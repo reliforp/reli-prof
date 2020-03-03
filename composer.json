@@ -1,0 +1,12 @@
+{
+  "name": "sj-i/php-profiler",
+  "description": "a profiler for php",
+  "minimum-stability": "stable",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "sji",
+      "homepage": "https://twitter.com/sji_ch"
+    }
+  ]
+}
