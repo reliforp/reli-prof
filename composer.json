@@ -9,5 +9,10 @@
       "name": "sji",
       "homepage": "https://twitter.com/sji_ch"
     }
-  ]
+  ],
+  "config": {
+    "platform": {
+      "php": "7.4.0"
+    }
+  }
 }
