@@ -1,7 +1,8 @@
 {
   "name": "sj-i/php-profiler",
   "description": "a profiler for php",
-  "minimum-stability": "stable",
+  "minimum-stability": "dev",
+  "prefer-stable": true,
   "license": "MIT",
   "authors": [
     {
