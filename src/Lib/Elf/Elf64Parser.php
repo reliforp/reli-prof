@@ -69,4 +69,31 @@ class Elf64Parser
         $header->e_shstrndx = $this->binary_reader->read16($data, 62);
         return $header;
     }
+
+    /**
+     * @param $data
+     * @param Elf64Header $elf_header
+     * @return Elf64ProgramHeader[]
+     */
+    public function parseProgramHeader($data, Elf64Header $elf_header): array
+    {
+        $program_header_table = [];
+
+        for ($i = 0; $i < $elf_header->e_phnum; $i++) {
+            $program_header = new Elf64ProgramHeader();
+            // ToDo: handle 64 bit offset correctly
+            $offset = $elf_header->e_phoff->lo + $elf_header->e_phentsize * $i;
+            $program_header->p_type = $this->binary_reader->read32($data, $offset);
+            $program_header->p_flags = $this->binary_reader->read32($data, $offset + 4);
+            $program_header->p_offset = $this->binary_reader->read64($data, $offset + 8);
+            $program_header->p_vaddr = $this->binary_reader->read64($data, $offset + 16);
+            $program_header->p_paddr = $this->binary_reader->read64($data, $offset + 24);
+            $program_header->p_filesz = $this->binary_reader->read64($data, $offset + 32);
+            $program_header->p_memsz = $this->binary_reader->read64($data, $offset + 40);
+            $program_header->p_align = $this->binary_reader->read64($data, $offset + 48);
+            $program_header_table[] = $program_header;
+        }
+
+        return $program_header_table;
+    }
 }

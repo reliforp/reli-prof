@@ -52,6 +52,7 @@ class Elf64Header
 
     public const EM_NONE = 0;
     public const EM_386 = 3;
+    public const EM_X86_64 = 62;
 
     public array $e_ident; // unsigned char[EI_NIDENT]
     public int $e_type; // Elf64_Half
