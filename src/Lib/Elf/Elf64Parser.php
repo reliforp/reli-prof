@@ -71,11 +71,11 @@ class Elf64Parser
     }
 
     /**
-     * @param $data
+     * @param string $data
      * @param Elf64Header $elf_header
      * @return Elf64ProgramHeaderEntry[]
      */
-    public function parseProgramHeader($data, Elf64Header $elf_header): Elf64ProgramHeaderTable
+    public function parseProgramHeader(string $data, Elf64Header $elf_header): Elf64ProgramHeaderTable
     {
         $program_header_table = [];
 
