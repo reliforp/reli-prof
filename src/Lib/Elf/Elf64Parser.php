@@ -73,14 +73,14 @@ class Elf64Parser
     /**
      * @param $data
      * @param Elf64Header $elf_header
-     * @return Elf64ProgramHeader[]
+     * @return Elf64ProgramHeaderEntry[]
      */
     public function parseProgramHeader($data, Elf64Header $elf_header): array
     {
         $program_header_table = [];
 
         for ($i = 0; $i < $elf_header->e_phnum; $i++) {
-            $program_header = new Elf64ProgramHeader();
+            $program_header = new Elf64ProgramHeaderEntry();
             // ToDo: handle 64 bit offset correctly
             $offset = $elf_header->e_phoff->lo + $elf_header->e_phentsize * $i;
             $program_header->p_type = $this->binary_reader->read32($data, $offset);
