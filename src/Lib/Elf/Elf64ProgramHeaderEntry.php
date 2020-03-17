@@ -40,4 +40,20 @@ class Elf64ProgramHeaderEntry
     public UInt64 $p_filesz; // Elf64_Xword
     public UInt64 $p_memsz; // Elf64_Xword
     public UInt64 $p_align; // Elf64_Xword
+
+    /**
+     * @return bool
+     */
+    public function isLoad()
+    {
+        return $this->p_type === self::PT_LOAD;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isDynamic()
+    {
+        return $this->p_type === self::PT_DYNAMIC;
+    }
 }
