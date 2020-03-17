@@ -17,6 +17,21 @@ use PhpProfiler\Lib\UInt64;
 
 class Elf64ProgramHeader
 {
+    public const PT_NULL = 0;
+    public const PT_LOAD = 1;
+    public const PT_DYNAMIC = 2;
+    public const PT_INTERP =3;
+    public const PT_NOTE = 4;
+    public const PT_SHLIB = 5;
+    public const PT_PHDR = 6;
+    public const PT_LOPROC = 0x70000000;
+    public const PT_HIPROC = 0x7fffffff;
+
+    public const PF_X = 1;
+    public const PF_W = 2;
+    public const PF_R = 4;
+    public const PF_MASKPROC = 0xf000000;
+
     public int $p_type; // Elf64_Word
     public int $p_flags; // Elf64_Word
     public UInt64 $p_offset; // Elf64_Off
