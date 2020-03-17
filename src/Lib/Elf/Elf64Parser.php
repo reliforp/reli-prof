@@ -96,4 +96,19 @@ class Elf64Parser
 
         return new Elf64ProgramHeaderTable(...$program_header_table);
     }
+
+    public function parseDynamicStructureArray(string $data, Elf64ProgramHeaderEntry $pt_dynamic)
+    {
+        $dynamic_array = [];
+        $offset = $pt_dynamic->p_offset->lo;
+        do {
+            $dynamic_structure = new Elf64DynamicStructure();
+            $dynamic_structure->d_tag = $this->binary_reader->read64($data, $offset);
+            $dynamic_structure->d_un = $this->binary_reader->read64($data, $offset + 8);
+            $dynamic_array[] = $dynamic_structure;
+            $offset += 16;
+        } while (!$dynamic_structure->isEnd());
+
+        return new Elf64DynamicStructureArray(...$dynamic_array);
+    }
 }

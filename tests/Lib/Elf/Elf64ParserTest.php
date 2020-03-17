@@ -33,6 +33,7 @@ class Elf64ParserTest extends TestCase
         $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
         $elf_header = $parser->parseElfHeader($php_binary);
         $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
-        var_dump($program_header_table);
+        $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
+        var_dump($dynamic_array);
     }
 }
