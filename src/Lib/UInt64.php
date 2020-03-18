@@ -12,7 +12,10 @@
 
 namespace PhpProfiler\Lib;
 
-
+/**
+ * Class UInt64
+ * @package PhpProfiler\Lib
+ */
 class UInt64
 {
     public int $hi;
@@ -27,5 +30,15 @@ class UInt64
     {
         $this->hi = $hi;
         $this->lo = $lo;
+    }
+
+    /**
+     * @return string
+     */
+    public function __toString()
+    {
+        $hi_hex = str_pad(base_convert($this->hi, 10, 16), 8, '0', STR_PAD_LEFT);
+        $lo_hex = str_pad(base_convert($this->lo, 10, 16), 8, '0', STR_PAD_LEFT);
+        return base_convert($hi_hex . $lo_hex, 16, 10);
     }
 }
