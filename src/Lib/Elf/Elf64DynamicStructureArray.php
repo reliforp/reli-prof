@@ -37,4 +37,21 @@ class Elf64DynamicStructureArray
     {
         return $this->entries;
     }
+
+    /**
+     * @return Elf64DynamicStructure[]
+     */
+    public function findStringTableEntries(): array
+    {
+        $entries = [];
+        foreach ($this->entries as $entry) {
+            if ($entry->isStringTable()) {
+                $entries[Elf64DynamicStructure::DT_STRTAB] = $entry;
+            }
+            else if ($entry->isStringTableSize()) {
+                $entries[Elf64DynamicStructure::DT_STRSZ] = $entry;
+            }
+        }
+        return $entries;
+    }
 }

@@ -116,4 +116,26 @@ class Elf64Parser
 
         return new Elf64DynamicStructureArray(...$dynamic_array);
     }
+
+    /**
+     * @param string $data
+     * @param Elf64DynamicStructureArray $dynamic_structure_array
+     * @return Elf64StringTable
+     */
+    public function parseStringTable(string $data, Elf64DynamicStructureArray $dynamic_structure_array): Elf64StringTable
+    {
+        /**
+         * @var Elf64DynamicStructure $dt_strtab
+         * @var Elf64DynamicStructure $dt_strsz
+         */
+        [
+            Elf64DynamicStructure::DT_STRTAB => $dt_strtab,
+            Elf64DynamicStructure::DT_STRSZ => $dt_strsz
+        ] = $dynamic_structure_array->findStringTableEntries();
+        $offset = $dt_strtab->d_un->toInt();
+        $size = $dt_strsz->d_un->toInt();
+        $string_table_region = substr($data, $offset, $size);
+        $strings = explode("\0", $string_table_region);
+        return new Elf64StringTable(...$strings);
+    }
 }
