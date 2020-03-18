@@ -41,4 +41,14 @@ class UInt64
         $lo_hex = str_pad(base_convert($this->lo, 10, 16), 8, '0', STR_PAD_LEFT);
         return base_convert($hi_hex . $lo_hex, 16, 10);
     }
+
+    /**
+     * do the wrong thing
+     *
+     * @return int
+     */
+    public function toInt(): int
+    {
+        return (int)(string)$this;
+    }
 }
