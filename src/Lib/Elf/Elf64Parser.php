@@ -97,7 +97,12 @@ class Elf64Parser
         return new Elf64ProgramHeaderTable(...$program_header_table);
     }
 
-    public function parseDynamicStructureArray(string $data, Elf64ProgramHeaderEntry $pt_dynamic)
+    /**
+     * @param string $data
+     * @param Elf64ProgramHeaderEntry $pt_dynamic
+     * @return Elf64DynamicStructureArray
+     */
+    public function parseDynamicStructureArray(string $data, Elf64ProgramHeaderEntry $pt_dynamic): Elf64DynamicStructureArray
     {
         $dynamic_array = [];
         $offset = $pt_dynamic->p_offset->lo;
