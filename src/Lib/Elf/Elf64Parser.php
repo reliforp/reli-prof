@@ -138,4 +138,38 @@ class Elf64Parser
 
         return new Elf64StringTable($string_table_region);
     }
+
+    /**
+     * @param string $data
+     * @param Elf64DynamicStructureArray $dynamic_structure_array
+     * @param int $number_of_symbols
+     * @return Elf64SymbolTableEntry[]
+     */
+    public function parseSymbolTable(string $data, Elf64DynamicStructureArray $dynamic_structure_array, int $number_of_symbols)
+    {
+        /**
+         * @var Elf64DynamicStructure $dt_symtab
+         * @var Elf64DynamicStructure $dt_syment
+         */
+        [
+            Elf64DynamicStructure::DT_SYMTAB => $dt_symtab,
+            Elf64DynamicStructure::DT_SYMENT => $dt_syment
+        ] = $dynamic_structure_array->findSymbolTablEntries();
+
+        $symbol_table_array = [];
+        $start_offset = $dt_symtab->d_un->toInt();
+        $entry_size = $dt_syment->d_un->toInt();
+        for ($i = 0; $i < $number_of_symbols; $i++) {
+            $offset = $start_offset + $i * $entry_size;
+            $symbol_table_entry = new Elf64SymbolTableEntry();
+            $symbol_table_entry->st_name = $this->binary_reader->read32($data, $offset);
+            $symbol_table_entry->st_info = $this->binary_reader->read8($data, $offset + 4);
+            $symbol_table_entry->st_other = $this->binary_reader->read8($data, $offset + 5);
+            $symbol_table_entry->st_shndx = $this->binary_reader->read16($data, $offset + 6);
+            $symbol_table_entry->st_value = $this->binary_reader->read64($data, $offset + 8);
+            $symbol_table_entry->st_size = $this->binary_reader->read64($data, $offset + 16);
+            $symbol_table_array[] = $symbol_table_entry;
+        }
+        return $symbol_table_array;
+    }
 }

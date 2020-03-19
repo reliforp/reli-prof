@@ -54,4 +54,21 @@ class Elf64DynamicStructureArray
         }
         return $entries;
     }
+
+    /**
+     * @return Elf64DynamicStructure[]
+     */
+    public function findSymbolTablEntries(): array
+    {
+        $entries = [];
+        foreach ($this->entries as $entry) {
+            if ($entry->isSymbolTable()) {
+                $entries[Elf64DynamicStructure::DT_SYMTAB] = $entry;
+            }
+            else if ($entry->isSymbolTableEntrySize()) {
+                $entries[Elf64DynamicStructure::DT_SYMENT] = $entry;
+            }
+        }
+        return $entries;
+    }
 }

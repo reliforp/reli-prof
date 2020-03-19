@@ -58,4 +58,20 @@ class Elf64ParserTest extends TestCase
         $string_table = $parser->parseStringTable($php_binary, $dynamic_array);
         var_dump($string_table);
     }
+
+    public function testParseSymbolTable()
+    {
+        $parser = new Elf64Parser(new BinaryReader());
+        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $elf_header = $parser->parseElfHeader($php_binary);
+        $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
+        $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
+        $symbol_table_array = $parser->parseSymbolTable($php_binary, $dynamic_array, 400);
+        $string_table = $parser->parseStringTable($php_binary, $dynamic_array);
+
+        foreach ($symbol_table_array as $symbol_table_entry) {
+            echo $string_table->lookup($symbol_table_entry->st_name);
+            var_dump($symbol_table_entry);
+        }
+    }
 }
