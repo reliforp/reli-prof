@@ -135,7 +135,7 @@ class Elf64Parser
         $offset = $dt_strtab->d_un->toInt();
         $size = $dt_strsz->d_un->toInt();
         $string_table_region = substr($data, $offset, $size);
-        $strings = explode("\0", $string_table_region);
-        return new Elf64StringTable(...$strings);
+
+        return new Elf64StringTable($string_table_region);
     }
 }
