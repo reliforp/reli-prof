@@ -51,4 +51,14 @@ class UInt64
     {
         return (int)(string)$this;
     }
+
+    /**
+     * @param int $bit_pos
+     * @return bool
+     */
+    public function checkBitSet(int $bit_pos): bool
+    {
+        $binary = str_pad(base_convert($this, 10, 2), 64, '0', STR_PAD_LEFT);
+        return strrev($binary)[$bit_pos];
+    }
 }

@@ -172,4 +172,52 @@ class Elf64Parser
         }
         return $symbol_table_array;
     }
+
+    /**
+     * @param string $data
+     * @param Elf64DynamicStructureArray $dynamic_structure_array
+     * @return Elf64GnuHashTable|null
+     */
+    public function parseGnuHashTable(string $data, Elf64DynamicStructureArray $dynamic_structure_array): ?Elf64GnuHashTable
+    {
+        $dt_gnu_hash = $dynamic_structure_array->findGnuHashTableEntry();
+        if (is_null($dt_gnu_hash)) {
+            return null;
+        }
+        $offset = $dt_gnu_hash->d_un->toInt();
+        $gnu_hash_table = new Elf64GnuHashTable();
+        $gnu_hash_table->nbuckets = $this->binary_reader->read32($data, $offset);
+        $gnu_hash_table->symoffset = $this->binary_reader->read32($data, $offset + 4);
+        $gnu_hash_table->bloom_size = $this->binary_reader->read32($data, $offset + 8);
+        $gnu_hash_table->bloom_shift = $this->binary_reader->read32($data, $offset + 12);
+        $bloom_offset = $offset + 16;
+        $bloom = [];
+        for ($i = 0; $i < $gnu_hash_table->bloom_size; $i++) {
+            $bloom[] = $this->binary_reader->read64($data, $bloom_offset + $i * 8);
+        }
+        $gnu_hash_table->bloom = $bloom;
+        $buckets_offset = $offset + 16 + $gnu_hash_table->bloom_size * 8;
+        $buckets = [];
+        for ($i = 0; $i < $gnu_hash_table->nbuckets; $i++) {
+            $buckets[] = $this->binary_reader->read32($data, $buckets_offset + $i * 4);
+        }
+        $gnu_hash_table->buckets = $buckets;
+
+        $chain_offset = $offset + 16 + $gnu_hash_table->bloom_size * 8 + $gnu_hash_table->nbuckets * 4;
+
+        $max_bucket_index = max($buckets);
+        $last_chain_offset = $chain_offset + ($max_bucket_index - $gnu_hash_table->symoffset) * 4;
+        $last_chain_item = $this->binary_reader->read32($data, $last_chain_offset);
+        for (; $last_chain_item & 1 === 0; $last_chain_offset += 4) {
+            $last_chain_item = $this->binary_reader->read32($data, $last_chain_offset);
+        }
+
+        $chain = [];
+        for (; $chain_offset <= $last_chain_offset; $chain_offset += 4) {
+            $chain[] = $this->binary_reader->read32($data, $chain_offset);
+        }
+        $gnu_hash_table->chain = $chain;
+
+        return $gnu_hash_table;
+    }
 }

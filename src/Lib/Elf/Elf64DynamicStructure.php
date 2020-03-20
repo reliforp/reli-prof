@@ -88,6 +88,14 @@ class Elf64DynamicStructure
     /**
      * @return bool
      */
+    public function isGnuHashTable(): bool
+    {
+        return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_GNU_HASH;
+    }
+
+    /**
+     * @return bool
+     */
     public function isStringTable(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_STRTAB;

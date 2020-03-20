@@ -71,4 +71,17 @@ class Elf64DynamicStructureArray
         }
         return $entries;
     }
+
+    /**
+     * @return Elf64DynamicStructure|null
+     */
+    public function findGnuHashTableEntry(): ?Elf64DynamicStructure
+    {
+        foreach ($this->entries as $entry) {
+            if ($entry->isGnuHashTable()) {
+                return $entry;
+            }
+        }
+        return null;
+    }
 }

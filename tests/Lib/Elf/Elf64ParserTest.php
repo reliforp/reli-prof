@@ -59,6 +59,21 @@ class Elf64ParserTest extends TestCase
         var_dump($string_table);
     }
 
+    public function testParseGnuHashTable()
+    {
+        $parser = new Elf64Parser(new BinaryReader());
+        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $elf_header = $parser->parseElfHeader($php_binary);
+        $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
+        $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
+        $gnu_hash_table = $parser->parseGnuHashTable($php_binary, $dynamic_array);
+        $number_of_symbols = $gnu_hash_table->getNumberOfSymbols();
+        $index = $gnu_hash_table->lookup('zend_class_implements');
+        $symbol_table_array = $parser->parseSymbolTable($php_binary, $dynamic_array, $number_of_symbols);
+        $string_table = $parser->parseStringTable($php_binary, $dynamic_array);
+        $this->assertSame('zend_class_implements', $string_table->lookup($symbol_table_array[$index]->st_name));
+    }
+
     public function testParseSymbolTable()
     {
         $parser = new Elf64Parser(new BinaryReader());
@@ -66,11 +81,12 @@ class Elf64ParserTest extends TestCase
         $elf_header = $parser->parseElfHeader($php_binary);
         $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
         $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
-        $symbol_table_array = $parser->parseSymbolTable($php_binary, $dynamic_array, 400);
+        $symbol_table_array = $parser->parseSymbolTable($php_binary, $dynamic_array, 2000);
         $string_table = $parser->parseStringTable($php_binary, $dynamic_array);
 
-        foreach ($symbol_table_array as $symbol_table_entry) {
-            echo $string_table->lookup($symbol_table_entry->st_name);
+        foreach ($symbol_table_array as $index => $symbol_table_entry) {
+            echo $string_table->lookup($symbol_table_entry->st_name) . "\n";
+            echo $index. "\n";
             var_dump($symbol_table_entry);
         }
     }
