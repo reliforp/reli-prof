@@ -36,9 +36,10 @@ class Elf64GnuHashTable
 
     /**
      * @param string $name
+     * @param callable $symbol_table_checker
      * @return int
      */
-    public function lookup(string $name): int
+    public function lookup(string $name, callable $symbol_table_checker): int
     {
         $hash = self::hash($name);
         if (!$this->checkBloomFilter($hash)) {
@@ -49,7 +50,9 @@ class Elf64GnuHashTable
 
         do {
             if (1|$this->chain[$chain_offset] === 1|$hash) {
-                return $chain_offset + $this->symoffset;
+                if ($symbol_table_checker($name, $chain_offset + $this->symoffset)) {
+                    return $chain_offset + $this->symoffset;
+                }
             }
             $chain_offset++;
         } while ($this->chain[$chain_offset] & 1 === 0);

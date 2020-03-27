@@ -68,8 +68,8 @@ class Elf64ParserTest extends TestCase
         $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
         $gnu_hash_table = $parser->parseGnuHashTable($php_binary, $dynamic_array);
         $number_of_symbols = $gnu_hash_table->getNumberOfSymbols();
-        $index = $gnu_hash_table->lookup('zend_class_implements');
-        $symbol_table_array = $parser->parseSymbolTable($php_binary, $dynamic_array, $number_of_symbols);
+        $index = $gnu_hash_table->lookup('zend_class_implements', fn ($unused) => true);
+        $symbol_table_array = $parser->parseSymbolTable($php_binary, $dynamic_array, $number_of_symbols)->entries;
         $string_table = $parser->parseStringTable($php_binary, $dynamic_array);
         $this->assertSame('zend_class_implements', $string_table->lookup($symbol_table_array[$index]->st_name));
     }
