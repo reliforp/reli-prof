@@ -31,4 +31,19 @@ class ProcessMemoryMap
     {
         $this->memory_areas = $memory_areas;
     }
+
+    /**
+     * @param string $regex
+     * @return ProcessMemoryArea[]
+     */
+    public function findByNameRegex(string $regex): array
+    {
+        $result = [];
+        foreach ($this->memory_areas as $memory_area) {
+            if (preg_match($regex, $memory_area->name)) {
+                $result[] = $memory_area;
+            }
+        }
+        return $result;
+    }
 }
