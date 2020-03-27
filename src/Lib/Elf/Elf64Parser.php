@@ -143,9 +143,9 @@ class Elf64Parser
      * @param string $data
      * @param Elf64DynamicStructureArray $dynamic_structure_array
      * @param int $number_of_symbols
-     * @return Elf64SymbolTableEntry[]
+     * @return Elf64SymbolTable
      */
-    public function parseSymbolTable(string $data, Elf64DynamicStructureArray $dynamic_structure_array, int $number_of_symbols)
+    public function parseSymbolTable(string $data, Elf64DynamicStructureArray $dynamic_structure_array, int $number_of_symbols): Elf64SymbolTable
     {
         /**
          * @var Elf64DynamicStructure $dt_symtab
@@ -170,7 +170,7 @@ class Elf64Parser
             $symbol_table_entry->st_size = $this->binary_reader->read64($data, $offset + 16);
             $symbol_table_array[] = $symbol_table_entry;
         }
-        return $symbol_table_array;
+        return new Elf64SymbolTable(...$symbol_table_array);
     }
 
     /**
