@@ -97,6 +97,10 @@ class Elf64ParserTest extends TestCase
         $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
         $elf_header = $parser->parseElfHeader($php_binary);
         $section_header = $parser->parseSectionHeader($php_binary, $elf_header);
-        var_dump($section_header->findSymbolTableEntry());
+        $symbol_table = $parser->parseSymbolTableFromSectionHeader($php_binary, $section_header->findSymbolTableEntry());
+        $string_table = $parser->parseStringTableFromSectionHeader($php_binary, $section_header->findStringTableEntry());
+        foreach ($symbol_table->entries as $entry) {
+            echo $string_table->lookup($entry->st_name) . PHP_EOL;
+        }
     }
 }

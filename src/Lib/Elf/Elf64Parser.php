@@ -141,6 +141,19 @@ class Elf64Parser
 
     /**
      * @param string $data
+     * @param Elf64SectionHeaderEntry $section_header_entry
+     * @return Elf64StringTable
+     */
+    public function parseStringTableFromSectionHeader(string $data, Elf64SectionHeaderEntry $section_header_entry): Elf64StringTable
+    {
+        $string_table_region = substr($data, $section_header_entry->sh_offset->toInt(), $section_header_entry->sh_size->toInt());
+
+        return new Elf64StringTable($string_table_region);
+
+    }
+
+    /**
+     * @param string $data
      * @param Elf64DynamicStructureArray $dynamic_structure_array
      * @param int $number_of_symbols
      * @return Elf64SymbolTable
@@ -276,6 +289,6 @@ class Elf64Parser
             $offset += $elf_header->e_shentsize;
         }
 
-        return new Elf64SectionHeaderTable(...$section_header_array);
+        return new Elf64SectionHeaderTable($this->parseStringTableFromSectionHeader($data, $section_header_array[$elf_header->e_shstrndx]), ...$section_header_array);
     }
 }
