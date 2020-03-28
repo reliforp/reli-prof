@@ -68,4 +68,12 @@ class Elf64Header
     public int $e_shentsize; // Elf64_Half
     public int $e_shnum; // Elf64_Half
     public int $e_shstrndx; // Elf64_Half
+
+    /**
+     * @return bool
+     */
+    public function hasSectionHeader(): bool
+    {
+        return $this->e_shnum > 0;
+    }
 }

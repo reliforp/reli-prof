@@ -90,4 +90,13 @@ class Elf64ParserTest extends TestCase
             var_dump($symbol_table_entry);
         }
     }
+
+    public function testParseSectionHeader()
+    {
+        $parser = new Elf64Parser(new BinaryReader());
+        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $elf_header = $parser->parseElfHeader($php_binary);
+        $section_header = $parser->parseSectionHeader($php_binary, $elf_header);
+        var_dump($section_header->findSymbolTableEntry());
+    }
 }

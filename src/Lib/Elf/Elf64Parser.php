@@ -220,4 +220,34 @@ class Elf64Parser
 
         return $gnu_hash_table;
     }
+
+    /**
+     * @param string $data
+     * @param Elf64Header $elf_header
+     * @return Elf64SectionHeaderTable
+     */
+    public function parseSectionHeader(string $data, Elf64Header $elf_header): Elf64SectionHeaderTable
+    {
+        $section_header_array = [];
+
+        $offset = $elf_header->e_shoff->toInt();
+        for ($i = 0; $i < $elf_header->e_shnum; $i++) {
+            $section_header_entry = new Elf64SectionHeaderEntry();
+            $section_header_entry->sh_name = $this->binary_reader->read32($data, $offset);
+            $section_header_entry->sh_type = $this->binary_reader->read32($data, $offset + 4);
+            $section_header_entry->sh_flags = $this->binary_reader->read64($data, $offset + 8);
+            $section_header_entry->sh_addr = $this->binary_reader->read64($data, $offset + 16);
+            $section_header_entry->sh_offset = $this->binary_reader->read64($data, $offset + 24);
+            $section_header_entry->sh_size = $this->binary_reader->read64($data, $offset + 32);
+            $section_header_entry->sh_link = $this->binary_reader->read32($data, $offset + 40);
+            $section_header_entry->sh_info = $this->binary_reader->read32($data, $offset + 44);
+            $section_header_entry->sh_addralign = $this->binary_reader->read64($data, $offset + 48);
+            $section_header_entry->sh_entsize = $this->binary_reader->read64($data, $offset + 56);
+            $section_header_array[] = $section_header_entry;
+
+            $offset += $elf_header->e_shentsize;
+        }
+
+        return new Elf64SectionHeaderTable(...$section_header_array);
+    }
 }
