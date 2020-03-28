@@ -145,7 +145,7 @@ class Elf64Parser
      * @param int $number_of_symbols
      * @return Elf64SymbolTable
      */
-    public function parseSymbolTable(string $data, Elf64DynamicStructureArray $dynamic_structure_array, int $number_of_symbols): Elf64SymbolTable
+    public function parseSymbolTableFromDynamic(string $data, Elf64DynamicStructureArray $dynamic_structure_array, int $number_of_symbols): Elf64SymbolTable
     {
         /**
          * @var Elf64DynamicStructure $dt_symtab
@@ -156,9 +156,37 @@ class Elf64Parser
             Elf64DynamicStructure::DT_SYMENT => $dt_syment
         ] = $dynamic_structure_array->findSymbolTablEntries();
 
-        $symbol_table_array = [];
         $start_offset = $dt_symtab->d_un->toInt();
         $entry_size = $dt_syment->d_un->toInt();
+
+        return $this->parseSymbolTable($data, $start_offset, $number_of_symbols, $entry_size);
+    }
+
+    /**
+     * @param string $data
+     * @param Elf64SectionHeaderEntry $section
+     * @return Elf64SymbolTable
+     */
+    public function parseSymbolTableFromSectionHeader(string $data, Elf64SectionHeaderEntry $section): Elf64SymbolTable
+    {
+        return $this->parseSymbolTable(
+            $data,
+            $section->sh_offset->toInt(),
+            $section->sh_size->toInt() / $section->sh_entsize->toInt(),
+            $section->sh_entsize->toInt()
+        );
+    }
+
+    /**
+     * @param string $data
+     * @param int $start_offset
+     * @param int $number_of_symbols
+     * @param int $entry_size
+     * @return Elf64SymbolTable
+     */
+    public function parseSymbolTable(string $data, int $start_offset, int $number_of_symbols, int $entry_size): Elf64SymbolTable
+    {
+        $symbol_table_array = [];
         for ($i = 0; $i < $number_of_symbols; $i++) {
             $offset = $start_offset + $i * $entry_size;
             $symbol_table_entry = new Elf64SymbolTableEntry();

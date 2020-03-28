@@ -69,7 +69,7 @@ class Elf64ParserTest extends TestCase
         $gnu_hash_table = $parser->parseGnuHashTable($php_binary, $dynamic_array);
         $number_of_symbols = $gnu_hash_table->getNumberOfSymbols();
         $index = $gnu_hash_table->lookup('zend_class_implements', fn ($unused) => true);
-        $symbol_table_array = $parser->parseSymbolTable($php_binary, $dynamic_array, $number_of_symbols)->entries;
+        $symbol_table_array = $parser->parseSymbolTableFromDynamic($php_binary, $dynamic_array, $number_of_symbols)->entries;
         $string_table = $parser->parseStringTable($php_binary, $dynamic_array);
         $this->assertSame('zend_class_implements', $string_table->lookup($symbol_table_array[$index]->st_name));
     }
@@ -81,10 +81,10 @@ class Elf64ParserTest extends TestCase
         $elf_header = $parser->parseElfHeader($php_binary);
         $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
         $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
-        $symbol_table_array = $parser->parseSymbolTable($php_binary, $dynamic_array, 2000);
+        $symbol_table = $parser->parseSymbolTableFromDynamic($php_binary, $dynamic_array, 2000);
         $string_table = $parser->parseStringTable($php_binary, $dynamic_array);
 
-        foreach ($symbol_table_array as $index => $symbol_table_entry) {
+        foreach ($symbol_table->entries as $index => $symbol_table_entry) {
             echo $string_table->lookup($symbol_table_entry->st_name) . "\n";
             echo $index. "\n";
             var_dump($symbol_table_entry);

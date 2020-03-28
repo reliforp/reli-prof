@@ -44,7 +44,7 @@ class Elf64SymbolResolver
         $elf_dynamic_array = $parser->parseDynamicStructureArray($php_binary, $elf_program_header->findDynamic()[0]);
         $elf_string_table = $parser->parseStringTable($php_binary, $elf_dynamic_array);
         $elf_gnu_hash_table = $parser->parseGnuHashTable($php_binary, $elf_dynamic_array);
-        $elf_symbol_table = $parser->parseSymbolTable($php_binary, $elf_dynamic_array, $elf_gnu_hash_table->getNumberOfSymbols());
+        $elf_symbol_table = $parser->parseSymbolTableFromDynamic($php_binary, $elf_dynamic_array, $elf_gnu_hash_table->getNumberOfSymbols());
         return new self(
             $elf_symbol_table,
             $elf_gnu_hash_table,
