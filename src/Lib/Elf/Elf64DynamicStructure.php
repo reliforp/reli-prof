@@ -124,4 +124,12 @@ class Elf64DynamicStructure
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_SYMENT;
     }
+
+    /**
+     * @return bool
+     */
+    public function isDebug(): bool
+    {
+        return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_DEBUG;
+    }
 }

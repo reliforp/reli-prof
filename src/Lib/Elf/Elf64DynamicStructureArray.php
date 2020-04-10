@@ -84,4 +84,17 @@ class Elf64DynamicStructureArray
         }
         return null;
     }
+
+    /**
+     * @return Elf64DynamicStructure|null
+     */
+    public function findDebugEntry(): ?Elf64DynamicStructure
+    {
+        foreach ($this->entries as $entry) {
+            if ($entry->isDebug()) {
+                return $entry;
+            }
+        }
+        return null;
+    }
 }
