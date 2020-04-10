@@ -27,5 +27,8 @@
     "psr-4": {
       "PhpProfiler\\": "tests"
     }
+  },
+  "require": {
+    "symfony/console": "^5.0"
   }
 }
