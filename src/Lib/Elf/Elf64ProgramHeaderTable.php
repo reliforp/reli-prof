@@ -12,6 +12,8 @@
 
 namespace PhpProfiler\Lib\Elf;
 
+use PhpProfiler\Lib\UInt64;
+
 /**
  * Class Elf64ProgramHeaderTable
  * @package PhpProfiler\Lib\Elf
@@ -45,6 +47,24 @@ class Elf64ProgramHeaderTable
     }
 
     /**
+     * @return UInt64
+     */
+    public function findBaseAddress(): UInt64
+    {
+        $base_address = new UInt64(0, 0);
+        foreach ($this->findLoad() as $pt_load) {
+            if ($pt_load->p_vaddr->hi < $base_address->hi) {
+                $base_address = $pt_load->p_vaddr;
+            } elseif ($pt_load->p_vaddr->hi === $base_address->hi) {
+                if ($pt_load->p_vaddr->lo < $base_address->lo) {
+                    $base_address = $pt_load->p_vaddr;
+                }
+            }
+        }
+        return $base_address;
+    }
+
+    /**
      * @return Elf64ProgramHeaderEntry[]
      */
     public function findDynamic(): array
@@ -56,10 +76,5 @@ class Elf64ProgramHeaderTable
             }
         }
         return $result;
-    }
-
-    public function findAll(): array
-    {
-        return $this->entries;
     }
 }
