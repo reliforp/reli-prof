@@ -16,15 +16,9 @@ namespace PhpProfiler\Lib\Elf;
  * Class Elf64LinearScanSymbolResolver
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64LinearScanSymbolResolver
+class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
 {
-    /**
-     * @var Elf64SymbolTable
-     */
     private Elf64SymbolTable $symbol_table;
-    /**
-     * @var Elf64StringTable
-     */
     private Elf64StringTable $string_table;
 
     /**
