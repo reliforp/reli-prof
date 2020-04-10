@@ -18,9 +18,7 @@ namespace PhpProfiler\ProcessReader;
  */
 class ProcessMemoryMap
 {
-    /**
-     * @var ProcessMemoryArea[]
-     */
+    /** @var ProcessMemoryArea[] */
     private array $memory_areas;
 
     /**
