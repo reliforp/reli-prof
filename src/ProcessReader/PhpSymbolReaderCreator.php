@@ -47,7 +47,7 @@ class PhpSymbolReaderCreator
     {
         $memory_reader = $this->memory_reader;
 
-        $symbol_reader_creator = new ProcessSymbolReaderCreator(
+        $symbol_reader_creator = new ProcessModuleSymbolReaderCreator(
             $pid,
             ProcessMemoryMapCreator::create()->getProcessMemoryMap($pid),
             new SymbolResolverCreator(),
