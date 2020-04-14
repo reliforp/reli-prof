@@ -29,6 +29,7 @@
     }
   },
   "require": {
+    "ext-ffi": "*",
     "symfony/console": "^5.0"
   }
 }
