@@ -50,6 +50,12 @@ final class GetEgAddressCommand extends Command
             $error_output->writeln('pid is not specified');
             return 1;
         }
+        $pid = filter_var($pid, FILTER_VALIDATE_INT);
+        if ($pid === false) {
+            $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
+            $error_output->writeln('pid is not integer');
+            return 2;
+        }
 
         $memory_reader = new MemoryReader();
         $php_globals_finder = new PhpGlobalsFinder(

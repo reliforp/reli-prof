@@ -49,7 +49,7 @@ final class Elf64GnuHashTable
         $chain_offset = $this->buckets[$hash % $this->nbuckets] - $this->symoffset;
 
         do {
-            if (1|$this->chain[$chain_offset] === 1|$hash) {
+            if ((1|$this->chain[$chain_offset]) === (1|$hash)) {
                 if ($symbol_table_checker($name, $chain_offset + $this->symoffset)) {
                     return $chain_offset + $this->symoffset;
                 }
@@ -65,7 +65,9 @@ final class Elf64GnuHashTable
      */
     public function getNumberOfSymbols(): int
     {
-        return array_key_last($this->chain) + 1 + $this->symoffset;
+        /** @var int $last_chain_key */
+        $last_chain_key = array_key_last($this->chain);
+        return $last_chain_key + 1 + $this->symoffset;
     }
 
     /**

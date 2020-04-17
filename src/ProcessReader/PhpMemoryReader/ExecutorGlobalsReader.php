@@ -49,14 +49,14 @@ final class ExecutorGlobalsReader
         $eg_raw = $this->memory_reader->read($pid, $executor_globals_address, $this->zend_type_reader->sizeOf('zend_executor_globals'));
         $eg = $this->zend_type_reader->readAs('zend_executor_globals', $eg_raw);
         $current_execute_data_addr = \FFI::cast('long', $eg->current_execute_data);
-        $current_execute_data_raw = $this->memory_reader->read($pid, $current_execute_data_addr, $this->zend_type_reader->sizeOf('zend_execute_data'));
+        $current_execute_data_raw = $this->memory_reader->read($pid, $current_execute_data_addr->cdata, $this->zend_type_reader->sizeOf('zend_execute_data'));
         $current_execute_data = $this->zend_type_reader->readAs('zend_execute_data', $current_execute_data_raw);
         $func_pointer = \FFI::cast('long',$current_execute_data->func);
-        $current_function_raw = $this->memory_reader->read($pid, $func_pointer, $this->zend_type_reader->sizeOf('zend_function'));
+        $current_function_raw = $this->memory_reader->read($pid, $func_pointer->cdata, $this->zend_type_reader->sizeOf('zend_function'));
         $current_function = $this->zend_type_reader->readAs('zend_function', $current_function_raw);
         $current_function_name_pointer = \FFI::cast('long',$current_function->common->function_name);
 
-        $current_function_name_zstring = $this->memory_reader->read($pid, $current_function_name_pointer, 128);
+        $current_function_name_zstring = $this->memory_reader->read($pid, $current_function_name_pointer->cdata, 128);
         $string = $this->zend_type_reader->readAs('zend_string', $current_function_name_zstring);
 
         return \FFI::string($string->val);

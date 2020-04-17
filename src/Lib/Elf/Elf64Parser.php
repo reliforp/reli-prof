@@ -73,7 +73,7 @@ final class Elf64Parser
     /**
      * @param string $data
      * @param Elf64Header $elf_header
-     * @return Elf64ProgramHeaderEntry[]
+     * @return Elf64ProgramHeaderTable
      */
     public function parseProgramHeader(string $data, Elf64Header $elf_header): Elf64ProgramHeaderTable
     {
@@ -185,7 +185,7 @@ final class Elf64Parser
         return $this->parseSymbolTable(
             $data,
             $section->sh_offset->toInt(),
-            $section->sh_size->toInt() / $section->sh_entsize->toInt(),
+            (int)($section->sh_size->toInt() / $section->sh_entsize->toInt()),
             $section->sh_entsize->toInt()
         );
     }
@@ -249,7 +249,7 @@ final class Elf64Parser
         $max_bucket_index = max($buckets);
         $last_chain_offset = $chain_offset + ($max_bucket_index - $gnu_hash_table->symoffset) * 4;
         $last_chain_item = $this->binary_reader->read32($data, $last_chain_offset);
-        for (; $last_chain_item & 1 === 0; $last_chain_offset += 4) {
+        for (; ($last_chain_item & 1) === 0; $last_chain_offset += 4) {
             $last_chain_item = $this->binary_reader->read32($data, $last_chain_offset);
         }
 

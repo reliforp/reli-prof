@@ -16,6 +16,7 @@ namespace PhpProfiler\ProcessReader;
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\Tls\TlsFinder;
 use PhpProfiler\Lib\Process\MemoryReader;
+use PhpProfiler\Lib\Process\MemoryReaderException;
 use PhpProfiler\Lib\Process\RegisterReader;
 
 /**
@@ -41,7 +42,7 @@ final class PhpSymbolReaderCreator
     /**
      * @param int $pid
      * @return ProcessModuleSymbolReader
-     * @throws \PhpProfiler\Lib\Process\MemoryReaderException
+     * @throws MemoryReaderException
      */
     public function create(int $pid): ProcessModuleSymbolReader
     {
@@ -65,6 +66,10 @@ final class PhpSymbolReaderCreator
             $tls_block_address = $tls_finder->findTlsBlock($pid, 1);
         }
 
-        return $symbol_reader_creator->createModuleReaderByNameRegex('/.*\/php$/', $tls_block_address);
+        $php_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex('/.*\/php$/', $tls_block_address);
+        if (is_null($php_symbol_reader)) {
+            throw new \RuntimeException('php module not found');
+        }
+        return $php_symbol_reader;
     }
 }

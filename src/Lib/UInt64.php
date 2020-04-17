@@ -37,8 +37,8 @@ final class UInt64
      */
     public function __toString()
     {
-        $hi_hex = str_pad(base_convert($this->hi, 10, 16), 8, '0', STR_PAD_LEFT);
-        $lo_hex = str_pad(base_convert($this->lo, 10, 16), 8, '0', STR_PAD_LEFT);
+        $hi_hex = str_pad(base_convert((string)$this->hi, 10, 16), 8, '0', STR_PAD_LEFT);
+        $lo_hex = str_pad(base_convert((string)$this->lo, 10, 16), 8, '0', STR_PAD_LEFT);
         return base_convert($hi_hex . $lo_hex, 16, 10);
     }
 
@@ -58,7 +58,7 @@ final class UInt64
      */
     public function checkBitSet(int $bit_pos): bool
     {
-        $binary = str_pad(base_convert($this, 10, 2), 64, '0', STR_PAD_LEFT);
-        return strrev($binary)[$bit_pos];
+        $binary = str_pad(base_convert((string)$this, 10, 2), 64, '0', STR_PAD_LEFT);
+        return (bool)strrev($binary)[$bit_pos];
     }
 }

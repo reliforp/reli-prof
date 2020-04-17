@@ -40,7 +40,7 @@ final class PhpGlobalsFinder
      * @return int
      * @throws MemoryReaderException
      */
-    public function findTsrmLsCache(): int
+    public function findTsrmLsCache(): ?int
     {
         if (!isset($this->tsrm_ls_cache) and !$this->tsrm_ls_cache_not_found) {
             $this->tsrm_ls_cache = $this->php_symbol_reader->readAsInt64('_tsrm_ls_cache');
@@ -60,8 +60,15 @@ final class PhpGlobalsFinder
         $tsrm_ls_cache = $this->findTsrmLsCache();
         if (isset($tsrm_ls_cache)) {
             $executor_globals_offset = $this->php_symbol_reader->readAsInt64('executor_globals_offset');
+            if (is_null($executor_globals_offset)) {
+                throw new \RuntimeException('executor_globals_offset not found');
+            }
             return $tsrm_ls_cache + $executor_globals_offset;
         }
-        return $this->php_symbol_reader->readAsInt64('executor_globals');
+        $executor_globals = $this->php_symbol_reader->readAsInt64('executor_globals');
+        if (is_null($executor_globals)) {
+            throw new \RuntimeException('executor globals not found');
+        }
+        return $executor_globals;
     }
 }

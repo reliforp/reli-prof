@@ -25,7 +25,7 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
     /**
      * @param Elf64Parser $parser
      * @param string $php_binary
-     * @return Elf64SymbolResolver
+     * @return Elf64DynamicSymbolResolver
      */
     public static function load(Elf64Parser $parser, string $php_binary): self
     {

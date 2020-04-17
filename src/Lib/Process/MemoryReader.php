@@ -47,12 +47,12 @@ final class MemoryReader
 
     /**
      * @param int $pid
-     * @param string $remote_address
+     * @param int $remote_address
      * @param int $size
      * @return mixed
      * @throws MemoryReaderException
      */
-    public function read(int $pid, string $remote_address, int $size)
+    public function read(int $pid, int $remote_address, int $size)
     {
         $buffer = $this->ffi->new("unsigned char[{$size}]");
         $this->local_iov->iov_base = \FFI::addr($buffer);
@@ -70,11 +70,11 @@ final class MemoryReader
 
     /**
      * @param int $pid
-     * @param string $remote_address
+     * @param int $remote_address
      * @return int
      * @throws MemoryReaderException
      */
-    public function readAsInt64(int $pid, string $remote_address): int
+    public function readAsInt64(int $pid, int $remote_address): int
     {
         $bytes = $this->read($pid, $remote_address, 8);
         return $bytes[0]
