@@ -20,7 +20,7 @@ use PhpProfiler\Lib\UInt64;
  * @package PhpProfiler\Lib\Elf
  * @see https://flapenguin.me/2017/05/10/elf-lookup-dt-gnu-hash/
  */
-class Elf64GnuHashTable
+final class Elf64GnuHashTable
 {
     public const ELFCLASS_BITS = 64;
 

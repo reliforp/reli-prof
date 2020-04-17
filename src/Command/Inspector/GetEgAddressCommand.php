@@ -27,7 +27,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Class GetEgAddressCommand
  * @package PhpProfiler\Command\Inspector
  */
-class GetEgAddressCommand extends Command
+final class GetEgAddressCommand extends Command
 {
     public function configure()
     {

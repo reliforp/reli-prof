@@ -17,7 +17,7 @@ namespace PhpProfiler\Lib\Process;
  * Class MemoryReader
  * @package PhpProfiler\Lib\Process
  */
-class MemoryReader
+final class MemoryReader
 {
     private $ffi;
 

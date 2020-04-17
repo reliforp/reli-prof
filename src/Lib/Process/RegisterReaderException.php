@@ -16,6 +16,6 @@ namespace PhpProfiler\Lib\Process;
  * Class RegisterReaderException
  * @package PhpProfiler\Lib\Process
  */
-class RegisterReaderException extends \Exception
+final class RegisterReaderException extends \Exception
 {
 }

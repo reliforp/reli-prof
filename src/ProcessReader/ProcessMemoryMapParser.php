@@ -18,7 +18,7 @@ use PhpProfiler\Lib\String\LineFetcher;
  * Class ProcessMemoryMapParser
  * @package PhpProfiler\ProcessReader
  */
-class ProcessMemoryMapParser
+final class ProcessMemoryMapParser
 {
     private LineFetcher $line_fetcher;
 

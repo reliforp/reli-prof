@@ -21,7 +21,7 @@ use Traversable;
  * Class CommandFinder
  * @package App\Command
  */
-class CommandEnumerator implements \IteratorAggregate
+final class CommandEnumerator implements \IteratorAggregate
 {
     /**
      * @inheritDoc

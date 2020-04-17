@@ -16,7 +16,7 @@ namespace PhpProfiler\ProcessReader;
  * Class ProcessMemoryAttribute
  * @package PhpProfiler\ProcessReader
  */
-class ProcessMemoryAttribute
+final class ProcessMemoryAttribute
 {
     public bool $read;
     public bool $write;

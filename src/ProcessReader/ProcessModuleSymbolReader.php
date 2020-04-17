@@ -19,7 +19,7 @@ use PhpProfiler\Lib\Process\MemoryReader;
  * Class ProcessModuleSymbolReader
  * @package PhpProfiler\ProcessReader
  */
-class ProcessModuleSymbolReader
+final class ProcessModuleSymbolReader
 {
     private Elf64SymbolResolver $symbol_resolver;
     /** @var ProcessMemoryArea[] */

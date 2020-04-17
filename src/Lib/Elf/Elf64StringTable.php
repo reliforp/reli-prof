@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib\Elf;
  * Class Elf64StringTable
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64StringTable
+final class Elf64StringTable
 {
     /** @var string */
     public string $raw_data;

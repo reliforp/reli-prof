@@ -19,7 +19,7 @@ use PhpProfiler\Lib\UInt64;
  * Class Elf64DynamicStructure
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64DynamicStructure
+final class Elf64DynamicStructure
 {
     public const DT_NULL = 0;
     public const DT_NEEDED = 1;

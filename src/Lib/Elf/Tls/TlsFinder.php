@@ -21,7 +21,7 @@ use PhpProfiler\ProcessReader\ProcessModuleSymbolReader;
  * Class TlsFinder
  * @package PhpProfiler\Lib\Elf\Tls
  */
-class TlsFinder
+final class TlsFinder
 {
     private RegisterReader $register_reader;
     private ProcessModuleSymbolReader $symbol_reader;

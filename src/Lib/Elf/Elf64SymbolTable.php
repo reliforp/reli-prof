@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib\Elf;
  * Class Elf64SymbolTable
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64SymbolTable
+final class Elf64SymbolTable
 {
     public const STN_UNDEF = 0;
 

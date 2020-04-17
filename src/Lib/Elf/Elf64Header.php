@@ -18,7 +18,7 @@ use PhpProfiler\Lib\UInt64;
  * Class Elf64Header
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64Header
+final class Elf64Header
 {
     public const EI_MAG0 = 0;
     public const EI_MAG1 = 1;

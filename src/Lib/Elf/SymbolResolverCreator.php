@@ -18,7 +18,7 @@ use PhpProfiler\Lib\Binary\BinaryReader;
  * Class SymbolResolverCreator
  * @package PhpProfiler\Lib\Elf
  */
-class SymbolResolverCreator
+final class SymbolResolverCreator
 {
     /**
      * @param string $path

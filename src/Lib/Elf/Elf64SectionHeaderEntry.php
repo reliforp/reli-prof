@@ -18,7 +18,7 @@ use PhpProfiler\Lib\UInt64;
  * Class Elf64SectionHeaderEntry
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64SectionHeaderEntry
+final class Elf64SectionHeaderEntry
 {
     public const SHT_NULL = 0;
     public const SHT_PROGBITS = 1;

@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib\Elf;
  * Class Elf64DynamicStructureArray
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64DynamicStructureArray
+final class Elf64DynamicStructureArray
 {
     /** @var Elf64DynamicStructure[] */
     private $entries = [];

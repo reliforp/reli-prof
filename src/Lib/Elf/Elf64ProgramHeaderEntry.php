@@ -15,7 +15,7 @@ namespace PhpProfiler\Lib\Elf;
 
 use PhpProfiler\Lib\UInt64;
 
-class Elf64ProgramHeaderEntry
+final class Elf64ProgramHeaderEntry
 {
     public const PT_NULL = 0;
     public const PT_LOAD = 1;

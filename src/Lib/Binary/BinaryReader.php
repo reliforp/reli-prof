@@ -18,7 +18,7 @@ use PhpProfiler\Lib\UInt64;
  * Class BinaryReader
  * @package PhpProfiler\Lib\Binary
  */
-class BinaryReader
+final class BinaryReader
 {
     public function read8(string $data, int $offset): int
     {

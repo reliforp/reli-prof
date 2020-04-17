@@ -18,7 +18,7 @@ use PhpProfiler\Lib\Process\MemoryReaderException;
  * Class PhpGlobalsFinder
  * @package PhpProfiler\ProcessReader
  */
-class PhpGlobalsFinder
+final class PhpGlobalsFinder
 {
     private MemoryReader $memory_reader;
     private ProcessModuleSymbolReader $php_symbol_reader;

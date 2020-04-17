@@ -16,6 +16,6 @@ namespace PhpProfiler\Lib\Process;
  * Class MemoryReaderException
  * @package PhpProfiler\Lib\Process
  */
-class MemoryReaderException extends \Exception
+final class MemoryReaderException extends \Exception
 {
 }

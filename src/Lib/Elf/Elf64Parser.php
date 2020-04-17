@@ -19,7 +19,7 @@ use PhpProfiler\Lib\Binary\BinaryReader;
  * Class Elf64Parser
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64Parser
+final class Elf64Parser
 {
     /**
      * @var BinaryReader

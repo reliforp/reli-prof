@@ -20,7 +20,7 @@ use PhpProfiler\Lib\Process\MemoryReaderException;
  * Class ExecutorGlobalsReader
  * @package PhpProfiler\ProcessReader\PhpStateReader
  */
-class ExecutorGlobalsReader
+final class ExecutorGlobalsReader
 {
     private MemoryReader $memory_reader;
     /**

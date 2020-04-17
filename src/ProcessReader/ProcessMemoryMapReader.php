@@ -16,7 +16,7 @@ namespace PhpProfiler\ProcessReader;
  * Class ProcessMemoryMapReader
  * @package PhpProfiler\ProcessReader
  */
-class ProcessMemoryMapReader
+final class ProcessMemoryMapReader
 {
     /**
      * @param int $process_id

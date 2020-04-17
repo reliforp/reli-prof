@@ -19,7 +19,7 @@ use PhpProfiler\Lib\String\LineFetcher;
  * Class ProcessMemoryMapCreator
  * @package PhpProfiler\ProcessReader
  */
-class ProcessMemoryMapCreator
+final class ProcessMemoryMapCreator
 {
     private ProcessMemoryMapReader $memory_map_reader;
     private ProcessMemoryMapParser $memory_map_parser;

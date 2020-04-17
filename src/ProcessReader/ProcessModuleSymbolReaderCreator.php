@@ -19,7 +19,7 @@ use PhpProfiler\Lib\Process\MemoryReader;
  * Class ProcessModuleSymbolReaderCreator
  * @package PhpProfiler\ProcessReader
  */
-class ProcessModuleSymbolReaderCreator
+final class ProcessModuleSymbolReaderCreator
 {
     private ProcessMemoryMap $process_memory_map;
     private SymbolResolverCreator $symbol_resolver_creator;

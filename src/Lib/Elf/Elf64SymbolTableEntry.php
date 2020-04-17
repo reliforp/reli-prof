@@ -19,7 +19,7 @@ use PhpProfiler\Lib\UInt64;
  * Class Elf64SymbolTableEntry
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64SymbolTableEntry
+final class Elf64SymbolTableEntry
 {
     public const STT_NOTYPE = 0;
     public const STT_OBJECT = 1;

@@ -16,7 +16,7 @@ namespace PhpProfiler\ProcessReader;
  * Class ProcessMemoryArea
  * @package PhpProfiler\ProcessReader
  */
-class ProcessMemoryArea
+final class ProcessMemoryArea
 {
     public string $begin;
     public string $end;

@@ -22,7 +22,7 @@ use PhpProfiler\Lib\Process\RegisterReader;
  * Class PhpSymbolReaderCreator
  * @package PhpProfiler\ProcessReader
  */
-class PhpSymbolReaderCreator
+final class PhpSymbolReaderCreator
 {
     /**
      * @var MemoryReader

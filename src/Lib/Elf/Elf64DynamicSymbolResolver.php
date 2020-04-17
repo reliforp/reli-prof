@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib\Elf;
  * Class Elf64SymbolResolver
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
+final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
 {
     private Elf64SymbolTable $symbol_table;
     private Elf64GnuHashTable $hash_table;

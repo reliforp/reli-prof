@@ -19,7 +19,7 @@ use FFI\CData;
  * Class ZendTypeReader
  * @package PhpProfiler\Lib\PhpInternals
  */
-class ZendTypeReader
+final class ZendTypeReader
 {
     public const V74 = 'v74';
     public const V80 = 'v80';

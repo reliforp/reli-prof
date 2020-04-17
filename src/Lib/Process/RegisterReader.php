@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib\Process;
  * Class RegisterReader
  * @package PhpProfiler\Lib\Process
  */
-class RegisterReader
+final class RegisterReader
 {
     private const PTRACE_PEEKUSER = 3;
     private const PTRACE_ATTACH = 16;

@@ -16,7 +16,7 @@ namespace PhpProfiler\ProcessReader;
  * Class PhpBinaryFinder
  * @package PhpProfiler\ProcessReader
  */
-class PhpBinaryFinder
+final class PhpBinaryFinder
 {
     /**
      * @param int $pid

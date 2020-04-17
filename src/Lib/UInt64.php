@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib;
  * Class UInt64
  * @package PhpProfiler\Lib
  */
-class UInt64
+final class UInt64
 {
     public int $hi;
     public int $lo;

@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib\Elf;
  * Class Elf64SectionHeaderTable
  * @package PhpProfiler\Lib\Elf
  */
-class Elf64SectionHeaderTable
+final class Elf64SectionHeaderTable
 {
     /**
      * @var Elf64SectionHeaderEntry[]

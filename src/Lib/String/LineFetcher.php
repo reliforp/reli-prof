@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib\String;
  * Class LineFetcher
  * @package PhpProfiler\Lib\String
  */
-class LineFetcher
+final class LineFetcher
 {
     /**
      * @param string $string
