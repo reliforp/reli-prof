@@ -55,10 +55,10 @@ final class PhpSymbolReaderCreator
         );
 
         $tls_block_address = null;
-        $libpthread_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex('/.*\/libpthread-2\.29\.so$/');
+        $libpthread_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex('/.*\/libpthread.*\.so$/');
         if (!is_null($libpthread_symbol_reader)) {
             $tls_finder = new TlsFinder(
-                $symbol_reader_creator->createModuleReaderByNameRegex('/.*\/libpthread-2\.29\.so$/'),
+                $libpthread_symbol_reader,
                 new RegisterReader(),
                 $memory_reader
             );
