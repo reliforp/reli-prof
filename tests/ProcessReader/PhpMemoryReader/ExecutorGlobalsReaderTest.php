@@ -13,18 +13,44 @@ namespace PhpProfiler\ProcessReader\PhpMemoryReader;
 
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\MemoryReader;
+use PhpProfiler\ProcessReader\PhpGlobalsFinder;
+use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
 use PHPUnit\Framework\TestCase;
 
 class ExecutorGlobalsReaderTest extends TestCase
 {
 
-    public function testFindCurrentExecuteData()
+    public function testReadCurrentFunctionName()
     {
+        $memory_reader = new MemoryReader();
         $executor_globals_reader = new ExecutorGlobalsReader(
-            new MemoryReader(),
+            $memory_reader,
             new ZendTypeReader(ZendTypeReader::V80)
         );
-        $name = $executor_globals_reader->readCurrentFunctionName(4836, 0x56062bd8d990);
-        var_dump($name);
+        $child = proc_open(
+            [
+                PHP_BINARY,
+                '-d extension=parallel.so',
+                '-r',
+                'fputs(STDOUT, "a\n");fgets(STDIN);'
+            ],
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w']
+            ],
+            $pipes
+        );
+
+        fgets($pipes[1]);
+        $child_status = proc_get_status($child);
+        $php_globals_finder = new PhpGlobalsFinder(
+            $memory_reader,
+            (new PhpSymbolReaderCreator($memory_reader))->create($child_status['pid'])
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals();
+        $name = $executor_globals_reader->readCurrentFunctionName($child_status['pid'], $executor_globals_address);
+        $this->assertSame('fgets', $name);
     }
 }
