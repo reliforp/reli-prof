@@ -139,6 +139,7 @@ final class RegisterReader
                 throw new RegisterReaderException("failed to attach process errno={$errno}", $errno);
             }
         }
+        pcntl_waitpid($pid, $status, WUNTRACED);
 
         $fs = $this->ffi->ptrace(self::PTRACE_PEEKUSER, $pid, \FFI::cast('void *', $target_offset), $null);
         if ($fs === -1) {

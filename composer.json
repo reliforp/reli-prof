@@ -30,6 +30,7 @@
   },
   "require": {
     "ext-ffi": "*",
+    "ext-pcntl": "*",
     "symfony/console": "^5.0"
   }
 }
