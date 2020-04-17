@@ -63,7 +63,7 @@ final class MemoryReader
         $read = $this->ffi->process_vm_readv($pid, \FFI::addr($this->local_iov), 1, \FFI::addr($this->remote_iov), 1, 0);
         if ($read === -1) {
             $errno = $this->ffi->errno;
-            throw new MemoryReaderException('failed to read memory', $errno);
+            throw new MemoryReaderException("failed to read memory.remote_address={$remote_address}, errno={$errno}", $errno);
         }
         return $buffer;
     }

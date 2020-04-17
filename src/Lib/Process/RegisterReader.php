@@ -136,8 +136,7 @@ final class RegisterReader
         if ($attach === -1) {
             $errno = $this->ffi->errno;
             if ($errno) {
-                var_dump($errno);
-                throw new RegisterReaderException('failed to attach process', $errno);
+                throw new RegisterReaderException("failed to attach process errno={$errno}", $errno);
             }
         }
 
@@ -145,8 +144,7 @@ final class RegisterReader
         if ($fs === -1) {
             $errno = $this->ffi->errno;
             if ($errno) {
-                var_dump($errno);
-                throw new RegisterReaderException('failed to read register', $errno);
+                throw new RegisterReaderException("failed to read register errno={$errno}", $errno);
             }
         }
 
@@ -154,8 +152,7 @@ final class RegisterReader
         if ($detach === -1) {
             $errno = $this->ffi->errno;
             if ($errno) {
-                var_dump($errno);
-                throw new RegisterReaderException('failed to detach process', $errno);
+                throw new RegisterReaderException("failed to detach process errno={$errno}", $errno);
             }
         }
 
