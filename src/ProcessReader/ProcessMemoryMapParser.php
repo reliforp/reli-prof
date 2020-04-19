@@ -38,7 +38,7 @@ final class ProcessMemoryMapParser
     public function parse(string $memory_map_string): ProcessMemoryMap
     {
         $memory_areas = [];
-        foreach ($this->line_fetcher->createGenerator($memory_map_string) as $line)
+        foreach ($this->line_fetcher->createIterable($memory_map_string) as $line)
         {
             $line_parsed = $this->parseLine($line);
             if ($line_parsed !== null) {

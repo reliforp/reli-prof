@@ -20,9 +20,9 @@ final class LineFetcher
 {
     /**
      * @param string $string
-     * @return \Generator|void
+     * @return iterable<string>
      */
-    public function createGenerator(string $string)
+    public function createIterable(string $string): iterable
     {
         $line = strtok($string, "\n");
         if ($line === false) {

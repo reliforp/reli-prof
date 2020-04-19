@@ -41,6 +41,25 @@ final class Elf64SymbolTableEntry
     public UInt64 $st_size; // Elf64_Xword
 
     /**
+     * Elf64SymbolTableEntry constructor.
+     * @param int $st_name
+     * @param int $st_info
+     * @param int $st_other
+     * @param int $st_shndx
+     * @param UInt64 $st_value
+     * @param UInt64 $st_size
+     */
+    public function __construct(int $st_name, int $st_info, int $st_other, int $st_shndx, UInt64 $st_value, UInt64 $st_size)
+    {
+        $this->st_name = $st_name;
+        $this->st_info = $st_info;
+        $this->st_other = $st_other;
+        $this->st_shndx = $st_shndx;
+        $this->st_value = $st_value;
+        $this->st_size = $st_size;
+    }
+
+    /**
      * @return int
      */
     public function getType(): int

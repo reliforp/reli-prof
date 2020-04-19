@@ -30,8 +30,16 @@ final class SymbolResolverCreator
         $parser = new Elf64Parser(new BinaryReader());
         $elf_header = $parser->parseElfHeader($binary);
         $section_header = $parser->parseSectionHeader($binary, $elf_header);
-        $symbol_table = $parser->parseSymbolTableFromSectionHeader($binary, $section_header->findSymbolTableEntry());
-        $string_table = $parser->parseStringTableFromSectionHeader($binary, $section_header->findStringTableEntry());
+        $symbol_table_section_header_entry = $section_header->findSymbolTableEntry();
+        $string_table_section_header_entry = $section_header->findStringTableEntry();
+        if (is_null($symbol_table_section_header_entry)) {
+            throw new ElfParserException('cannot find symbol table from section header table');
+        }
+        if (is_null($string_table_section_header_entry)) {
+            throw new ElfParserException('cannot find string table from section header table');
+        }
+        $symbol_table = $parser->parseSymbolTableFromSectionHeader($binary, $symbol_table_section_header_entry);
+        $string_table = $parser->parseStringTableFromSectionHeader($binary, $string_table_section_header_entry);
         return new Elf64LinearScanSymbolResolver($symbol_table, $string_table);
     }
 }

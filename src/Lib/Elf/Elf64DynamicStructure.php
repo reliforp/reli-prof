@@ -70,6 +70,17 @@ final class Elf64DynamicStructure
     public UInt64 $d_un;
 
     /**
+     * Elf64DynamicStructure constructor.
+     * @param UInt64 $d_tag
+     * @param UInt64 $d_un
+     */
+    public function __construct(UInt64 $d_tag, UInt64 $d_un)
+    {
+        $this->d_tag = $d_tag;
+        $this->d_un = $d_un;
+    }
+
+    /**
      * @return bool
      */
     public function isEnd(): bool

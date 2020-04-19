@@ -30,9 +30,32 @@ final class Elf64GnuHashTable
     public int $bloom_shift; // uint32_t
     /** @var UInt64[]  */
     public array $bloom; // uint64_t[bloom_size]
+    /** @var int[] */
     public array $buckets = []; // uint32_t[nbuckets]
+    /** @var int[] */
     public array $chain; // uint32_t[]
 
+
+    /**
+     * Elf64GnuHashTable constructor.
+     * @param int $nbuckets
+     * @param int $symoffset
+     * @param int $bloom_size
+     * @param int $bloom_shift
+     * @param UInt64[] $bloom
+     * @param int[] $buckets
+     * @param int[] $chain
+     */
+    public function __construct(int $nbuckets, int $symoffset, int $bloom_size, int $bloom_shift, array $bloom, array $buckets, array $chain)
+    {
+        $this->nbuckets = $nbuckets;
+        $this->symoffset = $symoffset;
+        $this->bloom_size = $bloom_size;
+        $this->bloom_shift = $bloom_shift;
+        $this->bloom = $bloom;
+        $this->buckets = $buckets;
+        $this->chain = $chain;
+    }
 
     /**
      * @param string $name
@@ -55,7 +78,7 @@ final class Elf64GnuHashTable
                 }
             }
             $chain_offset++;
-        } while ($this->chain[$chain_offset] & 1 === 0);
+        } while (($this->chain[$chain_offset] & 1) === 0);
 
         return Elf64SymbolTable::STN_UNDEF;
     }

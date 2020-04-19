@@ -13,20 +13,26 @@
 namespace PhpProfiler\Lib\Process;
 
 
+use FFI;
+use FFI\CData;
+
 /**
  * Class MemoryReader
  * @package PhpProfiler\Lib\Process
  */
 final class MemoryReader
 {
-    private $ffi;
+    private FFI $ffi;
+    private CData $local_iov;
+    private CData $remote_iov;
+    private CData $remote_base;
 
     /**
      * MemoryReader constructor.
      */
     public function __construct()
     {
-        $this->ffi = \FFI::cdef('
+        $this->ffi = FFI::cdef('
         typedef int pid_t;
         struct iovec {
             void  *iov_base;    /* Starting address */
@@ -49,22 +55,37 @@ final class MemoryReader
      * @param int $pid
      * @param int $remote_address
      * @param int $size
-     * @return mixed
+     * @return \FFI\CArray
      * @throws MemoryReaderException
      */
-    public function read(int $pid, int $remote_address, int $size)
+    public function read(int $pid, int $remote_address, int $size): CData
     {
+        /** @var CData $buffer */
         $buffer = $this->ffi->new("unsigned char[{$size}]");
-        $this->local_iov->iov_base = \FFI::addr($buffer);
+
+        /**
+         * @var FFI\Libc\iovec $this->local_iov
+         * @psalm-suppress PropertyTypeCoercion
+         */
+        $this->local_iov->iov_base = FFI::addr($buffer);
         $this->local_iov->iov_len = $size;
+
+        /** @var FFI\Libc\iovec $this->remote_iov */
         $this->remote_iov->iov_len = $size;
-        $this->remote_base->cdata = (int)$remote_address;
-        $this->remote_iov->iov_base = \FFI::cast('void *', $this->remote_base);
-        $read = $this->ffi->process_vm_readv($pid, \FFI::addr($this->local_iov), 1, \FFI::addr($this->remote_iov), 1, 0);
+        /** @var FFI\CInteger $this->remote_base */
+        $this->remote_base->cdata = $remote_address;
+        /** @psalm-suppress PropertyTypeCoercion */
+        $this->remote_iov->iov_base = FFI::cast('void *', $this->remote_base);
+
+        /** @var FFI\Libc\process_vm_readv_ffi $this->ffi */
+        $read = $this->ffi->process_vm_readv($pid, FFI::addr($this->local_iov), 1, FFI::addr($this->remote_iov), 1, 0);
         if ($read === -1) {
+            /** @var int $errno */
             $errno = $this->ffi->errno;
             throw new MemoryReaderException("failed to read memory.remote_address={$remote_address}, errno={$errno}", $errno);
         }
+
+        /** @var \FFI\CArray */
         return $buffer;
     }
 

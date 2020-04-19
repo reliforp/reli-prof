@@ -30,9 +30,12 @@ final class Elf64StringTable
         $this->raw_data = $raw_data;
     }
 
-    public function lookup(int $start_offset)
+    public function lookup(int $start_offset): string
     {
         $end_offset = strpos($this->raw_data, "\0", $start_offset);
+        if ($end_offset === false) {
+            return '';
+        }
         return substr($this->raw_data, $start_offset, $end_offset - $start_offset);
     }
 }

@@ -12,6 +12,8 @@
 
 namespace PhpProfiler\Lib\Process;
 
+use FFI\CInteger;
+
 /**
  * Class RegisterReader
  * @package PhpProfiler\Lib\Process
@@ -50,7 +52,7 @@ final class RegisterReader
     public const FS = 25 * 8;
     public const GS = 26 * 8;
 
-    private $ffi;
+    private \FFI $ffi;
 
     public function __construct()
     {
@@ -120,20 +122,24 @@ final class RegisterReader
     /**
      * @param int $pid
      * @param int $register
-     * @return mixed
+     * @return int
      * @throws MemoryReaderException
      */
     public function attachAndReadOne(int $pid, int $register)
     {
+        /** @var CInteger $zero */
         $zero = $this->ffi->new('long');
         $zero->cdata = 0;
         $null = \FFI::cast('void *', $zero);
         $target_offset = $this->ffi->new('long');
+        /** @var \FFI\CInteger $target_offset */
         $target_offset->cdata = $register;
 
+        /** @var \FFI\Libc\ptrace_ffi $this->ffi */
         $attach = $this->ffi->ptrace(self::PTRACE_ATTACH, $pid, $null, $null);
 
         if ($attach === -1) {
+            /** @var int $errno */
             $errno = $this->ffi->errno;
             if ($errno) {
                 throw new RegisterReaderException("failed to attach process errno={$errno}", $errno);
@@ -143,6 +149,7 @@ final class RegisterReader
 
         $fs = $this->ffi->ptrace(self::PTRACE_PEEKUSER, $pid, \FFI::cast('void *', $target_offset), $null);
         if ($fs === -1) {
+            /** @var int $errno */
             $errno = $this->ffi->errno;
             if ($errno) {
                 throw new RegisterReaderException("failed to read register errno={$errno}", $errno);
@@ -151,6 +158,7 @@ final class RegisterReader
 
         $detach = $this->ffi->ptrace(self::PTRACE_DETACH, $pid, $null, $null);
         if ($detach === -1) {
+            /** @var int $errno */
             $errno = $this->ffi->errno;
             if ($errno) {
                 throw new RegisterReaderException("failed to detach process errno={$errno}", $errno);

@@ -28,6 +28,7 @@ final class CommandEnumerator implements \IteratorAggregate
      */
     public function getIterator()
     {
+        /** @var \SplFileInfo $command_file_info */
         foreach (new \GlobIterator(__DIR__ . '/*/*Command.php') as $command_file_info) {
             $class_name = $command_file_info->getBasename('.php');
             $namespace = $command_file_info->getPathInfo()->getFilename();

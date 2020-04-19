@@ -54,13 +54,19 @@ final class ProcessModuleSymbolReader
 
     /**
      * @param string $symbol_name
-     * @return mixed
+     * @return \FFI\CArray
      * @throws \PhpProfiler\Lib\Process\MemoryReaderException
      */
     public function read(string $symbol_name)
     {
         $symbol = $this->symbol_resolver->resolve($symbol_name);
-        $base_address = !$symbol->isTls() ? $this->base_address : $this->tls_block_address;
+        $base_address = $this->base_address;
+        if ($symbol->isTls()) {
+            if (is_null($this->tls_block_address)) {
+                throw new ProcessSymbolReaderException('trying to resolve TLS symbol but cannot find TLS block address');
+            }
+            $base_address = $this->tls_block_address;
+        }
         $address = $base_address + $symbol->st_value->toInt();
         return $this->memory_reader->read($this->pid, $address, $symbol->st_size->toInt());
     }
@@ -76,7 +82,13 @@ final class ProcessModuleSymbolReader
         if ($symbol->isUndefined()) {
             return null;
         }
-        $base_address = !$symbol->isTls() ? $this->base_address : $this->tls_block_address;
+        $base_address = $this->base_address;
+        if ($symbol->isTls()) {
+            if (is_null($this->tls_block_address)) {
+                throw new ProcessSymbolReaderException('trying to resolve TLS symbol but cannot find TLS block address');
+            }
+            $base_address = $this->tls_block_address;
+        }
         $address = $base_address + $symbol->st_value->toInt();
         return $this->memory_reader->readAsInt64($this->pid, $address);
     }

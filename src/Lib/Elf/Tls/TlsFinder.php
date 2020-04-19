@@ -80,7 +80,7 @@ final class TlsFinder
             ($desc[0]
                 + ($desc[1] << 8)
                 + ($desc[2] << 16)
-                + ($desc[3] << 24)) / 8;
+                + ($desc[3] << 21));
         $desc_num =
             $desc[4]
             + ($desc[5] << 8)

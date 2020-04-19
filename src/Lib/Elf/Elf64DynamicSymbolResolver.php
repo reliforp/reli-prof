@@ -26,6 +26,7 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
      * @param Elf64Parser $parser
      * @param string $php_binary
      * @return Elf64DynamicSymbolResolver
+     * @throws ElfParserException
      */
     public static function load(Elf64Parser $parser, string $php_binary): self
     {
@@ -34,6 +35,9 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
         $elf_dynamic_array = $parser->parseDynamicStructureArray($php_binary, $elf_program_header->findDynamic()[0]);
         $elf_string_table = $parser->parseStringTable($php_binary, $elf_dynamic_array);
         $elf_gnu_hash_table = $parser->parseGnuHashTable($php_binary, $elf_dynamic_array);
+        if (is_null($elf_gnu_hash_table)) {
+            throw new ElfParserException('cannot find gnu hash table');
+        }
         $elf_symbol_table = $parser->parseSymbolTableFromDynamic($php_binary, $elf_dynamic_array, $elf_gnu_hash_table->getNumberOfSymbols());
         return new self(
             $elf_symbol_table,

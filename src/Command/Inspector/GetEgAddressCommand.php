@@ -29,7 +29,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 final class GetEgAddressCommand extends Command
 {
-    public function configure()
+    public function configure(): void
     {
         $this->setName('inspector:eg_address')
             ->setDescription('get EG address from an outer process or thread')
@@ -42,7 +42,7 @@ final class GetEgAddressCommand extends Command
      * @return int
      * @throws MemoryReaderException
      */
-    public function execute(InputInterface $input, OutputInterface $output)
+    public function execute(InputInterface $input, OutputInterface $output): int
     {
         $pid = $input->getOption('pid');
         if (is_null($pid)) {

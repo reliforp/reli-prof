@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <psalm
     totallyTyped="false"
-    errorLevel="4"
+    errorLevel="1"
     resolveFromConfigFile="true"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns="https://getpsalm.org/schema/config"
@@ -13,4 +13,10 @@
             <directory name="vendor" />
         </ignoreFiles>
     </projectFiles>
+    <stubs>
+        <file name="tools/stubs/ffi/FFI.php"/>
+        <file name="tools/stubs/ffi/libc.php"/>
+        <file name="tools/stubs/ffi/scalar.php"/>
+        <file name="tools/stubs/ffi/php.php"/>
+    </stubs>
 </psalm>
