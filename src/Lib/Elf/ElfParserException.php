@@ -9,11 +9,9 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
 
-
-class ElfParserException extends \Exception
+final class ElfParserException extends \Exception
 {
 
 }

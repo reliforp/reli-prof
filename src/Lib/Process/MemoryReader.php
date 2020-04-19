@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Process;
-
 
 use FFI;
 use FFI\CData;
@@ -78,11 +76,21 @@ final class MemoryReader
         $this->remote_iov->iov_base = FFI::cast('void *', $this->remote_base);
 
         /** @var FFI\Libc\process_vm_readv_ffi $this->ffi */
-        $read = $this->ffi->process_vm_readv($pid, FFI::addr($this->local_iov), 1, FFI::addr($this->remote_iov), 1, 0);
+        $read = $this->ffi->process_vm_readv(
+            $pid,
+            FFI::addr($this->local_iov),
+            1,
+            FFI::addr($this->remote_iov),
+            1,
+            0
+        );
         if ($read === -1) {
             /** @var int $errno */
             $errno = $this->ffi->errno;
-            throw new MemoryReaderException("failed to read memory.remote_address={$remote_address}, errno={$errno}", $errno);
+            throw new MemoryReaderException(
+                "failed to read memory.remote_address={$remote_address}, errno={$errno}",
+                $errno
+            );
         }
 
         /** @var \FFI\CArray */

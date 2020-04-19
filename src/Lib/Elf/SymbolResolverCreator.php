@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
@@ -23,6 +22,7 @@ final class SymbolResolverCreator
     /**
      * @param string $path
      * @return Elf64LinearScanSymbolResolver
+     * @throws ElfParserException
      */
     public function createLinearScanResolverFromPath(string $path): Elf64LinearScanSymbolResolver
     {

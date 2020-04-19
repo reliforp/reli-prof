@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
-
 
 use PhpProfiler\Lib\UInt64;
 

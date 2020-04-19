@@ -11,7 +11,6 @@
 
 namespace PhpProfiler\ProcessReader;
 
-
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -24,6 +23,9 @@ class ProcessMemoryMapReaderTest extends TestCase
     {
         $result = (new ProcessMemoryMapReader())->read(getmypid());
         $first_line = strtok($result, "\n");
-        $this->assertRegExp('/[0-9a-f]{12,16}-[0-9a-f]{12,16} [r\-][w\-][x\-][p\-] [0-9a-f]{8} [0-9][0-9]:[0-9][0-9] [0-9]+ +[^ ]+/', $first_line);
+        $this->assertRegExp(
+            '/[0-9a-f]{12,16}-[0-9a-f]{12,16} [r\-][w\-][x\-][p\-] [0-9a-f]{8} [0-9][0-9]:[0-9][0-9] [0-9]+ +[^ ]+/',
+            $first_line
+        );
     }
 }

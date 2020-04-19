@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
-
 
 use PhpProfiler\Lib\UInt64;
 
@@ -49,8 +47,14 @@ final class Elf64SymbolTableEntry
      * @param UInt64 $st_value
      * @param UInt64 $st_size
      */
-    public function __construct(int $st_name, int $st_info, int $st_other, int $st_shndx, UInt64 $st_value, UInt64 $st_size)
-    {
+    public function __construct(
+        int $st_name,
+        int $st_info,
+        int $st_other,
+        int $st_shndx,
+        UInt64 $st_value,
+        UInt64 $st_size
+    ) {
         $this->st_name = $st_name;
         $this->st_info = $st_info;
         $this->st_other = $st_other;

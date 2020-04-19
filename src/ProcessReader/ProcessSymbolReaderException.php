@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\ProcessReader;
-
 
 class ProcessSymbolReaderException extends \Exception
 {

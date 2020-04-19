@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Command\Inspector;
-
 
 use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
@@ -33,7 +31,7 @@ final class GetEgAddressCommand extends Command
     {
         $this->setName('inspector:eg_address')
             ->setDescription('get EG address from an outer process or thread')
-            ->addOption('pid', 'p',InputOption::VALUE_REQUIRED, 'process id');
+            ->addOption('pid', 'p', InputOption::VALUE_REQUIRED, 'process id');
     }
 
     /**

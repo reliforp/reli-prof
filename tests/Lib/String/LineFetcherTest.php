@@ -11,7 +11,6 @@
 
 namespace PhpProfiler\Lib\String;
 
-
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -29,7 +28,7 @@ class LineFetcherTest extends TestCase
         STR;
         $result = [];
         $line_fetcher = new LineFetcher();
-        foreach($line_fetcher->createIterable($string) as $line) {
+        foreach ($line_fetcher->createIterable($string) as $line) {
             $result[] = $line;
         }
         $this->assertSame(

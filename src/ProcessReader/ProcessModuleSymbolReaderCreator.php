@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
@@ -34,8 +33,12 @@ final class ProcessModuleSymbolReaderCreator
      * @param SymbolResolverCreator $symbol_resolver_creator
      * @param MemoryReader $memory_reader
      */
-    public function __construct(int $pid, ProcessMemoryMap $process_memory_map, SymbolResolverCreator $symbol_resolver_creator, MemoryReader $memory_reader)
-    {
+    public function __construct(
+        int $pid,
+        ProcessMemoryMap $process_memory_map,
+        SymbolResolverCreator $symbol_resolver_creator,
+        MemoryReader $memory_reader
+    ) {
         $this->pid = $pid;
         $this->process_memory_map = $process_memory_map;
         $this->symbol_resolver_creator = $symbol_resolver_creator;
@@ -46,9 +49,12 @@ final class ProcessModuleSymbolReaderCreator
      * @param string $regex
      * @param int|null $tls_block_address
      * @return ProcessModuleSymbolReader|null
+     * @throws \PhpProfiler\Lib\Elf\ElfParserException
      */
-    public function createModuleReaderByNameRegex(string $regex, ?int $tls_block_address = null): ?ProcessModuleSymbolReader
-    {
+    public function createModuleReaderByNameRegex(
+        string $regex,
+        ?int $tls_block_address = null
+    ): ?ProcessModuleSymbolReader {
         $memory_areas = $this->process_memory_map->findByNameRegex($regex);
         if ($memory_areas === []) {
             return null;
@@ -56,6 +62,12 @@ final class ProcessModuleSymbolReaderCreator
 
         $module_name = current($memory_areas)->name;
         $symbol_resolver = $this->symbol_resolver_creator->createLinearScanResolverFromPath($module_name);
-        return new ProcessModuleSymbolReader($this->pid, $symbol_resolver, $memory_areas, $this->memory_reader, $tls_block_address);
+        return new ProcessModuleSymbolReader(
+            $this->pid,
+            $symbol_resolver,
+            $memory_areas,
+            $this->memory_reader,
+            $tls_block_address
+        );
     }
 }

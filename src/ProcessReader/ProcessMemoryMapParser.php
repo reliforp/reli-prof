@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\String\LineFetcher;
@@ -38,8 +37,7 @@ final class ProcessMemoryMapParser
     public function parse(string $memory_map_string): ProcessMemoryMap
     {
         $memory_areas = [];
-        foreach ($this->line_fetcher->createIterable($memory_map_string) as $line)
-        {
+        foreach ($this->line_fetcher->createIterable($memory_map_string) as $line) {
             $line_parsed = $this->parseLine($line);
             if ($line_parsed !== null) {
                 $memory_areas[] = $line_parsed;
@@ -55,7 +53,12 @@ final class ProcessMemoryMapParser
     private function parseLine(string $line): ?ProcessMemoryArea
     {
         $matches = [];
-        preg_match('/([0-9a-f]{12,16})-([0-9a-f]{12,16}) ([r\-][w\-][x\-][p\-]) ([0-9a-f]{8}) ([0-9][0-9]:[0-9][0-9]) ([0-9]+) +([^ ]+)/', $line, $matches);
+        preg_match(
+            // phpcs:ignore Generic.Files.LineLength.TooLong
+            '/([0-9a-f]{12,16})-([0-9a-f]{12,16}) ([r\-][w\-][x\-][p\-]) ([0-9a-f]{8}) ([0-9][0-9]:[0-9][0-9]) ([0-9]+) +([^ ]+)/',
+            $line,
+            $matches
+        );
         if ($matches === []) {
             return null;
         }

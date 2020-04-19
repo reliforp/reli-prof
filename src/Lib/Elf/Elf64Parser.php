@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
-
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 
@@ -125,8 +123,10 @@ final class Elf64Parser
      * @param Elf64ProgramHeaderEntry $pt_dynamic
      * @return Elf64DynamicStructureArray
      */
-    public function parseDynamicStructureArray(string $data, Elf64ProgramHeaderEntry $pt_dynamic): Elf64DynamicStructureArray
-    {
+    public function parseDynamicStructureArray(
+        string $data,
+        Elf64ProgramHeaderEntry $pt_dynamic
+    ): Elf64DynamicStructureArray {
         $dynamic_array = [];
         $offset = $pt_dynamic->p_offset->lo;
         do {
@@ -145,8 +145,10 @@ final class Elf64Parser
      * @param Elf64DynamicStructureArray $dynamic_structure_array
      * @return Elf64StringTable
      */
-    public function parseStringTable(string $data, Elf64DynamicStructureArray $dynamic_structure_array): Elf64StringTable
-    {
+    public function parseStringTable(
+        string $data,
+        Elf64DynamicStructureArray $dynamic_structure_array
+    ): Elf64StringTable {
         /**
          * @var Elf64DynamicStructure $dt_strtab
          * @var Elf64DynamicStructure $dt_strsz
@@ -167,12 +169,17 @@ final class Elf64Parser
      * @param Elf64SectionHeaderEntry $section_header_entry
      * @return Elf64StringTable
      */
-    public function parseStringTableFromSectionHeader(string $data, Elf64SectionHeaderEntry $section_header_entry): Elf64StringTable
-    {
-        $string_table_region = substr($data, $section_header_entry->sh_offset->toInt(), $section_header_entry->sh_size->toInt());
+    public function parseStringTableFromSectionHeader(
+        string $data,
+        Elf64SectionHeaderEntry $section_header_entry
+    ): Elf64StringTable {
+        $string_table_region = substr(
+            $data,
+            $section_header_entry->sh_offset->toInt(),
+            $section_header_entry->sh_size->toInt()
+        );
 
         return new Elf64StringTable($string_table_region);
-
     }
 
     /**
@@ -181,8 +188,11 @@ final class Elf64Parser
      * @param int $number_of_symbols
      * @return Elf64SymbolTable
      */
-    public function parseSymbolTableFromDynamic(string $data, Elf64DynamicStructureArray $dynamic_structure_array, int $number_of_symbols): Elf64SymbolTable
-    {
+    public function parseSymbolTableFromDynamic(
+        string $data,
+        Elf64DynamicStructureArray $dynamic_structure_array,
+        int $number_of_symbols
+    ): Elf64SymbolTable {
         /**
          * @var Elf64DynamicStructure $dt_symtab
          * @var Elf64DynamicStructure $dt_syment
@@ -220,8 +230,12 @@ final class Elf64Parser
      * @param int $entry_size
      * @return Elf64SymbolTable
      */
-    public function parseSymbolTable(string $data, int $start_offset, int $number_of_symbols, int $entry_size): Elf64SymbolTable
-    {
+    public function parseSymbolTable(
+        string $data,
+        int $start_offset,
+        int $number_of_symbols,
+        int $entry_size
+    ): Elf64SymbolTable {
         $symbol_table_array = [];
         for ($i = 0; $i < $number_of_symbols; $i++) {
             $offset = $start_offset + $i * $entry_size;
@@ -248,8 +262,10 @@ final class Elf64Parser
      * @param Elf64DynamicStructureArray $dynamic_structure_array
      * @return Elf64GnuHashTable|null
      */
-    public function parseGnuHashTable(string $data, Elf64DynamicStructureArray $dynamic_structure_array): ?Elf64GnuHashTable
-    {
+    public function parseGnuHashTable(
+        string $data,
+        Elf64DynamicStructureArray $dynamic_structure_array
+    ): ?Elf64GnuHashTable {
         $dt_gnu_hash = $dynamic_structure_array->findGnuHashTableEntry();
         if (is_null($dt_gnu_hash)) {
             return null;
@@ -285,7 +301,13 @@ final class Elf64Parser
         }
 
         return new Elf64GnuHashTable(
-            $nbuckets, $symoffset, $bloom_size, $bloom_shift, $bloom, $buckets, $chain
+            $nbuckets,
+            $symoffset,
+            $bloom_size,
+            $bloom_shift,
+            $bloom,
+            $buckets,
+            $chain
         );
     }
 
@@ -326,6 +348,12 @@ final class Elf64Parser
             $offset += $elf_header->e_shentsize;
         }
 
-        return new Elf64SectionHeaderTable($this->parseStringTableFromSectionHeader($data, $section_header_array[$elf_header->e_shstrndx]), ...$section_header_array);
+        return new Elf64SectionHeaderTable(
+            $this->parseStringTableFromSectionHeader(
+                $data,
+                $section_header_array[$elf_header->e_shstrndx]
+            ),
+            ...$section_header_array
+        );
     }
 }

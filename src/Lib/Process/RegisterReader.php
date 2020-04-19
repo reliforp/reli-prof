@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Process;
 
 use FFI\CInteger;
@@ -123,7 +122,7 @@ final class RegisterReader
      * @param int $pid
      * @param int $register
      * @return int
-     * @throws MemoryReaderException
+     * @throws RegisterReaderException
      */
     public function attachAndReadOne(int $pid, int $register)
     {

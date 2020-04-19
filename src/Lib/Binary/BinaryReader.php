@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Binary;
 
 use PhpProfiler\Lib\UInt64;
@@ -32,7 +31,10 @@ final class BinaryReader
 
     public function read32(string $data, int $offset): int
     {
-        return (ord($data[$offset + 3]) << 24) | (ord($data[$offset + 2]) << 16) | (ord($data[$offset + 1]) << 8) | ord($data[$offset]);
+        return (ord($data[$offset + 3]) << 24)
+            | (ord($data[$offset + 2]) << 16)
+            | (ord($data[$offset + 1]) << 8)
+            | ord($data[$offset]);
     }
 
     public function read64(string $data, int $offset): UInt64

@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\ProcessReader;
-
 
 use PhpProfiler\Lib\String\LineFetcher;
 use PHPUnit\Framework\TestCase;

@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\ProcessReader;
 
 /**
@@ -30,7 +29,7 @@ final class ProcessMemoryArea
         string $file_offset,
         ProcessMemoryAttribute $attribute,
         string $name
-    ){
+    ) {
         $this->begin = $begin;
         $this->end = $end;
         $this->file_offset = $file_offset;

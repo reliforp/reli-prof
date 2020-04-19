@@ -11,7 +11,6 @@
 
 namespace PhpProfiler\ProcessReader;
 
-
 use PHPUnit\Framework\TestCase;
 
 /**

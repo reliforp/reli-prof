@@ -11,7 +11,6 @@
 
 namespace PhpProfiler\Lib\Elf;
 
-
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -20,7 +19,6 @@ use PHPUnit\Framework\TestCase;
  */
 class Elf64GnuHashTableTest extends TestCase
 {
-
     public function testHash()
     {
         $this->assertSame(0x00001505, Elf64GnuHashTable::hash(''));

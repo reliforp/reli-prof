@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Elf\Elf64SymbolResolver;
@@ -56,6 +55,7 @@ final class ProcessModuleSymbolReader
      * @param string $symbol_name
      * @return \FFI\CArray
      * @throws \PhpProfiler\Lib\Process\MemoryReaderException
+     * @throws ProcessSymbolReaderException
      */
     public function read(string $symbol_name)
     {
@@ -63,7 +63,9 @@ final class ProcessModuleSymbolReader
         $base_address = $this->base_address;
         if ($symbol->isTls()) {
             if (is_null($this->tls_block_address)) {
-                throw new ProcessSymbolReaderException('trying to resolve TLS symbol but cannot find TLS block address');
+                throw new ProcessSymbolReaderException(
+                    'trying to resolve TLS symbol but cannot find TLS block address'
+                );
             }
             $base_address = $this->tls_block_address;
         }
@@ -75,6 +77,7 @@ final class ProcessModuleSymbolReader
      * @param string $symbol_name
      * @return int|null
      * @throws \PhpProfiler\Lib\Process\MemoryReaderException
+     * @throws ProcessSymbolReaderException
      */
     public function readAsInt64(string $symbol_name): ?int
     {
@@ -85,7 +88,9 @@ final class ProcessModuleSymbolReader
         $base_address = $this->base_address;
         if ($symbol->isTls()) {
             if (is_null($this->tls_block_address)) {
-                throw new ProcessSymbolReaderException('trying to resolve TLS symbol but cannot find TLS block address');
+                throw new ProcessSymbolReaderException(
+                    'trying to resolve TLS symbol but cannot find TLS block address'
+                );
             }
             $base_address = $this->tls_block_address;
         }

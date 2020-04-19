@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
-
 
 use PhpProfiler\Lib\UInt64;
 
@@ -20,7 +18,7 @@ final class Elf64ProgramHeaderEntry
     public const PT_NULL = 0;
     public const PT_LOAD = 1;
     public const PT_DYNAMIC = 2;
-    public const PT_INTERP =3;
+    public const PT_INTERP = 3;
     public const PT_NOTE = 4;
     public const PT_SHLIB = 5;
     public const PT_PHDR = 6;
@@ -52,8 +50,16 @@ final class Elf64ProgramHeaderEntry
      * @param UInt64 $p_memsz
      * @param UInt64 $p_align
      */
-    public function __construct(int $p_type, int $p_flags, UInt64 $p_offset, UInt64 $p_vaddr, UInt64 $p_paddr, UInt64 $p_filesz, UInt64 $p_memsz, UInt64 $p_align)
-    {
+    public function __construct(
+        int $p_type,
+        int $p_flags,
+        UInt64 $p_offset,
+        UInt64 $p_vaddr,
+        UInt64 $p_paddr,
+        UInt64 $p_filesz,
+        UInt64 $p_memsz,
+        UInt64 $p_align
+    ) {
         $this->p_type = $p_type;
         $this->p_flags = $p_flags;
         $this->p_offset = $p_offset;

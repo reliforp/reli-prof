@@ -9,10 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Command;
-
-
 
 use Exception;
 use Traversable;

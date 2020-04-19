@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
 
 use PhpProfiler\Lib\UInt64;
@@ -21,7 +20,7 @@ use PhpProfiler\Lib\UInt64;
 final class Elf64ProgramHeaderTable
 {
     /** @var Elf64ProgramHeaderEntry[] */
-    private $entries = [];
+    private array $entries;
 
     /**
      * Elf64ProgramHeaderTable constructor.

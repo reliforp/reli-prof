@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\ProcessReader;
-
 
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\Tls\TlsFinder;

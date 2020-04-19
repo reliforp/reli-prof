@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
 
 /**
@@ -19,7 +18,7 @@ namespace PhpProfiler\Lib\Elf;
 final class Elf64DynamicStructureArray
 {
     /** @var Elf64DynamicStructure[] */
-    private $entries = [];
+    private array $entries;
 
     /**
      * Elf64ProgramHeaderTable constructor.
@@ -47,8 +46,7 @@ final class Elf64DynamicStructureArray
         foreach ($this->entries as $entry) {
             if ($entry->isStringTable()) {
                 $entries[Elf64DynamicStructure::DT_STRTAB] = $entry;
-            }
-            else if ($entry->isStringTableSize()) {
+            } elseif ($entry->isStringTableSize()) {
                 $entries[Elf64DynamicStructure::DT_STRSZ] = $entry;
             }
         }
@@ -64,8 +62,7 @@ final class Elf64DynamicStructureArray
         foreach ($this->entries as $entry) {
             if ($entry->isSymbolTable()) {
                 $entries[Elf64DynamicStructure::DT_SYMTAB] = $entry;
-            }
-            else if ($entry->isSymbolTableEntrySize()) {
+            } elseif ($entry->isSymbolTableEntrySize()) {
                 $entries[Elf64DynamicStructure::DT_SYMENT] = $entry;
             }
         }

@@ -9,7 +9,6 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
 
 /**
@@ -38,7 +37,11 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
         if (is_null($elf_gnu_hash_table)) {
             throw new ElfParserException('cannot find gnu hash table');
         }
-        $elf_symbol_table = $parser->parseSymbolTableFromDynamic($php_binary, $elf_dynamic_array, $elf_gnu_hash_table->getNumberOfSymbols());
+        $elf_symbol_table = $parser->parseSymbolTableFromDynamic(
+            $php_binary,
+            $elf_dynamic_array,
+            $elf_gnu_hash_table->getNumberOfSymbols()
+        );
         return new self(
             $elf_symbol_table,
             $elf_gnu_hash_table,
@@ -56,7 +59,7 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
         Elf64SymbolTable $symbol_table,
         Elf64GnuHashTable $hash_table,
         Elf64StringTable $string_table
-    ){
+    ) {
         $this->symbol_table = $symbol_table;
         $this->hash_table = $hash_table;
         $this->string_table = $string_table;

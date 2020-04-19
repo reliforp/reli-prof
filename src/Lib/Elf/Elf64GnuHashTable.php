@@ -9,9 +9,7 @@
  * file that was distributed with this source code.
  */
 
-
 namespace PhpProfiler\Lib\Elf;
-
 
 use PhpProfiler\Lib\UInt64;
 
@@ -46,8 +44,15 @@ final class Elf64GnuHashTable
      * @param int[] $buckets
      * @param int[] $chain
      */
-    public function __construct(int $nbuckets, int $symoffset, int $bloom_size, int $bloom_shift, array $bloom, array $buckets, array $chain)
-    {
+    public function __construct(
+        int $nbuckets,
+        int $symoffset,
+        int $bloom_size,
+        int $bloom_shift,
+        array $bloom,
+        array $buckets,
+        array $chain
+    ) {
         $this->nbuckets = $nbuckets;
         $this->symoffset = $symoffset;
         $this->bloom_size = $bloom_size;
@@ -72,7 +77,7 @@ final class Elf64GnuHashTable
         $chain_offset = $this->buckets[$hash % $this->nbuckets] - $this->symoffset;
 
         do {
-            if ((1|$this->chain[$chain_offset]) === (1|$hash)) {
+            if ((1 | $this->chain[$chain_offset]) === (1 | $hash)) {
                 if ($symbol_table_checker($name, $chain_offset + $this->symoffset)) {
                     return $chain_offset + $this->symoffset;
                 }
