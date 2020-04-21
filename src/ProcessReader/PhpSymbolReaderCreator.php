@@ -23,9 +23,6 @@ use PhpProfiler\Lib\Process\RegisterReader;
  */
 final class PhpSymbolReaderCreator
 {
-    /**
-     * @var MemoryReader
-     */
     private MemoryReader $memory_reader;
 
     /**

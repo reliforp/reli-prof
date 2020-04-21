@@ -17,13 +17,8 @@ namespace PhpProfiler\Lib\Elf;
  */
 final class Elf64SectionHeaderTable
 {
-    /**
-     * @var Elf64SectionHeaderEntry[]
-     */
+    /** @var Elf64SectionHeaderEntry[] */
     private array $entries;
-    /**
-     * @var Elf64StringTable
-     */
     private Elf64StringTable $section_name_table;
 
     /**

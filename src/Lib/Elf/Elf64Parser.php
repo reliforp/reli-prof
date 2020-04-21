@@ -19,9 +19,6 @@ use PhpProfiler\Lib\Binary\BinaryReader;
  */
 final class Elf64Parser
 {
-    /**
-     * @var BinaryReader
-     */
     private BinaryReader $binary_reader;
 
     /**
