@@ -90,8 +90,7 @@ final class Elf64Parser
         $program_header_table = [];
 
         for ($i = 0; $i < $elf_header->e_phnum; $i++) {
-            // ToDo: handle 64 bit offset correctly
-            $offset = $elf_header->e_phoff->lo + $elf_header->e_phentsize * $i;
+            $offset = $elf_header->e_phoff->toInt() + $elf_header->e_phentsize * $i;
             $p_type = $this->binary_reader->read32($data, $offset);
             $p_flags = $this->binary_reader->read32($data, $offset + 4);
             $p_offset = $this->binary_reader->read64($data, $offset + 8);
