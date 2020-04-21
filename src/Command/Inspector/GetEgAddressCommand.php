@@ -11,8 +11,10 @@
 
 namespace PhpProfiler\Command\Inspector;
 
+use PhpProfiler\Lib\Elf\ElfParserException;
 use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
+use PhpProfiler\Lib\Process\RegisterReaderException;
 use PhpProfiler\ProcessReader\PhpGlobalsFinder;
 use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
 use PhpProfiler\ProcessReader\ProcessSymbolReaderException;
@@ -41,6 +43,8 @@ final class GetEgAddressCommand extends Command
      * @return int
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
+     * @throws ElfParserException
+     * @throws RegisterReaderException
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {

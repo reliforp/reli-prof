@@ -11,11 +11,13 @@
 
 namespace PhpProfiler\ProcessReader;
 
+use PhpProfiler\Lib\Elf\ElfParserException;
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 use PhpProfiler\Lib\Process\RegisterReader;
+use PhpProfiler\Lib\Process\RegisterReaderException;
 
 /**
  * Class PhpSymbolReaderCreator
@@ -38,6 +40,9 @@ final class PhpSymbolReaderCreator
      * @param int $pid
      * @return ProcessModuleSymbolReader
      * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
+     * @throws ElfParserException
+     * @throws RegisterReaderException
      */
     public function create(int $pid): ProcessModuleSymbolReader
     {
