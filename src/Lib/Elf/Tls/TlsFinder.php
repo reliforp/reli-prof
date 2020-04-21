@@ -14,7 +14,9 @@ namespace PhpProfiler\Lib\Elf\Tls;
 use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 use PhpProfiler\Lib\Process\RegisterReader;
+use PhpProfiler\Lib\Process\RegisterReaderException;
 use PhpProfiler\ProcessReader\ProcessModuleSymbolReader;
+use PhpProfiler\ProcessReader\ProcessSymbolReaderException;
 
 /**
  * Class TlsFinder
@@ -48,6 +50,8 @@ final class TlsFinder
      * @param int $module_index
      * @return int
      * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
+     * @throws RegisterReaderException
      */
     public function findTlsBlock(int $pid, int $module_index): int
     {
@@ -71,6 +75,7 @@ final class TlsFinder
      * @param string $symbol_name
      * @return int[]
      * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
      */
     private function getLibThreadDbDescriptor(string $symbol_name): array
     {

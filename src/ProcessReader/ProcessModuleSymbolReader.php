@@ -13,6 +13,7 @@ namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Elf\Elf64SymbolResolver;
 use PhpProfiler\Lib\Process\MemoryReader;
+use PhpProfiler\Lib\Process\MemoryReaderException;
 
 /**
  * Class ProcessModuleSymbolReader
@@ -54,7 +55,7 @@ final class ProcessModuleSymbolReader
     /**
      * @param string $symbol_name
      * @return \FFI\CArray
-     * @throws \PhpProfiler\Lib\Process\MemoryReaderException
+     * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      */
     public function read(string $symbol_name)
@@ -76,7 +77,7 @@ final class ProcessModuleSymbolReader
     /**
      * @param string $symbol_name
      * @return int|null
-     * @throws \PhpProfiler\Lib\Process\MemoryReaderException
+     * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      */
     public function readAsInt64(string $symbol_name): ?int

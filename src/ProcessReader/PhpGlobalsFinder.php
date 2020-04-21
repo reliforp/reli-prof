@@ -39,6 +39,7 @@ final class PhpGlobalsFinder
     /**
      * @return int
      * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
      */
     public function findTsrmLsCache(): ?int
     {
@@ -54,6 +55,7 @@ final class PhpGlobalsFinder
     /**
      * @return int
      * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
      */
     public function findExecutorGlobals(): int
     {

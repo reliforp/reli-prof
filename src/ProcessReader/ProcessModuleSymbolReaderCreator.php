@@ -11,6 +11,7 @@
 
 namespace PhpProfiler\ProcessReader;
 
+use PhpProfiler\Lib\Elf\ElfParserException;
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
 use PhpProfiler\Lib\Process\MemoryReader;
 
@@ -49,7 +50,7 @@ final class ProcessModuleSymbolReaderCreator
      * @param string $regex
      * @param int|null $tls_block_address
      * @return ProcessModuleSymbolReader|null
-     * @throws \PhpProfiler\Lib\Elf\ElfParserException
+     * @throws ElfParserException
      */
     public function createModuleReaderByNameRegex(
         string $regex,
