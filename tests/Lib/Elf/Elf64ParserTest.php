@@ -12,6 +12,7 @@
 namespace PhpProfiler\Lib\Elf;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\StringByteReader;
 use PhpProfiler\ProcessReader\PhpBinaryFinder;
 use PHPUnit\Framework\TestCase;
 
@@ -21,7 +22,7 @@ class Elf64ParserTest extends TestCase
     public function testParseElfHeader()
     {
         $parser = new Elf64Parser(new BinaryReader());
-        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $php_binary = $this->getSelfPhpBinary();
         $elf_header = $parser->parseElfHeader($php_binary);
         var_dump($elf_header);
     }
@@ -29,7 +30,7 @@ class Elf64ParserTest extends TestCase
     public function testParseProgramHeader()
     {
         $parser = new Elf64Parser(new BinaryReader());
-        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $php_binary = $this->getSelfPhpBinary();
         $elf_header = $parser->parseElfHeader($php_binary);
         $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
         var_dump($program_header_table);
@@ -38,7 +39,7 @@ class Elf64ParserTest extends TestCase
     public function testParseDynamicArray()
     {
         $parser = new Elf64Parser(new BinaryReader());
-        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $php_binary = $this->getSelfPhpBinary();
         $elf_header = $parser->parseElfHeader($php_binary);
         $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
         $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
@@ -50,7 +51,7 @@ class Elf64ParserTest extends TestCase
     public function testParseStringTable()
     {
         $parser = new Elf64Parser(new BinaryReader());
-        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $php_binary = $this->getSelfPhpBinary();
         $elf_header = $parser->parseElfHeader($php_binary);
         $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
         $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
@@ -61,7 +62,7 @@ class Elf64ParserTest extends TestCase
     public function testParseGnuHashTable()
     {
         $parser = new Elf64Parser(new BinaryReader());
-        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $php_binary = $this->getSelfPhpBinary();
         $elf_header = $parser->parseElfHeader($php_binary);
         $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
         $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
@@ -80,7 +81,7 @@ class Elf64ParserTest extends TestCase
     public function testParseSymbolTable()
     {
         $parser = new Elf64Parser(new BinaryReader());
-        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $php_binary = $this->getSelfPhpBinary();
         $elf_header = $parser->parseElfHeader($php_binary);
         $program_header_table = $parser->parseProgramHeader($php_binary, $elf_header);
         $dynamic_array = $parser->parseDynamicStructureArray($php_binary, $program_header_table->findDynamic()[0]);
@@ -97,7 +98,7 @@ class Elf64ParserTest extends TestCase
     public function testParseSectionHeader()
     {
         $parser = new Elf64Parser(new BinaryReader());
-        $php_binary = file_get_contents((new PhpBinaryFinder())->findByProcessId(getmypid()));
+        $php_binary = $this->getSelfPhpBinary();
         $elf_header = $parser->parseElfHeader($php_binary);
         $section_header = $parser->parseSectionHeader($php_binary, $elf_header);
         $symbol_table = $parser->parseSymbolTableFromSectionHeader(
@@ -111,5 +112,19 @@ class Elf64ParserTest extends TestCase
         foreach ($symbol_table->entries as $entry) {
             echo $string_table->lookup($entry->st_name) . PHP_EOL;
         }
+    }
+
+    /**
+     * @return StringByteReader
+     */
+    public function getSelfPhpBinary(): StringByteReader
+    {
+        return new StringByteReader(
+            file_get_contents(
+                (new PhpBinaryFinder())->findByProcessId(
+                    getmypid()
+                )
+            )
+        );
     }
 }

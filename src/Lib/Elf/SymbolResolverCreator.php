@@ -12,6 +12,7 @@
 namespace PhpProfiler\Lib\Elf;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\StringByteReader;
 
 /**
  * Class SymbolResolverCreator
@@ -26,7 +27,7 @@ final class SymbolResolverCreator
      */
     public function createLinearScanResolverFromPath(string $path): Elf64LinearScanSymbolResolver
     {
-        $binary = file_get_contents($path);
+        $binary = new StringByteReader(file_get_contents($path));
         $parser = new Elf64Parser(new BinaryReader());
         $elf_header = $parser->parseElfHeader($binary);
         $section_header = $parser->parseSectionHeader($binary, $elf_header);

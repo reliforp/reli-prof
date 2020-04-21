@@ -19,17 +19,17 @@ use PhpProfiler\Lib\UInt64;
  */
 final class BinaryReader
 {
-    public function read8(string $data, int $offset): int
+    public function read8(ByteReaderInterface $data, int $offset): int
     {
         return ord($data[$offset]);
     }
 
-    public function read16(string $data, int $offset): int
+    public function read16(ByteReaderInterface $data, int $offset): int
     {
         return (ord($data[$offset + 1]) << 8) | ord($data[$offset]);
     }
 
-    public function read32(string $data, int $offset): int
+    public function read32(ByteReaderInterface $data, int $offset): int
     {
         return (ord($data[$offset + 3]) << 24)
             | (ord($data[$offset + 2]) << 16)
@@ -37,7 +37,7 @@ final class BinaryReader
             | ord($data[$offset]);
     }
 
-    public function read64(string $data, int $offset): UInt64
+    public function read64(ByteReaderInterface $data, int $offset): UInt64
     {
         return new UInt64(
             $this->read32($data, $offset + 4),
@@ -45,8 +45,8 @@ final class BinaryReader
         );
     }
 
-    public function readString(string $data, int $offset, int $size): string
+    public function readString(ByteReaderInterface $data, int $offset, int $size): string
     {
-        return substr($data, $offset, $size);
+        return $data->createSliceAsString($offset, $size);
     }
 }

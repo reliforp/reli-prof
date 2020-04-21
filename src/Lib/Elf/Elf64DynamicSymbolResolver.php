@@ -11,6 +11,8 @@
 
 namespace PhpProfiler\Lib\Elf;
 
+use PhpProfiler\Lib\Binary\ByteReaderInterface;
+
 /**
  * Class Elf64SymbolResolver
  * @package PhpProfiler\Lib\Elf
@@ -23,11 +25,11 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
 
     /**
      * @param Elf64Parser $parser
-     * @param string $php_binary
+     * @param ByteReaderInterface $php_binary
      * @return Elf64DynamicSymbolResolver
      * @throws ElfParserException
      */
-    public static function load(Elf64Parser $parser, string $php_binary): self
+    public static function load(Elf64Parser $parser, ByteReaderInterface $php_binary): self
     {
         $elf_header = $parser->parseElfHeader($php_binary);
         $elf_program_header = $parser->parseProgramHeader($php_binary, $elf_header);
