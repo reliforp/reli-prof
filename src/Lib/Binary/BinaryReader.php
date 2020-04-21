@@ -21,20 +21,20 @@ final class BinaryReader
 {
     public function read8(ByteReaderInterface $data, int $offset): int
     {
-        return ord($data[$offset]);
+        return $data[$offset];
     }
 
     public function read16(ByteReaderInterface $data, int $offset): int
     {
-        return (ord($data[$offset + 1]) << 8) | ord($data[$offset]);
+        return ($data[$offset + 1] << 8) | $data[$offset];
     }
 
     public function read32(ByteReaderInterface $data, int $offset): int
     {
-        return (ord($data[$offset + 3]) << 24)
-            | (ord($data[$offset + 2]) << 16)
-            | (ord($data[$offset + 1]) << 8)
-            | ord($data[$offset]);
+        return ($data[$offset + 3] << 24)
+            | ($data[$offset + 2] << 16)
+            | ($data[$offset + 1] << 8)
+            | $data[$offset];
     }
 
     public function read64(ByteReaderInterface $data, int $offset): UInt64

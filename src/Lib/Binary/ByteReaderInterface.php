@@ -17,7 +17,7 @@ use LogicException;
 /**
  * Interface ByteReaderInterface
  *
- * @extends ArrayAccess<int, string>
+ * @extends ArrayAccess<int, int>
  * @package PhpProfiler\Lib\Binary
  */
 interface ByteReaderInterface extends ArrayAccess
@@ -32,9 +32,9 @@ interface ByteReaderInterface extends ArrayAccess
     /**
      * Offset to retrieve
      * @param int $offset
-     * @return string Can return all value types.
+     * @return int
      */
-    public function offsetGet($offset): string;
+    public function offsetGet($offset): int;
 
     /**
      * create a slice as string

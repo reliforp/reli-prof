@@ -31,9 +31,9 @@ final class StringByteReader implements ByteReaderInterface
         return isset($this->source[$offset]);
     }
 
-    public function offsetGet($offset): string
+    public function offsetGet($offset): int
     {
-        return $this->source[$offset];
+        return ord($this->source[$offset]);
     }
 
     public function createSliceAsString(int $offset, int $size): string

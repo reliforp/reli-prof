@@ -23,9 +23,9 @@ class StringByteReaderTest extends TestCase
     public function testRead()
     {
         $reader = new StringByteReader('abc');
-        $this->assertSame('a', $reader[0]);
-        $this->assertSame('b', $reader[1]);
-        $this->assertSame('c', $reader[2]);
+        $this->assertSame(0x61, $reader[0]);
+        $this->assertSame(0x62, $reader[1]);
+        $this->assertSame(0x63, $reader[2]);
     }
 
     public function testCreateSliceAsString()
