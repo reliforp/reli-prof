@@ -19,17 +19,21 @@ use PhpProfiler\ProcessReader\ProcessModuleSymbolReader;
 use PhpProfiler\ProcessReader\ProcessSymbolReaderException;
 
 /**
- * Class TlsFinder
+ * Class LibThreadDbTlsFinder
+ *
+ * This class uses some debugging symbols from libpthread.so,
+ * so if the target process doesn't load libpthread, it won't work.
+ *
  * @package PhpProfiler\Lib\Elf\Tls
  */
-final class TlsFinder
+final class LibThreadDbTlsFinder implements TlsFinderInterface
 {
     private RegisterReader $register_reader;
     private ProcessModuleSymbolReader $symbol_reader;
     private MemoryReader $memory_reader;
 
     /**
-     * TlsFinder constructor.
+     * LibThreadDbTlsFinder constructor.
      *
      * @param ProcessModuleSymbolReader $symbol_reader
      * @param RegisterReader $register_reader

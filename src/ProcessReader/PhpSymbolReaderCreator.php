@@ -12,7 +12,7 @@
 namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
-use PhpProfiler\Lib\Elf\Tls\TlsFinder;
+use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 use PhpProfiler\Lib\Process\RegisterReader;
@@ -53,7 +53,7 @@ final class PhpSymbolReaderCreator
         $tls_block_address = null;
         $libpthread_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex('/.*\/libpthread.*\.so$/');
         if (!is_null($libpthread_symbol_reader)) {
-            $tls_finder = new TlsFinder(
+            $tls_finder = new LibThreadDbTlsFinder(
                 $libpthread_symbol_reader,
                 new RegisterReader(),
                 $memory_reader
