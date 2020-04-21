@@ -15,6 +15,7 @@ use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 use PhpProfiler\ProcessReader\PhpGlobalsFinder;
 use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
+use PhpProfiler\ProcessReader\ProcessSymbolReaderException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -39,6 +40,7 @@ final class GetEgAddressCommand extends Command
      * @param OutputInterface $output
      * @return int
      * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
