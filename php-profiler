@@ -17,7 +17,7 @@ require 'vendor/autoload.php';
 
 $application = new Application();
 
-foreach (new CommandEnumerator() as $command_class) {
+foreach (new CommandEnumerator(new GlobIterator(__DIR__. '/src/Command/*/*Command.php')) as $command_class) {
     $application->add(new $command_class);
 }
 

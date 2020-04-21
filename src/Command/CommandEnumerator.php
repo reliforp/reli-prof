@@ -11,22 +11,34 @@
 
 namespace PhpProfiler\Command;
 
-use Exception;
-use Traversable;
+use FilesystemIterator;
+use IteratorAggregate;
+use SplFileInfo;
 
 /**
  * Class CommandFinder
  * @package App\Command
  */
-final class CommandEnumerator implements \IteratorAggregate
+final class CommandEnumerator implements IteratorAggregate
 {
+    private FilesystemIterator $command_files_iterator;
+
+    /**
+     * CommandEnumerator constructor.
+     * @param FilesystemIterator $command_files_iterator
+     */
+    public function __construct(FilesystemIterator $command_files_iterator)
+    {
+        $this->command_files_iterator = $command_files_iterator;
+    }
+
     /**
      * @inheritDoc
      */
     public function getIterator()
     {
-        /** @var \SplFileInfo $command_file_info */
-        foreach (new \GlobIterator(__DIR__ . '/*/*Command.php') as $command_file_info) {
+        /** @var SplFileInfo $command_file_info */
+        foreach ($this->command_files_iterator as $command_file_info) {
             $class_name = $command_file_info->getBasename('.php');
             $namespace = $command_file_info->getPathInfo()->getFilename();
             yield "PhpProfiler\\Command\\{$namespace}\\$class_name";
