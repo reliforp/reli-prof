@@ -11,6 +11,8 @@
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
+use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\CDataByteReader;
 use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 use PhpProfiler\Lib\Process\RegisterReader;
@@ -31,6 +33,7 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
     private RegisterReader $register_reader;
     private ProcessModuleSymbolReader $symbol_reader;
     private MemoryReader $memory_reader;
+    private BinaryReader $binary_reader;
 
     /**
      * LibThreadDbTlsFinder constructor.
@@ -47,6 +50,7 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
         $this->register_reader = $register_reader;
         $this->symbol_reader = $symbol_reader;
         $this->memory_reader = $memory_reader;
+        $this->binary_reader = new BinaryReader();
     }
 
     /**
@@ -83,22 +87,14 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
      */
     private function getLibThreadDbDescriptor(string $symbol_name): array
     {
-        $desc = $this->symbol_reader->read($symbol_name);
-        $desc_size =
-            $desc[0]
-                + ($desc[1] << 8)
-                + ($desc[2] << 16)
-                + ($desc[3] << 21); // ($desc[3] << 24) / 8
-        $desc_num =
-            $desc[4]
-            + ($desc[5] << 8)
-            + ($desc[6] << 16)
-            + ($desc[7] << 24);
-        $desc_offset =
-            $desc[8]
-            + ($desc[9] << 8)
-            + ($desc[10] << 16)
-            + ($desc[11] << 24);
+        $desc = new CDataByteReader(
+            $this->symbol_reader->read($symbol_name)
+        );
+
+        $desc_size = $this->binary_reader->read32($desc, 0) >> 3;
+        $desc_num = $this->binary_reader->read32($desc, 4);
+        $desc_offset = $this->binary_reader->read32($desc, 8);
+
         return [$desc_size, $desc_num, $desc_offset];
     }
 }
