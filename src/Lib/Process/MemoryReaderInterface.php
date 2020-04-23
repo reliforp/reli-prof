@@ -20,6 +20,7 @@ interface MemoryReaderInterface
      * @param int $remote_address
      * @param int $size
      * @return \FFI\CArray
+     * @throws MemoryReaderException
      */
     public function read(int $pid, int $remote_address, int $size): CData;
 
@@ -27,6 +28,7 @@ interface MemoryReaderInterface
      * @param int $pid
      * @param int $remote_address
      * @return int
+     * @throws MemoryReaderException
      */
     public function readAsInt64(int $pid, int $remote_address): int;
 }
