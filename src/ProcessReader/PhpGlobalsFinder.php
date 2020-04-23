@@ -11,7 +11,7 @@
 
 namespace PhpProfiler\ProcessReader;
 
-use PhpProfiler\Lib\Process\MemoryReader;
+use PhpProfiler\Lib\Process\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 
 /**
@@ -20,17 +20,17 @@ use PhpProfiler\Lib\Process\MemoryReaderException;
  */
 final class PhpGlobalsFinder
 {
-    private MemoryReader $memory_reader;
+    private MemoryReaderInterface $memory_reader;
     private ProcessModuleSymbolReader $php_symbol_reader;
     private ?int $tsrm_ls_cache = null;
     private bool $tsrm_ls_cache_not_found = false;
 
     /**
      * PhpGlobalsFinder constructor.
-     * @param MemoryReader $memory_reader
+     * @param MemoryReaderInterface $memory_reader
      * @param ProcessModuleSymbolReader $php_symbol_reader
      */
-    public function __construct(MemoryReader $memory_reader, ProcessModuleSymbolReader $php_symbol_reader)
+    public function __construct(MemoryReaderInterface $memory_reader, ProcessModuleSymbolReader $php_symbol_reader)
     {
         $this->memory_reader = $memory_reader;
         $this->php_symbol_reader = $php_symbol_reader;

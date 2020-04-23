@@ -12,7 +12,7 @@
 namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Elf\Elf64SymbolResolver;
-use PhpProfiler\Lib\Process\MemoryReader;
+use PhpProfiler\Lib\Process\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 
 /**
@@ -25,7 +25,7 @@ final class ProcessModuleSymbolReader
     /** @var ProcessMemoryArea[] */
     private array $memory_areas;
     private int $base_address;
-    private MemoryReader $memory_reader;
+    private MemoryReaderInterface $memory_reader;
     private ?int $tls_block_address;
     private int $pid;
 
@@ -34,14 +34,14 @@ final class ProcessModuleSymbolReader
      * @param int $pid
      * @param Elf64SymbolResolver $symbol_resolver
      * @param ProcessMemoryArea[] $memory_areas
-     * @param MemoryReader $memory_reader
+     * @param MemoryReaderInterface $memory_reader
      * @param int|null $tls_block_address
      */
     public function __construct(
         int $pid,
         Elf64SymbolResolver $symbol_resolver,
         array $memory_areas,
-        MemoryReader $memory_reader,
+        MemoryReaderInterface $memory_reader,
         ?int $tls_block_address
     ) {
         $this->pid = $pid;

@@ -12,7 +12,7 @@
 namespace PhpProfiler\ProcessReader\PhpMemoryReader;
 
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\Process\MemoryReader;
+use PhpProfiler\Lib\Process\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 
 /**
@@ -21,15 +21,15 @@ use PhpProfiler\Lib\Process\MemoryReaderException;
  */
 final class ExecutorGlobalsReader
 {
-    private MemoryReader $memory_reader;
+    private MemoryReaderInterface $memory_reader;
     private ZendTypeReader $zend_type_reader;
 
     /**
      * ExecutorGlobalsReader constructor.
-     * @param MemoryReader $memory_reader
+     * @param MemoryReaderInterface $memory_reader
      * @param ZendTypeReader $zend_type_reader
      */
-    public function __construct(MemoryReader $memory_reader, ZendTypeReader $zend_type_reader)
+    public function __construct(MemoryReaderInterface $memory_reader, ZendTypeReader $zend_type_reader)
     {
         $this->memory_reader = $memory_reader;
         $this->zend_type_reader = $zend_type_reader;

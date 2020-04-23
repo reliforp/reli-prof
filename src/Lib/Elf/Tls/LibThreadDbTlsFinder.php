@@ -13,8 +13,8 @@ namespace PhpProfiler\Lib\Elf\Tls;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
-use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
+use PhpProfiler\Lib\Process\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\RegisterReader;
 use PhpProfiler\Lib\Process\RegisterReaderException;
 use PhpProfiler\ProcessReader\ProcessModuleSymbolReader;
@@ -32,7 +32,7 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
 {
     private RegisterReader $register_reader;
     private ProcessModuleSymbolReader $symbol_reader;
-    private MemoryReader $memory_reader;
+    private MemoryReaderInterface $memory_reader;
     private BinaryReader $binary_reader;
 
     /**
@@ -40,12 +40,12 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
      *
      * @param ProcessModuleSymbolReader $symbol_reader
      * @param RegisterReader $register_reader
-     * @param MemoryReader $memory_reader
+     * @param MemoryReaderInterface $memory_reader
      */
     public function __construct(
         ProcessModuleSymbolReader $symbol_reader,
         RegisterReader $register_reader,
-        MemoryReader $memory_reader
+        MemoryReaderInterface $memory_reader
     ) {
         $this->register_reader = $register_reader;
         $this->symbol_reader = $symbol_reader;

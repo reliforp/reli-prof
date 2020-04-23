@@ -14,8 +14,8 @@ namespace PhpProfiler\ProcessReader;
 use PhpProfiler\Lib\Elf\ElfParserException;
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
-use PhpProfiler\Lib\Process\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
+use PhpProfiler\Lib\Process\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\RegisterReader;
 use PhpProfiler\Lib\Process\RegisterReaderException;
 
@@ -25,13 +25,13 @@ use PhpProfiler\Lib\Process\RegisterReaderException;
  */
 final class PhpSymbolReaderCreator
 {
-    private MemoryReader $memory_reader;
+    private MemoryReaderInterface $memory_reader;
 
     /**
      * PhpSymbolReaderCreator constructor.
-     * @param MemoryReader $memory_reader
+     * @param MemoryReaderInterface $memory_reader
      */
-    public function __construct(MemoryReader $memory_reader)
+    public function __construct(MemoryReaderInterface $memory_reader)
     {
         $this->memory_reader = $memory_reader;
     }

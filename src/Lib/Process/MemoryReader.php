@@ -20,7 +20,7 @@ use PhpProfiler\Lib\Binary\CDataByteReader;
  * Class MemoryReader
  * @package PhpProfiler\Lib\Process
  */
-final class MemoryReader
+final class MemoryReader implements MemoryReaderInterface
 {
     private FFI $ffi;
     private CData $local_iov;
