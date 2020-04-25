@@ -9,7 +9,7 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\ProcessReader;
+namespace PhpProfiler\Lib\Process\MemoryMap;
 
 use PhpProfiler\Lib\String\LineFetcher;
 use PHPUnit\Framework\TestCase;
@@ -18,7 +18,6 @@ class ProcessMemoryMapParserTest extends TestCase
 {
     public function testParse()
     {
-
         $reader = new ProcessMemoryMapReader();
         $parser = new ProcessMemoryMapParser(new LineFetcher());
         $result = $parser->parse($reader->read(getmypid()));
