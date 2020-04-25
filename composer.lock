@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "870d78d26783c449a10ae00577a24e0a",
+    "content-hash": "249fa5f1a065a515d3e7f7d3f6393104",
     "packages": [
         {
             "name": "psr/container",
@@ -1770,6 +1770,57 @@
                 "xunit"
             ],
             "time": "2020-02-13T07:30:12+00:00"
+        },
+        {
+            "name": "psalm/plugin-mockery",
+            "version": "0.3.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/psalm/psalm-plugin-mockery.git",
+                "reference": "2f00f8a9e632f853613d138074200a5c46345294"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/psalm/psalm-plugin-mockery/zipball/2f00f8a9e632f853613d138074200a5c46345294",
+                "reference": "2f00f8a9e632f853613d138074200a5c46345294",
+                "shasum": ""
+            },
+            "require": {
+                "mockery/mockery": "^0.9 || ^1.0",
+                "vimeo/psalm": "^3.0.2 || dev-master"
+            },
+            "require-dev": {
+                "codeception/base": "^2.5",
+                "muglug/package-versions-56": "^1.2",
+                "phpunit/phpunit": "^6.0 || ^7.0 || ^8.0",
+                "squizlabs/php_codesniffer": "^3.3.1",
+                "weirdan/codeception-psalm-module": "^0.2.1"
+            },
+            "type": "psalm-plugin",
+            "extra": {
+                "psalm": {
+                    "pluginClass": "Psalm\\MockeryPlugin\\Plugin"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Psalm\\MockeryPlugin\\": [
+                        "."
+                    ]
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Matt Brown",
+                    "email": "github@muglug.com"
+                }
+            ],
+            "description": "Psalm plugin for Mockery",
+            "time": "2019-05-20T17:35:55+00:00"
         },
         {
             "name": "psr/log",
