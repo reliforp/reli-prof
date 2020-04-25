@@ -11,6 +11,8 @@
 
 namespace PhpProfiler\ProcessReader;
 
+use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\CDataByteReader;
 use PhpProfiler\Lib\Process\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 
@@ -24,6 +26,7 @@ final class PhpGlobalsFinder
     private ProcessModuleSymbolReader $php_symbol_reader;
     private ?int $tsrm_ls_cache = null;
     private bool $tsrm_ls_cache_not_found = false;
+    private BinaryReader $binary_reader;
 
     /**
      * PhpGlobalsFinder constructor.
@@ -34,6 +37,7 @@ final class PhpGlobalsFinder
     {
         $this->memory_reader = $memory_reader;
         $this->php_symbol_reader = $php_symbol_reader;
+        $this->binary_reader = new BinaryReader();
     }
 
     /**
@@ -44,8 +48,13 @@ final class PhpGlobalsFinder
     public function findTsrmLsCache(): ?int
     {
         if (!isset($this->tsrm_ls_cache) and !$this->tsrm_ls_cache_not_found) {
-            $this->tsrm_ls_cache = $this->php_symbol_reader->readAsInt64('_tsrm_ls_cache');
-            if (!isset($this->tsrm_ls_cache)) {
+            $tsrm_lm_cache_cdata = $this->php_symbol_reader->read('_tsrm_ls_cache');
+            if (isset($tsrm_lm_cache_cdata)) {
+                $this->tsrm_ls_cache = $this->binary_reader->read64(
+                    new CDataByteReader($tsrm_lm_cache_cdata),
+                    0
+                )->toInt();
+            } else {
                 $this->tsrm_ls_cache_not_found = true;
             }
         }
@@ -61,16 +70,23 @@ final class PhpGlobalsFinder
     {
         $tsrm_ls_cache = $this->findTsrmLsCache();
         if (isset($tsrm_ls_cache)) {
-            $executor_globals_offset = $this->php_symbol_reader->readAsInt64('executor_globals_offset');
-            if (is_null($executor_globals_offset)) {
+            $executor_globals_offset_cdata = $this->php_symbol_reader->read('executor_globals_offset');
+            if (is_null($executor_globals_offset_cdata)) {
                 throw new \RuntimeException('executor_globals_offset not found');
             }
+            $executor_globals_offset = $this->binary_reader->read64(
+                new CDataByteReader($executor_globals_offset_cdata),
+                0
+            )->toInt();
             return $tsrm_ls_cache + $executor_globals_offset;
         }
-        $executor_globals = $this->php_symbol_reader->readAsInt64('executor_globals');
-        if (is_null($executor_globals)) {
+        $executor_globals_cdata = $this->php_symbol_reader->read('executor_globals');
+        if (is_null($executor_globals_cdata)) {
             throw new \RuntimeException('executor globals not found');
         }
-        return $executor_globals;
+        return $this->binary_reader->read64(
+            new CDataByteReader($executor_globals_cdata),
+            0
+        )->toInt();
     }
 }

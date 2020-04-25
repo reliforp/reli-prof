@@ -23,12 +23,4 @@ interface MemoryReaderInterface
      * @throws MemoryReaderException
      */
     public function read(int $pid, int $remote_address, int $size): CData;
-
-    /**
-     * @param int $pid
-     * @param int $remote_address
-     * @return int
-     * @throws MemoryReaderException
-     */
-    public function readAsInt64(int $pid, int $remote_address): int;
 }

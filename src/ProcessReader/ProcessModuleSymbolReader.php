@@ -11,6 +11,7 @@
 
 namespace PhpProfiler\ProcessReader;
 
+use FFI\CData;
 use PhpProfiler\Lib\Elf\Elf64SymbolResolver;
 use PhpProfiler\Lib\Process\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReaderException;
@@ -54,33 +55,11 @@ final class ProcessModuleSymbolReader
 
     /**
      * @param string $symbol_name
-     * @return \FFI\CArray
+     * @return \FFI\CArray|null
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      */
-    public function read(string $symbol_name)
-    {
-        $symbol = $this->symbol_resolver->resolve($symbol_name);
-        $base_address = $this->base_address;
-        if ($symbol->isTls()) {
-            if (is_null($this->tls_block_address)) {
-                throw new ProcessSymbolReaderException(
-                    'trying to resolve TLS symbol but cannot find TLS block address'
-                );
-            }
-            $base_address = $this->tls_block_address;
-        }
-        $address = $base_address + $symbol->st_value->toInt();
-        return $this->memory_reader->read($this->pid, $address, $symbol->st_size->toInt());
-    }
-
-    /**
-     * @param string $symbol_name
-     * @return int|null
-     * @throws MemoryReaderException
-     * @throws ProcessSymbolReaderException
-     */
-    public function readAsInt64(string $symbol_name): ?int
+    public function read(string $symbol_name): ?CData
     {
         $symbol = $this->symbol_resolver->resolve($symbol_name);
         if ($symbol->isUndefined()) {
@@ -96,6 +75,6 @@ final class ProcessModuleSymbolReader
             $base_address = $this->tls_block_address;
         }
         $address = $base_address + $symbol->st_value->toInt();
-        return $this->memory_reader->readAsInt64($this->pid, $address);
+        return $this->memory_reader->read($this->pid, $address, $symbol->st_size->toInt());
     }
 }

@@ -13,8 +13,6 @@ namespace PhpProfiler\Lib\Process;
 
 use FFI;
 use FFI\CData;
-use PhpProfiler\Lib\Binary\BinaryReader;
-use PhpProfiler\Lib\Binary\CDataByteReader;
 
 /**
  * Class MemoryReader
@@ -26,7 +24,6 @@ final class MemoryReader implements MemoryReaderInterface
     private CData $local_iov;
     private CData $remote_iov;
     private CData $remote_base;
-    private BinaryReader $binary_reader;
 
     /**
      * MemoryReader constructor.
@@ -50,7 +47,6 @@ final class MemoryReader implements MemoryReaderInterface
         $this->local_iov = $this->ffi->new('struct iovec');
         $this->remote_iov = $this->ffi->new('struct iovec');
         $this->remote_base = $this->ffi->new('long');
-        $this->binary_reader = new BinaryReader();
     }
 
     /**
@@ -99,20 +95,5 @@ final class MemoryReader implements MemoryReaderInterface
 
         /** @var \FFI\CArray */
         return $buffer;
-    }
-
-    /**
-     * @param int $pid
-     * @param int $remote_address
-     * @return int
-     * @throws MemoryReaderException
-     */
-    public function readAsInt64(int $pid, int $remote_address): int
-    {
-        $bytes = new CDataByteReader(
-            $this->read($pid, $remote_address, 8)
-        );
-
-        return $this->binary_reader->read64($bytes, 0)->toInt();
     }
 }

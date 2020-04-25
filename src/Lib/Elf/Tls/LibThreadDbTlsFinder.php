@@ -71,12 +71,14 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
 //        [,,] = $this->getLibThreadDbDescriptor($pid, '_thread_db_link_map_l_tls_modid');
 
         $dtv_pointer_address = $thread_pointer + $thread_db_pthread_dtvp_offset;
-        $dtv_pointer = $this->memory_reader->readAsInt64($pid, $dtv_pointer_address);
+        $dtv_pointer_cdata = $this->memory_reader->read($pid, $dtv_pointer_address, 8);
+        $dtv_pointer = $this->binary_reader->read64(new CDataByteReader($dtv_pointer_cdata), 0)->toInt();
 
         $dtv_slot = $thread_db_dtv_dtv_size * $module_index;
         $tls_address_pointer = $dtv_pointer + $dtv_slot + $thread_db_dtv_t_pointer_val_offset;
 
-        return $this->memory_reader->readAsInt64($pid, $tls_address_pointer);
+        $tls_address_cdata = $this->memory_reader->read($pid, $tls_address_pointer, 8);
+        return $this->binary_reader->read64(new CDataByteReader($tls_address_cdata), 0)->toInt();
     }
 
     /**
