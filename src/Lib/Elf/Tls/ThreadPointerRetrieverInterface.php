@@ -11,6 +11,10 @@
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
+/**
+ * Interface ThreadPointerRetrieverInterface
+ * @package PhpProfiler\Lib\Elf\Tls
+ */
 interface ThreadPointerRetrieverInterface
 {
     /**
