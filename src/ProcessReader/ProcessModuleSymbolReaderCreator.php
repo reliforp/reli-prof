@@ -21,42 +21,38 @@ use PhpProfiler\Lib\Process\MemoryReaderInterface;
  */
 final class ProcessModuleSymbolReaderCreator
 {
-    private ProcessMemoryMap $process_memory_map;
     private SymbolResolverCreator $symbol_resolver_creator;
     private MemoryReaderInterface $memory_reader;
-    private int $pid;
 
     /**
      * ProcessSymbolReaderCreator constructor.
      *
-     * @param int $pid
-     * @param ProcessMemoryMap $process_memory_map
      * @param SymbolResolverCreator $symbol_resolver_creator
      * @param MemoryReaderInterface $memory_reader
      */
     public function __construct(
-        int $pid,
-        ProcessMemoryMap $process_memory_map,
         SymbolResolverCreator $symbol_resolver_creator,
         MemoryReaderInterface $memory_reader
     ) {
-        $this->pid = $pid;
-        $this->process_memory_map = $process_memory_map;
         $this->symbol_resolver_creator = $symbol_resolver_creator;
         $this->memory_reader = $memory_reader;
     }
 
     /**
+     * @param int $pid
+     * @param ProcessMemoryMap $process_memory_map
      * @param string $regex
      * @param int|null $tls_block_address
      * @return ProcessModuleSymbolReader|null
      * @throws ElfParserException
      */
     public function createModuleReaderByNameRegex(
+        int $pid,
+        ProcessMemoryMap $process_memory_map,
         string $regex,
         ?int $tls_block_address = null
     ): ?ProcessModuleSymbolReader {
-        $memory_areas = $this->process_memory_map->findByNameRegex($regex);
+        $memory_areas = $process_memory_map->findByNameRegex($regex);
         if ($memory_areas === []) {
             return null;
         }
@@ -64,7 +60,7 @@ final class ProcessModuleSymbolReaderCreator
         $module_name = current($memory_areas)->name;
         $symbol_resolver = $this->symbol_resolver_creator->createLinearScanResolverFromPath($module_name);
         return new ProcessModuleSymbolReader(
-            $this->pid,
+            $pid,
             $symbol_resolver,
             $memory_areas,
             $this->memory_reader,

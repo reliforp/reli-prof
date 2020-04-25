@@ -49,14 +49,17 @@ final class PhpSymbolReaderCreator
         $memory_reader = $this->memory_reader;
 
         $symbol_reader_creator = new ProcessModuleSymbolReaderCreator(
-            $pid,
-            ProcessMemoryMapCreator::create()->getProcessMemoryMap($pid),
             new SymbolResolverCreator(),
             $memory_reader
         );
+        $process_memory_map = ProcessMemoryMapCreator::create()->getProcessMemoryMap($pid);
 
         $tls_block_address = null;
-        $libpthread_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex('/.*\/libpthread.*\.so$/');
+        $libpthread_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex(
+            $pid,
+            $process_memory_map,
+            '/.*\/libpthread.*\.so$/'
+        );
         if (!is_null($libpthread_symbol_reader)) {
             $tls_finder = new LibThreadDbTlsFinder(
                 $libpthread_symbol_reader,
@@ -66,7 +69,12 @@ final class PhpSymbolReaderCreator
             $tls_block_address = $tls_finder->findTlsBlock($pid, 1);
         }
 
-        $php_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex('/.*\/php$/', $tls_block_address);
+        $php_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex(
+            $pid,
+            $process_memory_map,
+            '/.*\/php$/',
+            $tls_block_address
+        );
         if (is_null($php_symbol_reader)) {
             throw new \RuntimeException('php module not found');
         }
