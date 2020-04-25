@@ -13,6 +13,7 @@ namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Elf\ElfParserException;
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
+use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReaderInterface;
 
 /**
