@@ -11,11 +11,13 @@
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
+use Exception;
+
 /**
- * Interface TlsFinderInterface
+ * Class TlsFinderException
  * @package PhpProfiler\Lib\Elf\Tls
  */
-interface TlsFinderInterface
+final class TlsFinderException extends Exception
 {
-    public function findTlsBlock(int $pid, int $module_index): int;
+
 }

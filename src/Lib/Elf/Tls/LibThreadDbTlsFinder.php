@@ -15,8 +15,6 @@ use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
 use PhpProfiler\Lib\Process\MemoryReaderException;
 use PhpProfiler\Lib\Process\MemoryReaderInterface;
-use PhpProfiler\Lib\Process\RegisterReader;
-use PhpProfiler\Lib\Process\RegisterReaderException;
 use PhpProfiler\ProcessReader\ProcessModuleSymbolReader;
 use PhpProfiler\ProcessReader\ProcessSymbolReaderException;
 
@@ -30,8 +28,8 @@ use PhpProfiler\ProcessReader\ProcessSymbolReaderException;
  */
 final class LibThreadDbTlsFinder implements TlsFinderInterface
 {
-    private RegisterReader $register_reader;
     private ProcessModuleSymbolReader $symbol_reader;
+    private ThreadPointerRetrieverInterface $thread_pointer_retriever;
     private MemoryReaderInterface $memory_reader;
     private BinaryReader $binary_reader;
 
@@ -39,16 +37,16 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
      * LibThreadDbTlsFinder constructor.
      *
      * @param ProcessModuleSymbolReader $symbol_reader
-     * @param RegisterReader $register_reader
+     * @param ThreadPointerRetrieverInterface $thread_pointer_retriever
      * @param MemoryReaderInterface $memory_reader
      */
     public function __construct(
         ProcessModuleSymbolReader $symbol_reader,
-        RegisterReader $register_reader,
+        ThreadPointerRetrieverInterface $thread_pointer_retriever,
         MemoryReaderInterface $memory_reader
     ) {
-        $this->register_reader = $register_reader;
         $this->symbol_reader = $symbol_reader;
+        $this->thread_pointer_retriever = $thread_pointer_retriever;
         $this->memory_reader = $memory_reader;
         $this->binary_reader = new BinaryReader();
     }
@@ -59,11 +57,11 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
      * @return int
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
-     * @throws RegisterReaderException
+     * @throws TlsFinderException
      */
     public function findTlsBlock(int $pid, int $module_index): int
     {
-        $thread_pointer = $this->register_reader->attachAndReadOne($pid, RegisterReader::FS_BASE);
+        $thread_pointer = $this->thread_pointer_retriever->getThreadPointer($pid);
 
         [,,$thread_db_pthread_dtvp_offset] = $this->getLibThreadDbDescriptor('_thread_db_pthread_dtvp');
         [$thread_db_dtv_dtv_size,,] = $this->getLibThreadDbDescriptor('_thread_db_dtv_dtv');

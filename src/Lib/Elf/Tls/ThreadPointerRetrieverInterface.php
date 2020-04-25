@@ -11,11 +11,12 @@
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
-/**
- * Interface TlsFinderInterface
- * @package PhpProfiler\Lib\Elf\Tls
- */
-interface TlsFinderInterface
+interface ThreadPointerRetrieverInterface
 {
-    public function findTlsBlock(int $pid, int $module_index): int;
+    /**
+     * @param int $pid
+     * @return int
+     * @throws TlsFinderException
+     */
+    public function getThreadPointer(int $pid): int;
 }
