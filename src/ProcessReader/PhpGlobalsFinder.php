@@ -13,8 +13,6 @@ namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
-use PhpProfiler\Lib\Process\MemoryReaderInterface;
-use PhpProfiler\Lib\Process\MemoryReaderException;
 
 /**
  * Class PhpGlobalsFinder
@@ -22,7 +20,6 @@ use PhpProfiler\Lib\Process\MemoryReaderException;
  */
 final class PhpGlobalsFinder
 {
-    private MemoryReaderInterface $memory_reader;
     private ProcessModuleSymbolReader $php_symbol_reader;
     private ?int $tsrm_ls_cache = null;
     private bool $tsrm_ls_cache_not_found = false;
@@ -30,19 +27,16 @@ final class PhpGlobalsFinder
 
     /**
      * PhpGlobalsFinder constructor.
-     * @param MemoryReaderInterface $memory_reader
      * @param ProcessModuleSymbolReader $php_symbol_reader
      */
-    public function __construct(MemoryReaderInterface $memory_reader, ProcessModuleSymbolReader $php_symbol_reader)
+    public function __construct(ProcessModuleSymbolReader $php_symbol_reader)
     {
-        $this->memory_reader = $memory_reader;
         $this->php_symbol_reader = $php_symbol_reader;
         $this->binary_reader = new BinaryReader();
     }
 
     /**
      * @return int
-     * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      */
     public function findTsrmLsCache(): ?int
@@ -63,7 +57,6 @@ final class PhpGlobalsFinder
 
     /**
      * @return int
-     * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      */
     public function findExecutorGlobals(): int

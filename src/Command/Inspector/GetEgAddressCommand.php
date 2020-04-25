@@ -63,7 +63,6 @@ final class GetEgAddressCommand extends Command
 
         $memory_reader = new MemoryReader();
         $php_globals_finder = new PhpGlobalsFinder(
-            $memory_reader,
             (new PhpSymbolReaderCreator($memory_reader))->create($pid)
         );
 
