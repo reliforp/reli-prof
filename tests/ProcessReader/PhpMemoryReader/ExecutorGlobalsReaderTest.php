@@ -12,7 +12,7 @@
 namespace PhpProfiler\ProcessReader\PhpMemoryReader;
 
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\Process\MemoryReader;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\ProcessReader\PhpGlobalsFinder;
 use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
 use PHPUnit\Framework\TestCase;

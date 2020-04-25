@@ -17,8 +17,8 @@ use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
-use PhpProfiler\Lib\Process\MemoryReaderException;
-use PhpProfiler\Lib\Process\MemoryReaderInterface;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 /**
  * Class PhpSymbolReaderCreator

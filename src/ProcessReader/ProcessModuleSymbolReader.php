@@ -14,8 +14,8 @@ namespace PhpProfiler\ProcessReader;
 use FFI\CData;
 use PhpProfiler\Lib\Elf\Elf64SymbolResolver;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
-use PhpProfiler\Lib\Process\MemoryReaderInterface;
-use PhpProfiler\Lib\Process\MemoryReaderException;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
 /**
  * Class ProcessModuleSymbolReader

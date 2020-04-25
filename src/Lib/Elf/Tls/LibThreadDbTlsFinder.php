@@ -13,8 +13,8 @@ namespace PhpProfiler\Lib\Elf\Tls;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
-use PhpProfiler\Lib\Process\MemoryReaderException;
-use PhpProfiler\Lib\Process\MemoryReaderInterface;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\ProcessReader\ProcessModuleSymbolReader;
 use PhpProfiler\ProcessReader\ProcessSymbolReaderException;
 

@@ -12,8 +12,8 @@
 namespace PhpProfiler\ProcessReader\PhpMemoryReader;
 
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\Process\MemoryReaderInterface;
-use PhpProfiler\Lib\Process\MemoryReaderException;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
 /**
  * Class ExecutorGlobalsReader
