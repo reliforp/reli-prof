@@ -84,12 +84,15 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
      * @return int[]
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
+     * @throws TlsFinderException
      */
     private function getLibThreadDbDescriptor(string $symbol_name): array
     {
-        $desc = new CDataByteReader(
-            $this->symbol_reader->read($symbol_name)
-        );
+        $buffer = $this->symbol_reader->read($symbol_name);
+        if (is_null($buffer)) {
+            throw new TlsFinderException('cannot find ' . $symbol_name);
+        }
+        $desc = new CDataByteReader($buffer);
 
         $desc_size = $this->binary_reader->read32($desc, 0) >> 3;
         $desc_num = $this->binary_reader->read32($desc, 4);
