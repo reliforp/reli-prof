@@ -11,8 +11,8 @@
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
-use PhpProfiler\Lib\Process\RegisterReaderException;
-use PhpProfiler\Lib\Process\X64RegisterReader;
+use PhpProfiler\Lib\Process\RegisterReader\RegisterReaderException;
+use PhpProfiler\Lib\Process\RegisterReader\X64RegisterReader;
 
 /**
  * Class X64ThreadPointerFinder

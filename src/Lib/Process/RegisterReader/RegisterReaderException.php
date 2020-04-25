@@ -9,7 +9,7 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\Lib\Process;
+namespace PhpProfiler\Lib\Process\RegisterReader;
 
 /**
  * Class RegisterReaderException
