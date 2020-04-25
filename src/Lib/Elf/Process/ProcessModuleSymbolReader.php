@@ -9,7 +9,7 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\ProcessReader;
+namespace PhpProfiler\Lib\Elf\Process;
 
 use FFI\CData;
 use PhpProfiler\Lib\Elf\Elf64SymbolResolver;
@@ -21,7 +21,7 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
  * Class ProcessModuleSymbolReader
  * @package PhpProfiler\ProcessReader
  */
-final class ProcessModuleSymbolReader
+final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
 {
     private Elf64SymbolResolver $symbol_resolver;
     /** @var ProcessMemoryArea[] */

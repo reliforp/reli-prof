@@ -9,7 +9,7 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\ProcessReader;
+namespace PhpProfiler\Lib\Elf\Process;
 
 use PhpProfiler\Lib\Elf\ElfParserException;
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;

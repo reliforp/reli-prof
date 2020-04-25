@@ -12,6 +12,9 @@
 namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Elf\ElfParserException;
+use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReader;
+use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
+use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;

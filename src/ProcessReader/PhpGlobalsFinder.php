@@ -13,6 +13,8 @@ namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
+use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReader;
+use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 
 /**
  * Class PhpGlobalsFinder

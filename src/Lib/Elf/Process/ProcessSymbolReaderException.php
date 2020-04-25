@@ -9,7 +9,7 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\ProcessReader;
+namespace PhpProfiler\Lib\Elf\Process;
 
 class ProcessSymbolReaderException extends \Exception
 {
