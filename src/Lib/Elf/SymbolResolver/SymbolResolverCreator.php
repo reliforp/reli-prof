@@ -9,10 +9,12 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\Lib\Elf;
+namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\StringByteReader;
+use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
+use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 
 /**
  * Class SymbolResolverCreator

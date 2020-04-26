@@ -9,10 +9,21 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\Lib\Elf;
+namespace PhpProfiler\Lib\Elf\Parser;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\ByteReaderInterface;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructureArray;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64GnuHashTable;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64Header;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderEntry;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderTable;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SectionHeaderEntry;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SectionHeaderTable;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64StringTable;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
 /**
  * Class Elf64Parser

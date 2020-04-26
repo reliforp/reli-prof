@@ -12,7 +12,7 @@
 namespace PhpProfiler\Lib\Elf\Process;
 
 use FFI\CData;
-use PhpProfiler\Lib\Elf\Elf64SymbolResolver;
+use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;

@@ -9,10 +9,11 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\Lib\Elf;
+namespace PhpProfiler\Lib\Elf\Parser;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\StringByteReader;
+use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\ProcessReader\PhpBinaryFinder;
 use PHPUnit\Framework\TestCase;
 

@@ -11,7 +11,7 @@
 
 namespace PhpProfiler\Command\Inspector;
 
-use PhpProfiler\Lib\Elf\ElfParserException;
+use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;

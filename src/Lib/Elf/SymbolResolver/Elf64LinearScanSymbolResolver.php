@@ -9,7 +9,11 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\Lib\Elf;
+namespace PhpProfiler\Lib\Elf\SymbolResolver;
+
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64StringTable;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
+use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
 /**
  * Class Elf64LinearScanSymbolResolver
