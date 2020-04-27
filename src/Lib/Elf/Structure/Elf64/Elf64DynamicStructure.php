@@ -55,7 +55,12 @@ final class Elf64DynamicStructure
     public const DT_PREINIT_ARRAYSZ = 33;
     public const DT_LOOS = 0x6000000d;
     public const DT_HIOS = 0x6ffff000;
+    public const DT_RELACOUNT = 0x6ffffff9;
     public const DT_GNU_HASH = 0x6ffffef5;
+    public const DT_FLAGS_1 = 0x6ffffffb;
+    public const DT_VERNEED = 0x6ffffffe;
+    public const DT_VERNEEDNUM = 0x6fffffff;
+    public const DT_VERSYM = 0x6ffffff0;
     public const DT_LOPROC = 0x70000000;
     public const DT_HIPROC = 0x7fffffff;
 

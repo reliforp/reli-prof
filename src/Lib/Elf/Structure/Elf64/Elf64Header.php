@@ -41,6 +41,11 @@ final class Elf64Header
     public const ELFDATA2LSB = 1;
     public const ELFDATA2MSB = 2;
 
+    public const EV_NONE = 0;
+    public const EV_CURRENT = 1;
+
+    public const ELFOSABI_NONE = 0;
+
     public const ET_NONE = 0;
     public const ET_REL = 1;
     public const ET_EXEC = 2;
