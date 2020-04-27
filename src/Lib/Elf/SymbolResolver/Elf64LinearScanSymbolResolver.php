@@ -41,12 +41,13 @@ final class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
      */
     public function resolve(string $symbol_name): Elf64SymbolTableEntry
     {
-        foreach ($this->symbol_table->entries as $entry) {
+        $all_symbols = $this->symbol_table->findAll();
+        foreach ($all_symbols as $entry) {
             $name = $this->string_table->lookup($entry->st_name);
             if ($symbol_name === $name) {
                 return $entry;
             }
         }
-        return $this->symbol_table->entries[Elf64SymbolTable::STN_UNDEF];
+        return $all_symbols[Elf64SymbolTable::STN_UNDEF];
     }
 }

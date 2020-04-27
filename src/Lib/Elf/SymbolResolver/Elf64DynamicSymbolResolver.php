@@ -80,9 +80,9 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
     public function resolve(string $symbol_name): Elf64SymbolTableEntry
     {
         $index = $this->hash_table->lookup($symbol_name, function (string $name, int $index) {
-            $symbol = $this->symbol_table->entries[$index];
+            $symbol = $this->symbol_table->lookup($index);
             return $name === $this->string_table->lookup($symbol->st_name);
         });
-        return $this->symbol_table->entries[$index];
+        return $this->symbol_table->lookup($index);
     }
 }

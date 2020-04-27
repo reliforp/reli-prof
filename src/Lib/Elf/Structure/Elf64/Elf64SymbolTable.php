@@ -22,7 +22,7 @@ final class Elf64SymbolTable
     /**
      * @var Elf64SymbolTableEntry[]
      */
-    public array $entries;
+    private array $entries;
 
     /**
      * Elf64SymbolTable constructor.
@@ -31,5 +31,22 @@ final class Elf64SymbolTable
     public function __construct(Elf64SymbolTableEntry ...$entries)
     {
         $this->entries = $entries;
+    }
+
+    /**
+     * @param int $index
+     * @return Elf64SymbolTableEntry
+     */
+    public function lookup(int $index): Elf64SymbolTableEntry
+    {
+        return $this->entries[$index];
+    }
+
+    /**
+     * @return Elf64SymbolTableEntry[]
+     */
+    public function findAll(): array
+    {
+        return $this->entries;
     }
 }
