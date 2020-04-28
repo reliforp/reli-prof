@@ -25,7 +25,13 @@ class ZendTypeReaderTest extends TestCase
         $reader = new ZendTypeReader(ZendTypeReader::V80);
         $string_size = $reader->sizeOf('zend_string');
         $data = FFI::new("char[{$string_size}]");
+        FFI::memset($data, 0, $string_size);
+        /** @var FFI\PhpInternals\zend_string $string */
         $string = $reader->readAs('zend_string', $data);
-        var_dump($string);
+        $this->assertSame(0, $string->gc->refcount);
+        $this->assertSame(0, $string->gc->u->type_info);
+        $this->assertSame(0, $string->h);
+        $this->assertSame(0, $string->len);
+        $this->assertSame(chr(0), $string->val[0]);
     }
 }

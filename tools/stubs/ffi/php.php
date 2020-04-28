@@ -1,6 +1,7 @@
 <?php
 namespace FFI\PhpInternals;
 
+use FFI\CArray;
 use FFI\CData;
 
 /**
@@ -34,5 +35,26 @@ class zend_function_common extends CData
 
 class zend_string extends CData
 {
+    public zend_refcounted_h $gc;
+
+    /** @var int */
+    public int $h;
+
+    /** @var int */
+    public int $len;
+
+    /** @var CData|CArray */
     public CData $val;
+}
+
+class zend_refcounted_h extends CData
+{
+    public int $refcount;
+
+    public zend_refcounted_h_u $u;
+}
+
+class zend_refcounted_h_u extends CData
+{
+    public int $type_info;
 }
