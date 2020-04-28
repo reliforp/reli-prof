@@ -16,6 +16,7 @@
     }
   },
   "require-dev": {
+    "ext-posix": "*",
     "phpunit/phpunit": "^9.0",
     "vimeo/psalm": "^3.11",
     "squizlabs/php_codesniffer": "*",

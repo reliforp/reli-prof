@@ -19,6 +19,20 @@ use PHPUnit\Framework\TestCase;
 
 class ExecutorGlobalsReaderTest extends TestCase
 {
+    /** @var resource|null */
+    private $child = null;
+
+    public function tearDown(): void
+    {
+        if (!is_null($this->child)) {
+            $child_status = proc_get_status($this->child);
+            if (is_array($child_status)) {
+                if ($child_status['running']) {
+                    posix_kill($child_status['pid'], SIGKILL);
+                }
+            }
+        }
+    }
 
     public function testReadCurrentFunctionName()
     {
@@ -27,7 +41,7 @@ class ExecutorGlobalsReaderTest extends TestCase
             $memory_reader,
             new ZendTypeReader(ZendTypeReader::V80)
         );
-        $child = proc_open(
+        $this->child = proc_open(
             [
                 PHP_BINARY,
                 '-d extension=parallel.so',
@@ -43,9 +57,8 @@ class ExecutorGlobalsReaderTest extends TestCase
         );
 
         fgets($pipes[1]);
-        $child_status = proc_get_status($child);
+        $child_status = proc_get_status($this->child);
         $php_globals_finder = new PhpGlobalsFinder(
-            $memory_reader,
             (new PhpSymbolReaderCreator($memory_reader))->create($child_status['pid'])
         );
 
