@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "249fa5f1a065a515d3e7f7d3f6393104",
+    "content-hash": "0226e93cd993445e2ceb90bc9a445637",
     "packages": [
         {
             "name": "psr/container",
@@ -747,6 +747,50 @@
                 "test"
             ],
             "time": "2016-01-20T08:20:44+00:00"
+        },
+        {
+            "name": "jetbrains/phpstorm-stubs",
+            "version": "dev-master",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/JetBrains/phpstorm-stubs.git",
+                "reference": "84392cc7b7a66c6eb6d21f7d7cda540ad1e7da65"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/84392cc7b7a66c6eb6d21f7d7cda540ad1e7da65",
+                "reference": "84392cc7b7a66c6eb6d21f7d7cda540ad1e7da65",
+                "shasum": ""
+            },
+            "require-dev": {
+                "nikic/php-parser": "^4",
+                "php": "^7.4",
+                "phpdocumentor/reflection-docblock": "^4.3",
+                "phpunit/phpunit": "^7"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "PhpStormStubsMap.php"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "Apache-2.0"
+            ],
+            "description": "PHP runtime & extensions header files for PhpStorm",
+            "homepage": "https://www.jetbrains.com/phpstorm",
+            "keywords": [
+                "autocomplete",
+                "code",
+                "inference",
+                "inspection",
+                "jetbrains",
+                "phpstorm",
+                "stubs",
+                "type"
+            ],
+            "time": "2020-04-09T12:26:55+00:00"
         },
         {
             "name": "mockery/mockery",
@@ -2878,14 +2922,18 @@
     ],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": [],
+    "stability-flags": {
+        "jetbrains/phpstorm-stubs": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
         "ext-ffi": "*",
         "ext-pcntl": "*"
     },
-    "platform-dev": [],
+    "platform-dev": {
+        "ext-posix": "*"
+    },
     "platform-overrides": {
         "php": "7.4.0"
     }

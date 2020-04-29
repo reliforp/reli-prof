@@ -14,7 +14,7 @@
         </ignoreFiles>
     </projectFiles>
     <stubs>
-        <file name="tools/stubs/ffi/FFI.php"/>
+        <file name="vendor/jetbrains/phpstorm-stubs/FFI/FFI.php"/>
         <file name="tools/stubs/ffi/libc.php"/>
         <file name="tools/stubs/ffi/scalar.php"/>
         <file name="tools/stubs/ffi/php.php"/>
