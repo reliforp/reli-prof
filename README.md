@@ -4,12 +4,21 @@ It can read information from running PHP process, by parsing ELF binary of the i
 
 # Status
 - WIP
-- Currently all it can do is finding the address of EG from another PHP process
+- It can periodically output the current running function name from another PHP process
+- Additionally, it can find the address of EG from another PHP process
     - ZTS is also supported.
+    - So it can also be used with [adsr/phpspy](https://github.com/adsr/phpspy) to profile in ZTS
 
 # Usage
+## Basic usage
+```
+sudo php ./php-profiler inspector:current_function -p <pid of the target process or thread>
+```
+
 ## Get the address of EG
-- sudo php ./php-profiler inspector:eg -p \<pid of the target process or thread>
+```
+sudo php ./php-profiler inspector:eg -p <pid of the target process or thread>
+``` 
 
 # Supported PHP version
 ## Execution
