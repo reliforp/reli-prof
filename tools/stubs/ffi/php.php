@@ -31,6 +31,7 @@ class zend_function extends CData
 class zend_function_common extends CData
 {
     public zend_string $function_name;
+    public zend_class_entry $scope;
 }
 
 class zend_string extends CData
@@ -57,4 +58,9 @@ class zend_refcounted_h extends CData
 class zend_refcounted_h_u extends CData
 {
     public int $type_info;
+}
+
+class zend_class_entry extends CData
+{
+    public zend_string $name;
 }

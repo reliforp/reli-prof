@@ -82,10 +82,37 @@ final class ExecutorGlobalsReader
          */
         $current_function_name_pointer = \FFI::cast('long', $current_function->common->function_name);
         /** @var \FFI\CPointer $current_function_name_pointer */
-        $current_function_name_zstring = $this->memory_reader->read($pid, $current_function_name_pointer->cdata, 128);
+        $current_function_name_zstring = $this->memory_reader->read(
+            $pid,
+            $current_function_name_pointer->cdata,
+            $this->zend_type_reader->sizeOf('zend_string') + 256
+        );
         /** @var \FFI\PhpInternals\zend_string $string */
         $string = $this->zend_type_reader->readAs('zend_string', $current_function_name_zstring);
 
-        return \FFI::string($string->val);
+        $class_name = '';
+        /** @var \FFI\CPointer $current_function_scope_pointer */
+        $current_function_scope_pointer = \FFI::cast('long', $current_function->common->scope);
+        if ($current_function_scope_pointer->cdata !== 0) {
+            $current_function_class_entry = $this->memory_reader->read(
+                $pid,
+                $current_function_scope_pointer->cdata,
+                $this->zend_type_reader->sizeOf('zend_class_entry')
+            );
+            /** @var \FFI\PhpInternals\zend_class_entry $class_entry */
+            $class_entry = $this->zend_type_reader->readAs('zend_class_entry', $current_function_class_entry);
+            $current_class_name_pointer = \FFI::cast('long', $class_entry->name);
+            /** @var \FFI\CPointer $current_class_name_pointer */
+            $current_class_name_zstring = $this->memory_reader->read(
+                $pid,
+                $current_class_name_pointer->cdata,
+                $this->zend_type_reader->sizeOf('zend_string') + 256
+            );
+            /** @var \FFI\PhpInternals\zend_string $class_name_string */
+            $class_name_string = $this->zend_type_reader->readAs('zend_string', $current_class_name_zstring);
+            $class_name = \FFI::string($class_name_string->val)  . '::';
+        }
+
+        return $class_name . \FFI::string($string->val);
     }
 }
