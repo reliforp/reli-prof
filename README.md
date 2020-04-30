@@ -9,6 +9,13 @@ It can read information from running PHP process, by parsing ELF binary of the i
     - ZTS is also supported.
     - So it can also be used with [adsr/phpspy](https://github.com/adsr/phpspy) to profile in ZTS
 
+# Installation
+```
+git clone git@github.com:sj-i/php-profiler.git
+cd php-profiler
+composer install
+```
+
 # Usage
 ## Basic usage
 ```
