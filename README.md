@@ -8,6 +8,7 @@ It can read information from running PHP process, by parsing ELF binary of the i
 - Additionally, it can find the address of EG from another PHP process
     - ZTS is also supported.
     - So it can also be used with [adsr/phpspy](https://github.com/adsr/phpspy) to profile in ZTS
+- It runs only on PHP 7.4
 
 # Installation
 ## From Git
@@ -35,7 +36,7 @@ sudo php ./php-profiler inspector:current_function -p <pid of the target process
 sudo php ./php-profiler inspector:eg -p <pid of the target process or thread>
 ``` 
 
-# Supported PHP version
+# Supported PHP versions
 ## Execution
 - PHP-7.4 64bit Linux x86_64 (NTS)
 - PHP-7.4 64bit Linux x86_64 (ZTS)
