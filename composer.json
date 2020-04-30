@@ -10,11 +10,6 @@
       "homepage": "https://twitter.com/sji_ch"
     }
   ],
-  "config": {
-    "platform": {
-      "php": "7.4.0"
-    }
-  },
   "require-dev": {
     "ext-posix": "*",
     "phpunit/phpunit": "^9.0",
@@ -35,6 +30,7 @@
     }
   },
   "require": {
+    "php": "^7.4",
     "ext-ffi": "*",
     "ext-pcntl": "*",
     "symfony/console": "^5.0"

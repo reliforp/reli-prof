@@ -21,7 +21,6 @@ use FFI\CData;
 final class ZendTypeReader
 {
     public const V74 = 'v74';
-    public const V80 = 'v80';
     private string $php_version;
     private ?FFI $ffi = null;
 
