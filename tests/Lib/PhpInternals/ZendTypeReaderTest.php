@@ -22,7 +22,7 @@ class ZendTypeReaderTest extends TestCase
 {
     public function testReadAsZendString()
     {
-        $reader = new ZendTypeReader(ZendTypeReader::V80);
+        $reader = new ZendTypeReader(ZendTypeReader::V74);
         $string_size = $reader->sizeOf('zend_string');
         $data = FFI::new("char[{$string_size}]");
         FFI::memset($data, 0, $string_size);

@@ -39,7 +39,7 @@ class ExecutorGlobalsReaderTest extends TestCase
         $memory_reader = new MemoryReader();
         $executor_globals_reader = new ExecutorGlobalsReader(
             $memory_reader,
-            new ZendTypeReader(ZendTypeReader::V80)
+            new ZendTypeReader(ZendTypeReader::V74)
         );
         $this->child = proc_open(
             [
