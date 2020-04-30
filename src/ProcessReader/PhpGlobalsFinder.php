@@ -75,13 +75,10 @@ final class PhpGlobalsFinder
             )->toInt();
             return $tsrm_ls_cache + $executor_globals_offset;
         }
-        $executor_globals_cdata = $this->php_symbol_reader->read('executor_globals');
-        if (is_null($executor_globals_cdata)) {
+        $executor_globals_address = $this->php_symbol_reader->resolveAddress('executor_globals');
+        if (is_null($executor_globals_address)) {
             throw new \RuntimeException('executor globals not found');
         }
-        return $this->binary_reader->read64(
-            new CDataByteReader($executor_globals_cdata),
-            0
-        )->toInt();
+        return $executor_globals_address;
     }
 }

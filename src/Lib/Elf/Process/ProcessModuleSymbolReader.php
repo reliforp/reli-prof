@@ -78,4 +78,28 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
         $address = $base_address + $symbol->st_value->toInt();
         return $this->memory_reader->read($this->pid, $address, $symbol->st_size->toInt());
     }
+
+    /**
+     * @param string $symbol_name
+     * @return int|null
+     * @throws ProcessSymbolReaderException
+     */
+    public function resolveAddress(string $symbol_name): ?int
+    {
+        $symbol = $this->symbol_resolver->resolve($symbol_name);
+        if ($symbol->isUndefined()) {
+            return null;
+        }
+        $base_address = $this->base_address;
+
+        if ($symbol->isTls()) {
+            if (is_null($this->tls_block_address)) {
+                throw new ProcessSymbolReaderException(
+                    'trying to resolve TLS symbol but cannot find TLS block address'
+                );
+            }
+            $base_address = $this->tls_block_address;
+        }
+        return $base_address + $symbol->st_value->toInt();
+    }
 }
