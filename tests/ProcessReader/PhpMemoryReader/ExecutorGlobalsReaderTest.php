@@ -44,7 +44,6 @@ class ExecutorGlobalsReaderTest extends TestCase
         $this->child = proc_open(
             [
                 PHP_BINARY,
-                '-d extension=parallel.so',
                 '-r',
                 'fputs(STDOUT, "a\n");fgets(STDIN);'
             ],
