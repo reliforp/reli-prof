@@ -15,6 +15,8 @@ It can read information from running PHP process, by parsing ELF binary of the i
 ## Execution
 - PHP-7.4 64bit Linux x86_64 (NTS)
 - PHP-7.4 64bit Linux x86_64 (ZTS)
+- FFI extension must be enabled.
+- If the target process is ZTS, PCNTL extension must be enabled.
 
 ## Target
 - PHP-7.4 64bit Linux x86_64 (NTS)
