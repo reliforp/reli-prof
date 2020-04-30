@@ -1,6 +1,6 @@
 # About
 This is a software intended to be a PHP profiler written in PHP.
-It can read information from running PHP process, by parsing ELF binary of the interpreter and reading memory map from /proc/<pid>/maps and using ptrace(2) and process_vm_readv(2) with FFI.
+It can read information from running PHP process, by parsing ELF binary of the interpreter and reading memory map from /proc/\<pid>/maps and using ptrace(2) and process_vm_readv(2) with FFI.
 
 # Status
 - WIP
@@ -9,7 +9,7 @@ It can read information from running PHP process, by parsing ELF binary of the i
 
 # Usage
 ## Get the address of EG
-- sudo php ./php-profiler inspector:eg -p <pid of the target process or thread>
+- sudo php ./php-profiler inspector:eg -p \<pid of the target process or thread>
 
 # Supported PHP version
 ## Execution
