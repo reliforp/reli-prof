@@ -1,5 +1,5 @@
 # About
-This is a software intended to be a PHP profiler written in PHP.
+This is a software intended to be a sampling PHP profiler written in PHP.
 It can read information from running PHP process, by parsing ELF binary of the interpreter and reading memory map from /proc/\<pid>/maps and using ptrace(2) and process_vm_readv(2) with FFI.
 
 # Status
@@ -10,10 +10,18 @@ It can read information from running PHP process, by parsing ELF binary of the i
     - So it can also be used with [adsr/phpspy](https://github.com/adsr/phpspy) to profile in ZTS
 
 # Installation
+## From Git
 ```
 git clone git@github.com:sj-i/php-profiler.git
 cd php-profiler
 composer install
+./php-profiler
+```
+
+## From Composer
+```
+composer require sj-i/php-profiler
+./vendor/bin/php-profiler
 ```
 
 # Usage
