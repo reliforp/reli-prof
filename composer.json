@@ -1,15 +1,26 @@
 {
   "name": "sj-i/php-profiler",
   "description": "a profiler for php",
-  "minimum-stability": "dev",
-  "prefer-stable": true,
+  "type": "project",
   "license": "MIT",
+  "keywords": [
+    "php",
+    "profiler"
+  ],
   "authors": [
     {
       "name": "sji",
       "homepage": "https://twitter.com/sji_ch"
     }
   ],
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "require": {
+    "php": "^7.4",
+    "ext-ffi": "*",
+    "ext-pcntl": "*",
+    "symfony/console": "^5.0"
+  },
   "require-dev": {
     "ext-posix": "*",
     "phpunit/phpunit": "^9.0",
@@ -29,10 +40,7 @@
       "PhpProfiler\\": "tests"
     }
   },
-  "require": {
-    "php": "^7.4",
-    "ext-ffi": "*",
-    "ext-pcntl": "*",
-    "symfony/console": "^5.0"
-  }
+  "bin": [
+    "php-profiler"
+  ]
 }
