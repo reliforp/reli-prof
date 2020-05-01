@@ -9,6 +9,8 @@
  * file that was distributed with this source code.
  */
 
+declare(strict_types=1);
+
 namespace PhpProfiler\Command\CommandEnumeratorTestData\Test1Directory;
 
 final class Test1Command

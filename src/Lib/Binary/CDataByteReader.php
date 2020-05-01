@@ -9,10 +9,13 @@
  * file that was distributed with this source code.
  */
 
+declare(strict_types=1);
+
 namespace PhpProfiler\Lib\Binary;
 
 use FFI\CArray;
 use FFI\CData;
+use PhpProfiler\Lib\PhpCast;
 
 final class CDataByteReader implements ByteReaderInterface
 {
@@ -37,7 +40,7 @@ final class CDataByteReader implements ByteReaderInterface
 
     public function offsetGet($offset): int
     {
-        return $this->source[$offset];
+        return PhpCast::anyToInt($this->source[$offset]);
     }
 
     public function createSliceAsString(int $offset, int $size): string
