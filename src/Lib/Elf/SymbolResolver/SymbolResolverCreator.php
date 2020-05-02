@@ -47,4 +47,16 @@ final class SymbolResolverCreator
         $string_table = $parser->parseStringTableFromSectionHeader($binary, $string_table_section_header_entry);
         return new Elf64LinearScanSymbolResolver($symbol_table, $string_table);
     }
+
+    /**
+     * @param string $path
+     * @return Elf64DynamicSymbolResolver
+     * @throws ElfParserException
+     */
+    public function createDynamicResolverFromPath(string $path): Elf64DynamicSymbolResolver
+    {
+        $binary = new StringByteReader(file_get_contents($path));
+        $parser = new Elf64Parser(new BinaryReader());
+        return Elf64DynamicSymbolResolver::load($parser, $binary);
+    }
 }

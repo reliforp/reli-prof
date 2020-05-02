@@ -61,13 +61,24 @@ final class ProcessModuleSymbolReaderCreator
         }
 
         $module_name = current($memory_areas)->name;
-        $symbol_resolver = $this->symbol_resolver_creator->createLinearScanResolverFromPath($module_name);
-        return new ProcessModuleSymbolReader(
-            $pid,
-            $symbol_resolver,
-            $memory_areas,
-            $this->memory_reader,
-            $tls_block_address
-        );
+        try {
+            $symbol_resolver = $this->symbol_resolver_creator->createLinearScanResolverFromPath($module_name);
+            return new ProcessModuleSymbolReader(
+                $pid,
+                $symbol_resolver,
+                $memory_areas,
+                $this->memory_reader,
+                $tls_block_address
+            );
+        } catch (ElfParserException $e) {
+            $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromPath($module_name);
+            return new ProcessModuleSymbolReader(
+                $pid,
+                $symbol_resolver,
+                $memory_areas,
+                $this->memory_reader,
+                $tls_block_address
+            );
+        }
     }
 }
