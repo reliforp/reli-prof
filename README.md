@@ -9,7 +9,6 @@ It can read information from running PHP process, by parsing ELF binary of the i
     - ZTS is also supported.
     - So it can also be used with [adsr/phpspy](https://github.com/adsr/phpspy) to profile in ZTS
 - It runs only on PHP 7.4
-- Currently only CLI SAPI is supported as a target process
 
 # Installation
 ## From Git
