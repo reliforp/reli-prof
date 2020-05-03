@@ -27,4 +27,11 @@ interface ProcessSymbolReaderInterface
      * @throws ProcessSymbolReaderException
      */
     public function read(string $symbol_name): ?CData;
+
+    /**
+     * @param string $symbol_name
+     * @return int|null
+     * @throws ProcessSymbolReaderException
+     */
+    public function resolveAddress(string $symbol_name): ?int;
 }

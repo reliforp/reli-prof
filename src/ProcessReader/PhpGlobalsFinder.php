@@ -15,8 +15,9 @@ namespace PhpProfiler\ProcessReader;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
-use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReader;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
+use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderInterface;
+use RuntimeException;
 
 /**
  * Class PhpGlobalsFinder
@@ -24,16 +25,16 @@ use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
  */
 final class PhpGlobalsFinder
 {
-    private ProcessModuleSymbolReader $php_symbol_reader;
+    private ProcessSymbolReaderInterface $php_symbol_reader;
     private ?int $tsrm_ls_cache = null;
     private bool $tsrm_ls_cache_not_found = false;
     private BinaryReader $binary_reader;
 
     /**
      * PhpGlobalsFinder constructor.
-     * @param ProcessModuleSymbolReader $php_symbol_reader
+     * @param ProcessSymbolReaderInterface $php_symbol_reader
      */
-    public function __construct(ProcessModuleSymbolReader $php_symbol_reader)
+    public function __construct(ProcessSymbolReaderInterface $php_symbol_reader)
     {
         $this->php_symbol_reader = $php_symbol_reader;
         $this->binary_reader = new BinaryReader();
@@ -69,7 +70,7 @@ final class PhpGlobalsFinder
         if (isset($tsrm_ls_cache)) {
             $executor_globals_offset_cdata = $this->php_symbol_reader->read('executor_globals_offset');
             if (is_null($executor_globals_offset_cdata)) {
-                throw new \RuntimeException('executor_globals_offset not found');
+                throw new RuntimeException('executor_globals_offset not found');
             }
             $executor_globals_offset = $this->binary_reader->read64(
                 new CDataByteReader($executor_globals_offset_cdata),
@@ -79,7 +80,7 @@ final class PhpGlobalsFinder
         }
         $executor_globals_address = $this->php_symbol_reader->resolveAddress('executor_globals');
         if (is_null($executor_globals_address)) {
-            throw new \RuntimeException('executor globals not found');
+            throw new RuntimeException('executor globals not found');
         }
         return $executor_globals_address;
     }
