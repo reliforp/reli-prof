@@ -169,4 +169,64 @@ final class ExecutorGlobalsReader
         }
         return $class_name . \FFI::string($string->val);
     }
+
+    /**
+     * @param int $pid
+     * @param int $executor_globals_address
+     * @param int $depth
+     * @return string[]
+     * @throws MemoryReaderException
+     */
+    public function readCallTrace(int $pid, int $executor_globals_address, int $depth): array
+    {
+        /** @var \FFI\PhpInternals\zend_executor_globals $eg */
+        $eg = $this->readExecutorGlobals($pid, $executor_globals_address);
+
+        /** @var \FFI\PhpInternals\zend_execute_data $current_execute_data */
+        $current_execute_data = $this->readCurrentExecuteData($pid, $eg);
+
+        $stack = [];
+        $stack[] = clone $current_execute_data;
+        for ($i = 0; $i < $depth; $i++) {
+            $current_execute_data = $this->readPreviousExecuteData($pid, $current_execute_data);
+            if (is_null($current_execute_data)) {
+                break;
+            }
+            $stack[] = clone $current_execute_data;
+        }
+
+        $result = [];
+        foreach ($stack as $current_execute_data) {
+            /** @var \FFI\PhpInternals\zend_function $current_function */
+            $current_function = $this->readCurrentFunction($pid, $current_execute_data);
+            $result[] = $this->readFunctionName($pid, $current_function);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param int $pid
+     * @param CData $execute_data
+     * @return CData
+     * @throws MemoryReaderException
+     */
+    public function readPreviousExecuteData(int $pid, CData $execute_data): ?CData
+    {
+        /**
+         * @var \FFI\CPointer $previous_execute_data_addr
+         * @var \FFI\PhpInternals\zend_execute_data $execute_data
+         * @psalm-suppress PropertyTypeCoercion
+         */
+        $previous_execute_data_addr = \FFI::cast('long', $execute_data->prev_execute_data);
+        if ($previous_execute_data_addr->cdata == 0) {
+            return null;
+        }
+        $previous_execute_data_raw = $this->memory_reader->read(
+            $pid,
+            $previous_execute_data_addr->cdata,
+            $this->zend_type_reader->sizeOf('zend_execute_data')
+        );
+        return $this->zend_type_reader->readAs('zend_execute_data', $previous_execute_data_raw);
+    }
 }

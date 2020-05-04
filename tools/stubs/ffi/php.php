@@ -21,6 +21,7 @@ class zend_executor_globals extends CData
 class zend_execute_data extends CData
 {
     public zend_function $func;
+    public zend_execute_data $prev_execute_data;
 }
 
 class zend_function extends CData
