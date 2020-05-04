@@ -89,8 +89,9 @@ final class MemoryReader implements MemoryReaderInterface
         if ($read === -1) {
             /** @var int $errno */
             $errno = $this->ffi->errno;
+            $log_address = dechex($remote_address);
             throw new MemoryReaderException(
-                "failed to read memory.remote_address={$remote_address}, errno={$errno}",
+                "failed to read memory.remote_address=0x{$log_address}, errno={$errno}",
                 $errno
             );
         }
