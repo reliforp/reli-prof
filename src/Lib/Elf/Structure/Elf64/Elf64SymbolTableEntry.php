@@ -21,6 +21,14 @@ use PhpProfiler\Lib\UInt64;
  */
 final class Elf64SymbolTableEntry
 {
+    public const STB_LOCAL = 0;
+    public const STB_GLOBAL = 1;
+    public const STB_WEAK = 2;
+    public const STB_LOOS = 10;
+    public const STB_HIOS = 12;
+    public const STB_LOPROC = 13;
+    public const STB_HIPROC = 15;
+
     public const STT_NOTYPE = 0;
     public const STT_OBJECT = 1;
     public const STT_FUNC = 2;
@@ -32,6 +40,14 @@ final class Elf64SymbolTableEntry
     public const STT_HIOS = 12;
     public const STT_LOPROC = 13;
     public const STT_HIPROC = 15;
+
+    public const STV_DEFAULT = 0;
+    public const STV_INTERNAL = 1;
+    public const STV_HIDDEN = 2;
+    public const STV_PROTECTED = 3;
+    public const STV_EXPORTED = 4;
+    public const STV_SINGLETON = 5;
+    public const STV_ELIMINATE = 6;
 
     public int $st_name; // Elf64_Word
     public int $st_info; // unsigned char
@@ -71,6 +87,24 @@ final class Elf64SymbolTableEntry
     public function getType(): int
     {
         return (($this->st_info) & 0xf);
+    }
+
+    /**
+     * @return int
+     */
+    public function getBind(): int
+    {
+        return $this->st_info >> 4;
+    }
+
+    /**
+     * @param int $bind
+     * @param int $type
+     * @return int
+     */
+    public static function createInfo(int $bind, int $type): int
+    {
+        return ($bind << 4) + ($type & 0x0f);
     }
 
     /**
