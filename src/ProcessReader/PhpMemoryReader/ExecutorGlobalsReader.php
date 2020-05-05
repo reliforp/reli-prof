@@ -94,7 +94,7 @@ final class ExecutorGlobalsReader
             $current_execute_data_addr->cdata,
             $this->zend_type_reader->sizeOf('zend_execute_data')
         );
-        return $this->zend_type_reader->readAs('zend_execute_data', $current_execute_data_raw);
+        return clone $this->zend_type_reader->readAs('zend_execute_data', $current_execute_data_raw);
     }
 
     /**
@@ -116,7 +116,7 @@ final class ExecutorGlobalsReader
             $func_pointer->cdata,
             $this->zend_type_reader->sizeOf('zend_function')
         );
-        return $this->zend_type_reader->readAs('zend_function', $current_function_raw);
+        return clone $this->zend_type_reader->readAs('zend_function', $current_function_raw);
     }
 
     /**
@@ -127,47 +127,73 @@ final class ExecutorGlobalsReader
      */
     public function readFunctionName(int $pid, CData $current_function): string
     {
+        $function_name = '<main>';
+        $class_name = '';
         /**
          * @psalm-suppress PropertyTypeCoercion
          * @psalm-var \FFI\PhpInternals\zend_function $current_function
          * @psalm-var \FFI\CPointer $current_function_name_pointer
          */
         $current_function_name_pointer = \FFI::cast('long', $current_function->common->function_name);
-        if ($current_function_name_pointer->cdata == 0) {
-            return '<main>';
-        }
-        /** @var \FFI\CPointer $current_function_name_pointer */
-        $current_function_name_zstring = $this->memory_reader->read(
-            $pid,
-            $current_function_name_pointer->cdata,
-            $this->zend_type_reader->sizeOf('zend_string') + 256
-        );
-        /** @var \FFI\PhpInternals\zend_string $string */
-        $string = $this->zend_type_reader->readAs('zend_string', $current_function_name_zstring);
-
-        $class_name = '';
-        /** @var \FFI\CPointer $current_function_scope_pointer */
-        $current_function_scope_pointer = \FFI::cast('long', $current_function->common->scope);
-        if ($current_function_scope_pointer->cdata !== 0) {
-            $current_function_class_entry = $this->memory_reader->read(
+        if ($current_function_name_pointer->cdata !== 0) {
+            /** @var \FFI\CPointer $current_function_name_pointer */
+            $current_function_name_zstring = $this->memory_reader->read(
                 $pid,
-                $current_function_scope_pointer->cdata,
-                $this->zend_type_reader->sizeOf('zend_class_entry')
-            );
-            /** @var \FFI\PhpInternals\zend_class_entry $class_entry */
-            $class_entry = $this->zend_type_reader->readAs('zend_class_entry', $current_function_class_entry);
-            $current_class_name_pointer = \FFI::cast('long', $class_entry->name);
-            /** @var \FFI\CPointer $current_class_name_pointer */
-            $current_class_name_zstring = $this->memory_reader->read(
-                $pid,
-                $current_class_name_pointer->cdata,
+                $current_function_name_pointer->cdata,
                 $this->zend_type_reader->sizeOf('zend_string') + 256
             );
-            /** @var \FFI\PhpInternals\zend_string $class_name_string */
-            $class_name_string = $this->zend_type_reader->readAs('zend_string', $current_class_name_zstring);
-            $class_name = \FFI::string($class_name_string->val) . '::';
+            /** @var \FFI\PhpInternals\zend_string $string */
+            $string = $this->zend_type_reader->readAs('zend_string', $current_function_name_zstring);
+            $function_name = \FFI::string($string->val);
+            /** @var \FFI\CPointer $current_function_scope_pointer */
+            $current_function_scope_pointer = \FFI::cast('long', $current_function->common->scope);
+            if ($current_function_scope_pointer->cdata !== 0) {
+                $current_function_class_entry = $this->memory_reader->read(
+                    $pid,
+                    $current_function_scope_pointer->cdata,
+                    $this->zend_type_reader->sizeOf('zend_class_entry')
+                );
+                /** @var \FFI\PhpInternals\zend_class_entry $class_entry */
+                $class_entry = $this->zend_type_reader->readAs('zend_class_entry', $current_function_class_entry);
+                $current_class_name_pointer = \FFI::cast('long', $class_entry->name);
+                /** @var \FFI\CPointer $current_class_name_pointer */
+                $current_class_name_zstring = $this->memory_reader->read(
+                    $pid,
+                    $current_class_name_pointer->cdata,
+                    $this->zend_type_reader->sizeOf('zend_string') + 256
+                );
+                /** @var \FFI\PhpInternals\zend_string $class_name_string */
+                $class_name_string = $this->zend_type_reader->readAs('zend_string', $current_class_name_zstring);
+                $class_name = \FFI::string($class_name_string->val) . '::';
+            }
         }
-        return $class_name . \FFI::string($string->val);
+
+        return $class_name . $function_name;
+    }
+
+    /**
+     * @param int $pid
+     * @param CData $current_function
+     * @return string
+     * @throws MemoryReaderException
+     */
+    public function readFunctionFile(int $pid, CData $current_function): string
+    {
+        /** @psalm-var \FFI\PhpInternals\zend_function $current_function */
+        $filename = '<internal>';
+        if ($current_function->type === 2) {
+            $filename_pointer = \FFI::cast('long', $current_function->op_array->filename);
+            /** @var \FFI\CPointer $filename_pointer */
+            $filename_zstring_raw = $this->memory_reader->read(
+                $pid,
+                $filename_pointer->cdata,
+                $this->zend_type_reader->sizeOf('zend_string') + 256
+            );
+            /** @var \FFI\PhpInternals\zend_string $filename_zstring */
+            $filename_zstring = $this->zend_type_reader->readAs('zend_string', $filename_zstring_raw);
+            $filename = \FFI::string($filename_zstring->val);
+        }
+        return $filename;
     }
 
     /**
@@ -186,20 +212,25 @@ final class ExecutorGlobalsReader
         $current_execute_data = $this->readCurrentExecuteData($pid, $eg);
 
         $stack = [];
-        $stack[] = clone $current_execute_data;
+        $stack[] = $current_execute_data;
         for ($i = 0; $i < $depth; $i++) {
             $current_execute_data = $this->readPreviousExecuteData($pid, $current_execute_data);
             if (is_null($current_execute_data)) {
                 break;
             }
-            $stack[] = clone $current_execute_data;
+            $stack[] = $current_execute_data;
         }
 
         $result = [];
         foreach ($stack as $current_execute_data) {
             /** @var \FFI\PhpInternals\zend_function $current_function */
             $current_function = $this->readCurrentFunction($pid, $current_execute_data);
-            $result[] = $this->readFunctionName($pid, $current_function);
+            $lineno = -1;
+            $file = $this->readFunctionFile($pid, $current_function);
+            if ($file !== '<internal>') {
+                $lineno = $this->readOpline($pid, $current_execute_data);
+            }
+            $result[] = $this->readFunctionName($pid, $current_function) . " {$file}({$lineno})";
         }
 
         return $result;
@@ -227,6 +258,33 @@ final class ExecutorGlobalsReader
             $previous_execute_data_addr->cdata,
             $this->zend_type_reader->sizeOf('zend_execute_data')
         );
-        return $this->zend_type_reader->readAs('zend_execute_data', $previous_execute_data_raw);
+        return clone $this->zend_type_reader->readAs('zend_execute_data', $previous_execute_data_raw);
+    }
+
+    /**
+     * @param int $pid
+     * @param CData $current_execute_data
+     * @return int
+     * @throws MemoryReaderException
+     */
+    public function readOpline(int $pid, CData $current_execute_data): int
+    {
+        /**
+         * @psalm-var \FFI\CPointer $opline_addr
+         * @psalm-var \FFI\PhpInternals\zend_execute_data $current_execute_data
+         */
+        $opline_addr = \FFI::cast('long', $current_execute_data->opline);
+        if ($opline_addr->cdata == 0) {
+            return -1;
+        }
+        $opline_raw = $this->memory_reader->read(
+            $pid,
+            $opline_addr->cdata + 24,
+            4
+        );
+        return $opline_raw[0]
+            + ($opline_raw[1] << 9)
+            + ($opline_raw[2] << 16)
+            + ($opline_raw[3] << 24);
     }
 }

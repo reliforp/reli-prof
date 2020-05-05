@@ -20,13 +20,26 @@ class zend_executor_globals extends CData
 
 class zend_execute_data extends CData
 {
+    public zend_op $opline;
     public zend_function $func;
     public zend_execute_data $prev_execute_data;
 }
 
+class zend_op extends CData
+{
+    public int $lineno;
+}
+
 class zend_function extends CData
 {
+    public int $type;
     public zend_function_common $common;
+    public zend_op_array $op_array;
+}
+
+class zend_op_array extends CData
+{
+    public zend_string $filename;
 }
 
 class zend_function_common extends CData
