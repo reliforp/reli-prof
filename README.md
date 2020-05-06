@@ -1,3 +1,8 @@
+[![Packagist](https://img.shields.io/packagist/v/sj-i/php-profiler.svg)](https://packagist.org/packages/sj-i/php-profiler)
+[![Packagist](https://img.shields.io/packagist/dt/sj-i/php-profiler.svg)](https://packagist.org/packages/sj-i/php-profiler)
+[![Github Actions](https://github.com/sj-i/php-profiler/workflows/build/badge.svg)](https://github.com/sj-i/php-profiler/actions)
+[![Coverage Status](https://coveralls.io/repos/github/sj-i/php-profiler/badge.svg?branch=master)](https://coveralls.io/github/sj-i/php-profiler?branch=master)
+![Psalm coverage](https://shepherd.dev/github/sj-i/php-profiler/coverage.svg?)
 # About
 This is a software intended to be a sampling PHP profiler written in PHP.
 It can read information from running PHP process, by parsing ELF binary of the interpreter and reading memory map from /proc/\<pid>/maps and using ptrace(2) and process_vm_readv(2) with FFI.
