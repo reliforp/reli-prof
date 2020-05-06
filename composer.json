@@ -43,5 +43,16 @@
   },
   "bin": [
     "php-profiler"
-  ]
+  ],
+  "scripts": {
+    "test": [
+      "phpunit"
+    ],
+    "psalm": [
+      "psalm"
+    ],
+    "phpcs": [
+      "phpcs --standard=./phpcs.xml ./src ./tests"
+    ]
+  }
 }
