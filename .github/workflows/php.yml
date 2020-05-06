@@ -36,4 +36,4 @@ jobs:
       run: composer run-script phpcs
 
     - name: Run psalm
-      run: ./vendor/bin/psalm --shepherd
+      run: ./vendor/bin/psalm --shepherd --output-format=github
