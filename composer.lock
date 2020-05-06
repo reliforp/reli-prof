@@ -754,12 +754,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/JetBrains/phpstorm-stubs.git",
-                "reference": "84392cc7b7a66c6eb6d21f7d7cda540ad1e7da65"
+                "reference": "4522dea41207396f9ed19ce60b306a5ef8e453b7"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/84392cc7b7a66c6eb6d21f7d7cda540ad1e7da65",
-                "reference": "84392cc7b7a66c6eb6d21f7d7cda540ad1e7da65",
+                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/4522dea41207396f9ed19ce60b306a5ef8e453b7",
+                "reference": "4522dea41207396f9ed19ce60b306a5ef8e453b7",
                 "shasum": ""
             },
             "require-dev": {
@@ -790,7 +790,7 @@
                 "stubs",
                 "type"
             ],
-            "time": "2020-04-09T12:26:55+00:00"
+            "time": "2020-04-29T08:08:36+00:00"
         },
         {
             "name": "mockery/mockery",
