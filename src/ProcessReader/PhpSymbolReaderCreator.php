@@ -78,7 +78,7 @@ final class PhpSymbolReaderCreator
         $php_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex(
             $pid,
             $process_memory_map,
-            '/.*\/(php(74|80)?|php-fpm|libphp[78].*\.so)$/',
+            '/.*\/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$/',
             $tls_block_address
         );
         if (is_null($php_symbol_reader)) {
