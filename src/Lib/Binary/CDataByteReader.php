@@ -34,7 +34,10 @@ final class CDataByteReader implements ByteReaderInterface
 
     public function offsetExists($offset): bool
     {
-        return isset($this->source[$offset]);
+        if (count($this->source) <= $offset) {
+            return false;
+        }
+        return !is_null($this->source[$offset]);
     }
 
     public function offsetGet($offset): int

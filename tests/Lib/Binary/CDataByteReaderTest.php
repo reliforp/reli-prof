@@ -39,4 +39,26 @@ class CDataByteReaderTest extends TestCase
         $this->expectException(\LogicException::class);
         $reader[0] = 0;
     }
+
+    public function testOffsetExists()
+    {
+        /** @var \FFI\CArray $cdata_array */
+        $cdata_array = FFI::new('unsigned char[3]');
+        $cdata_array[0] = 1;
+        $reader = new CDataByteReader($cdata_array);
+        $this->assertTrue(isset($reader[0]));
+        $this->assertFalse(isset($reader[4]));
+    }
+
+    public function testCreateSliceAsString()
+    {
+        /** @var \FFI\CArray $cdata_array */
+        $cdata_array = FFI::new('unsigned char[4]');
+        $cdata_array[0] = ord('a');
+        $cdata_array[1] = ord('b');
+        $cdata_array[2] = ord('c');
+        $cdata_array[3] = ord('d');
+        $reader = new CDataByteReader($cdata_array);
+        $this->assertSame('abc', $reader->createSliceAsString(0, 3));
+    }
 }

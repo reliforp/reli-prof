@@ -26,7 +26,7 @@ class CPointer extends CData
  *
  * @template-implements \ArrayAccess<int, int>
  */
-class CArray extends CData implements \ArrayAccess
+class CArray extends CData implements \ArrayAccess, \Countable
 {
 
     public function offsetExists($offset)
