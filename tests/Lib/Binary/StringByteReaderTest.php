@@ -30,6 +30,13 @@ class StringByteReaderTest extends TestCase
         $this->assertSame(0x63, $reader[2]);
     }
 
+    public function testOffsetExists()
+    {
+        $reader = new StringByteReader('abc');
+        $this->assertTrue(isset($reader[0]));
+        $this->assertFalse(isset($reader[4]));
+    }
+
     public function testCreateSliceAsString()
     {
         $reader = new StringByteReader('abc');
