@@ -17,6 +17,7 @@ use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\StringByteReader;
 use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
+use PhpProfiler\Lib\File\FileReaderInterface;
 
 /**
  * Class SymbolResolverCreator
@@ -25,13 +26,27 @@ use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 final class SymbolResolverCreator
 {
     /**
+     * @var FileReaderInterface
+     */
+    private FileReaderInterface $file_reader;
+
+    /**
+     * SymbolResolverCreator constructor.
+     * @param FileReaderInterface $file_reader
+     */
+    public function __construct(FileReaderInterface $file_reader)
+    {
+        $this->file_reader = $file_reader;
+    }
+
+    /**
      * @param string $path
      * @return Elf64LinearScanSymbolResolver
      * @throws ElfParserException
      */
     public function createLinearScanResolverFromPath(string $path): Elf64LinearScanSymbolResolver
     {
-        $binary = new StringByteReader(file_get_contents($path));
+        $binary = new StringByteReader($this->file_reader->readAll($path));
         $parser = new Elf64Parser(new BinaryReader());
         $elf_header = $parser->parseElfHeader($binary);
         $section_header = $parser->parseSectionHeader($binary, $elf_header);
@@ -55,7 +70,7 @@ final class SymbolResolverCreator
      */
     public function createDynamicResolverFromPath(string $path): Elf64DynamicSymbolResolver
     {
-        $binary = new StringByteReader(file_get_contents($path));
+        $binary = new StringByteReader($this->file_reader->readAll($path));
         $parser = new Elf64Parser(new BinaryReader());
         return Elf64DynamicSymbolResolver::load($parser, $binary);
     }

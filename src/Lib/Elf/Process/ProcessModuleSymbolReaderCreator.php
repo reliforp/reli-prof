@@ -61,8 +61,9 @@ final class ProcessModuleSymbolReaderCreator
         }
 
         $module_name = current($memory_areas)->name;
+        $container_aware_path = $this->createContainerAwarePath($pid, $module_name);
         try {
-            $symbol_resolver = $this->symbol_resolver_creator->createLinearScanResolverFromPath($module_name);
+            $symbol_resolver = $this->symbol_resolver_creator->createLinearScanResolverFromPath($container_aware_path);
             return new ProcessModuleSymbolReader(
                 $pid,
                 $symbol_resolver,
@@ -71,7 +72,7 @@ final class ProcessModuleSymbolReaderCreator
                 $tls_block_address
             );
         } catch (ElfParserException $e) {
-            $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromPath($module_name);
+            $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromPath($container_aware_path);
             return new ProcessModuleSymbolReader(
                 $pid,
                 $symbol_resolver,
@@ -80,5 +81,15 @@ final class ProcessModuleSymbolReaderCreator
                 $tls_block_address
             );
         }
+    }
+
+    /**
+     * @param int $pid
+     * @param string $path
+     * @return string
+     */
+    private function createContainerAwarePath(int $pid, string $path): string
+    {
+        return "/proc/{$pid}/root{$path}";
     }
 }
