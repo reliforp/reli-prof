@@ -51,7 +51,7 @@ sudo php ./php-profiler inspector:eg -p <pid of the target process or thread>
 ## Use in a docker container and target a process on host
 ```
 docker build -t php-profiler .
-docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host php-profiler:latest /usr/php-profiler/php-profiler inspector:trace -p <pid of the target process or thread>
+docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host php-profiler:latest vendor/bin/php-profiler inspector:trace -p <pid of the target process or thread>
 ```
 
 # Supported PHP versions
