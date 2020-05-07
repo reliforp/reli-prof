@@ -84,8 +84,7 @@ final class Elf64GnuHashTable
                     return $chain_offset + $this->symoffset;
                 }
             }
-            $chain_offset++;
-        } while (($this->chain[$chain_offset] & 1) === 0);
+        } while (($this->chain[$chain_offset++] & 1) === 0);
 
         return Elf64SymbolTable::STN_UNDEF;
     }
