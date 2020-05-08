@@ -27,7 +27,8 @@ final class LineFetcher
     {
         $line = strtok($string, "\n");
         if ($line === false) {
-            yield $string;
+            assert($string === "\n");
+            yield  '';
             return;
         }
 

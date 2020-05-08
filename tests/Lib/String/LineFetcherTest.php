@@ -42,4 +42,20 @@ class LineFetcherTest extends TestCase
             $result
         );
     }
+
+    public function testCreateGeneratorLineBreakOnly()
+    {
+        $string = "\n";
+        $result = [];
+        $line_fetcher = new LineFetcher();
+        foreach ($line_fetcher->createIterable($string) as $line) {
+            $result[] = $line;
+        }
+        $this->assertSame(
+            [
+                '',
+            ],
+            $result
+        );
+    }
 }
