@@ -86,7 +86,6 @@ final class ExecutorGlobalsReader
         /**
          * @var \FFI\CPointer $current_execute_data_addr
          * @var \FFI\PhpInternals\zend_executor_globals $eg
-         * @psalm-suppress PropertyTypeCoercion
          */
         $current_execute_data_addr = \FFI::cast('long', $eg->current_execute_data);
         $current_execute_data_raw = $this->memory_reader->read(
@@ -108,7 +107,6 @@ final class ExecutorGlobalsReader
         /**
          * @var \FFI\CPointer $func_pointer
          * @var \FFI\PhpInternals\zend_execute_data $current_execute_data
-         * @psalm-suppress PropertyTypeCoercion
          */
         $func_pointer = \FFI::cast('long', $current_execute_data->func);
         $current_function_raw = $this->memory_reader->read(
@@ -130,7 +128,6 @@ final class ExecutorGlobalsReader
         $function_name = '<main>';
         $class_name = '';
         /**
-         * @psalm-suppress PropertyTypeCoercion
          * @psalm-var \FFI\PhpInternals\zend_function $current_function
          * @psalm-var \FFI\CPointer $current_function_name_pointer
          */
@@ -247,7 +244,6 @@ final class ExecutorGlobalsReader
         /**
          * @var \FFI\CPointer $previous_execute_data_addr
          * @var \FFI\PhpInternals\zend_execute_data $execute_data
-         * @psalm-suppress PropertyTypeCoercion
          */
         $previous_execute_data_addr = \FFI::cast('long', $execute_data->prev_execute_data);
         if ($previous_execute_data_addr->cdata == 0) {
