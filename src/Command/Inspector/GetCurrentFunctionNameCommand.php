@@ -30,11 +30,19 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class GetCurrentFunctionNameCommand extends Command
 {
+    private const SLEEP_NANO_SECONDS_DEFAULT = 1000 * 1000 * 10;
+
     public function configure(): void
     {
         $this->setName('inspector:current_function')
             ->setDescription('periodically get running function name from an outer process or thread')
-            ->addOption('pid', 'p', InputOption::VALUE_REQUIRED, 'process id');
+            ->addOption('pid', 'p', InputOption::VALUE_REQUIRED, 'process id')
+            ->addOption(
+                'sleep-ns',
+                's',
+                InputOption::VALUE_OPTIONAL,
+                'nanoseconds between traces (default: 1000 * 1000 * 10)'
+            );
     }
 
     /**
@@ -61,6 +69,17 @@ final class GetCurrentFunctionNameCommand extends Command
             return 2;
         }
 
+        $sleep_nano_seconds = $input->getOption('sleep-ns');
+        if (is_null($sleep_nano_seconds)) {
+            $sleep_nano_seconds = self::SLEEP_NANO_SECONDS_DEFAULT;
+        }
+        $sleep_nano_seconds = filter_var($sleep_nano_seconds, FILTER_VALIDATE_INT);
+        if ($sleep_nano_seconds === false) {
+            $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
+            $error_output->writeln('sleep-ns is not integer');
+            return 2;
+        }
+
         $memory_reader = new MemoryReader();
         $php_globals_finder = new PhpGlobalsFinder(
             (new PhpSymbolReaderCreator($memory_reader))->create($pid)
@@ -82,7 +101,7 @@ final class GetCurrentFunctionNameCommand extends Command
             try {
                 echo $eg_reader->readCurrentFunctionName($pid, $eg_address) , PHP_EOL;
                 $count_retry = 0;
-                time_nanosleep(0, 1000 * 1000 * 10);
+                time_nanosleep(0, $sleep_nano_seconds);
             } catch (MemoryReaderException $e) {
                 $count_retry++;
             }
