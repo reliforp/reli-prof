@@ -2,46 +2,57 @@ name: build
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - 'master'
   pull_request:
-    branches: [ master ]
+    branches:
+      - 'master'
 
 jobs:
-  test:
 
+  phpunit-test:
+    name: phpunit test
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup PHP Action
-      uses: shivammathur/setup-php@1.8.7
-      with:
-        # Setup PHP version.
-        php-version: 7.4
-        # Setup PHP extensions.
-        extensions: ffi
-        # Setup code coverage driver.
-        coverage: pcov
+      - uses: actions/checkout@v2
 
-    - name: Validate composer.json and composer.lock
-      run: composer validate
+      - name: Setup PHP Action
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 7.4
+          extensions: ffi
+          coverage: pcov
 
-    - name: Install dependencies
-      run: composer install --dev --prefer-dist --no-progress --no-suggest
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
 
-    - name: Run test suite
-      run: |
-        mkdir -p build/logs
-        ./vendor/bin/phpunit --coverage-html build/logs/coverage-html --coverage-clover build/logs/clover.xml
+      - name: Cache dependencies
+        uses: actions/cache@v1
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
 
-    - name: Send to coveralls
-      run: ./vendor/bin/php-coveralls -v
-      env:
-        COVERALLS_RUN_LOCALLY: 1
-        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+      - name: Validate composer.json and composer.lock
+        run: composer validate
 
-    - name: Run phpcs
-      run: composer run-script phpcs
+      - name: Install dependencies
+        run: composer install --dev --prefer-dist --no-progress --no-suggest
 
-    - name: Run psalm
-      run: ./vendor/bin/psalm --shepherd --output-format=github
+      - name: Setup problem matchers for PHP
+        run: echo "::add-matcher::${{ runner.tool_cache }}/php.json"
+
+      - name: Setup Problem Matchers for PHPUnit
+        run: echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
+
+      - name: Run test suite
+        run: |
+          mkdir -p build/logs
+          ./vendor/bin/phpunit --coverage-clover build/logs/clover.xml
+
+      - name: Send to coveralls
+        run: ./vendor/bin/php-coveralls -v
+        env:
+          COVERALLS_RUN_LOCALLY: 1
+          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
