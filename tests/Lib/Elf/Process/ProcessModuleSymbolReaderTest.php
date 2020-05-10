@@ -70,6 +70,51 @@ class ProcessModuleSymbolReaderTest extends TestCase
         );
     }
 
+    public function testReturnNullOnTryingToReadUndefinedSymbol()
+    {
+        $memory_areas = [
+            new ProcessMemoryArea(
+                '0x10000000',
+                '0x20000000',
+                '0x00000000',
+                new ProcessMemoryAttribute(
+                    true,
+                    false,
+                    true,
+                    true
+                ),
+                'test_area'
+            )
+        ];
+        $symbol_resolver = Mockery::mock(Elf64SymbolResolver::class);
+        $symbol_resolver->expects()
+            ->resolve('test_symbol')
+            ->andReturns(new Elf64SymbolTableEntry(
+                0,
+                Elf64SymbolTableEntry::createInfo(
+                    Elf64SymbolTableEntry::STB_LOCAL,
+                    Elf64SymbolTableEntry::STT_NOTYPE
+                ),
+                Elf64SymbolTableEntry::STV_DEFAULT,
+                0,
+                new UInt64(0, 0),
+                new UInt64(0, 0),
+            ));
+        $memory_reader = Mockery::mock(MemoryReaderInterface::class);
+
+        $process_symbol_reader = new ProcessModuleSymbolReader(
+            1,
+            $symbol_resolver,
+            $memory_areas,
+            $memory_reader,
+            null
+        );
+        $this->assertSame(
+            null,
+            $process_symbol_reader->read('test_symbol')
+        );
+    }
+
     public function testResolveAddress()
     {
         $memory_areas = [
