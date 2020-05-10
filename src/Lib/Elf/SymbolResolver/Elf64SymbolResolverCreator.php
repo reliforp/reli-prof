@@ -23,11 +23,8 @@ use PhpProfiler\Lib\File\FileReaderInterface;
  * Class SymbolResolverCreator
  * @package PhpProfiler\Lib\Elf
  */
-final class SymbolResolverCreator
+final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
 {
-    /**
-     * @var FileReaderInterface
-     */
     private FileReaderInterface $file_reader;
 
     /**

@@ -17,7 +17,7 @@ use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReader;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
-use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreator;
+use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
@@ -56,7 +56,7 @@ final class PhpSymbolReaderCreator
         $memory_reader = $this->memory_reader;
 
         $symbol_reader_creator = new ProcessModuleSymbolReaderCreator(
-            new SymbolResolverCreator(new CatFileReader()),
+            new Elf64SymbolResolverCreator(new CatFileReader()),
             $memory_reader
         );
         $process_memory_map = ProcessMemoryMapCreator::create()->getProcessMemoryMap($pid);

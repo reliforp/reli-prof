@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\Elf\Process;
 
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreator;
+use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
@@ -24,17 +24,17 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
  */
 final class ProcessModuleSymbolReaderCreator
 {
-    private SymbolResolverCreator $symbol_resolver_creator;
+    private SymbolResolverCreatorInterface $symbol_resolver_creator;
     private MemoryReaderInterface $memory_reader;
 
     /**
      * ProcessSymbolReaderCreator constructor.
      *
-     * @param SymbolResolverCreator $symbol_resolver_creator
+     * @param SymbolResolverCreatorInterface $symbol_resolver_creator
      * @param MemoryReaderInterface $memory_reader
      */
     public function __construct(
-        SymbolResolverCreator $symbol_resolver_creator,
+        SymbolResolverCreatorInterface $symbol_resolver_creator,
         MemoryReaderInterface $memory_reader
     ) {
         $this->symbol_resolver_creator = $symbol_resolver_creator;
