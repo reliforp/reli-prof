@@ -64,21 +64,12 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
      */
     public function read(string $symbol_name): ?CData
     {
-        $symbol = $this->symbol_resolver->resolve($symbol_name);
-        if ($symbol->isUndefined()) {
+        $address_and_size = $this->resolveAddressAndSize($symbol_name);
+        if ($address_and_size === null) {
             return null;
         }
-        $base_address = $this->base_address;
-        if ($symbol->isTls()) {
-            if (is_null($this->tls_block_address)) {
-                throw new ProcessSymbolReaderException(
-                    'trying to resolve TLS symbol but cannot find TLS block address'
-                );
-            }
-            $base_address = $this->tls_block_address;
-        }
-        $address = $base_address + $symbol->st_value->toInt();
-        return $this->memory_reader->read($this->pid, $address, $symbol->st_size->toInt());
+        [$address, $size] = $address_and_size;
+        return $this->memory_reader->read($this->pid, $address, $size);
     }
 
     /**
@@ -87,6 +78,22 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
      * @throws ProcessSymbolReaderException
      */
     public function resolveAddress(string $symbol_name): ?int
+    {
+        $address_and_size = $this->resolveAddressAndSize($symbol_name);
+        if ($address_and_size === null) {
+            return null;
+        }
+        [$address,] = $address_and_size;
+        return $address;
+    }
+
+
+    /**
+     * @param string $symbol_name
+     * @return int[]|null
+     * @throws ProcessSymbolReaderException
+     */
+    private function resolveAddressAndSize(string $symbol_name): ?array
     {
         $symbol = $this->symbol_resolver->resolve($symbol_name);
         if ($symbol->isUndefined()) {
@@ -102,6 +109,6 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
             }
             $base_address = $this->tls_block_address;
         }
-        return $base_address + $symbol->st_value->toInt();
+        return [$base_address + $symbol->st_value->toInt(), $symbol->st_size->toInt()];
     }
 }

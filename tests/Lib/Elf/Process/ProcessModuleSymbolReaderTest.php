@@ -109,6 +109,12 @@ class ProcessModuleSymbolReaderTest extends TestCase
             $memory_reader,
             null
         );
+
+        $this->assertSame(
+            null,
+            $process_symbol_reader->resolveAddress('test_symbol')
+        );
+
         $this->assertSame(
             null,
             $process_symbol_reader->read('test_symbol')
@@ -156,5 +162,93 @@ class ProcessModuleSymbolReaderTest extends TestCase
         );
         $address = $process_symbol_reader->resolveAddress('test_symbol');
         $this->assertSame(0x10001000, $address);
+    }
+
+    public function testReadTlsSymbol()
+    {
+        $memory_areas = [
+            new ProcessMemoryArea(
+                '0x10000000',
+                '0x20000000',
+                '0x00000000',
+                new ProcessMemoryAttribute(
+                    true,
+                    false,
+                    true,
+                    true
+                ),
+                'test_area'
+            )
+        ];
+        $symbol_resolver = Mockery::mock(Elf64SymbolResolver::class);
+        $symbol_resolver->expects()
+            ->resolve('test_symbol')
+            ->andReturns(new Elf64SymbolTableEntry(
+                1,
+                Elf64SymbolTableEntry::createInfo(
+                    Elf64SymbolTableEntry::STB_GLOBAL,
+                    Elf64SymbolTableEntry::STT_TLS
+                ),
+                Elf64SymbolTableEntry::STV_DEFAULT,
+                1,
+                new UInt64(0, 0x1000),
+                new UInt64(0, 8),
+            ));
+        $memory_reader = Mockery::mock(MemoryReaderInterface::class);
+
+        $process_symbol_reader = new ProcessModuleSymbolReader(
+            1,
+            $symbol_resolver,
+            $memory_areas,
+            $memory_reader,
+            0x10000
+        );
+        $this->assertSame(
+            0x11000,
+            $process_symbol_reader->resolveAddress('test_symbol')
+        );
+    }
+
+    public function testReadTlsSymbolOnTlsBlockNotSpecified()
+    {
+        $memory_areas = [
+            new ProcessMemoryArea(
+                '0x10000000',
+                '0x20000000',
+                '0x00000000',
+                new ProcessMemoryAttribute(
+                    true,
+                    false,
+                    true,
+                    true
+                ),
+                'test_area'
+            )
+        ];
+        $symbol_resolver = Mockery::mock(Elf64SymbolResolver::class);
+        $symbol_resolver->expects()
+            ->resolve('test_symbol')
+            ->andReturns(new Elf64SymbolTableEntry(
+                1,
+                Elf64SymbolTableEntry::createInfo(
+                    Elf64SymbolTableEntry::STB_GLOBAL,
+                    Elf64SymbolTableEntry::STT_TLS
+                ),
+                Elf64SymbolTableEntry::STV_DEFAULT,
+                1,
+                new UInt64(0, 0x1000),
+                new UInt64(0, 8),
+            ));
+        $memory_reader = Mockery::mock(MemoryReaderInterface::class);
+
+        $process_symbol_reader = new ProcessModuleSymbolReader(
+            1,
+            $symbol_resolver,
+            $memory_areas,
+            $memory_reader,
+            null
+        );
+        $this->expectException(ProcessSymbolReaderException::class);
+        $process_symbol_reader->resolveAddress('test_symbol');
     }
 }
