@@ -72,14 +72,29 @@ final class ProcessModuleSymbolReaderCreator
                 $tls_block_address
             );
         } catch (ElfParserException $e) {
-            $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromPath($container_aware_path);
-            return new ProcessModuleSymbolReader(
-                $pid,
-                $symbol_resolver,
-                $memory_areas,
-                $this->memory_reader,
-                $tls_block_address
-            );
+            try {
+                $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromPath($container_aware_path);
+                return new ProcessModuleSymbolReader(
+                    $pid,
+                    $symbol_resolver,
+                    $memory_areas,
+                    $this->memory_reader,
+                    $tls_block_address
+                );
+            } catch (ElfParserException $e) {
+                $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromProcessMemory(
+                    $this->memory_reader,
+                    $pid,
+                    $memory_areas
+                );
+                return new ProcessModuleSymbolReader(
+                    $pid,
+                    $symbol_resolver,
+                    $memory_areas,
+                    $this->memory_reader,
+                    $tls_block_address
+                );
+            }
         }
     }
 

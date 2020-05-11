@@ -67,7 +67,7 @@ final class PhpSymbolReaderCreator
             $process_memory_map,
             '/.*\/libpthread.*\.so$/'
         );
-        if (!is_null($libpthread_symbol_reader)) {
+        if (!is_null($libpthread_symbol_reader) and $libpthread_symbol_reader->isAllSymbolResolvable()) {
             $tls_finder = new LibThreadDbTlsFinder(
                 $libpthread_symbol_reader,
                 X64LinuxThreadPointerRetriever::createDefault(),

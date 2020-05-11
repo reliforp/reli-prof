@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\Elf\Process;
 
 use FFI\CData;
+use PhpProfiler\Lib\Elf\SymbolResolver\Elf64AllSymbolResolver;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
@@ -110,5 +111,13 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
             $base_address = $this->tls_block_address;
         }
         return [$base_address + $symbol->st_value->toInt(), $symbol->st_size->toInt()];
+    }
+
+    /**
+     * @return bool
+     */
+    public function isAllSymbolResolvable(): bool
+    {
+        return $this->symbol_resolver instanceof Elf64AllSymbolResolver;
     }
 }

@@ -76,7 +76,7 @@ final class Elf64GnuHashTable
             return Elf64SymbolTable::STN_UNDEF;
         }
 
-        $chain_offset = $this->buckets[$hash % $this->nbuckets] - $this->symoffset;
+        $chain_offset = max(0, $this->buckets[$hash % $this->nbuckets] - $this->symoffset);
 
         do {
             if ((1 | $this->chain[$chain_offset]) === (1 | $hash)) {
