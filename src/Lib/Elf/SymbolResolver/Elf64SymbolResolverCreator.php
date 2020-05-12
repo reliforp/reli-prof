@@ -100,7 +100,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
         $elf_header = $parser->parseElfHeader($php_binary);
         $elf_program_header = $parser->parseProgramHeader($php_binary, $elf_header);
         $elf_dynamic_array = $parser->parseDynamicStructureArray($php_binary, $elf_program_header->findDynamic()[0]);
-        $php_binary->toggle(true);
+        $php_binary->useMemoryAddress(true);
         $elf_string_table = $parser->parseStringTable($php_binary, $elf_dynamic_array);
         $elf_gnu_hash_table = $parser->parseGnuHashTable($php_binary, $elf_dynamic_array);
         if (is_null($elf_gnu_hash_table)) {
@@ -111,7 +111,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
             $elf_dynamic_array,
             $elf_gnu_hash_table->getNumberOfSymbols()
         );
-        $php_binary->toggle(false);
+        $php_binary->useMemoryAddress(false);
         return new Elf64DynamicSymbolResolver(
             $elf_symbol_table,
             $elf_gnu_hash_table,

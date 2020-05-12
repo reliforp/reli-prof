@@ -47,7 +47,7 @@ class ProcessMemoryByteReader implements ByteReaderInterface
         return true;
     }
 
-    public function toggle(bool $is_address): void
+    public function useMemoryAddress(bool $is_address): void
     {
         $this->is_address = $is_address;
     }
@@ -64,7 +64,7 @@ class ProcessMemoryByteReader implements ByteReaderInterface
     public function offsetGet($offset): int
     {
         if (!$this->is_address) {
-            $offset = $this->getOffsetFromMemoryAddress($offset);
+            $offset = $this->getMemoryAddressFromOffset($offset);
         }
         $page = (int)floor($offset / self::PAGE_SIZE);
         if (!isset($this->pages[$page])) {
@@ -83,7 +83,7 @@ class ProcessMemoryByteReader implements ByteReaderInterface
         return $this->pages[$page][($offset % self::PAGE_SIZE) - $diff];
     }
 
-    private function getOffsetFromMemoryAddress(int $offset): int
+    private function getMemoryAddressFromOffset(int $offset): int
     {
         $ranges = [];
         foreach ($this->memory_area as $memory_area) {
