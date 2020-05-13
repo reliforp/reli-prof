@@ -17,6 +17,7 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryAttribute;
+use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\UInt64;
 use PHPUnit\Framework\TestCase;
@@ -60,7 +61,7 @@ class ProcessModuleSymbolReaderTest extends TestCase
         $process_symbol_reader = new ProcessModuleSymbolReader(
             1,
             $symbol_resolver,
-            $memory_areas,
+            new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
             null
         );
@@ -105,7 +106,7 @@ class ProcessModuleSymbolReaderTest extends TestCase
         $process_symbol_reader = new ProcessModuleSymbolReader(
             1,
             $symbol_resolver,
-            $memory_areas,
+            new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
             null
         );
@@ -156,7 +157,7 @@ class ProcessModuleSymbolReaderTest extends TestCase
         $process_symbol_reader = new ProcessModuleSymbolReader(
             1,
             $symbol_resolver,
-            $memory_areas,
+            new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
             null
         );
@@ -199,7 +200,7 @@ class ProcessModuleSymbolReaderTest extends TestCase
         $process_symbol_reader = new ProcessModuleSymbolReader(
             1,
             $symbol_resolver,
-            $memory_areas,
+            new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
             0x10000
         );
@@ -244,7 +245,7 @@ class ProcessModuleSymbolReaderTest extends TestCase
         $process_symbol_reader = new ProcessModuleSymbolReader(
             1,
             $symbol_resolver,
-            $memory_areas,
+            new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
             null
         );
