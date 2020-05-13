@@ -16,7 +16,7 @@ namespace PhpProfiler\Lib\Elf\Process;
 use FFI\CData;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64AllSymbolResolver;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
+use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
@@ -27,8 +27,6 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
 {
     private Elf64SymbolResolver $symbol_resolver;
-    /** @var ProcessMemoryArea[] */
-    private array $memory_areas;
     private int $base_address;
     private MemoryReaderInterface $memory_reader;
     private ?int $tls_block_address;
@@ -38,21 +36,20 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
      * ProcessModuleSymbolResolver constructor.
      * @param int $pid
      * @param Elf64SymbolResolver $symbol_resolver
-     * @param ProcessMemoryArea[] $memory_areas
+     * @param ProcessModuleMemoryMap $module_memory_map
      * @param MemoryReaderInterface $memory_reader
      * @param int|null $tls_block_address
      */
     public function __construct(
         int $pid,
         Elf64SymbolResolver $symbol_resolver,
-        array $memory_areas,
+        ProcessModuleMemoryMap $module_memory_map,
         MemoryReaderInterface $memory_reader,
         ?int $tls_block_address
     ) {
         $this->pid = $pid;
         $this->symbol_resolver = $symbol_resolver;
-        $this->memory_areas = $memory_areas;
-        $this->base_address = hexdec(current($memory_areas)->begin);
+        $this->base_address = $module_memory_map->getBegin();
         $this->memory_reader = $memory_reader;
         $this->tls_block_address = $tls_block_address;
     }

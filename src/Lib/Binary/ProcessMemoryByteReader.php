@@ -9,9 +9,10 @@
  * file that was distributed with this source code.
  */
 
+declare(strict_types=1);
+
 namespace PhpProfiler\Lib\Binary;
 
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 class ProcessMemoryByteReader implements ByteReaderInterface
@@ -25,21 +26,19 @@ class ProcessMemoryByteReader implements ByteReaderInterface
     /** @var CDataByteReader[] */
     private array $pages = [];
     private int $pid;
-    /** @var ProcessMemoryArea[] */
-    private array $memory_area;
-    private bool $is_address = false;
+    private int $base_address;
 
     /**
      * ProcessMemoryByteReader constructor.
      * @param MemoryReaderInterface $memory_reader
      * @param int $pid
-     * @param ProcessMemoryArea[] $memory_area
+     * @param int $base_address
      */
-    public function __construct(MemoryReaderInterface $memory_reader, int $pid, array $memory_area)
+    public function __construct(MemoryReaderInterface $memory_reader, int $pid, int $base_address)
     {
         $this->memory_reader = $memory_reader;
         $this->pid = $pid;
-        $this->memory_area = $memory_area;
+        $this->base_address = $base_address;
     }
 
     public function offsetExists($offset): bool
@@ -47,56 +46,23 @@ class ProcessMemoryByteReader implements ByteReaderInterface
         return true;
     }
 
-    public function useMemoryAddress(bool $is_address): void
-    {
-        $this->is_address = $is_address;
-    }
-
-    public function getBegin(): int
-    {
-        $begin = PHP_INT_MAX;
-        foreach ($this->memory_area as $memory_area) {
-            $begin = min($begin, hexdec($memory_area->begin));
-        }
-        return $begin;
-    }
-
     public function offsetGet($offset): int
     {
-        if (!$this->is_address) {
-            $offset = $this->getMemoryAddressFromOffset($offset);
-        }
         $page = (int)floor($offset / self::PAGE_SIZE);
         if (!isset($this->pages[$page])) {
             $this->pages[$page] = new CDataByteReader(
                 $this->memory_reader->read(
                     $this->pid,
-                    max($this->getBegin(), $page * self::PAGE_SIZE),
+                    max($this->base_address, $page * self::PAGE_SIZE),
                     self::PAGE_SIZE
                 )
             );
         }
         $diff = 0;
-        if ($page * self::PAGE_SIZE < $this->getBegin()) {
-            $diff = $this->getBegin() - $page * self::PAGE_SIZE;
+        if ($page * self::PAGE_SIZE < $this->base_address) {
+            $diff = $this->base_address - $page * self::PAGE_SIZE;
         }
         return $this->pages[$page][($offset % self::PAGE_SIZE) - $diff];
-    }
-
-    private function getMemoryAddressFromOffset(int $offset): int
-    {
-        $ranges = [];
-        foreach ($this->memory_area as $memory_area) {
-            $ranges[hexdec($memory_area->file_offset)] = hexdec($memory_area->begin);
-        }
-        ksort($ranges);
-        $file_offset_decided = 0;
-        foreach ($ranges as $file_offset => $memory_begin) {
-            if ($file_offset <= $offset) {
-                $file_offset_decided = $file_offset;
-            }
-        }
-        return $ranges[$file_offset_decided] + ($offset - $file_offset_decided);
     }
 
     public function createSliceAsString(int $offset, int $size): string

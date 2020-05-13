@@ -16,10 +16,11 @@ namespace PhpProfiler\Lib\Elf\SymbolResolver;
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\ProcessMemoryByteReader;
 use PhpProfiler\Lib\Binary\StringByteReader;
+use PhpProfiler\Lib\Binary\UnrelocatedProcessMemoryByteReader;
 use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\File\FileReaderInterface;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
+use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 /**
@@ -86,21 +87,26 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     /**
      * @param MemoryReaderInterface $memory_reader
      * @param int $pid
-     * @param ProcessMemoryArea[] $memory_area
+     * @param ProcessModuleMemoryMap $module_memory_map
      * @return Elf64DynamicSymbolResolver
      * @throws ElfParserException
      */
     public function createDynamicResolverFromProcessMemory(
         MemoryReaderInterface $memory_reader,
         int $pid,
-        array $memory_area
+        ProcessModuleMemoryMap $module_memory_map
     ): Elf64DynamicSymbolResolver {
-        $php_binary = new ProcessMemoryByteReader($memory_reader, $pid, $memory_area);
+        $php_binary = new ProcessMemoryByteReader($memory_reader, $pid, $module_memory_map->getBegin());
+        $unrelocated_php_binary = new UnrelocatedProcessMemoryByteReader($php_binary, $module_memory_map);
+
         $parser = new Elf64Parser(new BinaryReader());
-        $elf_header = $parser->parseElfHeader($php_binary);
-        $elf_program_header = $parser->parseProgramHeader($php_binary, $elf_header);
-        $elf_dynamic_array = $parser->parseDynamicStructureArray($php_binary, $elf_program_header->findDynamic()[0]);
-        $php_binary->useMemoryAddress(true);
+        $elf_header = $parser->parseElfHeader($unrelocated_php_binary);
+        $elf_program_header = $parser->parseProgramHeader($unrelocated_php_binary, $elf_header);
+        $elf_dynamic_array = $parser->parseDynamicStructureArray(
+            $unrelocated_php_binary,
+            $elf_program_header->findDynamic()[0]
+        );
+
         $elf_string_table = $parser->parseStringTable($php_binary, $elf_dynamic_array);
         $elf_gnu_hash_table = $parser->parseGnuHashTable($php_binary, $elf_dynamic_array);
         if (is_null($elf_gnu_hash_table)) {
@@ -111,7 +117,6 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
             $elf_dynamic_array,
             $elf_gnu_hash_table->getNumberOfSymbols()
         );
-        $php_binary->useMemoryAddress(false);
         return new Elf64DynamicSymbolResolver(
             $elf_symbol_table,
             $elf_gnu_hash_table,

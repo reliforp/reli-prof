@@ -16,6 +16,7 @@ namespace PhpProfiler\Lib\Elf\Process;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMap;
+use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 /**
@@ -59,6 +60,7 @@ final class ProcessModuleSymbolReaderCreator
         if ($memory_areas === []) {
             return null;
         }
+        $module_memory_map = new ProcessModuleMemoryMap($memory_areas);
 
         $module_name = current($memory_areas)->name;
         $container_aware_path = $this->createContainerAwarePath($pid, $module_name);
@@ -67,7 +69,7 @@ final class ProcessModuleSymbolReaderCreator
             return new ProcessModuleSymbolReader(
                 $pid,
                 $symbol_resolver,
-                $memory_areas,
+                $module_memory_map,
                 $this->memory_reader,
                 $tls_block_address
             );
@@ -77,7 +79,7 @@ final class ProcessModuleSymbolReaderCreator
                 return new ProcessModuleSymbolReader(
                     $pid,
                     $symbol_resolver,
-                    $memory_areas,
+                    $module_memory_map,
                     $this->memory_reader,
                     $tls_block_address
                 );
@@ -85,12 +87,12 @@ final class ProcessModuleSymbolReaderCreator
                 $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromProcessMemory(
                     $this->memory_reader,
                     $pid,
-                    $memory_areas
+                    $module_memory_map
                 );
                 return new ProcessModuleSymbolReader(
                     $pid,
                     $symbol_resolver,
-                    $memory_areas,
+                    $module_memory_map,
                     $this->memory_reader,
                     $tls_block_address
                 );
