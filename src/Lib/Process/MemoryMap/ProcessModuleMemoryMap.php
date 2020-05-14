@@ -17,7 +17,7 @@ namespace PhpProfiler\Lib\Process\MemoryMap;
  * Class ProcessModuleMemoryMap
  * @package PhpProfiler\Lib\Process\MemoryMap
  */
-final class ProcessModuleMemoryMap
+final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
 {
     /** @var ProcessMemoryArea[] */
     private array $memory_areas;

@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
+use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 interface SymbolResolverCreatorInterface
@@ -36,12 +36,12 @@ interface SymbolResolverCreatorInterface
     /**
      * @param MemoryReaderInterface $memory_reader
      * @param int $pid
-     * @param ProcessModuleMemoryMap $module_memory_map
+     * @param ProcessModuleMemoryMapInterface $module_memory_map
      * @return Elf64DynamicSymbolResolver
      */
     public function createDynamicResolverFromProcessMemory(
         MemoryReaderInterface $memory_reader,
         int $pid,
-        ProcessModuleMemoryMap $module_memory_map
+        ProcessModuleMemoryMapInterface $module_memory_map
     ): Elf64DynamicSymbolResolver;
 }

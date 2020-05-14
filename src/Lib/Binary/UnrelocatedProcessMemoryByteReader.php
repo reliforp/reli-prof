@@ -13,21 +13,21 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Binary;
 
-use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
+use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 
 final class UnrelocatedProcessMemoryByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
 
-    private ProcessMemoryByteReader $byte_reader;
-    private ProcessModuleMemoryMap $module_memory_map;
+    private ByteReaderInterface $byte_reader;
+    private ProcessModuleMemoryMapInterface $module_memory_map;
 
     /**
      * UnrelocatedProcessMemoryByteReader constructor.
-     * @param ProcessMemoryByteReader $byte_reader
-     * @param ProcessModuleMemoryMap $module_memory_map
+     * @param ByteReaderInterface $byte_reader
+     * @param ProcessModuleMemoryMapInterface $module_memory_map
      */
-    public function __construct(ProcessMemoryByteReader $byte_reader, ProcessModuleMemoryMap $module_memory_map)
+    public function __construct(ByteReaderInterface $byte_reader, ProcessModuleMemoryMapInterface $module_memory_map)
     {
         $this->byte_reader = $byte_reader;
         $this->module_memory_map = $module_memory_map;
