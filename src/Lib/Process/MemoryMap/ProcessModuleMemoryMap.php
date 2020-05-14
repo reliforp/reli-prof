@@ -21,6 +21,9 @@ final class ProcessModuleMemoryMap
 {
     /** @var ProcessMemoryArea[] */
     private array $memory_areas;
+    private ?int $base_address = null;
+    /** @var array<int,int>|null  */
+    private ?array $sorted_offset_to_memory_map = null;
 
     /**
      * ProcessModuleMemoryMap constructor.
@@ -33,20 +36,19 @@ final class ProcessModuleMemoryMap
 
     public function getBegin(): int
     {
-        $begin = PHP_INT_MAX;
-        foreach ($this->memory_areas as $memory_area) {
-            $begin = min($begin, hexdec($memory_area->begin));
+        if (!isset($this->base_address)) {
+            $base_address = PHP_INT_MAX;
+            foreach ($this->memory_areas as $memory_area) {
+                $base_address = min($base_address, hexdec($memory_area->begin));
+            }
+            $this->base_address = $base_address;
         }
-        return $begin;
+        return $this->base_address;
     }
 
     public function getMemoryAddressFromOffset(int $offset): int
     {
-        $ranges = [];
-        foreach ($this->memory_areas as $memory_area) {
-            $ranges[hexdec($memory_area->file_offset)] = hexdec($memory_area->begin);
-        }
-        ksort($ranges);
+        $ranges = $this->getSortedOffsetToMemoryAreaMap();
         $file_offset_decided = 0;
         foreach ($ranges as $file_offset => $memory_begin) {
             if ($file_offset <= $offset) {
@@ -54,5 +56,21 @@ final class ProcessModuleMemoryMap
             }
         }
         return $ranges[$file_offset_decided] + ($offset - $file_offset_decided);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function getSortedOffsetToMemoryAreaMap(): array
+    {
+        if (!isset($this->sorted_offset_to_memory_map)) {
+            $ranges = [];
+            foreach ($this->memory_areas as $memory_area) {
+                $ranges[hexdec($memory_area->file_offset)] = hexdec($memory_area->begin);
+            }
+            ksort($ranges);
+            $this->sorted_offset_to_memory_map = $ranges;
+        }
+        return $this->sorted_offset_to_memory_map;
     }
 }
