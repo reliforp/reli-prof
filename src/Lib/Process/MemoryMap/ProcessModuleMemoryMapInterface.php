@@ -17,5 +17,4 @@ interface ProcessModuleMemoryMapInterface
 {
     public function getBaseAddress(): int;
     public function getMemoryAddressFromOffset(int $offset): int;
-
 }
