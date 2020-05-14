@@ -49,7 +49,7 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
     ) {
         $this->pid = $pid;
         $this->symbol_resolver = $symbol_resolver;
-        $this->base_address = $module_memory_map->getBegin();
+        $this->base_address = $module_memory_map->getBaseAddress();
         $this->memory_reader = $memory_reader;
         $this->tls_block_address = $tls_block_address;
     }

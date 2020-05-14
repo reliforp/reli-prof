@@ -96,7 +96,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
         int $pid,
         ProcessModuleMemoryMap $module_memory_map
     ): Elf64DynamicSymbolResolver {
-        $php_binary = new ProcessMemoryByteReader($memory_reader, $pid, $module_memory_map->getBegin());
+        $php_binary = new ProcessMemoryByteReader($memory_reader, $pid, $module_memory_map->getBaseAddress());
         $unrelocated_php_binary = new UnrelocatedProcessMemoryByteReader($php_binary, $module_memory_map);
 
         $parser = new Elf64Parser(new BinaryReader());

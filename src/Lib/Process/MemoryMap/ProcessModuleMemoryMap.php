@@ -34,7 +34,7 @@ final class ProcessModuleMemoryMap
         $this->memory_areas = $memory_areas;
     }
 
-    public function getBegin(): int
+    public function getBaseAddress(): int
     {
         if (!isset($this->base_address)) {
             $base_address = PHP_INT_MAX;
