@@ -15,7 +15,7 @@ namespace PhpProfiler\Lib\Binary;
 
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
-class ProcessMemoryByteReader implements ByteReaderInterface
+final class ProcessMemoryByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
 
