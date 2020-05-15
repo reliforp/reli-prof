@@ -21,7 +21,6 @@ jobs:
         with:
           php-version: 7.4
           coverage: none
-          tools: cs2pr
 
       - name: Get Composer Cache Directory
         id: composer-cache
@@ -44,4 +43,4 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-suggest
 
       - name: Run psalm
-        run: ./vendor/bin/psalm --shepherd --show-info=true --output-format=github
+        run: ./vendor/bin/psalm --shepherd --show-info=true --diff --diff-methods --output-format=github
