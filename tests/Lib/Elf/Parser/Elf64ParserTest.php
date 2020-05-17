@@ -29,7 +29,7 @@ class Elf64ParserTest extends TestCase
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
 
-        $this->assertSame(0x7f, $elf_header->e_ident[Elf64Header::EI_MAG0]);
+        $this->assertSame(0x7e, $elf_header->e_ident[Elf64Header::EI_MAG0]);
         $this->assertSame(ord('E'), $elf_header->e_ident[Elf64Header::EI_MAG1]);
         $this->assertSame(ord('L'), $elf_header->e_ident[Elf64Header::EI_MAG2]);
         $this->assertSame(ord('F'), $elf_header->e_ident[Elf64Header::EI_MAG3]);
