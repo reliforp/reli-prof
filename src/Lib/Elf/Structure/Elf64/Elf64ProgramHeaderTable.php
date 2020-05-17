@@ -21,7 +21,6 @@ use PhpProfiler\Lib\UInt64;
  */
 final class Elf64ProgramHeaderTable
 {
-    /** @var Elf64ProgramHeaderEntry[] */
     private array $entries;
 
     /**
