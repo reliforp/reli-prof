@@ -1,0 +1,42 @@
+<?php
+
+/**
+ * This file is part of the sj-i/php-profiler package.
+ *
+ * (c) sji <sji@sj-i.dev>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+declare(strict_types=1);
+
+namespace PhpProfiler\Lib\Process\MemoryMap;
+
+use PHPUnit\Framework\TestCase;
+
+class ProcessMemoryAreaTest extends TestCase
+{
+    public function testIsInRange()
+    {
+        $process_memory_area = new ProcessMemoryArea(
+            '0x10000000',
+            '0x20000000',
+            '0x00000000',
+            new ProcessMemoryAttribute(
+                true,
+                false,
+                true,
+                false
+            ),
+            'test'
+        );
+        $this->assertSame(false, $process_memory_area->isInRange(0x00000000));
+        $this->assertSame(false, $process_memory_area->isInRange(0x0fffffff));
+        $this->assertSame(true, $process_memory_area->isInRange(0x10000000));
+        $this->assertSame(true, $process_memory_area->isInRange(0x10000001));
+        $this->assertSame(true, $process_memory_area->isInRange(0x1fffffff));
+        $this->assertSame(true, $process_memory_area->isInRange(0x20000000));
+        $this->assertSame(false, $process_memory_area->isInRange(0x20000001));
+    }
+}

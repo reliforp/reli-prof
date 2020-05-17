@@ -38,4 +38,10 @@ final class ProcessMemoryArea
         $this->attribute = $attribute;
         $this->name = $name;
     }
+
+    public function isInRange(int $address): bool
+    {
+        return $address >= hexdec($this->begin)
+            and $address <= hexdec($this->end);
+    }
 }
