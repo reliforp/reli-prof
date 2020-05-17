@@ -46,7 +46,7 @@ final class ProcessMemoryByteReader implements ByteReaderInterface
 
     public function offsetExists($offset): bool
     {
-        return true;
+        return $this->memory_map->isInRange($offset);
     }
 
     public function offsetGet($offset): int
