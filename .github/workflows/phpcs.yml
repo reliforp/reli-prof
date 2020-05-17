@@ -35,7 +35,7 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Install Dependencies
-        run: composer install --prefer-dist
+        run: composer install --prefer-dist --no-progress --no-suggest
 
       - name: Run phpcs
         run: vendor/bin/phpcs --standard=./phpcs.xml --report=checkstyle -q ./src ./tests | cs2pr
