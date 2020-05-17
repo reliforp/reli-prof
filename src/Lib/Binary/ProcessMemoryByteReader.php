@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Binary;
 
+use OutOfBoundsException;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
@@ -51,9 +52,25 @@ final class ProcessMemoryByteReader implements ByteReaderInterface
 
     public function offsetGet($offset): int
     {
+        if (!isset($this[$offset])) {
+            throw new OutOfBoundsException();
+        }
+
         $base_address = $this->memory_map->getBaseAddress();
 
-        $page = (int)floor($offset / self::PAGE_SIZE);
+        $page = (int)($offset / self::PAGE_SIZE);
+        $page_block = $this->locatePage($page, $base_address);
+
+        $diff = 0;
+        if ($page * self::PAGE_SIZE < $base_address) {
+            $diff = $base_address - $page * self::PAGE_SIZE;
+        }
+
+        return $page_block[($offset % self::PAGE_SIZE) - $diff];
+    }
+
+    private function locatePage(int $page, int $base_address): CDataByteReader
+    {
         if (!isset($this->pages[$page])) {
             $this->pages[$page] = new CDataByteReader(
                 $this->memory_reader->read(
@@ -63,11 +80,7 @@ final class ProcessMemoryByteReader implements ByteReaderInterface
                 )
             );
         }
-        $diff = 0;
-        if ($page * self::PAGE_SIZE < $base_address) {
-            $diff = $base_address - $page * self::PAGE_SIZE;
-        }
-        return $this->pages[$page][($offset % self::PAGE_SIZE) - $diff];
+        return $this->pages[$page];
     }
 
     public function createSliceAsString(int $offset, int $size): string
