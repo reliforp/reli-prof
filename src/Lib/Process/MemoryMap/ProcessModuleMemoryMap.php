@@ -58,6 +58,16 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
         return $ranges[$file_offset_decided] + ($offset - $file_offset_decided);
     }
 
+    public function isInRange(int $address): bool
+    {
+        foreach ($this->memory_areas as $memory_area) {
+            if ($memory_area->isInRange($address)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * @return array<int, int>
      */

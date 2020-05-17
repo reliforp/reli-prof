@@ -77,4 +77,28 @@ class ProcessModuleMemoryMapTest extends TestCase
             'test'
         );
     }
+
+    public function testIsInRange()
+    {
+        $process_module_memory_map = new ProcessModuleMemoryMap(
+            [
+                $this->createProcessMemoryArea('0x10000000', '0x20000000', '0x00000000'),
+                $this->createProcessMemoryArea('0x30000000', '0x40000000', '0x10000000'),
+            ]
+        );
+        $this->assertSame(false, $process_module_memory_map->isInRange(0x00000000));
+        $this->assertSame(false, $process_module_memory_map->isInRange(0x00000001));
+        $this->assertSame(false, $process_module_memory_map->isInRange(0x0fffffff));
+        $this->assertSame(true, $process_module_memory_map->isInRange(0x10000000));
+        $this->assertSame(true, $process_module_memory_map->isInRange(0x10000001));
+        $this->assertSame(true, $process_module_memory_map->isInRange(0x1fffffff));
+        $this->assertSame(true, $process_module_memory_map->isInRange(0x20000000));
+        $this->assertSame(false, $process_module_memory_map->isInRange(0x20000001));
+        $this->assertSame(false, $process_module_memory_map->isInRange(0x2fffffff));
+        $this->assertSame(true, $process_module_memory_map->isInRange(0x30000000));
+        $this->assertSame(true, $process_module_memory_map->isInRange(0x30000001));
+        $this->assertSame(true, $process_module_memory_map->isInRange(0x3fffffff));
+        $this->assertSame(true, $process_module_memory_map->isInRange(0x40000000));
+        $this->assertSame(false, $process_module_memory_map->isInRange(0x40000001));
+    }
 }
