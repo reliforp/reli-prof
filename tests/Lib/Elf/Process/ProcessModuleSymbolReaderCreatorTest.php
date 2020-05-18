@@ -83,7 +83,7 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
                 $memory_reader,
                 1,
                 Mockery::on(
-                    function($actual) {
+                    function ($actual) {
                         $this->assertInstanceOf(ProcessModuleMemoryMapInterface::class, $actual);
                         return true;
                     }
