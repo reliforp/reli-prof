@@ -29,7 +29,7 @@
     "squizlabs/php_codesniffer": "*",
     "mockery/mockery": "^1.3",
     "psalm/plugin-mockery": "^0.3.0",
-    "jetbrains/phpstorm-stubs": "dev-master#4522dea41207396f9ed19ce60b306a5ef8e453b7",
+    "jetbrains/phpstorm-stubs": "dev-master",
     "php-coveralls/php-coveralls": "^2.2"
   },
   "autoload": {

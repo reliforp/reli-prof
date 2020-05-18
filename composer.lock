@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ce21767beeab1091241703c35d863de5",
+    "content-hash": "a2129c22bdf83c3af4d70d54d6221de1",
     "packages": [
         {
             "name": "psr/container",
@@ -943,12 +943,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/JetBrains/phpstorm-stubs.git",
-                "reference": "4522dea41207396f9ed19ce60b306a5ef8e453b7"
+                "reference": "2d61fb6210e3207622b6db90cb174a1ed6c5949f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/4522dea41207396f9ed19ce60b306a5ef8e453b7",
-                "reference": "4522dea41207396f9ed19ce60b306a5ef8e453b7",
+                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/2d61fb6210e3207622b6db90cb174a1ed6c5949f",
+                "reference": "2d61fb6210e3207622b6db90cb174a1ed6c5949f",
                 "shasum": ""
             },
             "require-dev": {
@@ -979,7 +979,7 @@
                 "stubs",
                 "type"
             ],
-            "time": "2020-04-29T08:08:36+00:00"
+            "time": "2020-05-06T09:39:59+00:00"
         },
         {
             "name": "mockery/mockery",
