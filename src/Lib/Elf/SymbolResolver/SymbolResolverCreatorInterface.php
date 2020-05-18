@@ -37,11 +37,11 @@ interface SymbolResolverCreatorInterface
      * @param MemoryReaderInterface $memory_reader
      * @param int $pid
      * @param ProcessModuleMemoryMapInterface $module_memory_map
-     * @return Elf64DynamicSymbolResolver
+     * @return Elf64SymbolResolver
      */
     public function createDynamicResolverFromProcessMemory(
         MemoryReaderInterface $memory_reader,
         int $pid,
         ProcessModuleMemoryMapInterface $module_memory_map
-    ): Elf64DynamicSymbolResolver;
+    ): Elf64SymbolResolver;
 }
