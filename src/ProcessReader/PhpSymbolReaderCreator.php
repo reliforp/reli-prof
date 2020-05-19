@@ -33,14 +33,24 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 final class PhpSymbolReaderCreator
 {
     private MemoryReaderInterface $memory_reader;
+    private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator;
+    private ProcessMemoryMapCreator $process_memory_map_creator;
 
     /**
      * PhpSymbolReaderCreator constructor.
+     *
      * @param MemoryReaderInterface $memory_reader
+     * @param ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator
+     * @param ProcessMemoryMapCreator $process_memory_map_creator
      */
-    public function __construct(MemoryReaderInterface $memory_reader)
-    {
+    public function __construct(
+        MemoryReaderInterface $memory_reader,
+        ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
+        ProcessMemoryMapCreator $process_memory_map_creator
+    ) {
         $this->memory_reader = $memory_reader;
+        $this->process_module_symbol_reader_creator = $process_module_symbol_reader_creator;
+        $this->process_memory_map_creator = $process_memory_map_creator;
     }
 
     /**
@@ -58,16 +68,10 @@ final class PhpSymbolReaderCreator
         string $libpthread_finder_regex = '/.*\/libpthread.*\.so$/',
         string $php_finder_regex = '/.*\/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$/'
     ): ProcessModuleSymbolReader {
-        $memory_reader = $this->memory_reader;
-
-        $symbol_reader_creator = new ProcessModuleSymbolReaderCreator(
-            new Elf64SymbolResolverCreator(new CatFileReader()),
-            $memory_reader
-        );
-        $process_memory_map = ProcessMemoryMapCreator::create()->getProcessMemoryMap($pid);
+        $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
 
         $tls_block_address = null;
-        $libpthread_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex(
+        $libpthread_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
             $pid,
             $process_memory_map,
             $libpthread_finder_regex
@@ -76,12 +80,12 @@ final class PhpSymbolReaderCreator
             $tls_finder = new LibThreadDbTlsFinder(
                 $libpthread_symbol_reader,
                 X64LinuxThreadPointerRetriever::createDefault(),
-                $memory_reader
+                $this->memory_reader
             );
             $tls_block_address = $tls_finder->findTlsBlock($pid, 1);
         }
 
-        $php_symbol_reader = $symbol_reader_creator->createModuleReaderByNameRegex(
+        $php_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
             $pid,
             $process_memory_map,
             $php_finder_regex,
