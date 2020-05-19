@@ -10,15 +10,24 @@
  * file that was distributed with this source code.
  */
 
+declare(strict_types=1);
+
+use DI\ContainerBuilder;
 use PhpProfiler\Command\CommandEnumerator;
 use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Command\Command;
 
 require 'vendor/autoload.php';
 
 $application = new Application();
+$container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/config/di.php')->build();
 
-foreach (new CommandEnumerator(new GlobIterator(__DIR__. '/src/Command/*/*Command.php')) as $command_class) {
-    $application->add(new $command_class);
+/** @var iterable<class-string> $command_enumerator */
+$command_enumerator = new CommandEnumerator(new GlobIterator(__DIR__. '/src/Command/*/*Command.php'));
+foreach ($command_enumerator as $command_class) {
+    /** @var Command $command */
+    $command = $container->make($command_class);
+    $application->add($command);
 }
 
 $application->run();

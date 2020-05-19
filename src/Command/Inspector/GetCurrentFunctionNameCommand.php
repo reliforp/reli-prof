@@ -16,12 +16,9 @@ namespace PhpProfiler\Command\Inspector;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\ProcessReader\PhpGlobalsFinder;
 use PhpProfiler\ProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
-use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -31,6 +28,26 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class GetCurrentFunctionNameCommand extends Command
 {
     private const SLEEP_NANO_SECONDS_DEFAULT = 1000 * 1000 * 10;
+
+    private PhpGlobalsFinder $php_globals_finder;
+    private ExecutorGlobalsReader $executor_globals_reader;
+
+    /**
+     * GetCurrentFunctionNameCommand constructor.
+     *
+     * @param PhpGlobalsFinder $php_globals_finder
+     * @param ExecutorGlobalsReader $executor_globals_reader
+     * @param string|null $name
+     */
+    public function __construct(
+        PhpGlobalsFinder $php_globals_finder,
+        ExecutorGlobalsReader $executor_globals_reader,
+        string $name = null
+    ) {
+        parent::__construct($name);
+        $this->php_globals_finder = $php_globals_finder;
+        $this->executor_globals_reader = $executor_globals_reader;
+    }
 
     public function configure(): void
     {
@@ -80,16 +97,7 @@ final class GetCurrentFunctionNameCommand extends Command
             return 2;
         }
 
-        $memory_reader = new MemoryReader();
-        $php_globals_finder = new PhpGlobalsFinder(
-            (new PhpSymbolReaderCreator($memory_reader))->create($pid)
-        );
-
-        $eg_address = $php_globals_finder->findExecutorGlobals();
-        $eg_reader = new ExecutorGlobalsReader(
-            $memory_reader,
-            new ZendTypeReader(ZendTypeReader::V74)
-        );
+        $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
 
         exec('stty -icanon -echo');
         $keyboard_input = fopen('php://stdin', 'r');
@@ -99,7 +107,7 @@ final class GetCurrentFunctionNameCommand extends Command
         $count_retry = 0;
         while ($key !== 'q' and $count_retry < 10) {
             try {
-                echo $eg_reader->readCurrentFunctionName($pid, $eg_address) , PHP_EOL;
+                echo $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address) , PHP_EOL;
                 $count_retry = 0;
                 time_nanosleep(0, $sleep_nano_seconds);
             } catch (MemoryReaderException $e) {

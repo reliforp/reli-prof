@@ -13,7 +13,12 @@ declare(strict_types=1);
 
 namespace PhpProfiler\ProcessReader\PhpMemoryReader;
 
+use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
+use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
+use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\ProcessReader\PhpGlobalsFinder;
 use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
@@ -59,11 +64,23 @@ class ExecutorGlobalsReaderTest extends TestCase
 
         fgets($pipes[1]);
         $child_status = proc_get_status($this->child);
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            $memory_reader,
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader()
+                ),
+                $memory_reader
+            ),
+            ProcessMemoryMapCreator::create()
+        );
         $php_globals_finder = new PhpGlobalsFinder(
-            (new PhpSymbolReaderCreator($memory_reader))->create($child_status['pid'])
+            $php_symbol_reader_creator,
+            new BinaryReader()
         );
 
-        $executor_globals_address = $php_globals_finder->findExecutorGlobals();
+        /** @var int $child_status['pid'] */
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals($child_status['pid']);
         $name = $executor_globals_reader->readCurrentFunctionName($child_status['pid'], $executor_globals_address);
         $this->assertSame('fgets', $name);
     }

@@ -15,10 +15,8 @@ namespace PhpProfiler\Command\Inspector;
 
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\ProcessReader\PhpGlobalsFinder;
-use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -32,6 +30,22 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 final class GetEgAddressCommand extends Command
 {
+    private PhpGlobalsFinder $php_globals_finder;
+
+    /**
+     * GetEgAddressCommand constructor.
+     *
+     * @param PhpGlobalsFinder $php_globals_finder
+     * @param string|null $name
+     */
+    public function __construct(
+        PhpGlobalsFinder $php_globals_finder,
+        string $name = null
+    ) {
+        parent::__construct($name);
+        $this->php_globals_finder = $php_globals_finder;
+    }
+
     public function configure(): void
     {
         $this->setName('inspector:eg_address')
@@ -63,12 +77,7 @@ final class GetEgAddressCommand extends Command
             return 2;
         }
 
-        $memory_reader = new MemoryReader();
-        $php_globals_finder = new PhpGlobalsFinder(
-            (new PhpSymbolReaderCreator($memory_reader))->create($pid)
-        );
-
-        $output->writeln('0x' . dechex($php_globals_finder->findExecutorGlobals()));
+        $output->writeln('0x' . dechex($this->php_globals_finder->findExecutorGlobals($pid)));
 
         return 0;
     }
