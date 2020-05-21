@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\LittleEndianReader;
 use PhpProfiler\Lib\Binary\ProcessMemoryByteReader;
 use PhpProfiler\Lib\Binary\StringByteReader;
 use PhpProfiler\Lib\Binary\UnrelocatedProcessMemoryByteReader;
@@ -52,7 +52,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
             throw new ElfParserException('cannot read ELF binary');
         }
         $binary = new StringByteReader($binary_raw);
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $elf_header = $parser->parseElfHeader($binary);
         $section_header = $parser->parseSectionHeader($binary, $elf_header);
         $symbol_table_section_header_entry = $section_header->findSymbolTableEntry();
@@ -80,7 +80,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
             throw new ElfParserException('cannot read ELF binary');
         }
         $binary = new StringByteReader($binary_raw);
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         return Elf64DynamicSymbolResolver::load($parser, $binary);
     }
 
@@ -99,7 +99,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
         $php_binary = new ProcessMemoryByteReader($memory_reader, $pid, $module_memory_map);
         $unrelocated_php_binary = new UnrelocatedProcessMemoryByteReader($php_binary, $module_memory_map);
 
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $elf_header = $parser->parseElfHeader($unrelocated_php_binary);
         $elf_program_header = $parser->parseProgramHeader($unrelocated_php_binary, $elf_header);
         $elf_dynamic_array = $parser->parseDynamicStructureArray(

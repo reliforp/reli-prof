@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
-use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\LittleEndianReader;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\File\CatFileReader;
@@ -76,7 +76,7 @@ class ExecutorGlobalsReaderTest extends TestCase
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new BinaryReader()
+            new LittleEndianReader()
         );
 
         /** @var int $child_status['pid'] */

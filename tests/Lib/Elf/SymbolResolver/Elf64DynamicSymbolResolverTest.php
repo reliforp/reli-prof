@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\LittleEndianReader;
 use PhpProfiler\Lib\Binary\StringByteReader;
 use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
@@ -27,7 +27,7 @@ class Elf64DynamicSymbolResolverTest extends TestCase
         $php_binary = new StringByteReader(
             file_get_contents(__DIR__ . '/../Parser/TestCase/test000.so')
         );
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $resolver = Elf64DynamicSymbolResolver::load($parser, $php_binary);
         $main = $resolver->resolve('main');
         $this->assertFalse($main->isUndefined());

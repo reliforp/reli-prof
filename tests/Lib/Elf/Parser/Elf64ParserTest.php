@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Parser;
 
-use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\LittleEndianReader;
 use PhpProfiler\Lib\Binary\StringByteReader;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64Header;
@@ -25,7 +25,7 @@ class Elf64ParserTest extends TestCase
 {
     public function testParseElfHeader()
     {
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
 
@@ -55,7 +55,7 @@ class Elf64ParserTest extends TestCase
 
     public function testParseProgramHeader()
     {
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
@@ -126,7 +126,7 @@ class Elf64ParserTest extends TestCase
 
     public function testParseDynamicArray()
     {
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
@@ -153,7 +153,7 @@ class Elf64ParserTest extends TestCase
 
     public function testParseStringTable()
     {
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
@@ -167,7 +167,7 @@ class Elf64ParserTest extends TestCase
 
     public function testParseGnuHashTable()
     {
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
@@ -184,7 +184,7 @@ class Elf64ParserTest extends TestCase
 
     public function testParseSymbolTable()
     {
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
@@ -219,7 +219,7 @@ class Elf64ParserTest extends TestCase
 
     public function testParseSectionHeader()
     {
-        $parser = new Elf64Parser(new BinaryReader());
+        $parser = new Elf64Parser(new LittleEndianReader());
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $section_header = $parser->parseSectionHeader($test_binary, $elf_header);

@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader;
 
-use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\Binary\LittleEndianReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
@@ -30,7 +30,7 @@ final class PhpGlobalsFinder
 {
     private ?int $tsrm_ls_cache = null;
     private bool $tsrm_ls_cache_not_found = false;
-    private BinaryReader $binary_reader;
+    private LittleEndianReader $integer_reader;
     private PhpSymbolReaderCreator $php_symbol_reader_creator;
     /** @var ProcessSymbolReaderInterface[] */
     private array $php_symbol_reader_cache = [];
@@ -38,14 +38,14 @@ final class PhpGlobalsFinder
     /**
      * PhpGlobalsFinder constructor.
      * @param PhpSymbolReaderCreator $php_symbol_reader_creator
-     * @param BinaryReader $binary_reader
+     * @param LittleEndianReader $integer_reader
      */
     public function __construct(
         PhpSymbolReaderCreator $php_symbol_reader_creator,
-        BinaryReader $binary_reader
+        LittleEndianReader $integer_reader
     ) {
         $this->php_symbol_reader_creator = $php_symbol_reader_creator;
-        $this->binary_reader = $binary_reader;
+        $this->integer_reader = $integer_reader;
     }
 
     /**
@@ -61,7 +61,7 @@ final class PhpGlobalsFinder
         if (!isset($this->tsrm_ls_cache) and !$this->tsrm_ls_cache_not_found) {
             $tsrm_lm_cache_cdata = $this->getSymbolReader($pid)->read('_tsrm_ls_cache');
             if (isset($tsrm_lm_cache_cdata)) {
-                $this->tsrm_ls_cache = $this->binary_reader->read64(
+                $this->tsrm_ls_cache = $this->integer_reader->read64(
                     new CDataByteReader($tsrm_lm_cache_cdata),
                     0
                 )->toInt();
@@ -104,7 +104,7 @@ final class PhpGlobalsFinder
             if (is_null($executor_globals_offset_cdata)) {
                 throw new RuntimeException('executor_globals_offset not found');
             }
-            $executor_globals_offset = $this->binary_reader->read64(
+            $executor_globals_offset = $this->integer_reader->read64(
                 new CDataByteReader($executor_globals_offset_cdata),
                 0
             )->toInt();

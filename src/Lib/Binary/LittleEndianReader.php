@@ -16,10 +16,10 @@ namespace PhpProfiler\Lib\Binary;
 use PhpProfiler\Lib\Integer\UInt64;
 
 /**
- * Class BinaryReader
+ * Class LittleEndianReader
  * @package PhpProfiler\Lib\Binary
  */
-final class BinaryReader
+final class LittleEndianReader
 {
     public function read8(ByteReaderInterface $data, int $offset): int
     {
