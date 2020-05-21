@@ -15,8 +15,8 @@ namespace PhpProfiler\Command\Inspector;
 
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
+use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
-use PhpProfiler\ProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;

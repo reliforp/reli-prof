@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\ProcessReader\PhpMemoryReader;
+namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
@@ -20,8 +20,8 @@ use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
-use PhpProfiler\ProcessReader\PhpGlobalsFinder;
-use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
+use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
+use PhpProfiler\Lib\PhpProcessReader\PhpSymbolReaderCreator;
 use PHPUnit\Framework\TestCase;
 
 class ExecutorGlobalsReaderTest extends TestCase

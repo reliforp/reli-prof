@@ -11,17 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\ProcessReader;
+namespace PhpProfiler\Lib\PhpProcessReader;
 
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReader;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
-use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
-use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;

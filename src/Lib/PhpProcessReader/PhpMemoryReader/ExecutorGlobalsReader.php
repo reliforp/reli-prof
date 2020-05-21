@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\ProcessReader\PhpMemoryReader;
+namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
 use FFI\CData;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;

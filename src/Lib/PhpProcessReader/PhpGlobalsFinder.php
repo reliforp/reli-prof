@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\ProcessReader;
+namespace PhpProfiler\Lib\PhpProcessReader;
 
 use PhpProfiler\Lib\Binary\BinaryReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
