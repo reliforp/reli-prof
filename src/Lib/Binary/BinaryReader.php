@@ -46,9 +46,4 @@ final class BinaryReader
             $this->read32($data, $offset),
         );
     }
-
-    public function readString(ByteReaderInterface $data, int $offset, int $size): string
-    {
-        return $data->createSliceAsString($offset, $size);
-    }
 }
