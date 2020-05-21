@@ -101,8 +101,10 @@ final class GetCurrentFunctionNameCommand extends Command
 
         $this->runPeriodically(
             $sleep_nano_seconds,
-            function () use ($pid, $eg_address) {
-                echo $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address) , PHP_EOL;
+            function () use ($pid, $eg_address, $output) {
+                $output->writeln(
+                    $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
+                );
             }
         );
 

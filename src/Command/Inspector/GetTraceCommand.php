@@ -113,15 +113,13 @@ final class GetTraceCommand extends Command
 
         $this->runPeriodically(
             $sleep_nano_seconds,
-            function () use ($pid, $eg_address, $depth) {
-                echo join(
-                    PHP_EOL,
-                    $this->executor_globals_reader->readCallTrace(
-                        $pid,
-                        $eg_address,
-                        $depth
-                    )
-                ) , PHP_EOL, PHP_EOL;
+            function () use ($pid, $eg_address, $depth, $output) {
+                $call_trace = $this->executor_globals_reader->readCallTrace(
+                    $pid,
+                    $eg_address,
+                    $depth
+                );
+                $output->writeln(join(PHP_EOL, $call_trace) . PHP_EOL);
             }
         );
 
