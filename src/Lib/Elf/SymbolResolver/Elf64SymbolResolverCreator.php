@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\Binary\LittleEndianReader;
 use PhpProfiler\Lib\Binary\ProcessMemoryByteReader;
 use PhpProfiler\Lib\Binary\StringByteReader;
 use PhpProfiler\Lib\Binary\UnrelocatedProcessMemoryByteReader;
@@ -30,14 +29,17 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
 {
     private FileReaderInterface $file_reader;
+    private Elf64Parser $elf_parser;
 
     /**
      * SymbolResolverCreator constructor.
      * @param FileReaderInterface $file_reader
+     * @param Elf64Parser $elf_parser
      */
-    public function __construct(FileReaderInterface $file_reader)
+    public function __construct(FileReaderInterface $file_reader, Elf64Parser $elf_parser)
     {
         $this->file_reader = $file_reader;
+        $this->elf_parser = $elf_parser;
     }
 
     /**
@@ -52,9 +54,8 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
             throw new ElfParserException('cannot read ELF binary');
         }
         $binary = new StringByteReader($binary_raw);
-        $parser = new Elf64Parser(new LittleEndianReader());
-        $elf_header = $parser->parseElfHeader($binary);
-        $section_header = $parser->parseSectionHeader($binary, $elf_header);
+        $elf_header = $this->elf_parser->parseElfHeader($binary);
+        $section_header = $this->elf_parser->parseSectionHeader($binary, $elf_header);
         $symbol_table_section_header_entry = $section_header->findSymbolTableEntry();
         $string_table_section_header_entry = $section_header->findStringTableEntry();
         if (is_null($symbol_table_section_header_entry)) {
@@ -63,8 +64,14 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
         if (is_null($string_table_section_header_entry)) {
             throw new ElfParserException('cannot find string table from section header table');
         }
-        $symbol_table = $parser->parseSymbolTableFromSectionHeader($binary, $symbol_table_section_header_entry);
-        $string_table = $parser->parseStringTableFromSectionHeader($binary, $string_table_section_header_entry);
+        $symbol_table = $this->elf_parser->parseSymbolTableFromSectionHeader(
+            $binary,
+            $symbol_table_section_header_entry
+        );
+        $string_table = $this->elf_parser->parseStringTableFromSectionHeader(
+            $binary,
+            $string_table_section_header_entry
+        );
         return new Elf64LinearScanSymbolResolver($symbol_table, $string_table);
     }
 
@@ -80,8 +87,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
             throw new ElfParserException('cannot read ELF binary');
         }
         $binary = new StringByteReader($binary_raw);
-        $parser = new Elf64Parser(new LittleEndianReader());
-        return Elf64DynamicSymbolResolver::load($parser, $binary);
+        return Elf64DynamicSymbolResolver::load($this->elf_parser, $binary);
     }
 
     /**
@@ -99,20 +105,19 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
         $php_binary = new ProcessMemoryByteReader($memory_reader, $pid, $module_memory_map);
         $unrelocated_php_binary = new UnrelocatedProcessMemoryByteReader($php_binary, $module_memory_map);
 
-        $parser = new Elf64Parser(new LittleEndianReader());
-        $elf_header = $parser->parseElfHeader($unrelocated_php_binary);
-        $elf_program_header = $parser->parseProgramHeader($unrelocated_php_binary, $elf_header);
-        $elf_dynamic_array = $parser->parseDynamicStructureArray(
+        $elf_header = $this->elf_parser->parseElfHeader($unrelocated_php_binary);
+        $elf_program_header = $this->elf_parser->parseProgramHeader($unrelocated_php_binary, $elf_header);
+        $elf_dynamic_array = $this->elf_parser->parseDynamicStructureArray(
             $unrelocated_php_binary,
             $elf_program_header->findDynamic()[0]
         );
 
-        $elf_string_table = $parser->parseStringTable($php_binary, $elf_dynamic_array);
-        $elf_gnu_hash_table = $parser->parseGnuHashTable($php_binary, $elf_dynamic_array);
+        $elf_string_table = $this->elf_parser->parseStringTable($php_binary, $elf_dynamic_array);
+        $elf_gnu_hash_table = $this->elf_parser->parseGnuHashTable($php_binary, $elf_dynamic_array);
         if (is_null($elf_gnu_hash_table)) {
             throw new ElfParserException('cannot find gnu hash table');
         }
-        $elf_symbol_table = $parser->parseSymbolTableFromDynamic(
+        $elf_symbol_table = $this->elf_parser->parseSymbolTableFromDynamic(
             $php_binary,
             $elf_dynamic_array,
             $elf_gnu_hash_table->getNumberOfSymbols()

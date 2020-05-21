@@ -13,7 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
-use PhpProfiler\Lib\Binary\LittleEndianReader;
+use PhpProfiler\Lib\Binary\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\File\CatFileReader;
@@ -68,11 +69,15 @@ class ExecutorGlobalsReaderTest extends TestCase
             $memory_reader,
             new ProcessModuleSymbolReaderCreator(
                 new Elf64SymbolResolverCreator(
-                    new CatFileReader()
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
                 ),
-                $memory_reader
+                $memory_reader,
             ),
-            ProcessMemoryMapCreator::create()
+            ProcessMemoryMapCreator::create(),
+            new LittleEndianReader()
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,

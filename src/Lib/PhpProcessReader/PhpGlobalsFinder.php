@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader;
 
-use PhpProfiler\Lib\Binary\LittleEndianReader;
+use PhpProfiler\Lib\Binary\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\Binary\CDataByteReader;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
@@ -30,7 +30,7 @@ final class PhpGlobalsFinder
 {
     private ?int $tsrm_ls_cache = null;
     private bool $tsrm_ls_cache_not_found = false;
-    private LittleEndianReader $integer_reader;
+    private IntegerByteSequenceReader $integer_reader;
     private PhpSymbolReaderCreator $php_symbol_reader_creator;
     /** @var ProcessSymbolReaderInterface[] */
     private array $php_symbol_reader_cache = [];
@@ -38,11 +38,11 @@ final class PhpGlobalsFinder
     /**
      * PhpGlobalsFinder constructor.
      * @param PhpSymbolReaderCreator $php_symbol_reader_creator
-     * @param LittleEndianReader $integer_reader
+     * @param IntegerByteSequenceReader $integer_reader
      */
     public function __construct(
         PhpSymbolReaderCreator $php_symbol_reader_creator,
-        LittleEndianReader $integer_reader
+        IntegerByteSequenceReader $integer_reader
     ) {
         $this->php_symbol_reader_creator = $php_symbol_reader_creator;
         $this->integer_reader = $integer_reader;

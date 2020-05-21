@@ -15,6 +15,7 @@ namespace PhpProfiler\Lib\Elf\Tls;
 
 use FFI\CData;
 use Mockery;
+use PhpProfiler\Lib\Binary\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PHPUnit\Framework\TestCase;
@@ -54,7 +55,12 @@ class LibThreadDbTlsFinderTest extends TestCase
         $memory_reader->expects()->read(1, 0x10008, 8)->andReturns($dtv_address);
         $memory_reader->expects()->read(1, 0x20008, 8)->andReturns($tls_block_address);
 
-        $finder = new LibThreadDbTlsFinder($symbol_reader, $thread_pointer_retriever, $memory_reader);
+        $finder = new LibThreadDbTlsFinder(
+            $symbol_reader,
+            $thread_pointer_retriever,
+            $memory_reader,
+            new LittleEndianReader()
+        );
 
         $this->assertSame(
             0x30000,
@@ -86,7 +92,12 @@ class LibThreadDbTlsFinderTest extends TestCase
 
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
 
-        $finder = new LibThreadDbTlsFinder($symbol_reader, $thread_pointer_retriever, $memory_reader);
+        $finder = new LibThreadDbTlsFinder(
+            $symbol_reader,
+            $thread_pointer_retriever,
+            $memory_reader,
+            new LittleEndianReader()
+        );
         $finder->findTlsBlock(1, 1);
     }
 

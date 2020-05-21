@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Parser;
 
-use PhpProfiler\Lib\Binary\LittleEndianReader;
+use PhpProfiler\Lib\Binary\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\Binary\ByteReaderInterface;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructureArray;
@@ -33,13 +33,13 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
  */
 final class Elf64Parser
 {
-    private LittleEndianReader $integer_reader;
+    private IntegerByteSequenceReader $integer_reader;
 
     /**
      * Elf64Parser constructor.
-     * @param LittleEndianReader $integer_reader
+     * @param IntegerByteSequenceReader $integer_reader
      */
-    public function __construct(LittleEndianReader $integer_reader)
+    public function __construct(IntegerByteSequenceReader $integer_reader)
     {
         $this->integer_reader = $integer_reader;
     }

@@ -11,6 +11,8 @@
 
 declare(strict_types=1);
 
+use PhpProfiler\Lib\Binary\IntegerByteSequence\IntegerByteSequenceReader;
+use PhpProfiler\Lib\Binary\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use PhpProfiler\Lib\File\CatFileReader;
@@ -27,5 +29,6 @@ return [
         return new ZendTypeReader(ZendTypeReader::V74);
     },
     SymbolResolverCreatorInterface::class => autowire(Elf64SymbolResolverCreator::class),
-    FileReaderInterface::class => autowire(CatFileReader::class)
+    FileReaderInterface::class => autowire(CatFileReader::class),
+    IntegerByteSequenceReader::class => autowire(LittleEndianReader::class),
 ];
