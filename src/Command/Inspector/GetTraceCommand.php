@@ -111,14 +111,9 @@ final class GetTraceCommand extends Command
 
         $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
 
-        exec('stty -icanon -echo');
-        $keyboard_input = fopen('php://stdin', 'r');
-        stream_set_blocking($keyboard_input, false);
-
-        $key = '';
-        $count_retry = 0;
-        while ($key !== 'q' and $count_retry < 10) {
-            try {
+        $this->runPeriodically(
+            $sleep_nano_seconds,
+            function () use ($pid, $eg_address, $depth) {
                 echo join(
                     PHP_EOL,
                     $this->executor_globals_reader->readCallTrace(
@@ -127,6 +122,23 @@ final class GetTraceCommand extends Command
                         $depth
                     )
                 ) , PHP_EOL, PHP_EOL;
+            }
+        );
+
+        return 0;
+    }
+
+    private function runPeriodically(int $sleep_nano_seconds, callable $func): void
+    {
+        exec('stty -icanon -echo');
+        $keyboard_input = fopen('php://stdin', 'r');
+        stream_set_blocking($keyboard_input, false);
+
+        $key = '';
+        $count_retry = 0;
+        while ($key !== 'q' and $count_retry < 10) {
+            try {
+                $func();
                 $count_retry = 0;
                 time_nanosleep(0, $sleep_nano_seconds);
             } catch (MemoryReaderException $e) {
@@ -134,7 +146,5 @@ final class GetTraceCommand extends Command
             }
             $key = fread($keyboard_input, 1);
         }
-
-        return 0;
     }
 }

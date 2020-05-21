@@ -99,6 +99,18 @@ final class GetCurrentFunctionNameCommand extends Command
 
         $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
 
+        $this->runPeriodically(
+            $sleep_nano_seconds,
+            function () use ($pid, $eg_address) {
+                echo $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address) , PHP_EOL;
+            }
+        );
+
+        return 0;
+    }
+
+    private function runPeriodically(int $sleep_nano_seconds, callable $func): void
+    {
         exec('stty -icanon -echo');
         $keyboard_input = fopen('php://stdin', 'r');
         stream_set_blocking($keyboard_input, false);
@@ -107,7 +119,7 @@ final class GetCurrentFunctionNameCommand extends Command
         $count_retry = 0;
         while ($key !== 'q' and $count_retry < 10) {
             try {
-                echo $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address) , PHP_EOL;
+                $func();
                 $count_retry = 0;
                 time_nanosleep(0, $sleep_nano_seconds);
             } catch (MemoryReaderException $e) {
@@ -115,7 +127,5 @@ final class GetCurrentFunctionNameCommand extends Command
             }
             $key = fread($keyboard_input, 1);
         }
-
-        return 0;
     }
 }
