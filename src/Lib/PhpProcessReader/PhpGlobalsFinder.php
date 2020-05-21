@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader;
 
-use PhpProfiler\Lib\Binary\IntegerByteSequence\IntegerByteSequenceReader;
-use PhpProfiler\Lib\Binary\CDataByteReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
+use PhpProfiler\Lib\ByteStream\CDataByteReader;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderInterface;

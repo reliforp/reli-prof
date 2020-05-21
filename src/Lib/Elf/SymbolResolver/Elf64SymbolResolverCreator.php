@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\Binary\ProcessMemoryByteReader;
-use PhpProfiler\Lib\Binary\StringByteReader;
-use PhpProfiler\Lib\Binary\UnrelocatedProcessMemoryByteReader;
+use PhpProfiler\Lib\ByteStream\ProcessMemoryByteReader;
+use PhpProfiler\Lib\ByteStream\StringByteReader;
+use PhpProfiler\Lib\ByteStream\UnrelocatedProcessMemoryByteReader;
 use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\File\FileReaderInterface;

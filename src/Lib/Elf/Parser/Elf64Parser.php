@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Parser;
 
-use PhpProfiler\Lib\Binary\IntegerByteSequence\IntegerByteSequenceReader;
-use PhpProfiler\Lib\Binary\ByteReaderInterface;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
+use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructureArray;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64GnuHashTable;

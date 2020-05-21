@@ -15,7 +15,7 @@ namespace PhpProfiler\Lib\Elf\Tls;
 
 use FFI\CData;
 use Mockery;
-use PhpProfiler\Lib\Binary\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PHPUnit\Framework\TestCase;

@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\Binary\IntegerByteSequence\LittleEndianReader;
-use PhpProfiler\Lib\Binary\StringByteReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\ByteStream\StringByteReader;
 use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use PHPUnit\Framework\TestCase;

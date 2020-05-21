@@ -11,8 +11,8 @@
 
 declare(strict_types=1);
 
-use PhpProfiler\Lib\Binary\IntegerByteSequence\IntegerByteSequenceReader;
-use PhpProfiler\Lib\Binary\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use PhpProfiler\Lib\File\CatFileReader;

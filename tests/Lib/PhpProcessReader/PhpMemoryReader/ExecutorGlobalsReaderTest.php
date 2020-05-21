@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
-use PhpProfiler\Lib\Binary\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;

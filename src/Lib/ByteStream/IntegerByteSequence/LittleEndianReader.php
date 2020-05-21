@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Binary\IntegerByteSequence;
+namespace PhpProfiler\Lib\ByteStream\IntegerByteSequence;
 
-use PhpProfiler\Lib\Binary\ByteReaderInterface;
+use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
 use PhpProfiler\Lib\Integer\UInt64;
 
 /**

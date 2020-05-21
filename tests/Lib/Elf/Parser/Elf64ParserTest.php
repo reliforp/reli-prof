@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Parser;
 
-use PhpProfiler\Lib\Binary\IntegerByteSequence\LittleEndianReader;
-use PhpProfiler\Lib\Binary\StringByteReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\ByteStream\StringByteReader;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64Header;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderEntry;

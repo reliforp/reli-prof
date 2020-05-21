@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Binary;
+namespace PhpProfiler\Lib\ByteStream;
 
 use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
