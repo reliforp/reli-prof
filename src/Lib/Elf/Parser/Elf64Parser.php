@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Parser;
 
-use PhpProfiler\Lib\Binary\BinaryReader;
-use PhpProfiler\Lib\Binary\ByteReaderInterface;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
+use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructureArray;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64GnuHashTable;
@@ -33,15 +33,15 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
  */
 final class Elf64Parser
 {
-    private BinaryReader $binary_reader;
+    private IntegerByteSequenceReader $integer_reader;
 
     /**
      * Elf64Parser constructor.
-     * @param BinaryReader $binary_reader
+     * @param IntegerByteSequenceReader $integer_reader
      */
-    public function __construct(BinaryReader $binary_reader)
+    public function __construct(IntegerByteSequenceReader $integer_reader)
     {
-        $this->binary_reader = $binary_reader;
+        $this->integer_reader = $integer_reader;
     }
 
     /**
@@ -51,30 +51,30 @@ final class Elf64Parser
     public function parseElfHeader(ByteReaderInterface $data): Elf64Header
     {
         $e_ident = [
-            $this->binary_reader->read8($data, 0),
-            $this->binary_reader->read8($data, 1),
-            $this->binary_reader->read8($data, 2),
-            $this->binary_reader->read8($data, 3),
-            $this->binary_reader->read8($data, 4),
-            $this->binary_reader->read8($data, 5),
-            $this->binary_reader->read8($data, 6),
-            $this->binary_reader->read8($data, 7),
-            $this->binary_reader->read8($data, 8),
-            $this->binary_reader->read8($data, 9),
+            $this->integer_reader->read8($data, 0),
+            $this->integer_reader->read8($data, 1),
+            $this->integer_reader->read8($data, 2),
+            $this->integer_reader->read8($data, 3),
+            $this->integer_reader->read8($data, 4),
+            $this->integer_reader->read8($data, 5),
+            $this->integer_reader->read8($data, 6),
+            $this->integer_reader->read8($data, 7),
+            $this->integer_reader->read8($data, 8),
+            $this->integer_reader->read8($data, 9),
         ];
-        $e_type = $this->binary_reader->read16($data, 16);
-        $e_machine = $this->binary_reader->read16($data, 18);
-        $e_version = $this->binary_reader->read32($data, 20);
-        $e_entry = $this->binary_reader->read64($data, 24);
-        $e_phoff = $this->binary_reader->read64($data, 32);
-        $e_shoff = $this->binary_reader->read64($data, 40);
-        $e_flags = $this->binary_reader->read32($data, 48);
-        $e_ehsize = $this->binary_reader->read16($data, 52);
-        $e_phentsize = $this->binary_reader->read16($data, 54);
-        $e_phnum = $this->binary_reader->read16($data, 56);
-        $e_shentsize = $this->binary_reader->read16($data, 58);
-        $e_shnum = $this->binary_reader->read16($data, 60);
-        $e_shstrndx = $this->binary_reader->read16($data, 62);
+        $e_type = $this->integer_reader->read16($data, 16);
+        $e_machine = $this->integer_reader->read16($data, 18);
+        $e_version = $this->integer_reader->read32($data, 20);
+        $e_entry = $this->integer_reader->read64($data, 24);
+        $e_phoff = $this->integer_reader->read64($data, 32);
+        $e_shoff = $this->integer_reader->read64($data, 40);
+        $e_flags = $this->integer_reader->read32($data, 48);
+        $e_ehsize = $this->integer_reader->read16($data, 52);
+        $e_phentsize = $this->integer_reader->read16($data, 54);
+        $e_phnum = $this->integer_reader->read16($data, 56);
+        $e_shentsize = $this->integer_reader->read16($data, 58);
+        $e_shnum = $this->integer_reader->read16($data, 60);
+        $e_shstrndx = $this->integer_reader->read16($data, 62);
 
         return new Elf64Header(
             $e_ident,
@@ -105,14 +105,14 @@ final class Elf64Parser
 
         for ($i = 0; $i < $elf_header->e_phnum; $i++) {
             $offset = $elf_header->e_phoff->toInt() + $elf_header->e_phentsize * $i;
-            $p_type = $this->binary_reader->read32($data, $offset);
-            $p_flags = $this->binary_reader->read32($data, $offset + 4);
-            $p_offset = $this->binary_reader->read64($data, $offset + 8);
-            $p_vaddr = $this->binary_reader->read64($data, $offset + 16);
-            $p_paddr = $this->binary_reader->read64($data, $offset + 24);
-            $p_filesz = $this->binary_reader->read64($data, $offset + 32);
-            $p_memsz = $this->binary_reader->read64($data, $offset + 40);
-            $p_align = $this->binary_reader->read64($data, $offset + 48);
+            $p_type = $this->integer_reader->read32($data, $offset);
+            $p_flags = $this->integer_reader->read32($data, $offset + 4);
+            $p_offset = $this->integer_reader->read64($data, $offset + 8);
+            $p_vaddr = $this->integer_reader->read64($data, $offset + 16);
+            $p_paddr = $this->integer_reader->read64($data, $offset + 24);
+            $p_filesz = $this->integer_reader->read64($data, $offset + 32);
+            $p_memsz = $this->integer_reader->read64($data, $offset + 40);
+            $p_align = $this->integer_reader->read64($data, $offset + 48);
             $program_header_table[] = new Elf64ProgramHeaderEntry(
                 $p_type,
                 $p_flags,
@@ -140,8 +140,8 @@ final class Elf64Parser
         $dynamic_array = [];
         $offset = $pt_dynamic->p_offset->lo;
         do {
-            $d_tag = $this->binary_reader->read64($data, $offset);
-            $d_un = $this->binary_reader->read64($data, $offset + 8);
+            $d_tag = $this->integer_reader->read64($data, $offset);
+            $d_un = $this->integer_reader->read64($data, $offset + 8);
             $dynamic_structure = new Elf64DynamicStructure($d_tag, $d_un);
             $dynamic_array[] = $dynamic_structure;
             $offset += 16;
@@ -250,12 +250,12 @@ final class Elf64Parser
         $symbol_table_array = [];
         for ($i = 0; $i < $number_of_symbols; $i++) {
             $offset = $start_offset + $i * $entry_size;
-            $st_name = $this->binary_reader->read32($data, $offset);
-            $st_info = $this->binary_reader->read8($data, $offset + 4);
-            $st_other = $this->binary_reader->read8($data, $offset + 5);
-            $st_shndx = $this->binary_reader->read16($data, $offset + 6);
-            $st_value = $this->binary_reader->read64($data, $offset + 8);
-            $st_size = $this->binary_reader->read64($data, $offset + 16);
+            $st_name = $this->integer_reader->read32($data, $offset);
+            $st_info = $this->integer_reader->read8($data, $offset + 4);
+            $st_other = $this->integer_reader->read8($data, $offset + 5);
+            $st_shndx = $this->integer_reader->read16($data, $offset + 6);
+            $st_value = $this->integer_reader->read64($data, $offset + 8);
+            $st_size = $this->integer_reader->read64($data, $offset + 16);
             $symbol_table_array[] = new Elf64SymbolTableEntry(
                 $st_name,
                 $st_info,
@@ -282,33 +282,33 @@ final class Elf64Parser
             return null;
         }
         $offset = $dt_gnu_hash->d_un->toInt();
-        $nbuckets = $this->binary_reader->read32($data, $offset);
-        $symoffset = $this->binary_reader->read32($data, $offset + 4);
-        $bloom_size = $this->binary_reader->read32($data, $offset + 8);
-        $bloom_shift = $this->binary_reader->read32($data, $offset + 12);
+        $nbuckets = $this->integer_reader->read32($data, $offset);
+        $symoffset = $this->integer_reader->read32($data, $offset + 4);
+        $bloom_size = $this->integer_reader->read32($data, $offset + 8);
+        $bloom_shift = $this->integer_reader->read32($data, $offset + 12);
         $bloom_offset = $offset + 16;
         $bloom = [];
         for ($i = 0; $i < $bloom_size; $i++) {
-            $bloom[] = $this->binary_reader->read64($data, $bloom_offset + $i * 8);
+            $bloom[] = $this->integer_reader->read64($data, $bloom_offset + $i * 8);
         }
         $buckets_offset = $offset + 16 + $bloom_size * 8;
         $buckets = [];
         for ($i = 0; $i < $nbuckets; $i++) {
-            $buckets[] = $this->binary_reader->read32($data, $buckets_offset + $i * 4);
+            $buckets[] = $this->integer_reader->read32($data, $buckets_offset + $i * 4);
         }
 
         $chain_offset = $offset + 16 + $bloom_size * 8 + $nbuckets * 4;
 
         $max_bucket_index = max($buckets);
         $last_chain_offset = $chain_offset + ($max_bucket_index - $symoffset) * 4;
-        $last_chain_item = $this->binary_reader->read32($data, $last_chain_offset);
+        $last_chain_item = $this->integer_reader->read32($data, $last_chain_offset);
         for (; ($last_chain_item & 1) === 0; $last_chain_offset += 4) {
-            $last_chain_item = $this->binary_reader->read32($data, $last_chain_offset);
+            $last_chain_item = $this->integer_reader->read32($data, $last_chain_offset);
         }
 
         $chain = [];
         for (; $chain_offset <= $last_chain_offset; $chain_offset += 4) {
-            $chain[] = $this->binary_reader->read32($data, $chain_offset);
+            $chain[] = $this->integer_reader->read32($data, $chain_offset);
         }
 
         return new Elf64GnuHashTable(
@@ -333,16 +333,16 @@ final class Elf64Parser
 
         $offset = $elf_header->e_shoff->toInt();
         for ($i = 0; $i < $elf_header->e_shnum; $i++) {
-            $sh_name = $this->binary_reader->read32($data, $offset);
-            $sh_type = $this->binary_reader->read32($data, $offset + 4);
-            $sh_flags = $this->binary_reader->read64($data, $offset + 8);
-            $sh_addr = $this->binary_reader->read64($data, $offset + 16);
-            $sh_offset = $this->binary_reader->read64($data, $offset + 24);
-            $sh_size = $this->binary_reader->read64($data, $offset + 32);
-            $sh_link = $this->binary_reader->read32($data, $offset + 40);
-            $sh_info = $this->binary_reader->read32($data, $offset + 44);
-            $sh_addralign = $this->binary_reader->read64($data, $offset + 48);
-            $sh_entsize = $this->binary_reader->read64($data, $offset + 56);
+            $sh_name = $this->integer_reader->read32($data, $offset);
+            $sh_type = $this->integer_reader->read32($data, $offset + 4);
+            $sh_flags = $this->integer_reader->read64($data, $offset + 8);
+            $sh_addr = $this->integer_reader->read64($data, $offset + 16);
+            $sh_offset = $this->integer_reader->read64($data, $offset + 24);
+            $sh_size = $this->integer_reader->read64($data, $offset + 32);
+            $sh_link = $this->integer_reader->read32($data, $offset + 40);
+            $sh_info = $this->integer_reader->read32($data, $offset + 44);
+            $sh_addralign = $this->integer_reader->read64($data, $offset + 48);
+            $sh_entsize = $this->integer_reader->read64($data, $offset + 56);
             $section_header_array[] = new Elf64SectionHeaderEntry(
                 $sh_name,
                 $sh_type,

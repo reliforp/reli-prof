@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
-use PhpProfiler\Lib\Binary\BinaryReader;
-use PhpProfiler\Lib\Binary\CDataByteReader;
+use PhpProfiler\Lib\ByteStream\CDataByteReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
@@ -33,7 +33,7 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
     private ProcessSymbolReaderInterface $symbol_reader;
     private ThreadPointerRetrieverInterface $thread_pointer_retriever;
     private MemoryReaderInterface $memory_reader;
-    private BinaryReader $binary_reader;
+    private IntegerByteSequenceReader $integer_reader;
 
     /**
      * LibThreadDbTlsFinder constructor.
@@ -41,16 +41,18 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
      * @param ProcessSymbolReaderInterface $symbol_reader
      * @param ThreadPointerRetrieverInterface $thread_pointer_retriever
      * @param MemoryReaderInterface $memory_reader
+     * @param IntegerByteSequenceReader $integer_reader
      */
     public function __construct(
         ProcessSymbolReaderInterface $symbol_reader,
         ThreadPointerRetrieverInterface $thread_pointer_retriever,
-        MemoryReaderInterface $memory_reader
+        MemoryReaderInterface $memory_reader,
+        IntegerByteSequenceReader $integer_reader
     ) {
         $this->symbol_reader = $symbol_reader;
         $this->thread_pointer_retriever = $thread_pointer_retriever;
         $this->memory_reader = $memory_reader;
-        $this->binary_reader = new BinaryReader();
+        $this->integer_reader = $integer_reader;
     }
 
     /**
@@ -72,13 +74,13 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
 
         $dtv_pointer_address = $thread_pointer + $thread_db_pthread_dtvp_offset;
         $dtv_pointer_cdata = $this->memory_reader->read($pid, $dtv_pointer_address, 8);
-        $dtv_pointer = $this->binary_reader->read64(new CDataByteReader($dtv_pointer_cdata), 0)->toInt();
+        $dtv_pointer = $this->integer_reader->read64(new CDataByteReader($dtv_pointer_cdata), 0)->toInt();
 
         $dtv_slot = $thread_db_dtv_dtv_size * $module_index;
         $tls_address_pointer = $dtv_pointer + $dtv_slot + $thread_db_dtv_t_pointer_val_offset;
 
         $tls_address_cdata = $this->memory_reader->read($pid, $tls_address_pointer, 8);
-        return $this->binary_reader->read64(new CDataByteReader($tls_address_cdata), 0)->toInt();
+        return $this->integer_reader->read64(new CDataByteReader($tls_address_cdata), 0)->toInt();
     }
 
     /**
@@ -96,9 +98,9 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
         }
         $desc = new CDataByteReader($buffer);
 
-        $desc_size = $this->binary_reader->read32($desc, 0) >> 3;
-        $desc_num = $this->binary_reader->read32($desc, 4);
-        $desc_offset = $this->binary_reader->read32($desc, 8);
+        $desc_size = $this->integer_reader->read32($desc, 0) >> 3;
+        $desc_num = $this->integer_reader->read32($desc, 4);
+        $desc_offset = $this->integer_reader->read32($desc, 8);
 
         return [$desc_size, $desc_num, $desc_offset];
     }

@@ -11,15 +11,16 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Binary;
+namespace PhpProfiler\Lib\ByteStream\IntegerByteSequence;
 
-use PhpProfiler\Lib\UInt64;
+use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
+use PhpProfiler\Lib\Integer\UInt64;
 
 /**
- * Class BinaryReader
+ * Class LittleEndianReader
  * @package PhpProfiler\Lib\Binary
  */
-final class BinaryReader
+final class LittleEndianReader implements IntegerByteSequenceReader
 {
     public function read8(ByteReaderInterface $data, int $offset): int
     {
@@ -45,10 +46,5 @@ final class BinaryReader
             $this->read32($data, $offset + 4),
             $this->read32($data, $offset),
         );
-    }
-
-    public function readString(ByteReaderInterface $data, int $offset, int $size): string
-    {
-        return $data->createSliceAsString($offset, $size);
     }
 }

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib;
+namespace PhpProfiler\Lib\Integer;
 
 /**
  * Class UInt64

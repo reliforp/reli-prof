@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\ProcessReader;
+namespace PhpProfiler\Lib\PhpProcessReader;
 
 /**
  * Class PhpBinaryFinder

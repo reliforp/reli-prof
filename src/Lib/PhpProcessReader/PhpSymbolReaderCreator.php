@@ -11,17 +11,16 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\ProcessReader;
+namespace PhpProfiler\Lib\PhpProcessReader;
 
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReader;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
-use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
-use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
@@ -35,6 +34,7 @@ final class PhpSymbolReaderCreator
     private MemoryReaderInterface $memory_reader;
     private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator;
     private ProcessMemoryMapCreator $process_memory_map_creator;
+    private IntegerByteSequenceReader $integer_reader;
 
     /**
      * PhpSymbolReaderCreator constructor.
@@ -42,15 +42,18 @@ final class PhpSymbolReaderCreator
      * @param MemoryReaderInterface $memory_reader
      * @param ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator
      * @param ProcessMemoryMapCreator $process_memory_map_creator
+     * @param IntegerByteSequenceReader $integer_reader
      */
     public function __construct(
         MemoryReaderInterface $memory_reader,
         ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
-        ProcessMemoryMapCreator $process_memory_map_creator
+        ProcessMemoryMapCreator $process_memory_map_creator,
+        IntegerByteSequenceReader $integer_reader
     ) {
         $this->memory_reader = $memory_reader;
         $this->process_module_symbol_reader_creator = $process_module_symbol_reader_creator;
         $this->process_memory_map_creator = $process_memory_map_creator;
+        $this->integer_reader = $integer_reader;
     }
 
     /**
@@ -80,7 +83,8 @@ final class PhpSymbolReaderCreator
             $tls_finder = new LibThreadDbTlsFinder(
                 $libpthread_symbol_reader,
                 X64LinuxThreadPointerRetriever::createDefault(),
-                $this->memory_reader
+                $this->memory_reader,
+                $this->integer_reader
             );
             $tls_block_address = $tls_finder->findTlsBlock($pid, 1);
         }

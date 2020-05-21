@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Binary;
+namespace PhpProfiler\Lib\ByteStream;
 
 use FFI;
 use PHPUnit\Framework\TestCase;

@@ -11,17 +11,18 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\ProcessReader\PhpMemoryReader;
+namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
-use PhpProfiler\Lib\Binary\BinaryReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
-use PhpProfiler\ProcessReader\PhpGlobalsFinder;
-use PhpProfiler\ProcessReader\PhpSymbolReaderCreator;
+use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
+use PhpProfiler\Lib\PhpProcessReader\PhpSymbolReaderCreator;
 use PHPUnit\Framework\TestCase;
 
 class ExecutorGlobalsReaderTest extends TestCase
@@ -68,15 +69,19 @@ class ExecutorGlobalsReaderTest extends TestCase
             $memory_reader,
             new ProcessModuleSymbolReaderCreator(
                 new Elf64SymbolResolverCreator(
-                    new CatFileReader()
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
                 ),
-                $memory_reader
+                $memory_reader,
             ),
-            ProcessMemoryMapCreator::create()
+            ProcessMemoryMapCreator::create(),
+            new LittleEndianReader()
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new BinaryReader()
+            new LittleEndianReader()
         );
 
         /** @var int $child_status['pid'] */
