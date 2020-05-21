@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Binary;
 
-use PhpProfiler\Lib\UInt64;
+use PhpProfiler\Lib\Integer\UInt64;
 
 /**
  * Class BinaryReader

@@ -21,7 +21,7 @@ use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
-use PhpProfiler\Lib\UInt64;
+use PhpProfiler\Lib\Integer\UInt64;
 use PHPUnit\Framework\TestCase;
 
 class ProcessModuleSymbolReaderTest extends TestCase
