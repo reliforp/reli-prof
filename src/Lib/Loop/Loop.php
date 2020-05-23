@@ -13,15 +13,21 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Loop;
 
-final class PeriodicLoopInvoker
+final class Loop
 {
-    public function runPeriodically(int $sleep_nano_seconds, LoopProcessInterface $invokee): void
+    private LoopProcessInterface $process;
+
+    public function __construct(LoopProcessInterface $process)
+    {
+        $this->process = $process;
+    }
+
+    public function invoke(): void
     {
         while (1) {
-            if (!$invokee->invoke()) {
-                break;
+            if (!$this->process->invoke()) {
+                return;
             }
-            time_nanosleep(0, $sleep_nano_seconds);
         }
     }
 }

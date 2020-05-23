@@ -16,13 +16,14 @@ namespace PhpProfiler\Command\Inspector;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
+use PhpProfiler\Lib\Loop\Loop;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
 use PhpProfiler\Lib\Loop\LoopProcess\KeyboardCancelLoop;
 use PhpProfiler\Lib\Loop\LoopProcess\RetryOnExceptionLoop;
-use PhpProfiler\Lib\Loop\PeriodicLoopInvoker;
+use PhpProfiler\Lib\Loop\LoopProcess\PeriodicLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -35,26 +36,22 @@ final class GetCurrentFunctionNameCommand extends Command
 
     private PhpGlobalsFinder $php_globals_finder;
     private ExecutorGlobalsReader $executor_globals_reader;
-    private PeriodicLoopInvoker $periodic_invoker;
 
     /**
      * GetCurrentFunctionNameCommand constructor.
      *
      * @param PhpGlobalsFinder $php_globals_finder
      * @param ExecutorGlobalsReader $executor_globals_reader
-     * @param PeriodicLoopInvoker $periodic_invoker
      * @param string|null $name
      */
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
         ExecutorGlobalsReader $executor_globals_reader,
-        PeriodicLoopInvoker $periodic_invoker,
         string $name = null
     ) {
         parent::__construct($name);
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
-        $this->periodic_invoker = $periodic_invoker;
     }
 
     public function configure(): void
@@ -107,24 +104,27 @@ final class GetCurrentFunctionNameCommand extends Command
 
         $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
 
-        $this->periodic_invoker->runPeriodically(
-            $sleep_nano_seconds,
-            new RetryOnExceptionLoop(
-                10,
-                [MemoryReaderException::class],
-                new KeyboardCancelLoop(
-                    'q',
-                    new CallableLoop(
-                        function () use ($pid, $eg_address, $output): bool {
-                            $output->writeln(
-                                $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
-                            );
-                            return true;
-                        }
+        $loop = new Loop(
+            new PeriodicLoop(
+                $sleep_nano_seconds,
+                new RetryOnExceptionLoop(
+                    10,
+                    [MemoryReaderException::class],
+                    new KeyboardCancelLoop(
+                        'q',
+                        new CallableLoop(
+                            function () use ($pid, $eg_address, $output): bool {
+                                $output->writeln(
+                                    $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
+                                );
+                                return true;
+                            }
+                        )
                     )
                 )
             )
         );
+        $loop->invoke();
 
         return 0;
     }
