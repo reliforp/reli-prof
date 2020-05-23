@@ -19,10 +19,10 @@ use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
-use PhpProfiler\Lib\Timer\LoopProcess\CallableLoop;
-use PhpProfiler\Lib\Timer\LoopProcess\KeyboardCancelLoop;
-use PhpProfiler\Lib\Timer\LoopProcess\RetryOnExceptionLoop;
-use PhpProfiler\Lib\Timer\PeriodicInvoker;
+use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
+use PhpProfiler\Lib\Loop\LoopProcess\KeyboardCancelLoop;
+use PhpProfiler\Lib\Loop\LoopProcess\RetryOnExceptionLoop;
+use PhpProfiler\Lib\Loop\PeriodicLoopInvoker;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -35,20 +35,20 @@ final class GetTraceCommand extends Command
 
     private PhpGlobalsFinder $php_globals_finder;
     private ExecutorGlobalsReader $executor_globals_reader;
-    private PeriodicInvoker $periodic_invoker;
+    private PeriodicLoopInvoker $periodic_invoker;
 
     /**
      * GetTraceCommand constructor.
      *
      * @param PhpGlobalsFinder $php_globals_finder
      * @param ExecutorGlobalsReader $executor_globals_reader
-     * @param PeriodicInvoker $periodic_invoker
+     * @param PeriodicLoopInvoker $periodic_invoker
      * @param string|null $name
      */
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
         ExecutorGlobalsReader $executor_globals_reader,
-        PeriodicInvoker $periodic_invoker,
+        PeriodicLoopInvoker $periodic_invoker,
         string $name = null
     ) {
         parent::__construct($name);

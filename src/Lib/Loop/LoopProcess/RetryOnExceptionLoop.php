@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Timer\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopProcess;
 
 use Exception;
-use PhpProfiler\Lib\Timer\LoopProcessInterface;
+use PhpProfiler\Lib\Loop\LoopProcessInterface;
 
 final class RetryOnExceptionLoop implements LoopProcessInterface
 {

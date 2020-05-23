@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Timer;
+namespace PhpProfiler\Lib\Loop;
 
-final class PeriodicInvoker
+final class PeriodicLoopInvoker
 {
     public function runPeriodically(int $sleep_nano_seconds, LoopProcessInterface $invokee): void
     {

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Timer;
+namespace PhpProfiler\Lib\Loop;
 
 interface LoopProcessInterface
 {
