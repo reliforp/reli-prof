@@ -19,6 +19,9 @@ use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
+use PhpProfiler\Lib\Timer\LoopProcess\CallableLoop;
+use PhpProfiler\Lib\Timer\LoopProcess\KeyboardCancelLoop;
+use PhpProfiler\Lib\Timer\LoopProcess\RetryOnExceptionLoop;
 use PhpProfiler\Lib\Timer\PeriodicInvoker;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -106,11 +109,21 @@ final class GetCurrentFunctionNameCommand extends Command
 
         $this->periodic_invoker->runPeriodically(
             $sleep_nano_seconds,
-            function () use ($pid, $eg_address, $output) {
-                $output->writeln(
-                    $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
-                );
-            }
+            new RetryOnExceptionLoop(
+                10,
+                [MemoryReaderException::class],
+                new KeyboardCancelLoop(
+                    'q',
+                    new CallableLoop(
+                        function () use ($pid, $eg_address, $output): bool {
+                            $output->writeln(
+                                $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
+                            );
+                            return true;
+                        }
+                    )
+                )
+            )
         );
 
         return 0;
