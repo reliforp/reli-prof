@@ -31,22 +31,26 @@ final class GetCurrentFunctionNameCommand extends Command
 
     private PhpGlobalsFinder $php_globals_finder;
     private ExecutorGlobalsReader $executor_globals_reader;
+    private TraceLoopProvider $loop_provider;
 
     /**
      * GetCurrentFunctionNameCommand constructor.
      *
      * @param PhpGlobalsFinder $php_globals_finder
      * @param ExecutorGlobalsReader $executor_globals_reader
+     * @param TraceLoopProvider $loop_provider
      * @param string|null $name
      */
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
         ExecutorGlobalsReader $executor_globals_reader,
+        TraceLoopProvider $loop_provider,
         string $name = null
     ) {
         parent::__construct($name);
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
+        $this->loop_provider = $loop_provider;
     }
 
     public function configure(): void
@@ -99,35 +103,16 @@ final class GetCurrentFunctionNameCommand extends Command
 
         $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
 
-        $this->runPeriodically(
-            $sleep_nano_seconds,
-            function () use ($pid, $eg_address, $output) {
+        $this->loop_provider->getMainLoop(
+            function () use ($pid, $eg_address, $output): bool {
                 $output->writeln(
                     $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
                 );
-            }
-        );
+                return true;
+            },
+            $sleep_nano_seconds
+        )->invoke();
 
         return 0;
-    }
-
-    private function runPeriodically(int $sleep_nano_seconds, callable $func): void
-    {
-        exec('stty -icanon -echo');
-        $keyboard_input = fopen('php://stdin', 'r');
-        stream_set_blocking($keyboard_input, false);
-
-        $key = '';
-        $count_retry = 0;
-        while ($key !== 'q' and $count_retry < 10) {
-            try {
-                $func();
-                $count_retry = 0;
-                time_nanosleep(0, $sleep_nano_seconds);
-            } catch (MemoryReaderException $e) {
-                $count_retry++;
-            }
-            $key = fread($keyboard_input, 1);
-        }
     }
 }
