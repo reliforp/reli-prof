@@ -46,7 +46,7 @@ final class RetryOnExceptionLoop implements LoopProcessInterface
                 return $result;
             } catch (Exception $e) {
                 if (in_array(get_class($e), $this->exception_names, true)) {
-                    $this->current_retry_count;
+                    $this->current_retry_count++;
                     continue;
                 }
                 throw $e;
