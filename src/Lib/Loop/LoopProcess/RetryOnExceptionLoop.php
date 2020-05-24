@@ -18,30 +18,30 @@ use PhpProfiler\Lib\Loop\LoopProcessInterface;
 
 final class RetryOnExceptionLoop implements LoopProcessInterface
 {
-    private LoopProcessInterface $invokee;
+    private LoopProcessInterface $chain;
     /** @var array<int, class-string<Exception>> */
     private array $exception_names;
     private int $max_retry;
     private int $current_retry_count = 0;
 
     /**
-     * RetryOnExceptionInvokee constructor.
+     * RetryOnExceptionLoop constructor.
      * @param int $max_retry
      * @param array<int, class-string<Exception>> $exception_names
-     * @param LoopProcessInterface $invokee
+     * @param LoopProcessInterface $chain
      */
-    public function __construct(int $max_retry, array $exception_names, LoopProcessInterface $invokee)
+    public function __construct(int $max_retry, array $exception_names, LoopProcessInterface $chain)
     {
         $this->max_retry = $max_retry;
         $this->exception_names = $exception_names;
-        $this->invokee = $invokee;
+        $this->chain = $chain;
     }
 
     public function invoke(): bool
     {
         while ($this->current_retry_count <= $this->max_retry) {
             try {
-                $result = $this->invokee->invoke();
+                $result = $this->chain->invoke();
                 $this->current_retry_count = 0;
                 return $result;
             } catch (Exception $e) {

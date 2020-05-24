@@ -17,14 +17,14 @@ use PhpProfiler\Lib\Loop\LoopProcessInterface;
 
 final class KeyboardCancelLoop implements LoopProcessInterface
 {
-    private LoopProcessInterface $invokee;
+    private LoopProcessInterface $chain;
     private string $cancel_key;
     /** @var resource */
     private $keyboard_input;
 
-    public function __construct(string $cancel_key, LoopProcessInterface $invokee)
+    public function __construct(string $cancel_key, LoopProcessInterface $chain)
     {
-        $this->invokee = $invokee;
+        $this->chain = $chain;
         exec('stty -icanon -echo');
         $this->keyboard_input = fopen('php://stdin', 'r');
         stream_set_blocking($this->keyboard_input, false);
@@ -37,6 +37,6 @@ final class KeyboardCancelLoop implements LoopProcessInterface
         if ($key === $this->cancel_key) {
             return false;
         }
-        return $this->invokee->invoke();
+        return $this->chain->invoke();
     }
 }

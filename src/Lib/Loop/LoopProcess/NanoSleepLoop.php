@@ -18,17 +18,17 @@ use PhpProfiler\Lib\Loop\LoopProcessInterface;
 final class NanoSleepLoop implements LoopProcessInterface
 {
     private int $sleep_nano_seconds;
-    private LoopProcessInterface $invokee;
+    private LoopProcessInterface $chain;
 
-    public function __construct(int $sleep_nano_seconds, LoopProcessInterface $invokee)
+    public function __construct(int $sleep_nano_seconds, LoopProcessInterface $chain)
     {
         $this->sleep_nano_seconds = $sleep_nano_seconds;
-        $this->invokee = $invokee;
+        $this->chain = $chain;
     }
 
     public function invoke(): bool
     {
-        if (!$this->invokee->invoke()) {
+        if (!$this->chain->invoke()) {
             return false;
         }
         time_nanosleep(0, $this->sleep_nano_seconds);
