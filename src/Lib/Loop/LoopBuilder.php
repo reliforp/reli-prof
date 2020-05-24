@@ -29,6 +29,9 @@ final class LoopBuilder
      */
     public function addProcess(string $process, array $parameters): self
     {
+        if (!is_a($process, LoopProcessInterface::class, true)) {
+            throw new LogicException('1st argument must be a name of a class implements LoopProcessInterface');
+        }
         $self = clone $this;
         $self->process_stack[] = $process;
         $self->parameter_stack[] = $parameters;
