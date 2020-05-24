@@ -15,7 +15,7 @@ namespace PhpProfiler\Lib\Loop\LoopProcess;
 
 use PhpProfiler\Lib\Loop\LoopProcessInterface;
 
-final class PeriodicLoop implements LoopProcessInterface
+final class NanoSleepLoop implements LoopProcessInterface
 {
     private int $sleep_nano_seconds;
     private LoopProcessInterface $invokee;

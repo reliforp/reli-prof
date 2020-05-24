@@ -23,7 +23,7 @@ use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
 use PhpProfiler\Lib\Loop\LoopProcess\KeyboardCancelLoop;
 use PhpProfiler\Lib\Loop\LoopProcess\RetryOnExceptionLoop;
-use PhpProfiler\Lib\Loop\LoopProcess\PeriodicLoop;
+use PhpProfiler\Lib\Loop\LoopProcess\NanoSleepLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -117,7 +117,7 @@ final class GetTraceCommand extends Command
         $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
 
         $loop = new Loop(
-            new PeriodicLoop(
+            new NanoSleepLoop(
                 $sleep_nano_seconds,
                 new RetryOnExceptionLoop(
                     10,
