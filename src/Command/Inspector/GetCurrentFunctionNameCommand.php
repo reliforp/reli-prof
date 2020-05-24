@@ -16,14 +16,9 @@ namespace PhpProfiler\Command\Inspector;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
-use PhpProfiler\Lib\Loop\LoopBuilder;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
-use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
-use PhpProfiler\Lib\Loop\LoopProcess\KeyboardCancelLoop;
-use PhpProfiler\Lib\Loop\LoopProcess\RetryOnExceptionLoop;
-use PhpProfiler\Lib\Loop\LoopProcess\NanoSleepLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -36,26 +31,26 @@ final class GetCurrentFunctionNameCommand extends Command
 
     private PhpGlobalsFinder $php_globals_finder;
     private ExecutorGlobalsReader $executor_globals_reader;
-    private LoopBuilder $loop_builder;
+    private TraceLoopProvider $loop_provider;
 
     /**
      * GetCurrentFunctionNameCommand constructor.
      *
      * @param PhpGlobalsFinder $php_globals_finder
      * @param ExecutorGlobalsReader $executor_globals_reader
-     * @param LoopBuilder $loop_builder
+     * @param TraceLoopProvider $loop_provider
      * @param string|null $name
      */
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
         ExecutorGlobalsReader $executor_globals_reader,
-        LoopBuilder $loop_builder,
+        TraceLoopProvider $loop_provider,
         string $name = null
     ) {
         parent::__construct($name);
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
-        $this->loop_builder = $loop_builder;
+        $this->loop_provider = $loop_provider;
     }
 
     public function configure(): void
@@ -108,19 +103,15 @@ final class GetCurrentFunctionNameCommand extends Command
 
         $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
 
-        $loop = $this->loop_builder->addProcess(NanoSleepLoop::class, [$sleep_nano_seconds])
-            ->addProcess(RetryOnExceptionLoop::class, [10, [MemoryReaderException::class]])
-            ->addProcess(KeyboardCancelLoop::class, ['q'])
-            ->addProcess(CallableLoop::class, [
-                function () use ($pid, $eg_address, $output): bool {
-                    $output->writeln(
-                        $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
-                    );
-                    return true;
-                }
-            ])
-            ->build();
-        $loop->invoke();
+        $this->loop_provider->getMainLoop(
+            function () use ($pid, $eg_address, $output): bool {
+                $output->writeln(
+                    $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
+                );
+                return true;
+            },
+            $sleep_nano_seconds
+        )->invoke();
 
         return 0;
     }
