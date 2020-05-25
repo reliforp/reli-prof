@@ -80,14 +80,12 @@ final class GetTraceCommand extends Command
     {
         $pid = $input->getOption('pid');
         if (is_null($pid)) {
-            $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-            $error_output->writeln('pid is not specified');
+            $this->writeError('pid is not specified', $output);
             return 1;
         }
         $pid = filter_var($pid, FILTER_VALIDATE_INT);
         if ($pid === false) {
-            $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-            $error_output->writeln('pid is not integer');
+            $this->writeError('pid is not integer', $output);
             return 2;
         }
 
@@ -97,8 +95,7 @@ final class GetTraceCommand extends Command
         }
         $depth = filter_var($depth, FILTER_VALIDATE_INT);
         if ($depth === false) {
-            $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-            $error_output->writeln('depth is not integer');
+            $this->writeError('depth is not integer', $output);
             return 2;
         }
 
@@ -108,8 +105,7 @@ final class GetTraceCommand extends Command
         }
         $sleep_nano_seconds = filter_var($sleep_nano_seconds, FILTER_VALIDATE_INT);
         if ($sleep_nano_seconds === false) {
-            $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-            $error_output->writeln('sleep-ns is not integer');
+            $this->writeError('sleep-ns is not integer', $output);
             return 2;
         }
 
@@ -129,5 +125,11 @@ final class GetTraceCommand extends Command
         )->invoke();
 
         return 0;
+    }
+
+    public function writeError(string $message, OutputInterface $output): void
+    {
+        $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
+        $error_output->writeln($message);
     }
 }

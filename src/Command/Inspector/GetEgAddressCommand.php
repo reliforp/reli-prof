@@ -66,19 +66,23 @@ final class GetEgAddressCommand extends Command
     {
         $pid = $input->getOption('pid');
         if (is_null($pid)) {
-            $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-            $error_output->writeln('pid is not specified');
+            $this->writeError('pid is not specified', $output);
             return 1;
         }
         $pid = filter_var($pid, FILTER_VALIDATE_INT);
         if ($pid === false) {
-            $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-            $error_output->writeln('pid is not integer');
+            $this->writeError('pid is not integer', $output);
             return 2;
         }
 
         $output->writeln('0x' . dechex($this->php_globals_finder->findExecutorGlobals($pid)));
 
         return 0;
+    }
+
+    public function writeError(string $message, OutputInterface $output): void
+    {
+        $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
+        $error_output->writeln($message);
     }
 }
