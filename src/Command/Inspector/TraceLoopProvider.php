@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
+use PhpProfiler\Command\Inspector\Settings\LoopSettings;
 use PhpProfiler\Lib\Loop\Loop;
 use PhpProfiler\Lib\Loop\LoopBuilder;
 use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
@@ -30,11 +31,11 @@ final class TraceLoopProvider
         $this->loop_builder = $loop_builder;
     }
 
-    public function getMainLoop(callable $main, int $sleep_nano_seconds): Loop
+    public function getMainLoop(callable $main, LoopSettings $settings): Loop
     {
-        return $this->loop_builder->addProcess(NanoSleepLoop::class, [$sleep_nano_seconds])
+        return $this->loop_builder->addProcess(NanoSleepLoop::class, [$settings->sleep_nano_seconds])
             ->addProcess(RetryOnExceptionLoop::class, [10, [MemoryReaderException::class]])
-            ->addProcess(KeyboardCancelLoop::class, ['q'])
+            ->addProcess(KeyboardCancelLoop::class, [$settings->cancel_key])
             ->addProcess(CallableLoop::class, [$main])
             ->build();
     }

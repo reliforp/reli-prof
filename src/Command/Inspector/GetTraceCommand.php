@@ -13,6 +13,10 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
+use PhpProfiler\Command\CommandSettingsException;
+use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Command\Inspector\Settings\LoopSettings;
+use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
@@ -22,13 +26,10 @@ use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class GetTraceCommand extends Command
 {
-    private const SLEEP_NANO_SECONDS_DEFAULT = 1000 * 1000 * 10;
-
     private PhpGlobalsFinder $php_globals_finder;
     private ExecutorGlobalsReader $executor_globals_reader;
     private TraceLoopProvider $loop_provider;
@@ -39,15 +40,13 @@ final class GetTraceCommand extends Command
      * @param PhpGlobalsFinder $php_globals_finder
      * @param ExecutorGlobalsReader $executor_globals_reader
      * @param TraceLoopProvider $loop_provider
-     * @param string|null $name
      */
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
         ExecutorGlobalsReader $executor_globals_reader,
-        TraceLoopProvider $loop_provider,
-        string $name = null
+        TraceLoopProvider $loop_provider
     ) {
-        parent::__construct($name);
+        parent::__construct();
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
         $this->loop_provider = $loop_provider;
@@ -75,61 +74,29 @@ final class GetTraceCommand extends Command
      * @throws ProcessSymbolReaderException
      * @throws ElfParserException
      * @throws TlsFinderException
+     * @throws CommandSettingsException
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $pid = $input->getOption('pid');
-        if (is_null($pid)) {
-            $this->writeError('pid is not specified', $output);
-            return 1;
-        }
-        $pid = filter_var($pid, FILTER_VALIDATE_INT);
-        if ($pid === false) {
-            $this->writeError('pid is not integer', $output);
-            return 2;
-        }
+        $target_process_settings = TargetProcessSettings::fromConsoleInput($input);
+        $loop_settings = LoopSettings::fromConsoleInput($input);
+        $get_trace_settings = GetTraceSettings::fromConsoleInput($input);
 
-        $depth = $input->getOption('depth');
-        if (is_null($depth)) {
-            $depth = PHP_INT_MAX;
-        }
-        $depth = filter_var($depth, FILTER_VALIDATE_INT);
-        if ($depth === false) {
-            $this->writeError('depth is not integer', $output);
-            return 2;
-        }
-
-        $sleep_nano_seconds = $input->getOption('sleep-ns');
-        if (is_null($sleep_nano_seconds)) {
-            $sleep_nano_seconds = self::SLEEP_NANO_SECONDS_DEFAULT;
-        }
-        $sleep_nano_seconds = filter_var($sleep_nano_seconds, FILTER_VALIDATE_INT);
-        if ($sleep_nano_seconds === false) {
-            $this->writeError('sleep-ns is not integer', $output);
-            return 2;
-        }
-
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
+        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings->pid);
 
         $this->loop_provider->getMainLoop(
-            function () use ($pid, $eg_address, $depth, $output): bool {
+            function () use ($get_trace_settings, $target_process_settings, $eg_address, $output): bool {
                 $call_trace = $this->executor_globals_reader->readCallTrace(
-                    $pid,
+                    $target_process_settings->pid,
                     $eg_address,
-                    $depth
+                    $get_trace_settings->depth
                 );
                 $output->writeln(join(PHP_EOL, $call_trace) . PHP_EOL);
                 return true;
             },
-            $sleep_nano_seconds
+            $loop_settings
         )->invoke();
 
         return 0;
-    }
-
-    public function writeError(string $message, OutputInterface $output): void
-    {
-        $error_output = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
-        $error_output->writeln($message);
     }
 }
