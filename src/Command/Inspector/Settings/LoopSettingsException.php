@@ -18,8 +18,10 @@ use PhpProfiler\Command\CommandSettingsException;
 class LoopSettingsException extends CommandSettingsException
 {
     public const SLEEP_NS_IS_NOT_INTEGER = 1;
+    public const MAX_RETRY_IS_NOT_INTEGER = 2;
 
     protected const ERRORS = [
         self::SLEEP_NS_IS_NOT_INTEGER => 'sleep-ns is not integer',
+        self::MAX_RETRY_IS_NOT_INTEGER => 'max-retries is not integer',
     ];
 }

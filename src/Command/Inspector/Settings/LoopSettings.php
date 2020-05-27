@@ -20,19 +20,23 @@ class LoopSettings
 {
     private const SLEEP_NANO_SECONDS_DEFAULT = 1000 * 1000 * 10;
     private const CANCEL_KEY_DEFAULT = 'q';
+    private const MAX_RETRY_DEFAULT = 10;
 
     public int $sleep_nano_seconds;
     public string $cancel_key;
+    public int $max_retries;
 
     /**
      * TraceLoopSettings constructor.
      * @param int $sleep_nano_seconds
      * @param string $cancel_key
+     * @param int $max_retries
      */
-    public function __construct(int $sleep_nano_seconds, string $cancel_key)
+    public function __construct(int $sleep_nano_seconds, string $cancel_key, int $max_retries)
     {
         $this->sleep_nano_seconds = $sleep_nano_seconds;
         $this->cancel_key = $cancel_key;
+        $this->max_retries = $max_retries;
     }
 
     /**
@@ -51,6 +55,15 @@ class LoopSettings
             throw LoopSettingsException::create(LoopSettingsException::SLEEP_NS_IS_NOT_INTEGER);
         }
 
-        return new self($sleep_nano_seconds, self::CANCEL_KEY_DEFAULT);
+        $max_retries = $input->getOption('max-retries');
+        if (is_null($max_retries)) {
+            $max_retries = self::MAX_RETRY_DEFAULT;
+        }
+        $max_retries = filter_var($max_retries, FILTER_VALIDATE_INT);
+        if ($max_retries === false) {
+            throw LoopSettingsException::create(LoopSettingsException::MAX_RETRY_IS_NOT_INTEGER);
+        }
+
+        return new self($sleep_nano_seconds, self::CANCEL_KEY_DEFAULT, $max_retries);
     }
 }

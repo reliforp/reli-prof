@@ -34,7 +34,7 @@ final class TraceLoopProvider
     public function getMainLoop(callable $main, LoopSettings $settings): Loop
     {
         return $this->loop_builder->addProcess(NanoSleepLoop::class, [$settings->sleep_nano_seconds])
-            ->addProcess(RetryOnExceptionLoop::class, [10, [MemoryReaderException::class]])
+            ->addProcess(RetryOnExceptionLoop::class, [$settings->max_retries, [MemoryReaderException::class]])
             ->addProcess(KeyboardCancelLoop::class, [$settings->cancel_key])
             ->addProcess(CallableLoop::class, [$main])
             ->build();

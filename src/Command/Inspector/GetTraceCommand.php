@@ -63,6 +63,12 @@ final class GetTraceCommand extends Command
                 's',
                 InputOption::VALUE_OPTIONAL,
                 'nanoseconds between traces (default: 1000 * 1000 * 10)'
+            )
+            ->addOption(
+                'max-retries',
+                'r',
+                InputOption::VALUE_OPTIONAL,
+                'max retries on contiguous errors of read (default: 10)'
             );
     }
 
