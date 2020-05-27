@@ -17,9 +17,9 @@ use PhpProfiler\Command\CommandSettingsException;
 
 class LoopSettingsException extends CommandSettingsException
 {
-    public const ERRPR_SLEEP_NS_IS_NOT_INTEGER = 1;
+    public const SLEEP_NS_IS_NOT_INTEGER = 1;
 
     protected const ERRORS = [
-        self::ERRPR_SLEEP_NS_IS_NOT_INTEGER => 'sleep-ns is not integer',
+        self::SLEEP_NS_IS_NOT_INTEGER => 'sleep-ns is not integer',
     ];
 }

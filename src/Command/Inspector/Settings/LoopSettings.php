@@ -48,7 +48,7 @@ class LoopSettings
         }
         $sleep_nano_seconds = filter_var($sleep_nano_seconds, FILTER_VALIDATE_INT);
         if ($sleep_nano_seconds === false) {
-            throw LoopSettingsException::create(LoopSettingsException::ERRPR_SLEEP_NS_IS_NOT_INTEGER);
+            throw LoopSettingsException::create(LoopSettingsException::SLEEP_NS_IS_NOT_INTEGER);
         }
 
         return new self($sleep_nano_seconds, self::CANCEL_KEY_DEFAULT);
