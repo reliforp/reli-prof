@@ -49,7 +49,20 @@ final class GetEgAddressCommand extends Command
     {
         $this->setName('inspector:eg_address')
             ->setDescription('get EG address from an outer process or thread')
-            ->addOption('pid', 'p', InputOption::VALUE_REQUIRED, 'process id');
+            ->addOption('pid', 'p', InputOption::VALUE_REQUIRED, 'process id')
+            ->addOption(
+                'php-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the php binary loaded in the target process'
+            )
+            ->addOption(
+                'libpthread-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the libpthread.so loaded in the target process'
+            )
+        ;
     }
 
     /**

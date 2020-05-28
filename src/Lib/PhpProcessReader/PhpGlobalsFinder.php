@@ -84,8 +84,12 @@ final class PhpGlobalsFinder
     public function getSymbolReader(TargetProcessSettings $target_process_settings): ProcessSymbolReaderInterface
     {
         if (!isset($this->php_symbol_reader_cache[$target_process_settings->pid])) {
-            $this->php_symbol_reader_cache[$target_process_settings->pid]
-                = $this->php_symbol_reader_creator->create($target_process_settings->pid);
+            $symbol_reader = $this->php_symbol_reader_creator->create(
+                $target_process_settings->pid,
+                $target_process_settings->php_regex,
+                $target_process_settings->libpthread_regex
+            );
+            $this->php_symbol_reader_cache[$target_process_settings->pid] = $symbol_reader;
         }
         return $this->php_symbol_reader_cache[$target_process_settings->pid];
     }

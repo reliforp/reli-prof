@@ -58,8 +58,8 @@ final class PhpSymbolReaderCreator
 
     /**
      * @param int $pid
-     * @param string $libpthread_finder_regex
      * @param string $php_finder_regex
+     * @param string $libpthread_finder_regex
      * @return ProcessModuleSymbolReader
      * @throws ElfParserException
      * @throws MemoryReaderException
@@ -68,8 +68,8 @@ final class PhpSymbolReaderCreator
      */
     public function create(
         int $pid,
-        string $libpthread_finder_regex = '/.*\/libpthread.*\.so$/',
-        string $php_finder_regex = '/.*\/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$/'
+        string $php_finder_regex,
+        string $libpthread_finder_regex
     ): ProcessModuleSymbolReader {
         $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
 

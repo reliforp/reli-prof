@@ -67,7 +67,20 @@ final class GetCurrentFunctionNameCommand extends Command
                 'r',
                 InputOption::VALUE_OPTIONAL,
                 'max retries on contiguous errors of read (default: 10)'
-            );
+            )
+            ->addOption(
+                'php-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the php binary loaded in the target process'
+            )
+            ->addOption(
+                'libpthread-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the libpthread.so loaded in the target process'
+            )
+        ;
     }
 
     /**
