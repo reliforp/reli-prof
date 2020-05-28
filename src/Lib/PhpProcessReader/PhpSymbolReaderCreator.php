@@ -60,8 +60,9 @@ final class PhpSymbolReaderCreator
      * @param int $pid
      * @param string $php_finder_regex
      * @param string $libpthread_finder_regex
+     * @param string|null $php_binar_path
+     * @param string|null $libpthread_binary_path
      * @return ProcessModuleSymbolReader
-     * @throws ElfParserException
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
@@ -69,7 +70,9 @@ final class PhpSymbolReaderCreator
     public function create(
         int $pid,
         string $php_finder_regex,
-        string $libpthread_finder_regex
+        string $libpthread_finder_regex,
+        ?string $php_binar_path,
+        ?string $libpthread_binary_path
     ): ProcessModuleSymbolReader {
         $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
 
@@ -77,7 +80,8 @@ final class PhpSymbolReaderCreator
         $libpthread_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
             $pid,
             $process_memory_map,
-            $libpthread_finder_regex
+            $libpthread_finder_regex,
+            $libpthread_binary_path
         );
         if (!is_null($libpthread_symbol_reader) and $libpthread_symbol_reader->isAllSymbolResolvable()) {
             $tls_finder = new LibThreadDbTlsFinder(
@@ -93,6 +97,7 @@ final class PhpSymbolReaderCreator
             $pid,
             $process_memory_map,
             $php_finder_regex,
+            $php_binar_path,
             $tls_block_address
         );
         if (is_null($php_symbol_reader)) {

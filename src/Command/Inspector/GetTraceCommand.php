@@ -82,6 +82,18 @@ final class GetTraceCommand extends Command
                 InputOption::VALUE_OPTIONAL,
                 'regex to find the libpthread.so loaded in the target process'
             )
+            ->addOption(
+                'php-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'path to the php binary (only needed in tracing chrooted ZTS target)'
+            )
+            ->addOption(
+                'libpthread-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'path to the libpthread.so (only needed in tracing chrooted ZTS target)'
+            )
         ;
     }
 

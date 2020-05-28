@@ -80,6 +80,18 @@ final class GetCurrentFunctionNameCommand extends Command
                 InputOption::VALUE_OPTIONAL,
                 'regex to find the libpthread.so loaded in the target process'
             )
+            ->addOption(
+                'php-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'path to the php binary (only needed for chrooted ZTS target)'
+            )
+            ->addOption(
+                'libpthread-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'path to the libpthread.so (only needed for chrooted ZTS target)'
+            )
         ;
     }
 

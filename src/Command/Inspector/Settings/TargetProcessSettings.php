@@ -24,21 +24,29 @@ class TargetProcessSettings
     public int $pid;
     public string $php_regex;
     public string $libpthread_regex;
+    public ?string $php_path;
+    public ?string $libpthread_path;
 
     /**
      * GetTraceSettings constructor.
      * @param int $pid
      * @param string $php_regex
      * @param string $libpthread_regex
+     * @param string|null $php_path
+     * @param string|null $libpthread_path
      */
     public function __construct(
         int $pid,
         string $php_regex = self::PHP_REGEX_DEFAULT,
-        string $libpthread_regex = self::LIBPTHREAD_REGEX_DEFAULT
+        string $libpthread_regex = self::LIBPTHREAD_REGEX_DEFAULT,
+        ?string $php_path = null,
+        ?string $libpthread_path = null
     ) {
         $this->pid = $pid;
         $this->php_regex = '{' . $php_regex . '}';
         $this->libpthread_regex = '{' . $libpthread_regex . '}';
+        $this->php_path = $php_path;
+        $this->libpthread_path = $libpthread_path;
     }
 
     /**
@@ -75,6 +83,20 @@ class TargetProcessSettings
             );
         }
 
-        return new self($pid, $php_regex, $libpthread_regex);
+        $php_path = $input->getOption('php-path');
+        if (!is_null($php_path) and !is_string($php_path)) {
+            throw TargetProcessSettingsException::create(
+                TargetProcessSettingsException::PHP_PATH_IS_NOT_STRING
+            );
+        }
+
+        $libpthread_path = $input->getOption('libpthread-path');
+        if (!is_null($libpthread_path) and !is_string($libpthread_path)) {
+            throw TargetProcessSettingsException::create(
+                TargetProcessSettingsException::LIBPTHREAD_PATH_IS_NOT_STRING
+            );
+        }
+
+        return new self($pid, $php_regex, $libpthread_regex, $php_path, $libpthread_path);
     }
 }

@@ -46,14 +46,15 @@ final class ProcessModuleSymbolReaderCreator
      * @param int $pid
      * @param ProcessMemoryMap $process_memory_map
      * @param string $regex
+     * @param string|null $binary_path
      * @param int|null $tls_block_address
      * @return ProcessModuleSymbolReader|null
-     * @throws ElfParserException
      */
     public function createModuleReaderByNameRegex(
         int $pid,
         ProcessMemoryMap $process_memory_map,
         string $regex,
+        ?string $binary_path,
         ?int $tls_block_address = null
     ): ?ProcessModuleSymbolReader {
         $memory_areas = $process_memory_map->findByNameRegex($regex);
@@ -63,9 +64,9 @@ final class ProcessModuleSymbolReaderCreator
         $module_memory_map = new ProcessModuleMemoryMap($memory_areas);
 
         $module_name = current($memory_areas)->name;
-        $container_aware_path = $this->createContainerAwarePath($pid, $module_name);
+        $path = $binary_path ?? $this->createContainerAwarePath($pid, $module_name);
         try {
-            $symbol_resolver = $this->symbol_resolver_creator->createLinearScanResolverFromPath($container_aware_path);
+            $symbol_resolver = $this->symbol_resolver_creator->createLinearScanResolverFromPath($path);
             return new ProcessModuleSymbolReader(
                 $pid,
                 $symbol_resolver,
@@ -75,7 +76,7 @@ final class ProcessModuleSymbolReaderCreator
             );
         } catch (ElfParserException $e) {
             try {
-                $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromPath($container_aware_path);
+                $symbol_resolver = $this->symbol_resolver_creator->createDynamicResolverFromPath($path);
                 return new ProcessModuleSymbolReader(
                     $pid,
                     $symbol_resolver,

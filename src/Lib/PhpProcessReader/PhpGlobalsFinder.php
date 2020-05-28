@@ -87,7 +87,9 @@ final class PhpGlobalsFinder
             $symbol_reader = $this->php_symbol_reader_creator->create(
                 $target_process_settings->pid,
                 $target_process_settings->php_regex,
-                $target_process_settings->libpthread_regex
+                $target_process_settings->libpthread_regex,
+                $target_process_settings->php_path,
+                $target_process_settings->libpthread_path
             );
             $this->php_symbol_reader_cache[$target_process_settings->pid] = $symbol_reader;
         }
