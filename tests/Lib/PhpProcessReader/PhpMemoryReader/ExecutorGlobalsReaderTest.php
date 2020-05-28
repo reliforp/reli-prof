@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
+use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
@@ -85,7 +86,9 @@ class ExecutorGlobalsReaderTest extends TestCase
         );
 
         /** @var int $child_status['pid'] */
-        $executor_globals_address = $php_globals_finder->findExecutorGlobals($child_status['pid']);
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new TargetProcessSettings($child_status['pid'])
+        );
         $name = $executor_globals_reader->readCurrentFunctionName($child_status['pid'], $executor_globals_address);
         $this->assertSame('fgets', $name);
     }

@@ -68,7 +68,7 @@ final class GetEgAddressCommand extends Command
         $target_process_settings = TargetProcessSettings::fromConsoleInput($input);
 
         $output->writeln(
-            '0x' . dechex($this->php_globals_finder->findExecutorGlobals($target_process_settings->pid))
+            '0x' . dechex($this->php_globals_finder->findExecutorGlobals($target_process_settings))
         );
 
         return 0;

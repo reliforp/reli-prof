@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader;
 
+use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\ByteStream\CDataByteReader;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
@@ -49,17 +50,17 @@ final class PhpGlobalsFinder
     }
 
     /**
-     * @param int $pid
+     * @param TargetProcessSettings $target_process_settings
      * @return int
      * @throws ElfParserException
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
      */
-    public function findTsrmLsCache(int $pid): ?int
+    public function findTsrmLsCache(TargetProcessSettings $target_process_settings): ?int
     {
         if (!isset($this->tsrm_ls_cache) and !$this->tsrm_ls_cache_not_found) {
-            $tsrm_lm_cache_cdata = $this->getSymbolReader($pid)->read('_tsrm_ls_cache');
+            $tsrm_lm_cache_cdata = $this->getSymbolReader($target_process_settings)->read('_tsrm_ls_cache');
             if (isset($tsrm_lm_cache_cdata)) {
                 $this->tsrm_ls_cache = $this->integer_reader->read64(
                     new CDataByteReader($tsrm_lm_cache_cdata),
@@ -73,34 +74,36 @@ final class PhpGlobalsFinder
     }
 
     /**
-     * @param int $pid
+     * @param TargetProcessSettings $target_process_settings
      * @return ProcessSymbolReaderInterface
-     * @throws ProcessSymbolReaderException
      * @throws ElfParserException
-     * @throws TlsFinderException
      * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
+     * @throws TlsFinderException
      */
-    public function getSymbolReader(int $pid): ProcessSymbolReaderInterface
+    public function getSymbolReader(TargetProcessSettings $target_process_settings): ProcessSymbolReaderInterface
     {
-        if (!isset($this->php_symbol_reader_cache[$pid])) {
-            $this->php_symbol_reader_cache[$pid] = $this->php_symbol_reader_creator->create($pid);
+        if (!isset($this->php_symbol_reader_cache[$target_process_settings->pid])) {
+            $this->php_symbol_reader_cache[$target_process_settings->pid]
+                = $this->php_symbol_reader_creator->create($target_process_settings->pid);
         }
-        return $this->php_symbol_reader_cache[$pid];
+        return $this->php_symbol_reader_cache[$target_process_settings->pid];
     }
 
     /**
-     * @param int $pid
+     * @param TargetProcessSettings $target_process_settings
      * @return int
      * @throws ElfParserException
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
      */
-    public function findExecutorGlobals(int $pid): int
+    public function findExecutorGlobals(TargetProcessSettings $target_process_settings): int
     {
-        $tsrm_ls_cache = $this->findTsrmLsCache($pid);
+        $tsrm_ls_cache = $this->findTsrmLsCache($target_process_settings);
         if (isset($tsrm_ls_cache)) {
-            $executor_globals_offset_cdata = $this->getSymbolReader($pid)->read('executor_globals_offset');
+            $executor_globals_offset_cdata = $this->getSymbolReader($target_process_settings)
+                ->read('executor_globals_offset');
             if (is_null($executor_globals_offset_cdata)) {
                 throw new RuntimeException('executor_globals_offset not found');
             }
@@ -110,7 +113,8 @@ final class PhpGlobalsFinder
             )->toInt();
             return $tsrm_ls_cache + $executor_globals_offset;
         }
-        $executor_globals_address = $this->getSymbolReader($pid)->resolveAddress('executor_globals');
+        $executor_globals_address = $this->getSymbolReader($target_process_settings)
+            ->resolveAddress('executor_globals');
         if (is_null($executor_globals_address)) {
             throw new RuntimeException('executor globals not found');
         }

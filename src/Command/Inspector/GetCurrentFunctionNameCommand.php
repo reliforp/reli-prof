@@ -86,7 +86,7 @@ final class GetCurrentFunctionNameCommand extends Command
         $loop_settings = LoopSettings::fromConsoleInput($input);
 
         $pid = $target_process_settings->pid;
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($pid);
+        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings);
 
         $this->loop_provider->getMainLoop(
             function () use ($pid, $eg_address, $output): bool {
