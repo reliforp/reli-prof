@@ -37,7 +37,6 @@ final class GetEgAddressCommand extends Command
      * GetEgAddressCommand constructor.
      *
      * @param PhpGlobalsFinder $php_globals_finder
-     * @param string|null $name
      */
     public function __construct(
         PhpGlobalsFinder $php_globals_finder
