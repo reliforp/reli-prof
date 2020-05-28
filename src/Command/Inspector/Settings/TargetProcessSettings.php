@@ -18,8 +18,8 @@ use Symfony\Component\Console\Input\InputInterface;
 
 class TargetProcessSettings
 {
-    private const PHP_REGEX_DEFAULT = '.*\/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$';
-    private const LIBPTHREAD_REGEX_DEFAULT = '.*\/libpthread.*\.so$';
+    private const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$';
+    private const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so$';
 
     public int $pid;
     public string $php_regex;
@@ -37,8 +37,8 @@ class TargetProcessSettings
         string $libpthread_regex = self::LIBPTHREAD_REGEX_DEFAULT
     ) {
         $this->pid = $pid;
-        $this->php_regex = '/' . $php_regex . '/';
-        $this->libpthread_regex = '/' . $libpthread_regex . '/';
+        $this->php_regex = '{' . $php_regex . '}';
+        $this->libpthread_regex = '{' . $libpthread_regex . '}';
     }
 
     /**
