@@ -16,9 +16,12 @@
    +----------------------------------------------------------------------+
 */
 
+// zend_long.h
 typedef int64_t zend_long;
 typedef uint64_t zend_ulong;
 typedef int64_t zend_off_t;
+
+// zend_types.h
 typedef unsigned char zend_bool;
 typedef unsigned char zend_uchar;
 typedef intptr_t zend_intptr_t;
@@ -164,6 +167,7 @@ struct _zend_resource {
 
 typedef uintptr_t zend_type;
 
+// zend_compile.h
 typedef struct _zend_property_info {
 	uint32_t offset; /* property offset for object properties or
 	                      property index for static properties */
@@ -174,6 +178,7 @@ typedef struct _zend_property_info {
 	zend_type type;
 } zend_property_info;
 
+// zend_types.h
 typedef struct {
 	size_t num;
 	size_t num_allocated;
@@ -197,20 +202,26 @@ struct _zend_ast_ref {
 	/*zend_ast        ast; zend_ast follows the zend_ast_ref structure */
 };
 
+// zend_globals.h
 typedef struct _zend_vm_stack *zend_vm_stack;
+
+// zend_execute.h
 struct _zend_vm_stack {
 	zval *top;
 	zval *end;
 	zend_vm_stack prev;
 };
 
+// zend_globals_macros.h
 typedef struct _zend_compiler_globals zend_compiler_globals;
 typedef struct _zend_executor_globals zend_executor_globals;
 typedef struct _zend_php_scanner_globals zend_php_scanner_globals;
 typedef struct _zend_ini_scanner_globals zend_ini_scanner_globals;
 
+// zend_globals.h
 typedef struct _zend_ini_entry zend_ini_entry;
 
+// zend_ini.h
 struct _zend_ini_entry {
 	zend_string *name;
 	int (*on_modify)(zend_ini_entry *entry, zend_string *new_value, void *mh_arg1, void *mh_arg2, void *mh_arg3, int stage);
@@ -229,6 +240,7 @@ struct _zend_ini_entry {
 
 };
 
+// zend_iterators.h
 typedef struct _zend_object_iterator zend_object_iterator;
 
 typedef struct _zend_object_iterator_funcs {
@@ -273,6 +285,7 @@ typedef struct _zend_class_iterator_funcs {
 	zend_function *zf_rewind;
 } zend_class_iterator_funcs;
 
+// zend.h
 typedef enum {
 	EH_NORMAL = 0,
 	EH_THROW
@@ -284,6 +297,7 @@ typedef struct {
 	zval                   user_handler;
 } zend_error_handling;
 
+// zend_objects_API.h
 typedef struct _zend_objects_store {
 	zend_object **object_buckets;
 	uint32_t top;
@@ -291,6 +305,7 @@ typedef struct _zend_objects_store {
 	int free_list_head;
 } zend_objects_store;
 
+// zend_modules.h
 typedef struct _zend_module_entry zend_module_entry;
 typedef struct _zend_module_dep zend_module_dep;
 struct _zend_module_dep {
@@ -300,8 +315,10 @@ struct _zend_module_dep {
 	unsigned char type;		/* dependency type */
 };
 
+// zend_compile.h
 typedef void (*zif_handler)(zend_execute_data *execute_data, zval *return_value);
 
+// zend_API.h
 typedef struct _zend_function_entry {
 	const char *fname;
 	zif_handler handler;
@@ -310,6 +327,7 @@ typedef struct _zend_function_entry {
 	uint32_t flags;
 } zend_function_entry;
 
+// zend_modules.h
 struct _zend_module_entry {
 	unsigned short size;
 	unsigned int zend_api;
@@ -337,11 +355,13 @@ struct _zend_module_entry {
 	const char *build_id;
 };
 
+// zend_stack.h
 typedef struct _zend_stack {
 	int size, top, max;
 	void *elements;
 } zend_stack;
 
+// zend_compile.h
 typedef struct _zend_op zend_op;
 typedef struct _zend_op_array zend_op_array;
 
@@ -481,7 +501,7 @@ union _zend_function {
 	zend_internal_function internal_function;
 };
 
-
+// zend_globals.h
 struct _zend_executor_globals {
 	zval uninitialized_zval;
 	zval error_zval;
@@ -587,6 +607,7 @@ struct _zend_executor_globals {
 	void *reserved[6];
 };
 
+// zend_compile.h
 typedef struct _zend_class_constant {
 	zval value; /* access flags are stored in reserved: zval.u2.access_flags */
 	zend_string *doc_comment;
@@ -604,6 +625,7 @@ struct _zend_execute_data {
 	void               **run_time_cache;   /* cache op_array->run_time_cache */
 };
 
+// zend.h
 typedef struct _zend_class_name {
 	zend_string *name;
 	zend_string *lc_name;
