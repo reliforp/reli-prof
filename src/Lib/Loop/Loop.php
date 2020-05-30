@@ -26,7 +26,7 @@ final class Loop
     {
         while (1) {
             if (!$this->process->invoke()) {
-                return;
+                break;
             }
         }
     }
