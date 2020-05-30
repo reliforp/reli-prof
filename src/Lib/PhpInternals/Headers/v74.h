@@ -342,20 +342,6 @@ typedef struct _zend_stack {
 	void *elements;
 } zend_stack;
 
-typedef struct
-{
-  unsigned long int __val[1024 / (8 * sizeof (unsigned long int))];
-} __sigset_t;
-
-typedef long int __jmp_buf[8];
-struct __jmp_buf_tag
-{
-    __jmp_buf __jmpbuf;
-    int __mask_was_saved;
-    __sigset_t __saved_mask;
-};
-typedef struct __jmp_buf_tag sigjmp_buf[1];
-
 typedef struct _zend_op zend_op;
 typedef struct _zend_op_array zend_op_array;
 
@@ -511,7 +497,7 @@ struct _zend_executor_globals {
 
 	HashTable included_files;	/* files already included */
 
-	sigjmp_buf *bailout;
+	void *bailout;
 
 	int error_reporting;
 	int exit_status;
