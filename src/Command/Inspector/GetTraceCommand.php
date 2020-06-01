@@ -83,6 +83,12 @@ final class GetTraceCommand extends Command
                 'regex to find the libpthread.so loaded in the target process'
             )
             ->addOption(
+                'php-version',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'php version of the target'
+            )
+            ->addOption(
                 'php-path',
                 null,
                 InputOption::VALUE_OPTIONAL,
@@ -119,6 +125,7 @@ final class GetTraceCommand extends Command
             function () use ($get_trace_settings, $target_process_settings, $eg_address, $output): bool {
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $target_process_settings->pid,
+                    $target_process_settings->php_version,
                     $eg_address,
                     $get_trace_settings->depth
                 );

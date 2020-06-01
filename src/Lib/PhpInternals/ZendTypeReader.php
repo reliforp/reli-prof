@@ -24,12 +24,19 @@ final class ZendTypeReader
 {
     public const V73 = 'v73';
     public const V74 = 'v74';
+
+    public const ALL_SUPPORTED_VERSIONS = [
+        self::V73,
+        self::V74,
+    ];
+
     private string $php_version;
     private ?FFI $ffi = null;
 
     /**
      * ZendTypeReader constructor.
      * @param string $php_version
+     * @psalm-param value-of<self::ALL_SUPPORTED_VERSIONS> $php_version
      */
     public function __construct(string $php_version)
     {

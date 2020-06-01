@@ -81,6 +81,12 @@ final class GetCurrentFunctionNameCommand extends Command
                 'regex to find the libpthread.so loaded in the target process'
             )
             ->addOption(
+                'php-version',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'php version of the target'
+            )
+            ->addOption(
                 'php-path',
                 null,
                 InputOption::VALUE_OPTIONAL,
@@ -114,9 +120,13 @@ final class GetCurrentFunctionNameCommand extends Command
         $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings);
 
         $this->loop_provider->getMainLoop(
-            function () use ($pid, $eg_address, $output): bool {
+            function () use ($target_process_settings, $eg_address, $output): bool {
                 $output->writeln(
-                    $this->executor_globals_reader->readCurrentFunctionName($pid, $eg_address)
+                    $this->executor_globals_reader->readCurrentFunctionName(
+                        $target_process_settings->pid,
+                        $target_process_settings->php_version,
+                        $eg_address
+                    )
                 );
                 return true;
             },
