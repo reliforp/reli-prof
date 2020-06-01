@@ -20,6 +20,7 @@ use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -48,7 +49,7 @@ class ExecutorGlobalsReaderTest extends TestCase
         $memory_reader = new MemoryReader();
         $executor_globals_reader = new ExecutorGlobalsReader(
             $memory_reader,
-            new ZendTypeReader(ZendTypeReader::V74)
+            new ZendTypeReaderCreator()
         );
         $this->child = proc_open(
             [
@@ -89,7 +90,11 @@ class ExecutorGlobalsReaderTest extends TestCase
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
             new TargetProcessSettings($child_status['pid'])
         );
-        $name = $executor_globals_reader->readCurrentFunctionName($child_status['pid'], $executor_globals_address);
+        $name = $executor_globals_reader->readCurrentFunctionName(
+            $child_status['pid'],
+            ZendTypeReader::V74,
+            $executor_globals_address
+        );
         $this->assertSame('fgets', $name);
     }
 }
