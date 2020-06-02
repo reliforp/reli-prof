@@ -22,11 +22,13 @@ use FFI\CData;
  */
 final class ZendTypeReader
 {
+    public const V71 = 'v71';
     public const V72 = 'v72';
     public const V73 = 'v73';
     public const V74 = 'v74';
 
     public const ALL_SUPPORTED_VERSIONS = [
+        self::V71,
         self::V72,
         self::V73,
         self::V74,
