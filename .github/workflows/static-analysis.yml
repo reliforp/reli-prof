@@ -20,7 +20,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: 7.4
-          extensions: dom
+          extensions: dom, mbstring
           coverage: none
 
       - name: Get Composer Cache Directory
