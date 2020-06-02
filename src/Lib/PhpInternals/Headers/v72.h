@@ -49,14 +49,15 @@ typedef void (*sort_func_t)(void *, size_t, size_t, compare_func_t, swap_func_t)
 typedef void (*dtor_func_t)(zval *pDest);
 typedef void (*copy_ctor_func_t)(zval *pElement);
 
-typedef struct _zend_refcounted_h {
-	uint32_t         refcount;			/* reference counter 32-bit */
+typedef struct zend_refcounted_h {
+	uint32_t refcount;
 	union {
 		struct {
 			struct {
-				zend_uchar    type;
-				zend_uchar    flags;    /* used for strings & objects */
-				uint16_t      gc_info; /* keeps GC root number (or 0) and color */
+				zend_uchar type;
+				zend_uchar flags;    /* used for strings & objects */
+				uint16_t gc_info;    /* keeps GC root number (or 0) and color */
+            }
 		} v;
 		uint32_t type_info;
 	} u;
@@ -177,7 +178,7 @@ struct _zend_reference {
 
 struct _zend_ast_ref {
 	zend_refcounted_h gc;
-	zend_ast        ast;
+	zend_ast         *ast;
 };
 
 // zend_globals.h
