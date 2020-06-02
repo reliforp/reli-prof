@@ -13,7 +13,7 @@ It can read information from running PHP process, by parsing ELF binary of the i
 - WIP
 - It can periodically read and output the current running function name or call trace from another PHP process
 - Additionally, it can find the address of EG from another PHP process
-    - ZTS is also supported, if the target process is PHP 7.4.
+    - ZTS is also supported, if you have an unstripped php binary.
     - So it can also be used with [adsr/phpspy](https://github.com/adsr/phpspy) to profile in ZTS
 - It runs only on PHP 7.4
 
@@ -61,10 +61,10 @@ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=h
 - If the target process is ZTS, PCNTL extension must be enabled.
 
 ## Target
-- PHP-7.0 64bit Linux x86_64 (NTS)
-- PHP-7.1 64bit Linux x86_64 (NTS)
-- PHP-7.2 64bit Linux x86_64 (NTS)
-- PHP-7.3 64bit Linux x86_64 (NTS)
+- PHP-7.0 64bit Linux x86_64 (NTS / ZTS)
+- PHP-7.1 64bit Linux x86_64 (NTS / ZTS)
+- PHP-7.2 64bit Linux x86_64 (NTS / ZTS)
+- PHP-7.3 64bit Linux x86_64 (NTS / ZTS)
 - PHP-7.4 64bit Linux x86_64 (NTS / ZTS)
     - The target process has to load libpthread.so on ZTS to find EG from TLS,
 
