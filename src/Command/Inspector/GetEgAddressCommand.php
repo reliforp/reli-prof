@@ -63,6 +63,12 @@ final class GetEgAddressCommand extends Command
                 'regex to find the libpthread.so loaded in the target process'
             )
             ->addOption(
+                'php-version',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'php version of the target'
+            )
+            ->addOption(
                 'php-path',
                 null,
                 InputOption::VALUE_OPTIONAL,
