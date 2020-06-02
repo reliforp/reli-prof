@@ -49,7 +49,7 @@ class ExecutorGlobalsReaderTest extends TestCase
         $memory_reader = new MemoryReader();
         $executor_globals_reader = new ExecutorGlobalsReader(
             $memory_reader,
-            new ZendTypeReaderCreator()
+            new ZendTypeReaderCreator(),
         );
         $this->child = proc_open(
             [
@@ -83,7 +83,8 @@ class ExecutorGlobalsReaderTest extends TestCase
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader()
+            new LittleEndianReader(),
+            new MemoryReader()
         );
 
         /** @var int $child_status['pid'] */
