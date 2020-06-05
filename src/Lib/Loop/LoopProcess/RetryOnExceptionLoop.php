@@ -39,7 +39,7 @@ final class RetryOnExceptionLoop implements LoopProcessInterface
 
     public function invoke(): bool
     {
-        while ($this->current_retry_count <= $this->max_retry) {
+        while ($this->current_retry_count <= $this->max_retry or $this->max_retry === -1) {
             try {
                 $result = $this->chain->invoke();
                 $this->current_retry_count = 0;

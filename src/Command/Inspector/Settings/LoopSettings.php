@@ -20,7 +20,7 @@ class LoopSettings
 {
     private const SLEEP_NANO_SECONDS_DEFAULT = 1000 * 1000 * 10;
     private const CANCEL_KEY_DEFAULT = 'q';
-    private const MAX_RETRY_DEFAULT = 10;
+    private const MAX_RETRY_DEFAULT = -1;
 
     public int $sleep_nano_seconds;
     public string $cancel_key;
