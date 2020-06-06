@@ -21,7 +21,8 @@
     "ext-ffi": "*",
     "ext-pcntl": "*",
     "symfony/console": "^5.0",
-    "php-di/php-di": "^6.1"
+    "php-di/php-di": "^6.1",
+    "amphp/parallel": "^1.4"
   },
   "require-dev": {
     "ext-posix": "*",
