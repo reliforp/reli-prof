@@ -15,7 +15,7 @@ namespace PhpProfiler\Lib\Process\ProcFileSystem;
 
 use IteratorAggregate;
 
-class CommandLineEnumerator implements IteratorAggregate
+final class CommandLineEnumerator implements IteratorAggregate
 {
     /**
      * @return \Generator<int, string>
