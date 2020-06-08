@@ -13,25 +13,28 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Loop\LoopProcess;
 
+use LogicException;
 use PHPUnit\Framework\TestCase;
 
 class NanoSleepLoopTest extends TestCase
 {
-    public function testReturnFalseWithoutSleepIfChainFailed(): void
+    public function testReturnFalseIfChainFailed(): void
     {
         $time = time();
         $nano_sleep_loop = new NanoSleepLoop(
-            1000 * 1000 * 1000,
+            0,
             new CallableLoop(fn () => false)
         );
         $this->assertSame(false, $nano_sleep_loop->invoke());
     }
 
-    public function testSleepIfChainSucceed(): void
+    public function testSleepBeforeChainInvoked(): void
     {
         $nano_sleep_loop = new NanoSleepLoop(
             1000 * 1000 * 1000,
-            new CallableLoop(fn () => true)
+            new CallableLoop(function () {
+                throw new LogicException('should not be thrown');
+            })
         );
         $this->expectWarning();
         $this->expectWarningMessageMatches('/nanoseconds was not in the range 0 to 999 999 999/');
