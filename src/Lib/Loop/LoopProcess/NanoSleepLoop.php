@@ -28,10 +28,10 @@ final class NanoSleepLoop implements LoopProcessInterface
 
     public function invoke(): bool
     {
+        time_nanosleep(0, $this->sleep_nano_seconds);
         if (!$this->chain->invoke()) {
             return false;
         }
-        time_nanosleep(0, $this->sleep_nano_seconds);
         return true;
     }
 }
