@@ -35,12 +35,30 @@ class DaemonCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $context = Context\create(__DIR__ . '/Worker/php-searcher.php');
-        /** @var int $pid */
+        /** @var int $searcher_pid */
         $searcher_pid = Promise\wait($context->start());
-        /** @var int[] $result */
+        /** @var int[] $pid_list */
         $pid_list = Promise\wait($context->receive());
+        $readers = [];
         foreach ($pid_list as $pid) {
-            $output->writeln($pid);
+            $context = Context\create(__DIR__ . '/Worker/php-reader.php');
+            Promise\wait($context->start());
+            Promise\wait($context->send($pid));
+            $readers[$pid] = $context;
+        }
+        while (1) {
+            if ($readers) {
+                foreach ($readers as $pid => $reader) {
+                    if (!$reader->isRunning()) {
+                        unset($readers[$pid]);
+                        continue;
+                    }
+                    /** @var string */
+                    $result = Promise\wait($reader->receive());
+                    $output->write($result);
+                }
+            }
+            time_nanosleep(0, 1000 * 1000 * 10);
         }
         return 0;
     }
