@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
-use PhpProfiler\Command\Inspector\Settings\LoopSettings;
+use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Lib\Loop\Loop;
 use PhpProfiler\Lib\Loop\LoopBuilder;
 use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
@@ -31,7 +31,7 @@ final class TraceLoopProvider
         $this->loop_builder = $loop_builder;
     }
 
-    public function getMainLoop(callable $main, LoopSettings $settings): Loop
+    public function getMainLoop(callable $main, TraceLoopSettings $settings): Loop
     {
         return $this->loop_builder
             ->addProcess(RetryOnExceptionLoop::class, [$settings->max_retries, [MemoryReaderException::class]])

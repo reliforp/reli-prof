@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Command\Inspector;
 
 use PhpProfiler\Command\CommandSettingsException;
-use PhpProfiler\Command\Inspector\Settings\LoopSettings;
+use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
@@ -114,7 +114,7 @@ final class GetCurrentFunctionNameCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $target_process_settings = TargetProcessSettings::fromConsoleInput($input);
-        $loop_settings = LoopSettings::fromConsoleInput($input);
+        $loop_settings = TraceLoopSettings::fromConsoleInput($input);
 
         $pid = $target_process_settings->pid;
         $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings);

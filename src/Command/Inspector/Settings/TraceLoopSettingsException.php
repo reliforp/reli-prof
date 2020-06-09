@@ -15,7 +15,7 @@ namespace PhpProfiler\Command\Inspector\Settings;
 
 use PhpProfiler\Command\CommandSettingsException;
 
-class LoopSettingsException extends CommandSettingsException
+class TraceLoopSettingsException extends CommandSettingsException
 {
     public const SLEEP_NS_IS_NOT_INTEGER = 1;
     public const MAX_RETRY_IS_NOT_INTEGER = 2;
