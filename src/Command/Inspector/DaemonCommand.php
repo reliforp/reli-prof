@@ -47,21 +47,35 @@ class DaemonCommand extends Command
             Promise\wait($context->send($pid));
             $readers[$pid] = $context;
         }
+        exec('stty -icanon -echo');
+
         Loop::run(function () use (&$readers, $output) {
-            Loop::repeat(10, function () use (&$readers, $output) {
-                if (empty($readers)) {
-                    return false;
+            Loop::onReadable(
+                STDIN,
+                /** @param resource $stream */
+                function (string $watcher_id, $stream) {
+                    $key = fread($stream, 1);
+                    if ($key === 'q') {
+                        Loop::cancel($watcher_id);
+                        Loop::stop();
+                    }
                 }
+            );
+            Loop::repeat(10, function () use (&$readers, $output) {
+                /** @var array<int, Context\Context> $readers */
+
                 $promises = [];
                 foreach ($readers as $pid => $reader) {
                     if (!$reader->isRunning()) {
+                        /** @psalm-suppress MixedArrayAccess*/
                         unset($readers[$pid]);
                         continue;
                     }
                     $promises[] = \Amp\call(
                         function () use ($reader, &$readers, $pid, $output) {
-                            /** @var string */
+                            /** @psalm-suppress MixedArrayAccess*/
                             unset($readers[$pid]);
+                            /** @var string $result */
                             $result = yield $reader->receive();
                             $output->write($result);
                             $readers[$pid] = $reader;
