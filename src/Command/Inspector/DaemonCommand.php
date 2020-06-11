@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
+use Amp\Loop;
 use Amp\Promise;
 use Amp\Parallel\Context;
 use Symfony\Component\Console\Command\Command;
@@ -46,20 +47,31 @@ class DaemonCommand extends Command
             Promise\wait($context->send($pid));
             $readers[$pid] = $context;
         }
-        while (1) {
-            if ($readers) {
+        Loop::run(function () use (&$readers, $output) {
+            Loop::repeat(10, function () use (&$readers, $output) {
+                if (empty($readers)) {
+                    return false;
+                }
+                $promises = [];
                 foreach ($readers as $pid => $reader) {
                     if (!$reader->isRunning()) {
                         unset($readers[$pid]);
                         continue;
                     }
-                    /** @var string */
-                    $result = Promise\wait($reader->receive());
-                    $output->write($result);
+                    $promises[] = \Amp\call(
+                        function () use ($reader, &$readers, $pid, $output) {
+                            /** @var string */
+                            unset($readers[$pid]);
+                            $result = yield $reader->receive();
+                            $output->write($result);
+                            $readers[$pid] = $reader;
+                        }
+                    );
                 }
-            }
-            time_nanosleep(0, 1000 * 1000 * 10);
-        }
+                yield $promises;
+            });
+        });
+
         return 0;
     }
 }
