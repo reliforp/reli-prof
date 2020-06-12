@@ -16,13 +16,15 @@ use DI\ContainerBuilder;
 use PhpProfiler\Lib\Concurrency\Amphp\Task\PhpSearcherTask;
 
 return function (Channel $channel): \Generator {
-
     $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/../../../../config/di.php')->build();
 
     /** @var PhpSearcherTask $searcher */
     $searcher = $container->make(PhpSearcherTask::class, ['channel' => $channel]);
 
+    /** @var string $target_regex */
+    $target_regex = yield $channel->receive();
+
     while (1) {
-        yield from $searcher->run();
+        yield from $searcher->run($target_regex);
     }
 };

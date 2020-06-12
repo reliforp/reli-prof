@@ -28,11 +28,11 @@ final class PhpSearcherTask
         $this->process_searcher = $process_searcher;
     }
 
-    public function run(): Generator
+    public function run(string $target_regex): Generator
     {
         while (1) {
             yield $this->channel->send(
-                $this->process_searcher->searchByRegex('/php-fpm/')
+                $this->process_searcher->searchByRegex($target_regex)
             );
             sleep(1);
         }

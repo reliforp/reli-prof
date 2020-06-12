@@ -18,6 +18,7 @@ use Amp\Promise;
 use Amp\Parallel\Context;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class DaemonCommand extends Command
@@ -25,7 +26,14 @@ class DaemonCommand extends Command
     public function configure(): void
     {
         $this->setName('inspector:daemon')
-            ->setDescription('periodically get running function name from an outer process or thread');
+            ->setDescription('periodically get running function name from an outer process or thread')
+            ->addOption(
+                'target-regex',
+                'P',
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the php binary loaded in the target process'
+            )
+        ;
     }
 
     /**
@@ -35,9 +43,12 @@ class DaemonCommand extends Command
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string $target_regex */
+        $target_regex = $input->getOption('target-regex') ?? '/php-fpm/';
         $context = Context\create(__DIR__ . '/Worker/php-searcher.php');
         /** @var int $searcher_pid */
         $searcher_pid = Promise\wait($context->start());
+        Promise\wait($context->send($target_regex));
         /** @var int[] $pid_list */
         $pid_list = Promise\wait($context->receive());
         $readers = [];
