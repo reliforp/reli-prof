@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Loop;
 
-interface LoopProcessInterface
+interface LoopMiddlewareInterface
 {
     public function invoke(): bool;
 }

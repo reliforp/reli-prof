@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
 use Exception;
 use LogicException;
@@ -22,19 +22,19 @@ class RetryOnExceptionLoopTest extends TestCase
 {
     public function testReturnIfChainReturn(): void
     {
-        $loop = new RetryOnExceptionLoop(0, [Exception::class], new CallableLoop(fn () => true));
+        $loop = new RetryOnExceptionMiddleware(0, [Exception::class], new CallableMiddleware(fn () => true));
         $this->assertSame(true, $loop->invoke());
-        $loop = new RetryOnExceptionLoop(0, [Exception::class], new CallableLoop(fn () => false));
+        $loop = new RetryOnExceptionMiddleware(0, [Exception::class], new CallableMiddleware(fn () => false));
         $this->assertSame(false, $loop->invoke());
     }
 
     public function testRetryIfChainThrows(): void
     {
         $counter = 0;
-        $loop = new RetryOnExceptionLoop(
+        $loop = new RetryOnExceptionMiddleware(
             1,
             [Exception::class],
-            new CallableLoop(
+            new CallableMiddleware(
                 function () use (&$counter) {
                     if ($counter++ === 0) {
                         throw new Exception();
@@ -50,10 +50,10 @@ class RetryOnExceptionLoopTest extends TestCase
     public function testReturnFalseIfRetryCountExceedsMax(): void
     {
         $counter = 0;
-        $loop = new RetryOnExceptionLoop(
+        $loop = new RetryOnExceptionMiddleware(
             0,
             [Exception::class],
-            new CallableLoop(
+            new CallableMiddleware(
                 function () use (&$counter) {
                     if ($counter++ === 0) {
                         throw new Exception();
@@ -68,10 +68,10 @@ class RetryOnExceptionLoopTest extends TestCase
 
     public function testRethrowUnspecifiedException(): void
     {
-        $loop = new RetryOnExceptionLoop(
+        $loop = new RetryOnExceptionMiddleware(
             0,
             [RuntimeException::class],
-            new CallableLoop(
+            new CallableMiddleware(
                 function () {
                     throw new LogicException();
                 }

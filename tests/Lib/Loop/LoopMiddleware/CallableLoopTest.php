@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
 use PHPUnit\Framework\TestCase;
 
@@ -20,7 +20,7 @@ class CallableLoopTest extends TestCase
     public function testInvoke(): void
     {
         $side_effect = false;
-        $loop = new CallableLoop(function () use (&$side_effect) {
+        $loop = new CallableMiddleware(function () use (&$side_effect) {
             $side_effect = true;
             return true;
         });

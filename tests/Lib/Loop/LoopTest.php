@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Loop;
 
-use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
+use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;
 use PHPUnit\Framework\TestCase;
 
 class LoopTest extends TestCase
@@ -22,7 +22,7 @@ class LoopTest extends TestCase
     {
         $counter = 0;
         $loop = new Loop(
-            new CallableLoop(
+            new CallableMiddleware(
                 function () use (&$counter) {
                     $counter++;
                     if ($counter >= 3) {

@@ -15,9 +15,9 @@ namespace PhpProfiler\Lib\Loop;
 
 final class Loop
 {
-    private LoopProcessInterface $process;
+    private LoopMiddlewareInterface $process;
 
-    public function __construct(LoopProcessInterface $process)
+    public function __construct(LoopMiddlewareInterface $process)
     {
         $this->process = $process;
     }

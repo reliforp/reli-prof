@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
-use PhpProfiler\Lib\Loop\LoopProcessInterface;
+use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
 
-final class CallableLoop implements LoopProcessInterface
+final class CallableMiddleware implements LoopMiddlewareInterface
 {
     private $callable;
 

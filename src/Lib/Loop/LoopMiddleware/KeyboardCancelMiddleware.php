@@ -11,18 +11,18 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
-use PhpProfiler\Lib\Loop\LoopProcessInterface;
+use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
 
-final class KeyboardCancelLoop implements LoopProcessInterface
+final class KeyboardCancelMiddleware implements LoopMiddlewareInterface
 {
-    private LoopProcessInterface $chain;
+    private LoopMiddlewareInterface $chain;
     private string $cancel_key;
     /** @var resource */
     private $keyboard_input;
 
-    public function __construct(string $cancel_key, LoopProcessInterface $chain)
+    public function __construct(string $cancel_key, LoopMiddlewareInterface $chain)
     {
         $this->chain = $chain;
         exec('stty -icanon -echo');

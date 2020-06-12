@@ -16,10 +16,10 @@ namespace PhpProfiler\Command\Inspector;
 use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Lib\Loop\Loop;
 use PhpProfiler\Lib\Loop\LoopBuilder;
-use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
-use PhpProfiler\Lib\Loop\LoopProcess\KeyboardCancelLoop;
-use PhpProfiler\Lib\Loop\LoopProcess\NanoSleepLoop;
-use PhpProfiler\Lib\Loop\LoopProcess\RetryOnExceptionLoop;
+use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;
+use PhpProfiler\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware;
+use PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware;
+use PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
 final class TraceLoopProvider
@@ -34,10 +34,10 @@ final class TraceLoopProvider
     public function getMainLoop(callable $main, TraceLoopSettings $settings): Loop
     {
         return $this->loop_builder
-            ->addProcess(RetryOnExceptionLoop::class, [$settings->max_retries, [MemoryReaderException::class]])
-            ->addProcess(KeyboardCancelLoop::class, [$settings->cancel_key])
-            ->addProcess(NanoSleepLoop::class, [$settings->sleep_nano_seconds])
-            ->addProcess(CallableLoop::class, [$main])
+            ->addProcess(RetryOnExceptionMiddleware::class, [$settings->max_retries, [MemoryReaderException::class]])
+            ->addProcess(KeyboardCancelMiddleware::class, [$settings->cancel_key])
+            ->addProcess(NanoSleepMiddleware::class, [$settings->sleep_nano_seconds])
+            ->addProcess(CallableMiddleware::class, [$main])
             ->build();
     }
 }

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -24,12 +24,12 @@ class KeyboardCancelLoopTest extends TestCase
      */
     public function testReturnFalseIfCancelKeyPressed(): void
     {
-        $reflection = new ReflectionClass(KeyboardCancelLoop::class);
+        $reflection = new ReflectionClass(KeyboardCancelMiddleware::class);
         $keyboard_cancel_loop = $reflection->newInstanceWithoutConstructor();
         $keyboard_input_stream = fopen('php://memory', 'rw');
         (function () use ($keyboard_input_stream) {
-            /** @var KeyboardCancelLoop $this */
-            $this->chain = new CallableLoop(fn () => true);
+            /** @var KeyboardCancelMiddleware $this */
+            $this->chain = new CallableMiddleware(fn () => true);
             $this->cancel_key = 'q';
             $this->keyboard_input = $keyboard_input_stream;
         })->bindTo($keyboard_cancel_loop, $keyboard_cancel_loop)();

@@ -11,16 +11,16 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
-use PhpProfiler\Lib\Loop\LoopProcessInterface;
+use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
 
-final class NanoSleepLoop implements LoopProcessInterface
+final class NanoSleepMiddleware implements LoopMiddlewareInterface
 {
     private int $sleep_nano_seconds;
-    private LoopProcessInterface $chain;
+    private LoopMiddlewareInterface $chain;
 
-    public function __construct(int $sleep_nano_seconds, LoopProcessInterface $chain)
+    public function __construct(int $sleep_nano_seconds, LoopMiddlewareInterface $chain)
     {
         $this->sleep_nano_seconds = $sleep_nano_seconds;
         $this->chain = $chain;

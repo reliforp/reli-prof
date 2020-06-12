@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
 use LogicException;
 use PHPUnit\Framework\TestCase;
@@ -21,18 +21,18 @@ class NanoSleepLoopTest extends TestCase
     public function testReturnFalseIfChainFailed(): void
     {
         $time = time();
-        $nano_sleep_loop = new NanoSleepLoop(
+        $nano_sleep_loop = new NanoSleepMiddleware(
             0,
-            new CallableLoop(fn () => false)
+            new CallableMiddleware(fn () => false)
         );
         $this->assertSame(false, $nano_sleep_loop->invoke());
     }
 
     public function testSleepBeforeChainInvoked(): void
     {
-        $nano_sleep_loop = new NanoSleepLoop(
+        $nano_sleep_loop = new NanoSleepMiddleware(
             1000 * 1000 * 1000,
-            new CallableLoop(function () {
+            new CallableMiddleware(function () {
                 throw new LogicException('should not be thrown');
             })
         );
@@ -43,9 +43,9 @@ class NanoSleepLoopTest extends TestCase
 
     public function testReturnTrueIfChainSucceed(): void
     {
-        $nano_sleep_loop = new NanoSleepLoop(
+        $nano_sleep_loop = new NanoSleepMiddleware(
             0,
-            new CallableLoop(fn () => true)
+            new CallableMiddleware(fn () => true)
         );
         $this->assertSame(true, $nano_sleep_loop->invoke());
     }

@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopProcess;
+namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
 use Exception;
-use PhpProfiler\Lib\Loop\LoopProcessInterface;
+use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
 
-final class RetryOnExceptionLoop implements LoopProcessInterface
+final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
 {
-    private LoopProcessInterface $chain;
+    private LoopMiddlewareInterface $chain;
     /** @var array<int, class-string<Exception>> */
     private array $exception_names;
     private int $max_retry;
@@ -28,9 +28,9 @@ final class RetryOnExceptionLoop implements LoopProcessInterface
      * RetryOnExceptionLoop constructor.
      * @param int $max_retry
      * @param array<int, class-string<Exception>> $exception_names
-     * @param LoopProcessInterface $chain
+     * @param LoopMiddlewareInterface $chain
      */
-    public function __construct(int $max_retry, array $exception_names, LoopProcessInterface $chain)
+    public function __construct(int $max_retry, array $exception_names, LoopMiddlewareInterface $chain)
     {
         $this->max_retry = $max_retry;
         $this->exception_names = $exception_names;
