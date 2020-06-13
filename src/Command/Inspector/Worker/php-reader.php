@@ -13,6 +13,9 @@ declare(strict_types=1);
 
 use Amp\Parallel\Sync\Channel;
 use DI\ContainerBuilder;
+use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
+use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Lib\Concurrency\Amphp\Task\PhpReaderTask;
 
 return function (Channel $channel): \Generator {
@@ -22,7 +25,26 @@ return function (Channel $channel): \Generator {
     /** @var PhpReaderTask $reader */
     $reader = $container->make(PhpReaderTask::class, ['channel' => $channel]);
 
+    /** @var int $pid */
+    $pid = yield $channel->receive();
+
+    $trace_loop_settings = new TraceLoopSettings(
+        10 * 1000 * 1000,
+        'q',
+        10
+    );
+    $target_process_settings = new TargetProcessSettings(
+        $pid
+    );
+    $get_trace_settings = new GetTraceSettings(
+        PHP_INT_MAX
+    );
+
     while (1) {
-        yield from $reader->run();
+        yield from $reader->run(
+            $trace_loop_settings,
+            $target_process_settings,
+            $get_trace_settings
+        );
     }
 };

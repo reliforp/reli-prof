@@ -15,41 +15,52 @@ namespace PhpProfiler\Lib\Concurrency\Amphp\Task;
 
 use Amp\Parallel\Sync\Channel;
 use Generator;
-use PhpProfiler\Command\Inspector\GetTraceCommand;
+use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
+use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Command\Inspector\Worker\ReaderLoopProvider;
+use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
+use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 
 final class PhpReaderTask
 {
     private Channel $channel;
-    private GetTraceCommand $get_trace_command;
+    private PhpGlobalsFinder $php_globals_finder;
+    private ExecutorGlobalsReader $executor_globals_reader;
+    private ReaderLoopProvider $reader_loop_provider;
 
-    public function __construct(Channel $channel, GetTraceCommand $get_trace_command)
-    {
+    public function __construct(
+        Channel $channel,
+        PhpGlobalsFinder $php_globals_finder,
+        ExecutorGlobalsReader $executor_globals_reader,
+        ReaderLoopProvider $reader_loop_provider
+    ) {
         $this->channel = $channel;
-        $this->get_trace_command = $get_trace_command;
+        $this->php_globals_finder = $php_globals_finder;
+        $this->executor_globals_reader = $executor_globals_reader;
+        $this->reader_loop_provider = $reader_loop_provider;
     }
 
-    public function run(): Generator
-    {
-        /** @var int $pid */
-        $pid = yield $this->channel->receive();
-        $process = proc_open(
-            [
-                PHP_BINARY,
-                __DIR__ . '/../../../../../php-profiler',
-                'inspector:trace',
-                '-p',
-                $pid
-            ],
-            [
-                0 => ['pipe', 'r'],
-                1 => ['pipe', 'w'],
-                2 => ['pipe', 'w'],
-            ],
-            $pipes
+    public function run(
+        TraceLoopSettings $loop_settings,
+        TargetProcessSettings $target_process_settings,
+        GetTraceSettings $get_trace_settings
+    ): Generator {
+        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings);
+
+        $loop = $this->reader_loop_provider->getMainLoop(
+            function () use ($get_trace_settings, $target_process_settings, $eg_address): \Generator {
+
+                $call_trace = $this->executor_globals_reader->readCallTrace(
+                    $target_process_settings->pid,
+                    $target_process_settings->php_version,
+                    $eg_address,
+                    $get_trace_settings->depth
+                );
+                yield $this->channel->send(join(PHP_EOL, $call_trace) . PHP_EOL);
+            },
+            $loop_settings
         );
-        stream_set_blocking($pipes[1], false);
-        for ($status = proc_get_status($process); $status['running']; $status = proc_get_status($process)) {
-            yield $this->channel->send(stream_get_contents($pipes[1]));
-        }
+        yield from $loop->invoke();
     }
 }
