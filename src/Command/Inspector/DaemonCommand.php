@@ -44,7 +44,7 @@ class DaemonCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         /** @var string $target_regex */
-        $target_regex = $input->getOption('target-regex') ?? '/php-fpm/';
+        $target_regex = '{' . ($input->getOption('target-regex') ?? '^php-fpm') . '}';
         $context = Context\create(__DIR__ . '/Worker/php-searcher.php');
         /** @var int $searcher_pid */
         $searcher_pid = Promise\wait($context->start());
