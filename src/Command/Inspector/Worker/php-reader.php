@@ -14,6 +14,7 @@ declare(strict_types=1);
 use Amp\Parallel\Sync\Channel;
 use DI\ContainerBuilder;
 use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Lib\Concurrency\Amphp\Task\PhpReaderTask;
@@ -36,6 +37,7 @@ return function (Channel $channel): \Generator {
     $target_process_settings = new TargetProcessSettings(
         $pid
     );
+    $target_php_settings = new TargetPhpSettings();
     $get_trace_settings = new GetTraceSettings(
         PHP_INT_MAX
     );
@@ -44,6 +46,7 @@ return function (Channel $channel): \Generator {
         yield from $reader->run(
             $trace_loop_settings,
             $target_process_settings,
+            $target_php_settings,
             $get_trace_settings
         );
     }

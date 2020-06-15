@@ -33,6 +33,49 @@ class DaemonCommand extends Command
                 InputOption::VALUE_OPTIONAL,
                 'regex to find the php binary loaded in the target process'
             )
+            ->addOption('depth', 'd', InputOption::VALUE_OPTIONAL, 'max depth')
+            ->addOption(
+                'sleep-ns',
+                's',
+                InputOption::VALUE_OPTIONAL,
+                'nanoseconds between traces (default: 1000 * 1000 * 10)'
+            )
+            ->addOption(
+                'max-retries',
+                'r',
+                InputOption::VALUE_OPTIONAL,
+                'max retries on contiguous errors of read (default: 10)'
+            )
+            ->addOption(
+                'php-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the php binary loaded in the target process'
+            )
+            ->addOption(
+                'libpthread-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the libpthread.so loaded in the target process'
+            )
+            ->addOption(
+                'php-version',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'php version of the target'
+            )
+            ->addOption(
+                'php-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'path to the php binary (only needed in tracing chrooted ZTS target)'
+            )
+            ->addOption(
+                'libpthread-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'path to the libpthread.so (only needed in tracing chrooted ZTS target)'
+            )
         ;
     }
 

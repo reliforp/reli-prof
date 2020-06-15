@@ -15,6 +15,7 @@ namespace PhpProfiler\Command\Inspector;
 
 use PhpProfiler\Command\CommandSettingsException;
 use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
@@ -116,16 +117,23 @@ final class GetTraceCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $target_process_settings = TargetProcessSettings::fromConsoleInput($input);
+        $target_php_settings = TargetPhpSettings::fromConsoleInput($input);
         $loop_settings = TraceLoopSettings::fromConsoleInput($input);
         $get_trace_settings = GetTraceSettings::fromConsoleInput($input);
 
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings);
+        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings);
 
         $this->loop_provider->getMainLoop(
-            function () use ($get_trace_settings, $target_process_settings, $eg_address, $output): bool {
+            function () use (
+                $get_trace_settings,
+                $target_process_settings,
+                $target_php_settings,
+                $eg_address,
+                $output
+            ): bool {
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $target_process_settings->pid,
-                    $target_process_settings->php_version,
+                    $target_php_settings->php_version,
                     $eg_address,
                     $get_trace_settings->depth
                 );

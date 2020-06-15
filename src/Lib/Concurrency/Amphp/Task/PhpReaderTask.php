@@ -16,6 +16,7 @@ namespace PhpProfiler\Lib\Concurrency\Amphp\Task;
 use Amp\Parallel\Sync\Channel;
 use Generator;
 use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Command\Inspector\Worker\ReaderLoopProvider;
@@ -44,16 +45,21 @@ final class PhpReaderTask
     public function run(
         TraceLoopSettings $loop_settings,
         TargetProcessSettings $target_process_settings,
+        TargetPhpSettings $target_php_settings,
         GetTraceSettings $get_trace_settings
     ): Generator {
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings);
+        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings);
 
         $loop = $this->reader_loop_provider->getMainLoop(
-            function () use ($get_trace_settings, $target_process_settings, $eg_address): \Generator {
-
+            function () use (
+                $get_trace_settings,
+                $target_process_settings,
+                $target_php_settings,
+                $eg_address
+            ): \Generator {
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $target_process_settings->pid,
-                    $target_process_settings->php_version,
+                    $target_php_settings->php_version,
                     $eg_address,
                     $get_trace_settings->depth
                 );
