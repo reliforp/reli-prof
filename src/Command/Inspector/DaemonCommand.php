@@ -16,6 +16,9 @@ namespace PhpProfiler\Command\Inspector;
 use Amp\Loop;
 use Amp\Promise;
 use Amp\Parallel\Context;
+use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
+use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -86,6 +89,10 @@ class DaemonCommand extends Command
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $target_php_settings = TargetPhpSettings::fromConsoleInput($input);
+        $loop_settings = TraceLoopSettings::fromConsoleInput($input);
+        $get_trace_settings = GetTraceSettings::fromConsoleInput($input);
+
         /** @var string $target_regex */
         $target_regex = '{' . ($input->getOption('target-regex') ?? '^php-fpm') . '}';
         $context = Context\create(__DIR__ . '/Worker/php-searcher.php');
@@ -95,11 +102,11 @@ class DaemonCommand extends Command
         /** @var int[] $pid_list */
         $pid_list = Promise\wait($context->receive());
         $readers = [];
-        foreach ($pid_list as $pid) {
+        foreach ($pid_list as $target_pid) {
             $context = Context\create(__DIR__ . '/Worker/php-reader.php');
             Promise\wait($context->start());
-            Promise\wait($context->send($pid));
-            $readers[$pid] = $context;
+            Promise\wait($context->send([$target_pid, $target_php_settings, $loop_settings, $get_trace_settings]));
+            $readers[$target_pid] = $context;
         }
         exec('stty -icanon -echo');
 

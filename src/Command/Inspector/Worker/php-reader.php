@@ -26,20 +26,18 @@ return function (Channel $channel): \Generator {
     /** @var PhpReaderTask $reader */
     $reader = $container->make(PhpReaderTask::class, ['channel' => $channel]);
 
-    /** @var int $pid */
-    $pid = yield $channel->receive();
+    /** @var array $start_message */
+    $start_message = yield $channel->receive();
+    /**
+     * @var int $pid
+     * @var TargetPhpSettings $target_php_settings
+     * @var TraceLoopSettings $trace_loop_settings
+     * @var GetTraceSettings $get_trace_settings
+     */
+    [$pid, $target_php_settings, $trace_loop_settings, $get_trace_settings] = $start_message;
 
-    $trace_loop_settings = new TraceLoopSettings(
-        10 * 1000 * 1000,
-        'q',
-        10
-    );
     $target_process_settings = new TargetProcessSettings(
         $pid
-    );
-    $target_php_settings = new TargetPhpSettings();
-    $get_trace_settings = new GetTraceSettings(
-        PHP_INT_MAX
     );
 
     while (1) {
