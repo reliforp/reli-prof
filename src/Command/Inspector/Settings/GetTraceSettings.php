@@ -16,7 +16,7 @@ namespace PhpProfiler\Command\Inspector\Settings;
 use PhpProfiler\Command\CommandSettingsException;
 use Symfony\Component\Console\Input\InputInterface;
 
-class GetTraceSettings
+final class GetTraceSettings
 {
     public int $depth;
 

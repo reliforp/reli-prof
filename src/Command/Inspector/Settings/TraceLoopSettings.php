@@ -16,7 +16,7 @@ namespace PhpProfiler\Command\Inspector\Settings;
 use PhpProfiler\Command\CommandSettingsException;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TraceLoopSettings
+final class TraceLoopSettings
 {
     private const SLEEP_NANO_SECONDS_DEFAULT = 1000 * 1000 * 10;
     private const CANCEL_KEY_DEFAULT = 'q';

@@ -17,7 +17,7 @@ use PhpProfiler\Command\CommandSettingsException;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TargetProcessSettings
+final class TargetProcessSettings
 {
     public int $pid;
 

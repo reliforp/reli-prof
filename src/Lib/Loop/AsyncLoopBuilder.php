@@ -13,7 +13,7 @@ namespace PhpProfiler\Lib\Loop;
 
 use LogicException;
 
-class AsyncLoopBuilder
+final class AsyncLoopBuilder
 {
     /** @var array<int, class-string<AsyncLoopMiddlewareInterface>> */
     private array $process_stack = [];

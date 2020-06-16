@@ -24,7 +24,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class DaemonCommand extends Command
+final class DaemonCommand extends Command
 {
     public function configure(): void
     {
