@@ -16,6 +16,7 @@ namespace PhpProfiler\Command\Inspector;
 use Amp\Loop;
 use Amp\Promise;
 use Amp\Parallel\Context;
+use PhpProfiler\Command\Inspector\Settings\DaemonSettings;
 use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
 use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
@@ -48,6 +49,12 @@ final class DaemonCommand extends Command
                 'r',
                 InputOption::VALUE_OPTIONAL,
                 'max retries on contiguous errors of read (default: 10)'
+            )
+            ->addOption(
+                'threads',
+                'T',
+                InputOption::VALUE_OPTIONAL,
+                'number of workers (default: 8)'
             )
             ->addOption(
                 'php-regex',
@@ -92,6 +99,7 @@ final class DaemonCommand extends Command
         $target_php_settings = TargetPhpSettings::fromConsoleInput($input);
         $loop_settings = TraceLoopSettings::fromConsoleInput($input);
         $get_trace_settings = GetTraceSettings::fromConsoleInput($input);
+        $daemon_settings = DaemonSettings::fromConsoleInput($input);
 
         /** @var string $target_regex */
         $target_regex = '{' . ($input->getOption('target-regex') ?? '^php-fpm') . '}';
