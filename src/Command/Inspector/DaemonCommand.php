@@ -101,12 +101,10 @@ final class DaemonCommand extends Command
         $get_trace_settings = GetTraceSettings::fromConsoleInput($input);
         $daemon_settings = DaemonSettings::fromConsoleInput($input);
 
-        /** @var string $target_regex */
-        $target_regex = '{' . ($input->getOption('target-regex') ?? '^php-fpm') . '}';
         $context = Context\create(__DIR__ . '/Worker/php-searcher.php');
         /** @var int $searcher_pid */
         $searcher_pid = Promise\wait($context->start());
-        Promise\wait($context->send($target_regex));
+        Promise\wait($context->send($daemon_settings->target_regex));
         /** @var int[] $pid_list */
         $pid_list = Promise\wait($context->receive());
         $readers = [];

@@ -18,8 +18,10 @@ use PhpProfiler\Command\CommandSettingsException;
 final class DaemonSettingsException extends CommandSettingsException
 {
     public const THREADS_IS_NOT_INTEGER = 1;
+    public const TARGET_REGEX_IS_NOT_STRING = 2;
 
     protected const ERRORS = [
         self::THREADS_IS_NOT_INTEGER => 'threads is not integer',
+        self::TARGET_REGEX_IS_NOT_STRING => 'target-regex is not string',
     ];
 }

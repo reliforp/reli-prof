@@ -18,13 +18,19 @@ use Symfony\Component\Console\Input\InputInterface;
 
 final class DaemonSettings
 {
-    private int $threads;
+    private const TARGET_REGEX_DEFAULT = '^php-fpm';
+
+    public string $target_regex;
+    public int $threads;
 
     /**
      * DaemonSettings constructor.
+     * @param string $target_regex
+     * @param int $threads
      */
-    public function __construct(int $threads)
+    public function __construct(string $target_regex, int $threads)
     {
+        $this->target_regex = $target_regex;
         $this->threads = $threads;
     }
 
@@ -43,6 +49,12 @@ final class DaemonSettings
         if ($threads === false) {
             throw DaemonSettingsException::create(DaemonSettingsException::THREADS_IS_NOT_INTEGER);
         }
-        return new self($threads);
+
+        $target_regex = $input->getOption('target-regex') ?? self::TARGET_REGEX_DEFAULT;
+        if (!is_string($target_regex)) {
+            throw DaemonSettingsException::create(DaemonSettingsException::TARGET_REGEX_IS_NOT_STRING);
+        }
+
+        return new self('{' . $target_regex . '}', $threads);
     }
 }
