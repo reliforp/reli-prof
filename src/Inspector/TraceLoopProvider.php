@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector;
+namespace PhpProfiler\Inspector;
 
-use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Lib\Loop\Loop;
 use PhpProfiler\Lib\Loop\LoopBuilder;
 use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;

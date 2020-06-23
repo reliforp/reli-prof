@@ -11,11 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
-
-final class TargetPhpSettingsException extends CommandSettingsException
+final class TargetPhpInspectorSettingsException extends InspectorSettingsException
 {
     public const PHP_REGEX_IS_NOT_STRING = 3;
     public const LIBPTHREAD_REGEX_IS_NOT_STRING = 4;

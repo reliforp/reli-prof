@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
+use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Input\InputInterface;
 
 final class DaemonSettings
@@ -37,7 +37,7 @@ final class DaemonSettings
     /**
      * @param InputInterface $input
      * @return self
-     * @throws CommandSettingsException
+     * @throws InspectorSettingsException
      */
     public static function fromConsoleInput(InputInterface $input): self
     {
@@ -47,12 +47,14 @@ final class DaemonSettings
         }
         $threads = filter_var($threads, FILTER_VALIDATE_INT);
         if ($threads === false) {
-            throw DaemonSettingsException::create(DaemonSettingsException::THREADS_IS_NOT_INTEGER);
+            throw DaemonInspectorSettingsException::create(DaemonInspectorSettingsException::THREADS_IS_NOT_INTEGER);
         }
 
         $target_regex = $input->getOption('target-regex') ?? self::TARGET_REGEX_DEFAULT;
         if (!is_string($target_regex)) {
-            throw DaemonSettingsException::create(DaemonSettingsException::TARGET_REGEX_IS_NOT_STRING);
+            throw DaemonInspectorSettingsException::create(
+                DaemonInspectorSettingsException::TARGET_REGEX_IS_NOT_STRING
+            );
         }
 
         return new self('{' . $target_regex . '}', $threads);

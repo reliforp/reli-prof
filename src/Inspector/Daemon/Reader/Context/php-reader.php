@@ -13,15 +13,15 @@ declare(strict_types=1);
 
 use Amp\Parallel\Sync\Channel;
 use DI\ContainerBuilder;
-use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
-use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TargetProcessSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Lib\Concurrency\Amphp\Task\PhpReaderTask;
 
 return function (Channel $channel): \Generator {
 
-    $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/../../../../config/di.php')->build();
+    $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/../../../../../config/di.php')->build();
 
     /** @var PhpReaderTask $reader */
     $reader = $container->make(PhpReaderTask::class, ['channel' => $channel]);

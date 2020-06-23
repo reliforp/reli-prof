@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command;
+namespace PhpProfiler\Inspector\Settings;
 
 use LogicException;
 
-abstract class CommandSettingsException extends \Exception
+abstract class InspectorSettingsException extends \Exception
 {
     public const ERROR_NONE = 0;
 
@@ -37,7 +37,7 @@ abstract class CommandSettingsException extends \Exception
      * @param int $error_no
      * @return static
      */
-    public static function create(int $error_no): CommandSettingsException
+    public static function create(int $error_no): InspectorSettingsException
     {
         if (!isset(static::ERRORS[$error_no])) {
             throw new LogicException('wrong creation of CommandSettingException');

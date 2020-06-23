@@ -11,11 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
-
-final class GetTraceSettingsException extends CommandSettingsException
+final class GetTraceInspectorSettingsException extends InspectorSettingsException
 {
     public const DEPTH_IS_NOT_INTEGER = 1;
 

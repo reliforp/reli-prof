@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Worker;
+namespace PhpProfiler\Inspector\Daemon\Worker;
 
-use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Lib\Loop\AsyncLoop;
 use PhpProfiler\Lib\Loop\AsyncLoopBuilder;
 use PhpProfiler\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;

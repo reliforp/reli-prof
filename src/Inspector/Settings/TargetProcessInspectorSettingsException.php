@@ -11,11 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
-
-final class TargetProcessSettingsException extends CommandSettingsException
+final class TargetProcessInspectorSettingsException extends InspectorSettingsException
 {
     public const PID_NOT_SPECIFIED = 1;
     public const PID_IS_NOT_INTEGER = 2;

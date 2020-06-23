@@ -16,7 +16,7 @@ use DI\ContainerBuilder;
 use PhpProfiler\Lib\Concurrency\Amphp\Task\PhpSearcherTask;
 
 return function (Channel $channel): \Generator {
-    $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/../../../../config/di.php')->build();
+    $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/../../../../../config/di.php')->build();
 
     /** @var PhpSearcherTask $searcher */
     $searcher = $container->make(PhpSearcherTask::class, ['channel' => $channel]);

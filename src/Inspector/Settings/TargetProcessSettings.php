@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
+use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use Symfony\Component\Console\Input\InputInterface;
 
@@ -33,20 +33,20 @@ final class TargetProcessSettings
     /**
      * @param InputInterface $input
      * @return self
-     * @throws CommandSettingsException
+     * @throws InspectorSettingsException
      */
     public static function fromConsoleInput(InputInterface $input): self
     {
         $pid = $input->getOption('pid');
         if (is_null($pid)) {
-            throw TargetProcessSettingsException::create(
-                TargetProcessSettingsException::PID_NOT_SPECIFIED
+            throw TargetProcessInspectorSettingsException::create(
+                TargetProcessInspectorSettingsException::PID_NOT_SPECIFIED
             );
         }
         $pid = filter_var($pid, FILTER_VALIDATE_INT);
         if ($pid === false) {
-            throw TargetProcessSettingsException::create(
-                TargetProcessSettingsException::PID_NOT_SPECIFIED
+            throw TargetProcessInspectorSettingsException::create(
+                TargetProcessInspectorSettingsException::PID_NOT_SPECIFIED
             );
         }
 

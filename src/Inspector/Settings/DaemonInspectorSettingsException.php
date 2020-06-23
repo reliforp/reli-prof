@@ -11,11 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
-
-final class DaemonSettingsException extends CommandSettingsException
+final class DaemonInspectorSettingsException extends InspectorSettingsException
 {
     public const THREADS_IS_NOT_INTEGER = 1;
     public const TARGET_REGEX_IS_NOT_STRING = 2;

@@ -11,9 +11,8 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
 use Symfony\Component\Console\Input\InputInterface;
 
 final class TraceLoopSettings
@@ -42,7 +41,7 @@ final class TraceLoopSettings
     /**
      * @param InputInterface $input
      * @return self
-     * @throws CommandSettingsException
+     * @throws InspectorSettingsException
      */
     public static function fromConsoleInput(InputInterface $input): self
     {
@@ -52,7 +51,9 @@ final class TraceLoopSettings
         }
         $sleep_nano_seconds = filter_var($sleep_nano_seconds, FILTER_VALIDATE_INT);
         if ($sleep_nano_seconds === false) {
-            throw TraceLoopSettingsException::create(TraceLoopSettingsException::SLEEP_NS_IS_NOT_INTEGER);
+            throw TraceLoopInspectorSettingsException::create(
+                TraceLoopInspectorSettingsException::SLEEP_NS_IS_NOT_INTEGER
+            );
         }
 
         $max_retries = $input->getOption('max-retries');
@@ -61,7 +62,9 @@ final class TraceLoopSettings
         }
         $max_retries = filter_var($max_retries, FILTER_VALIDATE_INT);
         if ($max_retries === false) {
-            throw TraceLoopSettingsException::create(TraceLoopSettingsException::MAX_RETRY_IS_NOT_INTEGER);
+            throw TraceLoopInspectorSettingsException::create(
+                TraceLoopInspectorSettingsException::MAX_RETRY_IS_NOT_INTEGER
+            );
         }
 
         return new self($sleep_nano_seconds, self::CANCEL_KEY_DEFAULT, $max_retries);

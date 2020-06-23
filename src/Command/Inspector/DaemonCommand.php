@@ -16,10 +16,12 @@ namespace PhpProfiler\Command\Inspector;
 use Amp\Loop;
 use Amp\Promise;
 use Amp\Parallel\Context;
-use PhpProfiler\Command\Inspector\Settings\DaemonSettings;
-use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
+use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
+use PhpProfiler\Inspector\Settings\DaemonSettings;
+use PhpProfiler\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -27,6 +29,18 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class DaemonCommand extends Command
 {
+    private PhpSearcherContextCreator $php_searcher_context_creator;
+    private PhpReaderContextCreator $php_reader_context_creator;
+
+    public function __construct(
+        PhpSearcherContextCreator $php_searcher_context_creator,
+        PhpReaderContextCreator $php_reader_context_creator
+    ) {
+        parent::__construct();
+        $this->php_reader_context_creator = $php_reader_context_creator;
+        $this->php_searcher_context_creator = $php_searcher_context_creator;
+    }
+
     public function configure(): void
     {
         $this->setName('inspector:daemon')
@@ -101,7 +115,7 @@ final class DaemonCommand extends Command
         $get_trace_settings = GetTraceSettings::fromConsoleInput($input);
         $daemon_settings = DaemonSettings::fromConsoleInput($input);
 
-        $context = Context\create(__DIR__ . '/Worker/php-searcher.php');
+        $context = $this->php_searcher_context_creator->create();
         /** @var int $searcher_pid */
         $searcher_pid = Promise\wait($context->start());
         Promise\wait($context->send($daemon_settings->target_regex));
@@ -109,7 +123,7 @@ final class DaemonCommand extends Command
         $pid_list = Promise\wait($context->receive());
         $readers = [];
         foreach ($pid_list as $target_pid) {
-            $context = Context\create(__DIR__ . '/Worker/php-reader.php');
+            $context = $this->php_reader_context_creator->create();
             Promise\wait($context->start());
             Promise\wait($context->send([$target_pid, $target_php_settings, $loop_settings, $get_trace_settings]));
             $readers[$target_pid] = $context;

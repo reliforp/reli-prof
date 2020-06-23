@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
+use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Input\InputInterface;
 
 final class GetTraceSettings
@@ -32,7 +32,7 @@ final class GetTraceSettings
     /**
      * @param InputInterface $input
      * @return self
-     * @throws CommandSettingsException
+     * @throws InspectorSettingsException
      */
     public static function fromConsoleInput(InputInterface $input): self
     {
@@ -42,7 +42,7 @@ final class GetTraceSettings
         }
         $depth = filter_var($depth, FILTER_VALIDATE_INT);
         if ($depth === false) {
-            throw GetTraceSettingsException::create(GetTraceSettingsException::DEPTH_IS_NOT_INTEGER);
+            throw GetTraceInspectorSettingsException::create(GetTraceInspectorSettingsException::DEPTH_IS_NOT_INTEGER);
         }
         return new self($depth);
     }

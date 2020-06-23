@@ -11,11 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings;
 
-use PhpProfiler\Command\CommandSettingsException;
-
-final class TraceLoopSettingsException extends CommandSettingsException
+final class TraceLoopInspectorSettingsException extends InspectorSettingsException
 {
     public const SLEEP_NS_IS_NOT_INTEGER = 1;
     public const MAX_RETRY_IS_NOT_INTEGER = 2;

@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
-use PhpProfiler\Command\CommandSettingsException;
-use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
+use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -92,7 +92,7 @@ final class GetEgAddressCommand extends Command
      * @throws ProcessSymbolReaderException
      * @throws ElfParserException
      * @throws TlsFinderException
-     * @throws CommandSettingsException
+     * @throws InspectorSettingsException
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {

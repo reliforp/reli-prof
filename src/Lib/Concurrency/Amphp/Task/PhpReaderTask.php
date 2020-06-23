@@ -15,11 +15,11 @@ namespace PhpProfiler\Lib\Concurrency\Amphp\Task;
 
 use Amp\Parallel\Sync\Channel;
 use Generator;
-use PhpProfiler\Command\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Command\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Command\Inspector\Settings\TargetProcessSettings;
-use PhpProfiler\Command\Inspector\Settings\TraceLoopSettings;
-use PhpProfiler\Command\Inspector\Worker\ReaderLoopProvider;
+use PhpProfiler\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TargetProcessSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Daemon\Worker\ReaderLoopProvider;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 
