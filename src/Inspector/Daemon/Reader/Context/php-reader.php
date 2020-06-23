@@ -17,7 +17,7 @@ use PhpProfiler\Inspector\Settings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings;
-use PhpProfiler\Lib\Concurrency\Amphp\Task\PhpReaderTask;
+use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTask;
 
 return function (Channel $channel): \Generator {
 

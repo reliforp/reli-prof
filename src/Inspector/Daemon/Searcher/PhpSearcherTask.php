@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Concurrency\Amphp\Task;
+namespace PhpProfiler\Inspector\Daemon\Searcher;
 
 use Amp\Parallel\Sync\Channel;
 use Generator;

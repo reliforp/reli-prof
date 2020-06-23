@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 use Amp\Parallel\Sync\Channel;
 use DI\ContainerBuilder;
-use PhpProfiler\Lib\Concurrency\Amphp\Task\PhpSearcherTask;
+use PhpProfiler\Inspector\Daemon\Searcher\PhpSearcherTask;
 
 return function (Channel $channel): \Generator {
     $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/../../../../../config/di.php')->build();
