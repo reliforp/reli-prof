@@ -15,7 +15,7 @@ namespace PhpProfiler\Command\Inspector;
 
 use Amp\Loop;
 use Amp\Promise;
-use Amp\Parallel\Context;
+use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContext;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
 use PhpProfiler\Inspector\Settings\DaemonSettings;
@@ -115,18 +115,26 @@ final class DaemonCommand extends Command
         $get_trace_settings = GetTraceSettings::fromConsoleInput($input);
         $daemon_settings = DaemonSettings::fromConsoleInput($input);
 
-        $context = $this->php_searcher_context_creator->create();
-        /** @var int $searcher_pid */
-        $searcher_pid = Promise\wait($context->start());
-        Promise\wait($context->send($daemon_settings->target_regex));
-        /** @var int[] $pid_list */
-        $pid_list = Promise\wait($context->receive());
+        $searcher_context = $this->php_searcher_context_creator->create();
+        Promise\wait($searcher_context->start());
+        Promise\wait($searcher_context->sendTargetRegex($daemon_settings->target_regex));
+        $pid_list = Promise\wait($searcher_context->receivePidList());
+
         $readers = [];
         foreach ($pid_list as $target_pid) {
-            $context = $this->php_reader_context_creator->create();
-            Promise\wait($context->start());
-            Promise\wait($context->send([$target_pid, $target_php_settings, $loop_settings, $get_trace_settings]));
-            $readers[$target_pid] = $context;
+            $reader_context = $this->php_reader_context_creator->create();
+            Promise\wait($reader_context->start());
+            Promise\wait(
+                $reader_context->sendSettings(
+                    [
+                        $target_pid,
+                        $target_php_settings,
+                        $loop_settings,
+                        $get_trace_settings
+                    ]
+                )
+            );
+            $readers[$target_pid] = $reader_context;
         }
         exec('stty -icanon -echo');
 
@@ -143,7 +151,7 @@ final class DaemonCommand extends Command
                 }
             );
             Loop::repeat(10, function () use (&$readers, $output) {
-                /** @var array<int, Context\Context> $readers */
+                /** @var array<int, PhpReaderContext> $readers */
 
                 $promises = [];
                 foreach ($readers as $pid => $reader) {
@@ -157,7 +165,7 @@ final class DaemonCommand extends Command
                             /** @psalm-suppress MixedArrayAccess*/
                             unset($readers[$pid]);
                             /** @var string $result */
-                            $result = yield $reader->receive();
+                            $result = yield $reader->receiveTrace();
                             $output->write($result);
                             $readers[$pid] = $reader;
                         }

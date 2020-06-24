@@ -17,8 +17,8 @@ use Amp\Parallel\Context;
 
 final class PhpReaderContextCreator
 {
-    public function create(): Context\Context
+    public function create(): PhpReaderContext
     {
-        return Context\create(__DIR__ . '/php-reader.php');
+        return new PhpReaderContext(Context\create(__DIR__ . '/php-reader.php'));
     }
 }

@@ -17,8 +17,8 @@ use Amp\Parallel\Context;
 
 final class PhpSearcherContextCreator
 {
-    public function create(): Context\Context
+    public function create(): PhpSearcherContext
     {
-        return Context\create(__DIR__ . '/php-searcher.php');
+        return new PhpSearcherContext(Context\create(__DIR__ . '/php-searcher.php'));
     }
 }
