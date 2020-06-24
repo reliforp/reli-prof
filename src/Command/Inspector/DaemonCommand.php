@@ -15,6 +15,7 @@ namespace PhpProfiler\Command\Inspector;
 
 use Amp\Loop;
 use Amp\Promise;
+use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContext;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
@@ -120,10 +121,14 @@ final class DaemonCommand extends Command
         Promise\wait($searcher_context->sendTargetRegex($daemon_settings->target_regex));
         $pid_list = Promise\wait($searcher_context->receivePidList());
 
+        $worker_pool = WorkerPool::create($this->php_reader_context_creator, $daemon_settings->threads);
+
         $readers = [];
         foreach ($pid_list as $target_pid) {
-            $reader_context = $this->php_reader_context_creator->create();
-            Promise\wait($reader_context->start());
+            $reader_context = $worker_pool->getFreeWorker();
+            if (is_null($reader_context)) {
+                continue;
+            }
             Promise\wait(
                 $reader_context->sendSettings(
                     [
