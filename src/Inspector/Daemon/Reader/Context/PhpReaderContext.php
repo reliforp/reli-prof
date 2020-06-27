@@ -49,6 +49,12 @@ final class PhpReaderContext
         return $this->context->send($array);
     }
 
+    public function sendQuit(): Promise
+    {
+        /** @var Promise<int> */
+        return $this->context->send(null);
+    }
+
     public function isRunning(): bool
     {
         return $this->context->isRunning();
