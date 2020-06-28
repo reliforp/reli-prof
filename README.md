@@ -48,6 +48,11 @@ sudo php ./php-profiler inspector:trace -p <pid of the target process or thread>
 sudo php ./php-profiler inspector:eg -p <pid of the target process or thread>
 ``` 
 
+## Use daemon mode
+```
+sudo php ./php-profiler inspector:daemon -P <regex to find target processes>
+``` 
+
 ## Use in a docker container and target a process on host
 ```
 docker build -t php-profiler .
