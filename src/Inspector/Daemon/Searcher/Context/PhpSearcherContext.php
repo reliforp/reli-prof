@@ -15,10 +15,7 @@ namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
 
 use Amp\Parallel\Context;
 use Amp\Promise;
-use PhpProfiler\Inspector\Settings\DaemonSettings;
-use PhpProfiler\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Daemon\Dispatcher\Message\UpdateTargetProcessMessage;
 
 final class PhpSearcherContext
 {
@@ -48,11 +45,12 @@ final class PhpSearcherContext
     }
 
     /**
-     * @return Promise<int[]>
+     * @return Promise<UpdateTargetProcessMessage>
+     * @psalm-yield Promise<UpdateTargetProcessMessage>
      */
     public function receivePidList(): Promise
     {
-        /** @var Promise<int[]> */
+        /** @var Promise<UpdateTargetProcessMessage> */
         return $this->context->receive();
     }
 }

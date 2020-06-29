@@ -16,6 +16,9 @@ namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContext;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use Amp\Promise;
+use PhpProfiler\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
 final class WorkerPool
 {
@@ -25,14 +28,23 @@ final class WorkerPool
     /** @var array<int, bool> */
     private array $is_free_list;
 
+    /** @var array<int, bool> */
+    private array $on_read_list;
+
     public function __construct(PhpReaderContext ...$contexts)
     {
         $this->contexts = $contexts;
         $this->is_free_list = array_fill(0, count($contexts), true);
+        $this->on_read_list = array_fill(0, count($contexts), false);
     }
 
-    public static function create(PhpReaderContextCreator $creator, int $number): self
-    {
+    public static function create(
+        PhpReaderContextCreator $creator,
+        int $number,
+        TargetPhpSettings $target_php_settings,
+        TraceLoopSettings $loop_settings,
+        GetTraceSettings $get_trace_settings
+    ): self {
         $contexts = [];
         $started = [];
         for ($i = 0; $i < $number; $i++) {
@@ -41,6 +53,16 @@ final class WorkerPool
             $contexts[] = $context;
         }
         Promise\wait(Promise\all($started));
+        $send_settings = [];
+        for ($i = 0; $i < $number; $i++) {
+            $send_settings[] = $contexts[$i]->sendSettings(
+                $target_php_settings,
+                $loop_settings,
+                $get_trace_settings
+            );
+        }
+        Promise\wait(Promise\all($send_settings));
+
         return new self(...$contexts);
     }
 
@@ -55,6 +77,18 @@ final class WorkerPool
         return null;
     }
 
+    /**
+     * @return iterable<int, PhpReaderContext>
+     */
+    public function getReadableWorkers(): iterable
+    {
+        foreach ($this->contexts as $key => $context) {
+            if (!$this->is_free_list[$key] and !$this->on_read_list[$key]) {
+                yield $key => $context;
+            }
+        }
+    }
+
     public function returnWorkerToPool(PhpReaderContext $context_to_return): void
     {
         foreach ($this->contexts as $key => $context) {
@@ -62,5 +96,15 @@ final class WorkerPool
                 $this->is_free_list[$key] = true;
             }
         }
+    }
+
+    public function setOnRead(int $pid): void
+    {
+        $this->on_read_list[$pid] = true;
+    }
+
+    public function releaseOnRead(int $pid): void
+    {
+        $this->on_read_list[$pid] = false;
     }
 }

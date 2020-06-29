@@ -15,6 +15,8 @@ namespace PhpProfiler\Inspector\Daemon\Searcher;
 
 use Amp\Parallel\Sync\Channel;
 use Generator;
+use PhpProfiler\Inspector\Daemon\Dispatcher\Message\UpdateTargetProcessMessage;
+use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessList;
 use PhpProfiler\Lib\Process\Search\ProcessSearcher;
 
 final class PhpSearcherTask
@@ -32,7 +34,11 @@ final class PhpSearcherTask
     {
         while (1) {
             yield $this->channel->send(
-                $this->process_searcher->searchByRegex($target_regex)
+                new UpdateTargetProcessMessage(
+                    new TargetProcessList(
+                        ...$this->process_searcher->searchByRegex($target_regex)
+                    )
+                )
             );
             sleep(1);
         }

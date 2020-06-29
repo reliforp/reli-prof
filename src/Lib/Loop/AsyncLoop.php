@@ -24,6 +24,12 @@ final class AsyncLoop
 
     public function invoke(): \Generator
     {
-        yield from $this->process->invoke();
+        while (1) {
+            $result = $this->process->invoke();
+            if (!$result->valid()) {
+                break;
+            }
+            yield from $result;
+        }
     }
 }

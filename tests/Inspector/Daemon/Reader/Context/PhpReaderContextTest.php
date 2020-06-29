@@ -16,6 +16,10 @@ namespace PhpProfiler\Inspector\Daemon\Reader\Context;
 use Amp\Parallel\Context\Context;
 use Amp\Promise;
 use Mockery;
+use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
+use PhpProfiler\Inspector\Settings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 use PHPUnit\Framework\TestCase;
 
 final class PhpReaderContextTest extends TestCase
@@ -40,11 +44,35 @@ final class PhpReaderContextTest extends TestCase
 
     public function testSendSettings(): void
     {
-        $settings = [];
+        $target_php_settings = new TargetPhpSettings();
+        $trace_loop_settings = new TraceLoopSettings(1, 'q', 1);
+        $get_trace_settings = new GetTraceSettings(1);
+
+        $expected = new SetSettingsMessage(
+            $target_php_settings,
+            $trace_loop_settings,
+            $get_trace_settings
+        );
+
         $context = Mockery::mock(Context::class);
-        $context->expects()->send($settings)->andReturn(Mockery::mock(Promise::class));
+        $context->shouldReceive('send')
+            ->once()
+            ->with(
+                Mockery::on(function (SetSettingsMessage $actual) use ($expected) {
+                    $this->assertEquals($actual, $expected);
+                    return true;
+                })
+            )
+            ->andReturn(Mockery::mock(Promise::class));
         $php_reader_context = new PhpReaderContext($context);
-        $this->assertInstanceOf(Promise::class, $php_reader_context->sendSettings($settings));
+        $this->assertInstanceOf(
+            Promise::class,
+            $php_reader_context->sendSettings(
+                $target_php_settings,
+                $trace_loop_settings,
+                $get_trace_settings
+            )
+        );
     }
 
     public function testReceiveTrace(): void

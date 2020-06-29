@@ -15,6 +15,7 @@ namespace PhpProfiler\Inspector\Daemon\Reader;
 
 use Amp\Parallel\Sync\Channel;
 use Generator;
+use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings;
@@ -42,8 +43,8 @@ final class PhpReaderTask
     }
 
     public function run(
-        TraceLoopSettings $loop_settings,
         TargetProcessSettings $target_process_settings,
+        TraceLoopSettings $loop_settings,
         TargetPhpSettings $target_php_settings,
         GetTraceSettings $get_trace_settings
     ): Generator {
@@ -62,7 +63,9 @@ final class PhpReaderTask
                     $eg_address,
                     $get_trace_settings->depth
                 );
-                yield $this->channel->send(join(PHP_EOL, $call_trace) . PHP_EOL);
+                yield $this->channel->send(
+                    new TraceMessage(join(PHP_EOL, $call_trace) . PHP_EOL)
+                );
             },
             $loop_settings
         );

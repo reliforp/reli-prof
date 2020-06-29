@@ -54,20 +54,22 @@ final class DispatchTable
             }
             $this->assigned->putOne($picked);
             $this->dispatch_table[$picked] = $worker;
-            $worker->sendSettings([
-                $picked,
-                $this->target_php_settings,
-                $this->trace_loop_settings,
-                $this->get_trace_settings
-            ]);
+            $worker->sendAttach($picked);
         }
     }
 
     public function release(TargetProcessList $targets): void
     {
         foreach ($targets->getArray() as $pid) {
-            $this->dispatch_table[$pid]->sendQuit();
-            unset($this->dispatch_table[$pid]);
+            $this->releaseOne($pid);
         }
+    }
+
+    public function releaseOne(int $pid): void
+    {
+        $worker = $this->dispatch_table[$pid];
+        $this->worker_pool->returnWorkerToPool($worker);
+        unset($this->dispatch_table[$pid]);
+        $this->assigned = $this->assigned->getDiff(new TargetProcessList($pid));
     }
 }

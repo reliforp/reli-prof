@@ -15,8 +15,9 @@ namespace PhpProfiler\Command\Inspector;
 
 use Amp\Loop;
 use Amp\Promise;
+use PhpProfiler\Inspector\Daemon\Dispatcher\DispatchTable;
+use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContext;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
 use PhpProfiler\Inspector\Settings\DaemonSettings;
@@ -119,31 +120,25 @@ final class DaemonCommand extends Command
         $searcher_context = $this->php_searcher_context_creator->create();
         Promise\wait($searcher_context->start());
         Promise\wait($searcher_context->sendTargetRegex($daemon_settings->target_regex));
-        $pid_list = Promise\wait($searcher_context->receivePidList());
 
-        $worker_pool = WorkerPool::create($this->php_reader_context_creator, $daemon_settings->threads);
+        $worker_pool = WorkerPool::create(
+            $this->php_reader_context_creator,
+            $daemon_settings->threads,
+            $target_php_settings,
+            $loop_settings,
+            $get_trace_settings
+        );
 
-        $readers = [];
-        foreach ($pid_list as $target_pid) {
-            $reader_context = $worker_pool->getFreeWorker();
-            if (is_null($reader_context)) {
-                continue;
-            }
-            Promise\wait(
-                $reader_context->sendSettings(
-                    [
-                        $target_pid,
-                        $target_php_settings,
-                        $loop_settings,
-                        $get_trace_settings
-                    ]
-                )
-            );
-            $readers[$target_pid] = $reader_context;
-        }
+        $dispatch_table = new DispatchTable(
+            $worker_pool,
+            $target_php_settings,
+            $loop_settings,
+            $get_trace_settings
+        );
+
         exec('stty -icanon -echo');
 
-        Loop::run(function () use (&$readers, $output) {
+        Loop::run(function () use ($dispatch_table, $searcher_context, $worker_pool, $output) {
             Loop::onReadable(
                 STDIN,
                 /** @param resource $stream */
@@ -155,24 +150,29 @@ final class DaemonCommand extends Command
                     }
                 }
             );
-            Loop::repeat(10, function () use (&$readers, $output) {
-                /** @var array<int, PhpReaderContext> $readers */
-
+            Loop::repeat(10, function () use ($dispatch_table, $searcher_context, $worker_pool, $output) {
                 $promises = [];
+                static $searcher_on_read = false;
+                if (!$searcher_on_read) {
+                    $promises[] = \Amp\call(function () use ($searcher_context, $dispatch_table, &$searcher_on_read) {
+                        $searcher_on_read = true;
+                        $update_target_message = yield $searcher_context->receivePidList();
+                        $dispatch_table->updateTargets($update_target_message->target_process_list);
+                        $searcher_on_read = false;
+                    });
+                }
+                $readers = $worker_pool->getReadableWorkers();
                 foreach ($readers as $pid => $reader) {
-                    if (!$reader->isRunning()) {
-                        /** @psalm-suppress MixedArrayAccess*/
-                        unset($readers[$pid]);
-                        continue;
-                    }
                     $promises[] = \Amp\call(
-                        function () use ($reader, &$readers, $pid, $output) {
-                            /** @psalm-suppress MixedArrayAccess*/
-                            unset($readers[$pid]);
-                            /** @var string $result */
+                        function () use ($reader, $pid, $worker_pool, $dispatch_table, $output) {
+                            $worker_pool->setOnRead($pid);
                             $result = yield $reader->receiveTrace();
-                            $output->write($result);
-                            $readers[$pid] = $reader;
+                            $worker_pool->releaseOnRead($pid);
+                            if ($result instanceof TraceMessage) {
+                                $output->write($result->trace);
+                            } else {
+                                $dispatch_table->releaseOne($result->pid);
+                            }
                         }
                     );
                 }

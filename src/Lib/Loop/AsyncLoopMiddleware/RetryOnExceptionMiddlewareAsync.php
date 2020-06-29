@@ -51,6 +51,5 @@ final class RetryOnExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterf
             }
             $this->current_retry_count = 0;
         }
-        return false;
     }
 }

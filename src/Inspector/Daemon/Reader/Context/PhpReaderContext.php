@@ -15,7 +15,10 @@ namespace PhpProfiler\Inspector\Daemon\Reader\Context;
 
 use Amp\Parallel\Context;
 use Amp\Promise;
-use PhpProfiler\Inspector\Settings\DaemonSettings;
+use PhpProfiler\Inspector\Daemon\Dispatcher\Message\DetachWorkerMessage;
+use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings;
@@ -35,24 +38,36 @@ final class PhpReaderContext
     }
 
     /**
-     * @param array{
-     *     0: int,
-     *     1: TargetPhpSettings,
-     *     2: TraceLoopSettings,
-     *     3: GetTraceSettings
-     * } $array
+     * @param TargetPhpSettings $target_php_settings
+     * @param TraceLoopSettings $loop_settings
+     * @param GetTraceSettings $get_trace_settings
      * @return Promise<int>
      */
-    public function sendSettings(array $array): Promise
-    {
+    public function sendSettings(
+        TargetPhpSettings $target_php_settings,
+        TraceLoopSettings $loop_settings,
+        GetTraceSettings $get_trace_settings
+    ): Promise {
         /** @var Promise<int> */
-        return $this->context->send($array);
+        return $this->context->send(
+            new SetSettingsMessage(
+                $target_php_settings,
+                $loop_settings,
+                $get_trace_settings
+            )
+        );
     }
 
-    public function sendQuit(): Promise
+    /**
+     * @param int $pid
+     * @return Promise<int>
+     */
+    public function sendAttach(int $pid): Promise
     {
         /** @var Promise<int> */
-        return $this->context->send(null);
+        return $this->context->send(
+            new AttachMessage($pid)
+        );
     }
 
     public function isRunning(): bool
@@ -61,11 +76,12 @@ final class PhpReaderContext
     }
 
     /**
-    /* @return Promise<string>
+     * @return Promise<TraceMessage|DetachWorkerMessage>
+     * @psalm-yield Promise<TraceMessage|DetachWorkerMessage>
      */
     public function receiveTrace(): Promise
     {
-        /** @psalm-yield Promise<string> */
+        /** @var Promise<TraceMessage|DetachWorkerMessage> */
         return $this->context->receive();
     }
 }
