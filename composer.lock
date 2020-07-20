@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ae33faf31d016e2ee04b31555c5573c4",
+    "content-hash": "9f56127f3785817d0c614b1f94e81ef2",
     "packages": [
         {
             "name": "jeremeamia/superclosure",
@@ -3941,9 +3941,11 @@
     "platform": {
         "php": "^7.4",
         "ext-ffi": "*",
-        "ext-pcntl": "*"
+        "ext-pcntl": "*",
+        "ext-filter": "*"
     },
     "platform-dev": {
         "ext-posix": "*"
-    }
+    },
+    "plugin-api-version": "1.1.0"
 }
