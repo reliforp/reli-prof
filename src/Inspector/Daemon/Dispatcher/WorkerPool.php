@@ -94,6 +94,7 @@ final class WorkerPool
         foreach ($this->contexts as $key => $context) {
             if ($context === $context_to_return) {
                 $this->is_free_list[$key] = true;
+                $this->on_read_list[$key] = false;
             }
         }
     }
