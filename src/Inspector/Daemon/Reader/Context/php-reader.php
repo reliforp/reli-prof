@@ -18,6 +18,7 @@ use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings;
 use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTask;
+use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
 return function (Channel $channel): \Generator {
 
@@ -37,12 +38,16 @@ return function (Channel $channel): \Generator {
             $attach_message->pid
         );
 
-        yield from $reader->run(
-            $target_process_settings,
-            $set_settings_message->trace_loop_settings,
-            $set_settings_message->target_php_settings,
-            $set_settings_message->get_trace_settings
-        );
+        try {
+            yield from $reader->run(
+                $target_process_settings,
+                $set_settings_message->trace_loop_settings,
+                $set_settings_message->target_php_settings,
+                $set_settings_message->get_trace_settings
+            );
+        } catch (MemoryReaderException $e) {
+            // TODO: log errors
+        }
 
         yield $channel->send(
             new DetachWorkerMessage($attach_message->pid)
