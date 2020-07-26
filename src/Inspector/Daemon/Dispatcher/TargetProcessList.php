@@ -25,7 +25,13 @@ final class TargetProcessList
 
     public function pickOne(): ?int
     {
-        return array_pop($this->pid_list);
+        if ($this->pid_list === []) {
+            return null;
+        }
+        $key = array_rand($this->pid_list);
+        $value = $this->pid_list[$key];
+        unset($this->pid_list[$key]);
+        return $value;
     }
 
     public function putOne(int $pid): void
