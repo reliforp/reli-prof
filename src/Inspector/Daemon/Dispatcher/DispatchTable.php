@@ -45,11 +45,11 @@ final class DispatchTable
     {
         $diff = $this->assigned->getDiff($update);
         $this->release($diff);
-        $this->assigned = $this->assigned->getDiff($diff);
         $unassigned_new = $update->getDiff($this->assigned);
         for ($worker = $this->worker_pool->getFreeWorker(); $worker; $worker = $this->worker_pool->getFreeWorker()) {
             $picked = $unassigned_new->pickOne();
             if (is_null($picked)) {
+                $this->worker_pool->returnWorkerToPool($worker);
                 break;
             }
             $this->assigned->putOne($picked);
