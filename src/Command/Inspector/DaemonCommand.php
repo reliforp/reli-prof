@@ -167,8 +167,8 @@ final class DaemonCommand extends Command
                         function () use ($reader, $pid, $worker_pool, $dispatch_table, $output) {
                             $worker_pool->setOnRead($pid);
                             $result = yield $reader->receiveTrace();
-                            $worker_pool->releaseOnRead($pid);
                             if ($result instanceof TraceMessage) {
+                                $worker_pool->releaseOnRead($pid);
                                 $output->write($result->trace);
                             } else {
                                 $dispatch_table->releaseOne($result->pid);
