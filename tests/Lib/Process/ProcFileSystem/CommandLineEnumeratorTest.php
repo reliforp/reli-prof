@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\ProcFileSystem;
 
-use PhpProfiler\Lib\File\CatFileReader;
 use PHPUnit\Framework\TestCase;
 
 class CommandLineEnumeratorTest extends TestCase
@@ -53,7 +52,7 @@ class CommandLineEnumeratorTest extends TestCase
         $child_pid = $child_status['pid'];
 
         $target = null;
-        foreach (new CommandLineEnumerator(new CatFileReader()) as $pid => $command_line) {
+        foreach (new CommandLineEnumerator() as $pid => $command_line) {
             if ($pid === $child_pid) {
                 $target = $command_line;
                 break;

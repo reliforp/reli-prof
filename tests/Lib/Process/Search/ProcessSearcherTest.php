@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\Search;
 
-use PhpProfiler\Lib\File\CatFileReader;
 use PHPUnit\Framework\TestCase;
 
 class ProcessSearcherTest extends TestCase
@@ -52,7 +51,7 @@ class ProcessSearcherTest extends TestCase
         $child_status = proc_get_status($this->child);
         $child_pid = $child_status['pid'];
 
-        $searcher = new ProcessSearcher(new CatFileReader());
+        $searcher = new ProcessSearcher();
         $this->assertSame(
             [$child_pid],
             $searcher->searchByRegex('/test_ProcessSearcherTest/')
