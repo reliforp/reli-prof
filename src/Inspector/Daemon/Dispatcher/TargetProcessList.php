@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
-final class TargetProcessList
+final class TargetProcessList implements TargetProcessListInterface
 {
     /** @var int[] */
     private array $pid_list;
