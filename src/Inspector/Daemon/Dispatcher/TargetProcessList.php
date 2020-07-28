@@ -39,9 +39,9 @@ final class TargetProcessList implements TargetProcessListInterface
         $this->pid_list[] = $pid;
     }
 
-    public function getDiff(TargetProcessList $compare_list): self
+    public function getDiff(TargetProcessListInterface $compare_list): self
     {
-        return new self(...array_diff($this->pid_list, $compare_list->pid_list));
+        return new self(...array_diff($this->pid_list, $compare_list->getArray()));
     }
 
     /**

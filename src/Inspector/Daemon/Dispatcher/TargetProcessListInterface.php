@@ -17,6 +17,7 @@ interface TargetProcessListInterface
 {
     public function pickOne(): ?int;
     public function putOne(int $pid): void;
-    public function getDiff(TargetProcessList $compare_list): self;
+    public function getDiff(TargetProcessListInterface $compare_list): self;
+    /** @return int[] */
     public function getArray(): array;
 }

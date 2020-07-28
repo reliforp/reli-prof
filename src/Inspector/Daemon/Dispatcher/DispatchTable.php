@@ -20,8 +20,8 @@ use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
 final class DispatchTable
 {
-    private WorkerPool $worker_pool;
-    private TargetProcessList $assigned;
+    private WorkerPoolInterface $worker_pool;
+    private TargetProcessListInterface $assigned;
     private TargetPhpSettings $target_php_settings;
     private TraceLoopSettings $trace_loop_settings;
     private GetTraceSettings $get_trace_settings;
@@ -29,7 +29,7 @@ final class DispatchTable
     private array $dispatch_table = [];
 
     public function __construct(
-        WorkerPool $worker_pool,
+        WorkerPoolInterface $worker_pool,
         TargetPhpSettings $target_php_settings,
         TraceLoopSettings $trace_loop_settings,
         GetTraceSettings $get_trace_settings
@@ -41,7 +41,7 @@ final class DispatchTable
         $this->assigned = new TargetProcessList();
     }
 
-    public function updateTargets(TargetProcessList $update): void
+    public function updateTargets(TargetProcessListInterface $update): void
     {
         $diff = $this->assigned->getDiff($update);
         $this->release($diff);
@@ -58,7 +58,7 @@ final class DispatchTable
         }
     }
 
-    public function release(TargetProcessList $targets): void
+    public function release(TargetProcessListInterface $targets): void
     {
         foreach ($targets->getArray() as $pid) {
             $this->releaseOne($pid);
