@@ -20,7 +20,7 @@ use PhpProfiler\Inspector\Settings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
-final class WorkerPool
+final class WorkerPool implements WorkerPoolInterface
 {
     /** @var array<int, PhpReaderContextInterface> */
     private array $contexts;
