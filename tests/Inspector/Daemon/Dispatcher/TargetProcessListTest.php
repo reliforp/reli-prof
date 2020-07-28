@@ -40,6 +40,7 @@ class TargetProcessListTest extends TestCase
         $picked = [];
         $picked[] = $target_process_list->pickOne();
         $picked[] = $target_process_list->pickOne();
+        sort($picked);
         $this->assertSame([1, 2], $picked);
     }
 
