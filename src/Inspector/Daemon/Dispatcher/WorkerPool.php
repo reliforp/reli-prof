@@ -13,16 +13,16 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContext;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use Amp\Promise;
+use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
 final class WorkerPool
 {
-    /** @var array<int, PhpReaderContext> */
+    /** @var array<int, PhpReaderContextInterface> */
     private array $contexts;
 
     /** @var array<int, bool> */
@@ -31,7 +31,7 @@ final class WorkerPool
     /** @var array<int, bool> */
     private array $on_read_list;
 
-    public function __construct(PhpReaderContext ...$contexts)
+    public function __construct(PhpReaderContextInterface ...$contexts)
     {
         $this->contexts = $contexts;
         $this->is_free_list = array_fill(0, count($contexts), true);
@@ -39,7 +39,7 @@ final class WorkerPool
     }
 
     public static function create(
-        PhpReaderContextCreator $creator,
+        PhpReaderContextCreatorInterface $creator,
         int $number,
         TargetPhpSettings $target_php_settings,
         TraceLoopSettings $loop_settings,
@@ -66,7 +66,7 @@ final class WorkerPool
         return new self(...$contexts);
     }
 
-    public function getFreeWorker(): ?PhpReaderContext
+    public function getFreeWorker(): ?PhpReaderContextInterface
     {
         foreach ($this->contexts as $key => $context) {
             if ($this->is_free_list[$key]) {
@@ -78,7 +78,7 @@ final class WorkerPool
     }
 
     /**
-     * @return iterable<int, PhpReaderContext>
+     * @return iterable<int, PhpReaderContextInterface>
      */
     public function getReadableWorkers(): iterable
     {
@@ -89,7 +89,7 @@ final class WorkerPool
         }
     }
 
-    public function returnWorkerToPool(PhpReaderContext $context_to_return): void
+    public function returnWorkerToPool(PhpReaderContextInterface $context_to_return): void
     {
         foreach ($this->contexts as $key => $context) {
             if ($context === $context_to_return) {
