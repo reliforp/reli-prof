@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContext;
+use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings;
@@ -25,7 +25,7 @@ final class DispatchTable
     private TargetPhpSettings $target_php_settings;
     private TraceLoopSettings $trace_loop_settings;
     private GetTraceSettings $get_trace_settings;
-    /** @var array<int, PhpReaderContext> */
+    /** @var array<int, PhpReaderContextInterface> */
     private array $dispatch_table = [];
 
     public function __construct(
