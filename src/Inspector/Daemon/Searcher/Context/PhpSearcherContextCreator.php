@@ -13,12 +13,23 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
 
-use Amp\Parallel\Context;
+use PhpProfiler\Lib\Amphp\ContextCreator;
 
 final class PhpSearcherContextCreator
 {
+    private ContextCreator $context_creator;
+
+    public function __construct(ContextCreator $context_creator)
+    {
+        $this->context_creator = $context_creator;
+    }
+
     public function create(): PhpSearcherContext
     {
-        return new PhpSearcherContext(Context\create(__DIR__ . '/php-searcher.php'));
+        return new PhpSearcherContext(
+            $this->context_creator->create(
+                PhpSearcherEntryPoint::class
+            )
+        );
     }
 }

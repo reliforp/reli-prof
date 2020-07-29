@@ -11,29 +11,30 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher;
+namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
 
 use Amp\Parallel\Sync\Channel;
-use Generator;
 use PhpProfiler\Inspector\Daemon\Dispatcher\Message\UpdateTargetProcessMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessList;
+use PhpProfiler\Lib\Amphp\ContextEntryPointInterface;
 use PhpProfiler\Lib\Process\Search\ProcessSearcher;
 
-final class PhpSearcherTask
+final class PhpSearcherEntryPoint implements ContextEntryPointInterface
 {
-    private Channel $channel;
     private ProcessSearcher $process_searcher;
 
-    public function __construct(Channel $channel, ProcessSearcher $process_searcher)
+    public function __construct(ProcessSearcher $process_searcher)
     {
-        $this->channel = $channel;
         $this->process_searcher = $process_searcher;
     }
 
-    public function run(string $target_regex): Generator
+    public function run(Channel $channel): \Generator
     {
+        /** @var string $target_regex */
+        $target_regex = yield $channel->receive();
+
         while (1) {
-            yield $this->channel->send(
+            yield $channel->send(
                 new UpdateTargetProcessMessage(
                     new TargetProcessList(
                         ...$this->process_searcher->searchByRegex($target_regex)

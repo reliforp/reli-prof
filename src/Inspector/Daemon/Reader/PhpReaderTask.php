@@ -25,24 +25,22 @@ use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 
 final class PhpReaderTask
 {
-    private Channel $channel;
     private PhpGlobalsFinder $php_globals_finder;
     private ExecutorGlobalsReader $executor_globals_reader;
     private ReaderLoopProvider $reader_loop_provider;
 
     public function __construct(
-        Channel $channel,
         PhpGlobalsFinder $php_globals_finder,
         ExecutorGlobalsReader $executor_globals_reader,
         ReaderLoopProvider $reader_loop_provider
     ) {
-        $this->channel = $channel;
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
         $this->reader_loop_provider = $reader_loop_provider;
     }
 
     public function run(
+        Channel $channel,
         TargetProcessSettings $target_process_settings,
         TraceLoopSettings $loop_settings,
         TargetPhpSettings $target_php_settings,
@@ -52,6 +50,7 @@ final class PhpReaderTask
 
         $loop = $this->reader_loop_provider->getMainLoop(
             function () use (
+                $channel,
                 $get_trace_settings,
                 $target_process_settings,
                 $target_php_settings,
@@ -63,7 +62,7 @@ final class PhpReaderTask
                     $eg_address,
                     $get_trace_settings->depth
                 );
-                yield $this->channel->send(
+                yield $channel->send(
                     new TraceMessage(join(PHP_EOL, $call_trace) . PHP_EOL)
                 );
             },

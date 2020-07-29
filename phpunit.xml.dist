@@ -29,6 +29,7 @@
                 <directory suffix="Message.php">./src</directory>
                 <directory suffix="SettingsException.php">./src</directory>
                 <directory suffix="LoopProvider.php">./src</directory>
+                <directory suffix="context-entry.php">./src/Lib/Amphp</directory>
             </exclude>
         </whitelist>
     </filter>

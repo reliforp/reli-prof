@@ -11,6 +11,7 @@
 
 declare(strict_types=1);
 
+use PhpProfiler\Lib\Amphp\ContextCreator;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
@@ -31,4 +32,5 @@ return [
     SymbolResolverCreatorInterface::class => autowire(Elf64SymbolResolverCreator::class),
     FileReaderInterface::class => autowire(CatFileReader::class),
     IntegerByteSequenceReader::class => autowire(LittleEndianReader::class),
+    ContextCreator::class => autowire()->constructorParameter('di_config_file', __DIR__ . '/di.php'),
 ];
