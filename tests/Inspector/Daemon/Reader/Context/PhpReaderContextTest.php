@@ -16,6 +16,7 @@ namespace PhpProfiler\Inspector\Daemon\Reader\Context;
 use Amp\Parallel\Context\Context;
 use Amp\Promise;
 use Mockery;
+use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings;
@@ -73,6 +74,24 @@ final class PhpReaderContextTest extends TestCase
                 $get_trace_settings
             )
         );
+    }
+
+    public function testSendAttach(): void
+    {
+        $context = Mockery::mock(Context::class);
+        $context->expects()
+            ->send()
+            ->with(
+                Mockery::on(function (AttachMessage $actual) {
+                    $this->assertEquals(new AttachMessage(1), $actual);
+                    return true;
+                })
+            )
+            ->andReturn(
+                Mockery::mock(Promise::class)
+            );
+        $php_reader_context = new PhpReaderContext($context);
+        $this->assertInstanceOf(Promise::class, $php_reader_context->sendAttach(1));
     }
 
     public function testReceiveTrace(): void
