@@ -13,13 +13,13 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
 
-use PhpProfiler\Lib\Amphp\ContextCreator;
+use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 
 final class PhpSearcherContextCreator
 {
-    private ContextCreator $context_creator;
+    private ContextCreatorInterface $context_creator;
 
-    public function __construct(ContextCreator $context_creator)
+    public function __construct(ContextCreatorInterface $context_creator)
     {
         $this->context_creator = $context_creator;
     }

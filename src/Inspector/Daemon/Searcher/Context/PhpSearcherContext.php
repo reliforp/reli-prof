@@ -17,7 +17,7 @@ use Amp\Parallel\Context;
 use Amp\Promise;
 use PhpProfiler\Inspector\Daemon\Dispatcher\Message\UpdateTargetProcessMessage;
 
-final class PhpSearcherContext
+final class PhpSearcherContext implements PhpSearcherContextInterface
 {
     private Context\Context $context;
 
