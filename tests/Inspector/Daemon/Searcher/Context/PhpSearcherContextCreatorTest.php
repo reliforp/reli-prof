@@ -35,4 +35,5 @@ class PhpSearcherContextCreatorTest extends TestCase
             PhpSearcherContextInterface::class,
             $php_searcher_context_creator->create()
         );
-    }}
+    }
+}

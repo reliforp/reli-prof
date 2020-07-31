@@ -57,5 +57,4 @@ class TraceLoopSettingsTest extends TestCase
         $this->expectException(TraceLoopInspectorSettingsException::class);
         $settings = TraceLoopSettings::fromConsoleInput($input);
     }
-
 }

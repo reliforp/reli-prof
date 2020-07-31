@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
 
 use Amp\Promise;
+use PhpProfiler\Inspector\Daemon\Dispatcher\Message\UpdateTargetProcessMessage;
 
 interface PhpSearcherContextInterface
 {
