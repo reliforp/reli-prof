@@ -27,6 +27,7 @@ use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
+use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
 use function DI\autowire;
 
 return [
@@ -42,4 +43,5 @@ return [
     ContextCreatorInterface::class => autowire(ContextCreator::class)
         ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
     PhpReaderTaskInterface::class => autowire(PhpReaderTask::class),
+    ProcessSearcherInterface::class => autowire(\PhpProfiler\Lib\Process\Search\ProcessSearcher::class),
 ];

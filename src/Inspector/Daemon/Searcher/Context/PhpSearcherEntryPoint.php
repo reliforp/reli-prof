@@ -17,13 +17,13 @@ use Amp\Parallel\Sync\Channel;
 use PhpProfiler\Inspector\Daemon\Dispatcher\Message\UpdateTargetProcessMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessList;
 use PhpProfiler\Lib\Amphp\ContextEntryPointInterface;
-use PhpProfiler\Lib\Process\Search\ProcessSearcher;
+use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
 
 final class PhpSearcherEntryPoint implements ContextEntryPointInterface
 {
-    private ProcessSearcher $process_searcher;
+    private ProcessSearcherInterface $process_searcher;
 
-    public function __construct(ProcessSearcher $process_searcher)
+    public function __construct(ProcessSearcherInterface $process_searcher)
     {
         $this->process_searcher = $process_searcher;
     }

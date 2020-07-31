@@ -15,7 +15,7 @@ namespace PhpProfiler\Lib\Process\Search;
 
 use PhpProfiler\Lib\Process\ProcFileSystem\CommandLineEnumerator;
 
-final class ProcessSearcher
+final class ProcessSearcher implements ProcessSearcherInterface
 {
     /**
      * @param string $regex
