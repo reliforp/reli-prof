@@ -17,20 +17,20 @@ use LogicException;
 
 final class LoopBuilder
 {
-    /** @var array<int, class-string<LoopProcessInterface>> */
+    /** @var array<int, class-string<LoopMiddlewareInterface>> */
     private array $process_stack = [];
     /** @var array<int, array> */
     private array $parameter_stack = [];
 
     /**
-     * @param class-string<LoopProcessInterface> $process
+     * @param class-string<LoopMiddlewareInterface> $process
      * @param array $parameters
      * @return self
      */
     public function addProcess(string $process, array $parameters): self
     {
-        if (!is_a($process, LoopProcessInterface::class, true)) {
-            throw new LogicException('1st argument must be a name of a class implements LoopProcessInterface');
+        if (!is_a($process, LoopMiddlewareInterface::class, true)) {
+            throw new LogicException('1st argument must be a name of a class implements LoopMiddlewareInterface');
         }
         $self = clone $this;
         $self->process_stack[] = $process;

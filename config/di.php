@@ -11,6 +11,12 @@
 
 declare(strict_types=1);
 
+use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
+use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
+use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTask;
+use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTaskInterface;
+use PhpProfiler\Lib\Amphp\ContextCreator;
+use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
@@ -21,6 +27,7 @@ use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
+use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
 use function DI\autowire;
 
 return [
@@ -31,4 +38,10 @@ return [
     SymbolResolverCreatorInterface::class => autowire(Elf64SymbolResolverCreator::class),
     FileReaderInterface::class => autowire(CatFileReader::class),
     IntegerByteSequenceReader::class => autowire(LittleEndianReader::class),
+    ContextCreator::class => autowire()
+        ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
+    ContextCreatorInterface::class => autowire(ContextCreator::class)
+        ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
+    PhpReaderTaskInterface::class => autowire(PhpReaderTask::class),
+    ProcessSearcherInterface::class => autowire(\PhpProfiler\Lib\Process\Search\ProcessSearcher::class),
 ];

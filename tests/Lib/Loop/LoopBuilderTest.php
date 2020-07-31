@@ -15,8 +15,8 @@ namespace PhpProfiler\Lib\Loop;
 
 use Exception;
 use LogicException;
-use PhpProfiler\Lib\Loop\LoopProcess\CallableLoop;
-use PhpProfiler\Lib\Loop\LoopProcess\RetryOnExceptionLoop;
+use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;
+use PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
 use PHPUnit\Framework\TestCase;
 
 class LoopBuilderTest extends TestCase
@@ -26,9 +26,9 @@ class LoopBuilderTest extends TestCase
         $call_counter = 0;
         $execute_counter = 0;
         $builder = new LoopBuilder();
-        $loop = $builder->addProcess(RetryOnExceptionLoop::class, [1, [Exception::class]])
+        $loop = $builder->addProcess(RetryOnExceptionMiddleware::class, [1, [Exception::class]])
             ->addProcess(
-                CallableLoop::class,
+                CallableMiddleware::class,
                 [
                     function () use (&$call_counter, &$execute_counter): bool {
                         if (++$call_counter === 1) {
