@@ -17,6 +17,8 @@ use Amp\Parallel\Context;
 
 final class ContextCreator implements ContextCreatorInterface
 {
+    public const ENTRY_SCRIPT = __DIR__ . '/context-entry.php';
+
     private string $di_config_file;
 
     public function __construct(string $di_config_file)
@@ -30,7 +32,7 @@ final class ContextCreator implements ContextCreatorInterface
     public function create(string $entry_point_name): Context\Context
     {
         return Context\create([
-            ContextEntryPointInterface::ENTRY_SCRIPT,
+            self::ENTRY_SCRIPT,
             $entry_point_name,
             $this->di_config_file,
         ]);

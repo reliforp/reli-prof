@@ -17,7 +17,5 @@ use Amp\Parallel\Sync\Channel;
 
 interface ContextEntryPointInterface
 {
-    public const ENTRY_SCRIPT = __DIR__ . '/context-entry.php';
-
     public function run(Channel $channel): \Generator;
 }
