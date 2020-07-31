@@ -23,7 +23,7 @@ use PhpProfiler\Inspector\Settings\TraceLoopSettings;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 
-final class PhpReaderTask
+final class PhpReaderTask implements PhpReaderTaskInterface
 {
     private PhpGlobalsFinder $php_globals_finder;
     private ExecutorGlobalsReader $executor_globals_reader;

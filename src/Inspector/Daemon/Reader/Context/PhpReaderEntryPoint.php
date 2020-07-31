@@ -18,15 +18,15 @@ use PhpProfiler\Inspector\Daemon\Dispatcher\Message\DetachWorkerMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings;
-use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTask;
+use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTaskInterface;
 use PhpProfiler\Lib\Amphp\ContextEntryPointInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
 final class PhpReaderEntryPoint implements ContextEntryPointInterface
 {
-    private PhpReaderTask $php_reader_task;
+    private PhpReaderTaskInterface $php_reader_task;
 
-    public function __construct(PhpReaderTask $php_reader_task)
+    public function __construct(PhpReaderTaskInterface $php_reader_task)
     {
         $this->php_reader_task = $php_reader_task;
     }
