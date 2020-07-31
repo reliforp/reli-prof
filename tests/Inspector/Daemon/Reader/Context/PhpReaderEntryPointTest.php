@@ -81,7 +81,10 @@ class PhpReaderEntryPointTest extends TestCase
 
         $promise = $generator->current();
         $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(fn ($error, $value) => $this->assertSame(1, $value));
+        $promise->onResolve(function ($error, $value) use (&$result) {
+            $result = $value;
+        });
+        $this->assertSame(1, $result);
 
         $promise = $generator->send(
             new SetSettingsMessage(
@@ -91,26 +94,37 @@ class PhpReaderEntryPointTest extends TestCase
             )
         );
         $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(fn ($error, $value) => $this->assertSame(1, $value));
+        $promise->onResolve(function ($error, $value) use (&$result) {
+            $result = $value;
+        });
+        $this->assertSame(2, $result);
 
         $promise = $generator->send(new AttachMessage(123));
         $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(fn ($error, $value) => $this->assertSame(2, $value));
+        $promise->onResolve(function ($error, $value) use (&$result) {
+            $result = $value;
+        });
+        $this->assertSame(3, $result);
 
         $promise = $generator->send(null);
         $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(fn ($error, $value) => $this->assertSame(3, $value));
+        $promise->onResolve(function ($error, $value) use (&$result) {
+            $result = $value;
+        });
+        $this->assertSame(4, $result);
 
         $promise = $generator->send(null);
         $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(fn ($error, $value) => $this->assertSame(4, $value));
+        $promise->onResolve(function ($error, $value) use (&$result) {
+            $result = $value;
+        });
+        $this->assertSame(5, $result);
 
         $promise = $generator->send(null);
         $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(fn ($error, $value) => $this->assertSame(5, $value));
-
-        $promise = $generator->send(null);
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(fn ($error, $value) => $this->assertSame(6, $value));
+        $promise->onResolve(function ($error, $value) use (&$result) {
+            $result = $value;
+        });
+        $this->assertSame(6, $result);
     }
 }
