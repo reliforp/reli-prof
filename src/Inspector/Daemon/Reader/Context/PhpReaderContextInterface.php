@@ -46,7 +46,6 @@ interface PhpReaderContextInterface
 
     /**
      * @return Promise<TraceMessage|DetachWorkerMessage>
-     * @psalm-yield Promise<TraceMessage|DetachWorkerMessage>
      */
     public function receiveTrace(): Promise;
 }
