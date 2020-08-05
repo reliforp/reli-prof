@@ -15,9 +15,11 @@ namespace PhpProfiler\Inspector\Daemon\Dispatcher\Message;
 
 final class TraceMessage
 {
-    public string $trace;
+    /** @var string[] */
+    public array $trace;
 
-    public function __construct(string $trace)
+    /** @param string[] $trace */
+    public function __construct(array $trace)
     {
         $this->trace = $trace;
     }

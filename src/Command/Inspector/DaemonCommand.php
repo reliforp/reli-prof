@@ -129,7 +129,7 @@ final class DaemonCommand extends Command
                             $result = yield $reader->receiveTrace();
                             if ($result instanceof TraceMessage) {
                                 $worker_pool->releaseOnRead($pid);
-                                $output->write($result->trace);
+                                $this->outputTrace($output, $result);
                             } else {
                                 $dispatch_table->releaseOne($result->pid);
                             }
@@ -141,5 +141,12 @@ final class DaemonCommand extends Command
         });
 
         return 0;
+    }
+
+    private function outputTrace(OutputInterface $output, TraceMessage $message): void
+    {
+        $output->writeln(
+            join(PHP_EOL, $message->trace) . PHP_EOL
+        );
     }
 }

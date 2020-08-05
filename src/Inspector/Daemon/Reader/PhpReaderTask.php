@@ -63,7 +63,7 @@ final class PhpReaderTask implements PhpReaderTaskInterface
                     $get_trace_settings->depth
                 );
                 yield $channel->send(
-                    new TraceMessage(join(PHP_EOL, $call_trace) . PHP_EOL)
+                    new TraceMessage($call_trace)
                 );
             },
             $loop_settings
