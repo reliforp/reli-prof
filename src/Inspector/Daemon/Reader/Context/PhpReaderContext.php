@@ -77,7 +77,6 @@ final class PhpReaderContext implements PhpReaderContextInterface
 
     /**
      * @return Promise<TraceMessage|DetachWorkerMessage>
-     * @psalm-yield Promise<TraceMessage|DetachWorkerMessage>
      */
     public function receiveTrace(): Promise
     {

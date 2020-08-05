@@ -31,7 +31,6 @@ interface PhpSearcherContextInterface
 
     /**
      * @return Promise<UpdateTargetProcessMessage>
-     * @psalm-yield Promise<UpdateTargetProcessMessage>
      */
     public function receivePidList(): Promise;
 }

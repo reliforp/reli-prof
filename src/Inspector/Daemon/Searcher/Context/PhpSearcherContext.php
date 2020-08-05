@@ -46,7 +46,6 @@ final class PhpSearcherContext implements PhpSearcherContextInterface
 
     /**
      * @return Promise<UpdateTargetProcessMessage>
-     * @psalm-yield Promise<UpdateTargetProcessMessage>
      */
     public function receivePidList(): Promise
     {
