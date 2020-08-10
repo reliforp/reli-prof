@@ -11,7 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
+
+use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 
 final class TargetProcessInspectorSettingsException extends InspectorSettingsException
 {

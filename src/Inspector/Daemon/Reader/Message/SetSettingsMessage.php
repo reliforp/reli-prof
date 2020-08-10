@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Reader\Message;
 
-use PhpProfiler\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 final class SetSettingsMessage
 {

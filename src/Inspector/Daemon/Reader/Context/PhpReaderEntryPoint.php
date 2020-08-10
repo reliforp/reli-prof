@@ -17,7 +17,7 @@ use Amp\Parallel\Sync\Channel;
 use PhpProfiler\Inspector\Daemon\Dispatcher\Message\DetachWorkerMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings;
+use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTaskInterface;
 use PhpProfiler\Lib\Amphp\ContextEntryPointInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;

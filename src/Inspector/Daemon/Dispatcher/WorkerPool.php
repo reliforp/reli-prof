@@ -16,9 +16,9 @@ namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 use Amp\Promise;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
-use PhpProfiler\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 final class WorkerPool implements WorkerPoolInterface
 {

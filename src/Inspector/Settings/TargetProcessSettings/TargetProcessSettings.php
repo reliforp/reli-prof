@@ -11,10 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use Symfony\Component\Console\Input\InputInterface;
 
 final class TargetProcessSettings

@@ -11,7 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\DaemonSettings;
+
+use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 
 final class DaemonInspectorSettingsException extends InspectorSettingsException
 {

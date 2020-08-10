@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\DaemonSettings;
 
 use Mockery;
 use PHPUnit\Framework\TestCase;

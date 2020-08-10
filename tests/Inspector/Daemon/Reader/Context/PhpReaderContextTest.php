@@ -18,9 +18,9 @@ use Amp\Promise;
 use Mockery;
 use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
-use PhpProfiler\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PHPUnit\Framework\TestCase;
 
 final class PhpReaderContextTest extends TestCase

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
 
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use Symfony\Component\Console\Input\InputInterface;
