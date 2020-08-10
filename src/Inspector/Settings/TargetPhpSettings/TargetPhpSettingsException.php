@@ -15,7 +15,7 @@ namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 
-final class TargetPhpInspectorSettingsException extends InspectorSettingsException
+final class TargetPhpSettingsException extends InspectorSettingsException
 {
     public const PHP_REGEX_IS_NOT_STRING = 3;
     public const LIBPTHREAD_REGEX_IS_NOT_STRING = 4;

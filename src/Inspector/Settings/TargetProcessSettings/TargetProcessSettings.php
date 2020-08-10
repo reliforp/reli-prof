@@ -38,14 +38,14 @@ final class TargetProcessSettings
     {
         $pid = $input->getOption('pid');
         if (is_null($pid)) {
-            throw TargetProcessInspectorSettingsException::create(
-                TargetProcessInspectorSettingsException::PID_NOT_SPECIFIED
+            throw TargetProcessSettingsException::create(
+                TargetProcessSettingsException::PID_NOT_SPECIFIED
             );
         }
         $pid = filter_var($pid, FILTER_VALIDATE_INT);
         if ($pid === false) {
-            throw TargetProcessInspectorSettingsException::create(
-                TargetProcessInspectorSettingsException::PID_NOT_SPECIFIED
+            throw TargetProcessSettingsException::create(
+                TargetProcessSettingsException::PID_NOT_SPECIFIED
             );
         }
 

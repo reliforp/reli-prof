@@ -52,8 +52,8 @@ final class TraceLoopSettings
         }
         $sleep_nano_seconds = filter_var($sleep_nano_seconds, FILTER_VALIDATE_INT);
         if ($sleep_nano_seconds === false) {
-            throw TraceLoopInspectorSettingsException::create(
-                TraceLoopInspectorSettingsException::SLEEP_NS_IS_NOT_INTEGER
+            throw TraceLoopSettingsException::create(
+                TraceLoopSettingsException::SLEEP_NS_IS_NOT_INTEGER
             );
         }
 
@@ -63,8 +63,8 @@ final class TraceLoopSettings
         }
         $max_retries = filter_var($max_retries, FILTER_VALIDATE_INT);
         if ($max_retries === false) {
-            throw TraceLoopInspectorSettingsException::create(
-                TraceLoopInspectorSettingsException::MAX_RETRY_IS_NOT_INTEGER
+            throw TraceLoopSettingsException::create(
+                TraceLoopSettingsException::MAX_RETRY_IS_NOT_INTEGER
             );
         }
 

@@ -33,7 +33,7 @@ class TargetProcessSettingsTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns(null);
-        $this->expectException(TargetProcessInspectorSettingsException::class);
+        $this->expectException(TargetProcessSettingsException::class);
         $settings = TargetProcessSettings::fromConsoleInput($input);
     }
 
@@ -41,7 +41,7 @@ class TargetProcessSettingsTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns('abc');
-        $this->expectException(TargetProcessInspectorSettingsException::class);
+        $this->expectException(TargetProcessSettingsException::class);
         $settings = TargetProcessSettings::fromConsoleInput($input);
     }
 }

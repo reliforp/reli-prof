@@ -56,7 +56,7 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns('v56');
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
+        $this->expectException(TargetPhpSettingsException::class);
         $settings = TargetPhpSettings::fromConsoleInput($input);
     }
 
@@ -68,7 +68,7 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
+        $this->expectException(TargetPhpSettingsException::class);
         $settings = TargetPhpSettings::fromConsoleInput($input);
     }
 
@@ -80,7 +80,7 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
+        $this->expectException(TargetPhpSettingsException::class);
         $settings = TargetPhpSettings::fromConsoleInput($input);
     }
 
@@ -92,7 +92,7 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(1);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
+        $this->expectException(TargetPhpSettingsException::class);
         $settings = TargetPhpSettings::fromConsoleInput($input);
     }
 
@@ -104,7 +104,7 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(1);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
+        $this->expectException(TargetPhpSettingsException::class);
         $settings = TargetPhpSettings::fromConsoleInput($input);
     }
 }

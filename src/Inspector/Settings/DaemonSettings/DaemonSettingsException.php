@@ -15,7 +15,7 @@ namespace PhpProfiler\Inspector\Settings\DaemonSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 
-final class DaemonInspectorSettingsException extends InspectorSettingsException
+final class DaemonSettingsException extends InspectorSettingsException
 {
     public const THREADS_IS_NOT_INTEGER = 1;
     public const TARGET_REGEX_IS_NOT_STRING = 2;

@@ -47,13 +47,13 @@ final class DaemonSettings
         }
         $threads = filter_var($threads, FILTER_VALIDATE_INT);
         if ($threads === false) {
-            throw DaemonInspectorSettingsException::create(DaemonInspectorSettingsException::THREADS_IS_NOT_INTEGER);
+            throw DaemonSettingsException::create(DaemonSettingsException::THREADS_IS_NOT_INTEGER);
         }
 
         $target_regex = $input->getOption('target-regex') ?? self::TARGET_REGEX_DEFAULT;
         if (!is_string($target_regex)) {
-            throw DaemonInspectorSettingsException::create(
-                DaemonInspectorSettingsException::TARGET_REGEX_IS_NOT_STRING
+            throw DaemonSettingsException::create(
+                DaemonSettingsException::TARGET_REGEX_IS_NOT_STRING
             );
         }
 

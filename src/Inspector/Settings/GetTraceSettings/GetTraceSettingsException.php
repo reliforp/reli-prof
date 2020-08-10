@@ -11,17 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
+namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 
-final class TargetProcessInspectorSettingsException extends InspectorSettingsException
+final class GetTraceSettingsException extends InspectorSettingsException
 {
-    public const PID_NOT_SPECIFIED = 1;
-    public const PID_IS_NOT_INTEGER = 2;
+    public const DEPTH_IS_NOT_INTEGER = 1;
 
     protected const ERRORS = [
-        self::PID_NOT_SPECIFIED => 'pid is not specified',
-        self::PID_IS_NOT_INTEGER => 'pid is not integer',
+        self::DEPTH_IS_NOT_INTEGER => 'depth is not integer',
     ];
 }

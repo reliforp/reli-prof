@@ -42,7 +42,7 @@ final class GetTraceSettings
         }
         $depth = filter_var($depth, FILTER_VALIDATE_INT);
         if ($depth === false) {
-            throw GetTraceInspectorSettingsException::create(GetTraceInspectorSettingsException::DEPTH_IS_NOT_INTEGER);
+            throw GetTraceSettingsException::create(GetTraceSettingsException::DEPTH_IS_NOT_INTEGER);
         }
         return new self($depth);
     }

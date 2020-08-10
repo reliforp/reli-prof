@@ -56,37 +56,37 @@ final class TargetPhpSettings
     {
         $php_regex = $input->getOption('php-regex') ?? self::PHP_REGEX_DEFAULT;
         if (!is_string($php_regex)) {
-            throw TargetPhpInspectorSettingsException::create(
-                TargetPhpInspectorSettingsException::PHP_REGEX_IS_NOT_STRING
+            throw TargetPhpSettingsException::create(
+                TargetPhpSettingsException::PHP_REGEX_IS_NOT_STRING
             );
         }
 
         $libpthread_regex = $input->getOption('libpthread-regex') ?? self::LIBPTHREAD_REGEX_DEFAULT;
         if (!is_string($libpthread_regex)) {
-            throw TargetPhpInspectorSettingsException::create(
-                TargetPhpInspectorSettingsException::LIBPTHREAD_REGEX_IS_NOT_STRING
+            throw TargetPhpSettingsException::create(
+                TargetPhpSettingsException::LIBPTHREAD_REGEX_IS_NOT_STRING
             );
         }
 
         $php_version = $input->getOption('php-version') ?? self::TARGET_PHP_VERSION_DEFAULT;
         if (!in_array($php_version, ZendTypeReader::ALL_SUPPORTED_VERSIONS, true)) {
-            throw TargetPhpInspectorSettingsException::create(
-                TargetPhpInspectorSettingsException::TARGET_PHP_VERSION_INVALID
+            throw TargetPhpSettingsException::create(
+                TargetPhpSettingsException::TARGET_PHP_VERSION_INVALID
             );
         }
         /** @psalm-var value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
 
         $php_path = $input->getOption('php-path');
         if (!is_null($php_path) and !is_string($php_path)) {
-            throw TargetPhpInspectorSettingsException::create(
-                TargetPhpInspectorSettingsException::PHP_PATH_IS_NOT_STRING
+            throw TargetPhpSettingsException::create(
+                TargetPhpSettingsException::PHP_PATH_IS_NOT_STRING
             );
         }
 
         $libpthread_path = $input->getOption('libpthread-path');
         if (!is_null($libpthread_path) and !is_string($libpthread_path)) {
-            throw TargetPhpInspectorSettingsException::create(
-                TargetPhpInspectorSettingsException::LIBPTHREAD_PATH_IS_NOT_STRING
+            throw TargetPhpSettingsException::create(
+                TargetPhpSettingsException::LIBPTHREAD_PATH_IS_NOT_STRING
             );
         }
 

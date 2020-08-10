@@ -43,7 +43,7 @@ class DaemonSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns('abc');
         $input->expects()->getOption('target-regex')->andReturns(null);
-        $this->expectException(DaemonInspectorSettingsException::class);
+        $this->expectException(DaemonSettingsException::class);
         $settings = DaemonSettings::fromConsoleInput($input);
     }
 
@@ -52,7 +52,7 @@ class DaemonSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(1);
-        $this->expectException(DaemonInspectorSettingsException::class);
+        $this->expectException(DaemonSettingsException::class);
         $settings = DaemonSettings::fromConsoleInput($input);
     }
 }

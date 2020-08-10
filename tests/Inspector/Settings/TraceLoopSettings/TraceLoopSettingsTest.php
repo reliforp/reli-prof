@@ -45,7 +45,7 @@ class TraceLoopSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('sleep-ns')->andReturns('abc');
         $input->expects()->getOption('max-retries')->andReturns(null);
-        $this->expectException(TraceLoopInspectorSettingsException::class);
+        $this->expectException(TraceLoopSettingsException::class);
         $settings = TraceLoopSettings::fromConsoleInput($input);
     }
 
@@ -54,7 +54,7 @@ class TraceLoopSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('sleep-ns')->andReturns(null);
         $input->expects()->getOption('max-retries')->andReturns('abc');
-        $this->expectException(TraceLoopInspectorSettingsException::class);
+        $this->expectException(TraceLoopSettingsException::class);
         $settings = TraceLoopSettings::fromConsoleInput($input);
     }
 }

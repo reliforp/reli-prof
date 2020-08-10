@@ -15,7 +15,7 @@ namespace PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 
-final class TraceLoopInspectorSettingsException extends InspectorSettingsException
+final class TraceLoopSettingsException extends InspectorSettingsException
 {
     public const SLEEP_NS_IS_NOT_INTEGER = 1;
     public const MAX_RETRY_IS_NOT_INTEGER = 2;
