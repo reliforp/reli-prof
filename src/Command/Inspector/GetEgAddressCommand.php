@@ -40,10 +40,10 @@ final class GetEgAddressCommand extends Command
         TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input
     ) {
-        parent::__construct();
         $this->php_globals_finder = $php_globals_finder;
         $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
         $this->target_process_settings_from_console_input = $target_process_settings_from_console_input;
+        parent::__construct();
     }
 
     public function configure(): void
