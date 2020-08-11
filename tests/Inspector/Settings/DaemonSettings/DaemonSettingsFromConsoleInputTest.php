@@ -30,11 +30,12 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
         $this->assertSame(4, $settings->threads);
     }
 
-    public function testFromConsoleInputDefault(): void
+    public function testFromConsoleInputTargetRegexNotSpecified(): void
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(null);
+        $this->expectException(DaemonSettingsException::class);
         $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
 

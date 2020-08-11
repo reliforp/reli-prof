@@ -27,16 +27,16 @@ final class DaemonSettingsFromConsoleInput
     {
         $command
             ->addOption(
+                'target-regex',
+                'P',
+                InputOption::VALUE_REQUIRED,
+                'regex to find target processes which have matching command-line (required)'
+            )
+            ->addOption(
                 'threads',
                 'T',
                 InputOption::VALUE_OPTIONAL,
                 'number of workers (default: 8)'
-            )
-            ->addOption(
-                'target-regex',
-                'P',
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the php binary loaded in the target process'
             )
         ;
     }
@@ -57,7 +57,10 @@ final class DaemonSettingsFromConsoleInput
             throw DaemonSettingsException::create(DaemonSettingsException::THREADS_IS_NOT_INTEGER);
         }
 
-        $target_regex = $input->getOption('target-regex') ?? DaemonSettings::TARGET_REGEX_DEFAULT;
+        $target_regex = $input->getOption('target-regex');
+        if (is_null($target_regex)) {
+            throw DaemonSettingsException::create(DaemonSettingsException::TARGET_REGEX_IS_NOT_SPECIFIED);
+        }
         if (!is_string($target_regex)) {
             throw DaemonSettingsException::create(
                 DaemonSettingsException::TARGET_REGEX_IS_NOT_STRING

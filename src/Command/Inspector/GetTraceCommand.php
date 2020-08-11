@@ -63,10 +63,10 @@ final class GetTraceCommand extends Command
         $this->setName('inspector:trace')
             ->setDescription('periodically get call trace from an outer process or thread')
         ;
-        $this->get_trace_settings_from_console_input->setOptions($this);
-        $this->target_php_settings_from_console_input->setOptions($this);
         $this->target_process_settings_from_console_input->setOptions($this);
+        $this->get_trace_settings_from_console_input->setOptions($this);
         $this->trace_loop_settings_from_console_input->setOptions($this);
+        $this->target_php_settings_from_console_input->setOptions($this);
     }
 
     /**

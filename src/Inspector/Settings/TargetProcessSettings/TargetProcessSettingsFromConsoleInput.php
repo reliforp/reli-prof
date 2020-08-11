@@ -30,7 +30,7 @@ final class TargetProcessSettingsFromConsoleInput
                 'pid',
                 'p',
                 InputOption::VALUE_REQUIRED,
-                'process id'
+                'process id (required)'
             )
         ;
     }
