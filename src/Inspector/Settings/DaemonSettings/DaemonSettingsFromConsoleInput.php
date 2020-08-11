@@ -46,7 +46,7 @@ final class DaemonSettingsFromConsoleInput
      * @return DaemonSettings
      * @throws InspectorSettingsException
      */
-    public function fromConsoleInput(InputInterface $input): DaemonSettings
+    public function createSettings(InputInterface $input): DaemonSettings
     {
         $threads = $input->getOption('threads');
         if (is_null($threads)) {

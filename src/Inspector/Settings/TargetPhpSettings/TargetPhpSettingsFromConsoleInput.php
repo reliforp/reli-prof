@@ -59,7 +59,7 @@ final class TargetPhpSettingsFromConsoleInput
         ;
     }
 
-    public function fromConsoleInput(InputInterface $input): TargetPhpSettings
+    public function createSettings(InputInterface $input): TargetPhpSettings
     {
         $php_regex = $input->getOption('php-regex') ?? TargetPhpSettings::PHP_REGEX_DEFAULT;
         if (!is_string($php_regex)) {

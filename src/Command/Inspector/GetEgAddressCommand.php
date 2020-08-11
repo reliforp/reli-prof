@@ -67,8 +67,8 @@ final class GetEgAddressCommand extends Command
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $target_php_settings = $this->target_php_settings_from_console_input->fromConsoleInput($input);
-        $target_process_settings = $this->target_process_settings_from_console_input->fromConsoleInput($input);
+        $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
+        $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
 
         $output->writeln(
             sprintf(

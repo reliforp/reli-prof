@@ -24,7 +24,7 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns(4);
         $input->expects()->getOption('target-regex')->andReturns('regex');
-        $settings = (new DaemonSettingsFromConsoleInput())->fromConsoleInput($input);
+        $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
 
         $this->assertSame('{regex}', $settings->target_regex);
         $this->assertSame(4, $settings->threads);
@@ -35,7 +35,7 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(null);
-        $settings = (new DaemonSettingsFromConsoleInput())->fromConsoleInput($input);
+        $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputThreadsNotInteger(): void
@@ -44,7 +44,7 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('threads')->andReturns('abc');
         $input->expects()->getOption('target-regex')->andReturns(null);
         $this->expectException(DaemonSettingsException::class);
-        $settings = (new DaemonSettingsFromConsoleInput())->fromConsoleInput($input);
+        $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputTargetRegexNotString(): void
@@ -53,6 +53,6 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(1);
         $this->expectException(DaemonSettingsException::class);
-        $settings = (new DaemonSettingsFromConsoleInput())->fromConsoleInput($input);
+        $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
 }

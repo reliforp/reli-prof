@@ -40,7 +40,7 @@ final class TargetProcessSettingsFromConsoleInput
      * @return TargetProcessSettings
      * @throws InspectorSettingsException
      */
-    public function fromConsoleInput(InputInterface $input): TargetProcessSettings
+    public function createSettings(InputInterface $input): TargetProcessSettings
     {
         $pid = $input->getOption('pid');
         if (is_null($pid)) {

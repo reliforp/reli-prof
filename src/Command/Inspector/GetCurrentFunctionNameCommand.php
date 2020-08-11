@@ -76,9 +76,9 @@ final class GetCurrentFunctionNameCommand extends Command
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $target_php_settings = $this->target_php_settings_from_console_input->fromConsoleInput($input);
-        $target_process_settings = $this->target_process_settings_from_console_input->fromConsoleInput($input);
-        $loop_settings = $this->trace_loop_settings_from_console_input->fromConsoleInput($input);
+        $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
+        $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
+        $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
 
         $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings);
 

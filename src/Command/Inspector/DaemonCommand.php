@@ -72,10 +72,10 @@ final class DaemonCommand extends Command
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $get_trace_settings = $this->get_trace_settings_from_console_input->fromConsoleInput($input);
-        $daemon_settings = $this->daemon_settings_from_console_input->fromConsoleInput($input);
-        $target_php_settings = $this->target_php_settings_from_console_input->fromConsoleInput($input);
-        $loop_settings = $this->trace_loop_settings_from_console_input->fromConsoleInput($input);
+        $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);
+        $daemon_settings = $this->daemon_settings_from_console_input->createSettings($input);
+        $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
+        $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
 
         $searcher_context = $this->php_searcher_context_creator->create();
         Promise\wait($searcher_context->start());

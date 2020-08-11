@@ -46,7 +46,7 @@ final class TraceLoopSettingsFromConsoleInput
      * @return TraceLoopSettings
      * @throws InspectorSettingsException
      */
-    public function fromConsoleInput(InputInterface $input): TraceLoopSettings
+    public function createSettings(InputInterface $input): TraceLoopSettings
     {
         $sleep_nano_seconds = $input->getOption('sleep-ns');
         if (is_null($sleep_nano_seconds)) {

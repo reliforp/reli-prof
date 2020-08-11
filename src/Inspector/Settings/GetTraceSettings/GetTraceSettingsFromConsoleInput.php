@@ -40,7 +40,7 @@ final class GetTraceSettingsFromConsoleInput
      * @return GetTraceSettings
      * @throws InspectorSettingsException
      */
-    public function fromConsoleInput(InputInterface $input): GetTraceSettings
+    public function createSettings(InputInterface $input): GetTraceSettings
     {
         $depth = $input->getOption('depth');
         if (is_null($depth)) {
