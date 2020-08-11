@@ -32,7 +32,7 @@ If you have a bit of extra CPU resource, the overhead of this software would be 
 - PHP-7.3 64bit Linux x86_64 (NTS / ZTS)
 - PHP-7.4 64bit Linux x86_64 (NTS / ZTS)
 
-The target process must load unstripped libpthread.so on ZTS to find EG from the TLS.
+On targeting ZTS, the target process must load libpthread.so, and also you must have unstripped binary of the interpreter and the libpthread.so, to find EG from the TLS.
 
 ## Installation
 ### From Git
