@@ -42,7 +42,7 @@ final class TargetPhpSettingsFromConsoleInput
                 'php-version',
                 null,
                 InputOption::VALUE_OPTIONAL,
-                'php version of the target'
+                'php version of the target (default: v74)'
             )
             ->addOption(
                 'php-path',
