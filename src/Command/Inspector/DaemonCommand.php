@@ -57,7 +57,7 @@ final class DaemonCommand extends Command
     public function configure(): void
     {
         $this->setName('inspector:daemon')
-            ->setDescription('periodically get running function name from an outer process or thread')
+            ->setDescription('concurrently get call traces from processes whose command-lines match a given regex')
         ;
         $this->daemon_settings_from_console_input->setOptions($this);
         $this->get_trace_settings_from_console_input->setOptions($this);
