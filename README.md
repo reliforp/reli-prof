@@ -12,7 +12,7 @@ php-profiler is a sampling profiler (or a VM state inspector) written in PHP. It
 It's implemented by using following techniques:
 
 - parsing ELF binary of the interpreter
-- reading memory map from /proc/<pid>/maps
+- reading memory map from /proc/\<pid\>/maps
 - reading memory of outer process by using ptrace(2) and process_vm_readv(2) via FFI
 - analyzing internal data structure in the PHP VM (aka Zend Engine)
 
