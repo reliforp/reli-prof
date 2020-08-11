@@ -14,10 +14,24 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 
 final class GetTraceSettingsFromConsoleInput
 {
+    public function setOptions(Command $command): void
+    {
+        $command
+            ->addOption(
+                'depth',
+                'd',
+                InputOption::VALUE_OPTIONAL,
+                'max depth'
+            )
+        ;
+    }
+
     /**
      * @param InputInterface $input
      * @return GetTraceSettings

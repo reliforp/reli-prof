@@ -23,7 +23,6 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
@@ -58,38 +57,9 @@ final class GetEgAddressCommand extends Command
     {
         $this->setName('inspector:eg_address')
             ->setDescription('get EG address from an outer process or thread')
-            ->addOption('pid', 'p', InputOption::VALUE_REQUIRED, 'process id')
-            ->addOption(
-                'php-regex',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the php binary loaded in the target process'
-            )
-            ->addOption(
-                'libpthread-regex',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the libpthread.so loaded in the target process'
-            )
-            ->addOption(
-                'php-version',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'php version of the target'
-            )
-            ->addOption(
-                'php-path',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'path to the php binary (only needed for chrooted ZTS target)'
-            )
-            ->addOption(
-                'libpthread-path',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'path to the libpthread.so (only needed for chrooted ZTS target)'
-            )
         ;
+        $this->target_php_settings_from_console_input->setOptions($this);
+        $this->target_process_settings_from_console_input->setOptions($this);
     }
 
     /**

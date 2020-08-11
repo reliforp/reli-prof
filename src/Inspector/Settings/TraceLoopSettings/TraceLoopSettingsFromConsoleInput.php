@@ -14,10 +14,30 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 
 final class TraceLoopSettingsFromConsoleInput
 {
+    public function setOptions(Command $command): void
+    {
+        $command
+            ->addOption(
+                'sleep-ns',
+                's',
+                InputOption::VALUE_OPTIONAL,
+                'nanoseconds between traces (default: 1000 * 1000 * 10)'
+            )
+            ->addOption(
+                'max-retries',
+                'r',
+                InputOption::VALUE_OPTIONAL,
+                'max retries on contiguous errors of read (default: 10)'
+            )
+        ;
+    }
+
     /**
      * @param InputInterface $input
      * @return TraceLoopSettings

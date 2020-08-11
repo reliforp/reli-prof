@@ -14,10 +14,24 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 
 final class TargetProcessSettingsFromConsoleInput
 {
+    public function setOptions(Command $command): void
+    {
+        $command
+            ->addOption(
+                'pid',
+                'p',
+                InputOption::VALUE_REQUIRED,
+                'process id'
+            )
+        ;
+    }
+
     /**
      * @param InputInterface $input
      * @return TargetProcessSettings

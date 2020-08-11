@@ -26,7 +26,6 @@ use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsol
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class DaemonCommand extends Command
@@ -59,62 +58,11 @@ final class DaemonCommand extends Command
     {
         $this->setName('inspector:daemon')
             ->setDescription('periodically get running function name from an outer process or thread')
-            ->addOption(
-                'target-regex',
-                'P',
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the php binary loaded in the target process'
-            )
-            ->addOption('depth', 'd', InputOption::VALUE_OPTIONAL, 'max depth')
-            ->addOption(
-                'sleep-ns',
-                's',
-                InputOption::VALUE_OPTIONAL,
-                'nanoseconds between traces (default: 1000 * 1000 * 10)'
-            )
-            ->addOption(
-                'max-retries',
-                'r',
-                InputOption::VALUE_OPTIONAL,
-                'max retries on contiguous errors of read (default: 10)'
-            )
-            ->addOption(
-                'threads',
-                'T',
-                InputOption::VALUE_OPTIONAL,
-                'number of workers (default: 8)'
-            )
-            ->addOption(
-                'php-regex',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the php binary loaded in the target process'
-            )
-            ->addOption(
-                'libpthread-regex',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the libpthread.so loaded in the target process'
-            )
-            ->addOption(
-                'php-version',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'php version of the target'
-            )
-            ->addOption(
-                'php-path',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'path to the php binary (only needed in tracing chrooted ZTS target)'
-            )
-            ->addOption(
-                'libpthread-path',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'path to the libpthread.so (only needed in tracing chrooted ZTS target)'
-            )
         ;
+        $this->daemon_settings_from_console_input->setOptions($this);
+        $this->get_trace_settings_from_console_input->setOptions($this);
+        $this->target_php_settings_from_console_input->setOptions($this);
+        $this->trace_loop_settings_from_console_input->setOptions($this);
     }
 
     /**

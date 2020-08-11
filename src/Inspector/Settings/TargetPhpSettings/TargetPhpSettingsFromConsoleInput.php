@@ -14,10 +14,48 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
 
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 
 final class TargetPhpSettingsFromConsoleInput
 {
+    public function setOptions(Command $command): void
+    {
+        $command
+            ->addOption(
+                'php-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the php binary loaded in the target process'
+            )
+            ->addOption(
+                'libpthread-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the libpthread.so loaded in the target process'
+            )
+            ->addOption(
+                'php-version',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'php version of the target'
+            )
+            ->addOption(
+                'php-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'path to the php binary (only needed in tracing chrooted ZTS target)'
+            )
+            ->addOption(
+                'libpthread-path',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'path to the libpthread.so (only needed in tracing chrooted ZTS target)'
+            )
+        ;
+    }
+
     public function fromConsoleInput(InputInterface $input): TargetPhpSettings
     {
         $php_regex = $input->getOption('php-regex') ?? TargetPhpSettings::PHP_REGEX_DEFAULT;
