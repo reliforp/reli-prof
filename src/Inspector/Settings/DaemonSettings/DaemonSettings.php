@@ -15,8 +15,6 @@ namespace PhpProfiler\Inspector\Settings\DaemonSettings;
 
 final class DaemonSettings
 {
-    public const TARGET_REGEX_DEFAULT = '^php-fpm';
-
     public string $target_regex;
     public int $threads;
 
