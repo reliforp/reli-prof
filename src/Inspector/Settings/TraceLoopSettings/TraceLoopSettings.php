@@ -13,14 +13,11 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
-use Symfony\Component\Console\Input\InputInterface;
-
 final class TraceLoopSettings
 {
-    private const SLEEP_NANO_SECONDS_DEFAULT = 1000 * 1000 * 10;
-    private const CANCEL_KEY_DEFAULT = 'q';
-    private const MAX_RETRY_DEFAULT = 10;
+    public const SLEEP_NANO_SECONDS_DEFAULT = 1000 * 1000 * 10;
+    public const CANCEL_KEY_DEFAULT = 'q';
+    public const MAX_RETRY_DEFAULT = 10;
 
     public int $sleep_nano_seconds;
     public string $cancel_key;
@@ -37,37 +34,5 @@ final class TraceLoopSettings
         $this->sleep_nano_seconds = $sleep_nano_seconds;
         $this->cancel_key = $cancel_key;
         $this->max_retries = $max_retries;
-    }
-
-    /**
-     * @param InputInterface $input
-     * @return self
-     * @throws InspectorSettingsException
-     */
-    public static function fromConsoleInput(InputInterface $input): self
-    {
-        $sleep_nano_seconds = $input->getOption('sleep-ns');
-        if (is_null($sleep_nano_seconds)) {
-            $sleep_nano_seconds = self::SLEEP_NANO_SECONDS_DEFAULT;
-        }
-        $sleep_nano_seconds = filter_var($sleep_nano_seconds, FILTER_VALIDATE_INT);
-        if ($sleep_nano_seconds === false) {
-            throw TraceLoopSettingsException::create(
-                TraceLoopSettingsException::SLEEP_NS_IS_NOT_INTEGER
-            );
-        }
-
-        $max_retries = $input->getOption('max-retries');
-        if (is_null($max_retries)) {
-            $max_retries = self::MAX_RETRY_DEFAULT;
-        }
-        $max_retries = filter_var($max_retries, FILTER_VALIDATE_INT);
-        if ($max_retries === false) {
-            throw TraceLoopSettingsException::create(
-                TraceLoopSettingsException::MAX_RETRY_IS_NOT_INTEGER
-            );
-        }
-
-        return new self($sleep_nano_seconds, self::CANCEL_KEY_DEFAULT, $max_retries);
     }
 }

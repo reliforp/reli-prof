@@ -14,13 +14,12 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
 
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use Symfony\Component\Console\Input\InputInterface;
 
 final class TargetPhpSettings
 {
-    private const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$';
-    private const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so$';
-    private const TARGET_PHP_VERSION_DEFAULT = ZendTypeReader::V74;
+    public const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$';
+    public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so$';
+    public const TARGET_PHP_VERSION_DEFAULT = ZendTypeReader::V74;
 
     public string $php_regex;
     public string $libpthread_regex;
@@ -50,46 +49,5 @@ final class TargetPhpSettings
         $this->php_version = $php_version;
         $this->php_path = $php_path;
         $this->libpthread_path = $libpthread_path;
-    }
-
-    public static function fromConsoleInput(InputInterface $input): self
-    {
-        $php_regex = $input->getOption('php-regex') ?? self::PHP_REGEX_DEFAULT;
-        if (!is_string($php_regex)) {
-            throw TargetPhpSettingsException::create(
-                TargetPhpSettingsException::PHP_REGEX_IS_NOT_STRING
-            );
-        }
-
-        $libpthread_regex = $input->getOption('libpthread-regex') ?? self::LIBPTHREAD_REGEX_DEFAULT;
-        if (!is_string($libpthread_regex)) {
-            throw TargetPhpSettingsException::create(
-                TargetPhpSettingsException::LIBPTHREAD_REGEX_IS_NOT_STRING
-            );
-        }
-
-        $php_version = $input->getOption('php-version') ?? self::TARGET_PHP_VERSION_DEFAULT;
-        if (!in_array($php_version, ZendTypeReader::ALL_SUPPORTED_VERSIONS, true)) {
-            throw TargetPhpSettingsException::create(
-                TargetPhpSettingsException::TARGET_PHP_VERSION_INVALID
-            );
-        }
-        /** @psalm-var value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
-
-        $php_path = $input->getOption('php-path');
-        if (!is_null($php_path) and !is_string($php_path)) {
-            throw TargetPhpSettingsException::create(
-                TargetPhpSettingsException::PHP_PATH_IS_NOT_STRING
-            );
-        }
-
-        $libpthread_path = $input->getOption('libpthread-path');
-        if (!is_null($libpthread_path) and !is_string($libpthread_path)) {
-            throw TargetPhpSettingsException::create(
-                TargetPhpSettingsException::LIBPTHREAD_PATH_IS_NOT_STRING
-            );
-        }
-
-        return new self($php_regex, $libpthread_regex, $php_version, $php_path, $libpthread_path);
     }
 }

@@ -13,9 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
 
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
-use Symfony\Component\Console\Input\InputInterface;
-
 final class TargetProcessSettings
 {
     public int $pid;
@@ -27,28 +24,5 @@ final class TargetProcessSettings
     public function __construct(int $pid)
     {
         $this->pid = $pid;
-    }
-
-    /**
-     * @param InputInterface $input
-     * @return self
-     * @throws InspectorSettingsException
-     */
-    public static function fromConsoleInput(InputInterface $input): self
-    {
-        $pid = $input->getOption('pid');
-        if (is_null($pid)) {
-            throw TargetProcessSettingsException::create(
-                TargetProcessSettingsException::PID_NOT_SPECIFIED
-            );
-        }
-        $pid = filter_var($pid, FILTER_VALIDATE_INT);
-        if ($pid === false) {
-            throw TargetProcessSettingsException::create(
-                TargetProcessSettingsException::PID_NOT_SPECIFIED
-            );
-        }
-
-        return new self($pid);
     }
 }

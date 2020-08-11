@@ -13,9 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
 
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
-use Symfony\Component\Console\Input\InputInterface;
-
 final class GetTraceSettings
 {
     public int $depth;
@@ -27,23 +24,5 @@ final class GetTraceSettings
     public function __construct(int $depth)
     {
         $this->depth = $depth;
-    }
-
-    /**
-     * @param InputInterface $input
-     * @return self
-     * @throws InspectorSettingsException
-     */
-    public static function fromConsoleInput(InputInterface $input): self
-    {
-        $depth = $input->getOption('depth');
-        if (is_null($depth)) {
-            $depth = PHP_INT_MAX;
-        }
-        $depth = filter_var($depth, FILTER_VALIDATE_INT);
-        if ($depth === false) {
-            throw GetTraceSettingsException::create(GetTraceSettingsException::DEPTH_IS_NOT_INTEGER);
-        }
-        return new self($depth);
     }
 }

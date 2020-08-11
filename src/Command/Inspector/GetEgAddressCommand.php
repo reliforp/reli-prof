@@ -14,8 +14,8 @@ declare(strict_types=1);
 namespace PhpProfiler\Command\Inspector;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
+use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -33,17 +33,25 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class GetEgAddressCommand extends Command
 {
     private PhpGlobalsFinder $php_globals_finder;
+    private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
+    private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input;
 
     /**
      * GetEgAddressCommand constructor.
      *
      * @param PhpGlobalsFinder $php_globals_finder
+     * @param TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input
+     * @param TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input
      */
     public function __construct(
-        PhpGlobalsFinder $php_globals_finder
+        PhpGlobalsFinder $php_globals_finder,
+        TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
+        TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input
     ) {
         parent::__construct();
         $this->php_globals_finder = $php_globals_finder;
+        $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
+        $this->target_process_settings_from_console_input = $target_process_settings_from_console_input;
     }
 
     public function configure(): void
@@ -96,8 +104,8 @@ final class GetEgAddressCommand extends Command
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $target_process_settings = TargetProcessSettings::fromConsoleInput($input);
-        $target_php_settings = TargetPhpSettings::fromConsoleInput($input);
+        $target_php_settings = $this->target_php_settings_from_console_input->fromConsoleInput($input);
+        $target_process_settings = $this->target_process_settings_from_console_input->fromConsoleInput($input);
 
         $output->writeln(
             sprintf(

@@ -13,12 +13,9 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Settings\DaemonSettings;
 
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
-use Symfony\Component\Console\Input\InputInterface;
-
 final class DaemonSettings
 {
-    private const TARGET_REGEX_DEFAULT = '^php-fpm';
+    public const TARGET_REGEX_DEFAULT = '^php-fpm';
 
     public string $target_regex;
     public int $threads;
@@ -32,31 +29,5 @@ final class DaemonSettings
     {
         $this->target_regex = $target_regex;
         $this->threads = $threads;
-    }
-
-    /**
-     * @param InputInterface $input
-     * @return self
-     * @throws InspectorSettingsException
-     */
-    public static function fromConsoleInput(InputInterface $input): self
-    {
-        $threads = $input->getOption('threads');
-        if (is_null($threads)) {
-            $threads = 8;
-        }
-        $threads = filter_var($threads, FILTER_VALIDATE_INT);
-        if ($threads === false) {
-            throw DaemonSettingsException::create(DaemonSettingsException::THREADS_IS_NOT_INTEGER);
-        }
-
-        $target_regex = $input->getOption('target-regex') ?? self::TARGET_REGEX_DEFAULT;
-        if (!is_string($target_regex)) {
-            throw DaemonSettingsException::create(
-                DaemonSettingsException::TARGET_REGEX_IS_NOT_STRING
-            );
-        }
-
-        return new self('{' . $target_regex . '}', $threads);
     }
 }

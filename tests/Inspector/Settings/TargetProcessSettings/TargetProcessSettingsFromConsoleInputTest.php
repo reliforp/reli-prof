@@ -17,14 +17,14 @@ use Mockery;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TargetProcessSettingsTest extends TestCase
+class TargetProcessSettingsFromConsoleInputTest extends TestCase
 {
     public function testFromConsoleInput(): void
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns(10);
 
-        $settings = TargetProcessSettings::fromConsoleInput($input);
+        $settings = (new TargetProcessSettingsFromConsoleInput())->fromConsoleInput($input);
 
         $this->assertSame(10, $settings->pid);
     }
@@ -34,7 +34,7 @@ class TargetProcessSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns(null);
         $this->expectException(TargetProcessSettingsException::class);
-        $settings = TargetProcessSettings::fromConsoleInput($input);
+        $settings = (new TargetProcessSettingsFromConsoleInput())->fromConsoleInput($input);
     }
 
     public function testFromConsoleInputPidNotInterger(): void
@@ -42,6 +42,6 @@ class TargetProcessSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns('abc');
         $this->expectException(TargetProcessSettingsException::class);
-        $settings = TargetProcessSettings::fromConsoleInput($input);
+        $settings = (new TargetProcessSettingsFromConsoleInput())->fromConsoleInput($input);
     }
 }

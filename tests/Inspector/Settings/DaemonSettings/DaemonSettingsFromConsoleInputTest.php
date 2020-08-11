@@ -17,14 +17,14 @@ use Mockery;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class DaemonSettingsTest extends TestCase
+class DaemonSettingsFromConsoleInputTest extends TestCase
 {
     public function testFromConsoleInput(): void
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns(4);
         $input->expects()->getOption('target-regex')->andReturns('regex');
-        $settings = DaemonSettings::fromConsoleInput($input);
+        $settings = (new DaemonSettingsFromConsoleInput())->fromConsoleInput($input);
 
         $this->assertSame('{regex}', $settings->target_regex);
         $this->assertSame(4, $settings->threads);
@@ -35,7 +35,7 @@ class DaemonSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(null);
-        $settings = DaemonSettings::fromConsoleInput($input);
+        $settings = (new DaemonSettingsFromConsoleInput())->fromConsoleInput($input);
     }
 
     public function testFromConsoleInputThreadsNotInteger(): void
@@ -44,7 +44,7 @@ class DaemonSettingsTest extends TestCase
         $input->expects()->getOption('threads')->andReturns('abc');
         $input->expects()->getOption('target-regex')->andReturns(null);
         $this->expectException(DaemonSettingsException::class);
-        $settings = DaemonSettings::fromConsoleInput($input);
+        $settings = (new DaemonSettingsFromConsoleInput())->fromConsoleInput($input);
     }
 
     public function testFromConsoleInputTargetRegexNotString(): void
@@ -53,6 +53,6 @@ class DaemonSettingsTest extends TestCase
         $input->expects()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(1);
         $this->expectException(DaemonSettingsException::class);
-        $settings = DaemonSettings::fromConsoleInput($input);
+        $settings = (new DaemonSettingsFromConsoleInput())->fromConsoleInput($input);
     }
 }
