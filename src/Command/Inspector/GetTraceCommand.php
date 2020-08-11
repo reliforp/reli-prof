@@ -48,7 +48,6 @@ final class GetTraceCommand extends Command
         TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
         TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
     ) {
-        parent::__construct();
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
         $this->loop_provider = $loop_provider;
@@ -56,6 +55,7 @@ final class GetTraceCommand extends Command
         $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
         $this->target_process_settings_from_console_input = $target_process_settings_from_console_input;
         $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
+        parent::__construct();
     }
 
     public function configure(): void

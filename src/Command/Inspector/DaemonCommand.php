@@ -45,13 +45,13 @@ final class DaemonCommand extends Command
         TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
     ) {
-        parent::__construct();
         $this->php_reader_context_creator = $php_reader_context_creator;
         $this->php_searcher_context_creator = $php_searcher_context_creator;
         $this->daemon_settings_from_console_input = $daemon_settings_from_console_input;
         $this->get_trace_settings_from_console_input = $get_trace_settings_from_console_input;
         $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
         $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
+        parent::__construct();
     }
 
     public function configure(): void
