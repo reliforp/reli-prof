@@ -11,9 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
 
-final class GetTraceInspectorSettingsException extends InspectorSettingsException
+use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+
+final class GetTraceSettingsException extends InspectorSettingsException
 {
     public const DEPTH_IS_NOT_INTEGER = 1;
 

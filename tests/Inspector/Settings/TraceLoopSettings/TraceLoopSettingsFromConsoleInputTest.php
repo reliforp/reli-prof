@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
 use Mockery;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TraceLoopSettingsTest extends TestCase
+class TraceLoopSettingsFromConsoleInputTest extends TestCase
 {
     public function testFromConsoleInput(): void
     {
@@ -25,7 +25,7 @@ class TraceLoopSettingsTest extends TestCase
         $input->expects()->getOption('sleep-ns')->andReturns(20000000);
         $input->expects()->getOption('max-retries')->andReturns(20);
 
-        $settings = TraceLoopSettings::fromConsoleInput($input);
+        $settings = (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
 
         $this->assertSame(20000000, $settings->sleep_nano_seconds);
         $this->assertSame(20, $settings->max_retries);
@@ -37,7 +37,7 @@ class TraceLoopSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('sleep-ns')->andReturns(null);
         $input->expects()->getOption('max-retries')->andReturns(null);
-        $settings = TraceLoopSettings::fromConsoleInput($input);
+        $settings = (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputSleepNsNotInteger(): void
@@ -45,8 +45,8 @@ class TraceLoopSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('sleep-ns')->andReturns('abc');
         $input->expects()->getOption('max-retries')->andReturns(null);
-        $this->expectException(TraceLoopInspectorSettingsException::class);
-        $settings = TraceLoopSettings::fromConsoleInput($input);
+        $this->expectException(TraceLoopSettingsException::class);
+        $settings = (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputMaxRetriesNotInteger(): void
@@ -54,7 +54,7 @@ class TraceLoopSettingsTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('sleep-ns')->andReturns(null);
         $input->expects()->getOption('max-retries')->andReturns('abc');
-        $this->expectException(TraceLoopInspectorSettingsException::class);
-        $settings = TraceLoopSettings::fromConsoleInput($input);
+        $this->expectException(TraceLoopSettingsException::class);
+        $settings = (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
     }
 }

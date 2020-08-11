@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
 
 use Mockery;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TargetPhpSettingsTest extends TestCase
+class TargetPhpSettingsFromConsoleInputTest extends TestCase
 {
     public function testFromConsoleInput(): void
     {
@@ -28,7 +28,7 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-path')->andReturns('ghi');
         $input->expects()->getOption('libpthread-path')->andReturns('jkl');
 
-        $settings = TargetPhpSettings::fromConsoleInput($input);
+        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
 
         $this->assertSame('{abc}', $settings->php_regex);
         $this->assertSame('{def}', $settings->libpthread_regex);
@@ -45,7 +45,7 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $settings = TargetPhpSettings::fromConsoleInput($input);
+        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPhpVersionNotSupported(): void
@@ -56,8 +56,8 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns('v56');
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
-        $settings = TargetPhpSettings::fromConsoleInput($input);
+        $this->expectException(TargetPhpSettingsException::class);
+        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPhpRegexNonString(): void
@@ -68,8 +68,8 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
-        $settings = TargetPhpSettings::fromConsoleInput($input);
+        $this->expectException(TargetPhpSettingsException::class);
+        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPthreadRegexNonString(): void
@@ -80,8 +80,8 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
-        $settings = TargetPhpSettings::fromConsoleInput($input);
+        $this->expectException(TargetPhpSettingsException::class);
+        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPhpPathNonString(): void
@@ -92,8 +92,8 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(1);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
-        $settings = TargetPhpSettings::fromConsoleInput($input);
+        $this->expectException(TargetPhpSettingsException::class);
+        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPthreadPathNonString(): void
@@ -104,7 +104,7 @@ class TargetPhpSettingsTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(1);
-        $this->expectException(TargetPhpInspectorSettingsException::class);
-        $settings = TargetPhpSettings::fromConsoleInput($input);
+        $this->expectException(TargetPhpSettingsException::class);
+        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 }

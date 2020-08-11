@@ -16,10 +16,10 @@ namespace PhpProfiler\Inspector\Daemon\Reader;
 use Amp\Parallel\Sync\Channel;
 use Generator;
 use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
-use PhpProfiler\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 

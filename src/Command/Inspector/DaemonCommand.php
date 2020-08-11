@@ -20,89 +20,49 @@ use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
-use PhpProfiler\Inspector\Settings\DaemonSettings;
-use PhpProfiler\Inspector\Settings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
+use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class DaemonCommand extends Command
 {
     private PhpSearcherContextCreator $php_searcher_context_creator;
     private PhpReaderContextCreator $php_reader_context_creator;
+    private DaemonSettingsFromConsoleInput $daemon_settings_from_console_input;
+    private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input;
+    private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
+    private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
 
     public function __construct(
         PhpSearcherContextCreator $php_searcher_context_creator,
-        PhpReaderContextCreator $php_reader_context_creator
+        PhpReaderContextCreator $php_reader_context_creator,
+        DaemonSettingsFromConsoleInput $daemon_settings_from_console_input,
+        GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
+        TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
+        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
     ) {
         parent::__construct();
         $this->php_reader_context_creator = $php_reader_context_creator;
         $this->php_searcher_context_creator = $php_searcher_context_creator;
+        $this->daemon_settings_from_console_input = $daemon_settings_from_console_input;
+        $this->get_trace_settings_from_console_input = $get_trace_settings_from_console_input;
+        $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
+        $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
     }
 
     public function configure(): void
     {
         $this->setName('inspector:daemon')
             ->setDescription('periodically get running function name from an outer process or thread')
-            ->addOption(
-                'target-regex',
-                'P',
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the php binary loaded in the target process'
-            )
-            ->addOption('depth', 'd', InputOption::VALUE_OPTIONAL, 'max depth')
-            ->addOption(
-                'sleep-ns',
-                's',
-                InputOption::VALUE_OPTIONAL,
-                'nanoseconds between traces (default: 1000 * 1000 * 10)'
-            )
-            ->addOption(
-                'max-retries',
-                'r',
-                InputOption::VALUE_OPTIONAL,
-                'max retries on contiguous errors of read (default: 10)'
-            )
-            ->addOption(
-                'threads',
-                'T',
-                InputOption::VALUE_OPTIONAL,
-                'number of workers (default: 8)'
-            )
-            ->addOption(
-                'php-regex',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the php binary loaded in the target process'
-            )
-            ->addOption(
-                'libpthread-regex',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'regex to find the libpthread.so loaded in the target process'
-            )
-            ->addOption(
-                'php-version',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'php version of the target'
-            )
-            ->addOption(
-                'php-path',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'path to the php binary (only needed in tracing chrooted ZTS target)'
-            )
-            ->addOption(
-                'libpthread-path',
-                null,
-                InputOption::VALUE_OPTIONAL,
-                'path to the libpthread.so (only needed in tracing chrooted ZTS target)'
-            )
         ;
+        $this->daemon_settings_from_console_input->setOptions($this);
+        $this->get_trace_settings_from_console_input->setOptions($this);
+        $this->target_php_settings_from_console_input->setOptions($this);
+        $this->trace_loop_settings_from_console_input->setOptions($this);
     }
 
     /**
@@ -112,10 +72,10 @@ final class DaemonCommand extends Command
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $target_php_settings = TargetPhpSettings::fromConsoleInput($input);
-        $loop_settings = TraceLoopSettings::fromConsoleInput($input);
-        $get_trace_settings = GetTraceSettings::fromConsoleInput($input);
-        $daemon_settings = DaemonSettings::fromConsoleInput($input);
+        $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);
+        $daemon_settings = $this->daemon_settings_from_console_input->createSettings($input);
+        $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
+        $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
 
         $searcher_context = $this->php_searcher_context_creator->create();
         Promise\wait($searcher_context->start());

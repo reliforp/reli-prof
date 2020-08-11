@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Reader;
 
-use PhpProfiler\Inspector\Settings\TraceLoopSettings;
+use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\Loop\AsyncLoop;
 use PhpProfiler\Lib\Loop\AsyncLoopBuilder;
 use PhpProfiler\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;

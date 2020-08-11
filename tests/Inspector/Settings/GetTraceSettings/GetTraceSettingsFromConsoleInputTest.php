@@ -11,20 +11,20 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
 
 use Mockery;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class GetTraceSettingsTest extends TestCase
+class GetTraceSettingsFromConsoleInputTest extends TestCase
 {
     public function testFromConsoleInput(): void
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns(10);
 
-        $settings = GetTraceSettings::fromConsoleInput($input);
+        $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
 
         $this->assertSame(10, $settings->depth);
     }
@@ -33,7 +33,7 @@ class GetTraceSettingsTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns(null);
-        $settings = GetTraceSettings::fromConsoleInput($input);
+        $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
         $this->assertSame(PHP_INT_MAX, $settings->depth);
     }
 
@@ -41,7 +41,7 @@ class GetTraceSettingsTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns('abc');
-        $this->expectException(GetTraceInspectorSettingsException::class);
-        $settings = GetTraceSettings::fromConsoleInput($input);
+        $this->expectException(GetTraceSettingsException::class);
+        $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
     }
 }
