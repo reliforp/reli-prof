@@ -35,13 +35,6 @@ final class GetEgAddressCommand extends Command
     private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
     private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input;
 
-    /**
-     * GetEgAddressCommand constructor.
-     *
-     * @param PhpGlobalsFinder $php_globals_finder
-     * @param TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input
-     * @param TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input
-     */
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
         TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
