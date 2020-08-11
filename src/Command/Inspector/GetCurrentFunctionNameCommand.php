@@ -59,9 +59,9 @@ final class GetCurrentFunctionNameCommand extends Command
         $this->setName('inspector:current_function')
             ->setDescription('periodically get running function name from an outer process or thread')
         ;
-        $this->target_php_settings_from_console_input->setOptions($this);
         $this->target_process_settings_from_console_input->setOptions($this);
         $this->trace_loop_settings_from_console_input->setOptions($this);
+        $this->target_php_settings_from_console_input->setOptions($this);
     }
 
     /**

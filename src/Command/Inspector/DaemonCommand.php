@@ -61,8 +61,8 @@ final class DaemonCommand extends Command
         ;
         $this->daemon_settings_from_console_input->setOptions($this);
         $this->get_trace_settings_from_console_input->setOptions($this);
-        $this->target_php_settings_from_console_input->setOptions($this);
         $this->trace_loop_settings_from_console_input->setOptions($this);
+        $this->target_php_settings_from_console_input->setOptions($this);
     }
 
     /**
