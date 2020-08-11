@@ -18,6 +18,16 @@ It's implemented by using following techniques:
 
 If you have a bit of extra CPU resource, the overhead of this software would be negligible.
 
+## Differences to phpspy, when to use php-profiler
+php-profiler is heavily inspired by adsr/phpspy.
+
+The main difference between the two is that php-profiler is written in almost pure PHP while phpspy is written in C.
+In profiling, there are cases you want to customize how and what information to get.
+If customizabilities for PHP developers matters, you can use this software at the cost of performance. (Although, I hope the cost is not too big.)
+
+Additionally, php-profiler can find VM state from ZTS interpreters. Currently this cannot be done with phpspy only.
+php-profiler also provides functionality to only get the address of EG from targets, so you can use actual profiling with phpspy if you want, even when the target is ZTS.
+
 ## Requirements
 ### Supported PHP versions
 #### Execution
