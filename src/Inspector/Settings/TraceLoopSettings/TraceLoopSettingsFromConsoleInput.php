@@ -20,6 +20,9 @@ use Symfony\Component\Console\Input\InputOption;
 
 final class TraceLoopSettingsFromConsoleInput
 {
+    /**
+     * @codeCoverageIgnore
+     */
     public function setOptions(Command $command): void
     {
         $command

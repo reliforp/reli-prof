@@ -20,6 +20,9 @@ use Symfony\Component\Console\Input\InputOption;
 
 final class TargetProcessSettingsFromConsoleInput
 {
+    /**
+     * @codeCoverageIgnore
+     */
     public function setOptions(Command $command): void
     {
         $command

@@ -20,6 +20,9 @@ use Symfony\Component\Console\Input\InputOption;
 
 final class DaemonSettingsFromConsoleInput
 {
+    /**
+     * @codeCoverageIgnore
+     */
     public function setOptions(Command $command): void
     {
         $command
