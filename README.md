@@ -19,7 +19,7 @@ It's implemented by using following techniques:
 If you have a bit of extra CPU resource, the overhead of this software would be negligible.
 
 ## Differences to phpspy, when to use php-profiler
-php-profiler is heavily inspired by adsr/phpspy.
+php-profiler is heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy).
 
 The main difference between the two is that php-profiler is written in almost pure PHP while phpspy is written in C.
 In profiling, there are cases you want to customize how and what information to get.
