@@ -253,11 +253,12 @@ final class ExecutorGlobalsReader
             /** @var \FFI\PhpInternals\zend_function $current_function */
             $current_function = $this->readCurrentFunction($pid, $php_version, $current_execute_data);
             $lineno = -1;
+            $opcode = -1;
             $file = $this->readFunctionFile($pid, $php_version, $current_function);
             if ($file !== '<internal>') {
-                $lineno = $this->readOpline($pid, $current_execute_data);
+                [$lineno, $opcode] = $this->readOpline($pid, $current_execute_data);
             }
-            $result[] = $this->readFunctionName($pid, $php_version, $current_function) . " {$file}({$lineno})";
+            $result[] = $this->readFunctionName($pid, $php_version, $current_function) . " {$file}({$lineno})<{$opcode}>";
         }
 
         return $result;
@@ -292,10 +293,10 @@ final class ExecutorGlobalsReader
     /**
      * @param int $pid
      * @param CData $current_execute_data
-     * @return int
+     * @return int[]
      * @throws MemoryReaderException
      */
-    public function readOpline(int $pid, CData $current_execute_data): int
+    public function readOpline(int $pid, CData $current_execute_data): array
     {
         /**
          * @psalm-var \FFI\CPointer $opline_addr
@@ -308,11 +309,15 @@ final class ExecutorGlobalsReader
         $opline_raw = $this->memory_reader->read(
             $pid,
             $opline_addr->cdata + 24,
-            4
+            8
         );
-        return $opline_raw[0]
+        return [
+            $opline_raw[0]
             + ($opline_raw[1] << 9)
             + ($opline_raw[2] << 16)
-            + ($opline_raw[3] << 24);
+            + ($opline_raw[3] << 24)
+            ,
+            $opline_raw[4]
+        ];
     }
 }

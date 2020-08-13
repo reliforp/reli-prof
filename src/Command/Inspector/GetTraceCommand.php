@@ -25,6 +25,7 @@ use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
+use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -38,6 +39,7 @@ final class GetTraceCommand extends Command
     private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
     private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input;
     private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
+    private ProcessStopper $process_stopper;
 
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
@@ -46,7 +48,8 @@ final class GetTraceCommand extends Command
         GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
         TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
-        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
+        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
+        ProcessStopper $process_stopper
     ) {
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
@@ -55,6 +58,7 @@ final class GetTraceCommand extends Command
         $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
         $this->target_process_settings_from_console_input = $target_process_settings_from_console_input;
         $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
+        $this->process_stopper = $process_stopper;
         parent::__construct();
     }
 
@@ -96,12 +100,14 @@ final class GetTraceCommand extends Command
                 $eg_address,
                 $output
             ): bool {
+                $this->process_stopper->stop($target_process_settings->pid);
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $target_process_settings->pid,
                     $target_php_settings->php_version,
                     $eg_address,
                     $get_trace_settings->depth
                 );
+                $this->process_stopper->resume($target_process_settings->pid);
                 $output->writeln(join(PHP_EOL, $call_trace) . PHP_EOL);
                 return true;
             },
