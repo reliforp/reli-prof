@@ -34,7 +34,7 @@ class TargetProcessSettingsFromConsoleInputTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns(null);
         $this->expectException(TargetProcessSettingsException::class);
-        $settings = (new TargetProcessSettingsFromConsoleInput())->createSettings($input);
+        (new TargetProcessSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPidNotInterger(): void
@@ -42,6 +42,6 @@ class TargetProcessSettingsFromConsoleInputTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns('abc');
         $this->expectException(TargetProcessSettingsException::class);
-        $settings = (new TargetProcessSettingsFromConsoleInput())->createSettings($input);
+        (new TargetProcessSettingsFromConsoleInput())->createSettings($input);
     }
 }

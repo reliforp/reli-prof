@@ -3,10 +3,10 @@ name: PHP Coding Style Checker
 on:
   push:
     branches:
-      - 'master'
+      - '*'
   pull_request:
     branches:
-      - 'master'
+      - '*'
 
 jobs:
 

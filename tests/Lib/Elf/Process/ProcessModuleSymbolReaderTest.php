@@ -113,13 +113,11 @@ class ProcessModuleSymbolReaderTest extends TestCase
             null
         );
 
-        $this->assertSame(
-            null,
+        $this->assertNull(
             $process_symbol_reader->resolveAddress('test_symbol')
         );
 
-        $this->assertSame(
-            null,
+        $this->assertNull(
             $process_symbol_reader->read('test_symbol')
         );
     }

@@ -23,9 +23,9 @@ class RetryOnExceptionLoopTest extends TestCase
     public function testReturnIfChainReturn(): void
     {
         $loop = new RetryOnExceptionMiddleware(0, [Exception::class], new CallableMiddleware(fn () => true));
-        $this->assertSame(true, $loop->invoke());
+        $this->assertTrue($loop->invoke());
         $loop = new RetryOnExceptionMiddleware(0, [Exception::class], new CallableMiddleware(fn () => false));
-        $this->assertSame(false, $loop->invoke());
+        $this->assertFalse($loop->invoke());
     }
 
     public function testRetryIfChainThrows(): void
@@ -43,7 +43,7 @@ class RetryOnExceptionLoopTest extends TestCase
                 }
             )
         );
-        $this->assertSame(true, $loop->invoke());
+        $this->assertTrue($loop->invoke());
         $this->assertSame(2, $counter);
     }
 
@@ -62,7 +62,7 @@ class RetryOnExceptionLoopTest extends TestCase
                 }
             )
         );
-        $this->assertSame(false, $loop->invoke());
+        $this->assertFalse($loop->invoke());
         $this->assertSame(1, $counter);
     }
 

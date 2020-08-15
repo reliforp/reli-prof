@@ -20,12 +20,12 @@ class NanoSleepLoopTest extends TestCase
 {
     public function testReturnFalseIfChainFailed(): void
     {
-        $time = time();
+        time();
         $nano_sleep_loop = new NanoSleepMiddleware(
             0,
             new CallableMiddleware(fn () => false)
         );
-        $this->assertSame(false, $nano_sleep_loop->invoke());
+        $this->assertFalse($nano_sleep_loop->invoke());
     }
 
     public function testSleepBeforeChainInvoked(): void
@@ -47,6 +47,6 @@ class NanoSleepLoopTest extends TestCase
             0,
             new CallableMiddleware(fn () => true)
         );
-        $this->assertSame(true, $nano_sleep_loop->invoke());
+        $this->assertTrue($nano_sleep_loop->invoke());
     }
 }

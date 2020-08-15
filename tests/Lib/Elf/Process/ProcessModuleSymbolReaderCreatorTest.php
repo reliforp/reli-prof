@@ -131,8 +131,7 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
         );
         $process_memory_map = new ProcessMemoryMap([]);
 
-        $this->assertSame(
-            null,
+        $this->assertNull(
             $symbol_reader_creator->createModuleReaderByNameRegex(
                 1,
                 $process_memory_map,

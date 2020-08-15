@@ -20,7 +20,7 @@ class CommandLineEnumeratorTest extends TestCase
     /** @var resource|null */
     private $child = null;
 
-    public function tearDown(): void
+    protected function tearDown(): void
     {
         if (!is_null($this->child)) {
             $child_status = proc_get_status($this->child);

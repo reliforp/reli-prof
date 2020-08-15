@@ -24,7 +24,7 @@ class CallableLoopTest extends TestCase
             $side_effect = true;
             return true;
         });
-        $this->assertSame(true, $loop->invoke());
-        $this->assertSame(true, $side_effect);
+        $this->assertTrue($loop->invoke());
+        $this->assertTrue($side_effect);
     }
 }

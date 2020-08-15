@@ -28,6 +28,6 @@ class CallableMiddlewareAsyncTest extends TestCase
         $result = $generator->current();
         $this->assertSame(42, $result);
         $result = $generator->send(null);
-        $this->assertSame(null, $result);
+        $this->assertNull($result);
     }
 }

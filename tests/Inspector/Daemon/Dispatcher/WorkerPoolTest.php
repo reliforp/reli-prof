@@ -74,7 +74,7 @@ class WorkerPoolTest extends TestCase
                 $worker_pool->getFreeWorker()
             ]
         );
-        $this->assertSame(null, $worker_pool->getFreeWorker());
+        $this->assertNull($worker_pool->getFreeWorker());
     }
 
     public function testGetReadableWorker()
