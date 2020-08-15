@@ -26,13 +26,13 @@ class TargetProcessListTest extends TestCase
         $picked[] = $target_process_list->pickOne();
         sort($picked);
         $this->assertSame([1, 2, 3], $picked);
-        $this->assertSame(null, $target_process_list->pickOne());
+        $this->assertNull($target_process_list->pickOne());
     }
 
     public function testPutOne(): void
     {
         $target_process_list = new TargetProcessList();
-        $this->assertSame(null, $target_process_list->pickOne());
+        $this->assertNull($target_process_list->pickOne());
         $target_process_list->putOne(1);
         $this->assertSame(1, $target_process_list->pickOne());
         $target_process_list->putOne(1);

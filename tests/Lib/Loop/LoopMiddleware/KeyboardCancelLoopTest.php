@@ -33,9 +33,9 @@ class KeyboardCancelLoopTest extends TestCase
             $this->cancel_key = 'q';
             $this->keyboard_input = $keyboard_input_stream;
         })->bindTo($keyboard_cancel_loop, $keyboard_cancel_loop)();
-        $this->assertSame(true, $keyboard_cancel_loop->invoke());
+        $this->assertTrue($keyboard_cancel_loop->invoke());
         fwrite($keyboard_input_stream, 'q');
         rewind($keyboard_input_stream);
-        $this->assertSame(false, $keyboard_cancel_loop->invoke());
+        $this->assertFalse($keyboard_cancel_loop->invoke());
     }
 }

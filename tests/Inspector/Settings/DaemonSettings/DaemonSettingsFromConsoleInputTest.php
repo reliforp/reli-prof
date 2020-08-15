@@ -36,7 +36,7 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(null);
         $this->expectException(DaemonSettingsException::class);
-        $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
+        (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputThreadsNotInteger(): void
@@ -45,7 +45,7 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('threads')->andReturns('abc');
         $input->expects()->getOption('target-regex')->andReturns(null);
         $this->expectException(DaemonSettingsException::class);
-        $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
+        (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputTargetRegexNotString(): void
@@ -54,6 +54,6 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(1);
         $this->expectException(DaemonSettingsException::class);
-        $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
+        (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
 }

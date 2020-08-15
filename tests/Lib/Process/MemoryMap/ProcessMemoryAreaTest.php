@@ -31,12 +31,12 @@ class ProcessMemoryAreaTest extends TestCase
             ),
             'test'
         );
-        $this->assertSame(false, $process_memory_area->isInRange(0x00000000));
-        $this->assertSame(false, $process_memory_area->isInRange(0x0fffffff));
-        $this->assertSame(true, $process_memory_area->isInRange(0x10000000));
-        $this->assertSame(true, $process_memory_area->isInRange(0x10000001));
-        $this->assertSame(true, $process_memory_area->isInRange(0x1fffffff));
-        $this->assertSame(true, $process_memory_area->isInRange(0x20000000));
-        $this->assertSame(false, $process_memory_area->isInRange(0x20000001));
+        $this->assertFalse($process_memory_area->isInRange(0x00000000));
+        $this->assertFalse($process_memory_area->isInRange(0x0fffffff));
+        $this->assertTrue($process_memory_area->isInRange(0x10000000));
+        $this->assertTrue($process_memory_area->isInRange(0x10000001));
+        $this->assertTrue($process_memory_area->isInRange(0x1fffffff));
+        $this->assertTrue($process_memory_area->isInRange(0x20000000));
+        $this->assertFalse($process_memory_area->isInRange(0x20000001));
     }
 }

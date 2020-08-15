@@ -42,6 +42,6 @@ class GetTraceSettingsFromConsoleInputTest extends TestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns('abc');
         $this->expectException(GetTraceSettingsException::class);
-        $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
+        (new GetTraceSettingsFromConsoleInput())->createSettings($input);
     }
 }

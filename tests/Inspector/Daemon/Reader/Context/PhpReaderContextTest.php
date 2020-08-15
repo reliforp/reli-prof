@@ -39,8 +39,8 @@ final class PhpReaderContextTest extends TestCase
         $context->expects()->isRunning()->andReturn(true);
         $context->expects()->isRunning()->andReturn(false);
         $php_reader_context = new PhpReaderContext($context);
-        $this->assertSame(true, $php_reader_context->isRunning());
-        $this->assertSame(false, $php_reader_context->isRunning());
+        $this->assertTrue($php_reader_context->isRunning());
+        $this->assertFalse($php_reader_context->isRunning());
     }
 
     public function testSendSettings(): void

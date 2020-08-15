@@ -45,7 +45,7 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
-        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
+        (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPhpVersionNotSupported(): void
@@ -57,7 +57,7 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
-        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
+        (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPhpRegexNonString(): void
@@ -69,7 +69,7 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
-        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
+        (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPthreadRegexNonString(): void
@@ -81,7 +81,7 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
-        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
+        (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPhpPathNonString(): void
@@ -93,7 +93,7 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('php-path')->andReturns(1);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
-        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
+        (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputPthreadPathNonString(): void
@@ -105,6 +105,6 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(1);
         $this->expectException(TargetPhpSettingsException::class);
-        $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
+        (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 }
