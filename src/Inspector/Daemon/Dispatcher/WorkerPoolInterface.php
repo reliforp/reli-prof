@@ -13,18 +13,18 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 
 interface WorkerPoolInterface
 {
-    public function getFreeWorker(): ?PhpReaderContextInterface;
+    public function getFreeWorker(): ?PhpReaderControllerInterface;
 
     /**
-     * @return iterable<int, PhpReaderContextInterface>
+     * @return iterable<int, PhpReaderControllerInterface>
      */
     public function getReadableWorkers(): iterable;
 
-    public function returnWorkerToPool(PhpReaderContextInterface $context_to_return): void;
+    public function returnWorkerToPool(PhpReaderControllerInterface $context_to_return): void;
 
     public function setOnRead(int $pid): void;
 

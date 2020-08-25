@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Dispatcher\Message;
+namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
 
 final class TraceMessage
 {

@@ -13,9 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Amphp;
 
-use Amp\Parallel\Sync\Channel;
-
-interface ContextEntryPointInterface
+interface WorkerEntryPointInterface
 {
-    public function run(Channel $channel): \Generator;
+    public function run(): \Generator;
 }

@@ -17,10 +17,13 @@ use Amp\Parallel\Sync\Channel;
 use Amp\Success;
 use Hamcrest\Matchers;
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\DetachWorkerMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
-use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTaskInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoopInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
@@ -31,20 +34,18 @@ class PhpReaderEntryPointTest extends TestCase
 {
     public function testRun(): void
     {
-        $php_reader_task = Mockery::mock(PhpReaderTaskInterface::class);
-        $channel = Mockery::mock(Channel::class);
-        $channel->expects()->receive()->andReturns(new Success(1))->once();
-        $channel->expects()->receive()->andReturns(new Success(2))->once();
+        $php_reader_task = Mockery::mock(PhpReaderTraceLoopInterface::class);
+        $protocol = Mockery::mock(PhpReaderWorkerProtocolInterface::class);
+        $protocol->expects()->receiveSettings()->andReturns(new Success(1))->once();
+        $protocol->expects()->receiveAttach()->andReturns(new Success(2))->once();
         $php_reader_task->shouldReceive('run')
             ->withArgs(
                 function (
-                    $channel_passed,
                     $target_process_settings,
                     $trace_loop_serrings,
                     $target_php_settings,
                     $get_trace_settings
-                ) use ($channel) {
-                    $this->assertSame($channel, $channel_passed);
+                ) {
                     $this->assertEquals(
                         [
                             new TargetProcessSettings(123),
@@ -64,20 +65,42 @@ class PhpReaderEntryPointTest extends TestCase
             )
             ->andReturns(
                 (function () {
-                    yield new Success(3);
-                    yield new Success(4);
-                    yield new Success(5);
+                    yield new TraceMessage(['abc']);
+                    yield new TraceMessage(['def']);
+                    yield new TraceMessage(['ghi']);
                 })()
             )
         ;
-        $channel->shouldReceive('send')
+        $protocol->expects()
+            ->sendTrace()
+            ->with(Matchers::equalTo(new TraceMessage(['abc'])))
+            ->andReturns(
+                new Success(3),
+            )
+        ;
+        $protocol->expects()
+            ->sendTrace()
+            ->with(Matchers::equalTo(new TraceMessage(['def'])))
+            ->andReturns(
+                new Success(4),
+            )
+        ;
+        $protocol->expects()
+            ->sendTrace()
+            ->with(Matchers::equalTo(new TraceMessage(['ghi'])))
+            ->andReturns(
+                new Success(5),
+            )
+        ;
+        $protocol->expects()
+            ->sendDetachWorker()
             ->with(Matchers::equalTo(new DetachWorkerMessage(123)))
             ->andReturns(new Success(6))
             ->once();
 
-        $php_reader_entry_point = new PhpReaderEntryPoint($php_reader_task);
+        $php_reader_entry_point = new PhpReaderEntryPoint($php_reader_task, $protocol);
 
-        $generator = $php_reader_entry_point->run($channel);
+        $generator = $php_reader_entry_point->run();
 
         $promise = $generator->current();
         $this->assertInstanceOf(Success::class, $promise);

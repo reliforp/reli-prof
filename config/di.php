@@ -11,10 +11,8 @@
 
 declare(strict_types=1);
 
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
-use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTask;
-use PhpProfiler\Inspector\Daemon\Reader\PhpReaderTaskInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoop;
+use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoopInterface;
 use PhpProfiler\Lib\Amphp\ContextCreator;
 use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
@@ -26,7 +24,7 @@ use PhpProfiler\Lib\File\FileReaderInterface;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
-
+use PhpProfiler\Lib\Process\Search\ProcessSearcher;
 use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
 use function DI\autowire;
 
@@ -42,6 +40,6 @@ return [
         ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
     ContextCreatorInterface::class => autowire(ContextCreator::class)
         ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
-    PhpReaderTaskInterface::class => autowire(PhpReaderTask::class),
-    ProcessSearcherInterface::class => autowire(\PhpProfiler\Lib\Process\Search\ProcessSearcher::class),
+    PhpReaderTraceLoopInterface::class => autowire(PhpReaderTraceLoop::class),
+    ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
 ];

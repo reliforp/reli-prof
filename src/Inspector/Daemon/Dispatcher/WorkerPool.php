@@ -15,14 +15,14 @@ namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
 use Amp\Promise;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 final class WorkerPool implements WorkerPoolInterface
 {
-    /** @var array<int, PhpReaderContextInterface> */
+    /** @var array<int, PhpReaderControllerInterface> */
     private array $contexts;
 
     /** @var array<int, bool> */
@@ -31,7 +31,7 @@ final class WorkerPool implements WorkerPoolInterface
     /** @var array<int, bool> */
     private array $on_read_list;
 
-    public function __construct(PhpReaderContextInterface ...$contexts)
+    public function __construct(PhpReaderControllerInterface ...$contexts)
     {
         $this->contexts = $contexts;
         $this->is_free_list = array_fill(0, count($contexts), true);
@@ -66,7 +66,7 @@ final class WorkerPool implements WorkerPoolInterface
         return new self(...$contexts);
     }
 
-    public function getFreeWorker(): ?PhpReaderContextInterface
+    public function getFreeWorker(): ?PhpReaderControllerInterface
     {
         foreach ($this->contexts as $key => $context) {
             if ($this->is_free_list[$key]) {
@@ -78,7 +78,7 @@ final class WorkerPool implements WorkerPoolInterface
     }
 
     /**
-     * @return iterable<int, PhpReaderContextInterface>
+     * @return iterable<int, PhpReaderControllerInterface>
      */
     public function getReadableWorkers(): iterable
     {
@@ -89,7 +89,7 @@ final class WorkerPool implements WorkerPoolInterface
         }
     }
 
-    public function returnWorkerToPool(PhpReaderContextInterface $context_to_return): void
+    public function returnWorkerToPool(PhpReaderControllerInterface $context_to_return): void
     {
         foreach ($this->contexts as $key => $context) {
             if ($context === $context_to_return) {

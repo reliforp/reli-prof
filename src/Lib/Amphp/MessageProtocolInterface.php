@@ -11,14 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Message;
+namespace PhpProfiler\Lib\Amphp;
 
-final class AttachMessage
+use Amp\Parallel\Sync\Channel;
+
+interface MessageProtocolInterface
 {
-    public int $pid;
-
-    public function __construct(int $pid)
-    {
-        $this->pid = $pid;
-    }
+    /**
+     * @param Channel $channel
+     * @return static
+     */
+    public static function createFromChannel(Channel $channel): self;
 }

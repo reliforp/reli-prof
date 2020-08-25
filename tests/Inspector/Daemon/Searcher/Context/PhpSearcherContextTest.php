@@ -13,30 +13,45 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
 
-use Amp\Parallel\Context\Context;
 use Amp\Promise;
 use Mockery;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherController;
+use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
+use PhpProfiler\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
 class PhpSearcherContextTest extends TestCase
 {
     public function testStart(): void
     {
-        $context = Mockery::mock(Context::class);
+        $context = Mockery::mock(ContextInterface::class);
         $context->expects()->start()->andReturn(Mockery::mock(Promise::class));
-        $php_searcher_context = new PhpSearcherContext($context);
+        $php_searcher_context = new PhpSearcherController($context);
         $this->assertInstanceOf(Promise::class, $php_searcher_context->start());
     }
 
     public function testSendTargetRegex(): void
     {
-
-        $context = Mockery::mock(Context::class);
-        $context->shouldReceive('send')
+        $protocol = Mockery::mock(PhpSearcherControllerProtocolInterface::class);
+        $context = Mockery::mock(ContextInterface::class);
+        $context->expects()
+            ->getProtocol()
+            ->andReturns($protocol)
+        ;
+        $protocol->shouldReceive('sendTargetRegex')
             ->once()
-            ->with('abcdefg')
-            ->andReturn(Mockery::mock(Promise::class));
-        $php_searcher_context = new PhpSearcherContext($context);
+            ->withArgs(
+                function (TargetRegexMessage $message) {
+                    $this->assertSame('abcdefg', $message->regex);
+                    return true;
+                }
+            )
+            ->andReturn(Mockery::mock(Promise::class))
+        ;
+        $php_searcher_context = new PhpSearcherController($context);
         $this->assertInstanceOf(
             Promise::class,
             $php_searcher_context->sendTargetRegex('abcdefg')
@@ -45,9 +60,14 @@ class PhpSearcherContextTest extends TestCase
 
     public function testReceivePidList(): void
     {
-        $context = Mockery::mock(Context::class);
-        $context->expects()->receive()->andReturn(Mockery::mock(Promise::class));
-        $php_searcher_context = new PhpSearcherContext($context);
+        $protocol = Mockery::mock(PhpSearcherControllerProtocolInterface::class);
+        $context = Mockery::mock(ContextInterface::class);
+        $context->expects()
+            ->getProtocol()
+            ->andReturns($protocol)
+        ;
+        $protocol->expects()->receiveUpdateTargetProcess()->andReturn(Mockery::mock(Promise::class));
+        $php_searcher_context = new PhpSearcherController($context);
         $this->assertInstanceOf(Promise::class, $php_searcher_context->receivePidList());
     }
 }

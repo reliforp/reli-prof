@@ -13,32 +13,34 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Reader\Context;
 
-use Amp\Parallel\Context\Context;
 use Amp\Promise;
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderController;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use PhpProfiler\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
 final class PhpReaderContextTest extends TestCase
 {
     public function testStart(): void
     {
-        $context = Mockery::mock(Context::class);
+        $context = Mockery::mock(ContextInterface::class);
         $context->expects()->start()->andReturn(Mockery::mock(Promise::class));
-        $php_reader_context = new PhpReaderContext($context);
+        $php_reader_context = new PhpReaderController($context);
         $this->assertInstanceOf(Promise::class, $php_reader_context->start());
     }
 
     public function testIsRunning(): void
     {
-        $context = Mockery::mock(Context::class);
+        $context = Mockery::mock(ContextInterface::class);
         $context->expects()->isRunning()->andReturn(true);
         $context->expects()->isRunning()->andReturn(false);
-        $php_reader_context = new PhpReaderContext($context);
+        $php_reader_context = new PhpReaderController($context);
         $this->assertTrue($php_reader_context->isRunning());
         $this->assertFalse($php_reader_context->isRunning());
     }
@@ -55,8 +57,8 @@ final class PhpReaderContextTest extends TestCase
             $get_trace_settings
         );
 
-        $context = Mockery::mock(Context::class);
-        $context->shouldReceive('send')
+        $protocol = Mockery::mock(PhpReaderControllerProtocolInterface::class);
+        $protocol->shouldReceive('sendSettings')
             ->once()
             ->with(
                 Mockery::on(function (SetSettingsMessage $actual) use ($expected) {
@@ -65,7 +67,12 @@ final class PhpReaderContextTest extends TestCase
                 })
             )
             ->andReturn(Mockery::mock(Promise::class));
-        $php_reader_context = new PhpReaderContext($context);
+        $context = Mockery::mock(ContextInterface::class);
+        $context->expects()
+            ->getProtocol()
+            ->andReturns($protocol)
+        ;
+        $php_reader_context = new PhpReaderController($context);
         $this->assertInstanceOf(
             Promise::class,
             $php_reader_context->sendSettings(
@@ -78,9 +85,9 @@ final class PhpReaderContextTest extends TestCase
 
     public function testSendAttach(): void
     {
-        $context = Mockery::mock(Context::class);
-        $context->expects()
-            ->send()
+        $protocol = Mockery::mock(PhpReaderControllerProtocolInterface::class);
+        $protocol->expects()
+            ->sendAttach()
             ->with(
                 Mockery::on(function (AttachMessage $actual) {
                     $this->assertEquals(new AttachMessage(1), $actual);
@@ -89,16 +96,27 @@ final class PhpReaderContextTest extends TestCase
             )
             ->andReturn(
                 Mockery::mock(Promise::class)
-            );
-        $php_reader_context = new PhpReaderContext($context);
+            )
+        ;
+        $context = Mockery::mock(ContextInterface::class);
+        $context->expects()
+            ->getProtocol()
+            ->andReturns($protocol)
+        ;
+        $php_reader_context = new PhpReaderController($context);
         $this->assertInstanceOf(Promise::class, $php_reader_context->sendAttach(1));
     }
 
     public function testReceiveTrace(): void
     {
-        $context = Mockery::mock(Context::class);
-        $context->expects()->receive()->andReturn(Mockery::mock(Promise::class));
-        $php_reader_context = new PhpReaderContext($context);
-        $this->assertInstanceOf(Promise::class, $php_reader_context->receiveTrace());
+        $protocol = Mockery::mock(PhpReaderControllerProtocolInterface::class);
+        $protocol->expects()->receiveTraceOrDetachWorker()->andReturn(Mockery::mock(Promise::class));
+        $context = Mockery::mock(ContextInterface::class);
+        $context->expects()
+            ->getProtocol()
+            ->andReturns($protocol)
+        ;
+        $php_reader_context = new PhpReaderController($context);
+        $this->assertInstanceOf(Promise::class, $php_reader_context->receiveTraceOrDetachWorker());
     }
 }

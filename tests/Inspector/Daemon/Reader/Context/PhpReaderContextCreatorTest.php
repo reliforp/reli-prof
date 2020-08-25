@@ -13,24 +13,33 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Reader\Context;
 
-use Amp\Parallel\Context;
 use Mockery;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
+use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
+use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderWorkerProtocol;
+use PhpProfiler\Lib\Amphp\Context;
 use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
+use PhpProfiler\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
 class PhpReaderContextCreatorTest extends TestCase
 {
     public function testCreate()
     {
-        $context = Mockery::mock(Context\Context::class);
+        $context = Mockery::mock(ContextInterface::class);
         $context_creator = Mockery::mock(ContextCreatorInterface::class);
         $context_creator->expects()
-            ->create(PhpReaderEntryPoint::class)
+            ->create(
+                PhpReaderEntryPoint::class,
+                PhpReaderWorkerProtocol::class,
+                PhpReaderControllerProtocol::class
+            )
             ->andReturns($context);
 
         $php_reader_context_creator = new PhpReaderContextCreator($context_creator);
         $this->assertInstanceOf(
-            PhpReaderContextInterface::class,
+            PhpReaderControllerInterface::class,
             $php_reader_context_creator->create()
         );
     }

@@ -11,18 +11,20 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Context;
+namespace PhpProfiler\Inspector\Daemon\Reader\Controller;
 
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\DetachWorkerMessage;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
-interface PhpReaderContextInterface
+interface PhpReaderControllerInterface
 {
     public function start(): Promise;
+
+    public function isRunning(): bool;
 
     /**
      * @param TargetPhpSettings $target_php_settings
@@ -42,10 +44,8 @@ interface PhpReaderContextInterface
      */
     public function sendAttach(int $pid): Promise;
 
-    public function isRunning(): bool;
-
     /**
      * @return Promise<TraceMessage|DetachWorkerMessage>
      */
-    public function receiveTrace(): Promise;
+    public function receiveTraceOrDetachWorker(): Promise;
 }

@@ -16,7 +16,7 @@ namespace PhpProfiler\Command\Inspector;
 use Amp\Loop;
 use Amp\Promise;
 use PhpProfiler\Inspector\Daemon\Dispatcher\DispatchTable;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
@@ -126,7 +126,7 @@ final class DaemonCommand extends Command
                     $promises[] = \Amp\call(
                         function () use ($reader, $pid, $worker_pool, $dispatch_table, $output) {
                             $worker_pool->setOnRead($pid);
-                            $result = yield $reader->receiveTrace();
+                            $result = yield $reader->receiveTraceOrDetachWorker();
                             if ($result instanceof TraceMessage) {
                                 $worker_pool->releaseOnRead($pid);
                                 $this->outputTrace($output, $result);

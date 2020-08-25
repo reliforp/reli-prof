@@ -29,7 +29,8 @@
                 <directory suffix="Message.php">./src</directory>
                 <directory suffix="Exception.php">./src</directory>
                 <directory suffix="LoopProvider.php">./src</directory>
-                <directory suffix="context-entry.php">./src/Lib/Amphp</directory>
+                <directory suffix="Protocol.php">./src</directory>
+                <directory suffix="worker-entry.php">./src/Lib/Amphp</directory>
             </exclude>
         </whitelist>
     </filter>

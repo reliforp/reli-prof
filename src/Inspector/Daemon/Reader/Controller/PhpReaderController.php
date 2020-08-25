@@ -11,23 +11,29 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Context;
+namespace PhpProfiler\Inspector\Daemon\Reader\Controller;
 
-use Amp\Parallel\Context;
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\DetachWorkerMessage;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Message\AttachMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Message\SetSettingsMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use PhpProfiler\Lib\Amphp\ContextInterface;
 
-final class PhpReaderContext implements PhpReaderContextInterface
+final class PhpReaderController implements PhpReaderControllerInterface
 {
-    private Context\Context $context;
+    /** @var ContextInterface<PhpReaderControllerProtocolInterface> */
+    private ContextInterface $context;
 
-    public function __construct(Context\Context $context)
+    /**
+     * PhpReaderContext constructor.
+     * @param ContextInterface<PhpReaderControllerProtocolInterface> $context
+     */
+    public function __construct(ContextInterface $context)
     {
         $this->context = $context;
     }
@@ -35,6 +41,11 @@ final class PhpReaderContext implements PhpReaderContextInterface
     public function start(): Promise
     {
         return $this->context->start();
+    }
+
+    public function isRunning(): bool
+    {
+        return $this->context->isRunning();
     }
 
     /**
@@ -49,7 +60,7 @@ final class PhpReaderContext implements PhpReaderContextInterface
         GetTraceSettings $get_trace_settings
     ): Promise {
         /** @var Promise<int> */
-        return $this->context->send(
+        return $this->context->getProtocol()->sendSettings(
             new SetSettingsMessage(
                 $target_php_settings,
                 $loop_settings,
@@ -65,22 +76,17 @@ final class PhpReaderContext implements PhpReaderContextInterface
     public function sendAttach(int $pid): Promise
     {
         /** @var Promise<int> */
-        return $this->context->send(
+        return $this->context->getProtocol()->sendAttach(
             new AttachMessage($pid)
         );
-    }
-
-    public function isRunning(): bool
-    {
-        return $this->context->isRunning();
     }
 
     /**
      * @return Promise<TraceMessage|DetachWorkerMessage>
      */
-    public function receiveTrace(): Promise
+    public function receiveTraceOrDetachWorker(): Promise
     {
         /** @var Promise<TraceMessage|DetachWorkerMessage> */
-        return $this->context->receive();
+        return $this->context->getProtocol()->receiveTraceOrDetachWorker();
     }
 }

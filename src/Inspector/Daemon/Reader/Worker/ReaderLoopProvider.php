@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader;
+namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
 
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\Loop\AsyncLoop;

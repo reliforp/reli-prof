@@ -16,7 +16,7 @@ namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 use Amp\Success;
 use Mockery;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
@@ -30,7 +30,7 @@ class WorkerPoolTest extends TestCase
         $trace_settings = new TraceLoopSettings(1, 'q', 1);
         $get_trace_settings = new GetTraceSettings(1);
 
-        $reader_context = Mockery::mock(PhpReaderContextInterface::class);
+        $reader_context = Mockery::mock(PhpReaderControllerInterface::class);
         $reader_context->expects()
             ->start()
             ->andReturns(new Success(null));
@@ -58,8 +58,8 @@ class WorkerPoolTest extends TestCase
 
     public function testGetFreeWorker()
     {
-        $reader_context1 = Mockery::mock(PhpReaderContextInterface::class);
-        $reader_context2 = Mockery::mock(PhpReaderContextInterface::class);
+        $reader_context1 = Mockery::mock(PhpReaderControllerInterface::class);
+        $reader_context2 = Mockery::mock(PhpReaderControllerInterface::class);
         $worker_pool = new WorkerPool(
             $reader_context1,
             $reader_context2
@@ -79,8 +79,8 @@ class WorkerPoolTest extends TestCase
 
     public function testGetReadableWorker()
     {
-        $reader_context1 = Mockery::mock(PhpReaderContextInterface::class);
-        $reader_context2 = Mockery::mock(PhpReaderContextInterface::class);
+        $reader_context1 = Mockery::mock(PhpReaderControllerInterface::class);
+        $reader_context2 = Mockery::mock(PhpReaderControllerInterface::class);
         $worker_pool = new WorkerPool(
             $reader_context1,
             $reader_context2
