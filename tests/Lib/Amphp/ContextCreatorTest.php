@@ -13,25 +13,36 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Amphp;
 
-use Amp\Parallel\Sync\Channel;
 use PHPUnit\Framework\TestCase;
 
 class ContextCreatorTest extends TestCase
 {
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function testCreate(): void
     {
         $creator = new ContextCreator('di_config');
-        $worker_protocol_class = new class implements MessageProtocolInterface {
-            public static function createFromChannel(Channel $channel): self
+        $namespace = __NAMESPACE__;
+        $class_definition = <<<CLASS_DEFINITION
+        namespace {$namespace};
+
+        use Amp\Parallel\Sync\Channel;
+
+        class ContextCreatorTestDummyProtocol implements MessageProtocolInterface {
+            public static function createFromChannel(Channel \$channel): self
             {
                 return new self();
             }
-        };
-        $controller_protocol_class = $worker_protocol_class;
+        }
+        CLASS_DEFINITION;
+        eval($class_definition);
+
         $context = $creator->create(
             WorkerEntryPointInterface::class,
-            get_class($worker_protocol_class),
-            get_class($controller_protocol_class),
+            ContextCreatorTestDummyProtocol::class,
+            ContextCreatorTestDummyProtocol::class,
         );
         $this->assertInstanceOf(Context::class, $context);
     }
