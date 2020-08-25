@@ -11,11 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Context;
+namespace PhpProfiler\Inspector\Daemon\Reader\Controller;
 
 use Amp\Promise;
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderController;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
@@ -25,7 +24,7 @@ use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
-final class PhpReaderContextTest extends TestCase
+final class PhpReaderControllerTest extends TestCase
 {
     public function testStart(): void
     {

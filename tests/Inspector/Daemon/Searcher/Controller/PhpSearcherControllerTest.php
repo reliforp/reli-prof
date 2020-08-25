@@ -11,19 +11,16 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
+namespace PhpProfiler\Inspector\Daemon\Searcher\Controller;
 
 use Amp\Promise;
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
-use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherController;
-use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
 use PhpProfiler\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
-class PhpSearcherContextTest extends TestCase
+class PhpSearcherControllerTest extends TestCase
 {
     public function testStart(): void
     {

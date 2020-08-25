@@ -11,16 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
+namespace PhpProfiler\Inspector\Daemon\Searcher\Worker;
 
-use Amp\Parallel\Sync\Channel;
 use Amp\Success;
 use Mockery;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessList;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
-use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherEntryPoint;
 use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
 use PHPUnit\Framework\TestCase;
 

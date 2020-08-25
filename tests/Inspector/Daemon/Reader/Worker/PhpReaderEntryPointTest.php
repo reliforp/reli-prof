@@ -11,9 +11,8 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Context;
+namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
 
-use Amp\Parallel\Sync\Channel;
 use Amp\Success;
 use Hamcrest\Matchers;
 use Mockery;
@@ -22,8 +21,6 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
-use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoopInterface;
-use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;

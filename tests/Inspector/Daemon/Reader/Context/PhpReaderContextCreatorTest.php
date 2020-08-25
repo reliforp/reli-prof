@@ -18,7 +18,6 @@ use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
 use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
 use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderWorkerProtocol;
-use PhpProfiler\Lib\Amphp\Context;
 use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 use PhpProfiler\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
