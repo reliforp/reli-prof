@@ -16,7 +16,7 @@ namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 use Amp\Success;
 use Mockery;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
@@ -30,7 +30,7 @@ class WorkerPoolTest extends TestCase
         $trace_settings = new TraceLoopSettings(1, 'q', 1);
         $get_trace_settings = new GetTraceSettings(1);
 
-        $reader_context = Mockery::mock(PhpReaderContextInterface::class);
+        $reader_context = Mockery::mock(PhpReaderControllerInterface::class);
         $reader_context->expects()
             ->start()
             ->andReturns(new Success(null));
@@ -58,8 +58,8 @@ class WorkerPoolTest extends TestCase
 
     public function testGetFreeWorker()
     {
-        $reader_context1 = Mockery::mock(PhpReaderContextInterface::class);
-        $reader_context2 = Mockery::mock(PhpReaderContextInterface::class);
+        $reader_context1 = Mockery::mock(PhpReaderControllerInterface::class);
+        $reader_context2 = Mockery::mock(PhpReaderControllerInterface::class);
         $worker_pool = new WorkerPool(
             $reader_context1,
             $reader_context2
@@ -77,63 +77,37 @@ class WorkerPoolTest extends TestCase
         $this->assertNull($worker_pool->getFreeWorker());
     }
 
-    public function testGetReadableWorker()
+    public function testGetWorkers()
     {
-        $reader_context1 = Mockery::mock(PhpReaderContextInterface::class);
-        $reader_context2 = Mockery::mock(PhpReaderContextInterface::class);
+        $reader_context1 = Mockery::mock(PhpReaderControllerInterface::class);
+        $reader_context2 = Mockery::mock(PhpReaderControllerInterface::class);
         $worker_pool = new WorkerPool(
             $reader_context1,
             $reader_context2
         );
-
-        $readable_workers = [];
-        foreach ($worker_pool->getReadableWorkers() as $pid => $worker) {
-            $readable_workers[$pid] = $worker;
+        $workers = [];
+        foreach ($worker_pool->getWorkers() as $worker) {
+            $workers[] = $worker;
         }
-        $this->assertSame([], $readable_workers);
-
-        $worker1 = $worker_pool->getFreeWorker();
-        $readable_workers = [];
-        foreach ($worker_pool->getReadableWorkers() as $pid => $worker) {
-            $readable_workers[$pid] = $worker;
-        }
-        $this->assertCount(1, $readable_workers);
-        $this->assertSame($worker1, $readable_workers[$pid]);
-
-        $worker2 = $worker_pool->getFreeWorker();
-        foreach ($worker_pool->getReadableWorkers() as $pid => $worker) {
-            $readable_workers[$pid] = $worker;
-        }
-        $this->assertCount(2, $readable_workers);
         $this->assertSame(
             [
-                $worker1,
-                $worker2,
+                $reader_context1,
+                $reader_context2
             ],
-            array_values($readable_workers)
+            $workers
         );
+    }
 
-        $worker_pool->returnWorkerToPool($worker2);
-        $readable_workers = [];
-        foreach ($worker_pool->getReadableWorkers() as $pid => $worker) {
-            $readable_workers[$pid] = $worker;
-        }
-        $this->assertCount(1, $readable_workers);
-        $this->assertSame($worker1, $readable_workers[$pid]);
-
-        $worker_pool->setOnRead($pid);
-        $readable_workers = [];
-        foreach ($worker_pool->getReadableWorkers() as $pid => $worker) {
-            $readable_workers[$pid] = $worker;
-        }
-        $this->assertSame([], $readable_workers);
-
-        $worker_pool->releaseOnRead($pid);
-        $readable_workers = [];
-        foreach ($worker_pool->getReadableWorkers() as $pid => $worker) {
-            $readable_workers[$pid] = $worker;
-        }
-        $this->assertCount(1, $readable_workers);
-        $this->assertSame($worker1, $readable_workers[$pid]);
+    public function testReturnWorkerToPool()
+    {
+        $reader_context = Mockery::mock(PhpReaderControllerInterface::class);
+        $worker_pool = new WorkerPool(
+            $reader_context
+        );
+        $returned_worker = $worker_pool->getFreeWorker();
+        $this->assertSame($reader_context, $returned_worker);
+        $this->assertNull($worker_pool->getFreeWorker());
+        $worker_pool->returnWorkerToPool($returned_worker);
+        $this->assertSame($reader_context, $worker_pool->getFreeWorker());
     }
 }

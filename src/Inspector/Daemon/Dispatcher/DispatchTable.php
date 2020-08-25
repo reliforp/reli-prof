@@ -13,19 +13,19 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 final class DispatchTable
 {
-    private WorkerPoolInterface $worker_pool;
+    public WorkerPoolInterface $worker_pool;
     private TargetProcessListInterface $assigned;
     private TargetPhpSettings $target_php_settings;
     private TraceLoopSettings $trace_loop_settings;
     private GetTraceSettings $get_trace_settings;
-    /** @var array<int, PhpReaderContextInterface> */
+    /** @var array<int, PhpReaderControllerInterface> */
     private array $dispatch_table = [];
 
     public function __construct(

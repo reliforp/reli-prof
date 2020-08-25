@@ -16,7 +16,7 @@ namespace PhpProfiler\Command\Inspector;
 use Amp\Loop;
 use Amp\Promise;
 use PhpProfiler\Inspector\Daemon\Dispatcher\DispatchTable;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
@@ -27,6 +27,8 @@ use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsol
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+
+use function Amp\call;
 
 final class DaemonCommand extends Command
 {
@@ -98,48 +100,49 @@ final class DaemonCommand extends Command
 
         exec('stty -icanon -echo');
 
+        Loop::onReadable(
+            STDIN,
+            /** @param resource $stream */
+            function (string $watcher_id, $stream) {
+                $key = fread($stream, 1);
+                if ($key === 'q') {
+                    Loop::cancel($watcher_id);
+                    Loop::stop();
+                }
+            }
+        );
         Loop::run(function () use ($dispatch_table, $searcher_context, $worker_pool, $output) {
-            Loop::onReadable(
-                STDIN,
-                /** @param resource $stream */
-                function (string $watcher_id, $stream) {
-                    $key = fread($stream, 1);
-                    if ($key === 'q') {
-                        Loop::cancel($watcher_id);
-                        Loop::stop();
-                    }
+            $promises = [];
+            $promises[] = call(function () use ($searcher_context, $dispatch_table) {
+                while (1) {
+                    $update_target_message = yield $searcher_context->receivePidList();
+                    $dispatch_table->updateTargets($update_target_message->target_process_list);
                 }
-            );
-            Loop::repeat(10, function () use ($dispatch_table, $searcher_context, $worker_pool, $output) {
-                $promises = [];
-                static $searcher_on_read = false;
-                if (!$searcher_on_read) {
-                    $promises[] = \Amp\call(function () use ($searcher_context, $dispatch_table, &$searcher_on_read) {
-                        $searcher_on_read = true;
-                        $update_target_message = yield $searcher_context->receivePidList();
-                        $dispatch_table->updateTargets($update_target_message->target_process_list);
-                        $searcher_on_read = false;
-                    });
-                }
-                $readers = $worker_pool->getReadableWorkers();
-                foreach ($readers as $pid => $reader) {
-                    $promises[] = \Amp\call(
-                        function () use ($reader, $pid, $worker_pool, $dispatch_table, $output) {
-                            $worker_pool->setOnRead($pid);
-                            $result = yield $reader->receiveTrace();
+            });
+            foreach ($worker_pool->getWorkers() as $reader) {
+                $promises[] = call(
+                    function () use ($reader, $dispatch_table, $output) {
+                        while (1) {
+                            $result = yield $reader->receiveTraceOrDetachWorker();
                             if ($result instanceof TraceMessage) {
-                                $worker_pool->releaseOnRead($pid);
-                                $output->write($result->trace);
+                                $this->outputTrace($output, $result);
                             } else {
                                 $dispatch_table->releaseOne($result->pid);
                             }
                         }
-                    );
-                }
-                yield $promises;
-            });
+                    }
+                );
+            }
+            yield $promises;
         });
 
         return 0;
+    }
+
+    private function outputTrace(OutputInterface $output, TraceMessage $message): void
+    {
+        $output->writeln(
+            join(PHP_EOL, $message->trace) . PHP_EOL
+        );
     }
 }

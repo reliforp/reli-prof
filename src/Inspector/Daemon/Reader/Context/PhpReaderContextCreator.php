@@ -13,22 +13,30 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Reader\Context;
 
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderController;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
+use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderWorkerProtocol;
+use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
 use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 
 final class PhpReaderContextCreator implements PhpReaderContextCreatorInterface
 {
     private ContextCreatorInterface $context_creator;
 
-    public function __construct(ContextCreatorInterface $context_creator)
-    {
+    public function __construct(
+        ContextCreatorInterface $context_creator
+    ) {
         $this->context_creator = $context_creator;
     }
 
-    public function create(): PhpReaderContextInterface
+    public function create(): PhpReaderControllerInterface
     {
-        return new PhpReaderContext(
+        return new PhpReaderController(
             $this->context_creator->create(
-                PhpReaderEntryPoint::class
+                PhpReaderEntryPoint::class,
+                PhpReaderWorkerProtocol::class,
+                PhpReaderControllerProtocol::class
             )
         );
     }

@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextInterface;
+use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
@@ -24,7 +24,7 @@ class DispatchTableTest extends TestCase
     public function testUpdateTarget()
     {
         $attached = [];
-        $worker1 = \Mockery::mock(PhpReaderContextInterface::class);
+        $worker1 = \Mockery::mock(PhpReaderControllerInterface::class);
         $worker1->expects()
             ->sendAttach()
             ->withArgs(function (int $pid) use (&$attached) {

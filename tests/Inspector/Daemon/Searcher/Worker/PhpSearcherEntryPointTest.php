@@ -11,13 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
+namespace PhpProfiler\Inspector\Daemon\Searcher\Worker;
 
-use Amp\Parallel\Sync\Channel;
 use Amp\Success;
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\UpdateTargetProcessMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessList;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
 use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -25,9 +26,9 @@ class PhpSearcherEntryPointTest extends TestCase
 {
     public function testRun()
     {
-        $channel = Mockery::mock(Channel::class);
-        $channel->expects()->receive()->andReturns(new Success(1))->once();
-        $channel->shouldReceive('send')
+        $protcol = Mockery::mock(PhpSearcherWorkerProtocolInterface::class);
+        $protcol->expects()->receiveTargetRegex()->andReturns(new Success(1))->once();
+        $protcol->shouldReceive('sendUpdateTargetProcess')
             ->withArgs(
                 function (UpdateTargetProcessMessage $message) {
                     $diff = $message->target_process_list->getDiff(
@@ -42,13 +43,12 @@ class PhpSearcherEntryPointTest extends TestCase
                 new Success(3),
             )
             ->once();
-
         $process_searcher = Mockery::mock(ProcessSearcherInterface::class);
         $process_searcher->expects()->searchByRegex('regex_to_search_process');
 
-        $entry_point = new PhpSearcherEntryPoint($process_searcher);
+        $entry_point = new PhpSearcherEntryPoint($protcol, $process_searcher);
 
-        $generator = $entry_point->run($channel);
+        $generator = $entry_point->run();
 
         $promise = $generator->current();
         $this->assertInstanceOf(Success::class, $promise);
@@ -57,7 +57,9 @@ class PhpSearcherEntryPointTest extends TestCase
         });
         $this->assertSame(1, $result);
 
-        $promise = $generator->send('regex_to_search_process');
+        $promise = $generator->send(
+            new TargetRegexMessage('regex_to_search_process')
+        );
         $this->assertInstanceOf(Success::class, $promise);
         $promise->onResolve(function ($error, $value) use (&$result) {
             $result = $value;

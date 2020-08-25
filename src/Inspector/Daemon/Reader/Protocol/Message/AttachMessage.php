@@ -11,11 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Context;
+namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
 
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
-
-interface PhpReaderContextCreatorInterface
+final class AttachMessage
 {
-    public function create(): PhpReaderControllerInterface;
+    public int $pid;
+
+    public function __construct(int $pid)
+    {
+        $this->pid = $pid;
+    }
 }

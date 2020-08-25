@@ -13,6 +13,11 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
 
+use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherController;
+use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
+use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
+use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherWorkerProtocol;
+use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherEntryPoint;
 use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 
 final class PhpSearcherContextCreator
@@ -24,11 +29,13 @@ final class PhpSearcherContextCreator
         $this->context_creator = $context_creator;
     }
 
-    public function create(): PhpSearcherContext
+    public function create(): PhpSearcherControllerInterface
     {
-        return new PhpSearcherContext(
+        return new PhpSearcherController(
             $this->context_creator->create(
-                PhpSearcherEntryPoint::class
+                PhpSearcherEntryPoint::class,
+                PhpSearcherWorkerProtocol::class,
+                PhpSearcherControllerProtocol::class
             )
         );
     }

@@ -13,12 +13,19 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Amphp;
 
-use Amp\Parallel\Context;
-
 interface ContextCreatorInterface
 {
     /**
-     * @param class-string<ContextEntryPointInterface> $entry_point_name
+     * @template TWorkerProtocol of MessageProtocolInterface
+     * @template TControllerProtocol of MessageProtocolInterface
+     * @param class-string<WorkerEntryPointInterface> $entry_point_class
+     * @param class-string<TWorkerProtocol> $worker_protocol_class
+     * @param class-string<TControllerProtocol> $controller_protocol_class
+     * @return ContextInterface<TControllerProtocol>
      */
-    public function create(string $entry_point_name): Context\Context;
+    public function create(
+        string $entry_point_class,
+        string $worker_protocol_class,
+        string $controller_protocol_class
+    ): ContextInterface;
 }

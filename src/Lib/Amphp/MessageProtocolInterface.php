@@ -11,14 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Dispatcher\Message;
+namespace PhpProfiler\Lib\Amphp;
 
-final class TraceMessage
+use Amp\Parallel\Sync\Channel;
+
+interface MessageProtocolInterface
 {
-    public string $trace;
-
-    public function __construct(string $trace)
-    {
-        $this->trace = $trace;
-    }
+    /**
+     * @param Channel $channel
+     * @return static
+     */
+    public static function createFromChannel(Channel $channel): self;
 }

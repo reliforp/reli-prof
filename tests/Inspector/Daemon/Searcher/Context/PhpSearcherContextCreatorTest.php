@@ -14,9 +14,12 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
 
 use Mockery;
-use Amp\Parallel\Context;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
+use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
+use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
+use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherEntryPoint;
+use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherWorkerProtocol;
 use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
+use PhpProfiler\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
 class PhpSearcherContextCreatorTest extends TestCase
@@ -24,15 +27,20 @@ class PhpSearcherContextCreatorTest extends TestCase
 
     public function testCreate()
     {
-        $context = Mockery::mock(Context\Context::class);
+        $context = Mockery::mock(ContextInterface::class);
         $context_creator = Mockery::mock(ContextCreatorInterface::class);
         $context_creator->expects()
-            ->create(PhpSearcherEntryPoint::class)
-            ->andReturns($context);
+            ->create(
+                PhpSearcherEntryPoint::class,
+                PhpSearcherWorkerProtocol::class,
+                PhpSearcherControllerProtocol::class
+            )
+            ->andReturns($context)
+        ;
 
         $php_searcher_context_creator = new PhpSearcherContextCreator($context_creator);
         $this->assertInstanceOf(
-            PhpSearcherContextInterface::class,
+            PhpSearcherControllerInterface::class,
             $php_searcher_context_creator->create()
         );
     }

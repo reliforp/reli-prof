@@ -11,11 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader;
+namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
 
-use Amp\Parallel\Sync\Channel;
 use Generator;
-use PhpProfiler\Inspector\Daemon\Dispatcher\Message\TraceMessage;
+use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
@@ -23,7 +22,7 @@ use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 
-final class PhpReaderTask implements PhpReaderTaskInterface
+final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
 {
     private PhpGlobalsFinder $php_globals_finder;
     private ExecutorGlobalsReader $executor_globals_reader;
@@ -39,8 +38,18 @@ final class PhpReaderTask implements PhpReaderTaskInterface
         $this->reader_loop_provider = $reader_loop_provider;
     }
 
+    /**
+     * @param TargetProcessSettings $target_process_settings
+     * @param TraceLoopSettings $loop_settings
+     * @param TargetPhpSettings $target_php_settings
+     * @param GetTraceSettings $get_trace_settings
+     * @return Generator<TraceMessage>
+     * @throws \PhpProfiler\Lib\Elf\Parser\ElfParserException
+     * @throws \PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException
+     * @throws \PhpProfiler\Lib\Elf\Tls\TlsFinderException
+     * @throws \PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException
+     */
     public function run(
-        Channel $channel,
         TargetProcessSettings $target_process_settings,
         TraceLoopSettings $loop_settings,
         TargetPhpSettings $target_php_settings,
@@ -50,7 +59,6 @@ final class PhpReaderTask implements PhpReaderTaskInterface
 
         $loop = $this->reader_loop_provider->getMainLoop(
             function () use (
-                $channel,
                 $get_trace_settings,
                 $target_process_settings,
                 $target_php_settings,
@@ -62,12 +70,12 @@ final class PhpReaderTask implements PhpReaderTaskInterface
                     $eg_address,
                     $get_trace_settings->depth
                 );
-                yield $channel->send(
-                    new TraceMessage(join(PHP_EOL, $call_trace) . PHP_EOL)
-                );
+                yield new TraceMessage($call_trace);
             },
             $loop_settings
         );
-        yield from $loop->invoke();
+        /** @var Generator<TraceMessage> */
+        $loop_process = $loop->invoke();
+        yield from $loop_process;
     }
 }

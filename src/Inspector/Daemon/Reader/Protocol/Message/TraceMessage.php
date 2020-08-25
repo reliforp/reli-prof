@@ -11,14 +11,16 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Message;
+namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
 
-final class AttachMessage
+final class TraceMessage
 {
-    public int $pid;
+    /** @var string[] */
+    public array $trace;
 
-    public function __construct(int $pid)
+    /** @param string[] $trace */
+    public function __construct(array $trace)
     {
-        $this->pid = $pid;
+        $this->trace = $trace;
     }
 }
