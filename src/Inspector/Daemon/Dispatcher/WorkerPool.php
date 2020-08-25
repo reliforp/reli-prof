@@ -80,12 +80,10 @@ final class WorkerPool implements WorkerPoolInterface
     /**
      * @return iterable<int, PhpReaderControllerInterface>
      */
-    public function getReadableWorkers(): iterable
+    public function getWorkers(): iterable
     {
         foreach ($this->contexts as $key => $context) {
-            if (!$this->is_free_list[$key] and !$this->on_read_list[$key]) {
-                yield $key => $context;
-            }
+            yield $key => $context;
         }
     }
 
@@ -94,18 +92,7 @@ final class WorkerPool implements WorkerPoolInterface
         foreach ($this->contexts as $key => $context) {
             if ($context === $context_to_return) {
                 $this->is_free_list[$key] = true;
-                $this->on_read_list[$key] = false;
             }
         }
-    }
-
-    public function setOnRead(int $pid): void
-    {
-        $this->on_read_list[$pid] = true;
-    }
-
-    public function releaseOnRead(int $pid): void
-    {
-        $this->on_read_list[$pid] = false;
     }
 }

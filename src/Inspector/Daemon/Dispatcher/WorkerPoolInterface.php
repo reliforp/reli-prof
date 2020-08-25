@@ -19,14 +19,10 @@ interface WorkerPoolInterface
 {
     public function getFreeWorker(): ?PhpReaderControllerInterface;
 
+    public function returnWorkerToPool(PhpReaderControllerInterface $context_to_return): void;
+
     /**
      * @return iterable<int, PhpReaderControllerInterface>
      */
-    public function getReadableWorkers(): iterable;
-
-    public function returnWorkerToPool(PhpReaderControllerInterface $context_to_return): void;
-
-    public function setOnRead(int $pid): void;
-
-    public function releaseOnRead(int $pid): void;
+    public function getWorkers(): iterable;
 }
