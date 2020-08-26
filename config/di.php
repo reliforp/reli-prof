@@ -26,6 +26,7 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\Search\ProcessSearcher;
 use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
+
 use function DI\autowire;
 
 return [
