@@ -16,6 +16,12 @@
   ],
   "minimum-stability": "dev",
   "prefer-stable": true,
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/sj-i/php-gtk"
+    }
+  ],
   "require": {
     "php": "^7.4",
     "ext-ffi": "*",
@@ -24,7 +30,8 @@
     "symfony/console": "^5.0",
     "php-di/php-di": "^6.1",
     "amphp/parallel": "^1.4",
-    "amphp/amp": "^2.4"
+    "amphp/amp": "^2.4",
+    "toknot/gtk": "dev-fix_for_me"
   },
   "require-dev": {
     "ext-posix": "*",

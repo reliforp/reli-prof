@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "22295666d6712537fd7e7bea3053687a",
+    "content-hash": "395be0bccdbe94382e47e87a4dbae1e5",
     "packages": [
         {
             "name": "amphp/amp",
@@ -1280,6 +1280,108 @@
                 "utf8"
             ],
             "time": "2020-07-08T08:27:49+00:00"
+        },
+        {
+            "name": "toknot/ffi-extend",
+            "version": "0.1.5",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/chopins/ffi-ext.git",
+                "reference": "08cda8b03171062e4d3d5c89cd26b39c7c3564b7"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/chopins/ffi-ext/zipball/08cda8b03171062e4d3d5c89cd26b39c7c3564b7",
+                "reference": "08cda8b03171062e4d3d5c89cd26b39c7c3564b7",
+                "shasum": ""
+            },
+            "require": {
+                "ext-ffi": "*",
+                "php": ">=7.4.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Toknot\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "BSD-3-Clause"
+            ],
+            "authors": [
+                {
+                    "name": "Szopen Xiao",
+                    "email": "xiao@toknot.com",
+                    "homepage": "http://toknot.com",
+                    "role": "Founder"
+                }
+            ],
+            "description": "call PHP C API.",
+            "homepage": "http://toknot.com",
+            "keywords": [
+                "c",
+                "ext",
+                "extend",
+                "ffi",
+                "php"
+            ],
+            "support": {
+                "issues": "https://github.com/chopins/ffi-ext/issues?state=open",
+                "source": "https://github.com/chopins/ffi-ext"
+            },
+            "time": "2020-11-12T16:10:17+00:00"
+        },
+        {
+            "name": "toknot/gtk",
+            "version": "dev-fix_for_me",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/sj-i/php-gtk.git",
+                "reference": "0fcff4101af5a91c1a5f3afef7171bc26571d668"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/sj-i/php-gtk/zipball/0fcff4101af5a91c1a5f3afef7171bc26571d668",
+                "reference": "0fcff4101af5a91c1a5f3afef7171bc26571d668",
+                "shasum": ""
+            },
+            "require": {
+                "ext-ffi": "*",
+                "php": ">=7.4.0",
+                "toknot/ffi-extend": ">=v0.1.4"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Gtk\\": "src/"
+                }
+            },
+            "license": [
+                "BSD-3-Clause"
+            ],
+            "authors": [
+                {
+                    "name": "Szopen Xiao",
+                    "email": "xiao@toknot.com",
+                    "homepage": "http://toknot.com",
+                    "role": "Founder"
+                }
+            ],
+            "description": "PHP bindings to the GTK+3.",
+            "homepage": "http://toknot.com",
+            "keywords": [
+                "ffi",
+                "gtk",
+                "gtk3",
+                "php",
+                "ui"
+            ],
+            "support": {
+                "issues": "https://github.com/chopins/php-gtk/issues?state=open",
+                "source": "https://github.com/chopins/php-gtk"
+            },
+            "time": "2020-12-10T17:37:54+00:00"
         }
     ],
     "packages-dev": [
@@ -4630,6 +4732,7 @@
     "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {
+        "toknot/gtk": 20,
         "jetbrains/phpstorm-stubs": 20
     },
     "prefer-stable": true,
@@ -4642,5 +4745,6 @@
     },
     "platform-dev": {
         "ext-posix": "*"
-    }
+    },
+    "plugin-api-version": "2.0.0"
 }
