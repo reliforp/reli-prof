@@ -29,7 +29,7 @@ final class ContextCreator implements ContextCreatorInterface
     /**
      * @template TWorkerProtocol of MessageProtocolInterface
      * @template TControllerProtocol of MessageProtocolInterface
-     * @param class-string<ContextEntryPointInterface> $entry_point_name
+     * @param class-string<WorkerEntryPointInterface> $entry_point_name
      * @param class-string<TWorkerProtocol> $worker_protocol_class
      * @param class-string<TControllerProtocol> $controller_protocol_class
      * @return ContextInterface<TControllerProtocol>
