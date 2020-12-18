@@ -25,6 +25,7 @@ final class Gui
     private Pango $pango;
     private Atk $atk;
     private Pixbuf $pixbuf;
+    private $image_widget;
 
     public static function load(): self
     {
@@ -73,12 +74,7 @@ final class Gui
         }
         /* Connect signal handlers to the constructed widgets. */
         $image1 = $pixbuf->gdk_pixbuf_new_from_file('out.svg', FFI::addr($error));
-        $image2 = $pixbuf->gdk_pixbuf_new_from_file('out2.svg', FFI::addr($error));
-        $image_widget = $gtk->gtk_image_new_from_pixbuf($image1);
-        $images = [
-            $image1,
-            $image2,
-        ];
+        $this->image_widget = $image_widget = $gtk->gtk_image_new_from_pixbuf($image1);
         $window = $gtk->gtk_builder_get_object($builder, "window");
         $gtk->g_signal_connect($window, "destroy", $gtk->G_CALLBACK([$gtk, 'gtk_main_quit', true]), NULL);
         $button = $gtk->gtk_builder_get_object($builder, "button1");
@@ -88,9 +84,26 @@ final class Gui
         $image_box = $gtk->GTK_CONTAINER($gtk->gtk_builder_get_object($builder, "image"));
         $gtk->gtk_container_add($image_box, $image_widget);
         $button = $gtk->gtk_builder_get_object($builder, "quit");
-        $gtk->g_signal_connect($button, "clicked", $gtk->G_CALLBACK([$gtk, 'gtk_main_quit', true]), NULL);
+        $gtk->g_signal_connect($button, "clicked", $gtk->G_CALLBACK(fn () => $this->quit()), NULL);
 
         $gtk->gtk_widget_show_all($gtk->GTK_WIDGET($window));
+    }
+
+    public function refreshImage()
+    {
+        $gtk = $this->gtk;
+        $pixbuf = $this->pixbuf;
+        $error = $gtk->ffi->new('GError*', false);
+        $image = $pixbuf->gdk_pixbuf_new_from_file('out.svg', FFI::addr($error));
+        $gtk->gtk_image_set_from_pixbuf($gtk->GTK_IMAGE($this->image_widget), $image);
+    }
+
+
+    public bool $isDone = false;
+    public function quit()
+    {
+        $this->isDone = true;
+        return $this->gtk->gtk_main_quit();
     }
 
 

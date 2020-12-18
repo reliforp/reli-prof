@@ -1,4 +1,26 @@
 <?php
+$callablemaker = <<<'CALLBLE_MAKER'
+namespace Amp;
+trait CallableMaker
+{
+    /**
+     * @deprecated Use \Closure::fromCallable() instead of this method in PHP 7.1.
+     */
+    private function callableFromInstanceMethod(string $method): callable
+    {
+        return \Closure::fromCallable([$this, $method]);
+    }
+
+    /**
+     * @deprecated Use \Closure::fromCallable() instead of this method in PHP 7.1.
+     */
+    private static function callableFromStaticMethod(string $method): callable
+    {
+        return \Closure::fromCallable([self::class, $method]);
+    }
+}
+CALLBLE_MAKER;
+eval($callablemaker);
 include_once('vendor/toknot/gtk/src/DefineValue.php');
 include_once('vendor/toknot/gtk/src/Builtin.php');
 include_once('vendor/toknot/gtk/src/GtkAbstract.php');
@@ -20,7 +42,7 @@ include_once('src/Lib/Amphp/ContextCreatorInterface.php');
 include_once('vendor/amphp/amp/lib/Loop/Driver.php');
 include_once('vendor/amphp/amp/lib/Internal/Placeholder.php');
 include_once('vendor/amphp/serialization/src/Serializer.php');
-include_once('vendor/amphp/amp/lib/CallableMaker.php');
+//include_once('vendor/amphp/amp/lib/CallableMaker.php');
 include_once('vendor/amphp/sync/src/KeyedSemaphore.php');
 include_once('vendor/amphp/sync/src/KeyedMutex.php');
 include_once('vendor/amphp/parallel/lib/Context/Internal/ProcessHub.php');

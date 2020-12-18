@@ -64,8 +64,7 @@ final class DispatcherEntryPoint implements WorkerEntryPointInterface
             $settings->get_trace_settings
         );
 
-        Loop::run(
-        function () use ($searcher_context, $dispatch_table, $worker_pool) {
+        while (1) {
             $promises = [];
             $promises[] = call(function () use ($searcher_context, $dispatch_table) {
                 while (1) {
@@ -79,18 +78,16 @@ final class DispatcherEntryPoint implements WorkerEntryPointInterface
                         while (1) {
                             $result = yield $reader->receiveTraceOrDetachWorker();
                             if ($result instanceof TraceMessage) {
-                                $this->outputTrace($result);
+                                yield $this->outputTrace($result);
                             } else {
                                 $dispatch_table->releaseOne($result->pid);
                             }
-                            file_put_contents('loaded', join("\n", array_reverse(get_included_files())));
                         }
                     }
                 );
             }
             yield $promises;
         }
-        );
     }
 
     private function outputTrace(TraceMessage $result): Promise
