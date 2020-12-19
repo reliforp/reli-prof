@@ -27,6 +27,7 @@ final class ZendTypeReader
     public const V72 = 'v72';
     public const V73 = 'v73';
     public const V74 = 'v74';
+    public const V80 = 'v80';
 
     public const ALL_SUPPORTED_VERSIONS = [
         self::V70,
@@ -34,6 +35,7 @@ final class ZendTypeReader
         self::V72,
         self::V73,
         self::V74,
+        self::V80,
     ];
 
     private string $php_version;
