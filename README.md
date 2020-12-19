@@ -41,6 +41,7 @@ php-profiler also provides functionality to only get the address of EG from targ
 - PHP-7.2 64bit Linux x86_64 (NTS / ZTS)
 - PHP-7.3 64bit Linux x86_64 (NTS / ZTS)
 - PHP-7.4 64bit Linux x86_64 (NTS / ZTS)
+- PHP-8.0 64bit Linux x86_64 (NTS / ZTS)
 
 On targeting ZTS, the target process must load libpthread.so, and also you must have unstripped binary of the interpreter and the libpthread.so, to find EG from the TLS.
 
