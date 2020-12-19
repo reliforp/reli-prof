@@ -311,7 +311,7 @@ final class ExecutorGlobalsReader
             4
         );
         return $opline_raw[0]
-            + ($opline_raw[1] << 9)
+            + ($opline_raw[1] << 8)
             + ($opline_raw[2] << 16)
             + ($opline_raw[3] << 24);
     }
