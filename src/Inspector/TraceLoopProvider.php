@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector;
 
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use PhpProfiler\Lib\Console\EchoBackCanceller;
 use PhpProfiler\Lib\Loop\Loop;
 use PhpProfiler\Lib\Loop\LoopBuilder;
 use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;
@@ -35,7 +36,7 @@ final class TraceLoopProvider
     {
         return $this->loop_builder
             ->addProcess(RetryOnExceptionMiddleware::class, [$settings->max_retries, [MemoryReaderException::class]])
-            ->addProcess(KeyboardCancelMiddleware::class, [$settings->cancel_key])
+            ->addProcess(KeyboardCancelMiddleware::class, [$settings->cancel_key, new EchoBackCanceller()])
             ->addProcess(NanoSleepMiddleware::class, [$settings->sleep_nano_seconds])
             ->addProcess(CallableMiddleware::class, [$main])
             ->build();

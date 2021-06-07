@@ -24,6 +24,7 @@ use PhpProfiler\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
+use PhpProfiler\Lib\Console\EchoBackCanceller;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -98,7 +99,7 @@ final class DaemonCommand extends Command
             $get_trace_settings
         );
 
-        exec('stty -icanon -echo');
+        $echo_back_canceler = new EchoBackCanceller();
 
         Loop::onReadable(
             STDIN,
