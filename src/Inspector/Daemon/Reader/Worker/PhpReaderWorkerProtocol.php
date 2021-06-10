@@ -30,6 +30,7 @@ final class PhpReaderWorkerProtocol implements PhpReaderWorkerProtocolInterface
         $this->channel = $channel;
     }
 
+    /** @return static */
     public static function createFromChannel(Channel $channel): self
     {
         return new self($channel);

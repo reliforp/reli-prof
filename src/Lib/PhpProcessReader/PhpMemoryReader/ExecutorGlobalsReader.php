@@ -157,7 +157,10 @@ final class ExecutorGlobalsReader
          */
         $current_function_name_pointer = \FFI::cast('long', $current_function->common->function_name);
         if ($current_function_name_pointer->cdata !== 0) {
-            /** @var \FFI\CPointer $current_function_name_pointer */
+            /**
+             * @psalm-ignore-var
+             * @var \FFI\CPointer $current_function_name_pointer
+             */
             $current_function_name_zstring = $this->memory_reader->read(
                 $pid,
                 $current_function_name_pointer->cdata,

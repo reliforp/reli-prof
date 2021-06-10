@@ -21,11 +21,16 @@ use LogicException;
  */
 trait ByteReaderDisableWriteAccessTrait
 {
+    /**
+     * @param mixed $offset
+     * @param mixed $value
+     */
     public function offsetSet($offset, $value): void
     {
         throw new LogicException('write access is forbidden for ByteReaderInteface');
     }
 
+    /** @param mixed $offset */
     public function offsetUnset($offset): void
     {
         throw new LogicException('write access is forbidden for ByteReaderInteface');

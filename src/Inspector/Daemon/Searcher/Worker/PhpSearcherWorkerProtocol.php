@@ -28,6 +28,7 @@ final class PhpSearcherWorkerProtocol implements PhpSearcherWorkerProtocolInterf
         $this->channel = $channel;
     }
 
+    /** @return static */
     public static function createFromChannel(Channel $channel): self
     {
         return new self($channel);

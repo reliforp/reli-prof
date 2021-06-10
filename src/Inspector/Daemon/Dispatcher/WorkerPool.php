@@ -31,6 +31,7 @@ final class WorkerPool implements WorkerPoolInterface
     /** @var array<int, bool> */
     private array $on_read_list;
 
+    /** @no-named-arguments */
     public function __construct(PhpReaderControllerInterface ...$contexts)
     {
         $this->contexts = $contexts;

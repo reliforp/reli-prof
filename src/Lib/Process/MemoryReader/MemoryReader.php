@@ -60,7 +60,6 @@ final class MemoryReader implements MemoryReaderInterface
      */
     public function read(int $pid, int $remote_address, int $size): CData
     {
-        /** @var CData $buffer */
         $buffer = $this->ffi->new("unsigned char[{$size}]");
 
         /**

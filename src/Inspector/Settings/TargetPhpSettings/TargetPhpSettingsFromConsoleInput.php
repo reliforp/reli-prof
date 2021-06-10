@@ -81,7 +81,6 @@ final class TargetPhpSettingsFromConsoleInput
                 TargetPhpSettingsException::TARGET_PHP_VERSION_INVALID
             );
         }
-        /** @psalm-var value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
 
         $php_path = $input->getOption('php-path');
         if (!is_null($php_path) and !is_string($php_path)) {

@@ -99,7 +99,7 @@ final class DaemonCommand extends Command
             $get_trace_settings
         );
 
-        $echo_back_canceler = new EchoBackCanceller();
+        $_echo_back_canceler = new EchoBackCanceller();
 
         Loop::onReadable(
             STDIN,

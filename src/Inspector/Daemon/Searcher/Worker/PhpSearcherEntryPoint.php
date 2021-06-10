@@ -35,7 +35,10 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
 
     public function run(): \Generator
     {
-        /** @var TargetRegexMessage $target_regex */
+        /**
+         * @psalm-ignore-var
+         * @var TargetRegexMessage $target_regex
+         */
         $target_regex = yield $this->protocol->receiveTargetRegex();
 
         while (1) {

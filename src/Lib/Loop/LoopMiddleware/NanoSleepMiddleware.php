@@ -28,6 +28,7 @@ final class NanoSleepMiddleware implements LoopMiddlewareInterface
 
     public function invoke(): bool
     {
+        /** @psalm-suppress UnusedFunctionCall */
         time_nanosleep(0, $this->sleep_nano_seconds);
         if (!$this->chain->invoke()) {
             return false;
