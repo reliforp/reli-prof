@@ -30,6 +30,7 @@ final class PhpReaderControllerProtocol implements PhpReaderControllerProtocolIn
         $this->channel = $channel;
     }
 
+    /** @return static */
     public static function createFromChannel(Channel $channel): self
     {
         return new self($channel);

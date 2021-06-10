@@ -28,6 +28,7 @@ final class NanoSleepMiddlewareAsync implements AsyncLoopMiddlewareInterface
 
     public function invoke(): \Generator
     {
+        /** @psalm-suppress UnusedFunctionCall */
         time_nanosleep(0, $this->sleep_nano_seconds);
         yield from $this->chain->invoke();
     }

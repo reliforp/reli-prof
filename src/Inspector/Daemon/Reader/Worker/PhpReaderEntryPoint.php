@@ -36,11 +36,17 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 
     public function run(): \Generator
     {
-        /** @var SetSettingsMessage $set_settings_message */
+        /**
+         * @psalm-ignore-var
+         * @var SetSettingsMessage $set_settings_message
+         */
         $set_settings_message = yield $this->protocol->receiveSettings();
 
         while (1) {
-            /** @var AttachMessage $attach_message */
+            /**
+             * @psalm-ignore-var
+             * @var AttachMessage $attach_message
+             */
             $attach_message = yield $this->protocol->receiveAttach();
 
             $target_process_settings = new TargetProcessSettings(

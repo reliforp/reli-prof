@@ -299,6 +299,10 @@ final class Elf64Parser
 
         $chain_offset = $offset + 16 + $bloom_size * 8 + $nbuckets * 4;
 
+        if ($buckets === []) {
+            return null;
+        }
+
         $max_bucket_index = max($buckets);
         $last_chain_offset = $chain_offset + ($max_bucket_index - $symoffset) * 4;
         $last_chain_item = $this->integer_reader->read32($data, $last_chain_offset);

@@ -14,7 +14,11 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Settings;
 
 use LogicException;
+use Throwable;
 
+/**
+ * @psalm-consistent-constructor
+ */
 abstract class InspectorSettingsException extends \Exception
 {
     public const ERROR_NONE = 0;
@@ -23,6 +27,16 @@ abstract class InspectorSettingsException extends \Exception
     protected const ERRORS = [
         self::ERROR_NONE => '',
     ];
+
+    /**
+     * @param string $message
+     * @param int $code
+     * @param Throwable|null $previous
+     */
+    public function __construct($message = "", $code = 0, Throwable $previous = null)
+    {
+        parent::__construct($message, $code, $previous);
+    }
 
     /**
      * @return array<int, string>

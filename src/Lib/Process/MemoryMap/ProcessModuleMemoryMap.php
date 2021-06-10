@@ -50,7 +50,7 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
     {
         $ranges = $this->getSortedOffsetToMemoryAreaMap();
         $file_offset_decided = 0;
-        foreach ($ranges as $file_offset => $memory_begin) {
+        foreach ($ranges as $file_offset => $_memory_begin) {
             if ($file_offset <= $offset) {
                 $file_offset_decided = $file_offset;
             }
