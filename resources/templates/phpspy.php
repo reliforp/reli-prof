@@ -12,7 +12,12 @@
 declare(strict_types=1);
 
 /**
- * @var string[] $traces
+ * @var array<int, array{
+ *     class?: string,
+ *     function: string,
+ *     file: string,
+ *     line: int,
+ * }> $traces
  */
 ?>
 <?php foreach ($traces as $depth => $trace): ?>
