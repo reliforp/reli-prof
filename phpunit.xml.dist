@@ -12,7 +12,7 @@
          executionOrder="default"
 >
     <php>
-        <ini name="memory_limit" value="256MB"/>
+        <ini name="memory_limit" value="256M"/>
     </php>
     <testsuites>
         <testsuite name="php-profiler">
@@ -20,18 +20,18 @@
         </testsuite>
     </testsuites>
 
-    <filter>
-        <whitelist processUncoveredFilesFromWhitelist="true">
+    <coverage>
+        <include>
             <directory suffix=".php">src</directory>
-            <exclude>
-                <directory suffix=".php">src/Command/*/</directory>
-                <directory suffix="Interface.php">./src</directory>
-                <directory suffix="Message.php">./src</directory>
-                <directory suffix="Exception.php">./src</directory>
-                <directory suffix="LoopProvider.php">./src</directory>
-                <directory suffix="Protocol.php">./src</directory>
-                <directory suffix="worker-entry.php">./src/Lib/Amphp</directory>
-            </exclude>
-        </whitelist>
-    </filter>
+        </include>
+        <exclude>
+            <directory suffix=".php">src/Command/*/</directory>
+            <directory suffix="Interface.php">./src</directory>
+            <directory suffix="Message.php">./src</directory>
+            <directory suffix="Exception.php">./src</directory>
+            <directory suffix="LoopProvider.php">./src</directory>
+            <directory suffix="Protocol.php">./src</directory>
+            <directory suffix="worker-entry.php">./src/Lib/Amphp</directory>
+        </exclude>
+    </coverage>
 </phpunit>
