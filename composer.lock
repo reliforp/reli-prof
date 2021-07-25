@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f0c93ae3bb655d627765d41660d281bb",
+    "content-hash": "2dc4c74f742f6b995c0b11379efc886c",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2297,26 +2297,24 @@
         },
         {
             "name": "jetbrains/phpstorm-stubs",
-            "version": "dev-master",
+            "version": "v2021.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/JetBrains/phpstorm-stubs.git",
-                "reference": "c228fd014d23903cb59c788d53b3ffa90f6b916c"
+                "reference": "ec9e109d9416203870109e464f8c8931474d404e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/c228fd014d23903cb59c788d53b3ffa90f6b916c",
-                "reference": "c228fd014d23903cb59c788d53b3ffa90f6b916c",
+                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/ec9e109d9416203870109e464f8c8931474d404e",
+                "reference": "ec9e109d9416203870109e464f8c8931474d404e",
                 "shasum": ""
             },
             "require-dev": {
-                "friendsofphp/php-cs-fixer": "@stable",
-                "nikic/php-parser": "dev-master",
+                "nikic/php-parser": "@stable",
                 "php": "^8.0",
                 "phpdocumentor/reflection-docblock": "@stable",
                 "phpunit/phpunit": "@stable"
             },
-            "default-branch": true,
             "type": "library",
             "autoload": {
                 "files": [
@@ -2340,9 +2338,9 @@
                 "type"
             ],
             "support": {
-                "source": "https://github.com/JetBrains/phpstorm-stubs/tree/master"
+                "source": "https://github.com/JetBrains/phpstorm-stubs/tree/v2021.1"
             },
-            "time": "2021-07-24T10:07:43+00:00"
+            "time": "2021-03-03T10:43:38+00:00"
         },
         {
             "name": "mockery/mockery",
@@ -5426,9 +5424,7 @@
     ],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {
-        "jetbrains/phpstorm-stubs": 20
-    },
+    "stability-flags": [],
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

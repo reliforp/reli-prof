@@ -10,6 +10,13 @@
     <projectFiles>
         <directory name="src" />
     </projectFiles>
+    <issueHandlers>
+        <PossiblyNullArgument>
+            <errorLevel type="suppress">
+                <file name="vendor/symfony/console/Command/Command.php"/>
+            </errorLevel>
+        </PossiblyNullArgument>
+    </issueHandlers>
     <stubs>
         <file name="vendor/jetbrains/phpstorm-stubs/FFI/FFI.php"/>
         <file name="tools/stubs/ffi/libc.php"/>
