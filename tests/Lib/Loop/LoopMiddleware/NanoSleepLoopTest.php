@@ -36,8 +36,13 @@ class NanoSleepLoopTest extends TestCase
                 throw new LogicException('should not be thrown');
             })
         );
-        $this->expectWarning();
-        $this->expectWarningMessageMatches('/nanoseconds was not in the range 0 to 999 999 999/');
+        if (version_compare('8.0.0', phpversion(), '<=')) {
+            $this->expectException(\ValueError::class);
+            $this->expectExceptionMessageMatches('/Nanoseconds was not in the range 0 to 999 999 999/');
+        } else {
+            $this->expectWarning();
+            $this->expectWarningMessageMatches('/nanoseconds was not in the range 0 to 999 999 999/');
+        }
         $nano_sleep_loop->invoke();
     }
 
