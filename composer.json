@@ -17,7 +17,7 @@
   "minimum-stability": "dev",
   "prefer-stable": true,
   "require": {
-    "php": "^7.4|^8.0",
+    "php": "^8.0",
     "ext-ffi": "*",
     "ext-filter": "*",
     "ext-json": "*",
