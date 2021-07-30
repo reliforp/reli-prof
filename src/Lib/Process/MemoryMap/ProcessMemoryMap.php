@@ -19,16 +19,13 @@ namespace PhpProfiler\Lib\Process\MemoryMap;
  */
 final class ProcessMemoryMap
 {
-    /** @var ProcessMemoryArea[] */
-    private array $memory_areas;
-
     /**
      * ProcessMemoryMap constructor.
      * @param ProcessMemoryArea[] $memory_areas
      */
-    public function __construct(array $memory_areas)
-    {
-        $this->memory_areas = $memory_areas;
+    public function __construct(
+        private array $memory_areas,
+    ) {
     }
 
     /**

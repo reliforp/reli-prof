@@ -18,21 +18,12 @@ use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
 /** @psalm-immutable */
 final class CallFrame
 {
-    public string $class_name;
-    public string $function_name;
-    public string $file_name;
-    public ?Opline $opline;
-
     public function __construct(
-        string $class_name,
-        string $function_name,
-        string $file_name,
-        ?Opline $opline
+        public string $class_name,
+        public string $function_name,
+        public string $file_name,
+        public ?Opline $opline
     ) {
-        $this->class_name = $class_name;
-        $this->function_name = $function_name;
-        $this->file_name = $file_name;
-        $this->opline = $opline;
     }
 
     public function getFullyQualifiedFunctionName(): string

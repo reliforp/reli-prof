@@ -18,8 +18,12 @@ use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
 final class CompatCallTraceFormatter implements CallTraceFormatter
 {
-    private CompatCallFrameFormatter $call_frame_formatter;
     private static ?self $cache;
+
+    public function __construct(
+        private CompatCallFrameFormatter $call_frame_formatter,
+    ) {
+    }
 
     public static function getInstance(): self
     {
@@ -28,14 +32,6 @@ final class CompatCallTraceFormatter implements CallTraceFormatter
         }
         return self::$cache;
     }
-
-    public function __construct(
-        CompatCallFrameFormatter $call_frame_formatter
-    ) {
-        $this->call_frame_formatter = $call_frame_formatter;
-    }
-
-
 
     public function format(CallTrace $call_trace): string
     {

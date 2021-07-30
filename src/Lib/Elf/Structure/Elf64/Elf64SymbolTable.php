@@ -28,7 +28,6 @@ final class Elf64SymbolTable
 
     /**
      * Elf64SymbolTable constructor.
-     * @param Elf64SymbolTableEntry ...$entries
      */
     public function __construct(Elf64SymbolTableEntry ...$entries)
     {

@@ -21,21 +21,14 @@ use Amp\Promise;
  */
 final class Context implements ContextInterface
 {
-    private AmphpContext $amphp_context;
-    /** @var T object */
-    private object $protocol_interface;
-
     /**
      * Context constructor.
-     * @param AmphpContext $amphp_context
      * @param T $protocol_interface
      */
     public function __construct(
-        AmphpContext $amphp_context,
-        object $protocol_interface
+        private AmphpContext $amphp_context,
+        private object $protocol_interface
     ) {
-        $this->amphp_context = $amphp_context;
-        $this->protocol_interface = $protocol_interface;
     }
 
     /**

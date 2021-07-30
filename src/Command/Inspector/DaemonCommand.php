@@ -36,33 +36,16 @@ use function Amp\call;
 
 final class DaemonCommand extends Command
 {
-    private PhpSearcherContextCreator $php_searcher_context_creator;
-    private PhpReaderContextCreator $php_reader_context_creator;
-    private DaemonSettingsFromConsoleInput $daemon_settings_from_console_input;
-    private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input;
-    private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
-    private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
-    private TemplateSettingsFromConsoleInput $template_settings_from_console_input;
-    private TemplatedTraceFormatterFactory $templated_trace_formatter_factory;
-
     public function __construct(
-        PhpSearcherContextCreator $php_searcher_context_creator,
-        PhpReaderContextCreator $php_reader_context_creator,
-        DaemonSettingsFromConsoleInput $daemon_settings_from_console_input,
-        GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
-        TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
-        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
-        TemplateSettingsFromConsoleInput $template_settings_from_console_input,
-        TemplatedTraceFormatterFactory $template_factory,
+        private PhpSearcherContextCreator $php_searcher_context_creator,
+        private PhpReaderContextCreator $php_reader_context_creator,
+        private DaemonSettingsFromConsoleInput $daemon_settings_from_console_input,
+        private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
+        private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
+        private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
+        private TemplateSettingsFromConsoleInput $template_settings_from_console_input,
+        private TemplatedTraceFormatterFactory $templated_trace_formatter_factory,
     ) {
-        $this->php_reader_context_creator = $php_reader_context_creator;
-        $this->php_searcher_context_creator = $php_searcher_context_creator;
-        $this->daemon_settings_from_console_input = $daemon_settings_from_console_input;
-        $this->get_trace_settings_from_console_input = $get_trace_settings_from_console_input;
-        $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
-        $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
-        $this->template_settings_from_console_input = $template_settings_from_console_input;
-        $this->templated_trace_formatter_factory = $template_factory;
         parent::__construct();
     }
 

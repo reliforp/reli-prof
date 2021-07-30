@@ -23,11 +23,9 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
 final class ReaderLoopProvider
 {
-    private AsyncLoopBuilder $loop_builder;
-
-    public function __construct(AsyncLoopBuilder $loop_builder)
-    {
-        $this->loop_builder = $loop_builder;
+    public function __construct(
+        private AsyncLoopBuilder $loop_builder
+    ) {
     }
 
     public function getMainLoop(callable $main, TraceLoopSettings $settings): AsyncLoop

@@ -60,68 +60,25 @@ final class Elf64Header
     public const EM_386 = 3;
     public const EM_X86_64 = 62;
 
-    public array $e_ident; // unsigned char[EI_NIDENT]
-    public int $e_type; // Elf64_Half
-    public int $e_machine; // Elf64_Half
-    public int $e_version; // Elf64_Word
-    public UInt64 $e_entry; // Elf64_Addr
-    public UInt64 $e_phoff; // Elf64_Off
-    public UInt64 $e_shoff; // Elf64_Off
-    public int $e_flags; // Elf64_Word
-    public int $e_ehsize; // Elf64_Half
-    public int $e_phentsize; // Elf64_Half
-    public int $e_phnum; // Elf64_Half
-    public int $e_shentsize; // Elf64_Half
-    public int $e_shnum; // Elf64_Half
-    public int $e_shstrndx; // Elf64_Half
-
     /**
      * Elf64Header constructor.
-     * @param array $e_ident
-     * @param int $e_type
-     * @param int $e_machine
-     * @param int $e_version
-     * @param UInt64 $e_entry
-     * @param UInt64 $e_phoff
-     * @param UInt64 $e_shoff
-     * @param int $e_flags
-     * @param int $e_ehsize
-     * @param int $e_phentsize
-     * @param int $e_phnum
-     * @param int $e_shentsize
-     * @param int $e_shnum
-     * @param int $e_shstrndx
      */
     public function __construct(
-        array $e_ident,
-        int $e_type,
-        int $e_machine,
-        int $e_version,
-        UInt64 $e_entry,
-        UInt64 $e_phoff,
-        UInt64 $e_shoff,
-        int $e_flags,
-        int $e_ehsize,
-        int $e_phentsize,
-        int $e_phnum,
-        int $e_shentsize,
-        int $e_shnum,
-        int $e_shstrndx
+        public array $e_ident, // unsigned char[EI_NIDENT]
+        public int $e_type, // Elf64_Half
+        public int $e_machine, // Elf64_Half
+        public int $e_version, // Elf64_Word
+        public UInt64 $e_entry, // Elf64_Addr
+        public UInt64 $e_phoff, // Elf64_Off
+        public UInt64 $e_shoff, // Elf64_Off
+        public int $e_flags, // Elf64_Word
+        public int $e_ehsize, // Elf64_Half
+        public int $e_phentsize, // Elf64_Half
+        public int $e_phnum, // Elf64_Half
+        public int $e_shentsize, // Elf64_Half
+        public int $e_shnum, // Elf64_Half
+        public int $e_shstrndx // Elf64_Half
     ) {
-        $this->e_ident = $e_ident;
-        $this->e_type = $e_type;
-        $this->e_machine = $e_machine;
-        $this->e_version = $e_version;
-        $this->e_entry = $e_entry;
-        $this->e_phoff = $e_phoff;
-        $this->e_shoff = $e_shoff;
-        $this->e_flags = $e_flags;
-        $this->e_ehsize = $e_ehsize;
-        $this->e_phentsize = $e_phentsize;
-        $this->e_phnum = $e_phnum;
-        $this->e_shentsize = $e_shentsize;
-        $this->e_shnum = $e_shnum;
-        $this->e_shstrndx = $e_shstrndx;
     }
 
     /**

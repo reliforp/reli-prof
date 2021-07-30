@@ -17,12 +17,9 @@ use Noodlehaus\Config;
 
 final class TemplatePathResolver implements TemplatePathResolverInterface
 {
-    private Config $config;
-
     public function __construct(
-        Config $config
+        private Config $config
     ) {
-        $this->config = $config;
     }
 
     public function resolve(string $template_name): string

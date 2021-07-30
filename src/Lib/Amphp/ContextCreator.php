@@ -19,11 +19,9 @@ final class ContextCreator implements ContextCreatorInterface
 {
     public const ENTRY_SCRIPT = __DIR__ . '/worker-entry.php';
 
-    private string $di_config_file;
-
-    public function __construct(string $di_config_file)
-    {
-        $this->di_config_file = $di_config_file;
+    public function __construct(
+        private string $di_config_file
+    ) {
     }
 
     /**

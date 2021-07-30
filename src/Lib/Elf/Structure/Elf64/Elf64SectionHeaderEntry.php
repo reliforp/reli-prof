@@ -45,52 +45,21 @@ final class Elf64SectionHeaderEntry
     public const SHT_LOUSER = 0x80000000;
     public const SHT_HIUSER = 0xffffffff;
 
-    public int $sh_name; // Elf64_Word
-    public int $sh_type; // Elf64_Word
-    public UInt64 $sh_flags; // Elf64_Xword
-    public UInt64 $sh_addr; // Elf64_Addr
-    public UInt64 $sh_offset; // Elf64_Off
-    public UInt64 $sh_size; // Elf64_Xword
-    public int $sh_link; // Elf64_Word
-    public int $sh_info; // Elf64_Word
-    public UInt64 $sh_addralign; // Elf64_Xword
-    public UInt64 $sh_entsize; // Elf64_Xword
-
     /**
      * Elf64SectionHeaderEntry constructor.
-     * @param int $sh_name
-     * @param int $sh_type
-     * @param UInt64 $sh_flags
-     * @param UInt64 $sh_addr
-     * @param UInt64 $sh_offset
-     * @param UInt64 $sh_size
-     * @param int $sh_link
-     * @param int $sh_info
-     * @param UInt64 $sh_addralign
-     * @param UInt64 $sh_entsize
      */
     public function __construct(
-        int $sh_name,
-        int $sh_type,
-        UInt64 $sh_flags,
-        UInt64 $sh_addr,
-        UInt64 $sh_offset,
-        UInt64 $sh_size,
-        int $sh_link,
-        int $sh_info,
-        UInt64 $sh_addralign,
-        UInt64 $sh_entsize
+        public int $sh_name, // Elf64_Word
+        public int $sh_type, // Elf64_Word
+        public UInt64 $sh_flags, // Elf64_Xword
+        public UInt64 $sh_addr, // Elf64_Addr
+        public UInt64 $sh_offset, // Elf64_Off
+        public UInt64 $sh_size, // Elf64_Xword
+        public int $sh_link, // Elf64_Word
+        public int $sh_info, // Elf64_Word
+        public UInt64 $sh_addralign, // Elf64_Xword
+        public UInt64 $sh_entsize, // Elf64_Xword
     ) {
-        $this->sh_name = $sh_name;
-        $this->sh_type = $sh_type;
-        $this->sh_flags = $sh_flags;
-        $this->sh_addr = $sh_addr;
-        $this->sh_offset = $sh_offset;
-        $this->sh_size = $sh_size;
-        $this->sh_link = $sh_link;
-        $this->sh_info = $sh_info;
-        $this->sh_addralign = $sh_addralign;
-        $this->sh_entsize = $sh_entsize;
     }
 
     /**

@@ -26,32 +26,19 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
  */
 final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
 {
-    private Elf64SymbolResolver $symbol_resolver;
     private int $base_address;
-    private MemoryReaderInterface $memory_reader;
-    private ?int $tls_block_address;
-    private int $pid;
 
     /**
      * ProcessModuleSymbolResolver constructor.
-     * @param int $pid
-     * @param Elf64SymbolResolver $symbol_resolver
-     * @param ProcessModuleMemoryMap $module_memory_map
-     * @param MemoryReaderInterface $memory_reader
-     * @param int|null $tls_block_address
      */
     public function __construct(
-        int $pid,
-        Elf64SymbolResolver $symbol_resolver,
-        ProcessModuleMemoryMap $module_memory_map,
-        MemoryReaderInterface $memory_reader,
-        ?int $tls_block_address
+        private int $pid,
+        private Elf64SymbolResolver $symbol_resolver,
+        private ProcessModuleMemoryMap $module_memory_map,
+        private MemoryReaderInterface $memory_reader,
+        private ?int $tls_block_address
     ) {
-        $this->pid = $pid;
-        $this->symbol_resolver = $symbol_resolver;
         $this->base_address = $module_memory_map->getBaseAddress();
-        $this->memory_reader = $memory_reader;
-        $this->tls_block_address = $tls_block_address;
     }
 
     /**

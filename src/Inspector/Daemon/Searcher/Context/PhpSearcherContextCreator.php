@@ -22,11 +22,9 @@ use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 
 final class PhpSearcherContextCreator
 {
-    private ContextCreatorInterface $context_creator;
-
-    public function __construct(ContextCreatorInterface $context_creator)
-    {
-        $this->context_creator = $context_creator;
+    public function __construct(
+        private ContextCreatorInterface $context_creator
+    ) {
     }
 
     public function create(): PhpSearcherControllerInterface

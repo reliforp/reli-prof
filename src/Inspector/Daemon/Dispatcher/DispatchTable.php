@@ -20,24 +20,16 @@ use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 final class DispatchTable
 {
-    public WorkerPoolInterface $worker_pool;
     private TargetProcessListInterface $assigned;
-    private TargetPhpSettings $target_php_settings;
-    private TraceLoopSettings $trace_loop_settings;
-    private GetTraceSettings $get_trace_settings;
     /** @var array<int, PhpReaderControllerInterface> */
     private array $dispatch_table = [];
 
     public function __construct(
-        WorkerPoolInterface $worker_pool,
-        TargetPhpSettings $target_php_settings,
-        TraceLoopSettings $trace_loop_settings,
-        GetTraceSettings $get_trace_settings
+        public WorkerPoolInterface $worker_pool,
+        private TargetPhpSettings $target_php_settings,
+        private TraceLoopSettings $trace_loop_settings,
+        private GetTraceSettings $get_trace_settings
     ) {
-        $this->worker_pool = $worker_pool;
-        $this->target_php_settings = $target_php_settings;
-        $this->trace_loop_settings = $trace_loop_settings;
-        $this->get_trace_settings = $get_trace_settings;
         $this->assigned = new TargetProcessList();
     }
 

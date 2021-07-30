@@ -20,16 +20,13 @@ final class CDataByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
 
-    /** @var CArray */
-    private CData $source;
-
     /**
      * CDataByteReader constructor.
      * @param CArray $source
      */
-    public function __construct(CData $source)
-    {
-        $this->source = $source;
+    public function __construct(
+        private CData $source
+    ) {
     }
 
     public function offsetExists($offset): bool

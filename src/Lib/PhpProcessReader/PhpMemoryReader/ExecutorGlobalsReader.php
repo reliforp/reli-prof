@@ -30,24 +30,16 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
  */
 final class ExecutorGlobalsReader
 {
-    private MemoryReaderInterface $memory_reader;
-    private ZendTypeReaderCreator $zend_type_reader_creator;
     private ?ZendTypeReader $zend_type_reader = null;
-    private LittleEndianReader $little_endian_reader;
 
     /**
      * ExecutorGlobalsReader constructor.
-     * @param MemoryReaderInterface $memory_reader
-     * @param ZendTypeReaderCreator $zend_type_reader_creator
      */
     public function __construct(
-        MemoryReaderInterface $memory_reader,
-        ZendTypeReaderCreator $zend_type_reader_creator,
-        LittleEndianReader $little_endian_reader
+        private MemoryReaderInterface $memory_reader,
+        private ZendTypeReaderCreator $zend_type_reader_creator,
+        private LittleEndianReader $little_endian_reader,
     ) {
-        $this->memory_reader = $memory_reader;
-        $this->zend_type_reader_creator = $zend_type_reader_creator;
-        $this->little_endian_reader = $little_endian_reader;
     }
 
     /**

@@ -23,18 +23,13 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
  */
 final class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
 {
-    private Elf64SymbolTable $symbol_table;
-    private Elf64StringTable $string_table;
-
     /**
      * Elf64LinearScanSymbolResolver constructor.
-     * @param Elf64SymbolTable $symbol_table
-     * @param Elf64StringTable $string_table
      */
-    public function __construct(Elf64SymbolTable $symbol_table, Elf64StringTable $string_table)
-    {
-        $this->symbol_table = $symbol_table;
-        $this->string_table = $string_table;
+    public function __construct(
+        private Elf64SymbolTable $symbol_table,
+        private Elf64StringTable $string_table,
+    ) {
     }
 
     /**

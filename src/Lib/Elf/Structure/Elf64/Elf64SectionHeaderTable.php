@@ -21,16 +21,14 @@ final class Elf64SectionHeaderTable
 {
     /** @var Elf64SectionHeaderEntry[] */
     private array $entries;
-    private Elf64StringTable $section_name_table;
 
     /**
      * Elf64SectionHeaderTable constructor.
-     * @param Elf64StringTable $section_name_table
-     * @param Elf64SectionHeaderEntry ...$entries
      */
-    public function __construct(Elf64StringTable $section_name_table, Elf64SectionHeaderEntry ...$entries)
-    {
-        $this->section_name_table = $section_name_table;
+    public function __construct(
+        private Elf64StringTable $section_name_table,
+        Elf64SectionHeaderEntry ...$entries
+    ) {
         $this->entries = $entries;
     }
 

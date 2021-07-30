@@ -18,23 +18,17 @@ use PhpProfiler\Lib\Loop\AsyncLoopMiddlewareInterface;
 
 final class RetryOnExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterface
 {
-    private AsyncLoopMiddlewareInterface $chain;
-    /** @var array<int, class-string<Exception>> */
-    private array $exception_names;
-    private int $max_retry;
     private int $current_retry_count = 0;
 
     /**
      * RetryOnExceptionLoop constructor.
-     * @param int $max_retry
      * @param array<int, class-string<Exception>> $exception_names
-     * @param AsyncLoopMiddlewareInterface $chain
      */
-    public function __construct(int $max_retry, array $exception_names, AsyncLoopMiddlewareInterface $chain)
-    {
-        $this->max_retry = $max_retry;
-        $this->exception_names = $exception_names;
-        $this->chain = $chain;
+    public function __construct(
+        private int $max_retry,
+        private array $exception_names,
+        private AsyncLoopMiddlewareInterface $chain
+    ) {
     }
 
     public function invoke(): \Generator

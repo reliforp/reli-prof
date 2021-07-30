@@ -16,11 +16,8 @@ namespace PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings;
 /** @psalm-immutable  */
 final class TemplateSettings
 {
-    public string $template_name;
-
     public function __construct(
-        string $template_name
+        public string $template_name
     ) {
-        $this->template_name = $template_name;
     }
 }

@@ -22,12 +22,9 @@ use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 
 final class PhpReaderContextCreator implements PhpReaderContextCreatorInterface
 {
-    private ContextCreatorInterface $context_creator;
-
     public function __construct(
-        ContextCreatorInterface $context_creator
+        private ContextCreatorInterface $context_creator
     ) {
-        $this->context_creator = $context_creator;
     }
 
     public function create(): PhpReaderControllerInterface

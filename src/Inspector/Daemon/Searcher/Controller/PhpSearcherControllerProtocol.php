@@ -21,11 +21,9 @@ use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocol
 
 final class PhpSearcherControllerProtocol implements PhpSearcherControllerProtocolInterface
 {
-    private Channel $channel;
-
-    public function __construct(Channel $channel)
-    {
-        $this->channel = $channel;
+    public function __construct(
+        private Channel $channel
+    ) {
     }
 
     /** @return static */

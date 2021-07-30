@@ -19,24 +19,13 @@ namespace PhpProfiler\Lib\Process\MemoryMap;
  */
 final class ProcessMemoryArea
 {
-    public string $begin;
-    public string $end;
-    public string $file_offset;
-    public ProcessMemoryAttribute $attribute;
-    public string $name;
-
     public function __construct(
-        string $begin,
-        string $end,
-        string $file_offset,
-        ProcessMemoryAttribute $attribute,
-        string $name
+        public string $begin,
+        public string $end,
+        public string $file_offset,
+        public ProcessMemoryAttribute $attribute,
+        public string $name
     ) {
-        $this->begin = $begin;
-        $this->end = $end;
-        $this->file_offset = $file_offset;
-        $this->attribute = $attribute;
-        $this->name = $name;
     }
 
     public function isInRange(int $address): bool

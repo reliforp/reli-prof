@@ -25,21 +25,13 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
  */
 final class ProcessModuleSymbolReaderCreator
 {
-    private SymbolResolverCreatorInterface $symbol_resolver_creator;
-    private MemoryReaderInterface $memory_reader;
-
     /**
      * ProcessSymbolReaderCreator constructor.
-     *
-     * @param SymbolResolverCreatorInterface $symbol_resolver_creator
-     * @param MemoryReaderInterface $memory_reader
      */
     public function __construct(
-        SymbolResolverCreatorInterface $symbol_resolver_creator,
-        MemoryReaderInterface $memory_reader
+        private SymbolResolverCreatorInterface $symbol_resolver_creator,
+        private MemoryReaderInterface $memory_reader
     ) {
-        $this->symbol_resolver_creator = $symbol_resolver_creator;
-        $this->memory_reader = $memory_reader;
     }
 
     /**

@@ -71,18 +71,13 @@ final class Elf64DynamicStructure
     public const DF_TEXTREL = 4;
     public const DF_BIND_NOW = 8;
 
-    public UInt64 $d_tag;
-    public UInt64 $d_un;
-
     /**
      * Elf64DynamicStructure constructor.
-     * @param UInt64 $d_tag
-     * @param UInt64 $d_un
      */
-    public function __construct(UInt64 $d_tag, UInt64 $d_un)
-    {
-        $this->d_tag = $d_tag;
-        $this->d_un = $d_un;
+    public function __construct(
+        public UInt64 $d_tag,
+        public UInt64 $d_un
+    ) {
     }
 
     /**

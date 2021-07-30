@@ -27,10 +27,6 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
  */
 final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
 {
-    private Elf64SymbolTable $symbol_table;
-    private Elf64GnuHashTable $hash_table;
-    private Elf64StringTable $string_table;
-
     /**
      * @param Elf64Parser $parser
      * @param ByteReaderInterface $php_binary
@@ -61,24 +57,14 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
 
     /**
      * Elf64SymbolResolver constructor.
-     * @param Elf64SymbolTable $symbol_table
-     * @param Elf64GnuHashTable $hash_table
-     * @param Elf64StringTable $string_table
      */
     public function __construct(
-        Elf64SymbolTable $symbol_table,
-        Elf64GnuHashTable $hash_table,
-        Elf64StringTable $string_table
+        private Elf64SymbolTable $symbol_table,
+        private Elf64GnuHashTable $hash_table,
+        private Elf64StringTable $string_table,
     ) {
-        $this->symbol_table = $symbol_table;
-        $this->hash_table = $hash_table;
-        $this->string_table = $string_table;
     }
 
-    /**
-     * @param string $symbol_name
-     * @return Elf64SymbolTableEntry
-     */
     public function resolve(string $symbol_name): Elf64SymbolTableEntry
     {
         $index = $this->hash_table->lookup($symbol_name, function (string $name, int $index) {

@@ -28,18 +28,13 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
  */
 final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
 {
-    private FileReaderInterface $file_reader;
-    private Elf64Parser $elf_parser;
-
     /**
      * SymbolResolverCreator constructor.
-     * @param FileReaderInterface $file_reader
-     * @param Elf64Parser $elf_parser
      */
-    public function __construct(FileReaderInterface $file_reader, Elf64Parser $elf_parser)
-    {
-        $this->file_reader = $file_reader;
-        $this->elf_parser = $elf_parser;
+    public function __construct(
+        private FileReaderInterface $file_reader,
+        private Elf64Parser $elf_parser,
+    ) {
     }
 
     /**

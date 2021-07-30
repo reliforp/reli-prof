@@ -22,12 +22,9 @@ use Symfony\Component\Console\Input\InputOption;
 
 final class TemplateSettingsFromConsoleInput
 {
-    private Config $config;
-
     public function __construct(
-        Config $config
+        private Config $config
     ) {
-        $this->config = $config;
     }
 
     /**

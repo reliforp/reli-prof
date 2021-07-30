@@ -25,11 +25,9 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
 final class TraceLoopProvider
 {
-    private LoopBuilder $loop_builder;
-
-    public function __construct(LoopBuilder $loop_builder)
-    {
-        $this->loop_builder = $loop_builder;
+    public function __construct(
+        private LoopBuilder $loop_builder
+    ) {
     }
 
     public function getMainLoop(callable $main, TraceLoopSettings $settings): Loop

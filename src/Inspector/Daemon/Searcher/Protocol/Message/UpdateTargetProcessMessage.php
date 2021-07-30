@@ -17,10 +17,8 @@ use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessList;
 
 final class UpdateTargetProcessMessage
 {
-    public TargetProcessList $target_process_list;
-
-    public function __construct(TargetProcessList $target_process_list)
-    {
-        $this->target_process_list = $target_process_list;
+    public function __construct(
+        public TargetProcessList $target_process_list
+    ) {
     }
 }
