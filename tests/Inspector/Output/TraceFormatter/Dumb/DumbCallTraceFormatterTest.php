@@ -11,19 +11,19 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output;
+namespace PhpProfiler\Inspector\Output\TraceFormatter\Dumb;
 
 use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
 use PhpProfiler\Lib\PhpProcessReader\CallFrame;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
-class CallTraceFormatterTest extends TestCase
+class DumbCallTraceFormatterTest extends TestCase
 {
     /** @dataProvider dataProvider */
     public function testFormat(string $expects, CallTrace $call_trace): void
     {
-        $formatter = new CallTraceFormatter(new CallFrameFormatter());
+        $formatter = new DumbCallTraceFormatter(new DumbCallFrameFormatter());
         $this->assertSame($expects, $formatter->format($call_trace));
     }
 

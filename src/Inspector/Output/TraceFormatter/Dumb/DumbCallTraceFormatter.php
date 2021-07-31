@@ -11,16 +11,17 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output;
+namespace PhpProfiler\Inspector\Output\TraceFormatter\Dumb;
 
+use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
-final class CallTraceFormatter
+final class DumbCallTraceFormatter implements CallTraceFormatter
 {
-    private CallFrameFormatter $call_frame_formatter;
+    private DumbCallFrameFormatter $call_frame_formatter;
 
     public function __construct(
-        CallFrameFormatter $call_frame_formatter
+        DumbCallFrameFormatter $call_frame_formatter
     ) {
         $this->call_frame_formatter = $call_frame_formatter;
     }

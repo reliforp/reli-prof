@@ -20,7 +20,7 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
-use PhpProfiler\Inspector\Output\CallTraceFormatter;
+use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use PhpProfiler\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
