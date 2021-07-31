@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
 
+use PhpCast\NullableCast;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -42,7 +43,7 @@ final class TargetProcessSettingsFromConsoleInput
      */
     public function createSettings(InputInterface $input): TargetProcessSettings
     {
-        $pid = $input->getOption('pid');
+        $pid = NullableCast::toString($input->getOption('pid'));
         if (is_null($pid)) {
             throw TargetProcessSettingsException::create(
                 TargetProcessSettingsException::PID_NOT_SPECIFIED

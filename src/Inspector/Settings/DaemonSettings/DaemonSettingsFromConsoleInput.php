@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Settings\DaemonSettings;
 
+use PhpCast\NullableCast;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -48,7 +49,7 @@ final class DaemonSettingsFromConsoleInput
      */
     public function createSettings(InputInterface $input): DaemonSettings
     {
-        $threads = $input->getOption('threads');
+        $threads = NullableCast::toString($input->getOption('threads'));
         if (is_null($threads)) {
             $threads = 8;
         }

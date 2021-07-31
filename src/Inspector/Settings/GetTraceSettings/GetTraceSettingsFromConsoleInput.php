@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
 
+use PhpCast\NullableCast;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -42,7 +43,7 @@ final class GetTraceSettingsFromConsoleInput
      */
     public function createSettings(InputInterface $input): GetTraceSettings
     {
-        $depth = $input->getOption('depth');
+        $depth = NullableCast::toString($input->getOption('depth'));
         if (is_null($depth)) {
             $depth = PHP_INT_MAX;
         }
