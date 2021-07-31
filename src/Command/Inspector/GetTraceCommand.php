@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
+use PhpProfiler\Inspector\Output\CallTraceFormatter;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
@@ -38,6 +39,7 @@ final class GetTraceCommand extends Command
     private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
     private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input;
     private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
+    private CallTraceFormatter $call_trace_formatter;
 
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
@@ -46,7 +48,8 @@ final class GetTraceCommand extends Command
         GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
         TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
-        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
+        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
+        CallTraceFormatter $call_trace_formatter
     ) {
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
@@ -55,6 +58,7 @@ final class GetTraceCommand extends Command
         $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
         $this->target_process_settings_from_console_input = $target_process_settings_from_console_input;
         $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
+        $this->call_trace_formatter = $call_trace_formatter;
         parent::__construct();
     }
 
@@ -102,7 +106,7 @@ final class GetTraceCommand extends Command
                     $eg_address,
                     $get_trace_settings->depth
                 );
-                $output->writeln(join(PHP_EOL, $call_trace) . PHP_EOL);
+                $output->writeln($this->call_trace_formatter->format($call_trace) . PHP_EOL);
                 return true;
             },
             $loop_settings

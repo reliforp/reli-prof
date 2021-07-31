@@ -20,6 +20,7 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
+use PhpProfiler\Inspector\Output\CallTraceFormatter;
 use PhpProfiler\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
@@ -39,6 +40,7 @@ final class DaemonCommand extends Command
     private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input;
     private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
     private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
+    private CallTraceFormatter $call_trace_formatter;
 
     public function __construct(
         PhpSearcherContextCreator $php_searcher_context_creator,
@@ -46,7 +48,8 @@ final class DaemonCommand extends Command
         DaemonSettingsFromConsoleInput $daemon_settings_from_console_input,
         GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
         TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
-        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
+        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
+        CallTraceFormatter $call_trace_formatter
     ) {
         $this->php_reader_context_creator = $php_reader_context_creator;
         $this->php_searcher_context_creator = $php_searcher_context_creator;
@@ -54,6 +57,7 @@ final class DaemonCommand extends Command
         $this->get_trace_settings_from_console_input = $get_trace_settings_from_console_input;
         $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
         $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
+        $this->call_trace_formatter = $call_trace_formatter;
         parent::__construct();
     }
 
@@ -143,7 +147,7 @@ final class DaemonCommand extends Command
     private function outputTrace(OutputInterface $output, TraceMessage $message): void
     {
         $output->writeln(
-            join(PHP_EOL, $message->trace) . PHP_EOL
+            $this->call_trace_formatter->format($message->trace) . PHP_EOL
         );
     }
 }

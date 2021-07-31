@@ -51,6 +51,7 @@ class ExecutorGlobalsReaderTest extends TestCase
         $executor_globals_reader = new ExecutorGlobalsReader(
             $memory_reader,
             new ZendTypeReaderCreator(),
+            new LittleEndianReader()
         );
         $this->child = proc_open(
             [

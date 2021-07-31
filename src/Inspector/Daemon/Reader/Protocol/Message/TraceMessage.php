@@ -13,13 +13,13 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
 
+use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+
 final class TraceMessage
 {
-    /** @var string[] */
-    public array $trace;
+    public CallTrace $trace;
 
-    /** @param string[] $trace */
-    public function __construct(array $trace)
+    public function __construct(CallTrace $trace)
     {
         $this->trace = $trace;
     }
