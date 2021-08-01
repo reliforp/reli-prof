@@ -42,4 +42,12 @@ final class CallFrame
         }
         return "{$this->class_name}::{$this->function_name}";
     }
+
+    public function getLineno(): int
+    {
+        if (is_null($this->opline)) {
+            return -1;
+        }
+        return $this->opline->lineno;
+    }
 }
