@@ -11,20 +11,31 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Dumb;
+namespace PhpProfiler\Inspector\Output\TraceFormatter\Compat;
 
 use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
-final class DumbCallTraceFormatter implements CallTraceFormatter
+final class CompatCallTraceFormatter implements CallTraceFormatter
 {
-    private DumbCallFrameFormatter $call_frame_formatter;
+    private CompatCallFrameFormatter $call_frame_formatter;
+    private static ?self $cache;
+
+    public static function getInstance(): self
+    {
+        if (!isset(self::$cache)) {
+            self::$cache = new self(new CompatCallFrameFormatter());
+        }
+        return self::$cache;
+    }
 
     public function __construct(
-        DumbCallFrameFormatter $call_frame_formatter
+        CompatCallFrameFormatter $call_frame_formatter
     ) {
         $this->call_frame_formatter = $call_frame_formatter;
     }
+
+
 
     public function format(CallTrace $call_trace): string
     {

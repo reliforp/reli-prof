@@ -18,6 +18,7 @@ return [
     'output' => [
         'template' => [
             'default' => 'phpspy'
+            // 'default' => 'compat'
             // 'default' => 'json_lines'
         ],
     ],

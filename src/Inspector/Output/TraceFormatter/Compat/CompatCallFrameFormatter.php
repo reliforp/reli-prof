@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Dumb;
+namespace PhpProfiler\Inspector\Output\TraceFormatter\Compat;
 
 use PhpProfiler\Lib\PhpProcessReader\CallFrame;
 
-final class DumbCallFrameFormatter
+final class CompatCallFrameFormatter
 {
     public function format(CallFrame $call_frame): string
     {
