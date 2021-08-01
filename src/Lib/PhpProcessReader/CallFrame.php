@@ -34,4 +34,12 @@ final class CallFrame
         $this->file_name = $file_name;
         $this->opline = $opline;
     }
+
+    public function getFullyQualifiedFunctionName(): string
+    {
+        if ($this->class_name === '') {
+            return $this->function_name;
+        }
+        return "{$this->class_name}::{$this->function_name}";
+    }
 }

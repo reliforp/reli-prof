@@ -13,11 +13,12 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
-use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
+use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TemplatedTraceFormatterFactory;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
+use PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings\TemplateSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use PhpProfiler\Inspector\TraceLoopProvider;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
@@ -39,7 +40,8 @@ final class GetTraceCommand extends Command
     private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
     private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input;
     private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
-    private CallTraceFormatter $call_trace_formatter;
+    private TemplateSettingsFromConsoleInput $template_settings_from_console_input;
+    private TemplatedTraceFormatterFactory $templated_trace_formatter_factory;
 
     public function __construct(
         PhpGlobalsFinder $php_globals_finder,
@@ -49,7 +51,8 @@ final class GetTraceCommand extends Command
         TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
         TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
-        CallTraceFormatter $call_trace_formatter
+        TemplateSettingsFromConsoleInput $template_settings_from_console_input,
+        TemplatedTraceFormatterFactory $templated_trace_formatter_factory
     ) {
         $this->php_globals_finder = $php_globals_finder;
         $this->executor_globals_reader = $executor_globals_reader;
@@ -58,7 +61,8 @@ final class GetTraceCommand extends Command
         $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
         $this->target_process_settings_from_console_input = $target_process_settings_from_console_input;
         $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
-        $this->call_trace_formatter = $call_trace_formatter;
+        $this->template_settings_from_console_input = $template_settings_from_console_input;
+        $this->templated_trace_formatter_factory = $templated_trace_formatter_factory;
         parent::__construct();
     }
 
@@ -89,6 +93,8 @@ final class GetTraceCommand extends Command
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
+        $template_settings = $this->template_settings_from_console_input->createSettings($input);
+        $formatter = $this->templated_trace_formatter_factory->createFromSettings($template_settings);
 
         $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings);
 
@@ -98,7 +104,8 @@ final class GetTraceCommand extends Command
                 $target_process_settings,
                 $target_php_settings,
                 $eg_address,
-                $output
+                $output,
+                $formatter
             ): bool {
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $target_process_settings->pid,
@@ -106,7 +113,7 @@ final class GetTraceCommand extends Command
                     $eg_address,
                     $get_trace_settings->depth
                 );
-                $output->writeln($this->call_trace_formatter->format($call_trace) . PHP_EOL);
+                $output->write($formatter->format($call_trace) . PHP_EOL);
                 return true;
             },
             $loop_settings

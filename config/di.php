@@ -11,10 +11,11 @@
 
 declare(strict_types=1);
 
+use Noodlehaus\Config;
 use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoop;
 use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoopInterface;
-use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
-use PhpProfiler\Inspector\Output\TraceFormatter\Dumb\DumbCallTraceFormatter;
+use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TemplatePathResolver;
+use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TemplatePathResolverInterface;
 use PhpProfiler\Lib\Amphp\ContextCreator;
 use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
@@ -45,5 +46,6 @@ return [
         ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
     PhpReaderTraceLoopInterface::class => autowire(PhpReaderTraceLoop::class),
     ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
-    CallTraceFormatter::class => autowire(DumbCallTraceFormatter::class),
+    Config::class => fn () => Config::load(__DIR__ . '/config.php'),
+    TemplatePathResolverInterface::class => autowire(TemplatePathResolver::class),
 ];

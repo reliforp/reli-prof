@@ -11,10 +11,7 @@
 
 declare(strict_types=1);
 
-/**
- * @var string[] $traces
- */
+use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+/** @var CallTrace $call_trace */
 ?>
-<?php foreach ($traces as $trace): ?>
-<?= json_encode($trace, JSON_UNESCAPED_UNICODE), "\n" ?>
-<?php endforeach ?>
+<?= json_encode($call_trace, JSON_UNESCAPED_UNICODE) ?>

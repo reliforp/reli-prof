@@ -11,14 +11,9 @@
 
 declare(strict_types=1);
 
-return [
-    'paths' => [
-        'templates' => __DIR__ . '/../resources/templates',
-    ],
-    'output' => [
-        'template' => [
-            'default' => 'phpspy'
-            // 'default' => 'json_lines'
-        ],
-    ],
-];
+namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
+
+interface TemplatePathResolverInterface
+{
+    public function resolve(string $template_name): string;
+}
