@@ -11,16 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
-
+use PhpProfiler\Inspector\Output\TraceFormatter\Compat\CompatCallTraceFormatter;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
-final class TraceMessage
-{
-    public CallTrace $trace;
+/** @var CallTrace $call_trace */
 
-    public function __construct(CallTrace $trace)
-    {
-        $this->trace = $trace;
-    }
-}
+echo CompatCallTraceFormatter::getInstance()->format($call_trace) , PHP_EOL;

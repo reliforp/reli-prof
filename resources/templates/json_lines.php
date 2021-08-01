@@ -11,16 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
-
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
-
-final class TraceMessage
-{
-    public CallTrace $trace;
-
-    public function __construct(CallTrace $trace)
-    {
-        $this->trace = $trace;
-    }
-}
+/** @var CallTrace $call_trace */
+?>
+<?= json_encode($call_trace, JSON_UNESCAPED_UNICODE) ?>

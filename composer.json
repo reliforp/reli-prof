@@ -19,12 +19,15 @@
   "require": {
     "php": "^7.4|^8.0",
     "ext-ffi": "*",
-    "ext-pcntl": "*",
     "ext-filter": "*",
+    "ext-json": "*",
+    "ext-pcntl": "*",
     "symfony/console": "^5.0",
     "php-di/php-di": "^6.1",
     "amphp/parallel": "^1.4",
-    "amphp/amp": "^2.4"
+    "amphp/amp": "^2.4",
+    "hassankhan/config": "^2.1",
+    "sj-i/php-cast": "^1.0"
   },
   "require-dev": {
     "ext-posix": "*",

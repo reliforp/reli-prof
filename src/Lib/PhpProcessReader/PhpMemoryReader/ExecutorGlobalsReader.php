@@ -14,8 +14,13 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
 use FFI\CData;
+use PhpProfiler\Lib\ByteStream\CDataByteReader;
+use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
+use PhpProfiler\Lib\PhpProcessReader\CallFrame;
+use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
@@ -28,16 +33,21 @@ final class ExecutorGlobalsReader
     private MemoryReaderInterface $memory_reader;
     private ZendTypeReaderCreator $zend_type_reader_creator;
     private ?ZendTypeReader $zend_type_reader = null;
+    private LittleEndianReader $little_endian_reader;
 
     /**
      * ExecutorGlobalsReader constructor.
      * @param MemoryReaderInterface $memory_reader
      * @param ZendTypeReaderCreator $zend_type_reader_creator
      */
-    public function __construct(MemoryReaderInterface $memory_reader, ZendTypeReaderCreator $zend_type_reader_creator)
-    {
+    public function __construct(
+        MemoryReaderInterface $memory_reader,
+        ZendTypeReaderCreator $zend_type_reader_creator,
+        LittleEndianReader $little_endian_reader
+    ) {
         $this->memory_reader = $memory_reader;
         $this->zend_type_reader_creator = $zend_type_reader_creator;
+        $this->little_endian_reader = $little_endian_reader;
     }
 
     /**
@@ -72,7 +82,13 @@ final class ExecutorGlobalsReader
         /** @var \FFI\PhpInternals\zend_function $current_function */
         $current_function = $this->readCurrentFunction($pid, $php_version, $current_execute_data);
 
-        return $this->readFunctionName($pid, $php_version, $current_function);
+        return join(
+            '::',
+            array_filter(
+                $this->readFunctionName($pid, $php_version, $current_function),
+                fn (string $item) => strlen($item)
+            )
+        );
     }
 
     /**
@@ -141,13 +157,12 @@ final class ExecutorGlobalsReader
 
     /**
      * @param int $pid
-     * @param string $php_version
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @param CData $current_function
-     * @return string
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @return array{string, string}
      * @throws MemoryReaderException
      */
-    public function readFunctionName(int $pid, string $php_version, CData $current_function): string
+    public function readFunctionName(int $pid, string $php_version, CData $current_function): array
     {
         $function_name = '<main>';
         $class_name = '';
@@ -190,11 +205,11 @@ final class ExecutorGlobalsReader
                 /** @var \FFI\PhpInternals\zend_string $class_name_string */
                 $class_name_string = $this->getTypeReader($php_version)
                     ->readAs('zend_string', $current_class_name_zstring);
-                $class_name = \FFI::string($class_name_string->val) . '::';
+                $class_name = \FFI::string($class_name_string->val);
             }
         }
 
-        return $class_name . $function_name;
+        return [$class_name, $function_name];
     }
 
     /**
@@ -229,11 +244,11 @@ final class ExecutorGlobalsReader
      * @param string $php_version
      * @param int $executor_globals_address
      * @param int $depth
-     * @return string[]
+     * @return CallTrace
      * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
-    public function readCallTrace(int $pid, string $php_version, int $executor_globals_address, int $depth): array
+    public function readCallTrace(int $pid, string $php_version, int $executor_globals_address, int $depth): CallTrace
     {
         /** @var \FFI\PhpInternals\zend_executor_globals $eg */
         $eg = $this->readExecutorGlobals($pid, $php_version, $executor_globals_address);
@@ -255,15 +270,21 @@ final class ExecutorGlobalsReader
         foreach ($stack as $current_execute_data) {
             /** @var \FFI\PhpInternals\zend_function $current_function */
             $current_function = $this->readCurrentFunction($pid, $php_version, $current_execute_data);
-            $lineno = -1;
+            $opline = null;
             $file = $this->readFunctionFile($pid, $php_version, $current_function);
             if ($file !== '<internal>') {
-                $lineno = $this->readOpline($pid, $current_execute_data);
+                $opline = $this->readOpline($pid, $current_execute_data);
             }
-            $result[] = $this->readFunctionName($pid, $php_version, $current_function) . " {$file}({$lineno})";
+            [$class_name, $function_name] = $this->readFunctionName($pid, $php_version, $current_function);
+            $result[] = new CallFrame(
+                $class_name,
+                $function_name,
+                $file,
+                $opline
+            );
         }
 
-        return $result;
+        return new CallTrace(...$result);
     }
 
     /**
@@ -295,10 +316,10 @@ final class ExecutorGlobalsReader
     /**
      * @param int $pid
      * @param CData $current_execute_data
-     * @return int
+     * @return Opline|null
      * @throws MemoryReaderException
      */
-    public function readOpline(int $pid, CData $current_execute_data): int
+    public function readOpline(int $pid, CData $current_execute_data): ?Opline
     {
         /**
          * @psalm-var \FFI\CPointer $opline_addr
@@ -306,16 +327,34 @@ final class ExecutorGlobalsReader
          */
         $opline_addr = \FFI::cast('long', $current_execute_data->opline);
         if ($opline_addr->cdata == 0) {
-            return -1;
+            return null;
         }
         $opline_raw = $this->memory_reader->read(
             $pid,
-            $opline_addr->cdata + 24,
-            4
+            $opline_addr->cdata + 8,
+            24
         );
-        return $opline_raw[0]
-            + ($opline_raw[1] << 8)
-            + ($opline_raw[2] << 16)
-            + ($opline_raw[3] << 24);
+        $cdata_reader = new CDataByteReader($opline_raw);
+        $op1 = $this->little_endian_reader->read32($cdata_reader, 0);
+        $op2 = $this->little_endian_reader->read32($cdata_reader, 4);
+        $result = $this->little_endian_reader->read32($cdata_reader, 8);
+        $extended_value = $this->little_endian_reader->read32($cdata_reader, 12);
+        $lineno = $this->little_endian_reader->read32($cdata_reader, 16);
+        $opcode = $this->little_endian_reader->read8($cdata_reader, 20);
+        $op1_type = $this->little_endian_reader->read8($cdata_reader, 21);
+        $op2_type = $this->little_endian_reader->read8($cdata_reader, 22);
+        $result_type = $this->little_endian_reader->read8($cdata_reader, 23);
+
+        return new Opline(
+            $op1,
+            $op2,
+            $result,
+            $extended_value,
+            $lineno,
+            $opcode,
+            $op1_type,
+            $op2_type,
+            $result_type
+        );
     }
 }

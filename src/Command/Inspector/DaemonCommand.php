@@ -20,9 +20,12 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
+use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
+use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TemplatedTraceFormatterFactory;
 use PhpProfiler\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
+use PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings\TemplateSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use PhpProfiler\Lib\Console\EchoBackCanceller;
 use Symfony\Component\Console\Command\Command;
@@ -39,6 +42,8 @@ final class DaemonCommand extends Command
     private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input;
     private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
     private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
+    private TemplateSettingsFromConsoleInput $template_settings_from_console_input;
+    private TemplatedTraceFormatterFactory $templated_trace_formatter_factory;
 
     public function __construct(
         PhpSearcherContextCreator $php_searcher_context_creator,
@@ -46,7 +51,9 @@ final class DaemonCommand extends Command
         DaemonSettingsFromConsoleInput $daemon_settings_from_console_input,
         GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
         TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
-        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
+        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
+        TemplateSettingsFromConsoleInput $template_settings_from_console_input,
+        TemplatedTraceFormatterFactory $template_factory,
     ) {
         $this->php_reader_context_creator = $php_reader_context_creator;
         $this->php_searcher_context_creator = $php_searcher_context_creator;
@@ -54,6 +61,8 @@ final class DaemonCommand extends Command
         $this->get_trace_settings_from_console_input = $get_trace_settings_from_console_input;
         $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
         $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
+        $this->template_settings_from_console_input = $template_settings_from_console_input;
+        $this->templated_trace_formatter_factory = $template_factory;
         parent::__construct();
     }
 
@@ -66,6 +75,7 @@ final class DaemonCommand extends Command
         $this->get_trace_settings_from_console_input->setOptions($this);
         $this->trace_loop_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
+        $this->template_settings_from_console_input->setOptions($this);
     }
 
     /**
@@ -79,6 +89,8 @@ final class DaemonCommand extends Command
         $daemon_settings = $this->daemon_settings_from_console_input->createSettings($input);
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
+        $template_settings = $this->template_settings_from_console_input->createSettings($input);
+        $formatter = $this->templated_trace_formatter_factory->createFromSettings($template_settings);
 
         $searcher_context = $this->php_searcher_context_creator->create();
         Promise\wait($searcher_context->start());
@@ -112,7 +124,7 @@ final class DaemonCommand extends Command
                 }
             }
         );
-        Loop::run(function () use ($dispatch_table, $searcher_context, $worker_pool, $output) {
+        Loop::run(function () use ($dispatch_table, $searcher_context, $worker_pool, $output, $formatter) {
             $promises = [];
             $promises[] = call(function () use ($searcher_context, $dispatch_table) {
                 while (1) {
@@ -122,11 +134,11 @@ final class DaemonCommand extends Command
             });
             foreach ($worker_pool->getWorkers() as $reader) {
                 $promises[] = call(
-                    function () use ($reader, $dispatch_table, $output) {
+                    function () use ($reader, $dispatch_table, $output, $formatter) {
                         while (1) {
                             $result = yield $reader->receiveTraceOrDetachWorker();
                             if ($result instanceof TraceMessage) {
-                                $this->outputTrace($output, $result);
+                                $this->outputTrace($output, $formatter, $result);
                             } else {
                                 $dispatch_table->releaseOne($result->pid);
                             }
@@ -140,10 +152,13 @@ final class DaemonCommand extends Command
         return 0;
     }
 
-    private function outputTrace(OutputInterface $output, TraceMessage $message): void
-    {
-        $output->writeln(
-            join(PHP_EOL, $message->trace) . PHP_EOL
+    private function outputTrace(
+        OutputInterface $output,
+        CallTraceFormatter $formatter,
+        TraceMessage $message
+    ): void {
+        $output->write(
+            $formatter->format($message->trace) . PHP_EOL
         );
     }
 }

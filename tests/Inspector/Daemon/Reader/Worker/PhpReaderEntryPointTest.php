@@ -25,6 +25,8 @@ use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use PhpProfiler\Lib\PhpProcessReader\CallFrame;
+use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 class PhpReaderEntryPointTest extends TestCase
@@ -62,29 +64,29 @@ class PhpReaderEntryPointTest extends TestCase
             )
             ->andReturns(
                 (function () {
-                    yield new TraceMessage(['abc']);
-                    yield new TraceMessage(['def']);
-                    yield new TraceMessage(['ghi']);
+                    yield $this->getTestTrace('abc');
+                    yield $this->getTestTrace('def');
+                    yield $this->getTestTrace('ghi');
                 })()
             )
         ;
         $protocol->expects()
             ->sendTrace()
-            ->with(Matchers::equalTo(new TraceMessage(['abc'])))
+            ->with(Matchers::equalTo($this->getTestTrace('abc')))
             ->andReturns(
                 new Success(3),
             )
         ;
         $protocol->expects()
             ->sendTrace()
-            ->with(Matchers::equalTo(new TraceMessage(['def'])))
+            ->with(Matchers::equalTo($this->getTestTrace('def')))
             ->andReturns(
                 new Success(4),
             )
         ;
         $protocol->expects()
             ->sendTrace()
-            ->with(Matchers::equalTo(new TraceMessage(['ghi'])))
+            ->with(Matchers::equalTo($this->getTestTrace('ghi')))
             ->andReturns(
                 new Success(5),
             )
@@ -146,5 +148,14 @@ class PhpReaderEntryPointTest extends TestCase
             $result = $value;
         });
         $this->assertSame(6, $result);
+    }
+
+    private function getTestTrace(string $function): TraceMessage
+    {
+        return new TraceMessage(
+            new CallTrace(
+                new CallFrame('class', $function, 'file', null)
+            )
+        );
     }
 }

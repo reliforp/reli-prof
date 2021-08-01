@@ -11,16 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
+namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
 
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
-
-final class TraceMessage
+interface TemplatePathResolverInterface
 {
-    public CallTrace $trace;
-
-    public function __construct(CallTrace $trace)
-    {
-        $this->trace = $trace;
-    }
+    public function resolve(string $template_name): string;
 }

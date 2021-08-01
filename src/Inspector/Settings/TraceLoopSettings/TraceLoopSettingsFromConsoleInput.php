@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Settings\TraceLoopSettings;
 
+use PhpCast\NullableCast;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -48,7 +49,7 @@ final class TraceLoopSettingsFromConsoleInput
      */
     public function createSettings(InputInterface $input): TraceLoopSettings
     {
-        $sleep_nano_seconds = $input->getOption('sleep-ns');
+        $sleep_nano_seconds = NullableCast::toString($input->getOption('sleep-ns'));
         if (is_null($sleep_nano_seconds)) {
             $sleep_nano_seconds = TraceLoopSettings::SLEEP_NANO_SECONDS_DEFAULT;
         }
@@ -59,7 +60,7 @@ final class TraceLoopSettingsFromConsoleInput
             );
         }
 
-        $max_retries = $input->getOption('max-retries');
+        $max_retries = NullableCast::toString($input->getOption('max-retries'));
         if (is_null($max_retries)) {
             $max_retries = TraceLoopSettings::MAX_RETRY_DEFAULT;
         }

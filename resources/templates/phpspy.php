@@ -11,16 +11,8 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
-
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
-
-final class TraceMessage
-{
-    public CallTrace $trace;
-
-    public function __construct(CallTrace $trace)
-    {
-        $this->trace = $trace;
-    }
-}
+/** @var CallTrace $call_trace */
+?><?php foreach ($call_trace->call_frames as $depth => $frame): ?>
+<?= $depth ?> <?= $frame->getFullyQualifiedFunctionName() ?> <?= $frame->file_name ?>:<?= $frame->opline->lineno, "\n" ?>
+<?php endforeach ?>

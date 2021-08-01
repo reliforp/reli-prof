@@ -11,16 +11,8 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
-
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
-final class TraceMessage
-{
-    public CallTrace $trace;
+/** @var CallTrace $call_trace */
 
-    public function __construct(CallTrace $trace)
-    {
-        $this->trace = $trace;
-    }
-}
+echo $call_trace->call_frames[0]->getFullyQualifiedFunctionName();

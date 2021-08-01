@@ -11,16 +11,17 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
+namespace PhpProfiler\Lib\PhpProcessReader;
 
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
-
-final class TraceMessage
+/** @psalm-immutable */
+final class CallTrace
 {
-    public CallTrace $trace;
+    /** @var CallFrame[] */
+    public array $call_frames;
 
-    public function __construct(CallTrace $trace)
-    {
-        $this->trace = $trace;
+    public function __construct(
+        CallFrame ...$call_frames
+    ) {
+        $this->call_frames = $call_frames;
     }
 }
