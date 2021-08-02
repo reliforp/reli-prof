@@ -34,26 +34,17 @@ final class PhpGlobalsFinder
 {
     private ?int $tsrm_ls_cache = null;
     private bool $tsrm_ls_cache_not_found = false;
-    private IntegerByteSequenceReader $integer_reader;
-    private PhpSymbolReaderCreator $php_symbol_reader_creator;
     /** @var ProcessSymbolReaderInterface[] */
     private array $php_symbol_reader_cache = [];
-    private MemoryReaderInterface $memory_reader;
 
     /**
      * PhpGlobalsFinder constructor.
-     * @param PhpSymbolReaderCreator $php_symbol_reader_creator
-     * @param IntegerByteSequenceReader $integer_reader
-     * @param MemoryReaderInterface $memory_reader
      */
     public function __construct(
-        PhpSymbolReaderCreator $php_symbol_reader_creator,
-        IntegerByteSequenceReader $integer_reader,
-        MemoryReaderInterface $memory_reader
+        private PhpSymbolReaderCreator $php_symbol_reader_creator,
+        private IntegerByteSequenceReader $integer_reader,
+        private MemoryReaderInterface $memory_reader
     ) {
-        $this->php_symbol_reader_creator = $php_symbol_reader_creator;
-        $this->integer_reader = $integer_reader;
-        $this->memory_reader = $memory_reader;
     }
 
     /**

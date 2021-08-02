@@ -23,11 +23,9 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterfac
 
 final class PhpReaderWorkerProtocol implements PhpReaderWorkerProtocolInterface
 {
-    private Channel $channel;
-
-    public function __construct(Channel $channel)
-    {
-        $this->channel = $channel;
+    public function __construct(
+        private Channel $channel
+    ) {
     }
 
     /** @return static */

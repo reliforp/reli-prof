@@ -23,15 +23,12 @@ use SplFileInfo;
  */
 final class CommandEnumerator implements IteratorAggregate
 {
-    private FilesystemIterator $command_files_iterator;
-
     /**
      * CommandEnumerator constructor.
-     * @param FilesystemIterator $command_files_iterator
      */
-    public function __construct(FilesystemIterator $command_files_iterator)
-    {
-        $this->command_files_iterator = $command_files_iterator;
+    public function __construct(
+        private FilesystemIterator $command_files_iterator
+    ) {
     }
 
     /**

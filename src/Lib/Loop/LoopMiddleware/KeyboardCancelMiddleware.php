@@ -18,22 +18,16 @@ use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
 
 final class KeyboardCancelMiddleware implements LoopMiddlewareInterface
 {
-    private LoopMiddlewareInterface $chain;
-    private string $cancel_key;
     /** @var resource */
     private $keyboard_input;
-    private EchoBackCanceller $echo_back_canceller;
 
     public function __construct(
-        string $cancel_key,
-        EchoBackCanceller $echo_back_canceller,
-        LoopMiddlewareInterface $chain
+        private string $cancel_key,
+        private EchoBackCanceller $echo_back_canceller,
+        private LoopMiddlewareInterface $chain
     ) {
-        $this->chain = $chain;
         $this->keyboard_input = fopen('php://stdin', 'r');
         stream_set_blocking($this->keyboard_input, false);
-        $this->cancel_key = $cancel_key;
-        $this->echo_back_canceller = $echo_back_canceller;
     }
 
     public function invoke(): bool

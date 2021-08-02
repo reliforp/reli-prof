@@ -18,15 +18,10 @@ use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
 final class TemplatedCallTraceFormatter implements CallTraceFormatter
 {
-    private TemplatePathResolverInterface $template_path_resolver;
-    private string $template;
-
     public function __construct(
-        TemplatePathResolverInterface $template_path_resolver,
-        string $template
+        private TemplatePathResolverInterface $template_path_resolver,
+        private string $template
     ) {
-        $this->template_path_resolver = $template_path_resolver;
-        $this->template = $template;
     }
 
     public function format(CallTrace $call_trace): string

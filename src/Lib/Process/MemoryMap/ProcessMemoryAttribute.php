@@ -19,23 +19,14 @@ namespace PhpProfiler\Lib\Process\MemoryMap;
  */
 final class ProcessMemoryAttribute
 {
-    public bool $read;
-    public bool $write;
-    public bool $execute;
-    public bool $protected;
-
     /**
      * ProcessMemoryAttribute constructor.
-     * @param bool $read
-     * @param bool $write
-     * @param bool $execute
-     * @param bool $protected
      */
-    public function __construct(bool $read, bool $write, bool $execute, bool $protected)
-    {
-        $this->read = $read;
-        $this->write = $write;
-        $this->execute = $execute;
-        $this->protected = $protected;
+    public function __construct(
+        public bool $read,
+        public bool $write,
+        public bool $execute,
+        public bool $protected
+    ) {
     }
 }

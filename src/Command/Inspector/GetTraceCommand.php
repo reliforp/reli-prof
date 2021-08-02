@@ -33,36 +33,17 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class GetTraceCommand extends Command
 {
-    private PhpGlobalsFinder $php_globals_finder;
-    private ExecutorGlobalsReader $executor_globals_reader;
-    private TraceLoopProvider $loop_provider;
-    private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input;
-    private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
-    private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input;
-    private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
-    private TemplateSettingsFromConsoleInput $template_settings_from_console_input;
-    private TemplatedTraceFormatterFactory $templated_trace_formatter_factory;
-
     public function __construct(
-        PhpGlobalsFinder $php_globals_finder,
-        ExecutorGlobalsReader $executor_globals_reader,
-        TraceLoopProvider $loop_provider,
-        GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
-        TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
-        TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
-        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
-        TemplateSettingsFromConsoleInput $template_settings_from_console_input,
-        TemplatedTraceFormatterFactory $templated_trace_formatter_factory
+        private PhpGlobalsFinder $php_globals_finder,
+        private ExecutorGlobalsReader $executor_globals_reader,
+        private TraceLoopProvider $loop_provider,
+        private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
+        private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
+        private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
+        private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
+        private TemplateSettingsFromConsoleInput $template_settings_from_console_input,
+        private TemplatedTraceFormatterFactory $templated_trace_formatter_factory,
     ) {
-        $this->php_globals_finder = $php_globals_finder;
-        $this->executor_globals_reader = $executor_globals_reader;
-        $this->loop_provider = $loop_provider;
-        $this->get_trace_settings_from_console_input = $get_trace_settings_from_console_input;
-        $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
-        $this->target_process_settings_from_console_input = $target_process_settings_from_console_input;
-        $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
-        $this->template_settings_from_console_input = $template_settings_from_console_input;
-        $this->templated_trace_formatter_factory = $templated_trace_formatter_factory;
         parent::__construct();
     }
 

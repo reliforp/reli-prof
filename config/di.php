@@ -35,7 +35,7 @@ use function DI\autowire;
 return [
     MemoryReaderInterface::class => autowire(MemoryReader::class),
     ZendTypeReader::class => function () {
-        return new ZendTypeReader(ZendTypeReader::V74);
+        return new ZendTypeReader(ZendTypeReader::V80);
     },
     SymbolResolverCreatorInterface::class => autowire(Elf64SymbolResolverCreator::class),
     FileReaderInterface::class => autowire(CatFileReader::class),

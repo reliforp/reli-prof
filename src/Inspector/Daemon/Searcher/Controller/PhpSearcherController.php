@@ -21,16 +21,13 @@ use PhpProfiler\Lib\Amphp\ContextInterface;
 
 final class PhpSearcherController implements PhpSearcherControllerInterface
 {
-    /** @var ContextInterface<PhpSearcherControllerProtocolInterface> $context */
-    private ContextInterface $context;
-
     /**
      * PhpSearcherContext constructor.
      * @param ContextInterface<PhpSearcherControllerProtocolInterface> $context
      */
-    public function __construct(ContextInterface $context)
-    {
-        $this->context = $context;
+    public function __construct(
+        private ContextInterface $context
+    ) {
     }
 
     /**

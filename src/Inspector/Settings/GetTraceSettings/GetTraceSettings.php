@@ -15,14 +15,11 @@ namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
 
 final class GetTraceSettings
 {
-    public int $depth;
-
     /**
      * GetTraceSettings constructor.
-     * @param int $depth
      */
-    public function __construct(int $depth)
-    {
-        $this->depth = $depth;
+    public function __construct(
+        public int $depth
+    ) {
     }
 }

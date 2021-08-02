@@ -19,18 +19,13 @@ final class UnrelocatedProcessMemoryByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
 
-    private ByteReaderInterface $byte_reader;
-    private ProcessModuleMemoryMapInterface $module_memory_map;
-
     /**
      * UnrelocatedProcessMemoryByteReader constructor.
-     * @param ByteReaderInterface $byte_reader
-     * @param ProcessModuleMemoryMapInterface $module_memory_map
      */
-    public function __construct(ByteReaderInterface $byte_reader, ProcessModuleMemoryMapInterface $module_memory_map)
-    {
-        $this->byte_reader = $byte_reader;
-        $this->module_memory_map = $module_memory_map;
+    public function __construct(
+        private ByteReaderInterface $byte_reader,
+        private ProcessModuleMemoryMapInterface $module_memory_map
+    ) {
     }
 
     public function offsetExists($offset): bool

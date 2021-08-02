@@ -22,8 +22,6 @@ use PhpProfiler\Lib\Process\RegisterReader\X64RegisterReader;
  */
 final class X64LinuxThreadPointerRetriever implements ThreadPointerRetrieverInterface
 {
-    private X64RegisterReader $register_reader;
-
     public static function createDefault(): self
     {
         return new self(
@@ -33,11 +31,10 @@ final class X64LinuxThreadPointerRetriever implements ThreadPointerRetrieverInte
 
     /**
      * X64ThreadPointerFinder constructor.
-     * @param X64RegisterReader $register_reader
      */
-    public function __construct(X64RegisterReader $register_reader)
-    {
-        $this->register_reader = $register_reader;
+    public function __construct(
+        private X64RegisterReader $register_reader,
+    ) {
     }
 
     /**

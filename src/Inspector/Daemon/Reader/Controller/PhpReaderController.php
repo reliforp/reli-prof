@@ -26,16 +26,13 @@ use PhpProfiler\Lib\Amphp\ContextInterface;
 
 final class PhpReaderController implements PhpReaderControllerInterface
 {
-    /** @var ContextInterface<PhpReaderControllerProtocolInterface> */
-    private ContextInterface $context;
-
     /**
      * PhpReaderContext constructor.
      * @param ContextInterface<PhpReaderControllerProtocolInterface> $context
      */
-    public function __construct(ContextInterface $context)
-    {
-        $this->context = $context;
+    public function __construct(
+        private ContextInterface $context
+    ) {
     }
 
     public function start(): Promise

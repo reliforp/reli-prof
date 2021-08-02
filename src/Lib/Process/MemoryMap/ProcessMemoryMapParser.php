@@ -21,15 +21,12 @@ use PhpProfiler\Lib\String\LineFetcher;
  */
 final class ProcessMemoryMapParser
 {
-    private LineFetcher $line_fetcher;
-
     /**
      * ProcessMemoryMapParser constructor.
-     * @param LineFetcher $line_fetcher
      */
-    public function __construct(LineFetcher $line_fetcher)
-    {
-        $this->line_fetcher = $line_fetcher;
+    public function __construct(
+        private LineFetcher $line_fetcher
+    ) {
     }
 
     /**

@@ -18,10 +18,6 @@ use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
 
 final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
 {
-    private LoopMiddlewareInterface $chain;
-    /** @var array<int, class-string<Exception>> */
-    private array $exception_names;
-    private int $max_retry;
     private int $current_retry_count = 0;
 
     /**
@@ -30,11 +26,11 @@ final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
      * @param array<int, class-string<Exception>> $exception_names
      * @param LoopMiddlewareInterface $chain
      */
-    public function __construct(int $max_retry, array $exception_names, LoopMiddlewareInterface $chain)
-    {
-        $this->max_retry = $max_retry;
-        $this->exception_names = $exception_names;
-        $this->chain = $chain;
+    public function __construct(
+        private int $max_retry,
+        private array $exception_names,
+        private LoopMiddlewareInterface $chain,
+    ) {
     }
 
     public function invoke(): bool

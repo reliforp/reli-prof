@@ -19,16 +19,12 @@ namespace PhpProfiler\Lib\Elf\Structure\Elf64;
  */
 final class Elf64StringTable
 {
-    /** @var string */
-    public string $raw_data;
-
     /**
      * Elf64StringTable constructor.
-     * @param string $raw_data
      */
-    public function __construct(string $raw_data)
-    {
-        $this->raw_data = $raw_data;
+    public function __construct(
+        private string $raw_data
+    ) {
     }
 
     public function lookup(int $start_offset): string

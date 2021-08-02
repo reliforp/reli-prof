@@ -30,29 +30,15 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
  */
 final class LibThreadDbTlsFinder implements TlsFinderInterface
 {
-    private ProcessSymbolReaderInterface $symbol_reader;
-    private ThreadPointerRetrieverInterface $thread_pointer_retriever;
-    private MemoryReaderInterface $memory_reader;
-    private IntegerByteSequenceReader $integer_reader;
-
     /**
      * LibThreadDbTlsFinder constructor.
-     *
-     * @param ProcessSymbolReaderInterface $symbol_reader
-     * @param ThreadPointerRetrieverInterface $thread_pointer_retriever
-     * @param MemoryReaderInterface $memory_reader
-     * @param IntegerByteSequenceReader $integer_reader
      */
     public function __construct(
-        ProcessSymbolReaderInterface $symbol_reader,
-        ThreadPointerRetrieverInterface $thread_pointer_retriever,
-        MemoryReaderInterface $memory_reader,
-        IntegerByteSequenceReader $integer_reader
+        private ProcessSymbolReaderInterface $symbol_reader,
+        private ThreadPointerRetrieverInterface $thread_pointer_retriever,
+        private MemoryReaderInterface $memory_reader,
+        private IntegerByteSequenceReader $integer_reader,
     ) {
-        $this->symbol_reader = $symbol_reader;
-        $this->thread_pointer_retriever = $thread_pointer_retriever;
-        $this->memory_reader = $memory_reader;
-        $this->integer_reader = $integer_reader;
     }
 
     /**

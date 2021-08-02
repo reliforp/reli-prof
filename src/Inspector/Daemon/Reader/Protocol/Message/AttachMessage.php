@@ -15,10 +15,8 @@ namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
 
 final class AttachMessage
 {
-    public int $pid;
-
-    public function __construct(int $pid)
-    {
-        $this->pid = $pid;
+    public function __construct(
+        public int $pid
+    ) {
     }
 }

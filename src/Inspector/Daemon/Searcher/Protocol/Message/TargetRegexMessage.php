@@ -15,14 +15,11 @@ namespace PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message;
 
 final class TargetRegexMessage
 {
-    public string $regex;
-
     /**
      * TargetRegexMessage constructor.
-     * @param string $regex
      */
-    public function __construct(string $regex)
-    {
-        $this->regex = $regex;
+    public function __construct(
+        public string $regex
+    ) {
     }
 }

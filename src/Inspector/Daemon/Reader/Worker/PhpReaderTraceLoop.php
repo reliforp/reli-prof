@@ -24,18 +24,11 @@ use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 
 final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
 {
-    private PhpGlobalsFinder $php_globals_finder;
-    private ExecutorGlobalsReader $executor_globals_reader;
-    private ReaderLoopProvider $reader_loop_provider;
-
     public function __construct(
-        PhpGlobalsFinder $php_globals_finder,
-        ExecutorGlobalsReader $executor_globals_reader,
-        ReaderLoopProvider $reader_loop_provider
+        private PhpGlobalsFinder $php_globals_finder,
+        private ExecutorGlobalsReader $executor_globals_reader,
+        private ReaderLoopProvider $reader_loop_provider
     ) {
-        $this->php_globals_finder = $php_globals_finder;
-        $this->executor_globals_reader = $executor_globals_reader;
-        $this->reader_loop_provider = $reader_loop_provider;
     }
 
     /**

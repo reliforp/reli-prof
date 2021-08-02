@@ -15,17 +15,12 @@ namespace PhpProfiler\Inspector\Settings\DaemonSettings;
 
 final class DaemonSettings
 {
-    public string $target_regex;
-    public int $threads;
-
     /**
      * DaemonSettings constructor.
-     * @param string $target_regex
-     * @param int $threads
      */
-    public function __construct(string $target_regex, int $threads)
-    {
-        $this->target_regex = $target_regex;
-        $this->threads = $threads;
+    public function __construct(
+        public string $target_regex,
+        public int $threads
+    ) {
     }
 }

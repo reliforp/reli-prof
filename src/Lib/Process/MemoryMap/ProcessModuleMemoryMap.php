@@ -19,8 +19,6 @@ namespace PhpProfiler\Lib\Process\MemoryMap;
  */
 final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
 {
-    /** @var ProcessMemoryArea[] */
-    private array $memory_areas;
     private ?int $base_address = null;
     /** @var array<int,int>|null  */
     private ?array $sorted_offset_to_memory_map = null;
@@ -29,9 +27,9 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
      * ProcessModuleMemoryMap constructor.
      * @param ProcessMemoryArea[] $memory_areas
      */
-    public function __construct(array $memory_areas)
-    {
-        $this->memory_areas = $memory_areas;
+    public function __construct(
+        private array $memory_areas
+    ) {
     }
 
     public function getBaseAddress(): int

@@ -23,26 +23,17 @@ final class ProcessMemoryByteReader implements ByteReaderInterface
 
     private const PAGE_SIZE = 8192;
 
-    private MemoryReaderInterface $memory_reader;
-    private int $pid;
-    private ProcessModuleMemoryMapInterface $memory_map;
     /** @var CDataByteReader[] */
     private array $pages = [];
 
     /**
      * ProcessMemoryByteReader constructor.
-     * @param MemoryReaderInterface $memory_reader
-     * @param int $pid
-     * @param ProcessModuleMemoryMapInterface $memory_map
      */
     public function __construct(
-        MemoryReaderInterface $memory_reader,
-        int $pid,
-        ProcessModuleMemoryMapInterface $memory_map
+        private MemoryReaderInterface $memory_reader,
+        private int $pid,
+        private ProcessModuleMemoryMapInterface $memory_map
     ) {
-        $this->memory_reader = $memory_reader;
-        $this->pid = $pid;
-        $this->memory_map = $memory_map;
     }
 
     public function offsetExists($offset): bool

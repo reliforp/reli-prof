@@ -49,36 +49,17 @@ final class Elf64SymbolTableEntry
     public const STV_SINGLETON = 5;
     public const STV_ELIMINATE = 6;
 
-    public int $st_name; // Elf64_Word
-    public int $st_info; // unsigned char
-    public int $st_other; // unsigned char
-    public int $st_shndx; // Elf64_Half
-    public UInt64 $st_value; // Elf64_Addr
-    public UInt64 $st_size; // Elf64_Xword
-
     /**
      * Elf64SymbolTableEntry constructor.
-     * @param int $st_name
-     * @param int $st_info
-     * @param int $st_other
-     * @param int $st_shndx
-     * @param UInt64 $st_value
-     * @param UInt64 $st_size
      */
     public function __construct(
-        int $st_name,
-        int $st_info,
-        int $st_other,
-        int $st_shndx,
-        UInt64 $st_value,
-        UInt64 $st_size
+        public int $st_name, // Elf64_Word
+        public int $st_info, // unsigned char
+        public int $st_other, // unsigned char
+        public int $st_shndx, // Elf64_Half
+        public UInt64 $st_value, // Elf64_Addr
+        public UInt64 $st_size, // Elf64_Xword
     ) {
-        $this->st_name = $st_name;
-        $this->st_info = $st_info;
-        $this->st_other = $st_other;
-        $this->st_shndx = $st_shndx;
-        $this->st_value = $st_value;
-        $this->st_size = $st_size;
     }
 
     /**

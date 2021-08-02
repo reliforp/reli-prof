@@ -33,15 +33,12 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
  */
 final class Elf64Parser
 {
-    private IntegerByteSequenceReader $integer_reader;
-
     /**
      * Elf64Parser constructor.
-     * @param IntegerByteSequenceReader $integer_reader
      */
-    public function __construct(IntegerByteSequenceReader $integer_reader)
-    {
-        $this->integer_reader = $integer_reader;
+    public function __construct(
+        private IntegerByteSequenceReader $integer_reader
+    ) {
     }
 
     /**

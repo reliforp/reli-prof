@@ -23,15 +23,10 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
 final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 {
-    private PhpReaderTraceLoopInterface $trace_loop;
-    private PhpReaderWorkerProtocolInterface $protocol;
-
     public function __construct(
-        PhpReaderTraceLoopInterface $trace_loop,
-        PhpReaderWorkerProtocolInterface $protocol
+        private PhpReaderTraceLoopInterface $trace_loop,
+        private PhpReaderWorkerProtocolInterface $protocol
     ) {
-        $this->trace_loop = $trace_loop;
-        $this->protocol = $protocol;
     }
 
     public function run(): \Generator

@@ -22,15 +22,10 @@ use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
 
 final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
 {
-    private PhpSearcherWorkerProtocolInterface $protocol;
-    private ProcessSearcherInterface $process_searcher;
-
     public function __construct(
-        PhpSearcherWorkerProtocolInterface $protocol,
-        ProcessSearcherInterface $process_searcher
+        private PhpSearcherWorkerProtocolInterface $protocol,
+        private ProcessSearcherInterface $process_searcher
     ) {
-        $this->protocol = $protocol;
-        $this->process_searcher = $process_searcher;
     }
 
     public function run(): \Generator

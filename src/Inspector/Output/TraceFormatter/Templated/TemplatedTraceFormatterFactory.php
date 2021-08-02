@@ -17,14 +17,12 @@ use PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings\TemplateSetti
 
 final class TemplatedTraceFormatterFactory
 {
-    private TemplatePathResolverInterface $template_path_resolver;
     /** @var array<string, TemplatedCallTraceFormatter> */
     private array $cache = [];
 
     public function __construct(
-        TemplatePathResolverInterface $template_path_resolver
+        private TemplatePathResolverInterface $template_path_resolver
     ) {
-        $this->template_path_resolver = $template_path_resolver;
     }
 
     public function createFromSettings(TemplateSettings $settings): TemplatedCallTraceFormatter

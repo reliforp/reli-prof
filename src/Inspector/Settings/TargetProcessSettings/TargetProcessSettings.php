@@ -15,14 +15,11 @@ namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
 
 final class TargetProcessSettings
 {
-    public int $pid;
-
     /**
      * GetTraceSettings constructor.
-     * @param int $pid
      */
-    public function __construct(int $pid)
-    {
-        $this->pid = $pid;
+    public function __construct(
+        public int $pid
+    ) {
     }
 }

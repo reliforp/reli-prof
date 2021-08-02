@@ -21,9 +21,6 @@ use PhpProfiler\Lib\String\LineFetcher;
  */
 final class ProcessMemoryMapCreator
 {
-    private ProcessMemoryMapReader $memory_map_reader;
-    private ProcessMemoryMapParser $memory_map_parser;
-
     /**
      * @return static
      */
@@ -37,13 +34,11 @@ final class ProcessMemoryMapCreator
 
     /**
      * ProcessMemoryMapCreator constructor.
-     * @param ProcessMemoryMapReader $memory_map_reader
-     * @param ProcessMemoryMapParser $memory_map_parser
      */
-    public function __construct(ProcessMemoryMapReader $memory_map_reader, ProcessMemoryMapParser $memory_map_parser)
-    {
-        $this->memory_map_reader = $memory_map_reader;
-        $this->memory_map_parser = $memory_map_parser;
+    public function __construct(
+        private ProcessMemoryMapReader $memory_map_reader,
+        private ProcessMemoryMapParser $memory_map_parser
+    ) {
     }
 
     /**

@@ -38,17 +38,15 @@ final class ZendTypeReader
         self::V80,
     ];
 
-    private string $php_version;
     private ?FFI $ffi = null;
 
     /**
      * ZendTypeReader constructor.
-     * @param string $php_version
-     * @psalm-param value-of<self::ALL_SUPPORTED_VERSIONS> $php_version
+     * @param value-of<self::ALL_SUPPORTED_VERSIONS> $php_version
      */
-    public function __construct(string $php_version)
-    {
-        $this->php_version = $php_version;
+    public function __construct(
+        private string $php_version
+    ) {
     }
 
     /**

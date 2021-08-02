@@ -30,27 +30,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class GetCurrentFunctionNameCommand extends Command
 {
-    private PhpGlobalsFinder $php_globals_finder;
-    private ExecutorGlobalsReader $executor_globals_reader;
-    private TraceLoopProvider $loop_provider;
-    private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input;
-    private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input;
-    private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input;
-
     public function __construct(
-        PhpGlobalsFinder $php_globals_finder,
-        ExecutorGlobalsReader $executor_globals_reader,
-        TraceLoopProvider $loop_provider,
-        TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
-        TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
-        TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
+        private PhpGlobalsFinder $php_globals_finder,
+        private ExecutorGlobalsReader $executor_globals_reader,
+        private TraceLoopProvider $loop_provider,
+        private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
+        private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
+        private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
     ) {
-        $this->php_globals_finder = $php_globals_finder;
-        $this->executor_globals_reader = $executor_globals_reader;
-        $this->loop_provider = $loop_provider;
-        $this->target_php_settings_from_console_input = $target_php_settings_from_console_input;
-        $this->target_process_settings_from_console_input = $target_process_settings_from_console_input;
-        $this->trace_loop_settings_from_console_input = $trace_loop_settings_from_console_input;
         parent::__construct();
     }
 

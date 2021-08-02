@@ -19,18 +19,13 @@ namespace PhpProfiler\Lib\Integer;
  */
 final class UInt64
 {
-    public int $hi;
-    public int $lo;
-
     /**
      * UInt64 constructor.
-     * @param int $hi
-     * @param int $lo
      */
-    public function __construct(int $hi, int $lo)
-    {
-        $this->hi = $hi;
-        $this->lo = $lo;
+    public function __construct(
+        public int $hi,
+        public int $lo
+    ) {
     }
 
     /**

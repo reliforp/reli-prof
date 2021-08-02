@@ -19,17 +19,10 @@ use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 final class SetSettingsMessage
 {
-    public TargetPhpSettings $target_php_settings;
-    public TraceLoopSettings $trace_loop_settings;
-    public GetTraceSettings $get_trace_settings;
-
     public function __construct(
-        TargetPhpSettings $target_php_settings,
-        TraceLoopSettings $trace_loop_settings,
-        GetTraceSettings $get_trace_settings
+        public TargetPhpSettings $target_php_settings,
+        public TraceLoopSettings $trace_loop_settings,
+        public GetTraceSettings $get_trace_settings
     ) {
-        $this->target_php_settings = $target_php_settings;
-        $this->trace_loop_settings = $trace_loop_settings;
-        $this->get_trace_settings = $get_trace_settings;
     }
 }

@@ -15,11 +15,9 @@ namespace PhpProfiler\Lib\Loop;
 
 final class AsyncLoop
 {
-    private AsyncLoopMiddlewareInterface $process;
-
-    public function __construct(AsyncLoopMiddlewareInterface $process)
-    {
-        $this->process = $process;
+    public function __construct(
+        private AsyncLoopMiddlewareInterface $process
+    ) {
     }
 
     public function invoke(): \Generator

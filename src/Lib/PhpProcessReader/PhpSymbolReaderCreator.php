@@ -31,29 +31,15 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
  */
 final class PhpSymbolReaderCreator
 {
-    private MemoryReaderInterface $memory_reader;
-    private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator;
-    private ProcessMemoryMapCreator $process_memory_map_creator;
-    private IntegerByteSequenceReader $integer_reader;
-
     /**
      * PhpSymbolReaderCreator constructor.
-     *
-     * @param MemoryReaderInterface $memory_reader
-     * @param ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator
-     * @param ProcessMemoryMapCreator $process_memory_map_creator
-     * @param IntegerByteSequenceReader $integer_reader
      */
     public function __construct(
-        MemoryReaderInterface $memory_reader,
-        ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
-        ProcessMemoryMapCreator $process_memory_map_creator,
-        IntegerByteSequenceReader $integer_reader
+        private MemoryReaderInterface $memory_reader,
+        private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
+        private ProcessMemoryMapCreator $process_memory_map_creator,
+        private IntegerByteSequenceReader $integer_reader,
     ) {
-        $this->memory_reader = $memory_reader;
-        $this->process_module_symbol_reader_creator = $process_module_symbol_reader_creator;
-        $this->process_memory_map_creator = $process_memory_map_creator;
-        $this->integer_reader = $integer_reader;
     }
 
     /**

@@ -17,10 +17,8 @@ use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
 final class TraceMessage
 {
-    public CallTrace $trace;
-
-    public function __construct(CallTrace $trace)
-    {
-        $this->trace = $trace;
+    public function __construct(
+        public CallTrace $trace,
+    ) {
     }
 }

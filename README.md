@@ -31,7 +31,6 @@ php-profiler also provides functionality to only get the address of EG from targ
 ## Requirements
 ### Supported PHP versions
 #### Execution
-- PHP-7.4 64bit Linux x86_64 (NTS / ZTS)
 - PHP-8.0 64bit Linux x86_64 (NTS / ZTS)
 - FFI extension must be enabled.
 - If the target process is ZTS, PCNTL extension must be enabled.

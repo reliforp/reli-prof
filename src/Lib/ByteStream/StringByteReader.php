@@ -21,11 +21,9 @@ final class StringByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
 
-    private string $source;
-
-    public function __construct(string $source)
-    {
-        $this->source = $source;
+    public function __construct(
+        private string $source
+    ) {
     }
 
     public function offsetExists($offset): bool
