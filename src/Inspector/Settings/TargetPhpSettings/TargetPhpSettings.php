@@ -19,7 +19,7 @@ final class TargetPhpSettings
 {
     public const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$';
     public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so$';
-    public const TARGET_PHP_VERSION_DEFAULT = ZendTypeReader::V74;
+    public const TARGET_PHP_VERSION_DEFAULT = ZendTypeReader::V80;
 
     /**
      * GetTraceSettings constructor.
@@ -28,7 +28,7 @@ final class TargetPhpSettings
     public function __construct(
         public string $php_regex = self::PHP_REGEX_DEFAULT,
         public string $libpthread_regex = self::LIBPTHREAD_REGEX_DEFAULT,
-        public string $php_version = ZendTypeReader::V74,
+        public string $php_version = self::TARGET_PHP_VERSION_DEFAULT,
         public ?string $php_path = null,
         public ?string $libpthread_path = null
     ) {
