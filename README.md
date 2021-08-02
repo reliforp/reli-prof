@@ -199,6 +199,12 @@ docker build -t php-profiler .
 docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host php-profiler:latest vendor/bin/php-profiler inspector:trace -p <pid of the target process or thread>
 ```
 
+### Generate flamegraphs from traces
+```bash
+sudo php ./php-profiler inspector:trace -p <pid of the target process or thread> >traces
+./tools/stackcollapse-phpspy/stackcollapse-phpspy.pl <traces | ./tools/flamegraph/flamegraph.pl >flame.svg
+```
+
 # LICENSE
 - MIT (mostly)
 - Some C headers defining internal structures are extracted from php-src. They are licensed under the zend engine license. See src/Lib/PhpInternals/Headers . So here are the words required by the zend engine license.
