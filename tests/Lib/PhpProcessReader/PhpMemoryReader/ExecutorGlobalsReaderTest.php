@@ -20,6 +20,7 @@ use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
 use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\File\CatFileReader;
+use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
@@ -51,7 +52,8 @@ class ExecutorGlobalsReaderTest extends TestCase
         $executor_globals_reader = new ExecutorGlobalsReader(
             $memory_reader,
             new ZendTypeReaderCreator(),
-            new LittleEndianReader()
+            new LittleEndianReader(),
+            new OpcodeFactory()
         );
         $this->child = proc_open(
             [

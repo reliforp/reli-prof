@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
 
+use PhpProfiler\Lib\PhpInternals\Opcodes\Opcode;
+
 /** @psalm-immutable */
 final class Opline
 {
@@ -22,7 +24,7 @@ final class Opline
         public int $result,
         public int $extended_value,
         public int $lineno,
-        public int $opcode,
+        public Opcode $opcode,
         public int $op1_type,
         public int $op2_type,
         public int $result_type,

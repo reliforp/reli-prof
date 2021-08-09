@@ -16,6 +16,7 @@ namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 use FFI\CData;
 use PhpProfiler\Lib\ByteStream\CDataByteReader;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
@@ -39,6 +40,7 @@ final class ExecutorGlobalsReader
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private LittleEndianReader $little_endian_reader,
+        private OpcodeFactory $opcode_factory,
     ) {
     }
 
@@ -265,7 +267,7 @@ final class ExecutorGlobalsReader
             $opline = null;
             $file = $this->readFunctionFile($pid, $php_version, $current_function);
             if ($file !== '<internal>') {
-                $opline = $this->readOpline($pid, $current_execute_data);
+                $opline = $this->readOpline($pid, $php_version, $current_execute_data);
             }
             [$class_name, $function_name] = $this->readFunctionName($pid, $php_version, $current_function);
             $result[] = new CallFrame(
@@ -308,10 +310,12 @@ final class ExecutorGlobalsReader
     /**
      * @param int $pid
      * @param CData $current_execute_data
+     * @param string $php_version
+     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @return Opline|null
      * @throws MemoryReaderException
      */
-    public function readOpline(int $pid, CData $current_execute_data): ?Opline
+    public function readOpline(int $pid, string $php_version, CData $current_execute_data): ?Opline
     {
         /**
          * @psalm-var \FFI\CPointer $opline_addr
@@ -343,7 +347,7 @@ final class ExecutorGlobalsReader
             $result,
             $extended_value,
             $lineno,
-            $opcode,
+            $this->opcode_factory->create($php_version, $opcode),
             $op1_type,
             $op2_type,
             $result_type
