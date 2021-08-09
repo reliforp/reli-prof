@@ -41,4 +41,12 @@ final class CallFrame
         }
         return $this->opline->lineno;
     }
+
+    public function getOpcodeName(): string
+    {
+        if (is_null($this->opline)) {
+            return '';
+        }
+        return $this->opline->opcode->getName();
+    }
 }

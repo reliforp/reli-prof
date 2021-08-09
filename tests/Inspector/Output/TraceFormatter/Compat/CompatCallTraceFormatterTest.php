@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Output\TraceFormatter\Compat;
 
+use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeV80;
 use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
 use PhpProfiler\Lib\PhpProcessReader\CallFrame;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
@@ -49,7 +50,7 @@ class CompatCallTraceFormatterTest extends TestCase
                             1,
                             1,
                             1,
-                            1,
+                            new OpcodeV80(OpcodeV80::ZEND_NOP),
                             1,
                             1,
                             1,
