@@ -11,7 +11,15 @@
 
 declare(strict_types=1);
 
+use Psr\Log\LogLevel;
+
 return [
+    'log' => [
+        'path' => [
+            'default' => 'php-profiler.log',
+        ],
+        'level' => LogLevel::INFO,
+    ],
     'paths' => [
         'templates' => __DIR__ . '/../resources/templates',
     ],

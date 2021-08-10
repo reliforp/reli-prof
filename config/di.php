@@ -11,6 +11,8 @@
 
 declare(strict_types=1);
 
+use Monolog\Handler\StreamHandler;
+use Monolog\Logger;
 use Noodlehaus\Config;
 use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoop;
 use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoopInterface;
@@ -29,7 +31,7 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\Search\ProcessSearcher;
 use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
-
+use Psr\Log\LoggerInterface;
 use function DI\autowire;
 
 return [
@@ -48,4 +50,14 @@ return [
     ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
     Config::class => fn () => Config::load(__DIR__ . '/config.php'),
     TemplatePathResolverInterface::class => autowire(TemplatePathResolver::class),
+    LoggerInterface::class => function (Config $config) {
+        $logger = new Logger('default');
+        $logger->pushHandler(
+            new StreamHandler(
+                $config->get('log.path.default'),
+                Logger::toMonologLevel($config->get('log.level'))
+            )
+        );
+        return $logger;
+    }
 ];
