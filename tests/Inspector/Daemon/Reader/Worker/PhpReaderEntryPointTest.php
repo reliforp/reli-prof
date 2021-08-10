@@ -48,7 +48,7 @@ class PhpReaderEntryPointTest extends TestCase
                     $this->assertEquals(
                         [
                             new TargetProcessSettings(123),
-                            new TraceLoopSettings(1, 'q', 10),
+                            new TraceLoopSettings(1, 'q', 10, false),
                             new TargetPhpSettings(),
                             new GetTraceSettings(PHP_INT_MAX),
                         ],
@@ -111,7 +111,7 @@ class PhpReaderEntryPointTest extends TestCase
         $promise = $generator->send(
             new SetSettingsMessage(
                 new TargetPhpSettings(),
-                new TraceLoopSettings(1, 'q', 10),
+                new TraceLoopSettings(1, 'q', 10, false),
                 new GetTraceSettings(PHP_INT_MAX)
             )
         );

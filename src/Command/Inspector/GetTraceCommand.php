@@ -27,6 +27,7 @@ use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
+use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -43,6 +44,7 @@ final class GetTraceCommand extends Command
         private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
         private TemplateSettingsFromConsoleInput $template_settings_from_console_input,
         private TemplatedTraceFormatterFactory $templated_trace_formatter_factory,
+        private ProcessStopper $process_stopper,
     ) {
         parent::__construct();
     }
@@ -84,16 +86,24 @@ final class GetTraceCommand extends Command
                 $get_trace_settings,
                 $target_process_settings,
                 $target_php_settings,
+                $loop_settings,
                 $eg_address,
                 $output,
                 $formatter
             ): bool {
+                $is_target_stopped = false;
+                if ($loop_settings->stop_process) {
+                    $is_target_stopped = $this->process_stopper->stop($target_process_settings->pid);
+                }
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $target_process_settings->pid,
                     $target_php_settings->php_version,
                     $eg_address,
                     $get_trace_settings->depth
                 );
+                if ($loop_settings->stop_process and $is_target_stopped) {
+                    $this->process_stopper->resume($target_process_settings->pid);
+                }
                 $output->write($formatter->format($call_trace) . PHP_EOL);
                 return true;
             },

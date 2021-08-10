@@ -27,7 +27,7 @@ class WorkerPoolTest extends TestCase
     public function testCreate()
     {
         $php_settings = new TargetPhpSettings();
-        $trace_settings = new TraceLoopSettings(1, 'q', 1);
+        $trace_settings = new TraceLoopSettings(1, 'q', 1, false);
         $get_trace_settings = new GetTraceSettings(1);
 
         $reader_context = Mockery::mock(PhpReaderControllerInterface::class);

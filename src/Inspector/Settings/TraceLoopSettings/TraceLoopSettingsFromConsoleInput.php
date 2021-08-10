@@ -39,6 +39,12 @@ final class TraceLoopSettingsFromConsoleInput
                 InputOption::VALUE_OPTIONAL,
                 'max retries on contiguous errors of read (default: 10)'
             )
+            ->addOption(
+                'stop-process',
+                'S',
+                InputOption::VALUE_OPTIONAL,
+                'stop the target process while reading its trace (default: off)'
+            )
         ;
     }
 
@@ -71,6 +77,22 @@ final class TraceLoopSettingsFromConsoleInput
             );
         }
 
-        return new TraceLoopSettings($sleep_nano_seconds, TraceLoopSettings::CANCEL_KEY_DEFAULT, $max_retries);
+        $stop_process = NullableCast::toString($input->getOption('stop-process'));
+        if (is_null($stop_process)) {
+            $stop_process = false;
+        }
+        $stop_process = filter_var($stop_process, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($stop_process === null) {
+            throw TraceLoopSettingsException::create(
+                TraceLoopSettingsException::STOP_PROCESS_IS_NOT_BOOLEAN
+            );
+        }
+
+        return new TraceLoopSettings(
+            $sleep_nano_seconds,
+            TraceLoopSettings::CANCEL_KEY_DEFAULT,
+            $max_retries,
+            $stop_process,
+        );
     }
 }

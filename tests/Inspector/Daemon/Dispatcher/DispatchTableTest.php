@@ -38,7 +38,7 @@ class DispatchTableTest extends TestCase
         $dispatch_table = new DispatchTable(
             $worker_pool,
             new TargetPhpSettings(),
-            new TraceLoopSettings(1, 'test', 1),
+            new TraceLoopSettings(1, 'test', 1, false),
             new GetTraceSettings(1)
         );
 
