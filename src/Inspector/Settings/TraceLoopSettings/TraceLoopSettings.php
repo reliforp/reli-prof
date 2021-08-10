@@ -25,7 +25,8 @@ final class TraceLoopSettings
     public function __construct(
         public int $sleep_nano_seconds,
         public string $cancel_key,
-        public int $max_retries
+        public int $max_retries,
+        public bool $stop_process,
     ) {
     }
 }

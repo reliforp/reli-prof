@@ -47,7 +47,7 @@ final class PhpReaderControllerTest extends TestCase
     public function testSendSettings(): void
     {
         $target_php_settings = new TargetPhpSettings();
-        $trace_loop_settings = new TraceLoopSettings(1, 'q', 1);
+        $trace_loop_settings = new TraceLoopSettings(1, 'q', 1, false);
         $get_trace_settings = new GetTraceSettings(1);
 
         $expected = new SetSettingsMessage(
