@@ -27,7 +27,8 @@
     "amphp/parallel": "^1.4",
     "amphp/amp": "^2.4",
     "hassankhan/config": "^2.1",
-    "sj-i/php-cast": "^1.0"
+    "sj-i/php-cast": "^1.0",
+    "monolog/monolog": "^2.3"
   },
   "require-dev": {
     "ext-posix": "*",
