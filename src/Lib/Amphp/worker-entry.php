@@ -15,6 +15,9 @@ use Amp\Parallel\Sync\Channel;
 use DI\ContainerBuilder;
 use PhpProfiler\Lib\Amphp\WorkerEntryPointInterface;
 use PhpProfiler\Lib\Amphp\MessageProtocolInterface;
+use PhpProfiler\Lib\Log\Log;
+use PhpProfiler\Lib\Log\StateCollector\StateCollector;
+use Psr\Log\LoggerInterface;
 
 return function (Channel $channel) use ($argv): \Generator {
     /**
@@ -24,6 +27,11 @@ return function (Channel $channel) use ($argv): \Generator {
      */
     [, $entry_class, $protocol_class, $di_config] = $argv;
     $container = (new ContainerBuilder())->addDefinitions($di_config)->build();
+    /** @var LoggerInterface $logger */
+    $logger = $container->make(LoggerInterface::class);
+    /** @var StateCollector $state_collector */
+    $state_collector = $container->make(StateCollector::class);
+    Log::initializeLogger($logger, $state_collector);
     /** @var MessageProtocolInterface $protocol */
     $protocol = $container->make($protocol_class, ['channel' => $channel]);
     /** @var WorkerEntryPointInterface $entry_point */

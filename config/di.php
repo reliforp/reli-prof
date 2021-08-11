@@ -11,6 +11,8 @@
 
 declare(strict_types=1);
 
+use DI\Container;
+use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
 use Noodlehaus\Config;
@@ -26,6 +28,10 @@ use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\File\FileReaderInterface;
+use PhpProfiler\Lib\Log\StateCollector\CallerStateCollector;
+use PhpProfiler\Lib\Log\StateCollector\GroupedStateCollector;
+use PhpProfiler\Lib\Log\StateCollector\ProcessStateCollector;
+use PhpProfiler\Lib\Log\StateCollector\StateCollector;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
@@ -50,6 +56,12 @@ return [
     ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
     Config::class => fn () => Config::load(__DIR__ . '/config.php'),
     TemplatePathResolverInterface::class => autowire(TemplatePathResolver::class),
+    StateCollector::class => function (Container $container) {
+        $collectors = [];
+        $collectors[] = $container->make(ProcessStateCollector::class);
+        $collectors[] = $container->make(CallerStateCollector::class);
+        return new GroupedStateCollector(...$collectors);
+    },
     LoggerInterface::class => function (Config $config) {
         $logger = new Logger('default');
         $logger->pushHandler(
