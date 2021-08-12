@@ -18,6 +18,7 @@ use PhpProfiler\Lib\ByteStream\CDataByteReader;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
+use PhpProfiler\Lib\PhpInternals\ZendTypeCData;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
 use PhpProfiler\Lib\PhpProcessReader\CallFrame;
@@ -67,19 +68,20 @@ final class ExecutorGlobalsReader
      */
     public function readCurrentFunctionName(int $pid, string $php_version, int $executor_globals_address): string
     {
-        /** @var \FFI\PhpInternals\zend_executor_globals $eg */
         $eg = $this->readExecutorGlobals($pid, $php_version, $executor_globals_address);
-
-        /** @var \FFI\PhpInternals\zend_execute_data $current_execute_data */
-        $current_execute_data = $this->readCurrentExecuteData($pid, $php_version, $eg);
-
-        /** @var \FFI\PhpInternals\zend_function $current_function */
-        $current_function = $this->readCurrentFunction($pid, $php_version, $current_execute_data);
+        $current_execute_data = $this->readCurrentExecuteData($pid, $php_version, $eg->typed);
+        if (is_null($current_execute_data)) {
+            throw new \Exception('cannot read current execute data');
+        }
+        $current_function = $this->readCurrentFunction($pid, $php_version, $current_execute_data->typed);
+        if (is_null($current_function)) {
+            throw new \Exception('cannot read current function');
+        }
 
         return join(
             '::',
             array_filter(
-                $this->readFunctionName($pid, $php_version, $current_function),
+                $this->readFunctionName($pid, $php_version, $current_function->typed),
                 fn (string $item) => strlen($item)
             )
         );
@@ -89,64 +91,67 @@ final class ExecutorGlobalsReader
      * @param int $pid
      * @param string $php_version
      * @param int $executor_globals_address
-     * @return CData
+     * @return ZendTypeCData<\FFI\PhpInternals\zend_executor_globals>
      * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
-    public function readExecutorGlobals(int $pid, string $php_version, int $executor_globals_address): CData
+    public function readExecutorGlobals(int $pid, string $php_version, int $executor_globals_address): ZendTypeCData
     {
         $eg_raw = $this->memory_reader->read(
             $pid,
             $executor_globals_address,
             $this->getTypeReader($php_version)->sizeOf('zend_executor_globals')
         );
+        /** @var ZendTypeCData<\FFI\PhpInternals\zend_executor_globals> */
         return $this->getTypeReader($php_version)->readAs('zend_executor_globals', $eg_raw);
     }
 
     /**
      * @param int $pid
      * @param string $php_version
-     * @param CData $eg
-     * @return CData
+     * @param \FFI\PhpInternals\zend_executor_globals $eg
+     * @return null|ZendTypeCData<\FFI\PhpInternals\zend_execute_data>
      * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
-    public function readCurrentExecuteData(int $pid, string $php_version, CData $eg): CData
+    public function readCurrentExecuteData(int $pid, string $php_version, CData $eg): ?ZendTypeCData
     {
-        /**
-         * @var \FFI\CPointer $current_execute_data_addr
-         * @var \FFI\PhpInternals\zend_executor_globals $eg
-         */
+        /** @var \FFI\CPointer $current_execute_data_addr */
         $current_execute_data_addr = \FFI::cast('long', $eg->current_execute_data);
+        if ($current_execute_data_addr->cdata === 0) {
+            return null;
+        }
         $current_execute_data_raw = $this->memory_reader->read(
             $pid,
             $current_execute_data_addr->cdata,
             $this->getTypeReader($php_version)->sizeOf('zend_execute_data')
         );
-        return clone $this->getTypeReader($php_version)->readAs('zend_execute_data', $current_execute_data_raw);
+        /** @var null|ZendTypeCData<\FFI\PhpInternals\zend_execute_data> */
+        return $this->getTypeReader($php_version)->readAs('zend_execute_data', $current_execute_data_raw);
     }
 
     /**
      * @param int $pid
      * @param string $php_version
-     * @param CData $current_execute_data
-     * @return CData
+     * @param \FFI\PhpInternals\zend_execute_data $current_execute_data
+     * @return null|ZendTypeCData<\FFI\PhpInternals\zend_function>
      * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
-    public function readCurrentFunction(int $pid, string $php_version, CData $current_execute_data): CData
+    public function readCurrentFunction(int $pid, string $php_version, CData $current_execute_data): ?ZendTypeCData
     {
-        /**
-         * @var \FFI\CPointer $func_pointer
-         * @var \FFI\PhpInternals\zend_execute_data $current_execute_data
-         */
+        /** @var \FFI\CPointer $func_pointer */
         $func_pointer = \FFI::cast('long', $current_execute_data->func);
+        if ($func_pointer->cdata === 0) {
+            return null;
+        }
         $current_function_raw = $this->memory_reader->read(
             $pid,
             $func_pointer->cdata,
             $this->getTypeReader($php_version)->sizeOf('zend_function')
         );
-        return clone $this->getTypeReader($php_version)->readAs('zend_function', $current_function_raw);
+        /** @var null|ZendTypeCData<\FFI\PhpInternals\zend_function> */
+        return $this->getTypeReader($php_version)->readAs('zend_function', $current_function_raw);
     }
 
     /**
@@ -175,9 +180,9 @@ final class ExecutorGlobalsReader
                 $current_function_name_pointer->cdata,
                 $this->getTypeReader($php_version)->sizeOf('zend_string') + 256
             );
-            /** @var \FFI\PhpInternals\zend_string $string */
+            /** @var ZendTypeCData<\FFI\PhpInternals\zend_string> $string */
             $string = $this->getTypeReader($php_version)->readAs('zend_string', $current_function_name_zstring);
-            $function_name = \FFI::string($string->val);
+            $function_name = \FFI::string($string->typed->val);
             /** @var \FFI\CPointer $current_function_scope_pointer */
             $current_function_scope_pointer = \FFI::cast('long', $current_function->common->scope);
             if ($current_function_scope_pointer->cdata !== 0) {
@@ -186,20 +191,20 @@ final class ExecutorGlobalsReader
                     $current_function_scope_pointer->cdata,
                     $this->getTypeReader($php_version)->sizeOf('zend_class_entry')
                 );
-                /** @var \FFI\PhpInternals\zend_class_entry $class_entry */
+                /** @var ZendTypeCData<\FFI\PhpInternals\zend_class_entry> $class_entry */
                 $class_entry = $this->getTypeReader($php_version)
                     ->readAs('zend_class_entry', $current_function_class_entry);
-                $current_class_name_pointer = \FFI::cast('long', $class_entry->name);
+                $current_class_name_pointer = \FFI::cast('long', $class_entry->typed->name);
                 /** @var \FFI\CPointer $current_class_name_pointer */
                 $current_class_name_zstring = $this->memory_reader->read(
                     $pid,
                     $current_class_name_pointer->cdata,
                     $this->getTypeReader($php_version)->sizeOf('zend_string') + 256
                 );
-                /** @var \FFI\PhpInternals\zend_string $class_name_string */
+                /** @var ZendTypeCData<\FFI\PhpInternals\zend_string> $class_name_string */
                 $class_name_string = $this->getTypeReader($php_version)
                     ->readAs('zend_string', $current_class_name_zstring);
-                $class_name = \FFI::string($class_name_string->val);
+                $class_name = \FFI::string($class_name_string->typed->val);
             }
         }
 
@@ -226,9 +231,9 @@ final class ExecutorGlobalsReader
                 $filename_pointer->cdata,
                 $this->getTypeReader($php_version)->sizeOf('zend_string') + 256
             );
-            /** @var \FFI\PhpInternals\zend_string $filename_zstring */
+            /** @var ZendTypeCData<\FFI\PhpInternals\zend_string> $filename_zstring */
             $filename_zstring = $this->getTypeReader($php_version)->readAs('zend_string', $filename_zstring_raw);
-            $filename = \FFI::string($filename_zstring->val);
+            $filename = \FFI::string($filename_zstring->typed->val);
         }
         return $filename;
     }
@@ -242,18 +247,20 @@ final class ExecutorGlobalsReader
      * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
-    public function readCallTrace(int $pid, string $php_version, int $executor_globals_address, int $depth): CallTrace
+    public function readCallTrace(int $pid, string $php_version, int $executor_globals_address, int $depth): ?CallTrace
     {
-        /** @var \FFI\PhpInternals\zend_executor_globals $eg */
         $eg = $this->readExecutorGlobals($pid, $php_version, $executor_globals_address);
 
-        /** @var \FFI\PhpInternals\zend_execute_data $current_execute_data */
-        $current_execute_data = $this->readCurrentExecuteData($pid, $php_version, $eg);
+        $current_execute_data = $this->readCurrentExecuteData($pid, $php_version, $eg->typed);
+
+        if (is_null($current_execute_data)) {
+            return null;
+        }
 
         $stack = [];
         $stack[] = $current_execute_data;
         for ($i = 0; $i < $depth; $i++) {
-            $current_execute_data = $this->readPreviousExecuteData($pid, $php_version, $current_execute_data);
+            $current_execute_data = $this->readPreviousExecuteData($pid, $php_version, $current_execute_data->typed);
             if (is_null($current_execute_data)) {
                 break;
             }
@@ -262,14 +269,22 @@ final class ExecutorGlobalsReader
 
         $result = [];
         foreach ($stack as $current_execute_data) {
-            /** @var \FFI\PhpInternals\zend_function $current_function */
-            $current_function = $this->readCurrentFunction($pid, $php_version, $current_execute_data);
-            $opline = null;
-            $file = $this->readFunctionFile($pid, $php_version, $current_function);
-            if ($file !== '<internal>') {
-                $opline = $this->readOpline($pid, $php_version, $current_execute_data);
+            $current_function = $this->readCurrentFunction($pid, $php_version, $current_execute_data->typed);
+            if (is_null($current_function)) {
+                $result[] = new CallFrame(
+                    '',
+                    '<unknown>',
+                    '<unknown>',
+                    null
+                );
+                continue;
             }
-            [$class_name, $function_name] = $this->readFunctionName($pid, $php_version, $current_function);
+            $opline = null;
+            $file = $this->readFunctionFile($pid, $php_version, $current_function->typed);
+            if ($file !== '<internal>') {
+                $opline = $this->readOpline($pid, $php_version, $current_execute_data->typed);
+            }
+            [$class_name, $function_name] = $this->readFunctionName($pid, $php_version, $current_function->typed);
             $result[] = new CallFrame(
                 $class_name,
                 $function_name,
@@ -284,17 +299,14 @@ final class ExecutorGlobalsReader
     /**
      * @param int $pid
      * @param string $php_version
-     * @param CData $execute_data
-     * @return CData
+     * @param \FFI\PhpInternals\zend_execute_data $execute_data
+     * @return ZendTypeCData<\FFI\PhpInternals\zend_execute_data>
      * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
-    public function readPreviousExecuteData(int $pid, string $php_version, CData $execute_data): ?CData
+    public function readPreviousExecuteData(int $pid, string $php_version, CData $execute_data): ?ZendTypeCData
     {
-        /**
-         * @var \FFI\CPointer $previous_execute_data_addr
-         * @var \FFI\PhpInternals\zend_execute_data $execute_data
-         */
+        /** @var \FFI\CPointer $previous_execute_data_addr */
         $previous_execute_data_addr = \FFI::cast('long', $execute_data->prev_execute_data);
         if ($previous_execute_data_addr->cdata == 0) {
             return null;
@@ -304,7 +316,8 @@ final class ExecutorGlobalsReader
             $previous_execute_data_addr->cdata,
             $this->getTypeReader($php_version)->sizeOf('zend_execute_data')
         );
-        return clone $this->getTypeReader($php_version)->readAs('zend_execute_data', $previous_execute_data_raw);
+        /** @var ZendTypeCData<\FFI\PhpInternals\zend_execute_data> */
+        return $this->getTypeReader($php_version)->readAs('zend_execute_data', $previous_execute_data_raw);
     }
 
     /**

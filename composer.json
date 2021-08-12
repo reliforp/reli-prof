@@ -41,6 +41,7 @@
     "php-coveralls/php-coveralls": "^2.3"
   },
   "autoload": {
+    "files": ["src/Lib/Defer/defer.php"],
     "psr-4": {
       "PhpProfiler\\": "src"
     }

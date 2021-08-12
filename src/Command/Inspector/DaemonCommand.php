@@ -28,6 +28,7 @@ use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsol
 use PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings\TemplateSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use PhpProfiler\Lib\Console\EchoBackCanceller;
+use PhpProfiler\Lib\Log\Log;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -111,8 +112,14 @@ final class DaemonCommand extends Command
             $promises = [];
             $promises[] = call(function () use ($searcher_context, $dispatch_table) {
                 while (1) {
+                    Log::debug('receiving pid List');
                     $update_target_message = yield $searcher_context->receivePidList();
+                    Log::debug('update targets', [
+                        'update' => $update_target_message->target_process_list->getArray(),
+                        'current' => $dispatch_table->worker_pool->debugDump(),
+                    ]);
                     $dispatch_table->updateTargets($update_target_message->target_process_list);
+                    Log::debug('target updated', [$dispatch_table->worker_pool->debugDump()]);
                 }
             });
             foreach ($worker_pool->getWorkers() as $reader) {
@@ -123,6 +130,7 @@ final class DaemonCommand extends Command
                             if ($result instanceof TraceMessage) {
                                 $this->outputTrace($output, $formatter, $result);
                             } else {
+                                Log::debug('releaseOne', [$result]);
                                 $dispatch_table->releaseOne($result->pid);
                             }
                         }

@@ -630,6 +630,6 @@ final class OpcodeV80 implements Opcode
 
     public function getName(): string
     {
-        return self::OPCODE_NAMES[$this->opcode];
+        return self::OPCODE_NAMES[$this->opcode] ?? '';
     }
 }

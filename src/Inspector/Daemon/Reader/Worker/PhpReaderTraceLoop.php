@@ -23,6 +23,8 @@ use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
 
+use function PhpProfiler\Lib\Defer\defer;
+
 final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
 {
     public function __construct(
@@ -60,9 +62,8 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                 $loop_settings,
                 $eg_address
             ): \Generator {
-                $is_target_stopped = false;
-                if ($loop_settings->stop_process) {
-                    $is_target_stopped = $this->process_stopper->stop($target_process_settings->pid);
+                if ($loop_settings->stop_process and $this->process_stopper->stop($target_process_settings->pid)) {
+                    defer($_, fn () => $this->process_stopper->resume($target_process_settings->pid));
                 }
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $target_process_settings->pid,
@@ -70,8 +71,8 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                     $eg_address,
                     $get_trace_settings->depth
                 );
-                if ($loop_settings->stop_process and $is_target_stopped) {
-                    $this->process_stopper->resume($target_process_settings->pid);
+                if (is_null($call_trace)) {
+                    return;
                 }
                 yield new TraceMessage($call_trace);
             },

@@ -26,8 +26,8 @@ use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
-use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\File\FileReaderInterface;
+use PhpProfiler\Lib\File\NativeFileReader;
 use PhpProfiler\Lib\Log\StateCollector\CallerStateCollector;
 use PhpProfiler\Lib\Log\StateCollector\GroupedStateCollector;
 use PhpProfiler\Lib\Log\StateCollector\ProcessStateCollector;
@@ -46,7 +46,7 @@ return [
         return new ZendTypeReader(ZendTypeReader::V80);
     },
     SymbolResolverCreatorInterface::class => autowire(Elf64SymbolResolverCreator::class),
-    FileReaderInterface::class => autowire(CatFileReader::class),
+    FileReaderInterface::class => autowire(NativeFileReader::class),
     IntegerByteSequenceReader::class => autowire(LittleEndianReader::class),
     ContextCreator::class => autowire()
         ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
@@ -70,6 +70,8 @@ return [
                 Logger::toMonologLevel($config->get('log.level'))
             )
         );
+        $handler->setFormatter(new JsonFormatter());
+        $logger->pushHandler($handler);
         return $logger;
     }
 ];

@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\Loop\AsyncLoopMiddleware;
 
 use Exception;
+use PhpProfiler\Lib\Log\Log;
 use PhpProfiler\Lib\Loop\AsyncLoopMiddlewareInterface;
 
 final class RetryOnExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterface
@@ -37,6 +38,10 @@ final class RetryOnExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterf
             try {
                 yield from $this->chain->invoke();
             } catch (Exception $e) {
+                Log::debug($e->getMessage(), [
+                    'exception' => $e,
+                    'trace' => $e->getTrace()
+                ]);
                 if (in_array(get_class($e), $this->exception_names, true)) {
                     $this->current_retry_count++;
                     continue;

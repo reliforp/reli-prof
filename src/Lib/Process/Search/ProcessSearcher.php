@@ -13,10 +13,16 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\Search;
 
+use PhpProfiler\Lib\File\FileReaderInterface;
 use PhpProfiler\Lib\Process\ProcFileSystem\CommandLineEnumerator;
 
 final class ProcessSearcher implements ProcessSearcherInterface
 {
+    public function __construct(
+        private FileReaderInterface $file_reader
+    ) {
+    }
+
     /**
      * @param string $regex
      * @return int[]
@@ -25,7 +31,7 @@ final class ProcessSearcher implements ProcessSearcherInterface
     {
         $result = [];
 
-        foreach (new CommandLineEnumerator() as $pid => $command_line) {
+        foreach (new CommandLineEnumerator($this->file_reader) as $pid => $command_line) {
             if (preg_match($regex, $command_line)) {
                 $result[] = $pid;
             }

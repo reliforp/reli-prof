@@ -539,7 +539,6 @@ final class OpcodeV70 implements Opcode
 
     public function getName(): string
     {
-        assert(isset(self::OPCODE_NAMES[$this->opcode]));
-        return self::OPCODE_NAMES[$this->opcode];
+        return self::OPCODE_NAMES[$this->opcode] ?? '';
     }
 }

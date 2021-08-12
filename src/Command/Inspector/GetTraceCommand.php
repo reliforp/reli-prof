@@ -32,6 +32,8 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function PhpProfiler\Lib\Defer\defer;
+
 final class GetTraceCommand extends Command
 {
     public function __construct(
@@ -91,9 +93,8 @@ final class GetTraceCommand extends Command
                 $output,
                 $formatter
             ): bool {
-                $is_target_stopped = false;
-                if ($loop_settings->stop_process) {
-                    $is_target_stopped = $this->process_stopper->stop($target_process_settings->pid);
+                if ($loop_settings->stop_process and $this->process_stopper->stop($target_process_settings->pid)) {
+                    defer($_, fn () => $this->process_stopper->resume($target_process_settings->pid));
                 }
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $target_process_settings->pid,
@@ -101,10 +102,9 @@ final class GetTraceCommand extends Command
                     $eg_address,
                     $get_trace_settings->depth
                 );
-                if ($loop_settings->stop_process and $is_target_stopped) {
-                    $this->process_stopper->resume($target_process_settings->pid);
+                if (!is_null($call_trace)) {
+                    $output->write($formatter->format($call_trace) . PHP_EOL);
                 }
-                $output->write($formatter->format($call_trace) . PHP_EOL);
                 return true;
             },
             $loop_settings

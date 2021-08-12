@@ -25,4 +25,6 @@ interface WorkerPoolInterface
      * @return iterable<int, PhpReaderControllerInterface>
      */
     public function getWorkers(): iterable;
+
+    public function debugDump(): array;
 }
