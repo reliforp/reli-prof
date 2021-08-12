@@ -19,7 +19,7 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use PhpProfiler\Lib\Amphp\WorkerEntryPointInterface;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
+use PhpProfiler\Lib\Log\Log;
 
 final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 {
@@ -58,8 +58,12 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 foreach ($loop_runner as $message) {
                     yield $this->protocol->sendTrace($message);
                 }
-            } catch (MemoryReaderException $e) {
-                // TODO: log errors
+                Log::debug('end trace');
+            } catch (\Throwable $e) {
+                Log::debug('exception thrown at reading traces', [
+                    'exception' => $e,
+                    'trace' => $e->getTrace(),
+                ]);
             }
 
             yield $this->protocol->sendDetachWorker(
