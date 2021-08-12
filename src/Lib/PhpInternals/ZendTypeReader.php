@@ -64,12 +64,12 @@ final class ZendTypeReader
     /**
      * @param string $type
      * @param CData $cdata
-     * @return CData
+     * @return ZendTypeCData
      */
-    public function readAs(string $type, CData $cdata): CData
+    public function readAs(string $type, CData $cdata): ZendTypeCData
     {
         $ffi = $this->loadHeader($this->php_version);
-        return $ffi->cast($type, $cdata);
+        return new ZendTypeCData($cdata, $ffi->cast($type, $cdata));
     }
 
     /**
