@@ -51,3 +51,10 @@ class ptrace_ffi extends \FFI
      */
     public function ptrace(int $request, int $pid, CData $addr, CData $data): int {}
 }
+
+class libc_file_ffi extends \FFI
+{
+    public function open(string $path, int $mode): int {}
+    public function read(int $fd, CData $buffer, int $size): int {}
+    public function close(int $fd) {}
+}
