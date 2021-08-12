@@ -14,6 +14,9 @@ declare(strict_types=1);
 
 use DI\ContainerBuilder;
 use PhpProfiler\Command\CommandEnumerator;
+use PhpProfiler\Lib\Log\Log;
+use Psr\Log\LoggerInterface;
+use PhpProfiler\Lib\Log\StateCollector\StateCollector;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 
@@ -21,6 +24,11 @@ require 'vendor/autoload.php';
 
 $application = new Application();
 $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/config/di.php')->build();
+
+Log::initializeLogger(
+    $container->make(LoggerInterface::class),
+    $container->make(StateCollector::class),
+);
 
 /** @var iterable<class-string> $command_enumerator */
 $command_enumerator = new CommandEnumerator(new GlobIterator(__DIR__. '/src/Command/*/*Command.php'));
