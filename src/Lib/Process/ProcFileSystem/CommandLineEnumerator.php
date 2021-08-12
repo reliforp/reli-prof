@@ -14,9 +14,15 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\Process\ProcFileSystem;
 
 use IteratorAggregate;
+use PhpProfiler\Lib\File\FileReaderInterface;
 
 final class CommandLineEnumerator implements IteratorAggregate
 {
+    public function __construct(
+        private FileReaderInterface $file_reader
+    ) {
+    }
+
     /**
      * @return \Generator<int, string>
      */
@@ -27,11 +33,16 @@ final class CommandLineEnumerator implements IteratorAggregate
          * @var \SplFileInfo $item
          */
         foreach (new \GlobIterator('/proc/*/cmdline') as $full_path => $item) {
-            $command_line = file_get_contents($full_path);
-            if ($command_line === false) {
+            if (file_exists($full_path) === false) {
                 continue;
             }
-
+            $command_line = $this->file_reader->readAll($full_path);
+            if ($command_line === '') {
+                continue;
+            }
+            if (!is_numeric(basename($item->getPath()))) {
+                continue;
+            }
             yield (int)basename($item->getPath()) => $command_line;
         }
     }
