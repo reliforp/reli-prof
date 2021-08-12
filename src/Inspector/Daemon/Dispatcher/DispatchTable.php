@@ -59,9 +59,11 @@ final class DispatchTable
 
     public function releaseOne(int $pid): void
     {
-        $worker = $this->dispatch_table[$pid];
-        $this->worker_pool->returnWorkerToPool($worker);
-        unset($this->dispatch_table[$pid]);
+        if (isset($this->dispatch_table[$pid])) {
+            $worker = $this->dispatch_table[$pid];
+            $this->worker_pool->returnWorkerToPool($worker);
+            unset($this->dispatch_table[$pid]);
+        }
         $this->assigned = $this->assigned->getDiff(new TargetProcessList($pid));
     }
 }
