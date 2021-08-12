@@ -96,4 +96,12 @@ final class WorkerPool implements WorkerPoolInterface
             }
         }
     }
+
+    public function debugDump(): array
+    {
+        return [
+            'all' => array_keys($this->contexts),
+            'is_free_list' => $this->is_free_list,
+        ];
+    }
 }

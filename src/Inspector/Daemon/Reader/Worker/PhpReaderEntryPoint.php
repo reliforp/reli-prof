@@ -25,7 +25,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 {
     public function __construct(
         private PhpReaderTraceLoopInterface $trace_loop,
-        private PhpReaderWorkerProtocolInterface $protocol
+        private PhpReaderWorkerProtocolInterface $protocol,
     ) {
     }
 
@@ -36,6 +36,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
          * @var SetSettingsMessage $set_settings_message
          */
         $set_settings_message = yield $this->protocol->receiveSettings();
+        Log::debug('settings_message', [$set_settings_message]);
 
         while (1) {
             /**
@@ -43,6 +44,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
              * @var AttachMessage $attach_message
              */
             $attach_message = yield $this->protocol->receiveAttach();
+            Log::debug('attach_message', [$attach_message]);
 
             $target_process_settings = new TargetProcessSettings(
                 $attach_message->pid
@@ -55,6 +57,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                     $set_settings_message->target_php_settings,
                     $set_settings_message->get_trace_settings
                 );
+                Log::debug('start trace');
                 foreach ($loop_runner as $message) {
                     yield $this->protocol->sendTrace($message);
                 }
@@ -66,9 +69,11 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 ]);
             }
 
+            Log::debug('detaching worker');
             yield $this->protocol->sendDetachWorker(
                 new DetachWorkerMessage($attach_message->pid)
             );
+            Log::debug('detached worker');
         }
     }
 }
