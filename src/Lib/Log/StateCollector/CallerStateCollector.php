@@ -21,24 +21,29 @@ final class CallerStateCollector implements StateCollector
 {
     public function collect(): array
     {
-        $result = [];
         $backtrace = debug_backtrace(limit: 5);
-        $in_logger_frame = false;
-        $previous_frame = [];
+
+        $last_logger_frame = [];
+        $caller_frame = [];
+
         foreach ($backtrace as $frame) {
             if ($this->isLoggerFrame($frame)) {
-                $in_logger_frame = true;
-            } elseif ($in_logger_frame) {
-                $result['context'] = [
-                    'file' => $previous_frame['file'],
-                    'line' => $previous_frame['line'],
-                    'class' => $frame['class'],
-                    'function' => $frame['function'],
-                    'args' => $frame['args'],
-                ];
+                $last_logger_frame = $frame;
+            } elseif ($last_logger_frame) {
+                $caller_frame = $frame;
                 break;
             }
-            $previous_frame = $frame;
+        }
+
+        $result = [];
+        if ($last_logger_frame) {
+            $result['context'] = [
+                'file' => $last_logger_frame['file'],
+                'line' => $last_logger_frame['line'],
+                'class' => $caller_frame['class'] ?? '',
+                'function' => $caller_frame['function'] ?? '',
+                'args' => $caller_frame['args'] ?? '',
+            ];
         }
         return $result;
     }
