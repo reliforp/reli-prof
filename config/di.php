@@ -64,11 +64,9 @@ return [
     },
     LoggerInterface::class => function (Config $config) {
         $logger = new Logger('default');
-        $logger->pushHandler(
-            new StreamHandler(
-                $config->get('log.path.default'),
-                Logger::toMonologLevel($config->get('log.level'))
-            )
+        $handler = new StreamHandler(
+            $config->get('log.path.default'),
+            Logger::toMonologLevel($config->get('log.level'))
         );
         $handler->setFormatter(new JsonFormatter());
         $logger->pushHandler($handler);
