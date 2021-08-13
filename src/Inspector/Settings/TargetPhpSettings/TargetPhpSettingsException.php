@@ -28,6 +28,6 @@ final class TargetPhpSettingsException extends InspectorSettingsException
         self::LIBPTHREAD_REGEX_IS_NOT_STRING => 'libpthread-regex must be a string',
         self::PHP_PATH_IS_NOT_STRING => 'php-path must be a string',
         self::LIBPTHREAD_PATH_IS_NOT_STRING => 'libpthread-path must be a string',
-        self::TARGET_PHP_VERSION_INVALID => 'php-version must be valid version string (eg: v74)',
+        self::TARGET_PHP_VERSION_INVALID => 'php-version must be valid version string (eg: v80)',
     ];
 }

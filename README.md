@@ -76,7 +76,7 @@ Options:
   -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: v74)
+      --php-version[=PHP-VERSION]            php version of the target (default: v80)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                 Display this help message
@@ -105,7 +105,7 @@ Options:
   -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: v74)
+      --php-version[=PHP-VERSION]            php version of the target (default: v80)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                 Display this help message
@@ -134,7 +134,7 @@ Options:
   -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: v74)
+      --php-version[=PHP-VERSION]            php version of the target (default: v80)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                 Display this help message
@@ -159,7 +159,7 @@ Options:
   -p, --pid=PID                              process id (required)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: v74)
+      --php-version[=PHP-VERSION]            php version of the target (default: v80)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                 Display this help message
