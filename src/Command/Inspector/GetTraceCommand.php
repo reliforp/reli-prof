@@ -60,6 +60,7 @@ final class GetTraceCommand extends Command
         $this->get_trace_settings_from_console_input->setOptions($this);
         $this->trace_loop_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
+        $this->template_settings_from_console_input->setOptions($this);
     }
 
     /**
