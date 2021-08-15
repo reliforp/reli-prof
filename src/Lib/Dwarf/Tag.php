@@ -15,6 +15,7 @@ namespace PhpProfiler\Lib\Dwarf;
 
 final class Tag
 {
+    // phpcs:disable Generic.NamingConventions.UpperCaseConstantName
     public const DW_TAG_array_type = 0x01;
     public const DW_TAG_class_type = 0x02;
     public const DW_TAG_entry_point = 0x03;
@@ -85,4 +86,5 @@ final class Tag
     public const DW_TAG_immutable_type = 0x4b;
     public const DW_TAG_lo_user = 0x4080;
     public const DW_TAG_hi_user = 0xffff;
+    // phpcs:enable Generic.NamingConventions.UpperCaseConstantName
 }
