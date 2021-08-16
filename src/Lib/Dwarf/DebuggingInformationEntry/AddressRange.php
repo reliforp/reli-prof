@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Dwarf\DebuggingInformationEntry;
 
-class AddressRange
+final class AddressRange
 {
 
 }
