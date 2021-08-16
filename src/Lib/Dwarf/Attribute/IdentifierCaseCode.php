@@ -11,14 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Dwarf\Expression;
+namespace PhpProfiler\Lib\Dwarf\Attribute;
 
-use PhpProfiler\Lib\Dwarf\CompilationUnit\CompilationUnit;
-
-final class ExpressionContext
+final class IdentifierCaseCode
 {
-    public function getCompilationUnit(): CompilationUnit
-    {
-
-    }
+    public const DW_ID_case_sensitive = 0x00;
+    public const DW_ID_up_case = 0x01;
+    public const DW_ID_down_case = 0x02;
+    public const DW_ID_case_insensitive = 0x03;
 }

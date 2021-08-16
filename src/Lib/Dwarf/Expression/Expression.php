@@ -15,9 +15,11 @@ namespace PhpProfiler\Lib\Dwarf\Expression;
 
 final class Expression
 {
+    /** @var array<int, Operation> */
     private array $operations;
     private Stack $stack;
 
+    /** @no-named-arguments */
     public function __construct(
         private ExpressionContext $expression_context,
         Stack $stack,

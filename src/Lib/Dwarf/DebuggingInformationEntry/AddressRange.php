@@ -11,14 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Dwarf\Expression;
+namespace PhpProfiler\Lib\Dwarf\DebuggingInformationEntry;
 
-use PhpProfiler\Lib\Dwarf\CompilationUnit\CompilationUnit;
-
-final class ExpressionContext
+class AddressRange
 {
-    public function getCompilationUnit(): CompilationUnit
-    {
 
-    }
 }

@@ -141,7 +141,6 @@ class Attribute
 
     public function __construct(
         public int $name,
-        public Form $form,
     ) {
     }
 }

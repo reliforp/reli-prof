@@ -15,17 +15,11 @@ namespace PhpProfiler\Lib\Dwarf\CompilationUnit\UnitHeader;
 
 use PhpProfiler\Lib\Dwarf\CompilationUnit\UnitType;
 
-final class SkeletonUnitHeader implements UnitHeader
+interface UnitHeader
 {
-    use UnitHeaderTrait;
-
-    public function __construct(
-        public int $unit_length,
-        public int $version,
-        public UnitType $unit_type,
-        public int $address_size,
-        public int $debug_abbrev_offset,
-        public int $dwo_id,
-    ) {
-    }
+    public function getUnitLength(): int;
+    public function getVersion(): int;
+    public function getUnitType(): UnitType;
+    public function getAddressSize(): int;
+    public function getDebugAbbrevOffset(): int;
 }

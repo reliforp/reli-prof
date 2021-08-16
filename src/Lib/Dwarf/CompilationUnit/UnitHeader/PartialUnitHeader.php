@@ -15,8 +15,10 @@ namespace PhpProfiler\Lib\Dwarf\CompilationUnit\UnitHeader;
 
 use PhpProfiler\Lib\Dwarf\CompilationUnit\UnitType;
 
-final class PartialUnitHeader
+final class PartialUnitHeader implements UnitHeader
 {
+    use UnitHeaderTrait;
+
     public function __construct(
         public int $unit_length,
         public int $version,

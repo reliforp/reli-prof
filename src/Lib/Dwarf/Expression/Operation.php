@@ -223,7 +223,7 @@ final class Operation
         };
     }
 
-    public function getOperands()
+    public function getOperands(): array
     {
         return $this->operands;
     }
