@@ -138,4 +138,10 @@ class Attribute
     public const DW_AT_lo_user = 0x2000;
     public const DW_AT_hi_user = 0x3fff;
     // phpcs:enable Generic.NamingConventions.UpperCaseConstantName
+
+    public function __construct(
+        public int $name,
+        public Form $form,
+    ) {
+    }
 }
