@@ -15,18 +15,18 @@ namespace PhpProfiler\Lib\Dwarf\Expression;
 
 final class Expression
 {
-    /** @var array<int, Operation> */
-    private array $operations;
     private Stack $stack;
 
-    /** @no-named-arguments */
+    /**
+     * @no-named-arguments
+     * @param array<int, Operation> $operations
+     */
     public function __construct(
         private ExpressionContext $expression_context,
         Stack $stack,
-        Operation ...$operations
+        private array $operations
     ) {
         $this->stack = clone $stack;
-        $this->operations = $operations;
     }
 
     public function execute(): int
@@ -34,7 +34,7 @@ final class Expression
         $length = count($this->operations);
         for ($pos = 0; $pos < $length; $pos += $step) {
             $operation = $this->operations[$pos];
-            $step = $operation->getOpcode()->execute(
+            $step = $operation->getOpcode($this->expression_context)->execute(
                 $this->stack,
                 ...$operation->getOperands(),
             );

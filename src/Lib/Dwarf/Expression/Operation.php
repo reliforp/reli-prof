@@ -13,9 +13,10 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Dwarf\Expression;
 
-use PhpProfiler\Lib\Dwarf\Expression\Opcodes\Addr;
-use PhpProfiler\Lib\Dwarf\Expression\Opcodes\Constant;
-use PhpProfiler\Lib\Dwarf\Expression\Opcodes\Lit;
+use PhpProfiler\Lib\Dwarf\Expression\Opcodes\LiteralEncodings\Addr;
+use PhpProfiler\Lib\Dwarf\Expression\Opcodes\LiteralEncodings\AddrConstX;
+use PhpProfiler\Lib\Dwarf\Expression\Opcodes\LiteralEncodings\Constant;
+use PhpProfiler\Lib\Dwarf\Expression\Opcodes\LiteralEncodings\Lit;
 use PhpProfiler\Lib\Dwarf\Expression\Opcodes\Opcode;
 
 final class Operation
@@ -198,7 +199,7 @@ final class Operation
         $this->operands = $operands;
     }
 
-    public function getOpcode(): Opcode
+    public function getOpcode(ExpressionContext $expression_context): Opcode
     {
         return match ($this->opcode) {
             self::DW_OP_addr => new Addr(),
