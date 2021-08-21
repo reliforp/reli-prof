@@ -23,7 +23,7 @@ class ExpressionTest extends TestCase
         $expression = new Expression(
             new ExpressionContext(),
             new Stack([]),
-            ...$operations
+            $operations
         );
         $this->assertSame(
             $expected,
