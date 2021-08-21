@@ -14,10 +14,16 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\Dwarf\Expression;
 
 use PhpProfiler\Lib\Dwarf\CompilationUnit\CompilationUnit;
+use PhpProfiler\Lib\Dwarf\ObjectFile\Executable;
 
 final class ExpressionContext
 {
     public function getCompilationUnit(): CompilationUnit
+    {
+
+    }
+
+    public function getExecutableFile(): Executable
     {
 
     }
