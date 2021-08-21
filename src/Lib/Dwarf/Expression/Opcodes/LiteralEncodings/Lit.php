@@ -11,15 +11,21 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Dwarf\Expression\Opcodes;
+namespace PhpProfiler\Lib\Dwarf\Expression\Opcodes\LiteralEncodings;
 
+use PhpProfiler\Lib\Dwarf\Expression\Opcodes\Opcode;
 use PhpProfiler\Lib\Dwarf\Expression\Stack;
 
-final class Addr implements Opcode
+final class Lit implements Opcode
 {
+    public function __construct(
+        private int $literal
+    ) {
+    }
+
     public function execute(Stack $stack, ...$operands): int
     {
-        $stack->push($operands[0]);
+        $stack->push($this->literal);
         return 1;
     }
 }
