@@ -221,6 +221,8 @@ final class Operation
             self::DW_OP_const8s, self::DW_OP_const8u,
             self::DW_OP_consts, self::DW_OP_constu
                 => new Constant(),
+            self::DW_OP_constx, self::DW_OP_addrx
+                => new AddrConstX($expression_context),
         };
     }
 
