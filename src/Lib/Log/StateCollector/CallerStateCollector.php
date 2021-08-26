@@ -37,6 +37,8 @@ final class CallerStateCollector implements StateCollector
 
         $result = [];
         if ($last_logger_frame) {
+            assert(isset($last_logger_frame['file']));
+            assert(isset($last_logger_frame['line']));
             $result['context'] = [
                 'file' => $last_logger_frame['file'],
                 'line' => $last_logger_frame['line'],
