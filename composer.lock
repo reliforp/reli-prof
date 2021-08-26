@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c27859cb0db178db592167f0ac65c47c",
+    "content-hash": "8f1dbffa184b6ea99a74e00ced90c6a1",
     "packages": [
         {
             "name": "amphp/amp",
@@ -2553,19 +2553,20 @@
         },
         {
             "name": "jetbrains/phpstorm-stubs",
-            "version": "v2021.1",
+            "version": "v2021.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/JetBrains/phpstorm-stubs.git",
-                "reference": "ec9e109d9416203870109e464f8c8931474d404e"
+                "reference": "a09a014a1984d2ac875c6b1220b7f17ca7d0a873"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/ec9e109d9416203870109e464f8c8931474d404e",
-                "reference": "ec9e109d9416203870109e464f8c8931474d404e",
+                "url": "https://api.github.com/repos/JetBrains/phpstorm-stubs/zipball/a09a014a1984d2ac875c6b1220b7f17ca7d0a873",
+                "reference": "a09a014a1984d2ac875c6b1220b7f17ca7d0a873",
                 "shasum": ""
             },
             "require-dev": {
+                "friendsofphp/php-cs-fixer": "@stable",
                 "nikic/php-parser": "@stable",
                 "php": "^8.0",
                 "phpdocumentor/reflection-docblock": "@stable",
@@ -2594,9 +2595,9 @@
                 "type"
             ],
             "support": {
-                "source": "https://github.com/JetBrains/phpstorm-stubs/tree/v2021.1"
+                "source": "https://github.com/JetBrains/phpstorm-stubs/tree/v2021.2"
             },
-            "time": "2021-03-03T10:43:38+00:00"
+            "time": "2021-06-06T20:58:57+00:00"
         },
         {
             "name": "mockery/mockery",
