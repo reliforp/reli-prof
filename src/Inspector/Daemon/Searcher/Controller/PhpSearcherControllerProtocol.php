@@ -26,8 +26,7 @@ final class PhpSearcherControllerProtocol implements PhpSearcherControllerProtoc
     ) {
     }
 
-    /** @return static */
-    public static function createFromChannel(Channel $channel): self
+    public static function createFromChannel(Channel $channel): static
     {
         return new self($channel);
     }

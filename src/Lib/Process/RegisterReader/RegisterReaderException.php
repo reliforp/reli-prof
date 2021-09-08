@@ -13,10 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\RegisterReader;
 
-/**
- * Class RegisterReaderException
- * @package PhpProfiler\Lib\Process
- */
 final class RegisterReaderException extends \Exception
 {
 }

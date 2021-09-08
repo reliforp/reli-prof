@@ -17,6 +17,9 @@ use OutOfBoundsException;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
+use function chr;
+use function max;
+
 final class ProcessMemoryByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
@@ -26,9 +29,6 @@ final class ProcessMemoryByteReader implements ByteReaderInterface
     /** @var CDataByteReader[] */
     private array $pages = [];
 
-    /**
-     * ProcessMemoryByteReader constructor.
-     */
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private int $pid,

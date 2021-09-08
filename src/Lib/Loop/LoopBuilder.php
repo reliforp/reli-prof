@@ -24,8 +24,6 @@ final class LoopBuilder
 
     /**
      * @param class-string<LoopMiddlewareInterface> $process
-     * @param array $parameters
-     * @return self
      */
     public function addProcess(string $process, array $parameters): self
     {

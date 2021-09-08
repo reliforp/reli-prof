@@ -16,10 +16,6 @@ namespace PhpProfiler\Lib\ByteStream\IntegerByteSequence;
 use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
 use PhpProfiler\Lib\Integer\UInt64;
 
-/**
- * Class LittleEndianReader
- * @package PhpProfiler\Lib\Binary
- */
 final class LittleEndianReader implements IntegerByteSequenceReader
 {
     public function read8(ByteReaderInterface $data, int $offset): int

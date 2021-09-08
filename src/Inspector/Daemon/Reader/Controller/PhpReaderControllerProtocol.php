@@ -28,8 +28,7 @@ final class PhpReaderControllerProtocol implements PhpReaderControllerProtocolIn
     ) {
     }
 
-    /** @return static */
-    public static function createFromChannel(Channel $channel): self
+    public static function createFromChannel(Channel $channel): static
     {
         return new self($channel);
     }
@@ -44,9 +43,7 @@ final class PhpReaderControllerProtocol implements PhpReaderControllerProtocolIn
         return $this->channel->send($message);
     }
 
-    /**
-     * @return Promise<TraceMessage|DetachWorkerMessage>
-     */
+    /** @return Promise<TraceMessage|DetachWorkerMessage> */
     public function receiveTraceOrDetachWorker(): Promise
     {
         /** @var Promise<TraceMessage|DetachWorkerMessage> */

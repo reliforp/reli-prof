@@ -15,6 +15,8 @@ namespace PhpProfiler\Inspector\Output\TraceFormatter\Compat;
 
 use PhpProfiler\Lib\PhpProcessReader\CallFrame;
 
+use function is_null;
+
 final class CompatCallFrameFormatter
 {
     public function format(CallFrame $call_frame): string

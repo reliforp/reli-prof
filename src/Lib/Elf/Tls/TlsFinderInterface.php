@@ -13,10 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
-/**
- * Interface TlsFinderInterface
- * @package PhpProfiler\Lib\Elf\Tls
- */
 interface TlsFinderInterface
 {
     public function findTlsBlock(int $pid, int $module_index): int;

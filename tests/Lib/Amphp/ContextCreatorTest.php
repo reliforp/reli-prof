@@ -31,7 +31,7 @@ class ContextCreatorTest extends TestCase
         use Amp\Parallel\Sync\Channel;
 
         class ContextCreatorTestDummyProtocol implements MessageProtocolInterface {
-            public static function createFromChannel(Channel \$channel): self
+            public static function createFromChannel(Channel \$channel): static
             {
                 return new self();
             }

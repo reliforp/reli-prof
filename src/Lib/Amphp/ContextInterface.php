@@ -15,20 +15,14 @@ namespace PhpProfiler\Lib\Amphp;
 
 use Amp\Promise;
 
-/**
- * @template-covariant T of MessageProtocolInterface
- */
+/** @template-covariant T of MessageProtocolInterface */
 interface ContextInterface
 {
-    /**
-     * @return Promise<null>
-     */
+    /** @return Promise<null> */
     public function start(): Promise;
 
     public function isRunning(): bool;
 
-    /**
-     * @return T
-     */
+    /** @return T */
     public function getProtocol(): object;
 }

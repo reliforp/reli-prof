@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\ByteStream;
 
 use LogicException;
 
-/**
- * Trait ByteReaderDisableWriteAccessTrait
- * @package PhpProfiler\Lib\Binary
- */
 trait ByteReaderDisableWriteAccessTrait
 {
     /**

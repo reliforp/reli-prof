@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\PhpProcessReader;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * Class PhpBinaryFinderTest
- * @package PhpProfiler\ProcessReader
- */
 class PhpBinaryFinderTest extends TestCase
 {
     public function testFindByProcessId()

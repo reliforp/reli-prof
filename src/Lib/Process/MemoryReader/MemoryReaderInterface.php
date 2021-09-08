@@ -18,9 +18,6 @@ use FFI\CData;
 interface MemoryReaderInterface
 {
     /**
-     * @param int $pid
-     * @param int $remote_address
-     * @param int $size
      * @return \FFI\CArray
      * @throws MemoryReaderException
      */

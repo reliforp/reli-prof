@@ -32,8 +32,6 @@ class ProcessModuleMemoryMapTest extends TestCase
     }
 
     /**
-     * @param int $expected
-     * @param int $offset
      * @dataProvider addressAndOffsetProvider
      */
     public function testGetMemoryAddressFromOffset(int $expected, int $offset)

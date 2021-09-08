@@ -16,10 +16,6 @@ namespace PhpProfiler\Lib\ByteStream;
 use LogicException;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Class StringByteReaderTest
- * @package PhpProfiler\Lib\Binary
- */
 class StringByteReaderTest extends TestCase
 {
     public function testRead()

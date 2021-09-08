@@ -15,15 +15,8 @@ namespace PhpProfiler\Lib\Process\MemoryMap;
 
 use PhpProfiler\Lib\String\LineFetcher;
 
-/**
- * Class ProcessMemoryMapCreator
- * @package PhpProfiler\ProcessReader
- */
 final class ProcessMemoryMapCreator
 {
-    /**
-     * @return static
-     */
     public static function create(): self
     {
         return new self(
@@ -32,19 +25,12 @@ final class ProcessMemoryMapCreator
         );
     }
 
-    /**
-     * ProcessMemoryMapCreator constructor.
-     */
     public function __construct(
         private ProcessMemoryMapReader $memory_map_reader,
         private ProcessMemoryMapParser $memory_map_parser
     ) {
     }
 
-    /**
-     * @param int $pid
-     * @return ProcessMemoryMap
-     */
     public function getProcessMemoryMap(int $pid): ProcessMemoryMap
     {
         $memory_map_raw = $this->memory_map_reader->read($pid);

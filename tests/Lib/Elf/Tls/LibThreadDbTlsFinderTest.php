@@ -20,10 +20,6 @@ use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Class LibThreadDbTlsFinderTest
- * @package PhpProfiler\Lib\Elf\Tls
- */
 class LibThreadDbTlsFinderTest extends TestCase
 {
     public function testFindTls()
@@ -70,9 +66,6 @@ class LibThreadDbTlsFinderTest extends TestCase
 
     /**
      * @dataProvider casesDebugSymbolsFoundOrNot
-     * @param CData|null $_thread_db_pthread_dtvp
-     * @param CData|null $_thread_db_dtv_dtv
-     * @param CData|null $_thread_db_dtv_t_pointer_val
      * @throws TlsFinderException
      */
     public function testThrowTlsFinderExceptionIfDebugSymbolsNotFound(

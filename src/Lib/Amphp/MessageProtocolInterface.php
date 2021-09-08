@@ -17,9 +17,5 @@ use Amp\Parallel\Sync\Channel;
 
 interface MessageProtocolInterface
 {
-    /**
-     * @param Channel $channel
-     * @return static
-     */
-    public static function createFromChannel(Channel $channel): self;
+    public static function createFromChannel(Channel $channel): static;
 }

@@ -21,10 +21,7 @@ final class TargetPhpSettings
     public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so$';
     public const TARGET_PHP_VERSION_DEFAULT = ZendTypeReader::V80;
 
-    /**
-     * GetTraceSettings constructor.
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
-     */
+    /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
     public function __construct(
         public string $php_regex = self::PHP_REGEX_DEFAULT,
         public string $libpthread_regex = self::LIBPTHREAD_REGEX_DEFAULT,

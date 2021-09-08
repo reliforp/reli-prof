@@ -13,10 +13,9 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\ByteStream;
 
-/**
- * Class StringByteReader
- * @package PhpProfiler\Lib\Binary
- */
+use function ord;
+use function substr;
+
 final class StringByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;

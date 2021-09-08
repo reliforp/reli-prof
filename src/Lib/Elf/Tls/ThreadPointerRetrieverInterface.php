@@ -13,15 +13,9 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
-/**
- * Interface ThreadPointerRetrieverInterface
- * @package PhpProfiler\Lib\Elf\Tls
- */
 interface ThreadPointerRetrieverInterface
 {
     /**
-     * @param int $pid
-     * @return int
      * @throws TlsFinderException
      */
     public function getThreadPointer(int $pid): int;

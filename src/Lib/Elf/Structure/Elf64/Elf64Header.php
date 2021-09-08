@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
 use PhpProfiler\Lib\Integer\UInt64;
 
-/**
- * Class Elf64Header
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64Header
 {
     public const EI_MAG0 = 0;
@@ -60,9 +56,6 @@ final class Elf64Header
     public const EM_386 = 3;
     public const EM_X86_64 = 62;
 
-    /**
-     * Elf64Header constructor.
-     */
     public function __construct(
         public array $e_ident, // unsigned char[EI_NIDENT]
         public int $e_type, // Elf64_Half
@@ -81,9 +74,6 @@ final class Elf64Header
     ) {
     }
 
-    /**
-     * @return bool
-     */
     public function hasSectionHeader(): bool
     {
         return $this->e_shnum > 0;

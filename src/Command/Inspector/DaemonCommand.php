@@ -34,6 +34,9 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function Amp\call;
+use function fread;
+
+use const STDIN;
 
 final class DaemonCommand extends Command
 {
@@ -62,11 +65,6 @@ final class DaemonCommand extends Command
         $this->template_settings_from_console_input->setOptions($this);
     }
 
-    /**
-     * @param InputInterface $input
-     * @param OutputInterface $output
-     * @return int
-     */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);
@@ -90,9 +88,6 @@ final class DaemonCommand extends Command
 
         $dispatch_table = new DispatchTable(
             $worker_pool,
-            $target_php_settings,
-            $loop_settings,
-            $get_trace_settings
         );
 
         $_echo_back_canceler = new EchoBackCanceller();

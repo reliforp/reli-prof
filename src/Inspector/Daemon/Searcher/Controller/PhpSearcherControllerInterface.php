@@ -18,19 +18,12 @@ use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMe
 
 interface PhpSearcherControllerInterface
 {
-    /**
-     * @return Promise<null>
-     */
+    /** @return Promise<null> */
     public function start(): Promise;
 
-    /**
-     * @param string $regex
-     * @return Promise<int>
-     */
+    /** @return Promise<int> */
     public function sendTargetRegex(string $regex): Promise;
 
-    /**
-     * @return Promise<UpdateTargetProcessMessage>
-     */
+    /** @return Promise<UpdateTargetProcessMessage> */
     public function receivePidList(): Promise;
 }

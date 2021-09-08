@@ -25,15 +25,8 @@ use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
-/**
- * Class PhpSymbolReaderCreator
- * @package PhpProfiler\ProcessReader
- */
 final class PhpSymbolReaderCreator
 {
-    /**
-     * PhpSymbolReaderCreator constructor.
-     */
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
@@ -43,12 +36,6 @@ final class PhpSymbolReaderCreator
     }
 
     /**
-     * @param int $pid
-     * @param string $php_finder_regex
-     * @param string $libpthread_finder_regex
-     * @param string|null $php_binar_path
-     * @param string|null $libpthread_binary_path
-     * @return ProcessModuleSymbolReader
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException

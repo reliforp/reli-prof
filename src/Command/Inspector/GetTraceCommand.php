@@ -64,9 +64,6 @@ final class GetTraceCommand extends Command
     }
 
     /**
-     * @param InputInterface $input
-     * @param OutputInterface $output
-     * @return int
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws ElfParserException

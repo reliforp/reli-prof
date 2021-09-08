@@ -15,24 +15,13 @@ namespace PhpProfiler\Lib\Process\MemoryMap;
 
 use PhpProfiler\Lib\String\LineFetcher;
 
-/**
- * Class ProcessMemoryMapParser
- * @package PhpProfiler\ProcessReader
- */
 final class ProcessMemoryMapParser
 {
-    /**
-     * ProcessMemoryMapParser constructor.
-     */
     public function __construct(
         private LineFetcher $line_fetcher
     ) {
     }
 
-    /**
-     * @param string $memory_map_string
-     * @return ProcessMemoryMap
-     */
     public function parse(string $memory_map_string): ProcessMemoryMap
     {
         $memory_areas = [];
@@ -45,10 +34,6 @@ final class ProcessMemoryMapParser
         return new ProcessMemoryMap($memory_areas);
     }
 
-    /**
-     * @param string $line
-     * @return ProcessMemoryArea
-     */
     private function parseLine(string $line): ?ProcessMemoryArea
     {
         $matches = [];

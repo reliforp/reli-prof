@@ -23,6 +23,7 @@ use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
 
+use function is_null;
 use function PhpProfiler\Lib\Defer\defer;
 
 final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
@@ -36,10 +37,6 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
     }
 
     /**
-     * @param TargetProcessSettings $target_process_settings
-     * @param TraceLoopSettings $loop_settings
-     * @param TargetPhpSettings $target_php_settings
-     * @param GetTraceSettings $get_trace_settings
      * @return Generator<TraceMessage>
      * @throws \PhpProfiler\Lib\Elf\Parser\ElfParserException
      * @throws \PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException
@@ -61,7 +58,7 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                 $target_php_settings,
                 $loop_settings,
                 $eg_address
-            ): \Generator {
+            ): Generator {
                 if ($loop_settings->stop_process and $this->process_stopper->stop($target_process_settings->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($target_process_settings->pid));
                 }

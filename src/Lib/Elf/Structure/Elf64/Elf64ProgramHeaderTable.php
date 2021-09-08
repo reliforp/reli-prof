@@ -15,19 +15,11 @@ namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
 use PhpProfiler\Lib\Integer\UInt64;
 
-/**
- * Class Elf64ProgramHeaderTable
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64ProgramHeaderTable
 {
     /** @var Elf64ProgramHeaderEntry[] */
     private array $entries;
 
-    /**
-     * Elf64ProgramHeaderTable constructor.
-     * @param Elf64ProgramHeaderEntry ...$entries
-     */
     public function __construct(Elf64ProgramHeaderEntry ...$entries)
     {
         $this->entries = $entries;
@@ -47,9 +39,6 @@ final class Elf64ProgramHeaderTable
         return $result;
     }
 
-    /**
-     * @return UInt64
-     */
     public function findBaseAddress(): UInt64
     {
         $base_address = new UInt64(0, 0);

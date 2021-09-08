@@ -22,8 +22,6 @@ final class AsyncLoopBuilder
 
     /**
      * @param class-string<AsyncLoopMiddlewareInterface> $process
-     * @param array $parameters
-     * @return self
      */
     public function addProcess(string $process, array $parameters): self
     {

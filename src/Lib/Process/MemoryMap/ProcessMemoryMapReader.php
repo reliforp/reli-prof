@@ -13,16 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\MemoryMap;
 
-/**
- * Class ProcessMemoryMapReader
- * @package PhpProfiler\ProcessReader
- */
 final class ProcessMemoryMapReader
 {
-    /**
-     * @param int $process_id
-     * @return string
-     */
     public function read(int $process_id): string
     {
         return file_get_contents("/proc/{$process_id}/maps");

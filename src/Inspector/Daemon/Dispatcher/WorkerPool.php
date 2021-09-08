@@ -20,6 +20,10 @@ use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
+use function array_fill;
+use function array_keys;
+use function count;
+
 final class WorkerPool implements WorkerPoolInterface
 {
     /** @var array<int, PhpReaderControllerInterface> */
@@ -28,15 +32,11 @@ final class WorkerPool implements WorkerPoolInterface
     /** @var array<int, bool> */
     private array $is_free_list;
 
-    /** @var array<int, bool> */
-    private array $on_read_list;
-
     /** @no-named-arguments */
     public function __construct(PhpReaderControllerInterface ...$contexts)
     {
         $this->contexts = $contexts;
         $this->is_free_list = array_fill(0, count($contexts), true);
-        $this->on_read_list = array_fill(0, count($contexts), false);
     }
 
     public static function create(
@@ -78,9 +78,7 @@ final class WorkerPool implements WorkerPoolInterface
         return null;
     }
 
-    /**
-     * @return iterable<int, PhpReaderControllerInterface>
-     */
+    /** @return iterable<int, PhpReaderControllerInterface> */
     public function getWorkers(): iterable
     {
         foreach ($this->contexts as $key => $context) {

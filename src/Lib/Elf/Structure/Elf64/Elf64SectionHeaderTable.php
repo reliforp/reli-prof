@@ -13,18 +13,11 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
-/**
- * Class Elf64SectionHeaderTable
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64SectionHeaderTable
 {
     /** @var Elf64SectionHeaderEntry[] */
     private array $entries;
 
-    /**
-     * Elf64SectionHeaderTable constructor.
-     */
     public function __construct(
         private Elf64StringTable $section_name_table,
         Elf64SectionHeaderEntry ...$entries
@@ -32,9 +25,6 @@ final class Elf64SectionHeaderTable
         $this->entries = $entries;
     }
 
-    /**
-     * @return Elf64SectionHeaderEntry|null
-     */
     public function findSymbolTableEntry(): ?Elf64SectionHeaderEntry
     {
         foreach ($this->entries as $entry) {
@@ -45,9 +35,6 @@ final class Elf64SectionHeaderTable
         return null;
     }
 
-    /**
-     * @return Elf64SectionHeaderEntry|null
-     */
     public function findStringTableEntry(): ?Elf64SectionHeaderEntry
     {
         foreach ($this->entries as $entry) {

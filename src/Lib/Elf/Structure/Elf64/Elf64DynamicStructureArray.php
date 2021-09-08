@@ -13,19 +13,11 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
-/**
- * Class Elf64DynamicStructureArray
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64DynamicStructureArray
 {
     /** @var Elf64DynamicStructure[] */
     private array $entries;
 
-    /**
-     * Elf64ProgramHeaderTable constructor.
-     * @param Elf64DynamicStructure ...$entries
-     */
     public function __construct(Elf64DynamicStructure ...$entries)
     {
         $this->entries = $entries;
@@ -71,9 +63,6 @@ final class Elf64DynamicStructureArray
         return $entries;
     }
 
-    /**
-     * @return Elf64DynamicStructure|null
-     */
     public function findGnuHashTableEntry(): ?Elf64DynamicStructure
     {
         foreach ($this->entries as $entry) {
@@ -84,9 +73,6 @@ final class Elf64DynamicStructureArray
         return null;
     }
 
-    /**
-     * @return Elf64DynamicStructure|null
-     */
     public function findDebugEntry(): ?Elf64DynamicStructure
     {
         foreach ($this->entries as $entry) {

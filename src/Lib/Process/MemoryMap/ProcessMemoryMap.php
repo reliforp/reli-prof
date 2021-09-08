@@ -13,25 +13,15 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\MemoryMap;
 
-/**
- * Class ProcessMemoryMap
- * @package PhpProfiler\ProcessReader
- */
 final class ProcessMemoryMap
 {
-    /**
-     * ProcessMemoryMap constructor.
-     * @param ProcessMemoryArea[] $memory_areas
-     */
+    /** @param ProcessMemoryArea[] $memory_areas */
     public function __construct(
         private array $memory_areas,
     ) {
     }
 
-    /**
-     * @param string $regex
-     * @return ProcessMemoryArea[]
-     */
+    /** @return ProcessMemoryArea[] */
     public function findByNameRegex(string $regex): array
     {
         $result = [];

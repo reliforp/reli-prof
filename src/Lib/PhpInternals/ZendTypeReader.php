@@ -16,10 +16,6 @@ namespace PhpProfiler\Lib\PhpInternals;
 use FFI;
 use FFI\CData;
 
-/**
- * Class ZendTypeReader
- * @package PhpProfiler\Lib\PhpInternals
- */
 final class ZendTypeReader
 {
     public const V70 = 'v70';
@@ -41,7 +37,6 @@ final class ZendTypeReader
     private ?FFI $ffi = null;
 
     /**
-     * ZendTypeReader constructor.
      * @param value-of<self::ALL_SUPPORTED_VERSIONS> $php_version
      */
     public function __construct(
@@ -49,10 +44,6 @@ final class ZendTypeReader
     ) {
     }
 
-    /**
-     * @param string $php_version
-     * @return FFI
-     */
     private function loadHeader(string $php_version): FFI
     {
         if (!isset($this->ffi)) {
@@ -61,21 +52,12 @@ final class ZendTypeReader
         return $this->ffi;
     }
 
-    /**
-     * @param string $type
-     * @param CData $cdata
-     * @return ZendTypeCData
-     */
     public function readAs(string $type, CData $cdata): ZendTypeCData
     {
         $ffi = $this->loadHeader($this->php_version);
         return new ZendTypeCData($cdata, $ffi->cast($type, $cdata));
     }
 
-    /**
-     * @param string $type
-     * @return int
-     */
     public function sizeOf(string $type): int
     {
         $ffi = $this->loadHeader($this->php_version);

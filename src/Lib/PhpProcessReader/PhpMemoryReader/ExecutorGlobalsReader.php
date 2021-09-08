@@ -26,17 +26,10 @@ use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
-/**
- * Class ExecutorGlobalsReader
- * @package PhpProfiler\ProcessReader\PhpStateReader
- */
 final class ExecutorGlobalsReader
 {
     private ?ZendTypeReader $zend_type_reader = null;
 
-    /**
-     * ExecutorGlobalsReader constructor.
-     */
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
@@ -46,9 +39,7 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param string $php_version
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
-     * @return ZendTypeReader
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      */
     public function getTypeReader(string $php_version): ZendTypeReader
     {
@@ -59,11 +50,7 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
-     * @param string $php_version
-     * @param int $executor_globals_address
-     * @return string
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readCurrentFunctionName(int $pid, string $php_version, int $executor_globals_address): string
@@ -88,11 +75,8 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
-     * @param string $php_version
-     * @param int $executor_globals_address
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @return ZendTypeCData<\FFI\PhpInternals\zend_executor_globals>
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readExecutorGlobals(int $pid, string $php_version, int $executor_globals_address): ZendTypeCData
@@ -107,11 +91,9 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
-     * @param string $php_version
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @param \FFI\PhpInternals\zend_executor_globals $eg
      * @return null|ZendTypeCData<\FFI\PhpInternals\zend_execute_data>
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readCurrentExecuteData(int $pid, string $php_version, CData $eg): ?ZendTypeCData
@@ -131,11 +113,9 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
-     * @param string $php_version
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @param \FFI\PhpInternals\zend_execute_data $current_execute_data
      * @return null|ZendTypeCData<\FFI\PhpInternals\zend_function>
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readCurrentFunction(int $pid, string $php_version, CData $current_execute_data): ?ZendTypeCData
@@ -155,9 +135,7 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
-     * @param CData $current_function
      * @return array{string, string}
      * @throws MemoryReaderException
      */
@@ -212,11 +190,7 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
-     * @param string $php_version
-     * @param CData $current_function
-     * @return string
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readFunctionFile(int $pid, string $php_version, CData $current_function): string
@@ -239,12 +213,7 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
-     * @param string $php_version
-     * @param int $executor_globals_address
-     * @param int $depth
-     * @return CallTrace
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readCallTrace(int $pid, string $php_version, int $executor_globals_address, int $depth): ?CallTrace
@@ -297,11 +266,9 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
-     * @param string $php_version
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @param \FFI\PhpInternals\zend_execute_data $execute_data
      * @return ZendTypeCData<\FFI\PhpInternals\zend_execute_data>
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readPreviousExecuteData(int $pid, string $php_version, CData $execute_data): ?ZendTypeCData
@@ -321,11 +288,7 @@ final class ExecutorGlobalsReader
     }
 
     /**
-     * @param int $pid
-     * @param CData $current_execute_data
-     * @param string $php_version
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
-     * @return Opline|null
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readOpline(int $pid, string $php_version, CData $current_execute_data): ?Opline

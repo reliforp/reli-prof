@@ -20,6 +20,8 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 
+use function is_null;
+
 final class TemplateSettingsFromConsoleInput
 {
     public function __construct(
@@ -27,9 +29,7 @@ final class TemplateSettingsFromConsoleInput
     ) {
     }
 
-    /**
-     * @codeCoverageIgnore
-     */
+    /** @codeCoverageIgnore */
     public function setOptions(Command $command): void
     {
         $command

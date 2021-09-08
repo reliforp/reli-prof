@@ -22,15 +22,8 @@ use PhpProfiler\Lib\File\FileReaderInterface;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
-/**
- * Class SymbolResolverCreator
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
 {
-    /**
-     * SymbolResolverCreator constructor.
-     */
     public function __construct(
         private FileReaderInterface $file_reader,
         private Elf64Parser $elf_parser,
@@ -38,8 +31,6 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     }
 
     /**
-     * @param string $path
-     * @return Elf64LinearScanSymbolResolver
      * @throws ElfParserException
      */
     public function createLinearScanResolverFromPath(string $path): Elf64LinearScanSymbolResolver
@@ -71,8 +62,6 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     }
 
     /**
-     * @param string $path
-     * @return Elf64DynamicSymbolResolver
      * @throws ElfParserException
      */
     public function createDynamicResolverFromPath(string $path): Elf64DynamicSymbolResolver
@@ -86,10 +75,6 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     }
 
     /**
-     * @param MemoryReaderInterface $memory_reader
-     * @param int $pid
-     * @param ProcessModuleMemoryMapInterface $module_memory_map
-     * @return Elf64DynamicSymbolResolver
      * @throws ElfParserException
      */
     public function createDynamicResolverFromProcessMemory(

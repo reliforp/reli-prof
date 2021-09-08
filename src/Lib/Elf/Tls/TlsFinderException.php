@@ -15,11 +15,6 @@ namespace PhpProfiler\Lib\Elf\Tls;
 
 use Exception;
 
-/**
- * Class TlsFinderException
- * @package PhpProfiler\Lib\Elf\Tls
- */
 final class TlsFinderException extends Exception
 {
-
 }

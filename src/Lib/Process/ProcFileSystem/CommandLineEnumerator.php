@@ -23,9 +23,7 @@ final class CommandLineEnumerator implements IteratorAggregate
     ) {
     }
 
-    /**
-     * @return \Generator<int, string>
-     */
+    /** @return \Generator<int, string> */
     public function getIterator()
     {
         /**

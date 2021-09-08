@@ -16,24 +16,17 @@ namespace PhpProfiler\Lib\Amphp;
 use Amp\Parallel\Context\Context as AmphpContext;
 use Amp\Promise;
 
-/**
- * @template-covariant T of MessageProtocolInterface
- */
+/** @template-covariant T of MessageProtocolInterface */
 final class Context implements ContextInterface
 {
-    /**
-     * Context constructor.
-     * @param T $protocol_interface
-     */
+    /** @param T $protocol_interface */
     public function __construct(
         private AmphpContext $amphp_context,
         private object $protocol_interface
     ) {
     }
 
-    /**
-     * @return Promise<null>
-     */
+    /** @return Promise<null> */
     public function start(): Promise
     {
         return $this->amphp_context->start();
@@ -44,9 +37,7 @@ final class Context implements ContextInterface
         return $this->amphp_context->isRunning();
     }
 
-    /**
-     * @return T
-     */
+    /** @return T */
     public function getProtocol(): object
     {
         return $this->protocol_interface;

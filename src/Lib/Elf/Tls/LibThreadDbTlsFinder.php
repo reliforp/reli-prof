@@ -21,18 +21,11 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 /**
- * Class LibThreadDbTlsFinder
- *
  * This class uses some debugging symbols from libpthread.so,
  * so if the target process doesn't load libpthread, it won't work.
- *
- * @package PhpProfiler\Lib\Elf\Tls
  */
 final class LibThreadDbTlsFinder implements TlsFinderInterface
 {
-    /**
-     * LibThreadDbTlsFinder constructor.
-     */
     public function __construct(
         private ProcessSymbolReaderInterface $symbol_reader,
         private ThreadPointerRetrieverInterface $thread_pointer_retriever,
@@ -42,9 +35,6 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
     }
 
     /**
-     * @param int $pid
-     * @param int $module_index
-     * @return int
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
@@ -70,7 +60,6 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
     }
 
     /**
-     * @param string $symbol_name
      * @return int[]
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException

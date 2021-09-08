@@ -21,16 +21,9 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64StringTable;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
-/**
- * Class Elf64SymbolResolver
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
 {
     /**
-     * @param Elf64Parser $parser
-     * @param ByteReaderInterface $php_binary
-     * @return Elf64DynamicSymbolResolver
      * @throws ElfParserException
      */
     public static function load(Elf64Parser $parser, ByteReaderInterface $php_binary): self
@@ -55,9 +48,6 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
         );
     }
 
-    /**
-     * Elf64SymbolResolver constructor.
-     */
     public function __construct(
         private Elf64SymbolTable $symbol_table,
         private Elf64GnuHashTable $hash_table,

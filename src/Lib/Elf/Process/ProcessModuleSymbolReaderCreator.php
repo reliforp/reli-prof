@@ -19,29 +19,14 @@ use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMap;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 
-/**
- * Class ProcessModuleSymbolReaderCreator
- * @package PhpProfiler\ProcessReader
- */
 final class ProcessModuleSymbolReaderCreator
 {
-    /**
-     * ProcessSymbolReaderCreator constructor.
-     */
     public function __construct(
         private SymbolResolverCreatorInterface $symbol_resolver_creator,
         private MemoryReaderInterface $memory_reader
     ) {
     }
 
-    /**
-     * @param int $pid
-     * @param ProcessMemoryMap $process_memory_map
-     * @param string $regex
-     * @param string|null $binary_path
-     * @param int|null $tls_block_address
-     * @return ProcessModuleSymbolReader|null
-     */
     public function createModuleReaderByNameRegex(
         int $pid,
         ProcessMemoryMap $process_memory_map,
@@ -93,11 +78,6 @@ final class ProcessModuleSymbolReaderCreator
         }
     }
 
-    /**
-     * @param int $pid
-     * @param string $path
-     * @return string
-     */
     private function createContainerAwarePath(int $pid, string $path): string
     {
         return "/proc/{$pid}/root{$path}";

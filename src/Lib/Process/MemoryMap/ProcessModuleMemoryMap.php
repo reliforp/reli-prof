@@ -13,20 +13,13 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\MemoryMap;
 
-/**
- * Class ProcessModuleMemoryMap
- * @package PhpProfiler\Lib\Process\MemoryMap
- */
 final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
 {
     private ?int $base_address = null;
     /** @var array<int,int>|null  */
     private ?array $sorted_offset_to_memory_map = null;
 
-    /**
-     * ProcessModuleMemoryMap constructor.
-     * @param ProcessMemoryArea[] $memory_areas
-     */
+    /** @param ProcessMemoryArea[] $memory_areas */
     public function __construct(
         private array $memory_areas
     ) {
@@ -66,9 +59,7 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
         return false;
     }
 
-    /**
-     * @return array<int, int>
-     */
+    /** @return array<int, int> */
     private function getSortedOffsetToMemoryAreaMap(): array
     {
         if (!isset($this->sorted_offset_to_memory_map)) {

@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * Class Elf64GnuHashTableTest
- * @package PhpProfiler\Lib\Elf
- */
 class Elf64GnuHashTableTest extends TestCase
 {
     public function testHash()

@@ -19,11 +19,16 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 
+use function filter_var;
+use function is_null;
+
+use const FILTER_NULL_ON_FAILURE;
+use const FILTER_VALIDATE_BOOLEAN;
+use const FILTER_VALIDATE_INT;
+
 final class TraceLoopSettingsFromConsoleInput
 {
-    /**
-     * @codeCoverageIgnore
-     */
+    /** @codeCoverageIgnore */
     public function setOptions(Command $command): void
     {
         $command
@@ -49,8 +54,6 @@ final class TraceLoopSettingsFromConsoleInput
     }
 
     /**
-     * @param InputInterface $input
-     * @return TraceLoopSettings
      * @throws InspectorSettingsException
      */
     public function createSettings(InputInterface $input): TraceLoopSettings

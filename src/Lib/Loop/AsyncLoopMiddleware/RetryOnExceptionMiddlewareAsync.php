@@ -22,7 +22,6 @@ final class RetryOnExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterf
     private int $current_retry_count = 0;
 
     /**
-     * RetryOnExceptionLoop constructor.
      * @param array<int, class-string<Exception>> $exception_names
      */
     public function __construct(

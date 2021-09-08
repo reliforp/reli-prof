@@ -20,9 +20,7 @@ use PhpProfiler\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpSearcherWorkerProtocolInterface extends MessageProtocolInterface
 {
-    /**
-     * @return Promise<TargetRegexMessage>
-     */
+    /** @return Promise<TargetRegexMessage> */
     public function receiveTargetRegex(): Promise;
 
     public function sendUpdateTargetProcess(UpdateTargetProcessMessage $message): Promise;

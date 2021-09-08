@@ -19,9 +19,6 @@ final class TraceLoopSettings
     public const CANCEL_KEY_DEFAULT = 'q';
     public const MAX_RETRY_DEFAULT = 10;
 
-    /**
-     * TraceLoopSettings constructor.
-     */
     public function __construct(
         public int $sleep_nano_seconds,
         public string $cancel_key,
