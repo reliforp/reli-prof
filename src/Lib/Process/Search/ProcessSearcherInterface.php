@@ -15,9 +15,6 @@ namespace PhpProfiler\Lib\Process\Search;
 
 interface ProcessSearcherInterface
 {
-    /**
-     * @param string $regex
-     * @return int[]
-     */
+    /** @return int[] */
     public function searchByRegex(string $regex): array;
 }

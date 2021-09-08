@@ -15,6 +15,9 @@ namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
 
 use Noodlehaus\Config;
 
+use function assert;
+use function is_string;
+
 final class TemplatePathResolver implements TemplatePathResolverInterface
 {
     public function __construct(

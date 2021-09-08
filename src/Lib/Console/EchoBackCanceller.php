@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Console;
 
+use function exec;
+
 final class EchoBackCanceller
 {
     private ?string $stty_settings;

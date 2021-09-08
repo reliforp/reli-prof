@@ -27,24 +27,13 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64StringTable;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
-/**
- * Class Elf64Parser
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64Parser
 {
-    /**
-     * Elf64Parser constructor.
-     */
     public function __construct(
         private IntegerByteSequenceReader $integer_reader
     ) {
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @return Elf64Header
-     */
     public function parseElfHeader(ByteReaderInterface $data): Elf64Header
     {
         $e_ident = [
@@ -91,11 +80,6 @@ final class Elf64Parser
         );
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @param Elf64Header $elf_header
-     * @return Elf64ProgramHeaderTable
-     */
     public function parseProgramHeader(ByteReaderInterface $data, Elf64Header $elf_header): Elf64ProgramHeaderTable
     {
         $program_header_table = [];
@@ -125,11 +109,6 @@ final class Elf64Parser
         return new Elf64ProgramHeaderTable(...$program_header_table);
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @param Elf64ProgramHeaderEntry $pt_dynamic
-     * @return Elf64DynamicStructureArray
-     */
     public function parseDynamicStructureArray(
         ByteReaderInterface $data,
         Elf64ProgramHeaderEntry $pt_dynamic
@@ -147,11 +126,6 @@ final class Elf64Parser
         return new Elf64DynamicStructureArray(...$dynamic_array);
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @param Elf64DynamicStructureArray $dynamic_structure_array
-     * @return Elf64StringTable
-     */
     public function parseStringTable(
         ByteReaderInterface $data,
         Elf64DynamicStructureArray $dynamic_structure_array
@@ -171,11 +145,6 @@ final class Elf64Parser
         return new Elf64StringTable($string_table_region);
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @param Elf64SectionHeaderEntry $section_header_entry
-     * @return Elf64StringTable
-     */
     public function parseStringTableFromSectionHeader(
         ByteReaderInterface $data,
         Elf64SectionHeaderEntry $section_header_entry
@@ -188,12 +157,6 @@ final class Elf64Parser
         return new Elf64StringTable($string_table_region);
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @param Elf64DynamicStructureArray $dynamic_structure_array
-     * @param int $number_of_symbols
-     * @return Elf64SymbolTable
-     */
     public function parseSymbolTableFromDynamic(
         ByteReaderInterface $data,
         Elf64DynamicStructureArray $dynamic_structure_array,
@@ -214,11 +177,6 @@ final class Elf64Parser
         return $this->parseSymbolTable($data, $start_offset, $number_of_symbols, $entry_size);
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @param Elf64SectionHeaderEntry $section
-     * @return Elf64SymbolTable
-     */
     public function parseSymbolTableFromSectionHeader(
         ByteReaderInterface $data,
         Elf64SectionHeaderEntry $section
@@ -231,13 +189,6 @@ final class Elf64Parser
         );
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @param int $start_offset
-     * @param int $number_of_symbols
-     * @param int $entry_size
-     * @return Elf64SymbolTable
-     */
     public function parseSymbolTable(
         ByteReaderInterface $data,
         int $start_offset,
@@ -323,11 +274,6 @@ final class Elf64Parser
         );
     }
 
-    /**
-     * @param ByteReaderInterface $data
-     * @param Elf64Header $elf_header
-     * @return Elf64SectionHeaderTable
-     */
     public function parseSectionHeader(ByteReaderInterface $data, Elf64Header $elf_header): Elf64SectionHeaderTable
     {
         $section_header_array = [];

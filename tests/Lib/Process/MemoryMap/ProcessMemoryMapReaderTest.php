@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\Process\MemoryMap;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * Class ProcessMemoryMapReaderTest
- * @package PhpProfiler\ProcessReader
- */
 class ProcessMemoryMapReaderTest extends TestCase
 {
     public function testRead()

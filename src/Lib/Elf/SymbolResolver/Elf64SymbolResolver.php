@@ -15,15 +15,7 @@ namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
-/**
- * Interface Elf64SymbolResolver
- * @package PhpProfiler\Lib\Elf
- */
 interface Elf64SymbolResolver
 {
-    /**
-     * @param string $symbol_name
-     * @return Elf64SymbolTableEntry
-     */
     public function resolve(string $symbol_name): Elf64SymbolTableEntry;
 }

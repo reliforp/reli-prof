@@ -16,14 +16,15 @@ namespace PhpProfiler\Lib\ByteStream;
 use FFI\CArray;
 use FFI\CData;
 
+use function chr;
+use function count;
+use function is_null;
+
 final class CDataByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
 
-    /**
-     * CDataByteReader constructor.
-     * @param CArray $source
-     */
+    /** @param CArray $source */
     public function __construct(
         private CData $source
     ) {

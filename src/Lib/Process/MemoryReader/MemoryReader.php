@@ -16,10 +16,6 @@ namespace PhpProfiler\Lib\Process\MemoryReader;
 use FFI;
 use FFI\CData;
 
-/**
- * Class MemoryReader
- * @package PhpProfiler\Lib\Process
- */
 final class MemoryReader implements MemoryReaderInterface
 {
     private FFI $ffi;
@@ -27,9 +23,6 @@ final class MemoryReader implements MemoryReaderInterface
     private CData $remote_iov;
     private CData $remote_base;
 
-    /**
-     * MemoryReader constructor.
-     */
     public function __construct()
     {
         $this->ffi = FFI::cdef('
@@ -52,9 +45,6 @@ final class MemoryReader implements MemoryReaderInterface
     }
 
     /**
-     * @param int $pid
-     * @param int $remote_address
-     * @param int $size
      * @return \FFI\CArray
      * @throws MemoryReaderException
      */

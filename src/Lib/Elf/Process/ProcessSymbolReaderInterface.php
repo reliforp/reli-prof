@@ -15,22 +15,15 @@ namespace PhpProfiler\Lib\Elf\Process;
 
 use FFI\CData;
 
-/**
- * Interface ProcessSymbolReaderInterface
- * @package PhpProfiler\Lib\Elf\Process
- */
 interface ProcessSymbolReaderInterface
 {
     /**
-     * @param string $symbol_name
      * @return \FFI\CArray|null
      * @throws ProcessSymbolReaderException
      */
     public function read(string $symbol_name): ?CData;
 
     /**
-     * @param string $symbol_name
-     * @return int|null
      * @throws ProcessSymbolReaderException
      */
     public function resolveAddress(string $symbol_name): ?int;

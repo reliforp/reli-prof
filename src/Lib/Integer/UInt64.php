@@ -13,24 +13,14 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Integer;
 
-/**
- * Class UInt64
- * @package PhpProfiler\Lib
- */
 final class UInt64
 {
-    /**
-     * UInt64 constructor.
-     */
     public function __construct(
         public int $hi,
         public int $lo
     ) {
     }
 
-    /**
-     * @return string
-     */
     public function __toString()
     {
         $hi_hex = str_pad(base_convert((string)$this->hi, 10, 16), 8, '0', STR_PAD_LEFT);
@@ -40,18 +30,12 @@ final class UInt64
 
     /**
      * do the wrong thing
-     *
-     * @return int
      */
     public function toInt(): int
     {
         return (int)(string)$this;
     }
 
-    /**
-     * @param int $bit_pos
-     * @return bool
-     */
     public function checkBitSet(int $bit_pos): bool
     {
         $binary = str_pad(base_convert((string)$this, 10, 2), 64, '0', STR_PAD_LEFT);

@@ -16,6 +16,8 @@ namespace PhpProfiler\Inspector\Output\TraceFormatter\Compat;
 use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
+use function join;
+
 final class CompatCallTraceFormatter implements CallTraceFormatter
 {
     private static ?self $cache;

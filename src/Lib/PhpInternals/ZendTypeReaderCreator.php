@@ -15,11 +15,7 @@ namespace PhpProfiler\Lib\PhpInternals;
 
 final class ZendTypeReaderCreator
 {
-    /**
-     * @param string $php_version
-     * @psalm-param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
-     * @return ZendTypeReader
-     */
+    /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
     public function create(string $php_version): ZendTypeReader
     {
         return new ZendTypeReader($php_version);

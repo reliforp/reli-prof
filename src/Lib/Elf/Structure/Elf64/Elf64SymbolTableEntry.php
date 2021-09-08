@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
 use PhpProfiler\Lib\Integer\UInt64;
 
-/**
- * Class Elf64SymbolTableEntry
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64SymbolTableEntry
 {
     public const STB_LOCAL = 0;
@@ -49,9 +45,6 @@ final class Elf64SymbolTableEntry
     public const STV_SINGLETON = 5;
     public const STV_ELIMINATE = 6;
 
-    /**
-     * Elf64SymbolTableEntry constructor.
-     */
     public function __construct(
         public int $st_name, // Elf64_Word
         public int $st_info, // unsigned char
@@ -62,43 +55,26 @@ final class Elf64SymbolTableEntry
     ) {
     }
 
-    /**
-     * @return int
-     */
     public function getType(): int
     {
         return (($this->st_info) & 0xf);
     }
 
-    /**
-     * @return int
-     */
     public function getBind(): int
     {
         return $this->st_info >> 4;
     }
 
-    /**
-     * @param int $bind
-     * @param int $type
-     * @return int
-     */
     public static function createInfo(int $bind, int $type): int
     {
         return ($bind << 4) + ($type & 0x0f);
     }
 
-    /**
-     * @return bool
-     */
     public function isTls(): bool
     {
         return $this->getType() === self::STT_TLS;
     }
 
-    /**
-     * @return bool
-     */
     public function isUndefined(): bool
     {
         return $this->st_name === 0

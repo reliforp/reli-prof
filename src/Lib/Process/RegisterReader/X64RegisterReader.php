@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\Process\RegisterReader;
 
 use FFI\CInteger;
 
-/**
- * Class X64RegisterReader
- * @package PhpProfiler\Lib\Process
- */
 final class X64RegisterReader
 {
     private const PTRACE_PEEKUSER = 3;
@@ -205,11 +201,8 @@ final class X64RegisterReader
 
 
     /**
-     * @param int $pid
-     * @param int $register
-     * @return int
+     * @param value-of<X64RegisterReader::ALL_REGISTERS> $register
      * @throws RegisterReaderException
-     * @psalm-param value-of<X64RegisterReader::ALL_REGISTERS> $register
      */
     public function attachAndReadOne(int $pid, int $register): int
     {

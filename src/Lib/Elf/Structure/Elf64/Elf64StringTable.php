@@ -13,15 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
-/**
- * Class Elf64StringTable
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64StringTable
 {
-    /**
-     * Elf64StringTable constructor.
-     */
     public function __construct(
         private string $raw_data
     ) {

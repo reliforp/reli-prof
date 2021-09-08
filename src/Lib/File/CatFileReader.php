@@ -14,18 +14,10 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\File;
 
 /**
- * Class CatFileReader
- *
  * workaround for a problem that PHP cannot open files in /proc/<pid>/root/
- *
- * @package PhpProfiler\Lib\File
  */
 final class CatFileReader implements FileReaderInterface
 {
-    /**
-     * @param string $path
-     * @return string
-     */
     public function readAll(string $path): string
     {
         /** @psalm-suppress InvalidArgument */

@@ -26,10 +26,7 @@ use PhpProfiler\Lib\Amphp\ContextInterface;
 
 final class PhpReaderController implements PhpReaderControllerInterface
 {
-    /**
-     * PhpReaderContext constructor.
-     * @param ContextInterface<PhpReaderControllerProtocolInterface> $context
-     */
+    /** @param ContextInterface<PhpReaderControllerProtocolInterface> $context */
     public function __construct(
         private ContextInterface $context
     ) {
@@ -45,18 +42,12 @@ final class PhpReaderController implements PhpReaderControllerInterface
         return $this->context->isRunning();
     }
 
-    /**
-     * @param TargetPhpSettings $target_php_settings
-     * @param TraceLoopSettings $loop_settings
-     * @param GetTraceSettings $get_trace_settings
-     * @return Promise<int>
-     */
+    /** @return Promise<int> */
     public function sendSettings(
         TargetPhpSettings $target_php_settings,
         TraceLoopSettings $loop_settings,
         GetTraceSettings $get_trace_settings
     ): Promise {
-        /** @var Promise<int> */
         return $this->context->getProtocol()->sendSettings(
             new SetSettingsMessage(
                 $target_php_settings,
@@ -66,13 +57,9 @@ final class PhpReaderController implements PhpReaderControllerInterface
         );
     }
 
-    /**
-     * @param int $pid
-     * @return Promise<int>
-     */
+    /** @return Promise<int> */
     public function sendAttach(int $pid): Promise
     {
-        /** @var Promise<int> */
         return $this->context->getProtocol()->sendAttach(
             new AttachMessage($pid)
         );
@@ -83,7 +70,6 @@ final class PhpReaderController implements PhpReaderControllerInterface
      */
     public function receiveTraceOrDetachWorker(): Promise
     {
-        /** @var Promise<TraceMessage|DetachWorkerMessage> */
         return $this->context->getProtocol()->receiveTraceOrDetachWorker();
     }
 }

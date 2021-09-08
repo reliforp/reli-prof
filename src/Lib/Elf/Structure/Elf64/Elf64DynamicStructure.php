@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
 use PhpProfiler\Lib\Integer\UInt64;
 
-/**
- * Class Elf64DynamicStructure
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64DynamicStructure
 {
     public const DT_NULL = 0;
@@ -71,74 +67,47 @@ final class Elf64DynamicStructure
     public const DF_TEXTREL = 4;
     public const DF_BIND_NOW = 8;
 
-    /**
-     * Elf64DynamicStructure constructor.
-     */
     public function __construct(
         public UInt64 $d_tag,
         public UInt64 $d_un
     ) {
     }
 
-    /**
-     * @return bool
-     */
     public function isEnd(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_NULL;
     }
 
-    /**
-     * @return bool
-     */
     public function isHashTable(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_HASH;
     }
 
-    /**
-     * @return bool
-     */
     public function isGnuHashTable(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_GNU_HASH;
     }
 
-    /**
-     * @return bool
-     */
     public function isStringTable(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_STRTAB;
     }
 
-    /**
-     * @return bool
-     */
     public function isStringTableSize(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_STRSZ;
     }
 
-    /**
-     * @return bool
-     */
     public function isSymbolTable(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_SYMTAB;
     }
 
-    /**
-     * @return bool
-     */
     public function isSymbolTableEntrySize(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_SYMENT;
     }
 
-    /**
-     * @return bool
-     */
     public function isDebug(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_DEBUG;

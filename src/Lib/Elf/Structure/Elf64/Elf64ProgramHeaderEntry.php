@@ -32,9 +32,6 @@ final class Elf64ProgramHeaderEntry
     public const PF_R = 4;
     public const PF_MASKPROC = 0xf000000;
 
-    /**
-     * Elf64ProgramHeaderEntry constructor.
-     */
     public function __construct(
         public int $p_type, // Elf64_Word
         public int $p_flags, // Elf64_Word
@@ -47,18 +44,12 @@ final class Elf64ProgramHeaderEntry
     ) {
     }
 
-    /**
-     * @return bool
-     */
-    public function isLoad()
+    public function isLoad(): bool
     {
         return $this->p_type === self::PT_LOAD;
     }
 
-    /**
-     * @return bool
-     */
-    public function isDynamic()
+    public function isDynamic(): bool
     {
         return $this->p_type === self::PT_DYNAMIC;
     }

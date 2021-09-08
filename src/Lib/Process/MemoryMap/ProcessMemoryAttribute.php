@@ -13,15 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\MemoryMap;
 
-/**
- * Class ProcessMemoryAttribute
- * @package PhpProfiler\ProcessReader
- */
 final class ProcessMemoryAttribute
 {
-    /**
-     * ProcessMemoryAttribute constructor.
-     */
     public function __construct(
         public bool $read,
         public bool $write,

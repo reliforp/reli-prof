@@ -16,8 +16,6 @@ namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 use PhpProfiler\Lib\Integer\UInt64;
 
 /**
- * Class Elf64GnuHashTable
- * @package PhpProfiler\Lib\Elf
  * @see https://flapenguin.me/2017/05/10/elf-lookup-dt-gnu-hash/
  */
 final class Elf64GnuHashTable
@@ -25,7 +23,6 @@ final class Elf64GnuHashTable
     public const ELFCLASS_BITS = 64;
 
     /**
-     * Elf64GnuHashTable constructor.
      * @param UInt64[] $bloom
      * @param int[] $buckets
      * @param int[] $chain
@@ -41,11 +38,6 @@ final class Elf64GnuHashTable
     ) {
     }
 
-    /**
-     * @param string $name
-     * @param callable $symbol_table_checker
-     * @return int
-     */
     public function lookup(string $name, callable $symbol_table_checker): int
     {
         $hash = self::hash($name);
@@ -66,9 +58,6 @@ final class Elf64GnuHashTable
         return Elf64SymbolTable::STN_UNDEF;
     }
 
-    /**
-     * @return int
-     */
     public function getNumberOfSymbols(): int
     {
         /** @var int $last_chain_key */
@@ -76,10 +65,6 @@ final class Elf64GnuHashTable
         return $last_chain_key + 1 + $this->symoffset;
     }
 
-    /**
-     * @param int $hash
-     * @return bool
-     */
     public function checkBloomFilter(int $hash): bool
     {
         $bloom = $this->bloom[($hash / self::ELFCLASS_BITS) % $this->bloom_size];
@@ -88,10 +73,6 @@ final class Elf64GnuHashTable
         return $bloom->checkBitSet($bloom_hash1) and $bloom->checkBitSet($bloom_hash2);
     }
 
-    /**
-     * @param string $name
-     * @return int
-     */
     public static function hash(string $name): int
     {
         $h = 5381;

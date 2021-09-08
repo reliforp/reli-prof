@@ -15,9 +15,6 @@ namespace PhpProfiler\Inspector\Settings\DaemonSettings;
 
 final class DaemonSettings
 {
-    /**
-     * DaemonSettings constructor.
-     */
     public function __construct(
         public string $target_regex,
         public int $threads

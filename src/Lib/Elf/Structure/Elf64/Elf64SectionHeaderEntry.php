@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
 use PhpProfiler\Lib\Integer\UInt64;
 
-/**
- * Class Elf64SectionHeaderEntry
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64SectionHeaderEntry
 {
     public const SHT_NULL = 0;
@@ -45,9 +41,6 @@ final class Elf64SectionHeaderEntry
     public const SHT_LOUSER = 0x80000000;
     public const SHT_HIUSER = 0xffffffff;
 
-    /**
-     * Elf64SectionHeaderEntry constructor.
-     */
     public function __construct(
         public int $sh_name, // Elf64_Word
         public int $sh_type, // Elf64_Word
@@ -62,17 +55,11 @@ final class Elf64SectionHeaderEntry
     ) {
     }
 
-    /**
-     * @return bool
-     */
     public function isSymbolTable(): bool
     {
         return $this->sh_type === self::SHT_SYMTAB;
     }
 
-    /**
-     * @return bool
-     */
     public function isStringTable(): bool
     {
         return $this->sh_type === self::SHT_STRTAB;

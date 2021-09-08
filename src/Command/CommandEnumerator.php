@@ -16,31 +16,26 @@ namespace PhpProfiler\Command;
 use FilesystemIterator;
 use IteratorAggregate;
 use SplFileInfo;
+use Symfony\Component\Console\Command\Command;
 
-/**
- * Class CommandFinder
- * @package App\Command
- */
+/** @implements IteratorAggregate<class-string<Command>> */
 final class CommandEnumerator implements IteratorAggregate
 {
-    /**
-     * CommandEnumerator constructor.
-     */
     public function __construct(
         private FilesystemIterator $command_files_iterator
     ) {
     }
 
-    /**
-     * @inheritDoc
-     */
+    /** @return \Generator<class-string<Command>> */
     public function getIterator()
     {
         /** @var SplFileInfo $command_file_info */
         foreach ($this->command_files_iterator as $command_file_info) {
             $class_name = $command_file_info->getBasename('.php');
             $namespace = $command_file_info->getPathInfo()->getFilename();
-            yield "PhpProfiler\\Command\\{$namespace}\\$class_name";
+            $result = "PhpProfiler\\Command\\{$namespace}\\$class_name";
+            assert(is_subclass_of($result, Command::class));
+            yield $result;
         }
     }
 }

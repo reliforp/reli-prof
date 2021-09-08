@@ -20,21 +20,16 @@ use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 
-/**
- * Class ProcessModuleSymbolReader
- * @package PhpProfiler\ProcessReader
- */
+use function is_null;
+
 final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
 {
     private int $base_address;
 
-    /**
-     * ProcessModuleSymbolResolver constructor.
-     */
     public function __construct(
         private int $pid,
         private Elf64SymbolResolver $symbol_resolver,
-        private ProcessModuleMemoryMap $module_memory_map,
+        ProcessModuleMemoryMap $module_memory_map,
         private MemoryReaderInterface $memory_reader,
         private ?int $tls_block_address
     ) {
@@ -42,7 +37,6 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
     }
 
     /**
-     * @param string $symbol_name
      * @return \FFI\CArray|null
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
@@ -58,8 +52,6 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
     }
 
     /**
-     * @param string $symbol_name
-     * @return int|null
      * @throws ProcessSymbolReaderException
      */
     public function resolveAddress(string $symbol_name): ?int
@@ -74,8 +66,7 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
 
 
     /**
-     * @param string $symbol_name
-     * @return int[]|null
+     * @return array{int, int}|null
      * @throws ProcessSymbolReaderException
      */
     private function resolveAddressAndSize(string $symbol_name): ?array
@@ -97,9 +88,6 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
         return [$base_address + $symbol->st_value->toInt(), $symbol->st_size->toInt()];
     }
 
-    /**
-     * @return bool
-     */
     public function isAllSymbolResolvable(): bool
     {
         return $this->symbol_resolver instanceof Elf64AllSymbolResolver;

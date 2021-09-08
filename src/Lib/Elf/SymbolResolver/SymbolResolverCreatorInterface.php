@@ -20,25 +20,15 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 interface SymbolResolverCreatorInterface
 {
     /**
-     * @param string $path
-     * @return Elf64AllSymbolResolver
      * @throws ElfParserException
      */
     public function createLinearScanResolverFromPath(string $path): Elf64AllSymbolResolver;
 
     /**
-     * @param string $path
-     * @return Elf64SymbolResolver
      * @throws ElfParserException
      */
     public function createDynamicResolverFromPath(string $path): Elf64SymbolResolver;
 
-    /**
-     * @param MemoryReaderInterface $memory_reader
-     * @param int $pid
-     * @param ProcessModuleMemoryMapInterface $module_memory_map
-     * @return Elf64SymbolResolver
-     */
     public function createDynamicResolverFromProcessMemory(
         MemoryReaderInterface $memory_reader,
         int $pid,

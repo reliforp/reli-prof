@@ -14,9 +14,8 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
 use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+
+use function is_null;
 
 final class DispatchTable
 {
@@ -26,9 +25,6 @@ final class DispatchTable
 
     public function __construct(
         public WorkerPoolInterface $worker_pool,
-        private TargetPhpSettings $target_php_settings,
-        private TraceLoopSettings $trace_loop_settings,
-        private GetTraceSettings $get_trace_settings
     ) {
         $this->assigned = new TargetProcessList();
     }

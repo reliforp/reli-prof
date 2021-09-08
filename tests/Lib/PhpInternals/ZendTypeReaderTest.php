@@ -16,10 +16,6 @@ namespace PhpProfiler\Lib\PhpInternals;
 use FFI;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Class ZendTypeReaderTest
- * @package PhpProfiler\Lib\PhpInternals
- */
 class ZendTypeReaderTest extends TestCase
 {
     public function testReadAsZendString()

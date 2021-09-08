@@ -21,9 +21,7 @@ interface WorkerPoolInterface
 
     public function returnWorkerToPool(PhpReaderControllerInterface $context_to_return): void;
 
-    /**
-     * @return iterable<int, PhpReaderControllerInterface>
-     */
+    /** @return iterable<int, PhpReaderControllerInterface> */
     public function getWorkers(): iterable;
 
     public function debugDump(): array;

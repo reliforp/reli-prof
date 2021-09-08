@@ -26,15 +26,8 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use RuntimeException;
 
-/**
- * Class PhpGlobalsFinder
- * @package PhpProfiler\ProcessReader
- */
 final class PhpGlobalsFinder
 {
-    /**
-     * PhpGlobalsFinder constructor.
-     */
     public function __construct(
         private PhpSymbolReaderCreator $php_symbol_reader_creator,
         private IntegerByteSequenceReader $integer_reader,
@@ -43,9 +36,6 @@ final class PhpGlobalsFinder
     }
 
     /**
-     * @param TargetProcessSettings $target_process_settings
-     * @param TargetPhpSettings $target_php_settings
-     * @return int
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
@@ -68,9 +58,6 @@ final class PhpGlobalsFinder
     }
 
     /**
-     * @param TargetProcessSettings $target_process_settings
-     * @param TargetPhpSettings $target_php_settings
-     * @return ProcessSymbolReaderInterface
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
@@ -89,9 +76,6 @@ final class PhpGlobalsFinder
     }
 
     /**
-     * @param TargetProcessSettings $target_process_settings
-     * @param TargetPhpSettings $target_php_settings
-     * @return int
      * @throws ElfParserException
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException

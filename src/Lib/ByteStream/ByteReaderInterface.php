@@ -16,34 +16,22 @@ namespace PhpProfiler\Lib\ByteStream;
 use ArrayAccess;
 use LogicException;
 
-/**
- * Interface ByteReaderInterface
- *
- * @extends ArrayAccess<int, int>
- * @package PhpProfiler\Lib\Binary
- */
+/** @extends ArrayAccess<int, int> */
 interface ByteReaderInterface extends ArrayAccess
 {
     /**
      * Whether a offset exists
      * @param int $offset
-     * @return bool true on success or false on failure.
      */
     public function offsetExists($offset): bool;
 
     /**
      * Offset to retrieve
      * @param int $offset
-     * @return int
      */
     public function offsetGet($offset): int;
 
-    /**
-     * create a slice as string
-     * @param $offset
-     * @param $size
-     * @return string
-     */
+    /** create a slice as string */
     public function createSliceAsString(int $offset, int $size): string;
 
     /**
@@ -53,7 +41,6 @@ interface ByteReaderInterface extends ArrayAccess
      *
      * @param mixed $offset
      * @param mixed $value
-     * @return void
      * @throws LogicException
      */
     public function offsetSet($offset, $value): void;
@@ -64,7 +51,6 @@ interface ByteReaderInterface extends ArrayAccess
      * always throws LogicException if accessed for write
      *
      * @param int $offset
-     * @return void
      * @throws LogicException
      */
     public function offsetUnset($offset): void;

@@ -13,10 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\MemoryMap;
 
-/**
- * Class ProcessMemoryArea
- * @package PhpProfiler\ProcessReader
- */
 final class ProcessMemoryArea
 {
     public function __construct(

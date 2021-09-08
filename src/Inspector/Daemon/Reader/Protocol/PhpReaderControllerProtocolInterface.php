@@ -22,12 +22,12 @@ use PhpProfiler\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpReaderControllerProtocolInterface extends MessageProtocolInterface
 {
+    /** @return Promise<int> */
     public function sendSettings(SetSettingsMessage $message): Promise;
 
+    /** @return Promise<int> */
     public function sendAttach(AttachMessage $message): Promise;
 
-    /**
-     * @return Promise<TraceMessage|DetachWorkerMessage>
-     */
+    /** @return Promise<TraceMessage|DetachWorkerMessage> */
     public function receiveTraceOrDetachWorker(): Promise;
 }

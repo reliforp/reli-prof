@@ -20,6 +20,8 @@ use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInte
 use PhpProfiler\Lib\Amphp\WorkerEntryPointInterface;
 use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
 
+use function sleep;
+
 final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
 {
     public function __construct(

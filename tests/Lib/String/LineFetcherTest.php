@@ -15,10 +15,6 @@ namespace PhpProfiler\Lib\String;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * Class LineFetcherTest
- * @package PhpProfiler\Lib\String
- */
 class LineFetcherTest extends TestCase
 {
     public function testCreateGenerator()

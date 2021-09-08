@@ -13,10 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Process\MemoryReader;
 
-/**
- * Class MemoryReaderException
- * @package PhpProfiler\Lib\Process
- */
 final class MemoryReaderException extends \Exception
 {
 }

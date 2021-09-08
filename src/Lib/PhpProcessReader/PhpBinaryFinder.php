@@ -13,16 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpProcessReader;
 
-/**
- * Class PhpBinaryFinder
- * @package PhpProfiler\ProcessReader
- */
 final class PhpBinaryFinder
 {
-    /**
-     * @param int $pid
-     * @return string
-     */
     public function findByProcessId(int $pid): string
     {
         return readlink("/proc/{$pid}/exe");

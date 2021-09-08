@@ -16,6 +16,11 @@ namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
 use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
+use function assert;
+use function is_string;
+use function ob_get_clean;
+use function ob_start;
+
 final class TemplatedCallTraceFormatter implements CallTraceFormatter
 {
     public function __construct(

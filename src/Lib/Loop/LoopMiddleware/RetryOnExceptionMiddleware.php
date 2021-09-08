@@ -21,10 +21,7 @@ final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
     private int $current_retry_count = 0;
 
     /**
-     * RetryOnExceptionLoop constructor.
-     * @param int $max_retry
      * @param array<int, class-string<Exception>> $exception_names
-     * @param LoopMiddlewareInterface $chain
      */
     public function __construct(
         private int $max_retry,

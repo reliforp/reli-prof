@@ -13,16 +13,9 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\String;
 
-/**
- * Class LineFetcher
- * @package PhpProfiler\Lib\String
- */
 final class LineFetcher
 {
-    /**
-     * @param string $string
-     * @return iterable<string>
-     */
+    /** @return iterable<string> */
     public function createIterable(string $string): iterable
     {
         $line = strtok($string, "\n");

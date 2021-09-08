@@ -18,9 +18,6 @@ final class GroupedStateCollector implements StateCollector
     /** @var StateCollector[] */
     private array $collectors;
 
-    /**
-     * @param StateCollector ...$collectors
-     */
     public function __construct(StateCollector ...$collectors)
     {
         $this->collectors = $collectors;

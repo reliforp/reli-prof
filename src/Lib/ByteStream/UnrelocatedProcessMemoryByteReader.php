@@ -19,9 +19,6 @@ final class UnrelocatedProcessMemoryByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
 
-    /**
-     * UnrelocatedProcessMemoryByteReader constructor.
-     */
     public function __construct(
         private ByteReaderInterface $byte_reader,
         private ProcessModuleMemoryMapInterface $module_memory_map

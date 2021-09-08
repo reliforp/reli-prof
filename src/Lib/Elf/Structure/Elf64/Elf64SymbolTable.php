@@ -13,31 +13,18 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Structure\Elf64;
 
-/**
- * Class Elf64SymbolTable
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64SymbolTable
 {
     public const STN_UNDEF = 0;
 
-    /**
-     * @var Elf64SymbolTableEntry[]
-     */
+    /** @var Elf64SymbolTableEntry[] */
     private array $entries;
 
-    /**
-     * Elf64SymbolTable constructor.
-     */
     public function __construct(Elf64SymbolTableEntry ...$entries)
     {
         $this->entries = $entries;
     }
 
-    /**
-     * @param int $index
-     * @return Elf64SymbolTableEntry
-     */
     public function lookup(int $index): Elf64SymbolTableEntry
     {
         return $this->entries[$index];

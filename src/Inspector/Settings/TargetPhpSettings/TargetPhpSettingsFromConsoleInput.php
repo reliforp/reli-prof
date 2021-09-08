@@ -18,11 +18,13 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 
+use function in_array;
+use function is_null;
+use function is_string;
+
 final class TargetPhpSettingsFromConsoleInput
 {
-    /**
-     * @codeCoverageIgnore
-     */
+    /** @codeCoverageIgnore */
     public function setOptions(Command $command): void
     {
         $command

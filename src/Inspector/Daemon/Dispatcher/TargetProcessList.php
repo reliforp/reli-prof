@@ -13,6 +13,9 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
+use function array_diff;
+use function array_rand;
+
 final class TargetProcessList implements TargetProcessListInterface
 {
     /** @var int[] */
@@ -44,9 +47,7 @@ final class TargetProcessList implements TargetProcessListInterface
         return new self(...array_diff($this->pid_list, $compare_list->getArray()));
     }
 
-    /**
-     * @return int[]
-     */
+    /** @return int[] */
     public function getArray(): array
     {
         return $this->pid_list;

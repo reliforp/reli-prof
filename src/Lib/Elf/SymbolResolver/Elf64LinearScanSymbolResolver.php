@@ -17,25 +17,14 @@ use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64StringTable;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
 use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
-/**
- * Class Elf64LinearScanSymbolResolver
- * @package PhpProfiler\Lib\Elf
- */
 final class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
 {
-    /**
-     * Elf64LinearScanSymbolResolver constructor.
-     */
     public function __construct(
         private Elf64SymbolTable $symbol_table,
         private Elf64StringTable $string_table,
     ) {
     }
 
-    /**
-     * @param string $symbol_name
-     * @return Elf64SymbolTableEntry
-     */
     public function resolve(string $symbol_name): Elf64SymbolTableEntry
     {
         $all_symbols = $this->symbol_table->findAll();

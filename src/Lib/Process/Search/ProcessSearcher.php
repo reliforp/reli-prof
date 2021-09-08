@@ -23,10 +23,7 @@ final class ProcessSearcher implements ProcessSearcherInterface
     ) {
     }
 
-    /**
-     * @param string $regex
-     * @return int[]
-     */
+    /** @return int[] */
     public function searchByRegex(string $regex): array
     {
         $result = [];

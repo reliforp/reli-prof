@@ -260,10 +260,6 @@ class Elf64ParserTest extends TestCase
         );
     }
 
-    /**
-     * @param string $name
-     * @return StringByteReader
-     */
     public function getTestBinary(string $name): StringByteReader
     {
         return new StringByteReader(

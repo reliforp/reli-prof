@@ -15,9 +15,6 @@ namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
 
 final class TargetProcessSettings
 {
-    /**
-     * GetTraceSettings constructor.
-     */
     public function __construct(
         public int $pid
     ) {

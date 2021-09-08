@@ -13,10 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\SymbolResolver;
 
-/**
- * Interface Elf64AllSymbolResolver
- * @package PhpProfiler\Lib\Elf
- */
 interface Elf64AllSymbolResolver extends Elf64SymbolResolver
 {
 }

@@ -16,10 +16,6 @@ namespace PhpProfiler\Lib\Elf\Tls;
 use PhpProfiler\Lib\Process\RegisterReader\RegisterReaderException;
 use PhpProfiler\Lib\Process\RegisterReader\X64RegisterReader;
 
-/**
- * Class X64ThreadPointerFinder
- * @package PhpProfiler\Lib\Elf\Tls
- */
 final class X64LinuxThreadPointerRetriever implements ThreadPointerRetrieverInterface
 {
     public static function createDefault(): self
@@ -29,17 +25,12 @@ final class X64LinuxThreadPointerRetriever implements ThreadPointerRetrieverInte
         );
     }
 
-    /**
-     * X64ThreadPointerFinder constructor.
-     */
     public function __construct(
         private X64RegisterReader $register_reader,
     ) {
     }
 
     /**
-     * @param int $pid
-     * @return int
      * @throws TlsFinderException
      */
     public function getThreadPointer(int $pid): int
