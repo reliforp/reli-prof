@@ -40,6 +40,7 @@ final class OpcodeFactory
     public function create(string $version, int $opcode): Opcode
     {
         return match ($version) {
+            'v70' => new OpcodeV70($opcode),
             'v71' => new OpcodeV71($opcode),
             'v72' => new OpcodeV72($opcode),
             'v73' => new OpcodeV73($opcode),
