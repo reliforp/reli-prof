@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\Process\Search;
 
 use PhpProfiler\Lib\File\NativeFileReader;
+use PhpProfiler\Lib\Process\ProcFileSystem\ThreadEnumerator;
 use PHPUnit\Framework\TestCase;
 
 class ProcessSearcherTest extends TestCase
@@ -52,7 +53,10 @@ class ProcessSearcherTest extends TestCase
         $child_status = proc_get_status($this->child);
         $child_pid = $child_status['pid'];
 
-        $searcher = new ProcessSearcher(new NativeFileReader());
+        $searcher = new ProcessSearcher(
+            new NativeFileReader(),
+            new ThreadEnumerator(),
+        );
         $this->assertSame(
             [$child_pid],
             $searcher->searchByRegex('/test_ProcessSearcherTest/')
