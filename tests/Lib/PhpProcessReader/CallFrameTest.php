@@ -22,6 +22,17 @@ class CallFrameTest extends TestCase
     public function testGetFullyQualifiedFunctionName()
     {
         $call_frame = new CallFrame(
+            '',
+            'function_name',
+            'file_name',
+            null
+        );
+        $this->assertSame(
+            'function_name',
+            $call_frame->getFullyQualifiedFunctionName()
+        );
+
+        $call_frame = new CallFrame(
             'class_name',
             'function_name',
             'file_name',
