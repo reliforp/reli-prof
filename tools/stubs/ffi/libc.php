@@ -37,11 +37,14 @@ class process_vm_readv_ffi extends \FFI
     public function process_vm_readv(int $pid, CData $local_iov_addr, int $liovcnt, CData $remote_iov_addr, int $riovcnt, int $flags): int {}
 }
 
-class ptrace_ffi extends \FFI
+class errno_ffi extends \FFI
 {
     /** @var int|CInteger */
     public int $errno;
+}
 
+class ptrace_ffi extends \FFI
+{
     /**
      * @param int $request
      * @param int $pid

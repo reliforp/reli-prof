@@ -11,15 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\MemoryReader;
+namespace PhpProfiler\Lib\Libc;
 
 use FFI\CData;
 
-interface MemoryReaderInterface
+interface Addressable
 {
-    /**
-     * @return \FFI\CArray<int>
-     * @throws MemoryReaderException
-     */
-    public function read(int $pid, int $remote_address, int $size): CData;
+    public function toVoidPointer(): CData;
 }

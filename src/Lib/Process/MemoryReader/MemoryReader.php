@@ -45,7 +45,7 @@ final class MemoryReader implements MemoryReaderInterface
     }
 
     /**
-     * @return \FFI\CArray
+     * @return \FFI\CArray<int>
      * @throws MemoryReaderException
      */
     public function read(int $pid, int $remote_address, int $size): CData
@@ -85,7 +85,7 @@ final class MemoryReader implements MemoryReaderInterface
             );
         }
 
-        /** @var \FFI\CArray */
+        /** @var \FFI\CArray<int> */
         return $buffer;
     }
 }
