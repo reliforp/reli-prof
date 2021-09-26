@@ -43,6 +43,11 @@ class errno_ffi extends \FFI
     public int $errno;
 }
 
+class execvp_ffi extends \FFI
+{
+    public function execvp(string $file, CData $argv): int {}
+}
+
 class ptrace_ffi extends \FFI
 {
     /**
