@@ -17,9 +17,9 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use PhpProfiler\Lib\Amphp\WorkerEntryPointInterface;
 use PhpProfiler\Lib\Log\Log;
+use PhpProfiler\Lib\Process\ProcessSpecifier;
 
 final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 {
@@ -46,13 +46,13 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             $attach_message = yield $this->protocol->receiveAttach();
             Log::debug('attach_message', [$attach_message]);
 
-            $target_process_settings = new TargetProcessSettings(
+            $process_specifier = new ProcessSpecifier(
                 $attach_message->pid
             );
 
             try {
                 $loop_runner = $this->trace_loop->run(
-                    $target_process_settings,
+                    $process_specifier,
                     $set_settings_message->trace_loop_settings,
                     $set_settings_message->target_php_settings,
                     $set_settings_message->get_trace_settings

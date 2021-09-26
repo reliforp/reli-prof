@@ -11,15 +11,8 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\MemoryReader;
+namespace PhpProfiler\Inspector\TargetProcess;
 
-use FFI\CData;
-
-interface MemoryReaderInterface
+class TragetProcessResolverException extends \Exception
 {
-    /**
-     * @return \FFI\CArray<int>
-     * @throws MemoryReaderException
-     */
-    public function read(int $pid, int $remote_address, int $size): CData;
 }

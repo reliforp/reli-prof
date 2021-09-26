@@ -28,6 +28,8 @@ use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use PhpProfiler\Lib\File\FileReaderInterface;
 use PhpProfiler\Lib\File\NativeFileReader;
+use PhpProfiler\Lib\Libc\Sys\Ptrace\Ptrace;
+use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceX64;
 use PhpProfiler\Lib\Log\StateCollector\CallerStateCollector;
 use PhpProfiler\Lib\Log\StateCollector\GroupedStateCollector;
 use PhpProfiler\Lib\Log\StateCollector\ProcessStateCollector;
@@ -71,5 +73,6 @@ return [
         $handler->setFormatter(new JsonFormatter());
         $logger->pushHandler($handler);
         return $logger;
-    }
+    },
+    Ptrace::class => autowire(PtraceX64::class),
 ];

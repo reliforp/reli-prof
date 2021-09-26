@@ -14,12 +14,14 @@ declare(strict_types=1);
 namespace PhpProfiler\Command\Inspector;
 
 use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TemplatedTraceFormatterFactory;
+use PhpProfiler\Inspector\RetryingLoopProvider;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings\TemplateSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
+use PhpProfiler\Inspector\TargetProcess\TargetProcessResolver;
 use PhpProfiler\Inspector\TraceLoopProvider;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
@@ -47,6 +49,8 @@ final class GetTraceCommand extends Command
         private TemplateSettingsFromConsoleInput $template_settings_from_console_input,
         private TemplatedTraceFormatterFactory $templated_trace_formatter_factory,
         private ProcessStopper $process_stopper,
+        private TargetProcessResolver $target_process_resolver,
+        private RetryingLoopProvider $retrying_loop_provider,
     ) {
         parent::__construct();
     }
@@ -79,23 +83,40 @@ final class GetTraceCommand extends Command
         $template_settings = $this->template_settings_from_console_input->createSettings($input);
         $formatter = $this->templated_trace_formatter_factory->createFromSettings($template_settings);
 
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings);
+        $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
+
+        // On targeting ZTS, it's possible that libpthread.so of the target process isn't yet loaded
+        // at this point. In that case the TLS block can't be located, then the address of EG can't
+        // be found also. So simply retrying the whole process of finding EG here.
+        $eg_address = null;
+        $this->retrying_loop_provider->do(
+            try: function () use (&$eg_address, $process_specifier, $target_php_settings) {
+                $eg_address = $this->php_globals_finder->findExecutorGlobals(
+                    $process_specifier,
+                    $target_php_settings
+                );
+            },
+            retry_on: [\Throwable::class],
+            max_retry: 10,
+            interval_on_retry_ns: 1000 * 1000 * 10,
+        );
+        assert(is_int($eg_address));
 
         $this->loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
-                $target_process_settings,
+                $process_specifier,
                 $target_php_settings,
                 $loop_settings,
                 $eg_address,
                 $output,
                 $formatter
             ): bool {
-                if ($loop_settings->stop_process and $this->process_stopper->stop($target_process_settings->pid)) {
-                    defer($_, fn () => $this->process_stopper->resume($target_process_settings->pid));
+                if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
+                    defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
                 }
                 $call_trace = $this->executor_globals_reader->readCallTrace(
-                    $target_process_settings->pid,
+                    $process_specifier->pid,
                     $target_php_settings->php_version,
                     $eg_address,
                     $get_trace_settings->depth

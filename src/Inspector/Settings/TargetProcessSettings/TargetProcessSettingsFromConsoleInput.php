@@ -16,6 +16,7 @@ namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
 use PhpCast\NullableCast;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 
@@ -36,6 +37,16 @@ final class TargetProcessSettingsFromConsoleInput
                 InputOption::VALUE_REQUIRED,
                 'process id (required)'
             )
+            ->addArgument(
+                'cmd',
+                InputArgument::OPTIONAL,
+                'command'
+            )
+            ->addArgument(
+                'args',
+                InputArgument::OPTIONAL | InputArgument::IS_ARRAY,
+                'args'
+            )
         ;
     }
 
@@ -45,18 +56,23 @@ final class TargetProcessSettingsFromConsoleInput
     public function createSettings(InputInterface $input): TargetProcessSettings
     {
         $pid = NullableCast::toString($input->getOption('pid'));
-        if (is_null($pid)) {
+        $command = NullableCast::toString($input->getArgument('cmd'));
+        if (is_null($pid) and is_null($command)) {
             throw TargetProcessSettingsException::create(
-                TargetProcessSettingsException::PID_NOT_SPECIFIED
+                TargetProcessSettingsException::TARGET_NOT_SPECIFIED
             );
         }
-        $pid = filter_var($pid, FILTER_VALIDATE_INT);
-        if ($pid === false) {
-            throw TargetProcessSettingsException::create(
-                TargetProcessSettingsException::PID_NOT_SPECIFIED
-            );
+        if (!is_null($pid)) {
+            $pid = filter_var($pid, FILTER_VALIDATE_INT);
+            if ($pid === false) {
+                throw TargetProcessSettingsException::create(
+                    TargetProcessSettingsException::TARGET_NOT_SPECIFIED
+                );
+            }
+            return new TargetProcessSettings($pid);
         }
-
-        return new TargetProcessSettings($pid);
+        /** @var list<string> $args */
+        $args = $input->getArgument('args');
+        return new TargetProcessSettings(null, $command, $args);
     }
 }

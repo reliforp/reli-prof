@@ -27,6 +27,7 @@ use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpSymbolReaderCreator;
+use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
 class ExecutorGlobalsReaderTest extends TestCase
@@ -93,7 +94,7 @@ class ExecutorGlobalsReaderTest extends TestCase
 
         /** @var int $child_status['pid'] */
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
-            new TargetProcessSettings($child_status['pid']),
+            new ProcessSpecifier($child_status['pid']),
             new TargetPhpSettings()
         );
         $name = $executor_globals_reader->readCurrentFunctionName(

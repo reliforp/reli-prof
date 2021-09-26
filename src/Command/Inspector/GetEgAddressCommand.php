@@ -13,9 +13,11 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
+use PhpProfiler\Inspector\RetryingLoopProvider;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
+use PhpProfiler\Inspector\TargetProcess\TargetProcessResolver;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -33,7 +35,9 @@ final class GetEgAddressCommand extends Command
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
-        private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input
+        private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
+        private TargetProcessResolver $target_process_resolver,
+        private RetryingLoopProvider $retrying_loop_provider,
     ) {
         parent::__construct();
     }
@@ -59,10 +63,27 @@ final class GetEgAddressCommand extends Command
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
 
+        $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
+
+        // see the comment at GetTraceCommand::execute()
+        $eg_address = null;
+        $this->retrying_loop_provider->do(
+            try: function () use (&$eg_address, $process_specifier, $target_php_settings) {
+                $eg_address = $this->php_globals_finder->findExecutorGlobals(
+                    $process_specifier,
+                    $target_php_settings
+                );
+            },
+            retry_on: [\Throwable::class],
+            max_retry: 10,
+            interval_on_retry_ns: 1000 * 1000 * 10,
+        );
+        assert(is_int($eg_address));
+
         $output->writeln(
             sprintf(
                 '0x%s',
-                dechex($this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings))
+                dechex($eg_address)
             )
         );
 

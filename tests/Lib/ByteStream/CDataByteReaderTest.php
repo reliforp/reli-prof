@@ -20,7 +20,7 @@ class CDataByteReaderTest extends TestCase
 {
     public function testRead()
     {
-        /** @var \FFI\CArray $cdata_array */
+        /** @var \FFI\CArray<int> $cdata_array */
         $cdata_array = FFI::new('unsigned char[3]');
         $cdata_array[0] = 1;
         $cdata_array[1] = 2;
@@ -33,7 +33,7 @@ class CDataByteReaderTest extends TestCase
 
     public function testWrite()
     {
-        /** @var \FFI\CArray $cdata_array */
+        /** @var \FFI\CArray<int> $cdata_array */
         $cdata_array = FFI::new('unsigned char[3]');
         $reader = new CDataByteReader($cdata_array);
         $this->expectException(\LogicException::class);
@@ -42,7 +42,7 @@ class CDataByteReaderTest extends TestCase
 
     public function testOffsetExists()
     {
-        /** @var \FFI\CArray $cdata_array */
+        /** @var \FFI\CArray<int> $cdata_array */
         $cdata_array = FFI::new('unsigned char[3]');
         $cdata_array[0] = 1;
         $reader = new CDataByteReader($cdata_array);
@@ -52,7 +52,7 @@ class CDataByteReaderTest extends TestCase
 
     public function testCreateSliceAsString()
     {
-        /** @var \FFI\CArray $cdata_array */
+        /** @var \FFI\CArray<int> $cdata_array */
         $cdata_array = FFI::new('unsigned char[4]');
         $cdata_array[0] = ord('a');
         $cdata_array[1] = ord('b');

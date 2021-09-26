@@ -11,15 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\MemoryReader;
+namespace PhpProfiler\Lib\System;
 
-use FFI\CData;
-
-interface MemoryReaderInterface
+class OnShutdown
 {
-    /**
-     * @return \FFI\CArray<int>
-     * @throws MemoryReaderException
-     */
-    public function read(int $pid, int $remote_address, int $size): CData;
+    public function register(callable $callback): void
+    {
+        \register_shutdown_function($callback);
+    }
 }

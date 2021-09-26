@@ -24,7 +24,7 @@ final class CDataByteReader implements ByteReaderInterface
 {
     use ByteReaderDisableWriteAccessTrait;
 
-    /** @param CArray $source */
+    /** @param CArray<int> $source */
     public function __construct(
         private CData $source
     ) {

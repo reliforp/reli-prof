@@ -11,15 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\MemoryReader;
+namespace PhpProfiler\Lib\Process;
 
-use FFI\CData;
-
-interface MemoryReaderInterface
+final class ProcessSpecifier
 {
-    /**
-     * @return \FFI\CArray<int>
-     * @throws MemoryReaderException
-     */
-    public function read(int $pid, int $remote_address, int $size): CData;
+    public function __construct(
+        public int $pid,
+    ) {
+    }
 }

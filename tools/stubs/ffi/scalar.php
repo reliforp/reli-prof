@@ -24,7 +24,8 @@ class CPointer extends CData
 /**
  * Class CArray
  *
- * @template-implements \ArrayAccess<int, int>
+ * @template T
+ * @template-implements \ArrayAccess<int, T>
  */
 class CArray extends CData implements \ArrayAccess, \Countable
 {

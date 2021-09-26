@@ -27,6 +27,7 @@ use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\PhpProcessReader\CallFrame;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
 class PhpReaderEntryPointTest extends TestCase
@@ -40,20 +41,20 @@ class PhpReaderEntryPointTest extends TestCase
         $php_reader_task->shouldReceive('run')
             ->withArgs(
                 function (
-                    $target_process_settings,
+                    $process_specifier,
                     $trace_loop_serrings,
                     $target_php_settings,
                     $get_trace_settings
                 ) {
                     $this->assertEquals(
                         [
-                            new TargetProcessSettings(123),
+                            new ProcessSpecifier(123),
                             new TraceLoopSettings(1, 'q', 10, false),
                             new TargetPhpSettings(),
                             new GetTraceSettings(PHP_INT_MAX),
                         ],
                         [
-                            $target_process_settings,
+                            $process_specifier,
                             $trace_loop_serrings,
                             $target_php_settings,
                             $get_trace_settings,

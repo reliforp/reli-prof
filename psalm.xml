@@ -16,6 +16,11 @@
                 <file name="vendor/symfony/console/Command/Command.php"/>
             </errorLevel>
         </PossiblyNullArgument>
+        <UnnecessaryVarAnnotation>
+            <errorLevel type="suppress">
+                <file name="vendor/myclabs/php-enum/src/Enum.php"/>
+            </errorLevel>
+        </UnnecessaryVarAnnotation>
     </issueHandlers>
     <stubs>
         <file name="vendor/jetbrains/phpstorm-stubs/FFI/FFI.php"/>

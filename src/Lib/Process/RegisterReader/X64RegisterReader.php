@@ -14,13 +14,12 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\Process\RegisterReader;
 
 use FFI\CInteger;
+use PhpProfiler\Lib\Libc\Errno\Errno;
+use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceRequest;
+use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceX64;
 
 final class X64RegisterReader
 {
-    private const PTRACE_PEEKUSER = 3;
-    private const PTRACE_ATTACH = 16;
-    private const PTRACE_DETACH = 17;
-
     /** @var int */
     public const R15 = 0 * 8;
 
@@ -133,72 +132,11 @@ final class X64RegisterReader
         self::GS,
     ];
 
-    private \FFI $ffi;
-
-    public function __construct()
-    {
-        $this->ffi = \FFI::cdef('
-           struct user_regs_struct {
-               unsigned long r15;
-               unsigned long r14;
-               unsigned long r13;
-               unsigned long r12;
-               unsigned long bp;
-               unsigned long bx;
-               unsigned long r11;
-               unsigned long r10;
-               unsigned long r9;
-               unsigned long r8;
-               unsigned long ax;
-               unsigned long cx;
-               unsigned long dx;
-               unsigned long si;
-               unsigned long di;
-               unsigned long orig_ax;
-               unsigned long ip;
-               unsigned long cs;
-               unsigned long flags;
-               unsigned long sp;
-               unsigned long ss;
-               unsigned long fs_base;
-               unsigned long gs_base;
-               unsigned long ds;
-               unsigned long es;
-               unsigned long fs;
-               unsigned long gs;
-           };
-           typedef int pid_t;
-           enum __ptrace_request
-           {
-               PTRACE_TRACEME = 0,
-               PTRACE_PEEKTEXT = 1,
-               PTRACE_PEEKDATA = 2,
-               PTRACE_PEEKUSER = 3,
-               PTRACE_POKETEXT = 4,
-               PTRACE_POKEDATA = 5,
-               PTRACE_POKEUSER = 6,
-               PTRACE_CONT = 7,
-               PTRACE_KILL = 8,
-               PTRACE_SINGLESTEP = 9,
-               PTRACE_GETREGS = 12,
-               PTRACE_SETREGS = 13,
-               PTRACE_GETFPREGS = 14,
-               PTRACE_SETFPREGS = 15,
-               PTRACE_ATTACH = 16,
-               PTRACE_DETACH = 17,
-               PTRACE_GETFPXREGS = 18,
-               PTRACE_SETFPXREGS = 19,
-               PTRACE_SYSCALL = 24,
-               PTRACE_SETOPTIONS = 0x4200,
-               PTRACE_GETEVENTMSG = 0x4201,
-               PTRACE_GETSIGINFO = 0x4202,
-               PTRACE_SETSIGINFO = 0x4203
-           };
-           long ptrace(enum __ptrace_request request, pid_t pid, void *addr, void *data);
-           int errno;
-       ', 'libc.so.6');
+    public function __construct(
+        private PtraceX64 $ptrace,
+        private Errno $errno,
+    ) {
     }
-
 
     /**
      * @param value-of<X64RegisterReader::ALL_REGISTERS> $register
@@ -206,39 +144,45 @@ final class X64RegisterReader
      */
     public function attachAndReadOne(int $pid, int $register): int
     {
-        /** @var CInteger $zero */
-        $zero = $this->ffi->new('long');
-        $zero->cdata = 0;
-        $null = \FFI::cast('void *', $zero);
-        $target_offset = $this->ffi->new('long');
+        $target_offset = \FFI::new('long');
         /** @var \FFI\CInteger $target_offset */
         $target_offset->cdata = $register;
 
-        /** @var \FFI\Libc\ptrace_ffi $this->ffi */
-        $attach = $this->ffi->ptrace(self::PTRACE_ATTACH, $pid, $null, $null);
-
+        $attach = $this->ptrace->ptrace(
+            PtraceRequest::PTRACE_ATTACH(),
+            $pid,
+            null,
+            null
+        );
         if ($attach === -1) {
-            /** @var int $errno */
-            $errno = $this->ffi->errno;
+            $errno = $this->errno->get();
             if ($errno) {
                 throw new RegisterReaderException("failed to attach process errno={$errno}", $errno);
             }
         }
-        pcntl_waitpid($pid, $status, WUNTRACED);
+        pcntl_waitpid($pid, $status, \WUNTRACED);
 
-        $fs = $this->ffi->ptrace(self::PTRACE_PEEKUSER, $pid, \FFI::cast('void *', $target_offset), $null);
+        $fs = $this->ptrace->ptrace(
+            PtraceRequest::PTRACE_PEEKUSER(),
+            $pid,
+            \FFI::cast('void *', $target_offset),
+            null
+        );
         if ($fs === -1) {
-            /** @var int $errno */
-            $errno = $this->ffi->errno;
+            $errno = $this->errno->get();
             if ($errno) {
                 throw new RegisterReaderException("failed to read register errno={$errno}", $errno);
             }
         }
 
-        $detach = $this->ffi->ptrace(self::PTRACE_DETACH, $pid, $null, $null);
+        $detach = $this->ptrace->ptrace(
+            PtraceRequest::PTRACE_DETACH(),
+            $pid,
+            null,
+            null
+        );
         if ($detach === -1) {
-            /** @var int $errno */
-            $errno = $this->ffi->errno;
+            $errno = $this->errno->get();
             if ($errno) {
                 throw new RegisterReaderException("failed to detach process errno={$errno}", $errno);
             }

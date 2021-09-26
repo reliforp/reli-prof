@@ -15,8 +15,11 @@ namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
 
 final class TargetProcessSettings
 {
+    /** @param list<string> $arguments */
     public function __construct(
-        public int $pid
+        public ?int $pid,
+        public ?string $command = null,
+        public array $arguments = [],
     ) {
     }
 }

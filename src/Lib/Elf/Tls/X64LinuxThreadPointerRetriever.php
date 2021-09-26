@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Elf\Tls;
 
+use PhpProfiler\Lib\Libc\Errno\Errno;
+use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceX64;
 use PhpProfiler\Lib\Process\RegisterReader\RegisterReaderException;
 use PhpProfiler\Lib\Process\RegisterReader\X64RegisterReader;
 
@@ -21,7 +23,10 @@ final class X64LinuxThreadPointerRetriever implements ThreadPointerRetrieverInte
     public static function createDefault(): self
     {
         return new self(
-            new X64RegisterReader()
+            new X64RegisterReader(
+                new PtraceX64(),
+                new Errno(),
+            )
         );
     }
 
