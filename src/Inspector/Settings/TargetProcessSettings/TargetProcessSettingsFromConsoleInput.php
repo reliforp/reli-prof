@@ -35,17 +35,17 @@ final class TargetProcessSettingsFromConsoleInput
                 'pid',
                 'p',
                 InputOption::VALUE_REQUIRED,
-                'process id (required)'
+                'process id'
             )
             ->addArgument(
                 'cmd',
                 InputArgument::OPTIONAL,
-                'command'
+                'command to execute as a target: either pid (via -p/--pid) or cmd must be specified'
             )
             ->addArgument(
                 'args',
                 InputArgument::OPTIONAL | InputArgument::IS_ARRAY,
-                'args'
+                'command line arguments for cmd',
             )
         ;
     }

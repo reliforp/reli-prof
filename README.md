@@ -23,9 +23,9 @@ php-profiler is heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy
 
 The main difference between the two is that php-profiler is written in almost pure PHP while phpspy is written in C.
 In profiling, there are cases you want to customize how and what information to get.
-If customizabilities for PHP developers matters, you can use this software at the cost of performance. (Although, I hope the cost is not too big.)
+If customizability for PHP developers matters, you can use this software at the cost of performance. (Although, I hope the cost is not too big.)
 
-Additionally, php-profiler can find VM state from ZTS interpreters. Currently this cannot be done with phpspy only.
+Additionally, php-profiler can find VM state from ZTS interpreters. For example, in the daemon mode, traces of threads started via [ext-parallel](https://github.com/krakjoe/parallel) are automatically retrieved. Currently this cannot be done with phpspy only.
 php-profiler also provides functionality to only get the address of EG from targets, so you can use actual profiling with phpspy if you want, even when the target is ZTS.
 
 ## Requirements
@@ -56,70 +56,48 @@ composer install
 
 ### From Composer
 ```bash
-composer require sj-i/php-profiler
-./vendor/bin/php-profiler
+composer create-project sj-i/php-profiler
+cd php-profiler
+./php-profiler
 ```
 
 ## Usage
-### Get current function names
-```bash
- % ./php-profiler inspector:current_function --help
-Description:
-  periodically get running function name from an outer process or thread
-
-Usage:
-  inspector:current_function [options]
-
-Options:
-  -p, --pid=PID                              process id (required)
-  -s, --sleep-ns[=SLEEP-NS]                  nanoseconds between traces (default: 1000 * 1000 * 10)
-  -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: v80)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                 Display this help message
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi                                 Force ANSI output
-      --no-ansi                              Disable ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
-
-```
-
 ### Get call traces
 ```bash
- % ./php-profiler inspector:trace --help           
+./php-profiler inspector:trace --help
 Description:
   periodically get call trace from an outer process or thread
 
 Usage:
-  inspector:trace [options]
+  inspector:trace [options] [--] [<cmd> [<args>...]]
+
+Arguments:
+  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
+  args                                       command line arguments for cmd
 
 Options:
-  -p, --pid=PID                              process id (required)
+  -p, --pid=PID                              process id
   -d, --depth[=DEPTH]                        max depth
   -s, --sleep-ns[=SLEEP-NS]                  nanoseconds between traces (default: 1000 * 1000 * 10)
   -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
+  -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
       --php-version[=PHP-VERSION]            php version of the target (default: v80)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                 Display this help message
+  -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
+  -h, --help                                 Display help for the given command. When no command is given display help for the list command
   -q, --quiet                                Do not output any message
   -V, --version                              Display this application version
-      --ansi                                 Force ANSI output
-      --no-ansi                              Disable ANSI output
+      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
   -n, --no-interaction                       Do not ask any interactive question
   -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
 ### Daemon mode
 ```bash
- % ./php-profiler inspector:daemon --help
+./php-profiler inspector:daemon --help
 Description:
   concurrently get call traces from processes whose command-lines match a given regex
 
@@ -132,65 +110,72 @@ Options:
   -d, --depth[=DEPTH]                        max depth
   -s, --sleep-ns[=SLEEP-NS]                  nanoseconds between traces (default: 1000 * 1000 * 10)
   -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
+  -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
       --php-version[=PHP-VERSION]            php version of the target (default: v80)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                 Display this help message
+  -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
+  -h, --help                                 Display help for the given command. When no command is given display help for the list command
   -q, --quiet                                Do not output any message
   -V, --version                              Display this application version
-      --ansi                                 Force ANSI output
-      --no-ansi                              Disable ANSI output
+      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
   -n, --no-interaction                       Do not ask any interactive question
   -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
 ### Get the address of EG
 ```bash
- % ./php-profiler inspector:eg --help   
+./php-profiler inspector:eg --help
 Description:
   get EG address from an outer process or thread
 
 Usage:
-  inspector:eg_address [options]
+  inspector:eg_address [options] [--] [<cmd> [<args>...]]
+
+Arguments:
+  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
+  args                                       command line arguments for cmd
 
 Options:
-  -p, --pid=PID                              process id (required)
+  -p, --pid=PID                              process id
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
       --php-version[=PHP-VERSION]            php version of the target (default: v80)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                 Display this help message
+  -h, --help                                 Display help for the given command. When no command is given display help for the list command
   -q, --quiet                                Do not output any message
   -V, --version                              Display this application version
-      --ansi                                 Force ANSI output
-      --no-ansi                              Disable ANSI output
+      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
   -n, --no-interaction                       Do not ask any interactive question
   -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
 ## Examples
-### Periodically read current function name
+### Trace a script
 ```bash
-sudo php ./php-profiler inspector:current_function -p <pid of the target process or thread>
+php ./php-profiler inspector:trace -- php <script file>
 ```
 
-### Periodically read call trace
+### Attach to a running process
 ```bash
 sudo php ./php-profiler inspector:trace -p <pid of the target process or thread>
 ```
+The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
 
 ### Daemon mode
 ```bash
 sudo php ./php-profiler inspector:daemon -P <regex to find target processes>
 ``` 
+The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
 
 ### Get the address of EG
 ```bash
 sudo php ./php-profiler inspector:eg -p <pid of the target process or thread>
 ``` 
+The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
 
 ### Use in a docker container and target a process on host
 ```bash
