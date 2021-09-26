@@ -37,7 +37,7 @@ final class TemplateSettingsFromConsoleInput
                 'template',
                 't',
                 InputOption::VALUE_OPTIONAL,
-                'template name'
+                'template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)'
             )
         ;
     }

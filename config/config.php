@@ -25,7 +25,8 @@ return [
     ],
     'output' => [
         'template' => [
-            'default' => 'phpspy'
+            'default' => 'phpspy',
+            // 'default' => 'phpspy_with_opcode'
             // 'default' => 'compat'
             // 'default' => 'json_lines'
         ],
