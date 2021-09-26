@@ -37,10 +37,12 @@ final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
                 $result = $this->chain->invoke();
                 $this->current_retry_count = 0;
                 return $result;
-            } catch (Exception $e) {
-                if (in_array(get_class($e), $this->exception_names, true)) {
-                    $this->current_retry_count++;
-                    continue;
+            } catch (\Throwable $e) {
+                foreach ($this->exception_names as $exception_name) {
+                    if (is_a($e, $exception_name)) {
+                        $this->current_retry_count++;
+                        continue 2;
+                    }
                 }
                 throw $e;
             }

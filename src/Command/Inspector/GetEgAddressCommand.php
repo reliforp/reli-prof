@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
+use PhpProfiler\Inspector\RetryingLoopProvider;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
@@ -36,6 +37,7 @@ final class GetEgAddressCommand extends Command
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
         private TargetProcessResolver $target_process_resolver,
+        private RetryingLoopProvider $retrying_loop_provider,
     ) {
         parent::__construct();
     }
@@ -63,25 +65,20 @@ final class GetEgAddressCommand extends Command
 
         $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
 
-        $last_exception = null;
-        for ($i = 0; $i < 10; $i++) {
-            try {
+        // see the comment at GetTraceCommand::execute()
+        $eg_address = null;
+        $this->retrying_loop_provider->do(
+            try: function () use (&$eg_address, $process_specifier, $target_php_settings) {
                 $eg_address = $this->php_globals_finder->findExecutorGlobals(
                     $process_specifier,
                     $target_php_settings
                 );
-                break;
-            } catch (\Throwable $e) {
-                $last_exception = $e;
-                /** @psalm-suppress UnusedFunctionCall */
-                \time_nanosleep(0, 1000 * 1000 * 10);
-                continue;
-            }
-        }
-        if ($i === 10) {
-            assert(isset($last_exception) and $last_exception instanceof \Exception);
-            throw new \Exception('cannot find executor globals', 0, $last_exception);
-        }
+            },
+            retry_on: [\Throwable::class],
+            max_retry: 10,
+            interval_on_retry_ns: 1000 * 1000 * 10,
+        );
+        assert(is_int($eg_address));
 
         $output->writeln(
             sprintf(

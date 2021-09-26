@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Command\Inspector;
 
 use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TemplatedTraceFormatterFactory;
+use PhpProfiler\Inspector\RetryingLoopProvider;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
@@ -49,6 +50,7 @@ final class GetTraceCommand extends Command
         private TemplatedTraceFormatterFactory $templated_trace_formatter_factory,
         private ProcessStopper $process_stopper,
         private TargetProcessResolver $target_process_resolver,
+        private RetryingLoopProvider $retrying_loop_provider,
     ) {
         parent::__construct();
     }
@@ -83,25 +85,22 @@ final class GetTraceCommand extends Command
 
         $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
 
-        $last_exception = null;
-        for ($i = 0; $i < 10; $i++) {
-            try {
+        // On targeting ZTS, it's possible that libpthread.so of the target process isn't yet loaded
+        // at this point. In that case the TLS block can't be located, then the address of EG can't
+        // be found also. So simply retrying the whole process of finding EG here.
+        $eg_address = null;
+        $this->retrying_loop_provider->do(
+            try: function () use (&$eg_address, $process_specifier, $target_php_settings) {
                 $eg_address = $this->php_globals_finder->findExecutorGlobals(
                     $process_specifier,
                     $target_php_settings
                 );
-                break;
-            } catch (\Throwable $e) {
-                $last_exception = $e;
-                /** @psalm-suppress UnusedFunctionCall */
-                \time_nanosleep(0, 1000 * 1000 * 10);
-                continue;
-            }
-        }
-        if ($i === 10) {
-            assert(isset($last_exception) and $last_exception instanceof \Exception);
-            throw new \Exception('cannot find executor globals', 0, $last_exception);
-        }
+            },
+            retry_on: [\Throwable::class],
+            max_retry: 10,
+            interval_on_retry_ns: 1000 * 1000 * 10,
+        );
+        assert(is_int($eg_address));
 
         $this->loop_provider->getMainLoop(
             function () use (
@@ -113,7 +112,6 @@ final class GetTraceCommand extends Command
                 $output,
                 $formatter
             ): bool {
-
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
                 }

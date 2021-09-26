@@ -20,7 +20,7 @@ use PhpProfiler\Lib\Libc\Unistd\Execvp;
 use PhpProfiler\Lib\Process\Exec\Internal\Pcntl;
 use PhpProfiler\Lib\System\OnShutdown;
 
-final class TraceeExecutor
+class TraceeExecutor
 {
     public function __construct(
         private Pcntl $pcntl,
