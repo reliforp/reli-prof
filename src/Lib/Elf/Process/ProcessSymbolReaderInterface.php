@@ -18,7 +18,7 @@ use FFI\CData;
 interface ProcessSymbolReaderInterface
 {
     /**
-     * @return \FFI\CArray|null
+     * @return \FFI\CArray<int>|null
      * @throws ProcessSymbolReaderException
      */
     public function read(string $symbol_name): ?CData;

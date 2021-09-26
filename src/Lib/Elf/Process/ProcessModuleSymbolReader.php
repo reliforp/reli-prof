@@ -37,7 +37,7 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
     }
 
     /**
-     * @return \FFI\CArray|null
+     * @return \FFI\CArray<int>|null
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      */
