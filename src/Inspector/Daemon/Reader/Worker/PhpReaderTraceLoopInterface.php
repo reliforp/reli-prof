@@ -17,14 +17,14 @@ use Generator;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use PhpProfiler\Lib\Process\ProcessSpecifier;
 
 interface PhpReaderTraceLoopInterface
 {
     /** @return Generator<TraceMessage> */
     public function run(
-        TargetProcessSettings $target_process_settings,
+        ProcessSpecifier $process_specifier,
         TraceLoopSettings $loop_settings,
         TargetPhpSettings $target_php_settings,
         GetTraceSettings $get_trace_settings

@@ -17,11 +17,11 @@ use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 
 final class TargetProcessSettingsException extends InspectorSettingsException
 {
-    public const PID_NOT_SPECIFIED = 1;
+    public const TARGET_NOT_SPECIFIED = 1;
     public const PID_IS_NOT_INTEGER = 2;
 
     protected const ERRORS = [
-        self::PID_NOT_SPECIFIED => 'pid is not specified',
+        self::TARGET_NOT_SPECIFIED => 'either pid or command must be specified',
         self::PID_IS_NOT_INTEGER => 'pid is not integer',
     ];
 }

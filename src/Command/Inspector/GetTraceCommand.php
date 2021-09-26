@@ -20,6 +20,7 @@ use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsol
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings\TemplateSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
+use PhpProfiler\Inspector\TargetProcess\TargetProcessResolver;
 use PhpProfiler\Inspector\TraceLoopProvider;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
@@ -47,6 +48,7 @@ final class GetTraceCommand extends Command
         private TemplateSettingsFromConsoleInput $template_settings_from_console_input,
         private TemplatedTraceFormatterFactory $templated_trace_formatter_factory,
         private ProcessStopper $process_stopper,
+        private TargetProcessResolver $target_process_resolver,
     ) {
         parent::__construct();
     }
@@ -79,23 +81,44 @@ final class GetTraceCommand extends Command
         $template_settings = $this->template_settings_from_console_input->createSettings($input);
         $formatter = $this->templated_trace_formatter_factory->createFromSettings($template_settings);
 
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings);
+        $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
+
+        $last_exception = null;
+        for ($i = 0; $i < 10; $i++) {
+            try {
+                $eg_address = $this->php_globals_finder->findExecutorGlobals(
+                    $process_specifier,
+                    $target_php_settings
+                );
+                break;
+            } catch (\Throwable $e) {
+                $last_exception = $e;
+                /** @psalm-suppress UnusedFunctionCall */
+                \time_nanosleep(0, 1000 * 1000 * 10);
+                continue;
+            }
+        }
+        if ($i === 10) {
+            assert(isset($last_exception) and $last_exception instanceof \Exception);
+            throw new \Exception('cannot find executor globals', 0, $last_exception);
+        }
 
         $this->loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
-                $target_process_settings,
+                $process_specifier,
                 $target_php_settings,
                 $loop_settings,
                 $eg_address,
                 $output,
                 $formatter
             ): bool {
-                if ($loop_settings->stop_process and $this->process_stopper->stop($target_process_settings->pid)) {
-                    defer($_, fn () => $this->process_stopper->resume($target_process_settings->pid));
+
+                if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
+                    defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
                 }
                 $call_trace = $this->executor_globals_reader->readCallTrace(
-                    $target_process_settings->pid,
+                    $process_specifier->pid,
                     $target_php_settings->php_version,
                     $eg_address,
                     $get_trace_settings->depth

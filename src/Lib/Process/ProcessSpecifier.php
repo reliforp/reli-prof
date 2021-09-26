@@ -11,15 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
+namespace PhpProfiler\Lib\Process;
 
-final class TargetProcessSettings
+final class ProcessSpecifier
 {
-    /** @param list<string> $arguments */
     public function __construct(
-        public ?int $pid,
-        public ?string $command = null,
-        public array $arguments = [],
+        public int $pid,
     ) {
     }
 }

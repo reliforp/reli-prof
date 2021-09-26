@@ -17,10 +17,10 @@ use Generator;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
+use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
 
 use function is_null;
@@ -44,26 +44,26 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
      * @throws \PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException
      */
     public function run(
-        TargetProcessSettings $target_process_settings,
+        ProcessSpecifier $process_specifier,
         TraceLoopSettings $loop_settings,
         TargetPhpSettings $target_php_settings,
         GetTraceSettings $get_trace_settings
     ): Generator {
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings);
+        $eg_address = $this->php_globals_finder->findExecutorGlobals($process_specifier, $target_php_settings);
 
         $loop = $this->reader_loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
-                $target_process_settings,
+                $process_specifier,
                 $target_php_settings,
                 $loop_settings,
                 $eg_address
             ): Generator {
-                if ($loop_settings->stop_process and $this->process_stopper->stop($target_process_settings->pid)) {
-                    defer($_, fn () => $this->process_stopper->resume($target_process_settings->pid));
+                if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
+                    defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
                 }
                 $call_trace = $this->executor_globals_reader->readCallTrace(
-                    $target_process_settings->pid,
+                    $process_specifier->pid,
                     $target_php_settings->php_version,
                     $eg_address,
                     $get_trace_settings->depth

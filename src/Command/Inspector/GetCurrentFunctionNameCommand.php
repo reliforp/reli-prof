@@ -17,6 +17,7 @@ use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
+use PhpProfiler\Inspector\TargetProcess\TargetProcessResolver;
 use PhpProfiler\Inspector\TraceLoopProvider;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
@@ -36,7 +37,8 @@ final class GetCurrentFunctionNameCommand extends Command
         private TraceLoopProvider $loop_provider,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
-        private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input
+        private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
+        private TargetProcessResolver $target_process_resolver,
     ) {
         parent::__construct();
     }
@@ -64,13 +66,33 @@ final class GetCurrentFunctionNameCommand extends Command
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
 
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings);
+        $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
+
+        $last_exception = null;
+        for ($i = 0; $i < 10; $i++) {
+            try {
+                $eg_address = $this->php_globals_finder->findExecutorGlobals(
+                    $process_specifier,
+                    $target_php_settings
+                );
+                break;
+            } catch (\Throwable $e) {
+                $last_exception = $e;
+                /** @psalm-suppress UnusedFunctionCall */
+                \time_nanosleep(0, 1000 * 1000 * 10);
+                continue;
+            }
+        }
+        if ($i === 10) {
+            assert(isset($last_exception) and $last_exception instanceof \Exception);
+            throw new \Exception('cannot find executor globals', 0, $last_exception);
+        }
 
         $this->loop_provider->getMainLoop(
-            function () use ($target_process_settings, $target_php_settings, $eg_address, $output): bool {
+            function () use ($process_specifier, $target_php_settings, $eg_address, $output): bool {
                 $output->writeln(
                     $this->executor_globals_reader->readCurrentFunctionName(
-                        $target_process_settings->pid,
+                        $process_specifier->pid,
                         $target_php_settings->php_version,
                         $eg_address
                     )

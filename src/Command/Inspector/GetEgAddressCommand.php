@@ -16,6 +16,7 @@ namespace PhpProfiler\Command\Inspector;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
+use PhpProfiler\Inspector\TargetProcess\TargetProcessResolver;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -33,7 +34,8 @@ final class GetEgAddressCommand extends Command
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
-        private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input
+        private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
+        private TargetProcessResolver $target_process_resolver,
     ) {
         parent::__construct();
     }
@@ -59,10 +61,32 @@ final class GetEgAddressCommand extends Command
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
 
+        $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
+
+        $last_exception = null;
+        for ($i = 0; $i < 10; $i++) {
+            try {
+                $eg_address = $this->php_globals_finder->findExecutorGlobals(
+                    $process_specifier,
+                    $target_php_settings
+                );
+                break;
+            } catch (\Throwable $e) {
+                $last_exception = $e;
+                /** @psalm-suppress UnusedFunctionCall */
+                \time_nanosleep(0, 1000 * 1000 * 10);
+                continue;
+            }
+        }
+        if ($i === 10) {
+            assert(isset($last_exception) and $last_exception instanceof \Exception);
+            throw new \Exception('cannot find executor globals', 0, $last_exception);
+        }
+
         $output->writeln(
             sprintf(
                 '0x%s',
-                dechex($this->php_globals_finder->findExecutorGlobals($target_process_settings, $target_php_settings))
+                dechex($eg_address)
             )
         );
 

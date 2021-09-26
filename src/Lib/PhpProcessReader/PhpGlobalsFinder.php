@@ -24,6 +24,7 @@ use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use PhpProfiler\Lib\Process\ProcessSpecifier;
 use RuntimeException;
 
 final class PhpGlobalsFinder
@@ -41,11 +42,11 @@ final class PhpGlobalsFinder
      * @throws TlsFinderException
      */
     public function findTsrmLsCache(
-        TargetProcessSettings $target_process_settings,
+        ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
         $tsrm_lm_cache_cdata = $this->getSymbolReader(
-            $target_process_settings,
+            $process_specifier,
             $target_php_settings
         )->read('_tsrm_ls_cache');
         if (isset($tsrm_lm_cache_cdata)) {
@@ -63,11 +64,11 @@ final class PhpGlobalsFinder
      * @throws TlsFinderException
      */
     public function getSymbolReader(
-        TargetProcessSettings $target_process_settings,
+        ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ProcessSymbolReaderInterface {
         return $this->php_symbol_reader_creator->create(
-            $target_process_settings->pid,
+            $process_specifier->pid,
             $target_php_settings->php_regex,
             $target_php_settings->libpthread_regex,
             $target_php_settings->php_path,
@@ -82,17 +83,17 @@ final class PhpGlobalsFinder
      * @throws TlsFinderException
      */
     public function findExecutorGlobals(
-        TargetProcessSettings $target_process_settings,
+        ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): int {
-        $tsrm_ls_cache = $this->findTsrmLsCache($target_process_settings, $target_php_settings);
+        $tsrm_ls_cache = $this->findTsrmLsCache($process_specifier, $target_php_settings);
         if (isset($tsrm_ls_cache)) {
             switch ($target_php_settings->php_version) {
                 case ZendTypeReader::V70:
                 case ZendTypeReader::V71:
                 case ZendTypeReader::V72:
                 case ZendTypeReader::V73:
-                    $executor_globals_id_cdata = $this->getSymbolReader($target_process_settings, $target_php_settings)
+                    $executor_globals_id_cdata = $this->getSymbolReader($process_specifier, $target_php_settings)
                         ->read('executor_globals_id');
                     if (is_null($executor_globals_id_cdata)) {
                         throw new RuntimeException('executor_globals_id not found');
@@ -100,7 +101,7 @@ final class PhpGlobalsFinder
                     $tsrm_ls_cache_dereferenced = $this->integer_reader->read64(
                         new CDataByteReader(
                             $this->memory_reader->read(
-                                $target_process_settings->pid,
+                                $process_specifier->pid,
                                 $tsrm_ls_cache,
                                 8
                             )
@@ -114,7 +115,7 @@ final class PhpGlobalsFinder
                     return $this->integer_reader->read64(
                         new CDataByteReader(
                             $this->memory_reader->read(
-                                $target_process_settings->pid,
+                                $process_specifier->pid,
                                 $tsrm_ls_cache_dereferenced + ($executor_globals_id - 1) * 8,
                                 8
                             )
@@ -125,7 +126,7 @@ final class PhpGlobalsFinder
                 case ZendTypeReader::V74:
                 case ZendTypeReader::V80:
                     $executor_globals_offset_cdata = $this->getSymbolReader(
-                        $target_process_settings,
+                        $process_specifier,
                         $target_php_settings
                     )->read('executor_globals_offset');
                     if (is_null($executor_globals_offset_cdata)) {
@@ -140,7 +141,7 @@ final class PhpGlobalsFinder
                     throw new \LogicException('this should never happen');
             }
         }
-        $executor_globals_address = $this->getSymbolReader($target_process_settings, $target_php_settings)
+        $executor_globals_address = $this->getSymbolReader($process_specifier, $target_php_settings)
             ->resolveAddress('executor_globals');
         if (is_null($executor_globals_address)) {
             throw new RuntimeException('executor globals not found');
