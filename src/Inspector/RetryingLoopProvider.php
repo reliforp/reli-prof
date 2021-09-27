@@ -25,18 +25,28 @@ class RetryingLoopProvider
     ) {
     }
 
-    /** @param class-string<\Throwable>[] $retry_on */
+    /**
+     * @template T
+     * @param callable():T $try
+     * @param class-string<\Throwable>[] $retry_on
+     * @return T
+     */
     public function do(
         callable $try,
         array $retry_on,
         int $max_retry,
         int $interval_on_retry_ns,
-    ): void {
-        // one successful execution is enough
-        $loop_canceller = function () use ($try): bool {
-            $try();
-            return false;
-        };
+    ) {
+        $result = null;
+
+        $loop_canceller =
+            /** @param-out T $result */
+            function () use (&$result, $try): bool {
+                $result = $try();
+                // one successful execution is enough
+                return false;
+            }
+        ;
 
         $this->loop_builder
             ->addProcess(RetryOnExceptionMiddleware::class, [$max_retry, $retry_on])
@@ -44,5 +54,8 @@ class RetryingLoopProvider
             ->addProcess(CallableMiddleware::class, [$loop_canceller])
             ->build()
             ->invoke();
+
+        /** @var T */
+        return $result;
     }
 }

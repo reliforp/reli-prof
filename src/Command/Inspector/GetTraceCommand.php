@@ -88,19 +88,15 @@ final class GetTraceCommand extends Command
         // On targeting ZTS, it's possible that libpthread.so of the target process isn't yet loaded
         // at this point. In that case the TLS block can't be located, then the address of EG can't
         // be found also. So simply retrying the whole process of finding EG here.
-        $eg_address = null;
-        $this->retrying_loop_provider->do(
-            try: function () use (&$eg_address, $process_specifier, $target_php_settings) {
-                $eg_address = $this->php_globals_finder->findExecutorGlobals(
-                    $process_specifier,
-                    $target_php_settings
-                );
-            },
+        $eg_address = $this->retrying_loop_provider->do(
+            try: fn () => $this->php_globals_finder->findExecutorGlobals(
+                $process_specifier,
+                $target_php_settings
+            ),
             retry_on: [\Throwable::class],
             max_retry: 10,
             interval_on_retry_ns: 1000 * 1000 * 10,
         );
-        assert(is_int($eg_address));
 
         $this->loop_provider->getMainLoop(
             function () use (
