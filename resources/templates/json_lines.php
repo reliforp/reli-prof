@@ -15,3 +15,4 @@ use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 /** @var CallTrace $call_trace */
 ?>
 <?= json_encode($call_trace, JSON_UNESCAPED_UNICODE) ?>
+<?= "\n" ?>

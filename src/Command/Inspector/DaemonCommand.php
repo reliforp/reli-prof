@@ -144,7 +144,7 @@ final class DaemonCommand extends Command
         TraceMessage $message
     ): void {
         $output->write(
-            $formatter->format($message->trace) . PHP_EOL
+            $formatter->format($message->trace)
         );
     }
 }

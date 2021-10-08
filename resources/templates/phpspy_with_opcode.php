@@ -17,3 +17,4 @@ use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 <?php foreach ($call_trace->call_frames as $depth => $frame): ?>
 <?= $depth ?> <?= $frame->getFullyQualifiedFunctionName() ?> <?= $frame->file_name ?>:<?= $frame->getLineno() ?>:<?= $frame->getOpcodeName() , "\n" ?>
 <?php endforeach ?>
+<?= "\n" ?>

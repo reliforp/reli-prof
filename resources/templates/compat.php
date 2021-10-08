@@ -16,4 +16,5 @@ use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 
 /** @var CallTrace $call_trace */
 
-echo CompatCallTraceFormatter::getInstance()->format($call_trace) , PHP_EOL;
+echo CompatCallTraceFormatter::getInstance()->format($call_trace) , "\n";
+echo "\n";
