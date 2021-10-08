@@ -186,8 +186,18 @@ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=h
 ### Generate flamegraphs from traces
 ```bash
 sudo php ./php-profiler inspector:trace -p <pid of the target process or thread> >traces
-./tools/stackcollapse-phpspy/stackcollapse-phpspy.pl <traces | ./tools/flamegraph/flamegraph.pl >flame.svg
+./php-profiler converter:flamegraph <traces >flame.svg
 ```
+
+### Generate the [speedscope](https://github.com/jlfwong/speedscope) format from phpspy compatible traces
+```bash
+sudo php ./php-profiler inspector:trace -p <pid of the target process or thread> >traces
+./php-profiler converter:speedscope <traces >profile.speedscope.json
+speedscope profile.speedscope.json
+```
+
+See [#101](https://github.com/sj-i/php-profiler/pull/101).
+
 
 # LICENSE
 - MIT (mostly)
