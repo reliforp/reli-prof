@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 /** @var CallTrace $call_trace */
-?><?php foreach ($call_trace->call_frames as $depth => $frame): ?>
+?>
+<?php foreach ($call_trace->call_frames as $depth => $frame): ?>
 <?= $depth ?> <?= $frame->getFullyQualifiedFunctionName() ?> <?= $frame->file_name ?>:<?= $frame->getLineno(), "\n" ?>
 <?php endforeach ?>
+<?= "\n" ?>

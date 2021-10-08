@@ -118,7 +118,7 @@ final class GetTraceCommand extends Command
                     $get_trace_settings->depth
                 );
                 if (!is_null($call_trace)) {
-                    $output->write($formatter->format($call_trace) . PHP_EOL);
+                    $output->write($formatter->format($call_trace));
                 }
                 return true;
             },
