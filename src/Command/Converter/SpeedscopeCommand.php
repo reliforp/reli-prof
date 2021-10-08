@@ -115,7 +115,7 @@ final class SpeedscopeCommand extends Command
             ],
             'profiles' => [[
                 'type' => 'sampled',
-                'name' => 'test',
+                'name' => 'php profile',
                 'unit' => 'none',
                 'startValue' => 0,
                 'endValue' => $counter,
