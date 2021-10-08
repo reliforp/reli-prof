@@ -205,7 +205,7 @@ So visualizations of the trace like flamegraph can show the usage of opcodes.
 
 For informational purposes, executing opcodes are also added to each end of the call frames. Except for the first frame, opcodes for function calls such as ZEND_DO_FCALL should appear there.
 
-If JIT is enabled for the target process, these information may be slightly inaccurate.
+If JIT is enabled at the target process, this information may be slightly inaccurate.
 
 ### Use in a docker container and target a process on host
 ```bash
