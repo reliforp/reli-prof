@@ -67,7 +67,10 @@ final class SpeedscopeCommand extends Command
         $frames = [];
         foreach ($buffer as $line_buffer) {
             $result = explode(' ', $line_buffer);
-            [$_depth, $name, $file_line] = $result;
+            [$depth, $name, $file_line] = $result;
+            if ($depth === '#') { // comment
+                continue;
+            }
             [$file, $line] = explode(':', $file_line);
             $frames[] = new CallFrame(
                 '',
@@ -102,7 +105,7 @@ final class SpeedscopeCommand extends Command
                     }
                     $sampled_stack[] = $trace_map[$mapper_key];
             }
-            $sampled_stacks[] = $sampled_stack;
+            $sampled_stacks[] = \array_reverse($sampled_stack);
             $counter++;
         }
         return [
