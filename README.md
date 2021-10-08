@@ -28,6 +28,8 @@ If customizability for PHP developers matters, you can use this software at the 
 Additionally, php-profiler can find VM state from ZTS interpreters. For example, in the daemon mode, traces of threads started via [ext-parallel](https://github.com/krakjoe/parallel) are automatically retrieved. Currently this cannot be done with phpspy only.
 php-profiler also provides functionality to only get the address of EG from targets, so you can use actual profiling with phpspy if you want, even when the target is ZTS.
 
+The php-profiler outputs more accurate line numbers, and additionally can show executing opcodes of the PHP-VM.
+
 ## Requirements
 ### Supported PHP versions
 #### Execution
@@ -176,6 +178,34 @@ The executing process must have the CAP_SYS_PTRACE capability. (Usually run as r
 sudo php ./php-profiler inspector:eg -p <pid of the target process or thread>
 ``` 
 The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
+
+### Show currently executing opcodes at traces
+If a user wants to profile a really CPU-bound application, then he or she wouldn't only want to know what line is slow, but what opcode is. In such cases, use `--template=phpspy_with_opcode` with `inspector:trace` or `inspector:daemon`.
+
+```bash
+sudo php ./php-profiler inspector:trace --template=phpspy_with_opcode -p <pid of the target process or thread>
+```
+
+The output would be like the following.
+
+```
+0 <VM>::ZEND_ASSIGN <VM>:-1
+1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:33:ZEND_ASSIGN
+2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL
+3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
+
+0 <VM>::ZEND_ASSIGN <VM>:-1
+1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:30:ZEND_ASSIGN
+2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL
+3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
+```
+
+The currently executing opcode becomes the first frame of the callstack.
+So visualizations of the trace like flamegraph can show the usage of opcodes.
+
+For informational purposes, executing opcodes are also added to each end of the call frames. Except for the first frame, opcodes for function calls such as ZEND_DO_FCALL should appear there.
+
+If JIT is enabled for the target process, these information may be slightly inaccurate.
 
 ### Use in a docker container and target a process on host
 ```bash
