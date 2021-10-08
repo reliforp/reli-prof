@@ -177,6 +177,28 @@ sudo php ./php-profiler inspector:eg -p <pid of the target process or thread>
 ``` 
 The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
 
+### Show currently executing opcodes at traces
+```bash
+sudo php ./php-profiler inspector:trace --template=phpspy_with_opcode -p <pid of the target process or thread>
+```
+
+The output would be like the following.
+
+```
+0 <VM>::ZEND_ASSIGN <VM>:-1
+1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:33:ZEND_ASSIGN
+2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL
+3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
+
+0 <VM>::ZEND_ASSIGN <VM>:-1
+1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:30:ZEND_ASSIGN
+2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL
+3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
+```
+
+The currently executing opcode becomes the first frame 
+
+
 ### Use in a docker container and target a process on host
 ```bash
 docker build -t php-profiler .
