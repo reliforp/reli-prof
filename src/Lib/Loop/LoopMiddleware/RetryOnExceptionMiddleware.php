@@ -39,6 +39,7 @@ final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
                 return $result;
             } catch (\Throwable $e) {
                 foreach ($this->exception_names as $exception_name) {
+                    /** @psalm-suppress DocblockTypeContradiction */
                     if (is_a($e, $exception_name)) {
                         $this->current_retry_count++;
                         continue 2;
