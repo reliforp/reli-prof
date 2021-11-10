@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "21df0e1253f6788fbfa216faa7d7e9e4",
+    "content-hash": "146308bfabe68ee7713f20e211aa6c12",
     "packages": [
         {
             "name": "amphp/amp",
@@ -3162,16 +3162,16 @@
         },
         {
             "name": "php-coveralls/php-coveralls",
-            "version": "v2.5.0",
+            "version": "v2.5.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/php-coveralls/php-coveralls.git",
-                "reference": "12acb81ab2486362068f48fd399e8e8d149af419"
+                "reference": "a54881adfb9bb3a01ca72e2832131b33f02da4e4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/php-coveralls/php-coveralls/zipball/12acb81ab2486362068f48fd399e8e8d149af419",
-                "reference": "12acb81ab2486362068f48fd399e8e8d149af419",
+                "url": "https://api.github.com/repos/php-coveralls/php-coveralls/zipball/a54881adfb9bb3a01ca72e2832131b33f02da4e4",
+                "reference": "a54881adfb9bb3a01ca72e2832131b33f02da4e4",
                 "shasum": ""
             },
             "require": {
@@ -3239,9 +3239,9 @@
             ],
             "support": {
                 "issues": "https://github.com/php-coveralls/php-coveralls/issues",
-                "source": "https://github.com/php-coveralls/php-coveralls/tree/v2.5.0"
+                "source": "https://github.com/php-coveralls/php-coveralls/tree/v2.5.1"
             },
-            "time": "2021-11-09T22:38:42+00:00"
+            "time": "2021-11-10T16:53:56+00:00"
         },
         {
             "name": "phpdocumentor/reflection-common",
