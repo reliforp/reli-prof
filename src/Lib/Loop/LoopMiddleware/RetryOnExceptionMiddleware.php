@@ -48,6 +48,7 @@ final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
                 throw $e;
             }
         }
-        return false;
+        assert(isset($e));
+        throw $e;
     }
 }
