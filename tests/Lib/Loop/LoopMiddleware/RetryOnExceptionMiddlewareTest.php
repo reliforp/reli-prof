@@ -18,7 +18,7 @@ use LogicException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
-class RetryOnExceptionLoopTest extends TestCase
+class RetryOnExceptionMiddlewareTest extends TestCase
 {
     public function testReturnIfChainReturn(): void
     {
