@@ -15,6 +15,7 @@ declare(strict_types=1);
 use DI\ContainerBuilder;
 use PhpProfiler\Command\CommandEnumerator;
 use PhpProfiler\Lib\Log\Log;
+use PhpProfiler\PhpProfiler;
 use Psr\Log\LoggerInterface;
 use PhpProfiler\Lib\Log\StateCollector\StateCollector;
 use Symfony\Component\Console\Application;
@@ -24,6 +25,9 @@ require 'vendor/autoload.php';
 
 $application = new Application();
 $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/config/di.php')->build();
+
+$application->setName(PhpProfiler::TOOL_NAME);
+$application->setVersion(PhpProfiler::VERSION);
 
 Log::initializeLogger(
     $container->make(LoggerInterface::class),
