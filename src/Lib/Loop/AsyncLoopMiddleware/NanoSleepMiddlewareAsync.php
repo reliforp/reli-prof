@@ -17,6 +17,7 @@ use PhpProfiler\Lib\Loop\AsyncLoopMiddlewareInterface;
 
 final class NanoSleepMiddlewareAsync implements AsyncLoopMiddlewareInterface
 {
+    /** @param positive-int $sleep_nano_seconds */
     public function __construct(
         private int $sleep_nano_seconds,
         private AsyncLoopMiddlewareInterface $chain
@@ -25,7 +26,10 @@ final class NanoSleepMiddlewareAsync implements AsyncLoopMiddlewareInterface
 
     public function invoke(): \Generator
     {
-        /** @psalm-suppress UnusedFunctionCall */
+        /**
+         * @psalm-suppress UnusedFunctionCall
+         * @psalm-suppress InvalidArgument
+         */
         time_nanosleep(0, $this->sleep_nano_seconds);
         yield from $this->chain->invoke();
     }

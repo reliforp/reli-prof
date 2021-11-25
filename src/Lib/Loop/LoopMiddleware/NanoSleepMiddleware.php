@@ -17,6 +17,7 @@ use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
 
 final class NanoSleepMiddleware implements LoopMiddlewareInterface
 {
+    /** @param positive-int $sleep_nano_seconds */
     public function __construct(
         private int $sleep_nano_seconds,
         private LoopMiddlewareInterface $chain,
@@ -25,7 +26,10 @@ final class NanoSleepMiddleware implements LoopMiddlewareInterface
 
     public function invoke(): bool
     {
-        /** @psalm-suppress UnusedFunctionCall */
+        /**
+         * @psalm-suppress UnusedFunctionCall
+         * @psalm-suppress InvalidArgument
+         */
         time_nanosleep(0, $this->sleep_nano_seconds);
         if (!$this->chain->invoke()) {
             return false;
