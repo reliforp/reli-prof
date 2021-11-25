@@ -125,6 +125,7 @@ final class PhpGlobalsFinder
 
                 case ZendTypeReader::V74:
                 case ZendTypeReader::V80:
+                case ZendTypeReader::V81:
                     $executor_globals_offset_cdata = $this->getSymbolReader(
                         $process_specifier,
                         $target_php_settings

@@ -56,14 +56,18 @@ final class PhpSymbolReaderCreator
             $libpthread_finder_regex,
             $libpthread_binary_path
         );
-        if (!is_null($libpthread_symbol_reader) and $libpthread_symbol_reader->isAllSymbolResolvable()) {
-            $tls_finder = new LibThreadDbTlsFinder(
-                $libpthread_symbol_reader,
-                X64LinuxThreadPointerRetriever::createDefault(),
-                $this->memory_reader,
-                $this->integer_reader
-            );
-            $tls_block_address = $tls_finder->findTlsBlock($pid, 1);
+        if (!is_null($libpthread_symbol_reader)) {
+            try {
+                $tls_finder = new LibThreadDbTlsFinder(
+                    $libpthread_symbol_reader,
+                    X64LinuxThreadPointerRetriever::createDefault(),
+                    $this->memory_reader,
+                    $this->integer_reader
+                );
+                $tls_block_address = $tls_finder->findTlsBlock($pid, 1);
+            } catch (TlsFinderException $e) {
+                $tls_block_address = null;
+            }
         }
 
         $php_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
