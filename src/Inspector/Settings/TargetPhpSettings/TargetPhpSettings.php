@@ -17,8 +17,8 @@ use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 
 final class TargetPhpSettings
 {
-    public const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0)?|php-fpm|libphp[78].*\.so)$';
-    public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so$';
+    public const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0)?|php-fpm|libphp[78]?.*\.so)$';
+    public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so';
     public const TARGET_PHP_VERSION_DEFAULT = ZendTypeReader::V80;
 
     /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
