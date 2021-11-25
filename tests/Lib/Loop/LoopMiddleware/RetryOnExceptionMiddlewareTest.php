@@ -18,7 +18,7 @@ use LogicException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
-class RetryOnExceptionLoopTest extends TestCase
+class RetryOnExceptionMiddlewareTest extends TestCase
 {
     public function testReturnIfChainReturn(): void
     {
@@ -47,7 +47,7 @@ class RetryOnExceptionLoopTest extends TestCase
         $this->assertSame(2, $counter);
     }
 
-    public function testReturnFalseIfRetryCountExceedsMax(): void
+    public function testThrowIfRetryCountExceedsMax(): void
     {
         $counter = 0;
         $loop = new RetryOnExceptionMiddleware(
@@ -62,7 +62,11 @@ class RetryOnExceptionLoopTest extends TestCase
                 }
             )
         );
-        $this->assertFalse($loop->invoke());
+        try {
+            $loop->invoke();
+        } catch (\Exception $e) {
+            $this->assertSame(Exception::class, $e::class);
+        }
         $this->assertSame(1, $counter);
     }
 
