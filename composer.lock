@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d09a510dcaea223e39f870a3ec537730",
+    "content-hash": "de78f5288b933f087d690c1601c7c9fc",
     "packages": [
         {
             "name": "amphp/amp",
@@ -3896,16 +3896,16 @@
         },
         {
             "name": "psalm/plugin-mockery",
-            "version": "0.9.0",
+            "version": "0.9.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/psalm/psalm-plugin-mockery.git",
-                "reference": "fcaf0d9215a97ee97ac7dc51b0543ff6e1e58d03"
+                "reference": "b1dcf5ff3e913178df7f3213f7130dfea8d01eb8"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/psalm/psalm-plugin-mockery/zipball/fcaf0d9215a97ee97ac7dc51b0543ff6e1e58d03",
-                "reference": "fcaf0d9215a97ee97ac7dc51b0543ff6e1e58d03",
+                "url": "https://api.github.com/repos/psalm/psalm-plugin-mockery/zipball/b1dcf5ff3e913178df7f3213f7130dfea8d01eb8",
+                "reference": "b1dcf5ff3e913178df7f3213f7130dfea8d01eb8",
                 "shasum": ""
             },
             "require": {
@@ -3944,9 +3944,9 @@
             "description": "Psalm plugin for Mockery",
             "support": {
                 "issues": "https://github.com/psalm/psalm-plugin-mockery/issues",
-                "source": "https://github.com/psalm/psalm-plugin-mockery/tree/0.9.0"
+                "source": "https://github.com/psalm/psalm-plugin-mockery/tree/0.9.1"
             },
-            "time": "2021-06-27T21:09:37+00:00"
+            "time": "2021-11-27T18:46:32+00:00"
         },
         {
             "name": "psr/http-client",
