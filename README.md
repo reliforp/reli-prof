@@ -127,6 +127,35 @@ Options:
   -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
+### top-like mode
+```bash
+./php-profiler inspector:top --help
+Description:
+  show an aggregated view of traces in real time in a form similar to the UNIX top command.
+
+Usage:
+  inspector:top [options]
+
+Options:
+  -P, --target-regex=TARGET-REGEX            regex to find target processes which have matching command-line (required)
+  -T, --threads[=THREADS]                    number of workers (default: 8)
+  -d, --depth[=DEPTH]                        max depth
+  -s, --sleep-ns[=SLEEP-NS]                  nanoseconds between traces (default: 1000 * 1000 * 10)
+  -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
+  -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
+      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
+      --php-version[=PHP-VERSION]            php version of the target (default: v80)
+      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
+  -h, --help                                 Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                Do not output any message
+  -V, --version                              Display this application version
+      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                       Do not ask any interactive question
+  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+```
+
 ### Get the address of EG
 ```bash
 ./php-profiler inspector:eg --help
