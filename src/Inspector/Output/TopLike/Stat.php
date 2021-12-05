@@ -50,7 +50,7 @@ final class Stat
         $this->function_entries[$name]->count_inclusive++;
     }
 
-    public function updateStat()
+    public function updateStat(): void
     {
         if (count($this->function_entries) === 0) {
             return;

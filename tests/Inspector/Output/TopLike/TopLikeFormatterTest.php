@@ -16,6 +16,7 @@ namespace PhpProfiler\Inspector\Output\TopLike;
 use PhpProfiler\Lib\DateTime\FixedClock;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
 use PHPUnit\Framework\TestCase;
+
 use function PHPUnit\Framework\assertSame;
 
 class TopLikeFormatterTest extends TestCase
@@ -25,7 +26,7 @@ class TopLikeFormatterTest extends TestCase
         $now = new \DateTimeImmutable();
         $formatter = new TopLikeFormatter(
             'regex',
-            $outputter = new class() implements Outputter {
+            $outputter = new class () implements Outputter {
                 public int $call_count = 0;
                 public function display(string $trace_target, Stat $stat): void
                 {

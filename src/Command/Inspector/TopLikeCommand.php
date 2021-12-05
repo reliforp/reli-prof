@@ -52,7 +52,9 @@ final class TopLikeCommand extends Command
     public function configure(): void
     {
         $this->setName('inspector:top')
-            ->setDescription('show an aggregated view of traces in real time in a form similar to the UNIX top command.')
+            ->setDescription(
+                'show an aggregated view of traces in real time in a form similar to the UNIX top command.'
+            )
         ;
         $this->daemon_settings_from_console_input->setOptions($this);
         $this->get_trace_settings_from_console_input->setOptions($this);

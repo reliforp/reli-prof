@@ -25,7 +25,7 @@ final class FixedClock implements Clock
         return $this->now;
     }
 
-    public function update(\DateTimeImmutable $now)
+    public function update(\DateTimeImmutable $now): void
     {
         $this->now = $now;
     }

@@ -196,38 +196,18 @@ class StatTest extends TestCase
             ]
         );
         $entries = $stat->function_entries;
-        $this->assertEquals(
-            $entry2, current($entries)
-        );
-        $this->assertEquals(
-            $entry1, next($entries)
-        );
-        $this->assertEquals(
-            $entry3, next($entries)
-        );
-        $this->assertEquals(
-            $entry4, next($entries)
-        );
-        $this->assertEquals(
-            $entry5, next($entries)
-        );
+        $this->assertEquals($entry2, current($entries));
+        $this->assertEquals($entry1, next($entries));
+        $this->assertEquals($entry3, next($entries));
+        $this->assertEquals($entry4, next($entries));
+        $this->assertEquals($entry5, next($entries));
         $stat->sort();
         $entries = $stat->function_entries;
-        $this->assertEquals(
-            $entry5, current($entries)
-        );
-        $this->assertEquals(
-            $entry1, next($entries)
-        );
-        $this->assertEquals(
-            $entry4, next($entries)
-        );
-        $this->assertEquals(
-            $entry3, next($entries)
-        );
-        $this->assertEquals(
-            $entry2, next($entries)
-        );
+        $this->assertEquals($entry5, current($entries));
+        $this->assertEquals($entry1, next($entries));
+        $this->assertEquals($entry4, next($entries));
+        $this->assertEquals($entry3, next($entries));
+        $this->assertEquals($entry2, next($entries));
     }
 
     public function testCalculateEntryTotals()
@@ -280,5 +260,4 @@ class StatTest extends TestCase
         $stat->updateTotalSampleCount();
         $this->assertSame(6, $stat->total_count);
     }
-
 }
