@@ -33,17 +33,14 @@ The php-profiler outputs more accurate line numbers, and additionally can show e
 ## Requirements
 ### Supported PHP versions
 #### Execution
-- PHP-8.0 64bit Linux x86_64 (NTS / ZTS)
+- PHP 8.0+ (NTS / ZTS)
+- 64bit Linux x86_64
 - FFI extension must be enabled.
 - If the target process is ZTS, PCNTL extension must be enabled.
 
 #### Target
-- PHP-7.0 64bit Linux x86_64 (NTS / ZTS)
-- PHP-7.1 64bit Linux x86_64 (NTS / ZTS)
-- PHP-7.2 64bit Linux x86_64 (NTS / ZTS)
-- PHP-7.3 64bit Linux x86_64 (NTS / ZTS)
-- PHP-7.4 64bit Linux x86_64 (NTS / ZTS)
-- PHP-8.0 64bit Linux x86_64 (NTS / ZTS)
+- PHP 7.0+ (NTS / ZTS)
+- 64bit Linux x86_64
 
 On targeting ZTS, the target process must load libpthread.so, and also you must have unstripped binary of the interpreter and the libpthread.so, to find EG from the TLS.
 
