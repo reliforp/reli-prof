@@ -72,6 +72,16 @@ final class PhpVersionDetector
                 $version_string_pointer->cdata,
                 3
             );
+            /** @var CPointer $version_string_pointer */
+            $name_string_pointer = \FFI::cast('long', $module_entry->typed->name)
+                ?? throw new \Exception();
+            $name_string_cdata = $this->memory_reader->read(
+                $process_specifier->pid,
+                $name_string_pointer->cdata,
+                3
+            );
+            var_dump(\FFI::string($name_string_cdata, 3));
+
             $php_version = \FFI::string($version_string_cdata, 3);
             var_dump($php_version);
         } catch (\Throwable $e) {
