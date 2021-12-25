@@ -44,7 +44,6 @@ class PhpVersionDetectorTest extends TestCase
 
     public function testTryDetection()
     {
-        var_dump(PHP_VERSION);
         $memory_reader = new MemoryReader();
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             $memory_reader,
@@ -82,11 +81,6 @@ class PhpVersionDetectorTest extends TestCase
 
         fgets($pipes[1]);
         $child_status = proc_get_status($this->child);
-
-        $process_memory_map = $process_memory_map_creator->getProcessMemoryMap(
-            $child_status['pid']
-        );
-        var_dump($process_memory_map);
 
         /** @var int $child_status['pid'] */
         $php_version = $php_version_detector->tryDetection(

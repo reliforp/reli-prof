@@ -46,46 +46,45 @@ final class PhpVersionDetector
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
     ): ?string {
-        try {
-            $php_symbol_reader = $this->php_symbol_reader_creator->create(
-                $process_specifier->pid,
-                $target_php_settings->getDelimitedPhpRegex(),
-                $target_php_settings->getDelimitedLibPthreadRegex(),
-                $target_php_settings->php_path,
-                $target_php_settings->libpthread_path,
-            );
-            $basic_functions_module = $php_symbol_reader->read('xml_module_entry')
-                ?? throw new \Exception();
+        $try_lists = [
+            [$target_php_settings->getDelimitedPhpRegex(), $target_php_settings->php_path, 'basic_functions_module'],
+            ['{/opcache.so}', null, 'accel_module_entry'],
+            ['{/xml.so}', null, 'xml_module_entry'],
+        ];
+        foreach ($try_lists as [$module_regex, $module_path, $module_entry]) {
+            try {
+                $php_symbol_reader = $this->php_symbol_reader_creator->create(
+                    $process_specifier->pid,
+                    $module_regex,
+                    $target_php_settings->getDelimitedLibPthreadRegex(),
+                    $module_path,
+                    $target_php_settings->libpthread_path,
+                );
+                $basic_functions_module = $php_symbol_reader->read($module_entry)
+                    ?? throw new \Exception();
 
-            // use default version for reading the definition of zend_module_entry
-            $zend_type_reader = $this->zend_type_reader_creator->create(
-                $target_php_settings->php_version
-            );
+                // use default version for reading the definition of zend_module_entry
+                $zend_type_reader = $this->zend_type_reader_creator->create(
+                    $target_php_settings->php_version
+                );
 
-            /** @var ZendTypeCData<\FFI\PhpInternals\zend_module_entry> $module_entry */
-            $module_entry = $zend_type_reader->readAs('zend_module_entry', $basic_functions_module);
-            /** @var CPointer $version_string_pointer */
-            $version_string_pointer = \FFI::cast('long', $module_entry->typed->version)
-                ?? throw new \Exception();
-            $version_string_cdata = $this->memory_reader->read(
-                $process_specifier->pid,
-                $version_string_pointer->cdata,
-                3
-            );
-            /** @var CPointer $version_string_pointer */
-            $name_string_pointer = \FFI::cast('long', $module_entry->typed->name)
-                ?? throw new \Exception();
-            $name_string_cdata = $this->memory_reader->read(
-                $process_specifier->pid,
-                $name_string_pointer->cdata,
-                3
-            );
-            var_dump(\FFI::string($name_string_cdata, 3));
+                /** @var ZendTypeCData<\FFI\PhpInternals\zend_module_entry> $module_entry */
+                $module_entry = $zend_type_reader->readAs('zend_module_entry', $basic_functions_module);
+                /** @var CPointer $version_string_pointer */
+                $version_string_pointer = \FFI::cast('long', $module_entry->typed->version)
+                    ?? throw new \Exception();
+                $version_string_cdata = $this->memory_reader->read(
+                    $process_specifier->pid,
+                    $version_string_pointer->cdata,
+                    3
+                );
 
-            $php_version = \FFI::string($version_string_cdata, 3);
-            var_dump($php_version);
-        } catch (\Throwable $e) {
-            var_dump($e);
+                $php_version = \FFI::string($version_string_cdata, 3);
+            } catch (\Throwable $e) {
+                continue;
+            }
+        }
+        if (!isset($php_version)) {
             return null;
         }
         return self::VERSION_STRING_CONVERTOR[$php_version] ?? null;
