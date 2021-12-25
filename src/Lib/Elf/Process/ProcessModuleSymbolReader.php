@@ -71,9 +71,10 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
      */
     private function resolveAddressAndSize(string $symbol_name): ?array
     {
-        var_dump($this->symbol_resolver);
         $symbol = $this->symbol_resolver->resolve($symbol_name);
-        var_dump($symbol);
+        if ($symbol_name === 'basic_functions_module') {
+            var_dump($symbol, $this->symbol_resolver::class);
+        }
         if ($symbol->isUndefined()) {
             return null;
         }
