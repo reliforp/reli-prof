@@ -24,7 +24,6 @@ use PHPUnit\Framework\TestCase;
 
 class PhpSearcherContextCreatorTest extends TestCase
 {
-
     public function testCreate()
     {
         $context = Mockery::mock(ContextInterface::class);

@@ -11,8 +11,8 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\CommandEnumeratorTestData\Test2Directory;
+namespace PhpProfiler\Lib\FFI;
 
-final class Test4Command
+final class CannotCastCDataException extends \Exception
 {
 }

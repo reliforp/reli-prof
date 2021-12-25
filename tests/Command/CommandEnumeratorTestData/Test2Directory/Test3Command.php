@@ -15,5 +15,4 @@ namespace PhpProfiler\Command\CommandEnumeratorTestData\Test2Directory;
 
 final class Test3Command
 {
-
 }
