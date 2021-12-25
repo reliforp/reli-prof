@@ -17,6 +17,7 @@ use FFI\CPointer;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Lib\PhpInternals\ZendTypeCData;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 
@@ -35,7 +36,7 @@ final class PhpVersionDetector
 
     public function __construct(
         private PhpSymbolReaderCreator $php_symbol_reader_creator,
-        private ZendTypeReader $zend_type_reader,
+        private ZendTypeReaderCreator $zend_type_reader_creator,
         private MemoryReaderInterface $memory_reader,
     ) {
     }
@@ -55,8 +56,14 @@ final class PhpVersionDetector
             );
             $basic_functions_module = $php_symbol_reader->read('basic_functions_module')
                 ?? throw new \Exception();
+
+            // use default version for reading the definition of zend_module_entry
+            $zend_type_reader = $this->zend_type_reader_creator->create(
+                $target_php_settings->php_version
+            );
+
             /** @var ZendTypeCData<\FFI\PhpInternals\zend_module_entry> $module_entry */
-            $module_entry = $this->zend_type_reader->readAs('zend_module_entry', $basic_functions_module);
+            $module_entry = $zend_type_reader->readAs('zend_module_entry', $basic_functions_module);
             /** @var CPointer $version_string_pointer */
             $version_string_pointer = \FFI::cast('long', $module_entry->typed->version)
                 ?? throw new \Exception();
