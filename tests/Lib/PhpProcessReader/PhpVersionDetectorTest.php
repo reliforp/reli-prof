@@ -57,7 +57,7 @@ class PhpVersionDetectorTest extends TestCase
                 ),
                 $memory_reader,
             ),
-            ProcessMemoryMapCreator::create(),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             new LittleEndianReader()
         );
         $php_version_detector = new PhpVersionDetector(
@@ -82,6 +82,11 @@ class PhpVersionDetectorTest extends TestCase
 
         fgets($pipes[1]);
         $child_status = proc_get_status($this->child);
+
+        $process_memory_map = $process_memory_map_creator->getProcessMemoryMap(
+            $child_status['pid']
+        );
+        var_dump($process_memory_map);
 
         /** @var int $child_status['pid'] */
         $php_version = $php_version_detector->tryDetection(
