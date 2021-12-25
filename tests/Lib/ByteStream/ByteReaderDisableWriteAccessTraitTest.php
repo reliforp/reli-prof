@@ -19,7 +19,6 @@ use PHPUnit\Framework\TestCase;
 
 class ByteReaderDisableWriteAccessTraitTest extends TestCase
 {
-
     public function testOffsetSet()
     {
         $this->expectException(LogicException::class);

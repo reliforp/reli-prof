@@ -15,5 +15,4 @@ namespace PhpProfiler\Lib\Elf\Parser;
 
 final class ElfParserException extends \Exception
 {
-
 }
