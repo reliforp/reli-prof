@@ -15,5 +15,4 @@ namespace PhpProfiler\Lib\Elf\Process;
 
 class ProcessSymbolReaderException extends \Exception
 {
-
 }
