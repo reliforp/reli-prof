@@ -82,6 +82,8 @@ class PhpVersionDetectorTest extends TestCase
         fgets($pipes[1]);
         $child_status = proc_get_status($this->child);
 
+        sleep(1);
+
         /** @var int $child_status['pid'] */
         $php_version = $php_version_detector->tryDetection(
             new ProcessSpecifier($child_status['pid']),
