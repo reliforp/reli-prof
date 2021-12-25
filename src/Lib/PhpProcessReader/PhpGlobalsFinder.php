@@ -69,8 +69,8 @@ final class PhpGlobalsFinder
     ): ProcessSymbolReaderInterface {
         return $this->php_symbol_reader_creator->create(
             $process_specifier->pid,
-            $target_php_settings->php_regex,
-            $target_php_settings->libpthread_regex,
+            $target_php_settings->getDelimitedPhpRegex(),
+            $target_php_settings->getDelimitedLibPthreadRegex(),
             $target_php_settings->php_path,
             $target_php_settings->libpthread_path
         );

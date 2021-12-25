@@ -15,6 +15,7 @@ namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
 
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 
+/** @psalm-immutable */
 final class TargetPhpSettings
 {
     public const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0)?|php-fpm|libphp[78]?.*\.so)$';
@@ -23,13 +24,38 @@ final class TargetPhpSettings
 
     /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
     public function __construct(
-        public string $php_regex = self::PHP_REGEX_DEFAULT,
-        public string $libpthread_regex = self::LIBPTHREAD_REGEX_DEFAULT,
+        private string $php_regex = self::PHP_REGEX_DEFAULT,
+        private string $libpthread_regex = self::LIBPTHREAD_REGEX_DEFAULT,
         public string $php_version = self::TARGET_PHP_VERSION_DEFAULT,
         public ?string $php_path = null,
         public ?string $libpthread_path = null
     ) {
-        $this->php_regex = '{' . $php_regex . '}';
-        $this->libpthread_regex = '{' . $libpthread_regex . '}';
+    }
+
+    public function getDelimitedPhpRegex(): string
+    {
+        return $this->getDelimitedRegex($this->php_regex);
+    }
+
+    public function getDelimitedLibPthreadRegex(): string
+    {
+        return $this->getDelimitedRegex($this->libpthread_regex);
+    }
+
+    private function getDelimitedRegex(string $regex): string
+    {
+        return '{' . $regex . '}';
+    }
+
+    /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
+    public function alterPhpVersion(string $php_version): self
+    {
+        return new self(
+            php_regex: $this->php_regex,
+            libpthread_regex: $this->libpthread_regex,
+            php_version: $php_version,
+            php_path: $this->php_path,
+            libpthread_path: $this->libpthread_path,
+        );
     }
 }

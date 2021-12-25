@@ -30,8 +30,8 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
 
         $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
 
-        $this->assertSame('{abc}', $settings->php_regex);
-        $this->assertSame('{def}', $settings->libpthread_regex);
+        $this->assertSame('{abc}', $settings->getDelimitedPhpRegex());
+        $this->assertSame('{def}', $settings->getDelimitedLibPthreadRegex());
         $this->assertSame('v74', $settings->php_version);
         $this->assertSame('ghi', $settings->php_path);
         $this->assertSame('jkl', $settings->libpthread_path);
