@@ -80,13 +80,11 @@ final class PhpVersionDetector
                 );
 
                 $php_version = \FFI::string($version_string_cdata, 3);
+                return self::VERSION_STRING_CONVERTOR[$php_version] ?? null;
             } catch (\Throwable $e) {
                 continue;
             }
         }
-        if (!isset($php_version)) {
-            return null;
-        }
-        return self::VERSION_STRING_CONVERTOR[$php_version] ?? null;
+        return null;
     }
 }
