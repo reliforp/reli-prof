@@ -44,6 +44,7 @@ class PhpVersionDetectorTest extends TestCase
 
     public function testTryDetection()
     {
+        var_dump(PHP_VERSION);
         $memory_reader = new MemoryReader();
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             $memory_reader,
