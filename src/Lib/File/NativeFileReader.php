@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\File;
 
 use FFI;
+use PhpProfiler\Lib\FFI\CannotAllocateBufferException;
 
 class NativeFileReader implements FileReaderInterface
 {
@@ -32,7 +33,8 @@ class NativeFileReader implements FileReaderInterface
 
     public function readAll(string $path): string
     {
-        $buffer = $this->ffi->new("unsigned char[4096]");
+        $buffer = $this->ffi->new("unsigned char[4096]")
+            ?? throw new CannotAllocateBufferException('cannot allocate buffer');
 
         $fd = $this->ffi->open($path, 0);
         $result = "";

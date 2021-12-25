@@ -15,6 +15,8 @@ namespace PhpProfiler\Lib\PhpInternals;
 
 use FFI;
 use FFI\CData;
+use PhpProfiler\Lib\FFI\CannotGetTypeForCDataException;
+use PhpProfiler\Lib\FFI\CannotLoadCHeaderException;
 
 final class ZendTypeReader
 {
@@ -52,7 +54,8 @@ final class ZendTypeReader
             if ($php_version === self::V81) {
                 $php_version = self::V80;
             }
-            $this->ffi = FFI::load(__DIR__ . "/Headers/{$php_version}.h");
+            $this->ffi = FFI::load(__DIR__ . "/Headers/{$php_version}.h")
+                ?? throw new CannotLoadCHeaderException('cannot load headers for zend engine');
         }
         return $this->ffi;
     }
@@ -66,7 +69,11 @@ final class ZendTypeReader
     public function sizeOf(string $type): int
     {
         $ffi = $this->loadHeader($this->php_version);
-        $type = $ffi->type($type);
-        return FFI::sizeof($type);
+        $cdata_type = $ffi->type($type)
+            ?? throw new CannotGetTypeForCDataException(
+                message: 'cannot get type for a C Data',
+                type: $type
+            );
+        return FFI::sizeof($cdata_type);
     }
 }
