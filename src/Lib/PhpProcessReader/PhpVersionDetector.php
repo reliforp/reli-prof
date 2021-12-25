@@ -73,7 +73,9 @@ final class PhpVersionDetector
                 3
             );
             $php_version = \FFI::string($version_string_cdata, 3);
-        } catch (\Throwable) {
+            var_dump($php_version);
+        } catch (\Throwable $e) {
+            var_dump($e->getMessage());
             return null;
         }
         return self::VERSION_STRING_CONVERTOR[$php_version] ?? null;
