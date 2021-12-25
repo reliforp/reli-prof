@@ -54,7 +54,7 @@ final class PhpVersionDetector
                 $target_php_settings->php_path,
                 $target_php_settings->libpthread_path,
             );
-            $basic_functions_module = $php_symbol_reader->read('basic_functions_module')
+            $basic_functions_module = $php_symbol_reader->read('json_module_entry')
                 ?? throw new \Exception();
 
             // use default version for reading the definition of zend_module_entry
