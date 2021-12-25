@@ -15,6 +15,8 @@ namespace PhpProfiler\Lib\Libc\Sys\Ptrace;
 
 use FFI\CData;
 use FFI\CInteger;
+use PhpProfiler\Lib\FFI\CannotAllocateBufferException;
+use PhpProfiler\Lib\FFI\CannotCastCDataException;
 use PhpProfiler\Lib\Libc\Addressable;
 
 class PtraceX64 implements Ptrace
@@ -95,15 +97,19 @@ class PtraceX64 implements Ptrace
     ): int {
         if (is_null($addr) or is_int($addr)) {
             /** @var CInteger */
-            $addr_holder = \FFI::new('long');
+            $addr_holder = \FFI::new('long')
+                ?? throw new CannotAllocateBufferException('cannot allocate buffer');
             $addr_holder->cdata = (int)$addr;
-            $addr = \FFI::cast('void *', $addr_holder);
+            $addr = \FFI::cast('void *', $addr_holder)
+                ?? throw new CannotCastCDataException('cannot cast buffer');
         }
         if (is_null($data) or is_int($data)) {
             /** @var CInteger */
-            $data_holder = \FFI::new('long');
+            $data_holder = \FFI::new('long')
+                ?? throw new CannotAllocateBufferException('cannot allocate buffer');
             $data_holder->cdata = (int)$data;
-            $data = \FFI::cast('void *', $data_holder);
+            $data = \FFI::cast('void *', $data_holder)
+                ?? throw new CannotCastCDataException('cannot cast buffer');
         }
 
         $addr_pointer = $addr instanceof Addressable ? $addr->toVoidPointer() : $addr;

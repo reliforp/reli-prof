@@ -15,6 +15,7 @@ namespace PhpProfiler\Lib\Process\MemoryReader;
 
 use FFI;
 use FFI\CData;
+use PhpProfiler\Lib\FFI\CannotAllocateBufferException;
 
 final class MemoryReader implements MemoryReaderInterface
 {
@@ -39,9 +40,12 @@ final class MemoryReader implements MemoryReaderInterface
                          unsigned long riovcnt,
                          unsigned long flags);
        ', 'libc.so.6');
-        $this->local_iov = $this->ffi->new('struct iovec');
-        $this->remote_iov = $this->ffi->new('struct iovec');
-        $this->remote_base = $this->ffi->new('long');
+        $this->local_iov = $this->ffi->new('struct iovec')
+            ?? throw new CannotAllocateBufferException('cannot allocate buffer');
+        $this->remote_iov = $this->ffi->new('struct iovec')
+            ?? throw new CannotAllocateBufferException('cannot allocate buffer');
+        $this->remote_base = $this->ffi->new('long')
+            ?? throw new CannotAllocateBufferException('cannot allocate buffer');
     }
 
     /**
@@ -50,7 +54,8 @@ final class MemoryReader implements MemoryReaderInterface
      */
     public function read(int $pid, int $remote_address, int $size): CData
     {
-        $buffer = $this->ffi->new("unsigned char[{$size}]");
+        $buffer = $this->ffi->new("unsigned char[{$size}]")
+            ?? throw new CannotAllocateBufferException('cannot allocate buffer');
 
         /**
          * @var FFI\Libc\iovec $this->local_iov
