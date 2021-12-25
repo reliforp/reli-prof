@@ -91,7 +91,10 @@ class PhpVersionDetectorTest extends TestCase
         /** @var int $child_status['pid'] */
         $php_version = $php_version_detector->tryDetection(
             new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new TargetPhpSettings(
+                php_regex: PHP_BINARY,
+                php_path: PHP_BINARY,
+            )
         );
         $this->assertIsString($php_version);
     }
