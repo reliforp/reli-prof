@@ -20,6 +20,7 @@ use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
+use PhpProfiler\Lib\PhpProcessReader\PhpVersionDetector;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
 
@@ -33,6 +34,7 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
         private ExecutorGlobalsReader $executor_globals_reader,
         private ReaderLoopProvider $reader_loop_provider,
         private ProcessStopper $process_stopper,
+        private PhpVersionDetector $php_version_detector,
     ) {
     }
 
@@ -49,6 +51,13 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
         TargetPhpSettings $target_php_settings,
         GetTraceSettings $get_trace_settings
     ): Generator {
+        $version = $this->php_version_detector->tryDetection(
+            $process_specifier,
+            $target_php_settings
+        );
+        if (!is_null($version)) {
+            $target_php_settings = $target_php_settings->alterPhpVersion($version);
+        }
         $eg_address = $this->php_globals_finder->findExecutorGlobals($process_specifier, $target_php_settings);
 
         $loop = $this->reader_loop_provider->getMainLoop(

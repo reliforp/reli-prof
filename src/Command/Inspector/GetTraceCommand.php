@@ -27,6 +27,7 @@ use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
+use PhpProfiler\Lib\PhpProcessReader\PhpVersionDetector;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
@@ -51,6 +52,7 @@ final class GetTraceCommand extends Command
         private ProcessStopper $process_stopper,
         private TargetProcessResolver $target_process_resolver,
         private RetryingLoopProvider $retrying_loop_provider,
+        private PhpVersionDetector $php_version_detector,
     ) {
         parent::__construct();
     }
@@ -84,6 +86,14 @@ final class GetTraceCommand extends Command
         $formatter = $this->templated_trace_formatter_factory->createFromSettings($template_settings);
 
         $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
+
+        $version = $this->php_version_detector->tryDetection(
+            $process_specifier,
+            $target_php_settings
+        );
+        if (!is_null($version)) {
+            $target_php_settings = $target_php_settings->alterPhpVersion($version);
+        }
 
         // On targeting ZTS, it's possible that libpthread.so of the target process isn't yet loaded
         // at this point. In that case the TLS block can't be located, then the address of EG can't

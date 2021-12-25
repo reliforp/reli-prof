@@ -78,3 +78,8 @@ class zend_class_entry extends CData
 {
     public zend_string $name;
 }
+
+class zend_module_entry extends CData
+{
+    public int $version; // pointer
+}
