@@ -78,7 +78,7 @@ final class TargetPhpSettingsFromConsoleInput
         }
 
         $php_version = $input->getOption('php-version') ?? TargetPhpSettings::TARGET_PHP_VERSION_DEFAULT;
-        if (!in_array($php_version, ZendTypeReader::ALL_SUPPORTED_VERSIONS, true)) {
+        if ($php_version !== 'auto' and !in_array($php_version, ZendTypeReader::ALL_SUPPORTED_VERSIONS, true)) {
             throw TargetPhpSettingsException::create(
                 TargetPhpSettingsException::TARGET_PHP_VERSION_INVALID
             );

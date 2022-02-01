@@ -36,7 +36,7 @@ class Pointer
     {
         return new Pointer(
             $this->type,
-            $n * $this->size + $this->address,
+            $this->address + $n * $this->size,
             $this->size,
         );
     }

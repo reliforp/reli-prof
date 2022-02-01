@@ -149,4 +149,16 @@ final class PhpGlobalsFinder
         }
         return $executor_globals_address;
     }
+
+    public function findModuleRegistry(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings
+    ): ?int {
+        $symbol_reader = $this->getSymbolReader(
+            $process_specifier,
+            $target_php_settings
+        );
+        $module_registry = $symbol_reader->resolveAddress('module_registry');
+        return $module_registry;
+    }
 }

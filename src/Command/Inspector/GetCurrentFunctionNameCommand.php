@@ -24,6 +24,7 @@ use PhpProfiler\Lib\Elf\Parser\ElfParserException;
 use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
+use PhpProfiler\Lib\PhpProcessReader\PhpVersionDetector;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
 use Symfony\Component\Console\Command\Command;
@@ -34,6 +35,7 @@ final class GetCurrentFunctionNameCommand extends Command
 {
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
+        private PhpVersionDetector $php_version_detector,
         private CallTraceReader $executor_globals_reader,
         private TraceLoopProvider $loop_provider,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
@@ -69,6 +71,11 @@ final class GetCurrentFunctionNameCommand extends Command
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
 
         $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
+
+        $target_php_settings = $this->php_version_detector->decidePhpVersion(
+            $process_specifier,
+            $target_php_settings
+        );
 
         // see the comment at GetTraceCommand::execute()
         $eg_address = $this->retrying_loop_provider->do(
