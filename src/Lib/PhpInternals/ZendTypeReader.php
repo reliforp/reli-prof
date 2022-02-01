@@ -15,6 +15,7 @@ namespace PhpProfiler\Lib\PhpInternals;
 
 use FFI;
 use FFI\CData;
+use PhpProfiler\Lib\FFI\CannotCastCDataException;
 use PhpProfiler\Lib\FFI\CannotGetTypeForCDataException;
 use PhpProfiler\Lib\FFI\CannotLoadCHeaderException;
 
@@ -60,10 +61,15 @@ final class ZendTypeReader
         return $this->ffi;
     }
 
-    public function readAs(string $type, CData $cdata): ZendTypeCData
+    public function readAs(string $type, CData $cdata): CastedCData
     {
         $ffi = $this->loadHeader($this->php_version);
-        return new ZendTypeCData($cdata, $ffi->cast($type, $cdata));
+        return new CastedCData(
+            $cdata,
+            $ffi->cast($type, $cdata) ?? throw new CannotCastCDataException(
+                'cannot cast a C Data'
+            ),
+        );
     }
 
     public function sizeOf(string $type): int

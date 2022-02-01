@@ -15,13 +15,16 @@ namespace PhpProfiler\Lib\PhpInternals;
 
 use FFI\CData;
 
-/** @template T */
-final class ZendTypeCData
+/** @template T of CData */
+final class CastedCData
 {
-    /** @param T $typed */
+    /**
+     * @param CData $raw
+     * @param T $casted
+     */
     public function __construct(
-        public CData $raw,
-        public CData $typed,
+        public object $raw,
+        public object $casted,
     ) {
     }
 }

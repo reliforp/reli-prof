@@ -21,12 +21,19 @@ use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use PhpProfiler\Lib\File\CatFileReader;
 use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeFactory;
+use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
+use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendExecuteData;
+use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
+use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendFunction;
+use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendString;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpSymbolReaderCreator;
+use PhpProfiler\Lib\Process\Pointer\Pointer;
+use PhpProfiler\Lib\Process\Pointer\RemoteProcessDereferencer;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
@@ -53,7 +60,6 @@ class ExecutorGlobalsReaderTest extends TestCase
         $executor_globals_reader = new ExecutorGlobalsReader(
             $memory_reader,
             new ZendTypeReaderCreator(),
-            new LittleEndianReader(),
             new OpcodeFactory()
         );
         $this->child = proc_open(
@@ -103,5 +109,85 @@ class ExecutorGlobalsReaderTest extends TestCase
             $executor_globals_address
         );
         $this->assertSame('fgets', $name);
+    }
+
+
+    public function testReadCallTrace()
+    {
+        $memory_reader = new MemoryReader();
+        $executor_globals_reader = new ExecutorGlobalsReader(
+            $memory_reader,
+            new ZendTypeReaderCreator(),
+            new OpcodeFactory()
+        );
+        $this->child = proc_open(
+            [
+                PHP_BINARY,
+                '-r',
+                <<<CODE
+                class A {
+                    public function wait() {
+                        fgets(STDIN);
+                    }
+                }
+                \$object = new A;
+                fputs(STDOUT, "a\n");
+                \$object->wait();
+                CODE
+            ],
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w']
+            ],
+            $pipes
+        );
+
+        fgets($pipes[1]);
+        $child_status = proc_get_status($this->child);
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            $memory_reader,
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+            ),
+            ProcessMemoryMapCreator::create(),
+            new LittleEndianReader()
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            new LittleEndianReader(),
+            new MemoryReader()
+        );
+
+        /** @var int $child_status['pid'] */
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+        $call_trace = $executor_globals_reader->readCallTrace(
+            $child_status['pid'],
+            ZendTypeReader::V74,
+            $executor_globals_address,
+            PHP_INT_MAX,
+        );
+        $this->assertCount(3, $call_trace->call_frames);
+        $this->assertSame(
+            'fgets',
+            $call_trace->call_frames[0]->getFullyQualifiedFunctionName()
+        );
+        $this->assertSame(
+            'A::wait',
+            $call_trace->call_frames[1]->getFullyQualifiedFunctionName()
+        );
+        $this->assertSame(
+            '<main>',
+            $call_trace->call_frames[2]->getFullyQualifiedFunctionName()
+        );
     }
 }
