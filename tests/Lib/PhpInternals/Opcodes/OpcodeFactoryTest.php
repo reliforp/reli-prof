@@ -44,5 +44,9 @@ class OpcodeFactoryTest extends TestCase
             'ZEND_NOP',
             $factory->create('v80', OpcodeV80::ZEND_NOP)->getName()
         );
+        $this->assertSame(
+            'ZEND_NOP',
+            $factory->create('v81', OpcodeV81::ZEND_NOP)->getName()
+        );
     }
 }

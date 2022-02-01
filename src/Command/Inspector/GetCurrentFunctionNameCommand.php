@@ -25,7 +25,7 @@ use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
-use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
+use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -34,7 +34,7 @@ final class GetCurrentFunctionNameCommand extends Command
 {
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
-        private ExecutorGlobalsReader $executor_globals_reader,
+        private CallTraceReader $executor_globals_reader,
         private TraceLoopProvider $loop_provider,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
