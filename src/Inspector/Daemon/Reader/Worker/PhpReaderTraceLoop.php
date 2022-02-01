@@ -19,7 +19,7 @@ use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
-use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\ExecutorGlobalsReader;
+use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
 
@@ -30,7 +30,7 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
 {
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
-        private ExecutorGlobalsReader $executor_globals_reader,
+        private CallTraceReader $executor_globals_reader,
         private ReaderLoopProvider $reader_loop_provider,
         private ProcessStopper $process_stopper,
     ) {

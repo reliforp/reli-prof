@@ -31,7 +31,7 @@ use PhpProfiler\Lib\Process\Pointer\Pointer;
 use PhpProfiler\Lib\Process\Pointer\RemoteProcessDereferencer;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 
-final class ExecutorGlobalsReader
+final class CallTraceReader
 {
     private ?ZendTypeReader $zend_type_reader = null;
 

@@ -37,7 +37,7 @@ use PhpProfiler\Lib\Process\Pointer\RemoteProcessDereferencer;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
-class ExecutorGlobalsReaderTest extends TestCase
+class CallTraceReaderTest extends TestCase
 {
     /** @var resource|null */
     private $child = null;
@@ -57,7 +57,7 @@ class ExecutorGlobalsReaderTest extends TestCase
     public function testReadCurrentFunctionName()
     {
         $memory_reader = new MemoryReader();
-        $executor_globals_reader = new ExecutorGlobalsReader(
+        $executor_globals_reader = new CallTraceReader(
             $memory_reader,
             new ZendTypeReaderCreator(),
             new OpcodeFactory()
@@ -115,7 +115,7 @@ class ExecutorGlobalsReaderTest extends TestCase
     public function testReadCallTrace()
     {
         $memory_reader = new MemoryReader();
-        $executor_globals_reader = new ExecutorGlobalsReader(
+        $executor_globals_reader = new CallTraceReader(
             $memory_reader,
             new ZendTypeReaderCreator(),
             new OpcodeFactory()
