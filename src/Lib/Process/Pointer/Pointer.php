@@ -32,7 +32,8 @@ class Pointer
     ) {
     }
 
-    public function indexedAt(int $n): Pointer {
+    public function indexedAt(int $n): Pointer
+    {
         return new Pointer(
             $this->type,
             $n * $this->size + $this->address,
