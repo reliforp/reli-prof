@@ -60,7 +60,7 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
             $symbol_reader_creator->createModuleReaderByNameRegex(
                 1,
                 $process_memory_map,
-                '/\/test_module/',
+                '\/test_module',
                 null
             )
         );
@@ -115,7 +115,7 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
             $symbol_reader_creator->createModuleReaderByNameRegex(
                 1,
                 $process_memory_map,
-                '/\/test_module/',
+                '\/test_module',
                 null
             )
         );

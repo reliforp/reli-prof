@@ -45,9 +45,9 @@ class ProcessMemoryMapTest extends TestCase
                 'test_area_2'
             ),
         ]);
-        $area1 = $memory_map->findByNameRegex('/.*1/');
-        $area2 = $memory_map->findByNameRegex('/.*2/');
-        $area_both = $memory_map->findByNameRegex('/test.*/');
+        $area1 = $memory_map->findByNameRegex('.*1');
+        $area2 = $memory_map->findByNameRegex('.*2');
+        $area_both = $memory_map->findByNameRegex('test.*');
 
         $this->assertCount(1, $area1);
         $this->assertCount(1, $area2);
