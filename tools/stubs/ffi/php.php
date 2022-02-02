@@ -156,5 +156,43 @@ class Bucket extends CData
 {
     public zval $val;
     public int $h;
-    public Pointer $key;
+    public CPointer $key;
+}
+
+class zend_module_entry extends CData
+{
+    public int $zts;
+    public CPointer $version;
+}
+
+class zend_hash_func_ffi extends \FFI
+{
+    public function zend_hash_func(string $str, int $len): int {}
+}
+
+class zend_array_v extends CData
+{
+    public int $flags;
+    public int $nApplyCount;
+    public int $nIteratorsCount;
+    public int $consistency;
+}
+
+class zend_array_u extends CData
+{
+    public int $flags;
+    public zend_array_v $v;
+
+}
+
+class zend_array extends CData
+{
+    public zend_array_u $u;
+    public int $nTableMask;
+    public CPointer $arData;
+    public int $nNumUsed;
+    public int $nNumOfElements;
+    public int $nTableSize;
+    public int $nInternalPointer;
+    public int $nNextFreeElement;
 }

@@ -18,11 +18,15 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 
 interface PhpReaderTraceLoopInterface
 {
-    /** @return Generator<TraceMessage> */
+    /**
+     * @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     * @return Generator<TraceMessage>
+     */
     public function run(
         ProcessSpecifier $process_specifier,
         TraceLoopSettings $loop_settings,

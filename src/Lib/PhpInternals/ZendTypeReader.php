@@ -18,6 +18,7 @@ use FFI\CData;
 use PhpProfiler\Lib\FFI\CannotCastCDataException;
 use PhpProfiler\Lib\FFI\CannotGetTypeForCDataException;
 use PhpProfiler\Lib\FFI\CannotLoadCHeaderException;
+use Webmozart\Assert\Assert;
 
 final class ZendTypeReader
 {
@@ -40,6 +41,32 @@ final class ZendTypeReader
     ];
 
     private ?FFI $ffi = null;
+
+    /** @return value-of<self::ALL_SUPPORTED_VERSIONS> */
+    public static function defaultVersion(): string
+    {
+        $version_string = join(
+            '',
+            [
+                'v',
+                PHP_MAJOR_VERSION,
+                PHP_MINOR_VERSION,
+            ]
+        );
+        Assert::true(self::isSupported($version_string));
+        /** @var value-of<self::ALL_SUPPORTED_VERSIONS> */
+        return $version_string;
+    }
+
+    /**
+     * @param string $version_string
+     * @assert-if-true value-of<self::ALL_SUPPORTED_VERSIONS> $version_string
+     * @return bool
+     */
+    public static function isSupported(string $version_string): bool
+    {
+        return in_array($version_string, self::ALL_SUPPORTED_VERSIONS, true);
+    }
 
     /**
      * @param value-of<self::ALL_SUPPORTED_VERSIONS> $php_version
