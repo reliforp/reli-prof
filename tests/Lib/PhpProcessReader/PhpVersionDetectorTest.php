@@ -70,6 +70,7 @@ class PhpVersionDetectorTest extends TestCase
             new TargetPhpSettings()
         );
         $php_version_detector = new PhpVersionDetector(
+            $php_globals_finder,
             $memory_reader,
             new ZendTypeReaderCreator()
         );

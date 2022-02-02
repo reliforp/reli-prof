@@ -20,7 +20,7 @@ use FFI\CPointer;
 class Cast
 {
     /** @param CPointer $cdata */
-    public static function castPointerToInt(CData $cdata): int
+    public static function castPointerToInt(CData &$cdata): int
     {
         /** @var CInteger $casted */
         $casted = \FFI::cast('long', $cdata);

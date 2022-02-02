@@ -21,7 +21,7 @@ use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
  */
 final class TargetPhpSettings
 {
-    public const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0)?|php-fpm|libphp[78]?.*\.so)$';
+    public const PHP_REGEX_DEFAULT = '.*/(php(74|7.4|80|8.0|81|8.1)?|php-fpm|libphp[78]?.*\.so)$';
     public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so';
     public const TARGET_PHP_VERSION_DEFAULT = 'auto';
 
@@ -33,7 +33,5 @@ final class TargetPhpSettings
         public ?string $php_path = null,
         public ?string $libpthread_path = null
     ) {
-        $this->php_regex = '{' . $php_regex . '}';
-        $this->libpthread_regex = '{' . $libpthread_regex . '}';
     }
 }

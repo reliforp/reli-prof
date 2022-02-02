@@ -26,7 +26,7 @@ final class ProcessMemoryMap
     {
         $result = [];
         foreach ($this->memory_areas as $memory_area) {
-            if (preg_match($regex, $memory_area->name)) {
+            if (preg_match('{' . $regex . '}', $memory_area->name)) {
                 $result[] = $memory_area;
             }
         }

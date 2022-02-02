@@ -41,10 +41,11 @@ final class Elf64GnuHashTable
     public function lookup(string $name, callable $symbol_table_checker): int
     {
         $hash = self::hash($name);
+/* this filter is buggy, so commenting out for now
         if (!$this->checkBloomFilter($hash)) {
             return Elf64SymbolTable::STN_UNDEF;
         }
-
+*/
         $chain_offset = max(0, $this->buckets[$hash % $this->nbuckets] - $this->symoffset);
 
         do {
