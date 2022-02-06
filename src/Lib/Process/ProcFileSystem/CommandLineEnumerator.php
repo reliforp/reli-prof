@@ -41,7 +41,7 @@ final class CommandLineEnumerator implements IteratorAggregate
             if (!is_numeric(basename($item->getPath()))) {
                 continue;
             }
-            yield (int)basename($item->getPath()) => $command_line;
+            yield (int)basename($item->getPath()) => preg_replace('/\0/', ' ', $command_line);
         }
     }
 }
