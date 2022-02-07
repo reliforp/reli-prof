@@ -16,5 +16,5 @@ namespace PhpProfiler;
 final class PhpProfiler
 {
     public const TOOL_NAME = 'php-profiler';
-    public const VERSION = '0.3.6';
+    public const VERSION = '0.4.1';
 }
