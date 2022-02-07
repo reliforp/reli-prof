@@ -220,7 +220,7 @@ $ ./php-profiler i:trace -- php -r "fgets(STDIN);"
 
 ### Attach to a running process
 ```bash
-$ sudo php ./php-profiler i:tr -p 2182685
+$ sudo php ./php-profiler i:trace -p 2182685
 0 time_nanosleep <internal>:-1
 1 PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/NanoSleepMiddleware.php:33
 2 PhpProfiler\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/KeyboardCancelMiddleware.php:39
