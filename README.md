@@ -102,7 +102,7 @@ Options:
   -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: auto)
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
@@ -132,7 +132,7 @@ Options:
   -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: auto)
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
@@ -162,7 +162,7 @@ Options:
   -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: auto)
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
@@ -190,7 +190,7 @@ Options:
   -p, --pid=PID                              process id
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version of the target (default: auto)
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
@@ -220,7 +220,7 @@ $ ./php-profiler i:trace -- php -r "fgets(STDIN);"
 
 ### Attach to a running process
 ```bash
-$ sudo ~/.phpenv/versions/8.1snapshot/bin/php ./php-profiler i:tr -p 2182685
+$ sudo php ./php-profiler i:tr -p 2182685
 0 time_nanosleep <internal>:-1
 1 PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/NanoSleepMiddleware.php:33
 2 PhpProfiler\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/KeyboardCancelMiddleware.php:39
@@ -300,7 +300,7 @@ $ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid
 ### Generate flamegraphs from traces
 ```bash
 $ sudo php ./php-profiler i:trace -p <pid of the target process or thread> >traces
-./php-profiler c:flamegraph <traces >flame.svg
+$ ./php-profiler c:flamegraph <traces >flame.svg
 ```
 
 ### Generate the [speedscope](https://github.com/jlfwong/speedscope) format from phpspy compatible traces
@@ -312,6 +312,20 @@ $ speedscope profile.speedscope.json
 
 See [#101](https://github.com/sj-i/php-profiler/pull/101).
 
+# Troubleshooting
+## I get an error message "php module not found" and can't get a trace!
+If your PHP binary uses a non-standard binary name that does not end with `/php`, use the `--php-regex` option to specify the name of the executable (or shared object) that contains the PHP interpreter.
+
+## I don't think the trace is accurate.
+The -S option will stop the execution of the target process for a moment at every sampling, but the trace obtained will be more accurate.
+
+## Trace retrieval from ZTS target does not work on Ubuntu 21.10 or later.
+Try to specify `--libpthread-regex="libc.so"` as an option.
+
+## I can't get traces on Amazon Linux 2.
+First, try `cat /proc/<pid>/maps` to check the memory map of the target PHP process. If the first module does not indicate the location of the PHP binary and looks like an anonymous region, try to specify `--php-regex="^$"` as an option.
+
+
 # Goals
 I would like to achieve the following 5 goals through this project.
 
@@ -319,7 +333,7 @@ I would like to achieve the following 5 goals through this project.
 - To be a framework for PHP programmers to create a freely customizable PHP profiler.
 - To be experimentation for the use of PHP outside of the web, where recent improvements of PHP like JIT and FFI have opened the door.
 - Another entry point for PHP programmers to learn about PHP's internal implementation.
-- To create programs that are fun to write for me.
+- To create a program that is fun to write for me.
 
 # LICENSE
 - MIT (mostly)
