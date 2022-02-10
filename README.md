@@ -9,12 +9,22 @@
 
 php-profiler is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications.
 
+# What can I use this for?
+- Detecting and visualizing bottlenecks in PHP scripts
+  - It provides not only at the function level of profiling but also at line level or opcode level resolution
+- Profiling without accumulated overhead even when a lot of fast functions called as this is a sampling profiler (see the links below, tideways, xhprof, and the profiler of xdebug, many profilers have this overhead)
+  - [Profiling Overhead and PHP 7](https://tideways.com/profiler/blog/profiling-overhead-and-php-7)
+  - [nikic/sample_prof](https://github.com/nikic/sample_prof)
+- Investigating the cause of a bug or performance failure
+  - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
+
+# How it works
 It's implemented by using following techniques:
 
-- parsing ELF binary of the interpreter
-- reading memory map from /proc/\<pid\>/maps
-- reading memory of outer process by using ptrace(2) and process_vm_readv(2) via FFI
-- analyzing internal data structure in the PHP VM (aka Zend Engine)
+- Parsing ELF binary of the interpreter
+- Reading memory map from /proc/\<pid\>/maps
+- Reading memory of outer process by using ptrace(2) and process_vm_readv(2) via FFI
+- Analyzing internal data structure in the PHP VM (aka Zend Engine)
 
 If you have a bit of extra CPU resource, the overhead of this software would be negligible.
 
@@ -317,14 +327,13 @@ See [#101](https://github.com/sj-i/php-profiler/pull/101).
 If your PHP binary uses a non-standard binary name that does not end with `/php`, use the `--php-regex` option to specify the name of the executable (or shared object) that contains the PHP interpreter.
 
 ## I don't think the trace is accurate.
-The -S option will stop the execution of the target process for a moment at every sampling, but the trace obtained will be more accurate.
+The `-S` option will give you better results. Using this option stops the execution of the target process for a moment at every sampling, but the trace obtained will be more accurate. If you don't stop the VMs from running when profiling CPU-heavy programs such as benchmarking programs, you may misjudge the bottleneck, because you will miss more VM states that transition very quickly and are not detected well.
 
 ## Trace retrieval from ZTS target does not work on Ubuntu 21.10 or later.
 Try to specify `--libpthread-regex="libc.so"` as an option.
 
 ## I can't get traces on Amazon Linux 2.
 First, try `cat /proc/<pid>/maps` to check the memory map of the target PHP process. If the first module does not indicate the location of the PHP binary and looks like an anonymous region, try to specify `--php-regex="^$"` as an option.
-
 
 # Goals
 I would like to achieve the following 5 goals through this project.
