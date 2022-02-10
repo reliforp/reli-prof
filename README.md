@@ -43,7 +43,7 @@ Other features of php-profiler that phpspy does not currently have include:
 - Output more accurate line numbers
 - Customize output format with PHP templates
 - Get running opcodes of the PHP-VM
-- Automatic retrieval of the version of stripped PHP binaries
+- Automatic retrieval of the target PHP version from stripped PHP binaries
 - Output traces in speedscope format
 
 There is no particular reason why these features cannot be implemented on the phpspy side, so it may be possible to do them on phpspy in the future.
