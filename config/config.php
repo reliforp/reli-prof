@@ -22,6 +22,7 @@ return [
     ],
     'paths' => [
         'templates' => __DIR__ . '/../resources/templates',
+        'tools' => __DIR__ . '/../tools',
     ],
     'output' => [
         'template' => [
