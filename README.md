@@ -116,6 +116,7 @@ Options:
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
+  -o, --output=OUTPUT                        path to write output from this tool (default: stdout)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
   -q, --quiet                                Do not output any message
   -V, --version                              Display this application version
@@ -146,6 +147,7 @@ Options:
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
+  -o, --output=OUTPUT                        path to write output from this tool (default: stdout)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
   -q, --quiet                                Do not output any message
   -V, --version                              Display this application version
@@ -309,9 +311,14 @@ $ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid
 
 ### Generate flamegraphs from traces
 ```bash
-$ sudo php ./php-profiler i:trace -p <pid of the target process or thread> >traces
+$ ./php-profiler i:trace -o traces -- php ./vendor/bin/psalm --no-cache
 $ ./php-profiler c:flamegraph <traces >flame.svg
+$ google-chrome flame.svg
 ```
+
+The generated flamegraph below visualizes traces from the execution of the psalm command.
+
+![flame](https://user-images.githubusercontent.com/6488121/153741551-3f0fc730-c748-4908-b8ac-7c3f46a5bdbc.svg)
 
 ### Generate the [speedscope](https://github.com/jlfwong/speedscope) format from phpspy compatible traces
 ```bash
