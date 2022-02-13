@@ -13,13 +13,13 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Command\Inspector;
 
-use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TemplatedTraceFormatterFactory;
+use PhpProfiler\Inspector\Output\TraceOutput\TraceOutputFactory;
 use PhpProfiler\Inspector\RetryingLoopProvider;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use PhpProfiler\Inspector\Settings\OutputSettings\OutputSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings\TemplateSettingsFromConsoleInput;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use PhpProfiler\Inspector\TargetProcess\TargetProcessResolver;
 use PhpProfiler\Inspector\TraceLoopProvider;
@@ -48,8 +48,8 @@ final class GetTraceCommand extends Command
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
         private TraceLoopSettingsFromConsoleInput $trace_loop_settings_from_console_input,
-        private TemplateSettingsFromConsoleInput $template_settings_from_console_input,
-        private TemplatedTraceFormatterFactory $templated_trace_formatter_factory,
+        private OutputSettingsFromConsoleInput $output_settings_from_console_input,
+        private TraceOutputFactory $trace_output_factory,
         private ProcessStopper $process_stopper,
         private TargetProcessResolver $target_process_resolver,
         private RetryingLoopProvider $retrying_loop_provider,
@@ -66,7 +66,7 @@ final class GetTraceCommand extends Command
         $this->get_trace_settings_from_console_input->setOptions($this);
         $this->trace_loop_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
-        $this->template_settings_from_console_input->setOptions($this);
+        $this->output_settings_from_console_input->setOptions($this);
     }
 
     /**
@@ -82,8 +82,10 @@ final class GetTraceCommand extends Command
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
-        $template_settings = $this->template_settings_from_console_input->createSettings($input);
-        $formatter = $this->templated_trace_formatter_factory->createFromSettings($template_settings);
+        $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
+            $output,
+            $this->output_settings_from_console_input->createSettings($input),
+        );
 
         $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
 
@@ -112,8 +114,7 @@ final class GetTraceCommand extends Command
                 $target_php_settings,
                 $loop_settings,
                 $eg_address,
-                $output,
-                $formatter
+                $trace_output
             ): bool {
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
@@ -125,7 +126,7 @@ final class GetTraceCommand extends Command
                     $get_trace_settings->depth
                 );
                 if (!is_null($call_trace)) {
-                    $output->write($formatter->format($call_trace));
+                    $trace_output->output($call_trace);
                 }
                 return true;
             },

@@ -11,18 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings;
+namespace PhpProfiler\Inspector\Settings\OutputSettings;
 
 use Noodlehaus\Config;
 use PhpCast\NullableCast;
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 
-use function is_null;
-
-final class TemplateSettingsFromConsoleInput
+final class OutputSettingsFromConsoleInput
 {
     public function __construct(
         private Config $config
@@ -39,24 +36,37 @@ final class TemplateSettingsFromConsoleInput
                 InputOption::VALUE_OPTIONAL,
                 'template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)'
             )
+            ->addOption(
+                'output',
+                'o',
+                InputOption::VALUE_REQUIRED,
+                'path to write output from this tool (default: stdout)'
+            )
         ;
     }
 
-    /**
-     * @throws InspectorSettingsException
-     */
-    public function createSettings(InputInterface $input): TemplateSettings
+    public function createSettings(InputInterface $input): OutputSettings
     {
         $template = NullableCast::toString($input->getOption('template'));
         if (is_null($template)) {
             $template = NullableCast::toString($this->config->get('output.template.default'));
             if (is_null($template)) {
-                throw TemplateSettingsException::create(
-                    TemplateSettingsException::TEMPLATE_NOT_SPECIFIED
+                throw OutputSettingsException::create(
+                    OutputSettingsException::TEMPLATE_NOT_SPECIFIED
                 );
             }
         }
 
-        return new TemplateSettings($template);
+        $output_path = $input->getOption('output');
+        if (!is_null($output_path) and !is_string($output_path)) {
+            throw OutputSettingsException::create(
+                OutputSettingsException::OUTPUT_IS_NOT_STRING
+            );
+        }
+
+        return new OutputSettings(
+            $template,
+            $output_path,
+        );
     }
 }

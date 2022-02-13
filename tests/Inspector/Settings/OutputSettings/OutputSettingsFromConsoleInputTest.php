@@ -11,23 +11,24 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings;
+namespace PhpProfiler\Inspector\Settings\OutputSettings;
 
 use Mockery;
 use Noodlehaus\Config;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TemplateSettingsFromConsoleInputTest extends TestCase
+class OutputSettingsFromConsoleInputTest extends TestCase
 {
     public function testCreateSettings(): void
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('template')->andReturns('test');
+        $input->expects()->getOption('output')->andReturns(null);
         $config = Mockery::mock(Config::class);
         $config->expects()->get()->never();
 
-        $settings = (new TemplateSettingsFromConsoleInput($config))->createSettings($input);
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
         $this->assertSame('test', $settings->template_name);
     }
 
@@ -35,10 +36,11 @@ class TemplateSettingsFromConsoleInputTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns(null);
         $config = Mockery::mock(Config::class);
         $config->expects()->get('output.template.default')->andReturns('test');
 
-        $settings = (new TemplateSettingsFromConsoleInput($config))->createSettings($input);
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
         $this->assertSame('test', $settings->template_name);
     }
 
@@ -46,10 +48,23 @@ class TemplateSettingsFromConsoleInputTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns(null);
         $config = Mockery::mock(Config::class);
         $config->expects()->get('output.template.default')->andReturns(null);
-        $this->expectException(TemplateSettingsException::class);
+        $this->expectException(OutputSettingsException::class);
 
-        $settings = (new TemplateSettingsFromConsoleInput($config))->createSettings($input);
+        (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+    }
+
+    public function testCreateSettingsInvalidOutput(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('template')->andReturns('test');
+        $input->expects()->getOption('output')->andReturns(123);
+        $config = Mockery::mock(Config::class);
+        $config->expects()->get()->never();
+        $this->expectException(OutputSettingsException::class);
+
+        (new OutputSettingsFromConsoleInput($config))->createSettings($input);
     }
 }

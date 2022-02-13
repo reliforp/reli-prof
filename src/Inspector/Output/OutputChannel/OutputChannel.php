@@ -11,13 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings;
+namespace PhpProfiler\Inspector\Output\OutputChannel;
 
-/** @psalm-immutable  */
-final class TemplateSettings
+interface OutputChannel
 {
-    public function __construct(
-        public string $template_name
-    ) {
-    }
+    public function output(string $content): void;
 }
