@@ -11,15 +11,17 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings;
+namespace PhpProfiler\Inspector\Settings\OutputSettings;
 
 use PhpProfiler\Inspector\Settings\InspectorSettingsException;
 
-final class TemplateSettingsException extends InspectorSettingsException
+class OutputSettingsException extends InspectorSettingsException
 {
-    public const TEMPLATE_NOT_SPECIFIED = 1;
+    public const OUTPUT_IS_NOT_STRING = 1;
+    public const TEMPLATE_NOT_SPECIFIED = 2;
 
     protected const ERRORS = [
+        self::OUTPUT_IS_NOT_STRING => 'output must be a string',
         self::TEMPLATE_NOT_SPECIFIED => 'template is not specified',
     ];
 }

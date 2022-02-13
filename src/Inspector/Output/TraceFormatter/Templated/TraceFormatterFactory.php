@@ -13,9 +13,10 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
 
-use PhpProfiler\Inspector\Settings\TemplatedTraceFormatterSettings\TemplateSettings;
+use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
+use PhpProfiler\Inspector\Settings\OutputSettings\OutputSettings;
 
-final class TemplatedTraceFormatterFactory
+class TraceFormatterFactory
 {
     /** @var array<string, TemplatedCallTraceFormatter> */
     private array $cache = [];
@@ -25,7 +26,7 @@ final class TemplatedTraceFormatterFactory
     ) {
     }
 
-    public function createFromSettings(TemplateSettings $settings): TemplatedCallTraceFormatter
+    public function createFromSettings(OutputSettings $settings): CallTraceFormatter
     {
         if (!isset($this->cache[$settings->template_name])) {
             $this->cache[$settings->template_name] = new TemplatedCallTraceFormatter(
