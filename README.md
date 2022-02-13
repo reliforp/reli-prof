@@ -3,8 +3,8 @@
 [![Packagist](https://img.shields.io/packagist/v/sj-i/php-profiler.svg)](https://packagist.org/packages/sj-i/php-profiler)
 [![Packagist](https://img.shields.io/packagist/dt/sj-i/php-profiler.svg)](https://packagist.org/packages/sj-i/php-profiler)
 [![Github Actions](https://github.com/sj-i/php-profiler/workflows/build/badge.svg)](https://github.com/sj-i/php-profiler/actions)
-[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/sj-i/php-profiler/badges/quality-score.png?b=0.4.x)](https://scrutinizer-ci.com/g/sj-i/php-profiler/?branch=0.4.x)
-[![Coverage Status](https://coveralls.io/repos/github/sj-i/php-profiler/badge.svg?branch=0.4.x)](https://coveralls.io/github/sj-i/php-profiler?branch=0.4.x)
+[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/sj-i/php-profiler/badges/quality-score.png?b=0.5.x)](https://scrutinizer-ci.com/g/sj-i/php-profiler/?branch=0.5.x)
+[![Coverage Status](https://coveralls.io/repos/github/sj-i/php-profiler/badge.svg?branch=0.5.x)](https://coveralls.io/github/sj-i/php-profiler?branch=0.5.x)
 ![Psalm coverage](https://shepherd.dev/github/sj-i/php-profiler/coverage.svg?)
 
 php-profiler is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications.
