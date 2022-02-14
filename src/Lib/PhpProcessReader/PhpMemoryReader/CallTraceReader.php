@@ -88,25 +88,6 @@ final class CallTraceReader
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
-    public function readCurrentFunctionName(int $pid, string $php_version, int $executor_globals_address): string
-    {
-        $dereferencer = $this->getDereferencer($pid, $php_version);
-        $eg = $this->getExecutorGlobals($executor_globals_address, $php_version, $dereferencer);
-        if (is_null($eg->current_execute_data)) {
-            throw new \Exception('cannot read current execute data');
-        }
-        /**
-         * @var ZendExecuteData $current_execute_data
-         * @psalm-ignore-var
-         */
-        $current_execute_data = $dereferencer->deref($eg->current_execute_data);
-        return $current_execute_data->getFunctionName($dereferencer) ?? 'unknown';
-    }
-
-    /**
-     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
-     * @throws MemoryReaderException
-     */
     public function readCallTrace(int $pid, string $php_version, int $executor_globals_address, int $depth): ?CallTrace
     {
         $dereferencer = $this->getDereferencer($pid, $php_version);
