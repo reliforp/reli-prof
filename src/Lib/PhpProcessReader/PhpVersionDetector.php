@@ -86,8 +86,6 @@ class PhpVersionDetector
             Assert::true(ZendTypeReader::isSupported($version));
         }
 
-        assert(isset($target_php_settings->libpthread_path));
-
         return new TargetPhpSettings(
             php_regex: $target_php_settings->php_regex,
             libpthread_regex: $target_php_settings->libpthread_regex,
