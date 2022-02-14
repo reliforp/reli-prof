@@ -305,8 +305,8 @@ If JIT is enabled at the target process, this information may be slightly inaccu
 
 ### Use in a docker container and target a process on host
 ```bash
-$ docker build -t php-profiler .
-$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host php-profiler:latest vendor/bin/php-profiler i:trace -p <pid of the target process or thread>
+$ docker pull sjidev/php-profiler
+$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host sjidev/php-profiler i:trace -p <pid of the target process or thread>
 ```
 
 ### Generate flamegraphs from traces
