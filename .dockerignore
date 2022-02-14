@@ -1,0 +1,12 @@
+.idea
+.git
+.gitignore
+.github
+.couscous
+couscous.yml
+.dockerignore
+Dockerfile
+.phpunit.result.cache
+php-profiler.log
+vendor
+lsp
