@@ -54,64 +54,6 @@ class CallTraceReaderTest extends TestCase
         }
     }
 
-    public function testReadCurrentFunctionName()
-    {
-        $memory_reader = new MemoryReader();
-        $executor_globals_reader = new CallTraceReader(
-            $memory_reader,
-            new ZendTypeReaderCreator(),
-            new OpcodeFactory()
-        );
-        $this->child = proc_open(
-            [
-                PHP_BINARY,
-                '-r',
-                'fputs(STDOUT, "a\n");fgets(STDIN);'
-            ],
-            [
-                ['pipe', 'r'],
-                ['pipe', 'w'],
-                ['pipe', 'w']
-            ],
-            $pipes
-        );
-
-        fgets($pipes[1]);
-        $child_status = proc_get_status($this->child);
-        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
-            $memory_reader,
-            new ProcessModuleSymbolReaderCreator(
-                new Elf64SymbolResolverCreator(
-                    new CatFileReader(),
-                    new Elf64Parser(
-                        new LittleEndianReader()
-                    )
-                ),
-                $memory_reader,
-            ),
-            ProcessMemoryMapCreator::create(),
-            new LittleEndianReader()
-        );
-        $php_globals_finder = new PhpGlobalsFinder(
-            $php_symbol_reader_creator,
-            new LittleEndianReader(),
-            new MemoryReader()
-        );
-
-        /** @var int $child_status['pid'] */
-        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
-        );
-        $name = $executor_globals_reader->readCurrentFunctionName(
-            $child_status['pid'],
-            ZendTypeReader::V74,
-            $executor_globals_address
-        );
-        $this->assertSame('fgets', $name);
-    }
-
-
     public function testReadCallTrace()
     {
         $memory_reader = new MemoryReader();
