@@ -1,7 +1,6 @@
 # Reli
 ![Minimum PHP version: 8.0.0](https://img.shields.io/badge/php-8.0.0%2B-blue.svg)
 [![Packagist](https://img.shields.io/packagist/v/sj-i/php-profiler.svg)](https://packagist.org/packages/sj-i/php-profiler)
-[![Packagist](https://img.shields.io/packagist/dt/sj-i/php-profiler.svg)](https://packagist.org/packages/sj-i/php-profiler)
 [![Github Actions](https://github.com/sj-i/php-profiler/workflows/build/badge.svg)](https://github.com/sj-i/php-profiler/actions)
 [![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/sj-i/php-profiler/badges/quality-score.png?b=0.5.x)](https://scrutinizer-ci.com/g/sj-i/php-profiler/?branch=0.5.x)
 [![Coverage Status](https://coveralls.io/repos/github/sj-i/php-profiler/badge.svg?branch=0.5.x)](https://coveralls.io/github/sj-i/php-profiler?branch=0.5.x)
@@ -75,18 +74,18 @@ Much of what can be done with phpspy will be done with reli in the future.
 On targeting ZTS, the target process must load libpthread.so, and also you must have unstripped binary of the interpreter and the libpthread.so, to find EG from the TLS.
 
 ## Installation
+### From Composer
+```bash
+composer create-project reliforp/reli-prof
+cd reli
+./reli
+```
+
 ### From Git
 ```bash
 git clone git@github.com:reliforp/reli-prof.git
 cd reli
 composer install
-./reli
-```
-
-### From Composer
-```bash
-composer create-project reliforp/reli-prof
-cd reli
 ./reli
 ```
 
