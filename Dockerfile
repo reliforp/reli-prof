@@ -15,4 +15,4 @@ COPY . .
 
 RUN composer install --no-dev
 
-ENTRYPOINT ["php", "php-profiler"]
+ENTRYPOINT ["php", "reli"]
