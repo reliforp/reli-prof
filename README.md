@@ -304,8 +304,8 @@ If JIT is enabled at the target process, this information may be slightly inaccu
 
 ### Use in a docker container and target a process on host
 ```bash
-$ docker pull sjidev/reli
-$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host sjidev/reli i:trace -p <pid of the target process or thread>
+$ docker pull reliforp/reli-prof
+$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof i:trace -p <pid of the target process or thread>
 ```
 
 ### Generate flamegraphs from traces
