@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace PhpProfiler;
 
-final class PhpProfiler
+final class ReliProfiler
 {
-    public const TOOL_NAME = 'php-profiler';
+    public const TOOL_NAME = 'reli';
     public const VERSION = '0.6.0-dev';
 }

@@ -1,4 +1,4 @@
-# php-profiler
+# Reli
 ![Minimum PHP version: 8.0.0](https://img.shields.io/badge/php-8.0.0%2B-blue.svg)
 [![Packagist](https://img.shields.io/packagist/v/sj-i/php-profiler.svg)](https://packagist.org/packages/sj-i/php-profiler)
 [![Packagist](https://img.shields.io/packagist/dt/sj-i/php-profiler.svg)](https://packagist.org/packages/sj-i/php-profiler)
@@ -7,9 +7,9 @@
 [![Coverage Status](https://coveralls.io/repos/github/sj-i/php-profiler/badge.svg?branch=0.5.x)](https://coveralls.io/github/sj-i/php-profiler?branch=0.5.x)
 ![Psalm coverage](https://shepherd.dev/github/sj-i/php-profiler/coverage.svg?)
 
-php-profiler is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications.
+Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler (We are in the process of changing the name right now). 
 
-# What can I use this for?
+## What can I use this for?
 - Detecting and visualizing bottlenecks in PHP scripts
   - It provides not only at the function level of profiling but also at line level or opcode level resolution
 - Profiling without accumulated overhead even when a lot of fast functions called as this is a sampling profiler (see the links below, tideways, xhprof, and the profiler of xdebug, many profilers have this overhead)
@@ -18,7 +18,7 @@ php-profiler is a sampling profiler (or a VM state inspector) written in PHP. It
 - Investigating the cause of a bug or performance failure
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
 
-# How it works
+## How it works
 It's implemented by using following techniques:
 
 - Parsing ELF binary of the interpreter
@@ -28,17 +28,17 @@ It's implemented by using following techniques:
 
 If you have a bit of extra CPU resource, the overhead of this software would be negligible.
 
-## Differences to phpspy, when to use php-profiler
-php-profiler is heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy).
+## Differences to phpspy, when to use reli
+Reli is heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy).
 
-The main difference between the two is that php-profiler is written in almost pure PHP while phpspy is written in C.
+The main difference between the two is that reli is written in almost pure PHP while phpspy is written in C.
 In profiling, there are cases you want to customize how and what information to get.
-If customizability for PHP developers matters, you can use this software at the cost of performance. (Although, I hope the cost is not too big.)
+If customizability for PHP developers matters, you can use this software at the cost of performance. (Although, we hope the cost is not too big.)
 
-Additionally, php-profiler can find VM state from ZTS interpreters. For example, in the daemon mode, traces of threads started via [ext-parallel](https://github.com/krakjoe/parallel) are automatically retrieved. Currently this cannot be done with phpspy only.
-php-profiler also provides functionality to only get the address of EG from targets, so you can use actual profiling with phpspy if you want, even when the target is ZTS.
+Additionally, reli can find VM state from ZTS interpreters. For example, in the daemon mode, traces of threads started via [ext-parallel](https://github.com/krakjoe/parallel) are automatically retrieved. Currently this cannot be done with phpspy only.
+Reli also provides functionality to only get the address of EG from targets, so you can use actual profiling with phpspy if you want, even when the target is ZTS.
 
-Other features of php-profiler that phpspy does not currently have include:
+Other features of reli that phpspy does not currently have include:
 
 - Output more accurate line numbers
 - Customize output format with PHP templates
@@ -48,7 +48,7 @@ Other features of php-profiler that phpspy does not currently have include:
 
 There is no particular reason why these features cannot be implemented on the phpspy side, so it may be possible to do them on phpspy in the future.
 
-On the other hand, there are a few things that phpspy can do but php-profiler cannot yet.
+On the other hand, there are a few things that phpspy can do but reli cannot yet.
 
 - Redirecting output of child processes
 - Forcing the address of EG
@@ -58,7 +58,7 @@ On the other hand, there are a few things that phpspy can do but php-profiler ca
 - Run more faster with lower overhead.
 - etc.
 
-Much of what can be done with phpspy will be done with php-profiler in the future.
+Much of what can be done with phpspy will be done with reli in the future.
 
 ## Requirements
 ### Supported PHP versions
@@ -77,23 +77,23 @@ On targeting ZTS, the target process must load libpthread.so, and also you must 
 ## Installation
 ### From Git
 ```bash
-git clone git@github.com:sj-i/php-profiler.git
-cd php-profiler
+git clone git@github.com:reliforp/reli-prof.git
+cd reli
 composer install
-./php-profiler
+./reli
 ```
 
 ### From Composer
 ```bash
-composer create-project sj-i/php-profiler
-cd php-profiler
-./php-profiler
+composer create-project reliforp/reli-prof
+cd reli
+./reli
 ```
 
 ## Usage
 ### Get call traces
 ```bash
-./php-profiler inspector:trace --help
+./reli inspector:trace --help
 Description:
   periodically get call trace from an outer process or thread
 
@@ -127,7 +127,7 @@ Options:
 
 ### Daemon mode
 ```bash
-./php-profiler inspector:daemon --help
+./reli inspector:daemon --help
 Description:
   concurrently get call traces from processes whose command-lines match a given regex
 
@@ -158,7 +158,7 @@ Options:
 
 ### top-like mode
 ```bash
-./php-profiler inspector:top --help
+./reli inspector:top --help
 Description:
   show an aggregated view of traces in real time in a form similar to the UNIX top command.
 
@@ -187,7 +187,7 @@ Options:
 
 ### Get the address of EG
 ```bash
-./php-profiler inspector:eg --help
+./reli inspector:eg --help
 Description:
   get EG address from an outer process or thread
 
@@ -216,7 +216,7 @@ Options:
 ## Examples
 ### Trace a script
 ```bash
-$ ./php-profiler i:trace -- php -r "fgets(STDIN);"
+$ ./reli i:trace -- php -r "fgets(STDIN);"
 0 fgets <internal>:-1
 1 <main> <internal>:-1
 
@@ -232,30 +232,30 @@ $ ./php-profiler i:trace -- php -r "fgets(STDIN);"
 
 ### Attach to a running process
 ```bash
-$ sudo php ./php-profiler i:trace -p 2182685
+$ sudo php ./reli i:trace -p 2182685
 0 time_nanosleep <internal>:-1
-1 PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/NanoSleepMiddleware.php:33
-2 PhpProfiler\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/KeyboardCancelMiddleware.php:39
-3 PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/RetryOnExceptionMiddleware.php:37
-4 PhpProfiler\Lib\Loop\Loop::invoke /home/sji/work/php-profiler/src/Lib/Loop/Loop.php:26
-5 PhpProfiler\Command\Inspector\GetTraceCommand::execute /home/sji/work/php-profiler/src/Command/Inspector/GetTraceCommand.php:133
-6 Symfony\Component\Console\Command\Command::run /home/sji/work/php-profiler/vendor/symfony/console/Command/Command.php:291
-7 Symfony\Component\Console\Application::doRunCommand /home/sji/work/php-profiler/vendor/symfony/console/Application.php:979
-8 Symfony\Component\Console\Application::doRun /home/sji/work/php-profiler/vendor/symfony/console/Application.php:299
-9 Symfony\Component\Console\Application::run /home/sji/work/php-profiler/vendor/symfony/console/Application.php:171
-10 <main> /home/sji/work/php-profiler/php-profiler:45
+1 PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/NanoSleepMiddleware.php:33
+2 PhpProfiler\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/KeyboardCancelMiddleware.php:39
+3 PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/RetryOnExceptionMiddleware.php:37
+4 PhpProfiler\Lib\Loop\Loop::invoke /home/sji/work/reli/src/Lib/Loop/Loop.php:26
+5 PhpProfiler\Command\Inspector\GetTraceCommand::execute /home/sji/work/reli/src/Command/Inspector/GetTraceCommand.php:133
+6 Symfony\Component\Console\Command\Command::run /home/sji/work/reli/vendor/symfony/console/Command/Command.php:291
+7 Symfony\Component\Console\Application::doRunCommand /home/sji/work/reli/vendor/symfony/console/Application.php:979
+8 Symfony\Component\Console\Application::doRun /home/sji/work/reli/vendor/symfony/console/Application.php:299
+9 Symfony\Component\Console\Application::run /home/sji/work/reli/vendor/symfony/console/Application.php:171
+10 <main> /home/sji/work/reli/reli:45
 
 0 time_nanosleep <internal>:-1
-1 PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/NanoSleepMiddleware.php:33
-2 PhpProfiler\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/KeyboardCancelMiddleware.php:39
-3 PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware::invoke /home/sji/work/php-profiler/src/Lib/Loop/LoopMiddleware/RetryOnExceptionMiddleware.php:37
-4 PhpProfiler\Lib\Loop\Loop::invoke /home/sji/work/php-profiler/src/Lib/Loop/Loop.php:26
-5 PhpProfiler\Command\Inspector\GetTraceCommand::execute /home/sji/work/php-profiler/src/Command/Inspector/GetTraceCommand.php:133
-6 Symfony\Component\Console\Command\Command::run /home/sji/work/php-profiler/vendor/symfony/console/Command/Command.php:291
-7 Symfony\Component\Console\Application::doRunCommand /home/sji/work/php-profiler/vendor/symfony/console/Application.php:979
-8 Symfony\Component\Console\Application::doRun /home/sji/work/php-profiler/vendor/symfony/console/Application.php:299
-9 Symfony\Component\Console\Application::run /home/sji/work/php-profiler/vendor/symfony/console/Application.php:171
-10 <main> /home/sji/work/php-profiler/php-profiler:45
+1 PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/NanoSleepMiddleware.php:33
+2 PhpProfiler\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/KeyboardCancelMiddleware.php:39
+3 PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/RetryOnExceptionMiddleware.php:37
+4 PhpProfiler\Lib\Loop\Loop::invoke /home/sji/work/reli/src/Lib/Loop/Loop.php:26
+5 PhpProfiler\Command\Inspector\GetTraceCommand::execute /home/sji/work/reli/src/Command/Inspector/GetTraceCommand.php:133
+6 Symfony\Component\Console\Command\Command::run /home/sji/work/reli/vendor/symfony/console/Command/Command.php:291
+7 Symfony\Component\Console\Application::doRunCommand /home/sji/work/reli/vendor/symfony/console/Application.php:979
+8 Symfony\Component\Console\Application::doRun /home/sji/work/reli/vendor/symfony/console/Application.php:299
+9 Symfony\Component\Console\Application::run /home/sji/work/reli/vendor/symfony/console/Application.php:171
+10 <main> /home/sji/work/reli/reli:45
 
 <press q to exit>
 ...
@@ -264,13 +264,13 @@ The executing process must have the CAP_SYS_PTRACE capability. (Usually run as r
 
 ### Daemon mode
 ```bash
-$ sudo php ./php-profiler i:daemon -P "^/usr/sbin/httpd"
+$ sudo php ./reli i:daemon -P "^/usr/sbin/httpd"
 ``` 
 The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
 
 ### Get the address of EG
 ```bash
-$ sudo php ./php-profiler i:eg -p 2183131
+$ sudo php ./reli i:eg -p 2183131
 0x555ae7825d80
 ``` 
 The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
@@ -279,7 +279,7 @@ The executing process must have the CAP_SYS_PTRACE capability. (Usually run as r
 If a user wants to profile a really CPU-bound application, then he or she wouldn't only want to know what line is slow, but what opcode is. In such cases, use `--template=phpspy_with_opcode` with `inspector:trace` or `inspector:daemon`.
 
 ```bash
-$ sudo php ./php-profiler i:trace --template=phpspy_with_opcode -p <pid of the target process or thread>
+$ sudo php ./reli i:trace --template=phpspy_with_opcode -p <pid of the target process or thread>
 ```
 
 The output would be like the following.
@@ -305,14 +305,14 @@ If JIT is enabled at the target process, this information may be slightly inaccu
 
 ### Use in a docker container and target a process on host
 ```bash
-$ docker pull sjidev/php-profiler
-$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host sjidev/php-profiler i:trace -p <pid of the target process or thread>
+$ docker pull sjidev/reli
+$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host sjidev/reli i:trace -p <pid of the target process or thread>
 ```
 
 ### Generate flamegraphs from traces
 ```bash
-$ ./php-profiler i:trace -o traces -- php ./vendor/bin/psalm --no-cache
-$ ./php-profiler c:flamegraph <traces >flame.svg
+$ ./reli i:trace -o traces -- php ./vendor/bin/psalm --no-cache
+$ ./reli c:flamegraph <traces >flame.svg
 $ google-chrome flame.svg
 ```
 
@@ -322,28 +322,28 @@ The generated flamegraph below visualizes traces from the execution of the psalm
 
 ### Generate the [speedscope](https://github.com/jlfwong/speedscope) format from phpspy compatible traces
 ```bash
-$ sudo php ./php-profiler i:trace -p <pid of the target process or thread> >traces
-$ ./php-profiler c:speedscope <traces >profile.speedscope.json
+$ sudo php ./reli i:trace -p <pid of the target process or thread> >traces
+$ ./reli c:speedscope <traces >profile.speedscope.json
 $ speedscope profile.speedscope.json
 ```
 
-See [#101](https://github.com/sj-i/php-profiler/pull/101).
+See [#101](https://github.com/reliforp/reli-prof/pull/101).
 
-# Troubleshooting
-## I get an error message "php module not found" and can't get a trace!
+## Troubleshooting
+### I get an error message "php module not found" and can't get a trace!
 If your PHP binary uses a non-standard binary name that does not end with `/php`, use the `--php-regex` option to specify the name of the executable (or shared object) that contains the PHP interpreter.
 
-## I don't think the trace is accurate.
+### I don't think the trace is accurate.
 The `-S` option will give you better results. Using this option stops the execution of the target process for a moment at every sampling, but the trace obtained will be more accurate. If you don't stop the VMs from running when profiling CPU-heavy programs such as benchmarking programs, you may misjudge the bottleneck, because you will miss more VM states that transition very quickly and are not detected well.
 
-## Trace retrieval from ZTS target does not work on Ubuntu 21.10 or later.
+### Trace retrieval from ZTS target does not work on Ubuntu 21.10 or later.
 Try to specify `--libpthread-regex="libc.so"` as an option.
 
-## I can't get traces on Amazon Linux 2.
+### I can't get traces on Amazon Linux 2.
 First, try `cat /proc/<pid>/maps` to check the memory map of the target PHP process. If the first module does not indicate the location of the PHP binary and looks like an anonymous region, try to specify `--php-regex="^$"` as an option.
 
-# Goals
-I would like to achieve the following 5 goals through this project.
+## Goals
+We would like to achieve the following 5 goals through this project.
 
 - To be able to closely observe what is happening inside a running PHP script.
 - To be a framework for PHP programmers to create a freely customizable PHP profiler.
@@ -351,7 +351,7 @@ I would like to achieve the following 5 goals through this project.
 - Another entry point for PHP programmers to learn about PHP's internal implementation.
 - To create a program that is fun to write for me.
 
-# LICENSE
+## LICENSE
 - MIT (mostly)
 - tools/flamegraph/flamegraph.pl is copied from https://github.com/brendangregg/FlameGraph and licenced under the CDDL 1.0. See tools/flamegraph/docs/cddl1.txt and the header of the script.
 - Some C headers defining internal structures are extracted from php-src. They are licensed under the zend engine license. See src/Lib/PhpInternals/Headers . So here are the words required by the zend engine license.
@@ -360,6 +360,16 @@ This product includes the Zend Engine, freely available at
      http://www.zend.com
 ```
 
-# See also
+## What does the name "Reli" mean?
+
+"Reli" means nothing, though you are free to think of this tool as a something reliable, or religious, or relishable, or whatever other reli-s as you like.
+
+Originally the name of this tool was just "php-profiler".
+Due to a licensing problem (#175), this simple good name had to be changed.
+
+So we applied a randomly chosen string manipulation function to the original name. `strrev('php-profiler')` results to `'reliforp-php'`, and it can be read as "reli for p(php)".
+Thus the name of this tool is "Reli for PH*" now. And you can also call it just "Reli".
+
+## See also
 - [adsr/phpspy](https://github.com/adsr/phpspy)
-    - php-profiler is heavily inspired by phpspy.
+    - Reli is heavily inspired by phpspy.

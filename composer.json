@@ -1,6 +1,6 @@
 {
-  "name": "sj-i/php-profiler",
-  "description": "a profiler for php",
+  "name": "reliforp/reli-prof",
+  "description": "A sampling profiler for PHP written in PHP, which reads information about running PHP VM from outside of the process.",
   "type": "project",
   "license": "MIT",
   "keywords": [
@@ -54,7 +54,7 @@
     }
   },
   "bin": [
-    "php-profiler"
+    "reli"
   ],
   "scripts": {
     "test": [
