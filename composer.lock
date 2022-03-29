@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "72479c0d97476b3515831f8ed7945582",
+    "content-hash": "123b2541d37661f2368017d42b104135",
     "packages": [
         {
             "name": "amphp/amp",
@@ -494,16 +494,16 @@
         },
         {
             "name": "hassankhan/config",
-            "version": "3.0.0",
+            "version": "3.0.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/hassankhan/config.git",
-                "reference": "a3f02c5158d0a772d242ffd377657793c08cc0c6"
+                "reference": "82421bb17d21cb0c10b98b89ea54aa4027adfc3f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/hassankhan/config/zipball/a3f02c5158d0a772d242ffd377657793c08cc0c6",
-                "reference": "a3f02c5158d0a772d242ffd377657793c08cc0c6",
+                "url": "https://api.github.com/repos/hassankhan/config/zipball/82421bb17d21cb0c10b98b89ea54aa4027adfc3f",
+                "reference": "82421bb17d21cb0c10b98b89ea54aa4027adfc3f",
                 "shasum": ""
             },
             "require": {
@@ -551,9 +551,9 @@
             ],
             "support": {
                 "issues": "https://github.com/hassankhan/config/issues",
-                "source": "https://github.com/hassankhan/config/tree/3.0.0"
+                "source": "https://github.com/hassankhan/config/tree/3.0.1"
             },
-            "time": "2021-12-30T16:38:05+00:00"
+            "time": "2022-03-26T19:37:50+00:00"
         },
         {
             "name": "monolog/monolog",
