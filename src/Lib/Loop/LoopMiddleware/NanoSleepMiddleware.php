@@ -15,6 +15,9 @@ namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
 use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
 
+use function hrtime;
+use function time_nanosleep;
+
 final class NanoSleepMiddleware implements LoopMiddlewareInterface
 {
     /** @param positive-int $sleep_nano_seconds */
@@ -26,13 +29,17 @@ final class NanoSleepMiddleware implements LoopMiddlewareInterface
 
     public function invoke(): bool
     {
-        /**
-         * @psalm-suppress UnusedFunctionCall
-         * @psalm-suppress InvalidArgument
-         */
-        time_nanosleep(0, $this->sleep_nano_seconds);
+        $start = hrtime(true);
         if (!$this->chain->invoke()) {
             return false;
+        }
+        $wait = $this->sleep_nano_seconds - hrtime(true) - $start;
+        if ($wait > 0) {
+            /**
+             * @psalm-suppress UnusedFunctionCall
+             * @psalm-suppress InvalidArgument
+             */
+            time_nanosleep(0, $wait);
         }
         return true;
     }
