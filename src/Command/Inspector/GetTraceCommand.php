@@ -107,6 +107,11 @@ final class GetTraceCommand extends Command
             interval_on_retry_ns: 1000 * 1000 * 10,
         );
 
+        $sg_address = $this->php_globals_finder->findSAPIGlobals(
+            $process_specifier,
+            $target_php_settings
+        );
+
         $this->loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
@@ -114,6 +119,7 @@ final class GetTraceCommand extends Command
                 $target_php_settings,
                 $loop_settings,
                 $eg_address,
+                $sg_address,
                 $trace_output
             ): bool {
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
@@ -123,6 +129,7 @@ final class GetTraceCommand extends Command
                     $process_specifier->pid,
                     $target_php_settings->php_version,
                     $eg_address,
+                    $sg_address,
                     $get_trace_settings->depth
                 );
                 if (!is_null($call_trace)) {

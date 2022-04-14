@@ -739,3 +739,113 @@ struct _zend_class_entry {
 		} internal;
 	} info;
 };
+
+/** zend_llist.h */
+
+typedef struct _zend_llist_element {
+	struct _zend_llist_element *next;
+	struct _zend_llist_element *prev;
+	char data[1]; /* Needs to always be last in the struct */
+} zend_llist_element;
+
+typedef struct _zend_llist {
+	zend_llist_element *head;
+	zend_llist_element *tail;
+	size_t count;
+	size_t size;
+	llist_dtor_func_t dtor;
+	unsigned char persistent;
+	zend_llist_element *traverse_ptr;
+} zend_llist;
+
+// main/SAPI.h
+/*
+   +----------------------------------------------------------------------+
+   | Copyright (c) The PHP Group                                          |
+   +----------------------------------------------------------------------+
+   | This source file is subject to version 3.01 of the PHP license,      |
+   | that is bundled with this package in the file LICENSE, and is        |
+   | available through the world-wide-web at the following url:           |
+   | http://www.php.net/license/3_01.txt                                  |
+   | If you did not receive a copy of the PHP license and are unable to   |
+   | obtain it through the world-wide-web, please send a note to          |
+   | license@php.net so we can mail you a copy immediately.               |
+   +----------------------------------------------------------------------+
+   | Author:  Zeev Suraski <zeev@php.net>                                 |
+   +----------------------------------------------------------------------+
+*/
+
+typedef struct {
+	char *header;
+	size_t header_len;
+} sapi_header_struct;
+
+typedef struct {
+	zend_llist headers;
+	int http_response_code;
+	unsigned char send_default_content_type;
+	char *mimetype;
+	char *http_status_line;
+} sapi_headers_struct;
+
+typedef struct _sapi_post_entry sapi_post_entry;
+typedef struct _sapi_module_struct sapi_module_struct;
+
+typedef struct {
+	const char *request_method;
+	char *query_string;
+	char *cookie_data;
+	zend_long content_length;
+
+	char *path_translated;
+	char *request_uri;
+
+	/* Do not use request_body directly, but the php://input stream wrapper instead */
+	struct _php_stream *request_body;
+
+	const char *content_type;
+
+	zend_bool headers_only;
+	zend_bool no_headers;
+	zend_bool headers_read;
+
+	sapi_post_entry *post_entry;
+
+	char *content_type_dup;
+
+	/* for HTTP authentication */
+	char *auth_user;
+	char *auth_password;
+	char *auth_digest;
+
+	/* this is necessary for the CGI SAPI module */
+	char *argv0;
+
+	char *current_user;
+	int current_user_length;
+
+	/* this is necessary for CLI module */
+	int argc;
+	char **argv;
+	int proto_num;
+} sapi_request_info;
+
+typedef struct _sapi_globals_struct {
+	void *server_context;
+	sapi_request_info request_info;
+	sapi_headers_struct sapi_headers;
+	int64_t read_post_bytes;
+	unsigned char post_read;
+	unsigned char headers_sent;
+	zend_stat_t global_stat;
+	char *default_mimetype;
+	char *default_charset;
+	HashTable *rfc1867_uploaded_files;
+	zend_long post_max_size;
+	int options;
+	zend_bool sapi_started;
+	double global_request_time;
+	HashTable known_post_content_types;
+	zval callback_func;
+	zend_fcall_info_cache fci_cache;
+} sapi_globals_struct;

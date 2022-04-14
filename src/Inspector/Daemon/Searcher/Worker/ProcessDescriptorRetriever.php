@@ -52,6 +52,10 @@ class ProcessDescriptorRetriever
                 new ProcessSpecifier($pid),
                 $target_php_settings_decided,
             );
+            $sg_address = $this->php_globals_finder->findSAPIGlobals(
+                $process_specifier,
+                $target_php_settings_decided
+            );
         } catch (\Throwable $e) {
             Log::debug(
                 'error on analyzing php binary',
@@ -70,6 +74,7 @@ class ProcessDescriptorRetriever
         $result = new TargetProcessDescriptor(
             $pid,
             $eg_address,
+            $sg_address,
             $target_php_settings_decided->php_version,
         );
         $process_descriptor_cache->set($result);

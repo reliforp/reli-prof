@@ -65,7 +65,8 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $process_specifier->pid,
                     $target_process_descriptor->php_version,
-                    $eg_address,
+                    $target_process_descriptor->eg_address,
+                    $target_process_descriptor->sg_address,
                     $get_trace_settings->depth
                 );
                 if (is_null($call_trace)) {
