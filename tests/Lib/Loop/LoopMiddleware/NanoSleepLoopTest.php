@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
-use LogicException;
 use PHPUnit\Framework\TestCase;
 
 class NanoSleepLoopTest extends TestCase
@@ -26,24 +25,6 @@ class NanoSleepLoopTest extends TestCase
             new CallableMiddleware(fn () => false)
         );
         $this->assertFalse($nano_sleep_loop->invoke());
-    }
-
-    public function testSleepBeforeChainInvoked(): void
-    {
-        $nano_sleep_loop = new NanoSleepMiddleware(
-            1000 * 1000 * 1000,
-            new CallableMiddleware(function () {
-                throw new LogicException('should not be thrown');
-            })
-        );
-        if (version_compare('8.0.0', phpversion(), '<=')) {
-            $this->expectException(\ValueError::class);
-            $this->expectExceptionMessageMatches('/Nanoseconds was not in the range 0 to 999 999 999/');
-        } else {
-            $this->expectWarning();
-            $this->expectWarningMessageMatches('/nanoseconds was not in the range 0 to 999 999 999/');
-        }
-        $nano_sleep_loop->invoke();
     }
 
     public function testReturnTrueIfChainSucceed(): void
