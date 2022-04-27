@@ -32,7 +32,7 @@ final class NanoSleepMiddlewareAsync implements AsyncLoopMiddlewareInterface
         $start = hrtime(true);
         yield from $this->chain->invoke();
 
-        $wait = $this->sleep_nano_seconds - hrtime(true) - $start;
+        $wait = $this->sleep_nano_seconds - (hrtime(true) - $start);
         if ($wait > 0) {
             /**
              * @psalm-suppress UnusedFunctionCall
