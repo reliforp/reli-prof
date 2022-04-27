@@ -33,7 +33,7 @@ final class NanoSleepMiddleware implements LoopMiddlewareInterface
         if (!$this->chain->invoke()) {
             return false;
         }
-        $wait = $this->sleep_nano_seconds - hrtime(true) - $start;
+        $wait = $this->sleep_nano_seconds - (hrtime(true) - $start);
         if ($wait > 0) {
             /**
              * @psalm-suppress UnusedFunctionCall
