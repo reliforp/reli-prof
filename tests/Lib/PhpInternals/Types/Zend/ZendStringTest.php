@@ -29,14 +29,14 @@ class ZendStringTest extends TestCase
                 },
                 (object)[
                     'h' => 123,
-                    'len' => 456,
+                    'len' => 234,
                     'val' => $string_addr,
                 ],
             ),
             24
         );
         $this->assertSame(123, $zend_string->h);
-        $this->assertSame(456, $zend_string->len);
+        $this->assertSame(234, $zend_string->len);
         $this->assertSame(
             \FFI::cast('long', $string_addr)->cdata,
             $zend_string->val->address
@@ -52,7 +52,7 @@ class ZendStringTest extends TestCase
                 },
                 (object)[
                     'h' => 123,
-                    'len' => 456,
+                    'len' => 345,
                     'val' => $string_addr,
                 ],
             ),
@@ -63,6 +63,6 @@ class ZendStringTest extends TestCase
         );
         $this->assertSame(RawString::class, $value_pointer->type);
         $this->assertSame(147, $value_pointer->address);
-        $this->assertSame(456, $value_pointer->size);
+        $this->assertSame(255, $value_pointer->size);
     }
 }
