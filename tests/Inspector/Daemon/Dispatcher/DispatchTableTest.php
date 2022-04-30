@@ -14,9 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
 use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PHPUnit\Framework\TestCase;
 
 class DispatchTableTest extends TestCase
@@ -27,26 +25,31 @@ class DispatchTableTest extends TestCase
         $worker1 = \Mockery::mock(PhpReaderControllerInterface::class);
         $worker1->expects()
             ->sendAttach()
-            ->withArgs(function (int $pid) use (&$attached) {
-                $attached[] = $pid;
-                return true;
-            });
+            ->withArgs(
+                function (TargetProcessDescriptor $process_descriptor) use (&$attached) {
+                    $attached[] = $process_descriptor->pid;
+                    return true;
+                }
+            );
         $worker2 = clone $worker1;
         $worker3 = clone $worker1;
         $workers = [$worker1, $worker2, $worker3];
         $worker_pool = \Mockery::mock(WorkerPoolInterface::class);
         $dispatch_table = new DispatchTable(
             $worker_pool,
-            new TargetPhpSettings(),
-            new TraceLoopSettings(1, 'test', 1, false),
-            new GetTraceSettings(1)
         );
 
         $worker_pool->expects()->getFreeWorker()->andReturns($worker1);
         $worker_pool->expects()->getFreeWorker()->andReturns($worker2);
         $worker_pool->expects()->getFreeWorker()->andReturns($worker3);
         $worker_pool->expects()->getFreeWorker()->andReturns(null);
-        $dispatch_table->updateTargets(new TargetProcessList(1, 2, 3));
+        $dispatch_table->updateTargets(
+            new TargetProcessList(
+                new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
+                new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
+                new TargetProcessDescriptor(3, 0, ZendTypeReader::V80),
+            )
+        );
         $attached_first = $attached;
         sort($attached);
         $this->assertSame([1, 2, 3], $attached);
@@ -56,7 +59,12 @@ class DispatchTableTest extends TestCase
         $worker_pool->expects()->returnWorkerToPool($detached);
         $worker_pool->expects()->getFreeWorker()->andReturns($detached);
         $worker_pool->expects()->returnWorkerToPool($detached);
-        $dispatch_table->updateTargets(new TargetProcessList(1, 2));
+        $dispatch_table->updateTargets(
+            new TargetProcessList(
+                new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
+                new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
+            )
+        );
         $this->assertSame([], $attached);
     }
 }

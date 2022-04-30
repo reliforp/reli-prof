@@ -16,18 +16,17 @@ namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
 use Amp\Success;
 use Hamcrest\Matchers;
 use Mockery;
+use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\PhpProcessReader\CallFrame;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
-use PhpProfiler\Lib\PhpProcessReader\PhpVersionDetector;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
 class PhpReaderEntryPointTest extends TestCase
@@ -38,26 +37,22 @@ class PhpReaderEntryPointTest extends TestCase
         $protocol = Mockery::mock(PhpReaderWorkerProtocolInterface::class);
         $protocol->expects()->receiveSettings()->andReturns(new Success(1))->once();
         $protocol->expects()->receiveAttach()->andReturns(new Success(2))->once();
-        $target_php_settings_expected = new TargetPhpSettings();
         $php_reader_task->shouldReceive('run')
             ->withArgs(
                 function (
-                    $process_specifier,
                     $trace_loop_serrings,
-                    $target_php_settings,
+                    $target_process_descriptor,
                     $get_trace_settings
-                ) use ($target_php_settings_expected) {
+                ) {
                     $this->assertEquals(
                         [
-                            new ProcessSpecifier(123),
                             new TraceLoopSettings(1, 'q', 10, false),
-                            $target_php_settings_expected,
+                            new TargetProcessDescriptor(123, 0, ZendTypeReader::V80),
                             new GetTraceSettings(PHP_INT_MAX),
                         ],
                         [
-                            $process_specifier,
                             $trace_loop_serrings,
-                            $target_php_settings,
+                            $target_process_descriptor,
                             $get_trace_settings,
                         ]
                     );
@@ -99,21 +94,9 @@ class PhpReaderEntryPointTest extends TestCase
             ->andReturns(new Success(6))
             ->once();
 
-        $php_version_detector = Mockery::mock(PhpVersionDetector::class);
-        $php_version_detector->expects()
-            ->decidePhpVersion()
-            ->withArgs(function (
-                ProcessSpecifier $process_specifier,
-                TargetPhpSettings $target_php_settings,
-            ) {
-                return true;
-            })
-            ->andReturns($target_php_settings_expected);
-
         $php_reader_entry_point = new PhpReaderEntryPoint(
             $php_reader_task,
             $protocol,
-            $php_version_detector
         );
 
         $generator = $php_reader_entry_point->run();
@@ -127,7 +110,6 @@ class PhpReaderEntryPointTest extends TestCase
 
         $promise = $generator->send(
             new SetSettingsMessage(
-                new TargetPhpSettings(),
                 new TraceLoopSettings(1, 'q', 10, false),
                 new GetTraceSettings(PHP_INT_MAX)
             )
@@ -138,7 +120,11 @@ class PhpReaderEntryPointTest extends TestCase
         });
         $this->assertSame(2, $result);
 
-        $promise = $generator->send(new AttachMessage(123));
+        $promise = $generator->send(
+            new AttachMessage(
+                new TargetProcessDescriptor(123, 0, ZendTypeReader::V80)
+            )
+        );
         $this->assertInstanceOf(Success::class, $promise);
         $promise->onResolve(function ($error, $value) use (&$result) {
             $result = $value;

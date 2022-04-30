@@ -14,8 +14,9 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Searcher\Controller;
 
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Lib\Amphp\ContextInterface;
 
 final class PhpSearcherController implements PhpSearcherControllerInterface
@@ -31,11 +32,14 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         return $this->context->start();
     }
 
-    public function sendTargetRegex(string $regex): Promise
+    public function sendTarget(string $regex, TargetPhpSettings $target_php_settings): Promise
     {
         return $this->context->getProtocol()
             ->sendTargetRegex(
-                new TargetRegexMessage($regex)
+                new TargetPhpSettingsMessage(
+                    $regex,
+                    $target_php_settings,
+                )
             )
         ;
     }

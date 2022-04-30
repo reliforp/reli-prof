@@ -13,10 +13,15 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message;
 
-final class TargetRegexMessage
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+
+final class TargetPhpSettingsMessage
 {
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|'auto'> $target_php_settings */
     public function __construct(
-        public string $regex
+        public string $regex,
+        public TargetPhpSettings $target_php_settings,
     ) {
     }
 }

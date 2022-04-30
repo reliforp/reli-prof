@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Reader\Controller;
 
 use Amp\Promise;
+use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 interface PhpReaderControllerInterface
@@ -28,13 +28,12 @@ interface PhpReaderControllerInterface
 
     /** @return Promise<int> */
     public function sendSettings(
-        TargetPhpSettings $target_php_settings,
         TraceLoopSettings $loop_settings,
         GetTraceSettings $get_trace_settings
     ): Promise;
 
     /** @return Promise<int> */
-    public function sendAttach(int $pid): Promise;
+    public function sendAttach(TargetProcessDescriptor $process_descriptor): Promise;
 
     /** @return Promise<TraceMessage|DetachWorkerMessage> */
     public function receiveTraceOrDetachWorker(): Promise;

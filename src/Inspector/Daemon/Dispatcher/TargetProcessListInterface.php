@@ -15,12 +15,14 @@ namespace PhpProfiler\Inspector\Daemon\Dispatcher;
 
 interface TargetProcessListInterface
 {
-    public function pickOne(): ?int;
+    public function pickOne(): ?TargetProcessDescriptor;
 
-    public function putOne(int $pid): void;
+    public function putOne(TargetProcessDescriptor $process_descriptor): void;
 
     public function getDiff(TargetProcessListInterface $compare_list): self;
 
-    /** @return int[] */
+    /** @return TargetProcessDescriptor[] */
     public function getArray(): array;
+
+    public function removeByPid(int $pid): void;
 }

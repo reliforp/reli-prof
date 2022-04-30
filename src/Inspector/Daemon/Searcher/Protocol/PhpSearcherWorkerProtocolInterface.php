@@ -14,14 +14,14 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Searcher\Protocol;
 
 use Amp\Promise;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
 use PhpProfiler\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpSearcherWorkerProtocolInterface extends MessageProtocolInterface
 {
-    /** @return Promise<TargetRegexMessage> */
-    public function receiveTargetRegex(): Promise;
+    /** @return Promise<TargetPhpSettingsMessage> */
+    public function receiveTargetPhpSettings(): Promise;
 
     public function sendUpdateTargetProcess(UpdateTargetProcessMessage $message): Promise;
 }

@@ -15,13 +15,13 @@ namespace PhpProfiler\Inspector\Daemon\Searcher\Protocol;
 
 use Amp\Promise;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use PhpProfiler\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpSearcherControllerProtocolInterface extends MessageProtocolInterface
 {
     /** @return Promise<int> */
-    public function sendTargetRegex(TargetRegexMessage $message): Promise;
+    public function sendTargetRegex(TargetPhpSettingsMessage $message): Promise;
 
     /** @return Promise<UpdateTargetProcessMessage> */
     public function receiveUpdateTargetProcess(): Promise;

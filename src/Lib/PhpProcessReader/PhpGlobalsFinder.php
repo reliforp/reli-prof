@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\PhpProcessReader;
 
 use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use PhpProfiler\Lib\ByteStream\CDataByteReader;
 use PhpProfiler\Lib\Elf\Parser\ElfParserException;
@@ -27,7 +26,7 @@ use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 use RuntimeException;
 
-final class PhpGlobalsFinder
+class PhpGlobalsFinder
 {
     public function __construct(
         private PhpSymbolReaderCreator $php_symbol_reader_creator,

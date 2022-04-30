@@ -14,12 +14,10 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
 
 use Generator;
+use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
 use PhpProfiler\Lib\Process\ProcessSpecifier;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
@@ -30,7 +28,6 @@ use function PhpProfiler\Lib\Defer\defer;
 final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
 {
     public function __construct(
-        private PhpGlobalsFinder $php_globals_finder,
         private CallTraceReader $executor_globals_reader,
         private ReaderLoopProvider $reader_loop_provider,
         private ProcessStopper $process_stopper,
@@ -38,7 +35,6 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
     }
 
     /**
-     * @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
      * @return Generator<TraceMessage>
      * @throws \PhpProfiler\Lib\Elf\Parser\ElfParserException
      * @throws \PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException
@@ -46,19 +42,20 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
      * @throws \PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException
      */
     public function run(
-        ProcessSpecifier $process_specifier,
         TraceLoopSettings $loop_settings,
-        TargetPhpSettings $target_php_settings,
+        TargetProcessDescriptor $target_process_descriptor,
         GetTraceSettings $get_trace_settings
     ): Generator {
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($process_specifier, $target_php_settings);
+        $eg_address = $target_process_descriptor->eg_address;
+        $process_specifier = new ProcessSpecifier(
+            $target_process_descriptor->pid
+        );
 
-        /** @var TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
         $loop = $this->reader_loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
                 $process_specifier,
-                $target_php_settings,
+                $target_process_descriptor,
                 $loop_settings,
                 $eg_address
             ): Generator {
@@ -67,7 +64,7 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                 }
                 $call_trace = $this->executor_globals_reader->readCallTrace(
                     $process_specifier->pid,
-                    $target_php_settings->php_version,
+                    $target_process_descriptor->php_version,
                     $eg_address,
                     $get_trace_settings->depth
                 );

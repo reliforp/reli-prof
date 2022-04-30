@@ -15,13 +15,14 @@ namespace PhpProfiler\Inspector\Daemon\Reader\Controller;
 
 use Amp\Promise;
 use Mockery;
+use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\Amphp\ContextInterface;
+use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PHPUnit\Framework\TestCase;
 
 final class PhpReaderControllerTest extends TestCase
@@ -46,12 +47,10 @@ final class PhpReaderControllerTest extends TestCase
 
     public function testSendSettings(): void
     {
-        $target_php_settings = new TargetPhpSettings();
         $trace_loop_settings = new TraceLoopSettings(1, 'q', 1, false);
         $get_trace_settings = new GetTraceSettings(1);
 
         $expected = new SetSettingsMessage(
-            $target_php_settings,
             $trace_loop_settings,
             $get_trace_settings
         );
@@ -75,7 +74,6 @@ final class PhpReaderControllerTest extends TestCase
         $this->assertInstanceOf(
             Promise::class,
             $php_reader_context->sendSettings(
-                $target_php_settings,
                 $trace_loop_settings,
                 $get_trace_settings
             )
@@ -89,7 +87,12 @@ final class PhpReaderControllerTest extends TestCase
             ->sendAttach()
             ->with(
                 Mockery::on(function (AttachMessage $actual) {
-                    $this->assertEquals(new AttachMessage(1), $actual);
+                    $this->assertEquals(
+                        new AttachMessage(
+                            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80)
+                        ),
+                        $actual
+                    );
                     return true;
                 })
             )
@@ -103,7 +106,12 @@ final class PhpReaderControllerTest extends TestCase
             ->andReturns($protocol)
         ;
         $php_reader_context = new PhpReaderController($context);
-        $this->assertInstanceOf(Promise::class, $php_reader_context->sendAttach(1));
+        $this->assertInstanceOf(
+            Promise::class,
+            $php_reader_context->sendAttach(
+                new TargetProcessDescriptor(1, 0, ZendTypeReader::V80)
+            )
+        );
     }
 
     public function testReceiveTrace(): void

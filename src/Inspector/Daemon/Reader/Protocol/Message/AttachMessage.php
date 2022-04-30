@@ -13,10 +13,12 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
 
+use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+
 final class AttachMessage
 {
     public function __construct(
-        public int $pid
+        public TargetProcessDescriptor $process_descriptor,
     ) {
     }
 }
