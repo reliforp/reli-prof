@@ -17,7 +17,6 @@ use Amp\Promise;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
 use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 use function array_fill;
@@ -42,7 +41,6 @@ final class WorkerPool implements WorkerPoolInterface
     public static function create(
         PhpReaderContextCreatorInterface $creator,
         int $number,
-        TargetPhpSettings $target_php_settings,
         TraceLoopSettings $loop_settings,
         GetTraceSettings $get_trace_settings
     ): self {
@@ -57,7 +55,6 @@ final class WorkerPool implements WorkerPoolInterface
         $send_settings = [];
         for ($i = 0; $i < $number; $i++) {
             $send_settings[] = $contexts[$i]->sendSettings(
-                $target_php_settings,
                 $loop_settings,
                 $get_trace_settings
             );

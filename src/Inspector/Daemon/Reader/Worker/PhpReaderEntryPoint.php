@@ -19,15 +19,12 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
 use PhpProfiler\Lib\Amphp\WorkerEntryPointInterface;
 use PhpProfiler\Lib\Log\Log;
-use PhpProfiler\Lib\PhpProcessReader\PhpVersionDetector;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
 
 final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 {
     public function __construct(
         private PhpReaderTraceLoopInterface $trace_loop,
         private PhpReaderWorkerProtocolInterface $protocol,
-        private PhpVersionDetector $php_version_detector,
     ) {
     }
 
@@ -48,20 +45,10 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             $attach_message = yield $this->protocol->receiveAttach();
             Log::debug('attach_message', [$attach_message]);
 
-            $process_specifier = new ProcessSpecifier(
-                $attach_message->pid
-            );
-
-            $target_php_settings = $this->php_version_detector->decidePhpVersion(
-                $process_specifier,
-                $set_settings_message->target_php_settings
-            );
-
             try {
                 $loop_runner = $this->trace_loop->run(
-                    $process_specifier,
                     $set_settings_message->trace_loop_settings,
-                    $target_php_settings,
+                    $attach_message->process_descriptor,
                     $set_settings_message->get_trace_settings
                 );
                 Log::debug('start trace');
@@ -78,7 +65,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 
             Log::debug('detaching worker');
             yield $this->protocol->sendDetachWorker(
-                new DetachWorkerMessage($attach_message->pid)
+                new DetachWorkerMessage($attach_message->process_descriptor->pid)
             );
             Log::debug('detached worker');
         }

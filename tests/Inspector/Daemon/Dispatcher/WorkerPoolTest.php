@@ -18,7 +18,6 @@ use Mockery;
 use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
 use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PHPUnit\Framework\TestCase;
 
@@ -26,7 +25,6 @@ class WorkerPoolTest extends TestCase
 {
     public function testCreate()
     {
-        $php_settings = new TargetPhpSettings();
         $trace_settings = new TraceLoopSettings(1, 'q', 1, false);
         $get_trace_settings = new GetTraceSettings(1);
 
@@ -36,7 +34,6 @@ class WorkerPoolTest extends TestCase
             ->andReturns(new Success(null));
         $reader_context->expects()
             ->sendSettings(
-                $php_settings,
                 $trace_settings,
                 $get_trace_settings
             )
@@ -49,7 +46,6 @@ class WorkerPoolTest extends TestCase
         $worker_pool = WorkerPool::create(
             $reader_context_creator,
             1,
-            $php_settings,
             $trace_settings,
             $get_trace_settings
         );

@@ -15,8 +15,9 @@ namespace PhpProfiler\Inspector\Daemon\Searcher\Controller;
 
 use Amp\Promise;
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -41,7 +42,7 @@ class PhpSearcherControllerTest extends TestCase
         $protocol->shouldReceive('sendTargetRegex')
             ->once()
             ->withArgs(
-                function (TargetRegexMessage $message) {
+                function (TargetPhpSettingsMessage $message) {
                     $this->assertSame('abcdefg', $message->regex);
                     return true;
                 }
@@ -51,7 +52,10 @@ class PhpSearcherControllerTest extends TestCase
         $php_searcher_context = new PhpSearcherController($context);
         $this->assertInstanceOf(
             Promise::class,
-            $php_searcher_context->sendTargetRegex('abcdefg')
+            $php_searcher_context->sendTarget(
+                'abcdefg',
+                new TargetPhpSettings()
+            )
         );
     }
 

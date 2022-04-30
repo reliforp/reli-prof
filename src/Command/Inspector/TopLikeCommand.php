@@ -75,12 +75,16 @@ final class TopLikeCommand extends Command
 
         $searcher_context = $this->php_searcher_context_creator->create();
         Promise\wait($searcher_context->start());
-        Promise\wait($searcher_context->sendTargetRegex($daemon_settings->target_regex));
+        Promise\wait(
+            $searcher_context->sendTarget(
+                $daemon_settings->target_regex,
+                $target_php_settings,
+            )
+        );
 
         $worker_pool = WorkerPool::create(
             $this->php_reader_context_creator,
             $daemon_settings->threads,
-            $target_php_settings,
             $loop_settings,
             $get_trace_settings
         );

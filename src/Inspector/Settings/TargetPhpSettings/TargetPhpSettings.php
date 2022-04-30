@@ -17,7 +17,6 @@ use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 
 /**
  * @template TVersion of value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|'auto'
- * @immutable
  */
 final class TargetPhpSettings
 {

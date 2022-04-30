@@ -15,6 +15,7 @@ namespace PhpProfiler\Inspector\Daemon\Searcher\Controller;
 
 use Amp\Promise;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
+use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 
 interface PhpSearcherControllerInterface
 {
@@ -22,7 +23,7 @@ interface PhpSearcherControllerInterface
     public function start(): Promise;
 
     /** @return Promise<int> */
-    public function sendTargetRegex(string $regex): Promise;
+    public function sendTarget(string $regex, TargetPhpSettings $target_php_settings): Promise;
 
     /** @return Promise<UpdateTargetProcessMessage> */
     public function receivePidList(): Promise;

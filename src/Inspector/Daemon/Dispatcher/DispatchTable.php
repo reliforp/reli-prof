@@ -41,7 +41,7 @@ final class DispatchTable
                 break;
             }
             $this->assigned->putOne($picked);
-            $this->dispatch_table[$picked] = $worker;
+            $this->dispatch_table[$picked->pid] = $worker;
             $worker->sendAttach($picked);
         }
     }
@@ -49,7 +49,7 @@ final class DispatchTable
     public function release(TargetProcessListInterface $targets): void
     {
         foreach ($targets->getArray() as $pid) {
-            $this->releaseOne($pid);
+            $this->releaseOne($pid->pid);
         }
     }
 
@@ -60,6 +60,6 @@ final class DispatchTable
             $this->worker_pool->returnWorkerToPool($worker);
             unset($this->dispatch_table[$pid]);
         }
-        $this->assigned = $this->assigned->getDiff(new TargetProcessList($pid));
+        $this->assigned->removeByPid($pid);
     }
 }

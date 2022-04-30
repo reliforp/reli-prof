@@ -15,7 +15,7 @@ namespace PhpProfiler\Inspector\Daemon\Searcher\Worker;
 
 use Amp\Parallel\Sync\Channel;
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
 
@@ -31,9 +31,9 @@ final class PhpSearcherWorkerProtocol implements PhpSearcherWorkerProtocolInterf
         return new self($channel);
     }
 
-    public function receiveTargetRegex(): Promise
+    public function receiveTargetPhpSettings(): Promise
     {
-        /** @var Promise<TargetRegexMessage> */
+        /** @var Promise<TargetPhpSettingsMessage> */
         return $this->channel->receive();
     }
 

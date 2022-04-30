@@ -14,13 +14,13 @@ declare(strict_types=1);
 namespace PhpProfiler\Inspector\Daemon\Reader\Controller;
 
 use Amp\Promise;
+use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\Amphp\ContextInterface;
 
@@ -44,13 +44,11 @@ final class PhpReaderController implements PhpReaderControllerInterface
 
     /** @return Promise<int> */
     public function sendSettings(
-        TargetPhpSettings $target_php_settings,
         TraceLoopSettings $loop_settings,
         GetTraceSettings $get_trace_settings
     ): Promise {
         return $this->context->getProtocol()->sendSettings(
             new SetSettingsMessage(
-                $target_php_settings,
                 $loop_settings,
                 $get_trace_settings
             )
@@ -58,10 +56,10 @@ final class PhpReaderController implements PhpReaderControllerInterface
     }
 
     /** @return Promise<int> */
-    public function sendAttach(int $pid): Promise
+    public function sendAttach(TargetProcessDescriptor $process_descriptor): Promise
     {
         return $this->context->getProtocol()->sendAttach(
-            new AttachMessage($pid)
+            new AttachMessage($process_descriptor)
         );
     }
 

@@ -15,7 +15,7 @@ namespace PhpProfiler\Inspector\Daemon\Searcher\Controller;
 
 use Amp\Parallel\Sync\Channel;
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetRegexMessage;
+use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
 
@@ -31,7 +31,7 @@ final class PhpSearcherControllerProtocol implements PhpSearcherControllerProtoc
         return new self($channel);
     }
 
-    public function sendTargetRegex(TargetRegexMessage $message): Promise
+    public function sendTargetRegex(TargetPhpSettingsMessage $message): Promise
     {
         return $this->channel->send($message);
     }
