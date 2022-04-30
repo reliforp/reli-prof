@@ -13,15 +13,16 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\Loop\LoopMiddleware;
 
-use Exception;
+use PhpProfiler\Lib\Log\Log;
 use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
+use Throwable;
 
 final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
 {
     private int $current_retry_count = 0;
 
     /**
-     * @param array<int, class-string<Exception>> $exception_names
+     * @param array<int, class-string<Throwable>> $exception_names
      */
     public function __construct(
         private int $max_retry,
@@ -37,18 +38,32 @@ final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
                 $result = $this->chain->invoke();
                 $this->current_retry_count = 0;
                 return $result;
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 foreach ($this->exception_names as $exception_name) {
                     /** @psalm-suppress DocblockTypeContradiction */
                     if (is_a($e, $exception_name)) {
                         $this->current_retry_count++;
+                        Log::debug(
+                            $e->getMessage(),
+                            [
+                                'retry_count' => $this->current_retry_count,
+                                'trace' => $e->getTrace()
+                            ]
+                        );
                         continue 2;
                     }
                 }
                 throw $e;
             }
         }
-        assert(isset($e));
+        assert(isset($e) and $e instanceof Throwable);
+        Log::error(
+            $e->getMessage(),
+            [
+                'retry_count' => $this->current_retry_count,
+                'trace' => $e->getTrace()
+            ]
+        );
         throw $e;
     }
 }
