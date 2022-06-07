@@ -30,7 +30,7 @@
     "sj-i/php-cast": "1.0.0",
     "monolog/monolog": "2.6.0",
     "myclabs/php-enum": "1.8.3",
-    "webmozart/assert": "1.10.0"
+    "webmozart/assert": "1.11.0"
   },
   "require-dev": {
     "ext-posix": "*",
