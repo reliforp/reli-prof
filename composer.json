@@ -28,7 +28,7 @@
     "amphp/amp": "2.6.2",
     "hassankhan/config": "3.0.1",
     "sj-i/php-cast": "1.0.0",
-    "monolog/monolog": "2.6.0",
+    "monolog/monolog": "2.7.0",
     "myclabs/php-enum": "1.8.3",
     "webmozart/assert": "1.11.0"
   },
