@@ -36,7 +36,7 @@
     "ext-posix": "*",
     "phpunit/phpunit": "9.5.20",
     "vimeo/psalm": "4.23.0",
-    "squizlabs/php_codesniffer": "3.6.2",
+    "squizlabs/php_codesniffer": "3.7.0",
     "mockery/mockery": "1.5.0",
     "psalm/plugin-mockery": "0.9.1",
     "jetbrains/phpstorm-stubs": "2022.1",
