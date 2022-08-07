@@ -16,7 +16,8 @@ namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 
 /**
- * @template TVersion of value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|'auto'
+ * @psalm-type VersionDecided=value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>
+ * @template TVersion of VersionDecided|'auto'
  */
 final class TargetPhpSettings
 {
@@ -32,5 +33,11 @@ final class TargetPhpSettings
         public ?string $php_path = null,
         public ?string $libpthread_path = null
     ) {
+    }
+
+    /** @psalm-assert-if-true self<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'> $this */
+    public function isDecided(): bool
+    {
+        return $this->php_version !== 'auto';
     }
 }

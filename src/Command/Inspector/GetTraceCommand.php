@@ -122,6 +122,7 @@ final class GetTraceCommand extends Command
                 $sg_address,
                 $trace_output
             ): bool {
+                assert($target_php_settings->isDecided());
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
                 }

@@ -108,7 +108,7 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
         string $symbol_name,
-    ): ?int {
+    ): int {
         $tsrm_ls_cache = $this->findTsrmLsCache($process_specifier, $target_php_settings);
         if (isset($tsrm_ls_cache)) {
             switch ($target_php_settings->php_version) {

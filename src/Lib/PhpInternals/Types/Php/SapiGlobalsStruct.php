@@ -13,12 +13,14 @@ declare(strict_types=1);
 
 namespace PhpProfiler\Lib\PhpInternals\Types\Php;
 
+use FFI\PhpInternals\sapi_globals_struct;
 use PhpProfiler\Lib\PhpInternals\CastedCData;
 use PhpProfiler\Lib\Process\Pointer\Dereferencable;
 use PhpProfiler\Lib\Process\Pointer\Pointer;
 
 final class SapiGlobalsStruct implements Dereferencable
 {
+    /** @psalm-suppress PropertyNotSetInConstructor */
     public float $global_request_time;
 
     /** @param CastedCData<sapi_globals_struct> $casted_cdata */
