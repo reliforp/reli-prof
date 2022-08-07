@@ -89,7 +89,7 @@ final class PhpReaderControllerTest extends TestCase
                 Mockery::on(function (AttachMessage $actual) {
                     $this->assertEquals(
                         new AttachMessage(
-                            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80)
+                            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80)
                         ),
                         $actual
                     );
@@ -109,7 +109,7 @@ final class PhpReaderControllerTest extends TestCase
         $this->assertInstanceOf(
             Promise::class,
             $php_reader_context->sendAttach(
-                new TargetProcessDescriptor(1, 0, ZendTypeReader::V80)
+                new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80)
             )
         );
     }

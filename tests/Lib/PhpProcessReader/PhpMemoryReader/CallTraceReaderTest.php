@@ -112,10 +112,16 @@ class CallTraceReaderTest extends TestCase
             new ProcessSpecifier($child_status['pid']),
             new TargetPhpSettings()
         );
+        $sapi_globals_address = $php_globals_finder->findSAPIGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+
         $call_trace = $executor_globals_reader->readCallTrace(
             $child_status['pid'],
             ZendTypeReader::V74,
             $executor_globals_address,
+            $sapi_globals_address,
             PHP_INT_MAX,
         );
         $this->assertCount(3, $call_trace->call_frames);

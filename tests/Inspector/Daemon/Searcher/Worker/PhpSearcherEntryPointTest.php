@@ -36,9 +36,9 @@ class PhpSearcherEntryPointTest extends TestCase
                 function (UpdateTargetProcessMessage $message) {
                     $diff = $message->target_process_list->getDiff(
                         new TargetProcessList(
-                            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
-                            new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
-                            new TargetProcessDescriptor(3, 0, ZendTypeReader::V80),
+                            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
+                            new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
+                            new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
                         )
                     )->getArray();
                     $this->assertSame([], $diff);

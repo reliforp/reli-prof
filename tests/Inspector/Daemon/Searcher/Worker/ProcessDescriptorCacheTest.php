@@ -24,10 +24,10 @@ class ProcessDescriptorCacheTest extends TestCase
         $process_descriptor_cache = new ProcessDescriptorCache();
         $this->assertNull($process_descriptor_cache->get(42));
         $process_descriptor_cache->set(
-            new TargetProcessDescriptor(42, 0, ZendTypeReader::V80)
+            new TargetProcessDescriptor(42, 0, 0, ZendTypeReader::V80)
         );
         $this->assertEquals(
-            new TargetProcessDescriptor(42, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(42, 0, 0, ZendTypeReader::V80),
             $process_descriptor_cache->get(42)
         );
     }
@@ -36,21 +36,21 @@ class ProcessDescriptorCacheTest extends TestCase
     {
         $process_descriptor_cache = new ProcessDescriptorCache();
         $process_descriptor_cache->set(
-            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80)
+            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80)
         );
         $process_descriptor_cache->set(
-            new TargetProcessDescriptor(2, 0, ZendTypeReader::V80)
+            new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80)
         );
         $process_descriptor_cache->set(
-            new TargetProcessDescriptor(3, 0, ZendTypeReader::V80)
+            new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80)
         );
         $process_descriptor_cache->removeDisappeared(1, 3);
         $this->assertEquals(
-            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
             $process_descriptor_cache->get(1)
         );
         $this->assertEquals(
-            new TargetProcessDescriptor(3, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
             $process_descriptor_cache->get(3)
         );
         $this->assertNull($process_descriptor_cache->get(2));

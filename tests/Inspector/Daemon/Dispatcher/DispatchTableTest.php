@@ -45,9 +45,9 @@ class DispatchTableTest extends TestCase
         $worker_pool->expects()->getFreeWorker()->andReturns(null);
         $dispatch_table->updateTargets(
             new TargetProcessList(
-                new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
-                new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
-                new TargetProcessDescriptor(3, 0, ZendTypeReader::V80),
+                new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
+                new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
+                new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
             )
         );
         $attached_first = $attached;
@@ -61,8 +61,8 @@ class DispatchTableTest extends TestCase
         $worker_pool->expects()->returnWorkerToPool($detached);
         $dispatch_table->updateTargets(
             new TargetProcessList(
-                new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
-                new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
+                new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
+                new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
             )
         );
         $this->assertSame([], $attached);
