@@ -15,6 +15,7 @@ namespace PhpProfiler\Lib\PhpInternals;
 
 use FFI;
 use FFI\CData;
+use PhpProfiler\Lib\FFI\CannotAllocateBufferException;
 use PhpProfiler\Lib\FFI\CannotCastCDataException;
 use PhpProfiler\Lib\FFI\CannotGetTypeForCDataException;
 use PhpProfiler\Lib\FFI\CannotLoadCHeaderException;
@@ -99,14 +100,54 @@ final class ZendTypeReader
         );
     }
 
+    /** @var array<string, int> $sizeof_cache */
+    private array $sizeof_cache = [];
+
     public function sizeOf(string $type): int
     {
-        $ffi = $this->loadHeader($this->php_version);
-        $cdata_type = $ffi->type($type)
-            ?? throw new CannotGetTypeForCDataException(
-                message: 'cannot get type for a C Data',
-                type: $type
-            );
-        return FFI::sizeof($cdata_type);
+        if (!isset($this->sizeof_cache[$type])) {
+            $ffi = $this->loadHeader($this->php_version);
+            $cdata_type = $ffi->type($type)
+                ?? throw new CannotGetTypeForCDataException(
+                    message: 'cannot get type for a C Data',
+                    type: $type
+                );
+            $this->sizeof_cache[$type] = FFI::sizeof($cdata_type);
+        }
+        return $this->sizeof_cache[$type];
+    }
+
+    /** @var array<string, array<string, array{int, int}>> $offset_cache */
+    private array $offset_cache = [];
+
+    /** @return array{int, int} */
+    public function getOffsetAndSizeOfMember(string $type, string $member): array
+    {
+        if (!isset($this->offset_cache[$type][$member])) {
+            $ffi = $this->loadHeader($this->php_version);
+            $dummy = $ffi->new($type);
+            if (is_null($dummy)) {
+                throw new CannotAllocateBufferException(
+                    message: sprintf(
+                        'cannot allocate buffer for calculating the offset of %s in %s',
+                        $member,
+                        $type
+                    )
+                );
+            }
+            /** @var CData $dummy_member */
+            $dummy_member = $dummy->$member;
+            /** @var FFI\CInteger $member_addr_cdata */
+            $member_addr_cdata = \FFI::cast('long', FFI::addr($dummy_member));
+            $member_addr = $member_addr_cdata->cdata;
+            /** @var FFI\CInteger $dummy_base_addr */
+            $dummy_base_addr = \FFI::cast('long', FFI::addr($dummy));
+            $addr = $member_addr - $dummy_base_addr->cdata;
+            $this->offset_cache[$type][$member] = [
+                $addr,
+                \FFI::sizeof($dummy_member)
+            ];
+        }
+        return $this->offset_cache[$type][$member];
     }
 }

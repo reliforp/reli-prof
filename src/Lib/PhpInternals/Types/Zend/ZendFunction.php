@@ -98,30 +98,45 @@ final class ZendFunction implements Dereferencable
         return $function_name;
     }
 
+    private ?string $resolved_name_cache = null;
+
     public function getFunctionName(Dereferencer $dereferencer): ?string
     {
         if ($this->function_name === null) {
             return null;
         }
-        $string = $dereferencer->deref($this->function_name);
-        $val = $string->getValuePointer($this->function_name);
-        return (string)$dereferencer->deref($val);
+        if (!isset($this->resolved_name_cache)) {
+            $string = $dereferencer->deref($this->function_name);
+            $val = $string->getValuePointer($this->function_name);
+            $this->resolved_name_cache = (string)$dereferencer->deref($val);
+        }
+        return $this->resolved_name_cache;
     }
+
+    private ?string $resolved_class_name_cache = null;
 
     public function getClassName(Dereferencer $dereferencer): ?string
     {
         if ($this->scope === null) {
             return null;
         }
-        $class_entry = $dereferencer->deref($this->scope);
-        return $class_entry->getClassName($dereferencer);
+        if (!isset($this->resolved_class_name_cache)) {
+            $class_entry = $dereferencer->deref($this->scope);
+            $this->resolved_class_name_cache = $class_entry->getClassName($dereferencer);
+        }
+        return $this->resolved_class_name_cache;
     }
+
+    private ?string $resolved_file_name_cache = null;
 
     public function getFileName(Dereferencer $dereferencer): ?string
     {
-        if ($this->type !== 2) {
-            return '<internal>';
+        if (!isset($this->resolved_file_name_cache)) {
+            if ($this->type !== 2) {
+                $this->resolved_file_name_cache = '<internal>';
+            }
+            $this->resolved_file_name_cache = $this->op_array->getFileName($dereferencer);
         }
-        return $this->op_array->getFileName($dereferencer);
+        return $this->resolved_file_name_cache;
     }
 }

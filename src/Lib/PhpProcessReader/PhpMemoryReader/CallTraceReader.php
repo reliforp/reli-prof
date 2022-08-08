@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
 
 use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeFactory;
+use PhpProfiler\Lib\PhpInternals\Types\C\RawDouble;
 use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
 use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendExecuteData;
@@ -24,6 +25,7 @@ use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
 use PhpProfiler\Lib\PhpProcessReader\CallFrame;
 use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use PhpProfiler\Lib\PhpProcessReader\TraceCache;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\Process\Pointer\Dereferencer;
@@ -86,6 +88,28 @@ final class CallTraceReader
 
     /**
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     */
+    public function getGlobalRequestTime(
+        int $sg_address,
+        string $php_version,
+        Dereferencer $dereferencer,
+    ): float {
+        $zend_type_reader = $this->getTypeReader($php_version);
+        [$offset, $size] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'sapi_globals_struct',
+            'global_request_time'
+        );
+
+        $pointer = new Pointer(
+            RawDouble::class,
+            $sg_address + $offset,
+            $size
+        );
+        return $dereferencer->deref($pointer)->value;
+    }
+
+    /**
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readCallTrace(
@@ -93,13 +117,18 @@ final class CallTraceReader
         string $php_version,
         int $executor_globals_address,
         int $sapi_globals_address,
-        int $depth
+        int $depth,
+        TraceCache $trace_cache,
     ): ?CallTrace {
         $dereferencer = $this->getDereferencer($pid, $php_version);
         $eg = $this->getExecutorGlobals($executor_globals_address, $php_version, $dereferencer);
         if (is_null($eg->current_execute_data)) {
             return null;
         }
+
+        $trace_cache->updateCacheKey($this->getGlobalRequestTime($sapi_globals_address, $php_version, $dereferencer));
+        $cached_deereferencer = $trace_cache->getDereferencer($dereferencer);
+
         /**
          * @var ZendExecuteData $current_execute_data
          * @psalm-ignore-var
@@ -131,17 +160,17 @@ final class CallTraceReader
              * @var ZendFunction $current_function
              * @psalm-ignore-var
              */
-            $current_function = $dereferencer->deref($current_execute_data->func);
+            $current_function = $cached_deereferencer->deref($current_execute_data->func);
 
-            $function_name = $current_function->getFunctionName($dereferencer) ?? '<main>';
-            $class_name = $current_function->getClassName($dereferencer) ?? '';
-            $file_name = $current_function->getFileName($dereferencer) ?? '<unknown>';
+            $function_name = $current_function->getFunctionName($cached_deereferencer) ?? '<main>';
+            $class_name = $current_function->getClassName($cached_deereferencer) ?? '';
+            $file_name = $current_function->getFileName($cached_deereferencer) ?? '<unknown>';
 
             $opline = null;
             if ($file_name !== '<internal>' and !is_null($current_execute_data->opline)) {
                 $opline = $this->readOpline(
                     $php_version,
-                    $dereferencer->deref($current_execute_data->opline)
+                    $cached_deereferencer->deref($current_execute_data->opline)
                 );
             }
 
