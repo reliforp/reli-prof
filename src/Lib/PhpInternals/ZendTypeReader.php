@@ -135,17 +135,20 @@ final class ZendTypeReader
                     )
                 );
             }
-            /** @var CData $dummy_member */
-            $dummy_member = $dummy->$member;
-            /** @var FFI\CInteger $member_addr_cdata */
-            $member_addr_cdata = \FFI::cast('long', FFI::addr($dummy_member));
+            /**
+             * @var FFI\CInteger $member_addr_cdata
+             * @psalm-suppress MixedArgument
+             */
+            $member_addr_cdata = \FFI::cast('long', FFI::addr($dummy->$member));
             $member_addr = $member_addr_cdata->cdata;
             /** @var FFI\CInteger $dummy_base_addr */
             $dummy_base_addr = \FFI::cast('long', FFI::addr($dummy));
             $addr = $member_addr - $dummy_base_addr->cdata;
+            /** @psalm-suppress MixedArgument */
+            $sizeof = \FFI::sizeof($dummy->$member);
             $this->offset_cache[$type][$member] = [
                 $addr,
-                \FFI::sizeof($dummy_member)
+                $sizeof,
             ];
         }
         return $this->offset_cache[$type][$member];
