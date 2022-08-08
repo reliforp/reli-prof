@@ -167,7 +167,11 @@ final class CallTraceReader
             $file_name = $current_function->getFileName($cached_deereferencer) ?? '<unknown>';
 
             $opline = null;
-            if ($file_name !== '<internal>' and !is_null($current_execute_data->opline)) {
+            if (
+                $file_name !== '<internal>'
+                and $file_name !== '<unknown>'
+                and !is_null($current_execute_data->opline)
+            ) {
                 $opline = $this->readOpline(
                     $php_version,
                     $cached_deereferencer->deref($current_execute_data->opline)
