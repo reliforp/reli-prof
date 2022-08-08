@@ -747,7 +747,6 @@ struct _zend_class_entry {
 	} info;
 };
 
-
 /** libc */
 typedef unsigned int mode_t;
 typedef unsigned long int dev_t;

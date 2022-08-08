@@ -701,6 +701,67 @@ struct _zend_class_entry {
 	} info;
 };
 
+/** libc */
+typedef unsigned int mode_t;
+typedef unsigned long int dev_t;
+typedef unsigned long int ino_t;
+typedef long int off_t;
+typedef long int nlink_t;
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
+typedef int pid_t;
+typedef long int blksize_t;
+typedef long int blkcnt_t;
+typedef unsigned long int fsblkcnt64_t;
+typedef unsigned long int uint64_t;
+
+struct timespec
+{
+    long tv_sec;
+    long tv_nsec;
+};
+
+struct stat
+{
+    dev_t st_dev;
+    ino_t st_ino;
+    nlink_t st_nlink;
+    mode_t st_mode;
+    uid_t st_uid;
+    gid_t st_gid;
+    int __pad0;
+    dev_t st_rdev;
+    off_t st_size;
+    blksize_t st_blksize;
+    blkcnt_t st_blocks;
+    struct timespec st_atim;
+    struct timespec st_mtim;
+    struct timespec st_ctim;
+    long int reserved[3];
+};
+
+/** zend_stream.h */
+typedef struct stat zend_stat_t;
+
+/** zend_llist.h */
+
+typedef void (*llist_dtor_func_t)(void *);
+typedef struct _zend_llist_element {
+	struct _zend_llist_element *next;
+	struct _zend_llist_element *prev;
+	char data[1]; /* Needs to always be last in the struct */
+} zend_llist_element;
+
+typedef struct _zend_llist {
+	zend_llist_element *head;
+	zend_llist_element *tail;
+	size_t count;
+	size_t size;
+	llist_dtor_func_t dtor;
+	unsigned char persistent;
+	zend_llist_element *traverse_ptr;
+} zend_llist;
+
 // main/SAPI.h
 /*
    +----------------------------------------------------------------------+
