@@ -34,7 +34,7 @@ class ProcessDescriptorRetrieverTest extends TestCase
         );
         $cache = new ProcessDescriptorCache();
         $cache->set(
-            new TargetProcessDescriptor(1, 42, ZendTypeReader::V80)
+            new TargetProcessDescriptor(1, 42, 0, ZendTypeReader::V80)
         );
         $result = $process_descriptor_retriever->getProcessDescriptor(
             1,
@@ -42,7 +42,7 @@ class ProcessDescriptorRetrieverTest extends TestCase
             $cache,
         );
         $this->assertEquals(
-            new TargetProcessDescriptor(1, 42, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 42, 0, ZendTypeReader::V80),
             $result
         );
     }
@@ -68,6 +68,13 @@ class ProcessDescriptorRetrieverTest extends TestCase
             )
             ->andReturns(42)
         ;
+        $php_globals_finder->expects()
+            ->findSAPIGlobals(
+                Matchers::equalTo(new ProcessSpecifier(1)),
+                $target_php_settings
+            )
+            ->andReturns(42)
+        ;
         $process_descriptor_retriever = new ProcessDescriptorRetriever(
             $php_globals_finder,
             $php_version_detector,
@@ -79,11 +86,11 @@ class ProcessDescriptorRetrieverTest extends TestCase
             $cache,
         );
         $this->assertEquals(
-            new TargetProcessDescriptor(1, 42, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 42, 42, ZendTypeReader::V80),
             $result
         );
         $this->assertEquals(
-            new TargetProcessDescriptor(1, 42, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 42, 42, ZendTypeReader::V80),
             $cache->get(1)
         );
     }

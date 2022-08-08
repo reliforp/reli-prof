@@ -21,6 +21,7 @@ final class TargetProcessDescriptor
     public function __construct(
         public int $pid,
         public int $eg_address,
+        public int $sg_address,
         public string $php_version,
     ) {
     }
@@ -29,7 +30,7 @@ final class TargetProcessDescriptor
     {
         static $invalid = null;
         /** @var self */
-        $invalid ??= new self(0, 0, ZendTypeReader::V80);
+        $invalid ??= new self(0, 0, 0, ZendTypeReader::V80);
         return $invalid;
     }
 }

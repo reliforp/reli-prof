@@ -42,21 +42,24 @@ final class ZendExecuteData implements Dereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'func' => $this->casted_cdata->casted->func !== null
+            'func' => $this->func =
+                $this->casted_cdata->casted->func !== null
                 ? Pointer::fromCData(
                     ZendFunction::class,
                     $this->casted_cdata->casted->func,
                 )
                 : null
             ,
-            'prev_execute_data' => $this->casted_cdata->casted->prev_execute_data !== null
+            'prev_execute_data' => $this->prev_execute_data =
+                $this->casted_cdata->casted->prev_execute_data !== null
                 ? Pointer::fromCData(
                     ZendExecuteData::class,
                     $this->casted_cdata->casted->prev_execute_data,
                 )
                 : null
             ,
-            'opline' => $this->casted_cdata->casted->opline !== null
+            'opline' => $this->opline =
+                $this->casted_cdata->casted->opline !== null
                 ? Pointer::fromCData(
                     ZendOp::class,
                     $this->casted_cdata->casted->opline

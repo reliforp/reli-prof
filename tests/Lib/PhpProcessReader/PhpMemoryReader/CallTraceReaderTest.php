@@ -28,6 +28,7 @@ use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendFunction;
 use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendString;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
 use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
+use PhpProfiler\Lib\PhpProcessReader\TraceCache;
 use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -112,11 +113,18 @@ class CallTraceReaderTest extends TestCase
             new ProcessSpecifier($child_status['pid']),
             new TargetPhpSettings()
         );
+        $sapi_globals_address = $php_globals_finder->findSAPIGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+
         $call_trace = $executor_globals_reader->readCallTrace(
             $child_status['pid'],
             ZendTypeReader::V74,
             $executor_globals_address,
+            $sapi_globals_address,
             PHP_INT_MAX,
+            new TraceCache(),
         );
         $this->assertCount(3, $call_trace->call_frames);
         $this->assertSame(

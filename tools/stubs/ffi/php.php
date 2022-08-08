@@ -196,3 +196,8 @@ class zend_array extends CData
     public int $nInternalPointer;
     public int $nNextFreeElement;
 }
+
+class sapi_globals_struct extends CData
+{
+    public float $global_request_time;
+}

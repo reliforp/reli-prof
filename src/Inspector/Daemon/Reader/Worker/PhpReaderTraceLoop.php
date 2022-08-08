@@ -19,7 +19,7 @@ use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
+use PhpProfiler\Lib\PhpProcessReader\TraceCache;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
 
 use function is_null;
@@ -46,27 +46,24 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
         TargetProcessDescriptor $target_process_descriptor,
         GetTraceSettings $get_trace_settings
     ): Generator {
-        $eg_address = $target_process_descriptor->eg_address;
-        $process_specifier = new ProcessSpecifier(
-            $target_process_descriptor->pid
-        );
-
+        $trace_cache = new TraceCache();
         $loop = $this->reader_loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
-                $process_specifier,
                 $target_process_descriptor,
                 $loop_settings,
-                $eg_address
+                $trace_cache,
             ): Generator {
-                if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
-                    defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
+                if ($loop_settings->stop_process and $this->process_stopper->stop($target_process_descriptor->pid)) {
+                    defer($_, fn () => $this->process_stopper->resume($target_process_descriptor->pid));
                 }
                 $call_trace = $this->executor_globals_reader->readCallTrace(
-                    $process_specifier->pid,
+                    $target_process_descriptor->pid,
                     $target_process_descriptor->php_version,
-                    $eg_address,
-                    $get_trace_settings->depth
+                    $target_process_descriptor->eg_address,
+                    $target_process_descriptor->sg_address,
+                    $get_trace_settings->depth,
+                    $trace_cache
                 );
                 if (is_null($call_trace)) {
                     return;

@@ -47,7 +47,7 @@ class PhpReaderEntryPointTest extends TestCase
                     $this->assertEquals(
                         [
                             new TraceLoopSettings(1, 'q', 10, false),
-                            new TargetProcessDescriptor(123, 0, ZendTypeReader::V80),
+                            new TargetProcessDescriptor(123, 0, 0, ZendTypeReader::V80),
                             new GetTraceSettings(PHP_INT_MAX),
                         ],
                         [
@@ -122,7 +122,7 @@ class PhpReaderEntryPointTest extends TestCase
 
         $promise = $generator->send(
             new AttachMessage(
-                new TargetProcessDescriptor(123, 0, ZendTypeReader::V80)
+                new TargetProcessDescriptor(123, 0, 0, ZendTypeReader::V80)
             )
         );
         $this->assertInstanceOf(Success::class, $promise);

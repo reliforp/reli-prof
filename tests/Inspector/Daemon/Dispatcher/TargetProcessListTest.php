@@ -22,9 +22,9 @@ class TargetProcessListTest extends TestCase
     {
         $picked = [];
         $target_process_list = new TargetProcessList(
-            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
-            new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
-            new TargetProcessDescriptor(3, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
         );
         $picked[] = $target_process_list->pickOne()->pid;
         $picked[] = $target_process_list->pickOne()->pid;
@@ -42,14 +42,14 @@ class TargetProcessListTest extends TestCase
         $target_process_list = new TargetProcessList();
         $this->assertNull($target_process_list->pickOne());
         $target_process_list->putOne(
-            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
         );
         $this->assertSame(1, $target_process_list->pickOne()->pid);
         $target_process_list->putOne(
-            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
         );
         $target_process_list->putOne(
-            new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
         );
         $picked = [];
         $picked[] = $target_process_list->pickOne()->pid;
@@ -61,9 +61,9 @@ class TargetProcessListTest extends TestCase
     public function testGetArray(): void
     {
         $target_process_list = new TargetProcessList(
-            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
-            new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
-            new TargetProcessDescriptor(3, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
         );
         $this->assertSame(
             [1, 2, 3],
@@ -73,7 +73,7 @@ class TargetProcessListTest extends TestCase
             )
         );
         $target_process_list->putOne(
-            new TargetProcessDescriptor(4, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(4, 0, 0, ZendTypeReader::V80),
         );
         $this->assertSame(
             [1, 2, 3, 4],
@@ -95,14 +95,14 @@ class TargetProcessListTest extends TestCase
     public function testGetDiff(): void
     {
         $target_process_list_1 = new TargetProcessList(
-            new TargetProcessDescriptor(1, 0, ZendTypeReader::V80),
-            new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
-            new TargetProcessDescriptor(3, 0, ZendTypeReader::V80),
-            new TargetProcessDescriptor(4, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(4, 0, 0, ZendTypeReader::V80),
         );
         $target_process_list_2 = new TargetProcessList(
-            new TargetProcessDescriptor(2, 0, ZendTypeReader::V80),
-            new TargetProcessDescriptor(3, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
+            new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
         );
         $diff = $target_process_list_1->getDiff($target_process_list_2);
         $this->assertSame(

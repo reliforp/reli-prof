@@ -28,6 +28,7 @@ use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
 use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
 use PhpProfiler\Lib\PhpProcessReader\PhpVersionDetector;
+use PhpProfiler\Lib\PhpProcessReader\TraceCache;
 use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
 use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
 use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
@@ -107,6 +108,12 @@ final class GetTraceCommand extends Command
             interval_on_retry_ns: 1000 * 1000 * 10,
         );
 
+        $sg_address = $this->php_globals_finder->findSAPIGlobals(
+            $process_specifier,
+            $target_php_settings
+        );
+
+        $trace_cache = new TraceCache();
         $this->loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
@@ -114,8 +121,11 @@ final class GetTraceCommand extends Command
                 $target_php_settings,
                 $loop_settings,
                 $eg_address,
-                $trace_output
+                $sg_address,
+                $trace_output,
+                $trace_cache,
             ): bool {
+                assert($target_php_settings->isDecided());
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
                 }
@@ -123,7 +133,9 @@ final class GetTraceCommand extends Command
                     $process_specifier->pid,
                     $target_php_settings->php_version,
                     $eg_address,
-                    $get_trace_settings->depth
+                    $sg_address,
+                    $get_trace_settings->depth,
+                    $trace_cache
                 );
                 if (!is_null($call_trace)) {
                     $trace_output->output($call_trace);

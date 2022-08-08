@@ -83,7 +83,7 @@ final class ZendString implements Dereferencable
         return new Pointer(
             RawString::class,
             $pointer->address + $this->offset_to_val,
-            $this->len
+            \min($this->len, 255)
         );
     }
 }
