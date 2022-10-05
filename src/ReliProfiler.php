@@ -16,5 +16,5 @@ namespace Reli;
 final class ReliProfiler
 {
     public const TOOL_NAME = 'reli';
-    public const VERSION = '0.6.0-dev';
+    public const VERSION = '0.6.0';
 }
