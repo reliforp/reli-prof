@@ -6,7 +6,7 @@
 [![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.6.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.6.x)
 ![Psalm coverage](https://shepherd.dev/github/reliforp/reli-prof/coverage.svg?)
 
-Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler (We are in the process of changing the name right now). 
+Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler. 
 
 ## What can I use this for?
 - Detecting and visualizing bottlenecks in PHP scripts
