@@ -29,7 +29,7 @@ final class DispatchTable
         $this->assigned = new TargetProcessList();
     }
 
-    public function updateTargets(TargetProcessListInterface $update): void
+    public function updateTargets(TargetProcessListInterface $update): \Generator
     {
         $diff = $this->assigned->getDiff($update);
         $this->release($diff);
@@ -42,7 +42,7 @@ final class DispatchTable
             }
             $this->assigned->putOne($picked);
             $this->dispatch_table[$picked->pid] = $worker;
-            $worker->sendAttach($picked);
+            yield $worker->sendAttach($picked);
         }
     }
 
