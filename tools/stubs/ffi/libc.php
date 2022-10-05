@@ -4,7 +4,7 @@ use FFI\CData;
 use FFI\CInteger;
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
