@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Process;
+namespace Reli\Lib\Elf\Process;
 
 use FFI\CData;
-use PhpProfiler\Lib\Elf\SymbolResolver\Elf64AllSymbolResolver;
-use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Lib\Elf\SymbolResolver\Elf64AllSymbolResolver;
+use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 
 use function is_null;
 

@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TopLike;
+namespace Reli\Inspector\Output\TopLike;
 
-use PhpProfiler\Lib\DateTime\Clock;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\DateTime\Clock;
+use Reli\Lib\PhpProcessReader\CallTrace;
 
 final class TopLikeFormatter
 {

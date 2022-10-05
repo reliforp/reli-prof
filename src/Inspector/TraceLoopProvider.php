@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,17 +11,17 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector;
+namespace Reli\Inspector;
 
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
-use PhpProfiler\Lib\Console\EchoBackCanceller;
-use PhpProfiler\Lib\Loop\Loop;
-use PhpProfiler\Lib\Loop\LoopBuilder;
-use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;
-use PhpProfiler\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware;
-use PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware;
-use PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Lib\Console\EchoBackCanceller;
+use Reli\Lib\Loop\Loop;
+use Reli\Lib\Loop\LoopBuilder;
+use Reli\Lib\Loop\LoopMiddleware\CallableMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\NanoSleepMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 
 final class TraceLoopProvider
 {

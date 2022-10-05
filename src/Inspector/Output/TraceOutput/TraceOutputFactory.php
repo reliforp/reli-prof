@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceOutput;
+namespace Reli\Inspector\Output\TraceOutput;
 
-use PhpProfiler\Inspector\Output\OutputChannel\ConsoleOutputChannel;
-use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
-use PhpProfiler\Inspector\Settings\OutputSettings\OutputSettings;
+use Reli\Inspector\Output\OutputChannel\ConsoleOutputChannel;
+use Reli\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Output\StreamOutput;
 

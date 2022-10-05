@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpProcessReader;
+namespace Reli\Lib\PhpProcessReader;
 
-use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeV70;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
+use Reli\Lib\PhpInternals\Opcodes\OpcodeV70;
+use Reli\Lib\PhpInternals\Types\Zend\Opline;
 use PHPUnit\Framework\TestCase;
 
 class CallFrameTest extends TestCase

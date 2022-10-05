@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
+namespace Reli\Inspector\Daemon\Reader\Worker;
 
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
-use PhpProfiler\Lib\Loop\AsyncLoop;
-use PhpProfiler\Lib\Loop\AsyncLoopBuilder;
-use PhpProfiler\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;
-use PhpProfiler\Lib\Loop\AsyncLoopMiddleware\NanoSleepMiddlewareAsync;
-use PhpProfiler\Lib\Loop\AsyncLoopMiddleware\RetryOnExceptionMiddlewareAsync;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Lib\Loop\AsyncLoop;
+use Reli\Lib\Loop\AsyncLoopBuilder;
+use Reli\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;
+use Reli\Lib\Loop\AsyncLoopMiddleware\NanoSleepMiddlewareAsync;
+use Reli\Lib\Loop\AsyncLoopMiddleware\RetryOnExceptionMiddlewareAsync;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 
 final class ReaderLoopProvider
 {

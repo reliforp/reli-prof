@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\ByteStream\IntegerByteSequence;
+namespace Reli\Lib\ByteStream\IntegerByteSequence;
 
-use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
-use PhpProfiler\Lib\Integer\UInt64;
+use Reli\Lib\ByteStream\ByteReaderInterface;
+use Reli\Lib\Integer\UInt64;
 
 final class LittleEndianReader implements IntegerByteSequenceReader
 {

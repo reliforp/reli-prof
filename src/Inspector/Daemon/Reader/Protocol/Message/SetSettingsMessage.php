@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
+namespace Reli\Inspector\Daemon\Reader\Protocol\Message;
 
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 final class SetSettingsMessage
 {

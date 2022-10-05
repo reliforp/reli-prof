@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop;
+namespace Reli\Lib\Loop;
 
-use PhpProfiler\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;
+use Reli\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;
 use PHPUnit\Framework\TestCase;
 
 class AsyncLoopBuilderTest extends TestCase

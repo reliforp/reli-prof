@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<ruleset name="php-profiler">
-    <description>php-profiler conventions</description>
+<ruleset name="reli">
+    <description>reli conventions</description>
     <rule ref="PSR12"></rule>
 </ruleset>

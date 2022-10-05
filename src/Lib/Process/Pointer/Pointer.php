@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,16 +11,16 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Pointer;
+namespace Reli\Lib\Process\Pointer;
 
 use FFI\CData;
 use FFI\CInteger;
 use FFI\CPointer;
 use FFI\CType;
-use PhpProfiler\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\CastedCData;
 
 /**
- * @template T of \PhpProfiler\Lib\Process\Pointer\Dereferencable
+ * @template T of \Reli\Lib\Process\Pointer\Dereferencable
  */
 class Pointer
 {
@@ -59,7 +59,7 @@ class Pointer
     }
 
     /**
-     * @template TType of \PhpProfiler\Lib\Process\Pointer\Dereferencable
+     * @template TType of \Reli\Lib\Process\Pointer\Dereferencable
      * @param class-string<TType> $type
      * @param CPointer $c_pointer
      * @return Pointer<TType>

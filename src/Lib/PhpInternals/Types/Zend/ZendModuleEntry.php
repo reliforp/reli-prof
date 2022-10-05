@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_module_entry;
-use PhpProfiler\Lib\FFI\Cast;
-use PhpProfiler\Lib\PhpInternals\CastedCData;
-use PhpProfiler\Lib\PhpInternals\Types\C\RawString;
-use PhpProfiler\Lib\Process\Pointer\Dereferencable;
-use PhpProfiler\Lib\Process\Pointer\Dereferencer;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\FFI\Cast;
+use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\Pointer;
 
 final class ZendModuleEntry implements Dereferencable
 {

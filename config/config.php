@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -16,7 +16,7 @@ use Psr\Log\LogLevel;
 return [
     'log' => [
         'path' => [
-            'default' => 'php-profiler.log',
+            'default' => 'reli.log',
         ],
         'level' => LogLevel::INFO,
     ],

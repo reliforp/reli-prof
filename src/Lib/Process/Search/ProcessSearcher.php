@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Search;
+namespace Reli\Lib\Process\Search;
 
-use PhpProfiler\Lib\File\FileReaderInterface;
-use PhpProfiler\Lib\Process\ProcFileSystem\CommandLineEnumerator;
-use PhpProfiler\Lib\Process\ProcFileSystem\ThreadEnumerator;
+use Reli\Lib\File\FileReaderInterface;
+use Reli\Lib\Process\ProcFileSystem\CommandLineEnumerator;
+use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
 
 final class ProcessSearcher implements ProcessSearcherInterface
 {

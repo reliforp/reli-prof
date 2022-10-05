@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TopLike;
+namespace Reli\Inspector\Output\TopLike;
 
-use PhpProfiler\Lib\DateTime\OnDemandClock;
+use Reli\Lib\DateTime\OnDemandClock;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Terminal;

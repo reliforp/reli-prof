@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,16 +11,16 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\SymbolResolver;
+namespace Reli\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\ByteStream\ProcessMemoryByteReader;
-use PhpProfiler\Lib\ByteStream\StringByteReader;
-use PhpProfiler\Lib\ByteStream\UnrelocatedProcessMemoryByteReader;
-use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
-use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\File\FileReaderInterface;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\ByteStream\ProcessMemoryByteReader;
+use Reli\Lib\ByteStream\StringByteReader;
+use Reli\Lib\ByteStream\UnrelocatedProcessMemoryByteReader;
+use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\File\FileReaderInterface;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
 {

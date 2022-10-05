@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
+namespace Reli\Inspector\Daemon\Reader\Worker;
 
 use Generator;
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 interface PhpReaderTraceLoopInterface
 {

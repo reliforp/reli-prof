@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Dispatcher;
+namespace Reli\Inspector\Daemon\Dispatcher;
 
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
+use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
+use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 use function array_fill;
 use function array_keys;

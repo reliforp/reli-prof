@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\ProcFileSystem;
+namespace Reli\Lib\Process\ProcFileSystem;
 
 use IteratorAggregate;
-use PhpProfiler\Lib\File\FileReaderInterface;
+use Reli\Lib\File\FileReaderInterface;
 
 final class CommandLineEnumerator implements IteratorAggregate
 {

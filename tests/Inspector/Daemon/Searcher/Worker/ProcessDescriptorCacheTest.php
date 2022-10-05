@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Worker;
+namespace Reli\Inspector\Daemon\Searcher\Worker;
 
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use PHPUnit\Framework\TestCase;
 
 class ProcessDescriptorCacheTest extends TestCase

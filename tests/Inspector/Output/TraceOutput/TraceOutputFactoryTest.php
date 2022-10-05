@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceOutput;
+namespace Reli\Inspector\Output\TraceOutput;
 
-use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
-use PhpProfiler\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
-use PhpProfiler\Inspector\Settings\OutputSettings\OutputSettings;
-use PhpProfiler\Lib\PhpProcessReader\CallFrame;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
+use Reli\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
+use Reli\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Output\StreamOutput;
 

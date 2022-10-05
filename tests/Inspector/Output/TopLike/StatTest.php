@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TopLike;
+namespace Reli\Inspector\Output\TopLike;
 
-use PhpProfiler\Lib\PhpProcessReader\CallFrame;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 class StatTest extends TestCase

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Pointer;
+namespace Reli\Lib\Process\Pointer;
 
-use PhpProfiler\Lib\FFI\CastedTypeProvider;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
+use Reli\Lib\FFI\CastedTypeProvider;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Process\ProcessSpecifier;
 
 class RemoteProcessDereferencer implements Dereferencer
 {

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,19 +11,19 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
+namespace Reli\Inspector\Daemon\Reader\Worker;
 
 use Generator;
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
-use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
-use PhpProfiler\Lib\PhpProcessReader\TraceCache;
-use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
+use Reli\Lib\PhpProcessReader\TraceCache;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 use function is_null;
-use function PhpProfiler\Lib\Defer\defer;
+use function Reli\Lib\Defer\defer;
 
 final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
 {
@@ -36,10 +36,10 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
 
     /**
      * @return Generator<TraceMessage>
-     * @throws \PhpProfiler\Lib\Elf\Parser\ElfParserException
-     * @throws \PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException
-     * @throws \PhpProfiler\Lib\Elf\Tls\TlsFinderException
-     * @throws \PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException
+     * @throws \Reli\Lib\Elf\Parser\ElfParserException
+     * @throws \Reli\Lib\Elf\Process\ProcessSymbolReaderException
+     * @throws \Reli\Lib\Elf\Tls\TlsFinderException
+     * @throws \Reli\Lib\Process\MemoryReader\MemoryReaderException
      */
     public function run(
         TraceLoopSettings $loop_settings,

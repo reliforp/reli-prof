@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
+namespace Reli\Inspector\Daemon\Searcher\Context;
 
-use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherController;
-use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
-use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
-use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherWorkerProtocol;
-use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherEntryPoint;
-use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
+use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherController;
+use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
+use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
+use Reli\Inspector\Daemon\Searcher\Worker\PhpSearcherWorkerProtocol;
+use Reli\Inspector\Daemon\Searcher\Worker\PhpSearcherEntryPoint;
+use Reli\Lib\Amphp\ContextCreatorInterface;
 
 final class PhpSearcherContextCreator
 {

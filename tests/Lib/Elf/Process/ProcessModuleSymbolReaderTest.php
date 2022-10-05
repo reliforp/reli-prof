@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,17 +11,17 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Process;
+namespace Reli\Lib\Elf\Process;
 
 use FFI;
 use Mockery;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
-use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryArea;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryAttribute;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
-use PhpProfiler\Lib\Integer\UInt64;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Integer\UInt64;
 use PHPUnit\Framework\TestCase;
 
 class ProcessModuleSymbolReaderTest extends TestCase

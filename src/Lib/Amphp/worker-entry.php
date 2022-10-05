@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 use Amp\Parallel\Sync\Channel;
 use DI\ContainerBuilder;
-use PhpProfiler\Lib\Amphp\WorkerEntryPointInterface;
-use PhpProfiler\Lib\Amphp\MessageProtocolInterface;
-use PhpProfiler\Lib\Log\Log;
-use PhpProfiler\Lib\Log\StateCollector\StateCollector;
+use Reli\Lib\Amphp\WorkerEntryPointInterface;
+use Reli\Lib\Amphp\MessageProtocolInterface;
+use Reli\Lib\Log\Log;
+use Reli\Lib\Log\StateCollector\StateCollector;
 use Psr\Log\LoggerInterface;
 
 return function (Channel $channel) use ($argv): \Generator {

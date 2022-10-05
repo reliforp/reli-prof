@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Converter;
+namespace Reli\Command\Converter;
 
 use PhpCast\Cast;
-use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeV80;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
-use PhpProfiler\Lib\PhpProcessReader\CallFrame;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpInternals\Opcodes\OpcodeV80;
+use Reli\Lib\PhpInternals\Types\Zend\Opline;
+use Reli\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTrace;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;

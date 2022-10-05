@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,18 +11,18 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpProcessReader;
+namespace Reli\Lib\PhpProcessReader;
 
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
-use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
-use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
-use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
-use PhpProfiler\Lib\File\CatFileReader;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
+use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
+use Reli\Lib\File\CatFileReader;
+use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
+use Reli\Lib\Process\MemoryReader\MemoryReader;
+use Reli\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
 class PhpVersionDetectorTest extends TestCase

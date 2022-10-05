@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Structure\Elf64;
+namespace Reli\Lib\Elf\Structure\Elf64;
 
-use PhpProfiler\Lib\Integer\UInt64;
+use Reli\Lib\Integer\UInt64;
 
 final class Elf64SymbolTableEntry
 {

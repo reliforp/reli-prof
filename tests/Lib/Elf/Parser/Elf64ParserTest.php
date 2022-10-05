@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Parser;
+namespace Reli\Lib\Elf\Parser;
 
-use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
-use PhpProfiler\Lib\ByteStream\StringByteReader;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64Header;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderEntry;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SectionHeaderEntry;
+use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use Reli\Lib\ByteStream\StringByteReader;
+use Reli\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
+use Reli\Lib\Elf\Structure\Elf64\Elf64Header;
+use Reli\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderEntry;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SectionHeaderEntry;
 use PHPUnit\Framework\TestCase;
 
 class Elf64ParserTest extends TestCase

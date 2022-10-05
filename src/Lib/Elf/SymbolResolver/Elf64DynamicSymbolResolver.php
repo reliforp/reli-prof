@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\SymbolResolver;
+namespace Reli\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
-use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
-use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64GnuHashTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64StringTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\ByteStream\ByteReaderInterface;
+use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\Elf\Structure\Elf64\Elf64GnuHashTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64StringTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
 final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
 {

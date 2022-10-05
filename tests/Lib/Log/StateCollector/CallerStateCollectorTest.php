@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Log\StateCollector;
+namespace Reli\Lib\Log\StateCollector;
 
-use PhpProfiler\Lib\Log\Log;
-use PhpProfiler\Lib\Log\TestLoggerTrait;
+use Reli\Lib\Log\Log;
+use Reli\Lib\Log\TestLoggerTrait;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 

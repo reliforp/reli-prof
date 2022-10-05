@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop;
+namespace Reli\Lib\Loop;
 
 use Exception;
 use LogicException;
-use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;
-use PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\CallableMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
 use PHPUnit\Framework\TestCase;
 
 class LoopBuilderTest extends TestCase

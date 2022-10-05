@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals;
+namespace Reli\Lib\PhpInternals;
 
 use FFI;
 use FFI\CData;
-use PhpProfiler\Lib\FFI\CannotAllocateBufferException;
-use PhpProfiler\Lib\FFI\CannotCastCDataException;
-use PhpProfiler\Lib\FFI\CannotGetTypeForCDataException;
-use PhpProfiler\Lib\FFI\CannotLoadCHeaderException;
+use Reli\Lib\FFI\CannotAllocateBufferException;
+use Reli\Lib\FFI\CannotCastCDataException;
+use Reli\Lib\FFI\CannotGetTypeForCDataException;
+use Reli\Lib\FFI\CannotLoadCHeaderException;
 use Webmozart\Assert\Assert;
 
 final class ZendTypeReader

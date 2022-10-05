@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
-use PhpProfiler\Lib\FFI\CastedTypeProvider;
-use PhpProfiler\Lib\PhpInternals\CastedCData;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\FFI\CastedTypeProvider;
+use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 
 class ZendCastedTypeProvider implements CastedTypeProvider
 {

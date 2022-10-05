@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Worker;
+namespace Reli\Inspector\Daemon\Reader\Worker;
 
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
-use PhpProfiler\Lib\Amphp\WorkerEntryPointInterface;
-use PhpProfiler\Lib\Log\Log;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
+use Reli\Lib\Amphp\WorkerEntryPointInterface;
+use Reli\Lib\Log\Log;
 
 final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 {

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Tls;
+namespace Reli\Lib\Elf\Tls;
 
-use PhpProfiler\Lib\ByteStream\CDataByteReader;
-use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
-use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderInterface;
-use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\ByteStream\CDataByteReader;
+use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
+use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
+use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 /**
  * This class uses some debugging symbols from libpthread.so,

@@ -7,6 +7,6 @@ couscous.yml
 .dockerignore
 Dockerfile
 .phpunit.result.cache
-php-profiler.log
+reli.log
 vendor
 lsp

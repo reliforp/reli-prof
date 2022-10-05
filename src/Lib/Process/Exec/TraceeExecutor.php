@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Exec;
+namespace Reli\Lib\Process\Exec;
 
-use PhpProfiler\Lib\Libc\Errno\Errno;
-use PhpProfiler\Lib\Libc\Sys\Ptrace\Ptrace;
-use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceRequest;
-use PhpProfiler\Lib\Libc\Unistd\Execvp;
-use PhpProfiler\Lib\Process\Exec\Internal\Pcntl;
-use PhpProfiler\Lib\System\OnShutdown;
+use Reli\Lib\Libc\Errno\Errno;
+use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
+use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
+use Reli\Lib\Libc\Unistd\Execvp;
+use Reli\Lib\Process\Exec\Internal\Pcntl;
+use Reli\Lib\System\OnShutdown;
 
 class TraceeExecutor
 {

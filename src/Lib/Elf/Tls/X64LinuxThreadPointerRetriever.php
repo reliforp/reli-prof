@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Tls;
+namespace Reli\Lib\Elf\Tls;
 
-use PhpProfiler\Lib\Libc\Errno\Errno;
-use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceX64;
-use PhpProfiler\Lib\Process\RegisterReader\RegisterReaderException;
-use PhpProfiler\Lib\Process\RegisterReader\X64RegisterReader;
+use Reli\Lib\Libc\Errno\Errno;
+use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
+use Reli\Lib\Process\RegisterReader\RegisterReaderException;
+use Reli\Lib\Process\RegisterReader\X64RegisterReader;
 
 final class X64LinuxThreadPointerRetriever implements ThreadPointerRetrieverInterface
 {

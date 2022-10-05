@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Compat;
+namespace Reli\Inspector\Output\TraceFormatter\Compat;
 
-use PhpProfiler\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallFrame;
 
 use function is_null;
 

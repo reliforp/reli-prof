@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TopLike;
+namespace Reli\Inspector\Output\TopLike;
 
-use PhpProfiler\Lib\DateTime\FixedClock;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\DateTime\FixedClock;
+use Reli\Lib\PhpProcessReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 use function PHPUnit\Framework\assertSame;

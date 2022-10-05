@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\TargetProcess;
+namespace Reli\Inspector\TargetProcess;
 
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
-use PhpProfiler\Lib\Process\Exec\TraceeExecutor;
+use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
+use Reli\Lib\Process\Exec\TraceeExecutor;
 use PHPUnit\Framework\TestCase;
 
 class TargetProcessResolverTest extends TestCase

@@ -5,10 +5,10 @@ use FFI\CArray;
 use FFI\CData;
 use FFI\CInteger;
 use FFI\CPointer;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\Pointer;
 
 /**
- * This file is part of the sj-i/php-profiler package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
