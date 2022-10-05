@@ -16,7 +16,7 @@ use Psr\Log\LogLevel;
 return [
     'log' => [
         'path' => [
-            'default' => 'php-profiler.log',
+            'default' => 'reli.log',
         ],
         'level' => LogLevel::INFO,
     ],

@@ -15,7 +15,7 @@
         <ini name="memory_limit" value="512M"/>
     </php>
     <testsuites>
-        <testsuite name="php-profiler">
+        <testsuite name="reli">
             <directory>tests</directory>
         </testsuite>
     </testsuites>
