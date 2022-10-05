@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Search;
+namespace Reli\Lib\Process\Search;
 
-use PhpProfiler\Lib\File\NativeFileReader;
-use PhpProfiler\Lib\Process\ProcFileSystem\ThreadEnumerator;
+use Reli\Lib\File\NativeFileReader;
+use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
 use PHPUnit\Framework\TestCase;
 
 class ProcessSearcherTest extends TestCase

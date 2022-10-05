@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_execute_data;
-use PhpProfiler\Lib\PhpInternals\CastedCData;
-use PhpProfiler\Lib\Process\Pointer\Dereferencable;
-use PhpProfiler\Lib\Process\Pointer\Dereferencer;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\Pointer;
 
 final class ZendExecuteData implements Dereferencable
 {

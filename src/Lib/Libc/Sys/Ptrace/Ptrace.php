@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Libc\Sys\Ptrace;
+namespace Reli\Lib\Libc\Sys\Ptrace;
 
 use FFI\CData;
-use PhpProfiler\Lib\Libc\Addressable;
+use Reli\Lib\Libc\Addressable;
 
 interface Ptrace
 {

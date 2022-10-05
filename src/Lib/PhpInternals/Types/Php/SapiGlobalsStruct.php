@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Php;
+namespace Reli\Lib\PhpInternals\Types\Php;
 
 use FFI\PhpInternals\sapi_globals_struct;
-use PhpProfiler\Lib\PhpInternals\CastedCData;
-use PhpProfiler\Lib\Process\Pointer\Dereferencable;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\Pointer;
 
 final class SapiGlobalsStruct implements Dereferencable
 {

@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Libc\Sys\Ptrace;
+namespace Reli\Lib\Libc\Sys\Ptrace;
 
 use FFI\CData;
 use FFI\CInteger;
-use PhpProfiler\Lib\FFI\CannotAllocateBufferException;
-use PhpProfiler\Lib\FFI\CannotCastCDataException;
-use PhpProfiler\Lib\Libc\Addressable;
+use Reli\Lib\FFI\CannotAllocateBufferException;
+use Reli\Lib\FFI\CannotCastCDataException;
+use Reli\Lib\Libc\Addressable;
 
 class PtraceX64 implements Ptrace
 {

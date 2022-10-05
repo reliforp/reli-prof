@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
 use FFI\PhpInternals\zend_op_array;
-use PhpProfiler\Lib\Process\Pointer\Dereferencer;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\Pointer;
 
 class ZendOpArray
 {

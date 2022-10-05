@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\RegisterReader;
+namespace Reli\Lib\Process\RegisterReader;
 
 use FFI\CInteger;
-use PhpProfiler\Lib\Libc\Errno\Errno;
-use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceRequest;
-use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceX64;
+use Reli\Lib\Libc\Errno\Errno;
+use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
+use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
 
 final class X64RegisterReader
 {

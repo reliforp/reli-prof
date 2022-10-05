@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
+namespace Reli\Inspector\Settings\GetTraceSettings;
 
 final class GetTraceSettings
 {

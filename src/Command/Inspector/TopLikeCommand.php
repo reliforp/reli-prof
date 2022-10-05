@@ -11,24 +11,24 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector;
+namespace Reli\Command\Inspector;
 
 use Amp\Loop;
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Dispatcher\DispatchTable;
-use PhpProfiler\Inspector\Daemon\Dispatcher\WorkerPool;
-use PhpProfiler\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
-use PhpProfiler\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
-use PhpProfiler\Inspector\Output\TopLike\TopLikeFormatter;
-use PhpProfiler\Inspector\Output\TopLike\TopLikeFormatterFactory;
-use PhpProfiler\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
-use PhpProfiler\Lib\Console\EchoBackCanceller;
-use PhpProfiler\Lib\Log\Log;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Inspector\Daemon\Dispatcher\DispatchTable;
+use Reli\Inspector\Daemon\Dispatcher\WorkerPool;
+use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use Reli\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
+use Reli\Inspector\Output\TopLike\TopLikeFormatter;
+use Reli\Inspector\Output\TopLike\TopLikeFormatterFactory;
+use Reli\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
+use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
+use Reli\Lib\Console\EchoBackCanceller;
+use Reli\Lib\Log\Log;
+use Reli\Lib\PhpProcessReader\CallTrace;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;

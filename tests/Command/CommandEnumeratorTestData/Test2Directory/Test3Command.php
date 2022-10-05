@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\CommandEnumeratorTestData\Test2Directory;
+namespace Reli\Command\CommandEnumeratorTestData\Test2Directory;
 
 final class Test3Command
 {

@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Tls;
+namespace Reli\Lib\Elf\Tls;
 
 use FFI\CData;
 use Mockery;
-use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
-use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderInterface;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use PHPUnit\Framework\TestCase;
 
 class LibThreadDbTlsFinderTest extends TestCase

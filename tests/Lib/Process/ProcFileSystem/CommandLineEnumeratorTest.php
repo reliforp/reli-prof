@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\ProcFileSystem;
+namespace Reli\Lib\Process\ProcFileSystem;
 
-use PhpProfiler\Lib\File\NativeFileReader;
+use Reli\Lib\File\NativeFileReader;
 use PHPUnit\Framework\TestCase;
 
 class CommandLineEnumeratorTest extends TestCase

@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Context;
+namespace Reli\Inspector\Daemon\Reader\Context;
 
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
-use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
-use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderWorkerProtocol;
-use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
-use PhpProfiler\Lib\Amphp\ContextInterface;
+use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
+use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
+use Reli\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
+use Reli\Inspector\Daemon\Reader\Worker\PhpReaderWorkerProtocol;
+use Reli\Lib\Amphp\ContextCreatorInterface;
+use Reli\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
 class PhpReaderContextCreatorTest extends TestCase

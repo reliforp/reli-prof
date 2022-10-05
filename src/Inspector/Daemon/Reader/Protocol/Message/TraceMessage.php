@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol\Message;
+namespace Reli\Inspector\Daemon\Reader\Protocol\Message;
 
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTrace;
 
 final class TraceMessage
 {

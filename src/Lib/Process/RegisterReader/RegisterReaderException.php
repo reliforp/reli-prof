@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\RegisterReader;
+namespace Reli\Lib\Process\RegisterReader;
 
 final class RegisterReaderException extends \Exception
 {

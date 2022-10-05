@@ -11,32 +11,32 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector;
+namespace Reli\Command\Inspector;
 
-use PhpProfiler\Inspector\Output\TraceOutput\TraceOutputFactory;
-use PhpProfiler\Inspector\RetryingLoopProvider;
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
-use PhpProfiler\Inspector\Settings\OutputSettings\OutputSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
-use PhpProfiler\Inspector\TargetProcess\TargetProcessResolver;
-use PhpProfiler\Inspector\TraceLoopProvider;
-use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
-use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
-use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
-use PhpProfiler\Lib\PhpProcessReader\PhpVersionDetector;
-use PhpProfiler\Lib\PhpProcessReader\TraceCache;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
-use PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
-use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
+use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
+use Reli\Inspector\RetryingLoopProvider;
+use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
+use Reli\Inspector\Settings\InspectorSettingsException;
+use Reli\Inspector\Settings\OutputSettings\OutputSettingsFromConsoleInput;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
+use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
+use Reli\Inspector\TargetProcess\TargetProcessResolver;
+use Reli\Inspector\TraceLoopProvider;
+use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
+use Reli\Lib\Elf\Tls\TlsFinderException;
+use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
+use Reli\Lib\PhpProcessReader\PhpVersionDetector;
+use Reli\Lib\PhpProcessReader\TraceCache;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-use function PhpProfiler\Lib\Defer\defer;
+use function Reli\Lib\Defer\defer;
 
 final class GetTraceCommand extends Command
 {

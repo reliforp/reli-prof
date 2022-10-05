@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\DateTime;
+namespace Reli\Lib\DateTime;
 
 final class FixedClock implements Clock
 {

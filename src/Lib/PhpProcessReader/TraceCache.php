@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpProcessReader;
+namespace Reli\Lib\PhpProcessReader;
 
-use PhpProfiler\Lib\Process\Pointer\Dereferencer;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\Pointer;
 
 final class TraceCache
 {
-    /** @param array<string, array<int, \PhpProfiler\Lib\Process\Pointer\Dereferencable>> $cache */
+    /** @param array<string, array<int, \Reli\Lib\Process\Pointer\Dereferencable>> $cache */
     public function __construct(
         private float $key = 0,
         private array $cache = [],
@@ -63,7 +63,7 @@ final class TraceCache
     }
 
     /**
-     * @template T of \PhpProfiler\Lib\Process\Pointer\Dereferencable
+     * @template T of \Reli\Lib\Process\Pointer\Dereferencable
      * @param Pointer<T> $pointer
      * @param T $item
      */
@@ -73,7 +73,7 @@ final class TraceCache
     }
 
     /**
-     * @template T of \PhpProfiler\Lib\Process\Pointer\Dereferencable
+     * @template T of \Reli\Lib\Process\Pointer\Dereferencable
      * @param Pointer<T> $pointer
      * @return T|null
      */

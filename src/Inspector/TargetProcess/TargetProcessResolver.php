@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\TargetProcess;
+namespace Reli\Inspector\TargetProcess;
 
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
-use PhpProfiler\Lib\Process\Exec\TraceeExecutor;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
+use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
+use Reli\Lib\Process\Exec\TraceeExecutor;
+use Reli\Lib\Process\ProcessSpecifier;
 
 class TargetProcessResolver
 {

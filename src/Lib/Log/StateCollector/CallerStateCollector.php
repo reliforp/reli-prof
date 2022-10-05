@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Log\StateCollector;
+namespace Reli\Lib\Log\StateCollector;
 
-use PhpProfiler\Lib\Log\Log;
+use Reli\Lib\Log\Log;
 
 use function debug_backtrace;
 

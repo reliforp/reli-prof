@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TraceLoopSettings;
+namespace Reli\Inspector\Settings\TraceLoopSettings;
 
 use Mockery;
 use PHPUnit\Framework\TestCase;

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Converter;
+namespace Reli\Command\Converter;
 
 use Noodlehaus\Config;
 use PhpCast\Cast;

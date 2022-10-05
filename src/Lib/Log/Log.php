@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Log;
+namespace Reli\Lib\Log;
 
-use PhpProfiler\Lib\Log\StateCollector\NullStateCollector;
-use PhpProfiler\Lib\Log\StateCollector\StateCollector;
+use Reli\Lib\Log\StateCollector\NullStateCollector;
+use Reli\Lib\Log\StateCollector\StateCollector;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 use Psr\Log\NullLogger;

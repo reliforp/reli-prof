@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop;
+namespace Reli\Lib\Loop;
 
-use PhpProfiler\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;
+use Reli\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;
 use PHPUnit\Framework\TestCase;
 
 class AsyncLoopBuilderTest extends TestCase

@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
+namespace Reli\Inspector\Settings\TargetPhpSettings;
 
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 
 /**
  * @psalm-type VersionDecided=value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>

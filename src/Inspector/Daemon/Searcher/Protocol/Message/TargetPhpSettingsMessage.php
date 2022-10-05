@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message;
+namespace Reli\Inspector\Daemon\Searcher\Protocol\Message;
 
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 
 final class TargetPhpSettingsMessage
 {

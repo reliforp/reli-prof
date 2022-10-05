@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Dispatcher;
+namespace Reli\Inspector\Daemon\Dispatcher;
 
 use PHPUnit\Framework\TestCase;
 

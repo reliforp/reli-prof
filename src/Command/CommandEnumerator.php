@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command;
+namespace Reli\Command;
 
 use FilesystemIterator;
 use IteratorAggregate;
@@ -33,7 +33,7 @@ final class CommandEnumerator implements IteratorAggregate
         foreach ($this->command_files_iterator as $command_file_info) {
             $class_name = $command_file_info->getBasename('.php');
             $namespace = $command_file_info->getPathInfo()->getFilename();
-            $result = "PhpProfiler\\Command\\{$namespace}\\$class_name";
+            $result = "Reli\\Command\\{$namespace}\\$class_name";
             assert(is_subclass_of($result, Command::class));
             yield $result;
         }

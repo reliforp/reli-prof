@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Pointer;
+namespace Reli\Lib\Process\Pointer;
 
 interface Dereferencer
 {

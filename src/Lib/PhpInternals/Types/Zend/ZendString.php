@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_string;
-use PhpProfiler\Lib\PhpInternals\CastedCData;
-use PhpProfiler\Lib\PhpInternals\Types\C\RawString;
-use PhpProfiler\Lib\Process\Pointer\Dereferencable;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\Pointer;
 
 final class ZendString implements Dereferencable
 {

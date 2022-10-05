@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use PhpProfiler\Lib\PhpInternals\Opcodes\Opcode;
+use Reli\Lib\PhpInternals\Opcodes\Opcode;
 
 /** @psalm-immutable */
 final class Opline

@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
+namespace Reli\Inspector\Output\TraceFormatter\Templated;
 
-use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
-use PhpProfiler\Inspector\Settings\OutputSettings\OutputSettings;
+use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 
 class TraceFormatterFactory
 {

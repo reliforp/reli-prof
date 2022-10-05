@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\SymbolResolver;
+namespace Reli\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64StringTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\Elf\Structure\Elf64\Elf64StringTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
 final class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
 {

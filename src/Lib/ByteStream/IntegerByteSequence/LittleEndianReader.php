@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\ByteStream\IntegerByteSequence;
+namespace Reli\Lib\ByteStream\IntegerByteSequence;
 
-use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
-use PhpProfiler\Lib\Integer\UInt64;
+use Reli\Lib\ByteStream\ByteReaderInterface;
+use Reli\Lib\Integer\UInt64;
 
 final class LittleEndianReader implements IntegerByteSequenceReader
 {

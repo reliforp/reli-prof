@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\SymbolResolver;
+namespace Reli\Lib\Elf\SymbolResolver;
 
-use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 interface SymbolResolverCreatorInterface
 {

@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Log;
+namespace Reli\Lib\Log;
 
-use PhpProfiler\Lib\Log\StateCollector\StateCollector;
+use Reli\Lib\Log\StateCollector\StateCollector;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;

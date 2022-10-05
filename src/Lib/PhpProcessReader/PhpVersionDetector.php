@@ -11,19 +11,19 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpProcessReader;
+namespace Reli\Lib\PhpProcessReader;
 
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendArray;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendModuleEntry;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
-use PhpProfiler\Lib\Process\Pointer\Dereferencer;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
-use PhpProfiler\Lib\Process\Pointer\RemoteProcessDereferencer;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
+use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
+use Reli\Lib\PhpInternals\Types\Zend\ZendModuleEntry;
+use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
+use Reli\Lib\Process\ProcessSpecifier;
 use Webmozart\Assert\Assert;
 
 class PhpVersionDetector

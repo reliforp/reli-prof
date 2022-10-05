@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
+namespace Reli\Inspector\Output\TraceFormatter\Templated;
 
-use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
+use Reli\Lib\PhpProcessReader\CallTrace;
 
 use function assert;
 use function is_string;

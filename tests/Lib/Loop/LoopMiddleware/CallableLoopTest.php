@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopMiddleware;
+namespace Reli\Lib\Loop\LoopMiddleware;
 
 use PHPUnit\Framework\TestCase;
 

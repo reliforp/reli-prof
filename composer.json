@@ -45,12 +45,12 @@
   "autoload": {
     "files": ["src/Lib/Defer/defer.php"],
     "psr-4": {
-      "PhpProfiler\\": "src"
+      "Reli\\": "src"
     }
   },
   "autoload-dev": {
     "psr-4": {
-      "PhpProfiler\\": "tests"
+      "Reli\\": "tests"
     }
   },
   "bin": [

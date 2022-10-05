@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Exec\Internal;
+namespace Reli\Lib\Process\Exec\Internal;
 
 class Pcntl
 {

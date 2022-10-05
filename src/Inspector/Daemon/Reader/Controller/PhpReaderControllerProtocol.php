@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Controller;
+namespace Reli\Inspector\Daemon\Reader\Controller;
 
 use Amp\Parallel\Sync\Channel;
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
 
 final class PhpReaderControllerProtocol implements PhpReaderControllerProtocolInterface
 {

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\OutputSettings;
+namespace Reli\Inspector\Settings\OutputSettings;
 
 use Noodlehaus\Config;
 use PhpCast\NullableCast;

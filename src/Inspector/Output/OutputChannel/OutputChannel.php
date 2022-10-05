@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\OutputChannel;
+namespace Reli\Inspector\Output\OutputChannel;
 
 interface OutputChannel
 {

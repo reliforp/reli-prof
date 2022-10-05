@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\ByteStream;
+namespace Reli\Lib\ByteStream;
 
 use function ord;
 use function substr;

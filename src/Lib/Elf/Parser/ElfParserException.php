@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Parser;
+namespace Reli\Lib\Elf\Parser;
 
 final class ElfParserException extends \Exception
 {

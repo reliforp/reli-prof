@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Context;
+namespace Reli\Inspector\Daemon\Searcher\Context;
 
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
-use PhpProfiler\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
-use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherEntryPoint;
-use PhpProfiler\Inspector\Daemon\Searcher\Worker\PhpSearcherWorkerProtocol;
-use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
-use PhpProfiler\Lib\Amphp\ContextInterface;
+use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
+use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
+use Reli\Inspector\Daemon\Searcher\Worker\PhpSearcherEntryPoint;
+use Reli\Inspector\Daemon\Searcher\Worker\PhpSearcherWorkerProtocol;
+use Reli\Lib\Amphp\ContextCreatorInterface;
+use Reli\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
 class PhpSearcherContextCreatorTest extends TestCase

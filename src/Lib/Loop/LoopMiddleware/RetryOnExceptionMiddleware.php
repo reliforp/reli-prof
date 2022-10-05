@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopMiddleware;
+namespace Reli\Lib\Loop\LoopMiddleware;
 
-use PhpProfiler\Lib\Log\Log;
-use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
+use Reli\Lib\Log\Log;
+use Reli\Lib\Loop\LoopMiddlewareInterface;
 use Throwable;
 
 final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface

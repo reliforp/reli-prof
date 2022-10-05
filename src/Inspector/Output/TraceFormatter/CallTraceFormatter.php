@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter;
+namespace Reli\Inspector\Output\TraceFormatter;
 
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTrace;
 
 interface CallTraceFormatter
 {

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpProcessReader;
+namespace Reli\Lib\PhpProcessReader;
 
 /** @psalm-immutable */
 final class CallTrace

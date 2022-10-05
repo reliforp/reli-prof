@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Compat;
+namespace Reli\Inspector\Output\TraceFormatter\Compat;
 
-use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeV80;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
-use PhpProfiler\Lib\PhpProcessReader\CallFrame;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpInternals\Opcodes\OpcodeV80;
+use Reli\Lib\PhpInternals\Types\Zend\Opline;
+use Reli\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 class CompatCallTraceFormatterTest extends TestCase

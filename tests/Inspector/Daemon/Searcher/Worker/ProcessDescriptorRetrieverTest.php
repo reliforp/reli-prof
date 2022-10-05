@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Worker;
+namespace Reli\Inspector\Daemon\Searcher\Worker;
 
 use Hamcrest\Matchers;
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
-use PhpProfiler\Lib\PhpProcessReader\PhpVersionDetector;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
+use Reli\Lib\PhpProcessReader\PhpVersionDetector;
+use Reli\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
 class ProcessDescriptorRetrieverTest extends TestCase

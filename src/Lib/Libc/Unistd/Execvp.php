@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Libc\Unistd;
+namespace Reli\Lib\Libc\Unistd;
 
 use FFI\CInteger;
 

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\AsyncLoopMiddleware;
+namespace Reli\Lib\Loop\AsyncLoopMiddleware;
 
 use PHPUnit\Framework\TestCase;
 

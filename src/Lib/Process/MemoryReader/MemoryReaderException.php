@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\MemoryReader;
+namespace Reli\Lib\Process\MemoryReader;
 
 final class MemoryReaderException extends \Exception
 {

@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\MemoryMap;
+namespace Reli\Lib\Process\MemoryMap;
 
-use PhpProfiler\Lib\String\LineFetcher;
+use Reli\Lib\String\LineFetcher;
 
 final class ProcessMemoryMapCreator
 {

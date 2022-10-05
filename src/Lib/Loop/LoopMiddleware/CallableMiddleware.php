@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\LoopMiddleware;
+namespace Reli\Lib\Loop\LoopMiddleware;
 
-use PhpProfiler\Lib\Loop\LoopMiddlewareInterface;
+use Reli\Lib\Loop\LoopMiddlewareInterface;
 
 final class CallableMiddleware implements LoopMiddlewareInterface
 {

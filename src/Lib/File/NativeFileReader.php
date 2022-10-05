@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\File;
+namespace Reli\Lib\File;
 
 use FFI;
-use PhpProfiler\Lib\FFI\CannotAllocateBufferException;
+use Reli\Lib\FFI\CannotAllocateBufferException;
 
 class NativeFileReader implements FileReaderInterface
 {

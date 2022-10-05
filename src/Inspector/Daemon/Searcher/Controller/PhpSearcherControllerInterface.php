@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Controller;
+namespace Reli\Inspector\Daemon\Searcher\Controller;
 
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 
 interface PhpSearcherControllerInterface
 {

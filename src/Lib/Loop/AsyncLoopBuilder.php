@@ -9,7 +9,7 @@
  * file that was distributed with this source code.
  */
 
-namespace PhpProfiler\Lib\Loop;
+namespace Reli\Lib\Loop;
 
 use LogicException;
 

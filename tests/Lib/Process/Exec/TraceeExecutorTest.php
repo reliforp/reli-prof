@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Exec;
+namespace Reli\Lib\Process\Exec;
 
 use Hamcrest\Type\IsCallable;
-use PhpProfiler\Lib\Libc\Errno\Errno;
-use PhpProfiler\Lib\Libc\Sys\Ptrace\PtraceX64;
-use PhpProfiler\Lib\Libc\Unistd\Execvp;
-use PhpProfiler\Lib\Process\Exec\Internal\Pcntl;
-use PhpProfiler\Lib\Process\ProcessStopper\ProcessStopper;
-use PhpProfiler\Lib\System\OnShutdown;
+use Reli\Lib\Libc\Errno\Errno;
+use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
+use Reli\Lib\Libc\Unistd\Execvp;
+use Reli\Lib\Process\Exec\Internal\Pcntl;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
+use Reli\Lib\System\OnShutdown;
 use PHPUnit\Framework\TestCase;
 
 class TraceeExecutorTest extends TestCase

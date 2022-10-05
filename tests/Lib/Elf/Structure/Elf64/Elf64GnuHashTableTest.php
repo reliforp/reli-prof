@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Structure\Elf64;
+namespace Reli\Lib\Elf\Structure\Elf64;
 
 use PHPUnit\Framework\TestCase;
 

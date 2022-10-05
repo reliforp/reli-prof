@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\AsyncLoopMiddleware;
+namespace Reli\Lib\Loop\AsyncLoopMiddleware;
 
-use PhpProfiler\Lib\Log\Log;
-use PhpProfiler\Lib\Loop\AsyncLoopMiddlewareInterface;
+use Reli\Lib\Log\Log;
+use Reli\Lib\Loop\AsyncLoopMiddlewareInterface;
 use Throwable;
 
 final class RetryOnExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterface

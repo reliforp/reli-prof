@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\TargetProcess;
+namespace Reli\Inspector\TargetProcess;
 
 class TragetProcessResolverException extends \Exception
 {

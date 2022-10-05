@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings;
+namespace Reli\Inspector\Settings;
 
 use LogicException;
 use Throwable;

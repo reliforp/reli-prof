@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Console;
+namespace Reli\Lib\Console;
 
 use function exec;
 

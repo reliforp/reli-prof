@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\Pointer;
 
 class ZendValue
 {

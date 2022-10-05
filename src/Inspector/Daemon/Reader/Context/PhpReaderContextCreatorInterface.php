@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Context;
+namespace Reli\Inspector\Daemon\Reader\Context;
 
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
+use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 
 interface PhpReaderContextCreatorInterface
 {

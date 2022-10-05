@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\SymbolResolver;
+namespace Reli\Lib\Elf\SymbolResolver;
 
 interface Elf64AllSymbolResolver extends Elf64SymbolResolver
 {

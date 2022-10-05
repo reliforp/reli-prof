@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command;
+namespace Reli\Command;
 
 use GlobIterator;
 use PHPUnit\Framework\TestCase;
@@ -29,10 +29,10 @@ class CommandEnumeratorTest extends TestCase
         }
         $this->assertSame(
             [
-                'PhpProfiler\Command\Test1Directory\Test1Command',
-                'PhpProfiler\Command\Test1Directory\Test2Command',
-                'PhpProfiler\Command\Test2Directory\Test3Command',
-                'PhpProfiler\Command\Test2Directory\Test4Command',
+                'Reli\Command\Test1Directory\Test1Command',
+                'Reli\Command\Test1Directory\Test2Command',
+                'Reli\Command\Test2Directory\Test3Command',
+                'Reli\Command\Test2Directory\Test4Command',
             ],
             $result
         );

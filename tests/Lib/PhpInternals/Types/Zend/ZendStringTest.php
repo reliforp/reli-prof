@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use PhpProfiler\Lib\PhpInternals\CastedCData;
-use PhpProfiler\Lib\PhpInternals\Types\C\RawString;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\Process\Pointer\Pointer;
 use PHPUnit\Framework\TestCase;
 
 class ZendStringTest extends TestCase

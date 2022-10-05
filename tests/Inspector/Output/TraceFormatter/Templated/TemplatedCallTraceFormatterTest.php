@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
+namespace Reli\Inspector\Output\TraceFormatter\Templated;
 
-use PhpProfiler\Lib\PhpProcessReader\CallFrame;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 class TemplatedCallTraceFormatterTest extends TestCase

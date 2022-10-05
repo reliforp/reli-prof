@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\MemoryMap;
+namespace Reli\Lib\Process\MemoryMap;
 
 final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
 {

@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Process;
+namespace Reli\Lib\Elf\Process;
 
-use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMap;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 final class ProcessModuleSymbolReaderCreator
 {

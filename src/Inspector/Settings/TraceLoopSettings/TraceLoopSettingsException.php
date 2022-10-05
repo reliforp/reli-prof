@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TraceLoopSettings;
+namespace Reli\Inspector\Settings\TraceLoopSettings;
 
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use Reli\Inspector\Settings\InspectorSettingsException;
 
 final class TraceLoopSettingsException extends InspectorSettingsException
 {

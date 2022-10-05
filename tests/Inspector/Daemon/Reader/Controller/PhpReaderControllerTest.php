@@ -11,18 +11,18 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Controller;
+namespace Reli\Inspector\Daemon\Reader\Controller;
 
 use Amp\Promise;
 use Mockery;
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
-use PhpProfiler\Inspector\Settings\GetTraceSettings\GetTraceSettings;
-use PhpProfiler\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
-use PhpProfiler\Lib\Amphp\ContextInterface;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
+use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Lib\Amphp\ContextInterface;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use PHPUnit\Framework\TestCase;
 
 final class PhpReaderControllerTest extends TestCase

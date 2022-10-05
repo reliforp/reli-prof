@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Libc;
+namespace Reli\Lib\Libc;
 
 use FFI\CData;
 

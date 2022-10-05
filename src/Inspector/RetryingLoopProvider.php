@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector;
+namespace Reli\Inspector;
 
-use PhpProfiler\Lib\Loop\LoopBuilder;
-use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;
-use PhpProfiler\Lib\Loop\LoopMiddleware\NanoSleepMiddleware;
-use PhpProfiler\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
+use Reli\Lib\Loop\LoopBuilder;
+use Reli\Lib\Loop\LoopMiddleware\CallableMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\NanoSleepMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
 
 class RetryingLoopProvider
 {

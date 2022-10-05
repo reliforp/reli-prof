@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop;
+namespace Reli\Lib\Loop;
 
-use PhpProfiler\Lib\Loop\LoopMiddleware\CallableMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\CallableMiddleware;
 use PHPUnit\Framework\TestCase;
 
 class LoopTest extends TestCase

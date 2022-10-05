@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
+namespace Reli\Inspector\Settings\TargetProcessSettings;
 
 final class TargetProcessSettings
 {

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
+namespace Reli\Inspector\Output\TraceFormatter\Templated;
 
 use Mockery;
 use Noodlehaus\Config;

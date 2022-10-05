@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process;
+namespace Reli\Lib\Process;
 
 final class ProcessSpecifier
 {

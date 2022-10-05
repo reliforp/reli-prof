@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Defer;
+namespace Reli\Lib\Defer;
 
 use PHPUnit\Framework\TestCase;
 

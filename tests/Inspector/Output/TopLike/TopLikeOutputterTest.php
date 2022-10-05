@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TopLike;
+namespace Reli\Inspector\Output\TopLike;
 
 use Mockery;
 use PHPUnit\Framework\TestCase;

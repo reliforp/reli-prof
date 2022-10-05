@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\System;
+namespace Reli\Lib\System;
 
 class OnShutdown
 {

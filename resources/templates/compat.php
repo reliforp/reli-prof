@@ -11,8 +11,8 @@
 
 declare(strict_types=1);
 
-use PhpProfiler\Inspector\Output\TraceFormatter\Compat\CompatCallTraceFormatter;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Inspector\Output\TraceFormatter\Compat\CompatCallTraceFormatter;
+use Reli\Lib\PhpProcessReader\CallTrace;
 
 /** @var CallTrace $call_trace */
 

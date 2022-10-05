@@ -13,11 +13,11 @@
 declare(strict_types=1);
 
 use DI\ContainerBuilder;
-use PhpProfiler\Command\CommandEnumerator;
-use PhpProfiler\Lib\Log\Log;
-use PhpProfiler\ReliProfiler;
+use Reli\Command\CommandEnumerator;
+use Reli\Lib\Log\Log;
+use Reli\ReliProfiler;
 use Psr\Log\LoggerInterface;
-use PhpProfiler\Lib\Log\StateCollector\StateCollector;
+use Reli\Lib\Log\StateCollector\StateCollector;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 

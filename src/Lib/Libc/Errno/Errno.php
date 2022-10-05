@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Libc\Errno;
+namespace Reli\Lib\Libc\Errno;
 
 class Errno
 {

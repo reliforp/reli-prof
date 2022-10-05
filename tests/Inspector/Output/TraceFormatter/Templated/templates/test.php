@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTrace;
 
 /** @var CallTrace $call_trace */
 

@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\GetTraceSettings;
+namespace Reli\Inspector\Settings\GetTraceSettings;
 
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use Reli\Inspector\Settings\InspectorSettingsException;
 
 final class GetTraceSettingsException extends InspectorSettingsException
 {

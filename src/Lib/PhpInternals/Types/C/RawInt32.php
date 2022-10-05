@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Types\C;
+namespace Reli\Lib\PhpInternals\Types\C;
 
 use FFI\CInteger;
-use PhpProfiler\Lib\PhpInternals\CastedCData;
-use PhpProfiler\Lib\Process\Pointer\Dereferencable;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
+use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\Pointer;
 
 final class RawInt32 implements Dereferencable
 {

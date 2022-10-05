@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals\Opcodes;
+namespace Reli\Lib\PhpInternals\Opcodes;
 
 use PHPUnit\Framework\TestCase;
 

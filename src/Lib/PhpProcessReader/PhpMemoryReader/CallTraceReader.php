@@ -11,27 +11,27 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
+namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
-use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeFactory;
-use PhpProfiler\Lib\PhpInternals\Types\C\RawDouble;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\Opline;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendExecuteData;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendFunction;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendOp;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
-use PhpProfiler\Lib\PhpProcessReader\CallFrame;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
-use PhpProfiler\Lib\PhpProcessReader\TraceCache;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
-use PhpProfiler\Lib\Process\Pointer\Dereferencer;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
-use PhpProfiler\Lib\Process\Pointer\RemoteProcessDereferencer;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
+use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
+use Reli\Lib\PhpInternals\Types\C\RawDouble;
+use Reli\Lib\PhpInternals\Types\Zend\Opline;
+use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
+use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
+use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
+use Reli\Lib\PhpInternals\Types\Zend\ZendOp;
+use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\TraceCache;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
+use Reli\Lib\Process\ProcessSpecifier;
 
 final class CallTraceReader
 {

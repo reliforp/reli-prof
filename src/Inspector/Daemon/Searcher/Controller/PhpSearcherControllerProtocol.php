@@ -11,13 +11,13 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Controller;
+namespace Reli\Inspector\Daemon\Searcher\Controller;
 
 use Amp\Parallel\Sync\Channel;
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
+use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
 
 final class PhpSearcherControllerProtocol implements PhpSearcherControllerProtocolInterface
 {

@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TargetProcessSettings;
+namespace Reli\Inspector\Settings\TargetProcessSettings;
 
 use PhpCast\NullableCast;
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use Reli\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;

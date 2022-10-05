@@ -11,21 +11,21 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Elf\Parser;
+namespace Reli\Lib\Elf\Parser;
 
-use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
-use PhpProfiler\Lib\ByteStream\ByteReaderInterface;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64DynamicStructureArray;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64GnuHashTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64Header;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderEntry;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SectionHeaderEntry;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SectionHeaderTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64StringTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
-use PhpProfiler\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
+use Reli\Lib\ByteStream\ByteReaderInterface;
+use Reli\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
+use Reli\Lib\Elf\Structure\Elf64\Elf64DynamicStructureArray;
+use Reli\Lib\Elf\Structure\Elf64\Elf64GnuHashTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64Header;
+use Reli\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderEntry;
+use Reli\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SectionHeaderEntry;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SectionHeaderTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64StringTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 
 final class Elf64Parser
 {

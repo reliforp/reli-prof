@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\ProcFileSystem;
+namespace Reli\Lib\Process\ProcFileSystem;
 
 use IteratorAggregate;
-use PhpProfiler\Lib\File\FileReaderInterface;
+use Reli\Lib\File\FileReaderInterface;
 
 final class CommandLineEnumerator implements IteratorAggregate
 {

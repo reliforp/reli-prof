@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Dispatcher;
+namespace Reli\Inspector\Daemon\Dispatcher;
 
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use PHPUnit\Framework\TestCase;
 
 class DispatchTableTest extends TestCase

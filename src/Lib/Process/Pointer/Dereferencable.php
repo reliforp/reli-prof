@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\Pointer;
+namespace Reli\Lib\Process\Pointer;
 
 use FFI\CData;
-use PhpProfiler\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\CastedCData;
 
 interface Dereferencable
 {

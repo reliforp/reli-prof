@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Context;
+namespace Reli\Inspector\Daemon\Reader\Context;
 
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderController;
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
-use PhpProfiler\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
-use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderWorkerProtocol;
-use PhpProfiler\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
-use PhpProfiler\Lib\Amphp\ContextCreatorInterface;
+use Reli\Inspector\Daemon\Reader\Controller\PhpReaderController;
+use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
+use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
+use Reli\Inspector\Daemon\Reader\Worker\PhpReaderWorkerProtocol;
+use Reli\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
+use Reli\Lib\Amphp\ContextCreatorInterface;
 
 final class PhpReaderContextCreator implements PhpReaderContextCreatorInterface
 {

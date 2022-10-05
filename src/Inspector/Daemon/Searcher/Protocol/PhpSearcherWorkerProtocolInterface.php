@@ -11,12 +11,12 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Protocol;
+namespace Reli\Inspector\Daemon\Searcher\Protocol;
 
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
-use PhpProfiler\Lib\Amphp\MessageProtocolInterface;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
+use Reli\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpSearcherWorkerProtocolInterface extends MessageProtocolInterface
 {

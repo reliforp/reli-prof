@@ -11,19 +11,19 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpProcessReader;
+namespace Reli\Lib\PhpProcessReader;
 
-use PhpProfiler\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
-use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReader;
-use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
-use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
-use PhpProfiler\Lib\Elf\Tls\LibThreadDbTlsFinder;
-use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
-use PhpProfiler\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
+use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReader;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
+use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
+use Reli\Lib\Elf\Tls\LibThreadDbTlsFinder;
+use Reli\Lib\Elf\Tls\TlsFinderException;
+use Reli\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 final class PhpSymbolReaderCreator
 {

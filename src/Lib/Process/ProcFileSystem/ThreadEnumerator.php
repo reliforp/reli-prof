@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Process\ProcFileSystem;
+namespace Reli\Lib\Process\ProcFileSystem;
 
 final class ThreadEnumerator
 {

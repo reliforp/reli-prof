@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\String;
+namespace Reli\Lib\String;
 
 final class LineFetcher
 {

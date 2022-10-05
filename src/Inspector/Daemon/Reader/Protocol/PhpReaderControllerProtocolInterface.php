@@ -11,14 +11,14 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Reader\Protocol;
+namespace Reli\Inspector\Daemon\Reader\Protocol;
 
 use Amp\Promise;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
-use PhpProfiler\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
-use PhpProfiler\Lib\Amphp\MessageProtocolInterface;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
+use Reli\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpReaderControllerProtocolInterface extends MessageProtocolInterface
 {

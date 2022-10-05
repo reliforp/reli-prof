@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\File;
+namespace Reli\Lib\File;
 
 /**
  * workaround for a problem that PHP cannot open files in /proc/<pid>/root/

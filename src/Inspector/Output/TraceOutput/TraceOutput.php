@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceOutput;
+namespace Reli\Inspector\Output\TraceOutput;
 
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTrace;
 
 interface TraceOutput
 {

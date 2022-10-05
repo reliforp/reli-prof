@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\OutputSettings;
+namespace Reli\Inspector\Settings\OutputSettings;
 
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
+use Reli\Inspector\Settings\InspectorSettingsException;
 
 class OutputSettingsException extends InspectorSettingsException
 {

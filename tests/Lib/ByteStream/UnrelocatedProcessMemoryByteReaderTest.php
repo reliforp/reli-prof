@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\ByteStream;
+namespace Reli\Lib\ByteStream;
 
-use PhpProfiler\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use PHPUnit\Framework\TestCase;
 
 class UnrelocatedProcessMemoryByteReaderTest extends TestCase

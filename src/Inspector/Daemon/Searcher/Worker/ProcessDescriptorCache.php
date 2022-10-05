@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Worker;
+namespace Reli\Inspector\Daemon\Searcher\Worker;
 
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 
 final class ProcessDescriptorCache
 {

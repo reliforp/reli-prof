@@ -11,10 +11,10 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Templated;
+namespace Reli\Inspector\Output\TraceFormatter\Templated;
 
 use Mockery;
-use PhpProfiler\Inspector\Settings\OutputSettings\OutputSettings;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use PHPUnit\Framework\TestCase;
 
 class TraceFormatterFactoryTest extends TestCase

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Log\StateCollector;
+namespace Reli\Lib\Log\StateCollector;
 
 use function getmypid;
 use function memory_get_peak_usage;

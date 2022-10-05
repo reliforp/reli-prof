@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Libc\Sys\Ptrace;
+namespace Reli\Lib\Libc\Sys\Ptrace;
 
 use MyCLabs\Enum\Enum;
 

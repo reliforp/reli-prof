@@ -11,31 +11,31 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpProcessReader\PhpMemoryReader;
+namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
-use PhpProfiler\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
-use PhpProfiler\Lib\Elf\Parser\Elf64Parser;
-use PhpProfiler\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
-use PhpProfiler\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
-use PhpProfiler\Lib\File\CatFileReader;
-use PhpProfiler\Lib\PhpInternals\Opcodes\OpcodeFactory;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendExecuteData;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendFunction;
-use PhpProfiler\Lib\PhpInternals\Types\Zend\ZendString;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
-use PhpProfiler\Lib\PhpInternals\ZendTypeReaderCreator;
-use PhpProfiler\Lib\PhpProcessReader\TraceCache;
-use PhpProfiler\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReader;
-use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
-use PhpProfiler\Lib\PhpProcessReader\PhpSymbolReaderCreator;
-use PhpProfiler\Lib\Process\Pointer\Pointer;
-use PhpProfiler\Lib\Process\Pointer\RemoteProcessDereferencer;
-use PhpProfiler\Lib\Process\ProcessSpecifier;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
+use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
+use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
+use Reli\Lib\File\CatFileReader;
+use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
+use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
+use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
+use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
+use Reli\Lib\PhpInternals\Types\Zend\ZendString;
+use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\PhpProcessReader\TraceCache;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
+use Reli\Lib\Process\MemoryReader\MemoryReader;
+use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
+use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
+use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
+use Reli\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
 class CallTraceReaderTest extends TestCase

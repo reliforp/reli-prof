@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\PhpInternals;
+namespace Reli\Lib\PhpInternals;
 
 use FFI\CData;
 

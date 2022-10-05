@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message;
+namespace Reli\Inspector\Daemon\Searcher\Protocol\Message;
 
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessList;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
 
 final class UpdateTargetProcessMessage
 {

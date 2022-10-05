@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Log;
+namespace Reli\Lib\Log;
 
 use PHPUnit\Framework\TestCase;
 

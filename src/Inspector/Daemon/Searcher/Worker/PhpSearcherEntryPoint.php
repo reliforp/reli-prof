@@ -11,15 +11,15 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Searcher\Worker;
+namespace Reli\Inspector\Daemon\Searcher\Worker;
 
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
-use PhpProfiler\Inspector\Daemon\Dispatcher\TargetProcessList;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
-use PhpProfiler\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
-use PhpProfiler\Lib\Amphp\WorkerEntryPointInterface;
-use PhpProfiler\Lib\Process\Search\ProcessSearcherInterface;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
+use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
+use Reli\Lib\Amphp\WorkerEntryPointInterface;
+use Reli\Lib\Process\Search\ProcessSearcherInterface;
 
 use function sleep;
 

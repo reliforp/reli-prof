@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceFormatter\Compat;
+namespace Reli\Inspector\Output\TraceFormatter\Compat;
 
-use PhpProfiler\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallFrame;
 
 use function is_null;
 

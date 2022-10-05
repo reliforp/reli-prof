@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Output\TraceOutput;
+namespace Reli\Inspector\Output\TraceOutput;
 
-use PhpProfiler\Inspector\Output\OutputChannel\OutputChannel;
-use PhpProfiler\Inspector\Output\TraceFormatter\CallTraceFormatter;
-use PhpProfiler\Lib\PhpProcessReader\CallTrace;
+use Reli\Inspector\Output\OutputChannel\OutputChannel;
+use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
+use Reli\Lib\PhpProcessReader\CallTrace;
 
 final class FormattedTraceOutput implements TraceOutput
 {

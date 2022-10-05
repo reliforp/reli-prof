@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Amphp;
+namespace Reli\Lib\Amphp;
 
 use PHPUnit\Framework\TestCase;
 

@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Daemon\Dispatcher;
+namespace Reli\Inspector\Daemon\Dispatcher;
 
-use PhpProfiler\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use PHPUnit\Framework\TestCase;
 
 class TargetProcessListTest extends TestCase

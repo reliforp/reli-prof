@@ -11,18 +11,18 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Command\Inspector;
+namespace Reli\Command\Inspector;
 
-use PhpProfiler\Inspector\RetryingLoopProvider;
-use PhpProfiler\Inspector\Settings\InspectorSettingsException;
-use PhpProfiler\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
-use PhpProfiler\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
-use PhpProfiler\Inspector\TargetProcess\TargetProcessResolver;
-use PhpProfiler\Lib\Elf\Parser\ElfParserException;
-use PhpProfiler\Lib\Elf\Tls\TlsFinderException;
-use PhpProfiler\Lib\PhpProcessReader\PhpGlobalsFinder;
-use PhpProfiler\Lib\Process\MemoryReader\MemoryReaderException;
-use PhpProfiler\Lib\Elf\Process\ProcessSymbolReaderException;
+use Reli\Inspector\RetryingLoopProvider;
+use Reli\Inspector\Settings\InspectorSettingsException;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
+use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
+use Reli\Inspector\TargetProcess\TargetProcessResolver;
+use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\Elf\Tls\TlsFinderException;
+use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;

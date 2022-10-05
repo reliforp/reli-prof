@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\DaemonSettings;
+namespace Reli\Inspector\Settings\DaemonSettings;
 
 final class DaemonSettings
 {

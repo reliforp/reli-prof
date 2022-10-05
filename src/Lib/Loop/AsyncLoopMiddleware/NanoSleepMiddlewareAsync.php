@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Lib\Loop\AsyncLoopMiddleware;
+namespace Reli\Lib\Loop\AsyncLoopMiddleware;
 
-use PhpProfiler\Lib\Loop\AsyncLoopMiddlewareInterface;
+use Reli\Lib\Loop\AsyncLoopMiddlewareInterface;
 
 use function hrtime;
 use function time_nanosleep;

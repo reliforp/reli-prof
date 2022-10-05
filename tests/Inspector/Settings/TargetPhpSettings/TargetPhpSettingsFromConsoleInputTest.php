@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace PhpProfiler\Inspector\Settings\TargetPhpSettings;
+namespace Reli\Inspector\Settings\TargetPhpSettings;
 
 use Mockery;
 use PHPUnit\Framework\TestCase;
