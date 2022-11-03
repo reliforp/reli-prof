@@ -19,6 +19,7 @@ use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
 use Reli\Lib\Amphp\WorkerEntryPointInterface;
+use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
 use Reli\Lib\Process\Search\ProcessSearcherInterface;
 
 use function sleep;
@@ -29,6 +30,7 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
         private PhpSearcherWorkerProtocolInterface $protocol,
         private ProcessSearcherInterface $process_searcher,
         private ProcessDescriptorRetriever $process_descriptor_retriever,
+        private ThreadEnumerator $thread_enumerator,
     ) {
     }
 
@@ -42,8 +44,15 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
         $cache = new ProcessDescriptorCache();
 
         while (1) {
-            $searched_pids = $this->process_searcher->searchByRegex(
-                $target_php_settings_message->regex
+            $searched_pids = array_diff(
+                $this->process_searcher->searchByRegex(
+                    $target_php_settings_message->regex
+                ),
+                [
+                    ...$this->thread_enumerator->getThreadIds(
+                        $target_php_settings_message->parent_pid
+                    )
+                ],
             );
             $cache->removeDisappeared(...$searched_pids);
 

@@ -54,7 +54,8 @@ class PhpSearcherControllerTest extends TestCase
             Promise::class,
             $php_searcher_context->sendTarget(
                 'abcdefg',
-                new TargetPhpSettings()
+                new TargetPhpSettings(),
+                getmypid(),
             )
         );
     }
