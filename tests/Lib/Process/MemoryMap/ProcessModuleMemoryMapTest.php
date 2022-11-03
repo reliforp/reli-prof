@@ -72,6 +72,8 @@ class ProcessModuleMemoryMapTest extends TestCase
                 false,
                 true
             ),
+            '00:01',
+            1,
             'test'
         );
     }

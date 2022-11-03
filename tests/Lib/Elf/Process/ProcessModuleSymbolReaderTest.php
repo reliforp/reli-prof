@@ -39,6 +39,8 @@ class ProcessModuleSymbolReaderTest extends TestCase
                     true,
                     true
                 ),
+                '00:01',
+                1,
                 'test_area'
             )
         ];
@@ -86,6 +88,8 @@ class ProcessModuleSymbolReaderTest extends TestCase
                     true,
                     true
                 ),
+                '00:01',
+                1,
                 'test_area'
             )
         ];
@@ -135,6 +139,8 @@ class ProcessModuleSymbolReaderTest extends TestCase
                     true,
                     true
                 ),
+                '00:01',
+                1,
                 'test_area'
             )
         ];
@@ -178,6 +184,8 @@ class ProcessModuleSymbolReaderTest extends TestCase
                     true,
                     true
                 ),
+                '00:01',
+                1,
                 'test_area'
             )
         ];
@@ -223,6 +231,8 @@ class ProcessModuleSymbolReaderTest extends TestCase
                     true,
                     true
                 ),
+                '00:01',
+                1,
                 'test_area'
             )
         ];

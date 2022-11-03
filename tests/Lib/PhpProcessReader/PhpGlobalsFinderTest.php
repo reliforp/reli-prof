@@ -16,6 +16,7 @@ namespace Reli\Lib\PhpProcessReader;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\File\CatFileReader;
@@ -52,9 +53,10 @@ class PhpGlobalsFinderTest extends TestCase
                     new CatFileReader(),
                     new Elf64Parser(
                         new LittleEndianReader()
-                    )
+                    ),
                 ),
                 $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
             ),
             ProcessMemoryMapCreator::create(),
             new LittleEndianReader()
