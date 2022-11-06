@@ -38,7 +38,8 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
         $symbol_reader_creator = new ProcessModuleSymbolReaderCreator(
             $symbol_resolver_creator,
-            $memory_reader
+            $memory_reader,
+            new PerBinarySymbolCacheRetriever(),
         );
         $process_memory_map = new ProcessMemoryMap([
             new ProcessMemoryArea(
@@ -51,6 +52,8 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
                     true,
                     false
                 ),
+                '00:01',
+                1,
                 '/test_module'
             ),
         ]);
@@ -93,7 +96,8 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
 
         $symbol_reader_creator = new ProcessModuleSymbolReaderCreator(
             $symbol_resolver_creator,
-            $memory_reader
+            $memory_reader,
+            new PerBinarySymbolCacheRetriever(),
         );
         $process_memory_map = new ProcessMemoryMap([
             new ProcessMemoryArea(
@@ -106,6 +110,8 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
                     true,
                     false
                 ),
+                '00:01',
+                1,
                 '/test_module'
             ),
         ]);
@@ -127,7 +133,8 @@ class ProcessModuleSymbolReaderCreatorTest extends TestCase
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
         $symbol_reader_creator = new ProcessModuleSymbolReaderCreator(
             $symbol_resolver_creator,
-            $memory_reader
+            $memory_reader,
+            new PerBinarySymbolCacheRetriever(),
         );
         $process_memory_map = new ProcessMemoryMap([]);
 
