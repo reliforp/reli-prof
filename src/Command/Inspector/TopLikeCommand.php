@@ -116,7 +116,7 @@ final class TopLikeCommand extends Command
                         'update' => $update_target_message->target_process_list->getArray(),
                         'current' => $dispatch_table->worker_pool->debugDump(),
                     ]);
-                    $dispatch_table->updateTargets($update_target_message->target_process_list);
+                    yield from $dispatch_table->updateTargets($update_target_message->target_process_list);
                     Log::debug('target updated', [$dispatch_table->worker_pool->debugDump()]);
                 }
             });
