@@ -36,10 +36,6 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
 
     public function run(): \Generator
     {
-        /**
-         * @psalm-ignore-var
-         * @var TargetPhpSettingsMessage $target_php_settings_message
-         */
         $target_php_settings_message = yield $this->protocol->receiveTargetPhpSettings();
         $cache = new ProcessDescriptorCache();
 

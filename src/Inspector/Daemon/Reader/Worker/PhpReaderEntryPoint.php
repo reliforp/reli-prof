@@ -30,18 +30,10 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 
     public function run(): \Generator
     {
-        /**
-         * @psalm-ignore-var
-         * @var SetSettingsMessage $set_settings_message
-         */
         $set_settings_message = yield $this->protocol->receiveSettings();
         Log::debug('settings_message', [$set_settings_message]);
 
         while (1) {
-            /**
-             * @psalm-ignore-var
-             * @var AttachMessage $attach_message
-             */
             $attach_message = yield $this->protocol->receiveAttach();
             Log::debug('attach_message', [$attach_message]);
 
