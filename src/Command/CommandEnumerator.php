@@ -32,7 +32,8 @@ final class CommandEnumerator implements IteratorAggregate
         /** @var SplFileInfo $command_file_info */
         foreach ($this->command_files_iterator as $command_file_info) {
             $class_name = $command_file_info->getBasename('.php');
-            $namespace = $command_file_info->getPathInfo()->getFilename();
+            $namespace = $command_file_info->getPathInfo()?->getFilename();
+            assert(!is_null($namespace));
             $result = "Reli\\Command\\{$namespace}\\$class_name";
             assert(is_subclass_of($result, Command::class));
             yield $result;

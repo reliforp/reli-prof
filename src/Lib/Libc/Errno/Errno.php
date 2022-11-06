@@ -28,6 +28,7 @@ class Errno
 
     public function get(): int
     {
+        /** @psalm-suppress InvalidCast */
         return (int)$this->ffi->errno;
     }
 
