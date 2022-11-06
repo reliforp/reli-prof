@@ -22,6 +22,7 @@ final class TargetPhpSettingsMessage
     public function __construct(
         public string $regex,
         public TargetPhpSettings $target_php_settings,
+        public int $parent_pid,
     ) {
     }
 }

@@ -23,7 +23,7 @@ interface PhpSearcherControllerInterface
     public function start(): Promise;
 
     /** @return Promise<int> */
-    public function sendTarget(string $regex, TargetPhpSettings $target_php_settings): Promise;
+    public function sendTarget(string $regex, TargetPhpSettings $target_php_settings, int $pid): Promise;
 
     /** @return Promise<UpdateTargetProcessMessage> */
     public function receivePidList(): Promise;

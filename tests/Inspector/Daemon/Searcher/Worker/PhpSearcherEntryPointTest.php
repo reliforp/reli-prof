@@ -22,6 +22,7 @@ use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
 use Reli\Lib\Process\Search\ProcessSearcherInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -58,6 +59,7 @@ class PhpSearcherEntryPointTest extends TestCase
             $protcol,
             $process_searcher,
             $process_descriptor_retriever,
+            new ThreadEnumerator()
         );
 
         $generator = $entry_point->run();
@@ -73,6 +75,7 @@ class PhpSearcherEntryPointTest extends TestCase
             new TargetPhpSettingsMessage(
                 'regex_to_search_process',
                 new TargetPhpSettings(),
+                getmypid(),
             )
         );
         $this->assertInstanceOf(Success::class, $promise);

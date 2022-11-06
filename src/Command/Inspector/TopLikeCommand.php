@@ -79,6 +79,7 @@ final class TopLikeCommand extends Command
             $searcher_context->sendTarget(
                 $daemon_settings->target_regex,
                 $target_php_settings,
+                getmypid(),
             )
         );
 
