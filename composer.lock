@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "256076bb239daf4ef96da49231542778",
+    "content-hash": "832a1a2d59a68f62592df0caaefab6a1",
     "packages": [
         {
             "name": "amphp/amp",
@@ -3818,21 +3818,21 @@
         },
         {
             "name": "psalm/plugin-mockery",
-            "version": "0.10.0",
+            "version": "0.11.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/psalm/psalm-plugin-mockery.git",
-                "reference": "2eb3bfa409e935cb07276ffacbf639184f7b38d4"
+                "reference": "eb111597a5e841b76b2eacca2d179c097e283c20"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/psalm/psalm-plugin-mockery/zipball/2eb3bfa409e935cb07276ffacbf639184f7b38d4",
-                "reference": "2eb3bfa409e935cb07276ffacbf639184f7b38d4",
+                "url": "https://api.github.com/repos/psalm/psalm-plugin-mockery/zipball/eb111597a5e841b76b2eacca2d179c097e283c20",
+                "reference": "eb111597a5e841b76b2eacca2d179c097e283c20",
                 "shasum": ""
             },
             "require": {
                 "mockery/mockery": "^0.9 || ^1.0",
-                "vimeo/psalm": "dev-master || dev-4.x || ^4.5 || ^5@beta"
+                "vimeo/psalm": "dev-master || dev-4.x || ^4.7.1 || ^5@beta"
             },
             "require-dev": {
                 "codeception/codeception": "^4.0.3",
@@ -3866,9 +3866,9 @@
             "description": "Psalm plugin for Mockery",
             "support": {
                 "issues": "https://github.com/psalm/psalm-plugin-mockery/issues",
-                "source": "https://github.com/psalm/psalm-plugin-mockery/tree/0.10.0"
+                "source": "https://github.com/psalm/psalm-plugin-mockery/tree/0.11.0"
             },
-            "time": "2022-11-01T21:17:43+00:00"
+            "time": "2022-11-25T03:55:59+00:00"
         },
         {
             "name": "psr/http-client",
