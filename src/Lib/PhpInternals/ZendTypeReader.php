@@ -30,6 +30,7 @@ final class ZendTypeReader
     public const V74 = 'v74';
     public const V80 = 'v80';
     public const V81 = 'v81';
+    public const V82 = 'v82';
 
     public const ALL_SUPPORTED_VERSIONS = [
         self::V70,
@@ -39,6 +40,7 @@ final class ZendTypeReader
         self::V74,
         self::V80,
         self::V81,
+        self::V82,
     ];
 
     private ?FFI $ffi = null;
@@ -80,9 +82,6 @@ final class ZendTypeReader
     private function loadHeader(string $php_version): FFI
     {
         if (!isset($this->ffi)) {
-            if ($php_version === self::V81) {
-                $php_version = self::V80;
-            }
             $this->ffi = FFI::load(__DIR__ . "/Headers/{$php_version}.h")
                 ?? throw new CannotLoadCHeaderException('cannot load headers for zend engine');
         }
