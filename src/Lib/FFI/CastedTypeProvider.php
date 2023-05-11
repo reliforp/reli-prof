@@ -16,9 +16,6 @@ namespace Reli\Lib\FFI;
 use FFI\CData;
 use Reli\Lib\PhpInternals\CastedCData;
 
-/**
- * @template T
- */
 interface CastedTypeProvider
 {
     /** @return CastedCData<CData> */

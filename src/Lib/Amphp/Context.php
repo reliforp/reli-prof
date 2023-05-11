@@ -16,7 +16,10 @@ namespace Reli\Lib\Amphp;
 use Amp\Parallel\Context\Context as AmphpContext;
 use Amp\Promise;
 
-/** @template-covariant T of MessageProtocolInterface */
+/**
+ * @template-covariant T of MessageProtocolInterface
+ * @implements ContextInterface<T>
+ */
 final class Context implements ContextInterface
 {
     /** @param T $protocol_interface */

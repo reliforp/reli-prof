@@ -15,8 +15,8 @@ namespace Reli\Lib\Process\ProcFileSystem;
 
 final class ThreadEnumerator
 {
-    /** @return \Generator<int> */
-    public function getThreadIds(int $pid)
+    /** @return \Generator<int, int> */
+    public function getThreadIds(int $pid): \Generator
     {
         /**
          * @var string $full_path

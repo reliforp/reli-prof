@@ -143,6 +143,7 @@ final class ZendTypeReader
             /** @var FFI\CInteger $dummy_base_addr */
             $dummy_base_addr = \FFI::cast('long', FFI::addr($dummy));
             $addr = $member_addr - $dummy_base_addr->cdata;
+            assert(is_int($addr));
             /** @psalm-suppress MixedArgument */
             $sizeof = \FFI::sizeof($dummy->$member);
             $this->offset_cache[$type][$member] = [

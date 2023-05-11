@@ -29,13 +29,12 @@
     "hassankhan/config": "3.1.0",
     "sj-i/php-cast": "1.0.0",
     "monolog/monolog": "3.3.1",
-    "myclabs/php-enum": "1.8.4",
     "webmozart/assert": "1.11.0"
   },
   "require-dev": {
     "ext-posix": "*",
     "phpunit/phpunit": "9.6.8",
-    "vimeo/psalm": "4.30.0",
+    "vimeo/psalm": "5.11.0",
     "squizlabs/php_codesniffer": "3.7.2",
     "mockery/mockery": "1.5.1",
     "psalm/plugin-mockery": "0.11.0",

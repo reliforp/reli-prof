@@ -37,7 +37,7 @@ class TraceeExecutor
         $pid = $this->pcntl->fork();
         if ($pid === 0) {
             $this->ptrace->ptrace(
-                PtraceRequest::PTRACE_PTRACEME(),
+                PtraceRequest::PTRACE_PTRACEME,
                 0,
                 null,
                 null
@@ -66,7 +66,7 @@ class TraceeExecutor
         }
 
         $this->ptrace->ptrace(
-            PtraceRequest::PTRACE_DETACH(),
+            PtraceRequest::PTRACE_DETACH,
             $pid,
             0,
             0

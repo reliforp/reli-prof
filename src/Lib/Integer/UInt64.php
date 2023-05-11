@@ -21,7 +21,7 @@ final class UInt64
     ) {
     }
 
-    public function __toString()
+    public function __toString(): string
     {
         $hi_hex = str_pad(base_convert((string)$this->hi, 10, 16), 8, '0', STR_PAD_LEFT);
         $lo_hex = str_pad(base_convert((string)$this->lo, 10, 16), 8, '0', STR_PAD_LEFT);

@@ -11,11 +11,20 @@
 
 namespace FFI;
 
+/** @template T */
+class CData
+{
+    /** @var T */
+    public $cdata;
+}
+
+/** @extends CData<int> */
 class CInteger extends CData
 {
     public int $cdata;
 }
 
+/** @extends CData<int> */
 class CPointer extends CData
 {
     public int $cdata;
@@ -26,6 +35,7 @@ class CPointer extends CData
  *
  * @template T
  * @template-implements \ArrayAccess<int, T>
+ * @extends CData<never>
  */
 class CArray extends CData implements \ArrayAccess, \Countable
 {
