@@ -20,7 +20,9 @@ final class ProcessMemoryArea
         public string $end,
         public string $file_offset,
         public ProcessMemoryAttribute $attribute,
-        public string $name
+        public string $device_id,
+        public int $inode_num,
+        public string $name,
     ) {
     }
 

@@ -29,6 +29,8 @@ class ProcessMemoryAreaTest extends TestCase
                 true,
                 false
             ),
+            '00:01',
+            1,
             'test'
         );
         $this->assertFalse($process_memory_area->isInRange(0x00000000));

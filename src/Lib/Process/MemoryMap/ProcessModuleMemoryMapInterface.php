@@ -20,4 +20,10 @@ interface ProcessModuleMemoryMapInterface
     public function getMemoryAddressFromOffset(int $offset): int;
 
     public function isInRange(int $address): bool;
+
+    public function getDeviceId(): string;
+
+    public function getInodeNumber(): int;
+
+    public function getModuleName(): string;
 }

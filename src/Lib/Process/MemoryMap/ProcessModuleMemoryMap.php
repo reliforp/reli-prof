@@ -72,4 +72,19 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
         }
         return $this->sorted_offset_to_memory_map;
     }
+
+    public function getDeviceId(): string
+    {
+        return $this->memory_areas[0]->device_id;
+    }
+
+    public function getInodeNumber(): int
+    {
+        return $this->memory_areas[0]->inode_num;
+    }
+
+    public function getModuleName(): string
+    {
+        return $this->memory_areas[0]->name;
+    }
 }

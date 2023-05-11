@@ -32,13 +32,17 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         return $this->context->start();
     }
 
-    public function sendTarget(string $regex, TargetPhpSettings $target_php_settings): Promise
-    {
+    public function sendTarget(
+        string $regex,
+        TargetPhpSettings $target_php_settings,
+        int $pid,
+    ): Promise {
         return $this->context->getProtocol()
             ->sendTargetRegex(
                 new TargetPhpSettingsMessage(
                     $regex,
                     $target_php_settings,
+                    $pid
                 )
             )
         ;

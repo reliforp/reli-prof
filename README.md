@@ -1,9 +1,9 @@
 # Reli
-![Minimum PHP version: 8.0.0](https://img.shields.io/badge/php-8.0.0%2B-blue.svg)
+![Minimum PHP version: 8.1.0](https://img.shields.io/badge/php-8.1.0%2B-blue.svg)
 [![Packagist](https://img.shields.io/packagist/v/reliforp/reli-prof.svg)](https://packagist.org/packages/reliforp/reli-prof)
 [![Github Actions](https://github.com/reliforp/reli-prof/workflows/build/badge.svg)](https://github.com/reliforp/reli-prof/actions)
-[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/reliforp/reli-prof/badges/quality-score.png?b=0.6.x)](https://scrutinizer-ci.com/g/reliforp/reli-prof/?branch=0.6.x)
-[![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.6.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.6.x)
+[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/reliforp/reli-prof/badges/quality-score.png?b=0.9.x)](https://scrutinizer-ci.com/g/reliforp/reli-prof/?branch=0.9.x)
+[![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.9.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.9.x)
 ![Psalm coverage](https://shepherd.dev/github/reliforp/reli-prof/coverage.svg?)
 
 Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler. 
@@ -62,7 +62,7 @@ Much of what can be done with phpspy will be done with reli in the future.
 ## Requirements
 ### Supported PHP versions
 #### Execution
-- PHP 8.0+ (NTS / ZTS)
+- PHP 8.1+ (NTS / ZTS)
 - 64bit Linux x86_64
 - FFI extension must be enabled.
 - If the target process is ZTS, PCNTL extension must be enabled.

@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryMap;
 
+use PhpCast\Cast;
 use Reli\Lib\String\LineFetcher;
 
 final class ProcessMemoryMapParser
@@ -46,17 +47,20 @@ final class ProcessMemoryMapParser
         if ($matches === []) {
             return null;
         }
-        $begin = $matches[1];
-        $end = $matches[2];
         $attribute_string = $matches[3];
-        $attribute = new ProcessMemoryAttribute(
-            $attribute_string[0] === 'r',
-            $attribute_string[1] === 'w',
-            $attribute_string[2] === 'x',
-            $attribute_string[3] === 'p',
+        return new ProcessMemoryArea(
+            begin: $matches[1],
+            end: $matches[2],
+            file_offset: $matches[4],
+            attribute: new ProcessMemoryAttribute(
+                read: $attribute_string[0] === 'r',
+                write: $attribute_string[1] === 'w',
+                execute: $attribute_string[2] === 'x',
+                protected: $attribute_string[3] === 'p',
+            ),
+            device_id: $matches[5],
+            inode_num: Cast::toInt($matches[6]),
+            name: $matches[7],
         );
-        $file_offset = $matches[4];
-        $name = $matches[7];
-        return new ProcessMemoryArea($begin, $end, $file_offset, $attribute, $name);
     }
 }

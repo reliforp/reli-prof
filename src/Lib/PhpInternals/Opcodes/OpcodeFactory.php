@@ -24,6 +24,7 @@ final class OpcodeFactory
         'v74' => OpcodeV74::class,
         'v80' => OpcodeV80::class,
         'v81' => OpcodeV81::class,
+        'v82' => OpcodeV82::class,
     ];
 
     /**
@@ -36,7 +37,8 @@ final class OpcodeFactory
      *   TVersion is 'v73' ? OpcodeV73 :
      *   TVersion is 'v74' ? OpcodeV74 :
      *   TVersion is 'v80' ? OpcodeV80 :
-     *   OpcodeV81
+     *   TVersion is 'v81' ? OpcodeV81 :
+     *   OpcodeV82
      * )
      */
     public function create(string $version, int $opcode): Opcode
@@ -49,6 +51,7 @@ final class OpcodeFactory
             'v74' => new OpcodeV74($opcode),
             'v80' => new OpcodeV80($opcode),
             'v81' => new OpcodeV81($opcode),
+            'v82' => new OpcodeV82($opcode),
         };
     }
 }

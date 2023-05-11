@@ -30,6 +30,8 @@ class ProcessMemoryMapTest extends TestCase
                     true,
                     false
                 ),
+                '00:01',
+                1,
                 'test_area_1'
             ),
             new ProcessMemoryArea(
@@ -42,6 +44,8 @@ class ProcessMemoryMapTest extends TestCase
                     true,
                     false
                 ),
+                '00:02',
+                2,
                 'test_area_2'
             ),
         ]);
