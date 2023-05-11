@@ -24,7 +24,7 @@
     "ext-pcntl": "*",
     "symfony/console": "6.0.8",
     "php-di/php-di": "7.0.2",
-    "amphp/parallel": "1.4.3",
+    "amphp/parallel": "2.1.0",
     "amphp/amp": "2.6.2",
     "hassankhan/config": "3.1.0",
     "sj-i/php-cast": "1.0.0",
