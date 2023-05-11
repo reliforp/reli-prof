@@ -2,6 +2,10 @@
 <psalm
     errorLevel="1"
     resolveFromConfigFile="true"
+    findUnusedBaselineEntry="false"
+    findUnusedCode="false"
+    maxShapedArraySize="200"
+
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns="https://getpsalm.org/schema/config"
     xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd"
@@ -22,7 +26,7 @@
         </UnnecessaryVarAnnotation>
     </issueHandlers>
     <stubs>
-        <file name="vendor/jetbrains/phpstorm-stubs/FFI/FFI.php"/>
+        <file name="tools/stubs/ffi/ffi.php"/>
         <file name="tools/stubs/ffi/libc.php"/>
         <file name="tools/stubs/ffi/scalar.php"/>
         <file name="tools/stubs/ffi/php.php"/>

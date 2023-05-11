@@ -149,7 +149,7 @@ final class X64RegisterReader
         $target_offset->cdata = $register;
 
         $attach = $this->ptrace->ptrace(
-            PtraceRequest::PTRACE_ATTACH(),
+            PtraceRequest::PTRACE_ATTACH,
             $pid,
             null,
             null
@@ -163,7 +163,7 @@ final class X64RegisterReader
         pcntl_waitpid($pid, $status, \WUNTRACED);
 
         $fs = $this->ptrace->ptrace(
-            PtraceRequest::PTRACE_PEEKUSER(),
+            PtraceRequest::PTRACE_PEEKUSER,
             $pid,
             \FFI::cast('void *', $target_offset),
             null
@@ -176,7 +176,7 @@ final class X64RegisterReader
         }
 
         $detach = $this->ptrace->ptrace(
-            PtraceRequest::PTRACE_DETACH(),
+            PtraceRequest::PTRACE_DETACH,
             $pid,
             null,
             null

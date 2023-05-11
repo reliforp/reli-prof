@@ -412,7 +412,6 @@ final class OpcodeV72 implements Opcode
         self::ZEND_ISSET_ISEMPTY_CV,
     ];
 
-    /** @var int[] */
     private const OPCODE_NAMES = [
         'ZEND_NOP',
         'ZEND_ADD',

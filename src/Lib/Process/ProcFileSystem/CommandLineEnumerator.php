@@ -16,6 +16,7 @@ namespace Reli\Lib\Process\ProcFileSystem;
 use IteratorAggregate;
 use Reli\Lib\File\FileReaderInterface;
 
+/** @implements IteratorAggregate<int, string> */
 final class CommandLineEnumerator implements IteratorAggregate
 {
     public function __construct(
@@ -24,7 +25,7 @@ final class CommandLineEnumerator implements IteratorAggregate
     }
 
     /** @return \Generator<int, string> */
-    public function getIterator()
+    public function getIterator(): \Generator
     {
         /**
          * @var string $full_path

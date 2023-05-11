@@ -13,35 +13,29 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Libc\Sys\Ptrace;
 
-use MyCLabs\Enum\Enum;
-
-/**
- * @extends Enum<int>
- * @psalm-immutable
- */
-final class PtraceRequest extends Enum
+enum PtraceRequest: int
 {
-    public const PTRACE_PTRACEME = 0;
-    public const PTRACE_PEEKTEXT = 1;
-    public const PTRACE_PEEKDATA = 2;
-    public const PTRACE_PEEKUSER = 3;
-    public const PTRACE_POKETEXT = 4;
-    public const PTRACE_POKEDATA = 5;
-    public const PTRACE_POKEUSER = 6;
-    public const PTRACE_CONT = 7;
-    public const PTRACE_KILL = 8;
-    public const PTRACE_SINGLESTEP = 9;
-    public const PTRACE_GETREGS = 12;
-    public const PTRACE_SETREGS = 13;
-    public const PTRACE_GETFPREGS = 14;
-    public const PTRACE_SETFPREGS = 15;
-    public const PTRACE_ATTACH = 16;
-    public const PTRACE_DETACH = 17;
-    public const PTRACE_GETFPXREGS = 18;
-    public const PTRACE_SETFPXREGS = 19;
-    public const PTRACE_SYSCALL = 24;
-    public const PTRACE_SETOPTIONS = 0x4200;
-    public const PTRACE_GETEVENTMSG = 0x4201;
-    public const PTRACE_GETSIGINFO = 0x4202;
-    public const PTRACE_SETSIGINFO = 0x4203;
+    case PTRACE_PTRACEME = 0;
+    case PTRACE_PEEKTEXT = 1;
+    case PTRACE_PEEKDATA = 2;
+    case PTRACE_PEEKUSER = 3;
+    case PTRACE_POKETEXT = 4;
+    case PTRACE_POKEDATA = 5;
+    case PTRACE_POKEUSER = 6;
+    case PTRACE_CONT = 7;
+    case PTRACE_KILL = 8;
+    case PTRACE_SINGLESTEP = 9;
+    case PTRACE_GETREGS = 12;
+    case PTRACE_SETREGS = 13;
+    case PTRACE_GETFPREGS = 14;
+    case PTRACE_SETFPREGS = 15;
+    case PTRACE_ATTACH = 16;
+    case PTRACE_DETACH = 17;
+    case PTRACE_GETFPXREGS = 18;
+    case PTRACE_SETFPXREGS = 19;
+    case PTRACE_SYSCALL = 24;
+    case PTRACE_SETOPTIONS = 0x4200;
+    case PTRACE_GETEVENTMSG = 0x4201;
+    case PTRACE_GETSIGINFO = 0x4202;
+    case PTRACE_SETSIGINFO = 0x4203;
 }

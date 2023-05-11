@@ -30,7 +30,7 @@ final class ProcessStopper
     {
         /** @var \FFI\Libc\ptrace_ffi $this->ffi */
         $attach = $this->ptrace->ptrace(
-            PtraceRequest::PTRACE_ATTACH(),
+            PtraceRequest::PTRACE_ATTACH,
             $pid,
             null,
             null
@@ -50,7 +50,7 @@ final class ProcessStopper
     {
         /** @var \FFI\Libc\ptrace_ffi $this->ffi */
         $detach = $this->ptrace->ptrace(
-            PtraceRequest::PTRACE_DETACH(),
+            PtraceRequest::PTRACE_DETACH,
             $pid,
             null,
             null

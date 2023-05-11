@@ -70,6 +70,7 @@ class Pointer
     ): self {
         /** @var CInteger $addr */
         $addr = \FFI::cast('long', $c_pointer);
+        /** @psalm-trace $addr */
         /**
          * @psalm-suppress InaccessibleMethod
          * @var CData $element

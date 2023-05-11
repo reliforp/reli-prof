@@ -117,7 +117,7 @@ class PtraceX64 implements Ptrace
 
         /** @var int */
         return $this->ffi->ptrace(
-            $request->getValue(),
+            $request->value,
             $pid,
             $addr_pointer,
             $data_pointer,

@@ -40,6 +40,7 @@ final class CDataByteReader implements ByteReaderInterface
 
     public function offsetGet($offset): int
     {
+        /** @var int */
         return $this->source[$offset];
     }
 
@@ -47,7 +48,9 @@ final class CDataByteReader implements ByteReaderInterface
     {
         $result = '';
         for ($i = $offset, $last_offset = $offset + $size; $i < $last_offset; $i++) {
-            $result .= chr($this->source[$i]);
+            $value = $this->source[$i];
+            assert(is_int($value));
+            $result .= chr($value);
         }
         return $result;
     }
