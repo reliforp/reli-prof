@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "de5c3e8d912cc0f3c17024f0f88ef4a2",
+    "content-hash": "6dd1da283c8f4ac38fc5fc256c972f7b",
     "packages": [
         {
             "name": "amphp/amp",
@@ -1724,6 +1724,79 @@
         }
     ],
     "packages-dev": [
+        {
+            "name": "composer/package-versions-deprecated",
+            "version": "1.11.99.5",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/composer/package-versions-deprecated.git",
+                "reference": "b4f54f74ef3453349c24a845d22392cd31e65f1d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/composer/package-versions-deprecated/zipball/b4f54f74ef3453349c24a845d22392cd31e65f1d",
+                "reference": "b4f54f74ef3453349c24a845d22392cd31e65f1d",
+                "shasum": ""
+            },
+            "require": {
+                "composer-plugin-api": "^1.1.0 || ^2.0",
+                "php": "^7 || ^8"
+            },
+            "replace": {
+                "ocramius/package-versions": "1.11.99"
+            },
+            "require-dev": {
+                "composer/composer": "^1.9.3 || ^2.0@dev",
+                "ext-zip": "^1.13",
+                "phpunit/phpunit": "^6.5 || ^7"
+            },
+            "type": "composer-plugin",
+            "extra": {
+                "class": "PackageVersions\\Installer",
+                "branch-alias": {
+                    "dev-master": "1.x-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "PackageVersions\\": "src/PackageVersions"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Marco Pivetta",
+                    "email": "ocramius@gmail.com"
+                },
+                {
+                    "name": "Jordi Boggiano",
+                    "email": "j.boggiano@seld.be"
+                }
+            ],
+            "description": "Composer plugin that provides efficient querying for installed package versions (no runtime IO)",
+            "support": {
+                "issues": "https://github.com/composer/package-versions-deprecated/issues",
+                "source": "https://github.com/composer/package-versions-deprecated/tree/1.11.99.5"
+            },
+            "funding": [
+                {
+                    "url": "https://packagist.com",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/composer",
+                    "type": "github"
+                },
+                {
+                    "url": "https://tidelift.com/funding/github/packagist/composer/composer",
+                    "type": "tidelift"
+                }
+            ],
+            "time": "2022-01-17T14:14:24+00:00"
+        },
         {
             "name": "composer/pcre",
             "version": "3.1.0",
@@ -3679,25 +3752,28 @@
         },
         {
             "name": "psalm/plugin-mockery",
-            "version": "0.11.0",
+            "version": "1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/psalm/psalm-plugin-mockery.git",
-                "reference": "eb111597a5e841b76b2eacca2d179c097e283c20"
+                "reference": "876247d15f91df08240d00dac69c5135b6689283"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/psalm/psalm-plugin-mockery/zipball/eb111597a5e841b76b2eacca2d179c097e283c20",
-                "reference": "eb111597a5e841b76b2eacca2d179c097e283c20",
+                "url": "https://api.github.com/repos/psalm/psalm-plugin-mockery/zipball/876247d15f91df08240d00dac69c5135b6689283",
+                "reference": "876247d15f91df08240d00dac69c5135b6689283",
                 "shasum": ""
             },
             "require": {
-                "mockery/mockery": "^0.9 || ^1.0",
-                "vimeo/psalm": "dev-master || dev-4.x || ^4.7.1 || ^5@beta"
+                "composer/package-versions-deprecated": "^1.10",
+                "composer/semver": "^1.4 || ^2.0 || ^3.0",
+                "mockery/mockery": "^1.0",
+                "php": "~7.4 || ~8.0 || ~8.1 || ~8.2",
+                "vimeo/psalm": "dev-master || ^5.0@rc || ^5.0"
             },
             "require-dev": {
-                "codeception/codeception": "^4.0.3",
-                "phpunit/phpunit": "^6.0 || ^7.0 || ^8.0",
+                "codeception/codeception": "^4.1.9",
+                "phpunit/phpunit": "^9.0",
                 "squizlabs/php_codesniffer": "^3.3.1",
                 "weirdan/codeception-psalm-module": "^0.13.1"
             },
@@ -3727,9 +3803,9 @@
             "description": "Psalm plugin for Mockery",
             "support": {
                 "issues": "https://github.com/psalm/psalm-plugin-mockery/issues",
-                "source": "https://github.com/psalm/psalm-plugin-mockery/tree/0.11.0"
+                "source": "https://github.com/psalm/psalm-plugin-mockery/tree/1.1.0"
             },
-            "time": "2022-11-25T03:55:59+00:00"
+            "time": "2022-11-25T07:16:18+00:00"
         },
         {
             "name": "psr/http-client",
