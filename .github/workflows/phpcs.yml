@@ -38,5 +38,8 @@ jobs:
       - name: Install Dependencies
         run: composer install --prefer-dist --no-progress --no-suggest
 
+      - name: Install Bin Dependencies
+        run: composer bin all install --prefer-dist --no-progress --no-suggest
+
       - name: Run phpcs
         run: vendor/bin/phpcs --standard=./phpcs.xml --report=checkstyle -q ./src ./tests | cs2pr
