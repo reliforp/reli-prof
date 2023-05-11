@@ -19,11 +19,6 @@
                 <file name="vendor/symfony/console/Command/Command.php"/>
             </errorLevel>
         </PossiblyNullArgument>
-        <UnnecessaryVarAnnotation>
-            <errorLevel type="suppress">
-                <file name="vendor/myclabs/php-enum/src/Enum.php"/>
-            </errorLevel>
-        </UnnecessaryVarAnnotation>
     </issueHandlers>
     <stubs>
         <file name="tools/stubs/ffi/ffi.php"/>
