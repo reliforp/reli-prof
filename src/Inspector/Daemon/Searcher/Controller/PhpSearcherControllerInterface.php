@@ -13,18 +13,14 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Controller;
 
-use Amp\Promise;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 
 interface PhpSearcherControllerInterface
 {
-    /** @return Promise<null> */
-    public function start(): Promise;
+    public function start(): void;
 
-    /** @return Promise<int> */
-    public function sendTarget(string $regex, TargetPhpSettings $target_php_settings, int $pid): Promise;
+    public function sendTarget(string $regex, TargetPhpSettings $target_php_settings, int $pid): void;
 
-    /** @return Promise<UpdateTargetProcessMessage> */
-    public function receivePidList(): Promise;
+    public function receivePidList(): UpdateTargetProcessMessage;
 }

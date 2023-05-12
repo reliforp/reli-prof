@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Reader\Controller;
 
-use Amp\Promise;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
@@ -32,9 +31,9 @@ final class PhpReaderController implements PhpReaderControllerInterface
     ) {
     }
 
-    public function start(): Promise
+    public function start(): void
     {
-        return $this->context->start();
+        $this->context->start();
     }
 
     public function isRunning(): bool
@@ -42,12 +41,11 @@ final class PhpReaderController implements PhpReaderControllerInterface
         return $this->context->isRunning();
     }
 
-    /** @return Promise<int> */
     public function sendSettings(
         TraceLoopSettings $loop_settings,
         GetTraceSettings $get_trace_settings
-    ): Promise {
-        return $this->context->getProtocol()->sendSettings(
+    ): void {
+        $this->context->getProtocol()->sendSettings(
             new SetSettingsMessage(
                 $loop_settings,
                 $get_trace_settings
@@ -55,18 +53,14 @@ final class PhpReaderController implements PhpReaderControllerInterface
         );
     }
 
-    /** @return Promise<int> */
-    public function sendAttach(TargetProcessDescriptor $process_descriptor): Promise
+    public function sendAttach(TargetProcessDescriptor $process_descriptor): void
     {
-        return $this->context->getProtocol()->sendAttach(
+        $this->context->getProtocol()->sendAttach(
             new AttachMessage($process_descriptor)
         );
     }
 
-    /**
-     * @return Promise<TraceMessage|DetachWorkerMessage>
-     */
-    public function receiveTraceOrDetachWorker(): Promise
+    public function receiveTraceOrDetachWorker(): TraceMessage|DetachWorkerMessage
     {
         return $this->context->getProtocol()->receiveTraceOrDetachWorker();
     }

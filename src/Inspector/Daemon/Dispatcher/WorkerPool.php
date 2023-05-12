@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Dispatcher;
 
-use Amp\Promise;
 use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
@@ -44,22 +43,20 @@ final class WorkerPool implements WorkerPoolInterface
         TraceLoopSettings $loop_settings,
         GetTraceSettings $get_trace_settings
     ): self {
+        /** @var list<PhpReaderControllerInterface> $contexts */
         $contexts = [];
-        $started = [];
         for ($i = 0; $i < $number; $i++) {
             $context = $creator->create();
-            $started[] = $context->start();
+            $context->start();
             $contexts[] = $context;
         }
-        Promise\wait(Promise\all($started));
         $send_settings = [];
         for ($i = 0; $i < $number; $i++) {
-            $send_settings[] = $contexts[$i]->sendSettings(
+            $contexts[$i]->sendSettings(
                 $loop_settings,
                 $get_trace_settings
             );
         }
-        Promise\wait(Promise\all($send_settings));
 
         return new self(...$contexts);
     }

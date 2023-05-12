@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Dispatcher;
 
-use Amp\Success;
 use Mockery;
 use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
@@ -29,15 +28,12 @@ class WorkerPoolTest extends TestCase
         $get_trace_settings = new GetTraceSettings(1);
 
         $reader_context = Mockery::mock(PhpReaderControllerInterface::class);
-        $reader_context->expects()
-            ->start()
-            ->andReturns(new Success(null));
+        $reader_context->expects()->start();
         $reader_context->expects()
             ->sendSettings(
                 $trace_settings,
                 $get_trace_settings
-            )
-            ->andReturns(new Success(1));
+            );
         $reader_context_creator = Mockery::mock(PhpReaderContextCreatorInterface::class);
         $reader_context_creator->expects()
             ->create()

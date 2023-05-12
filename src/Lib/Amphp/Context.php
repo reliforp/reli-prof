@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Reli\Lib\Amphp;
 
 use Amp\Parallel\Context\Context as AmphpContext;
-use Amp\Promise;
 
 /**
  * @template-covariant T of MessageProtocolInterface
@@ -29,15 +28,14 @@ final class Context implements ContextInterface
     ) {
     }
 
-    /** @return Promise<null> */
-    public function start(): Promise
+    public function start(): void
     {
-        return $this->amphp_context->start();
+        ;
     }
 
     public function isRunning(): bool
     {
-        return $this->amphp_context->isRunning();
+        return !$this->amphp_context->isClosed();
     }
 
     /** @return T */

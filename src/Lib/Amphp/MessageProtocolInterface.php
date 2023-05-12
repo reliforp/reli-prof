@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Amphp;
 
-use Amp\Parallel\Sync\Channel;
+use Amp\Sync\Channel;
 
 interface MessageProtocolInterface
 {

@@ -13,9 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Controller;
 
-use Amp\Promise;
 use Mockery;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\Amphp\ContextInterface;
@@ -26,9 +28,9 @@ class PhpSearcherControllerTest extends TestCase
     public function testStart(): void
     {
         $context = Mockery::mock(ContextInterface::class);
-        $context->expects()->start()->andReturn(Mockery::mock(Promise::class));
+        $context->expects()->start();
         $php_searcher_context = new PhpSearcherController($context);
-        $this->assertInstanceOf(Promise::class, $php_searcher_context->start());
+        $php_searcher_context->start();
     }
 
     public function testSendTargetRegex(): void
@@ -47,16 +49,12 @@ class PhpSearcherControllerTest extends TestCase
                     return true;
                 }
             )
-            ->andReturn(Mockery::mock(Promise::class))
         ;
         $php_searcher_context = new PhpSearcherController($context);
-        $this->assertInstanceOf(
-            Promise::class,
-            $php_searcher_context->sendTarget(
-                'abcdefg',
-                new TargetPhpSettings(),
-                getmypid(),
-            )
+        $php_searcher_context->sendTarget(
+            'abcdefg',
+            new TargetPhpSettings(),
+            getmypid(),
         );
     }
 
@@ -68,8 +66,14 @@ class PhpSearcherControllerTest extends TestCase
             ->getProtocol()
             ->andReturns($protocol)
         ;
-        $protocol->expects()->receiveUpdateTargetProcess()->andReturn(Mockery::mock(Promise::class));
+        $message = new UpdateTargetProcessMessage(
+            new TargetProcessList(
+                new TargetProcessDescriptor(1, 2, 3, 'v81'),
+                new TargetProcessDescriptor(4, 5, 6, 'v81'),
+            )
+        );
+        $protocol->expects()->receiveUpdateTargetProcess()->andReturn($message);
         $php_searcher_context = new PhpSearcherController($context);
-        $this->assertInstanceOf(Promise::class, $php_searcher_context->receivePidList());
+        $this->assertSame($message, $php_searcher_context->receivePidList());
     }
 }

@@ -13,8 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Controller;
 
-use Amp\Parallel\Sync\Channel;
-use Amp\Promise;
+use Amp\Sync\Channel;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
@@ -31,14 +30,14 @@ final class PhpSearcherControllerProtocol implements PhpSearcherControllerProtoc
         return new self($channel);
     }
 
-    public function sendTargetRegex(TargetPhpSettingsMessage $message): Promise
+    public function sendTargetRegex(TargetPhpSettingsMessage $message): void
     {
-        return $this->channel->send($message);
+        $this->channel->send($message);
     }
 
-    public function receiveUpdateTargetProcess(): Promise
+    public function receiveUpdateTargetProcess(): UpdateTargetProcessMessage
     {
-        /** @var Promise<UpdateTargetProcessMessage> */
+        /** @var UpdateTargetProcessMessage */
         return $this->channel->receive();
     }
 }

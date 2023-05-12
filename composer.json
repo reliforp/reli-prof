@@ -24,8 +24,8 @@
     "ext-pcntl": "*",
     "symfony/console": "6.2.10",
     "php-di/php-di": "7.0.2",
-    "amphp/parallel": "1.4.3",
-    "amphp/amp": "2.6.2",
+    "amphp/parallel": "2.1.0",
+    "amphp/amp": "3.0.0",
     "hassankhan/config": "3.1.0",
     "sj-i/php-cast": "1.0.0",
     "monolog/monolog": "3.3.1",
@@ -38,7 +38,8 @@
     "mockery/mockery": "1.5.1",
     "jetbrains/phpstorm-stubs": "2022.3",
     "php-coveralls/php-coveralls": "2.5.3",
-    "bamarni/composer-bin-plugin": "^1.8"
+    "bamarni/composer-bin-plugin": "^1.8",
+    "psalm/phar": "^5.11"
   },
   "autoload": {
     "files": ["src/Lib/Defer/defer.php"],
@@ -59,7 +60,7 @@
       "phpunit"
     ],
     "psalm": [
-      "psalm"
+      "psalm.phar"
     ],
     "phpcs": [
       "phpcs --standard=./phpcs.xml ./src ./tests"

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-use Amp\Parallel\Sync\Channel;
+use Amp\Sync\Channel;
 use DI\ContainerBuilder;
 use Reli\Lib\Amphp\WorkerEntryPointInterface;
 use Reli\Lib\Amphp\MessageProtocolInterface;
@@ -19,7 +19,7 @@ use Reli\Lib\Log\Log;
 use Reli\Lib\Log\StateCollector\StateCollector;
 use Psr\Log\LoggerInterface;
 
-return function (Channel $channel) use ($argv): \Generator {
+return function (Channel $channel) use ($argv): void {
     /**
      * @var class-string<WorkerEntryPointInterface> $entry_class
      * @var class-string<MessageProtocolInterface> $protocol_class
@@ -36,5 +36,5 @@ return function (Channel $channel) use ($argv): \Generator {
     $protocol = $container->make($protocol_class, ['channel' => $channel]);
     /** @var WorkerEntryPointInterface $entry_point */
     $entry_point = $container->make($entry_class, ['protocol' => $protocol]);
-    yield from $entry_point->run();
+    $entry_point->run();
 };

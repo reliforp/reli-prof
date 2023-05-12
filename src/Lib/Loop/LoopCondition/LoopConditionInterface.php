@@ -11,9 +11,9 @@
 
 declare(strict_types=1);
 
-namespace Reli\Lib\Amphp;
+namespace Reli\Lib\Loop\LoopCondition;
 
-interface WorkerEntryPointInterface
+interface LoopConditionInterface
 {
-    public function run(): void;
+    public function shouldContinue(): bool;
 }

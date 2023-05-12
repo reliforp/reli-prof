@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Worker;
 
-use Amp\Success;
 use Mockery;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
@@ -21,6 +20,7 @@ use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Lib\Loop\LoopCondition\OnlyOnceCondition;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
 use Reli\Lib\Process\Search\ProcessSearcherInterface;
@@ -30,8 +30,13 @@ class PhpSearcherEntryPointTest extends TestCase
 {
     public function testRun()
     {
+        $target_php_settings = new TargetPhpSettingsMessage(
+            'regex_to_search_process',
+            new TargetPhpSettings(),
+            getmypid(),
+        );
         $protcol = Mockery::mock(PhpSearcherWorkerProtocolInterface::class);
-        $protcol->expects()->receiveTargetPhpSettings()->andReturns(new Success(1))->once();
+        $protcol->expects()->receiveTargetPhpSettings()->andReturns($target_php_settings)->once();
         $protcol->shouldReceive('sendUpdateTargetProcess')
             ->withArgs(
                 function (UpdateTargetProcessMessage $message) {
@@ -46,10 +51,6 @@ class PhpSearcherEntryPointTest extends TestCase
                     return true;
                 }
             )
-            ->andReturns(
-                new Success(2),
-                new Success(3),
-            )
             ->once();
         $process_searcher = Mockery::mock(ProcessSearcherInterface::class);
         $process_searcher->expects()->searchByRegex('regex_to_search_process');
@@ -59,36 +60,10 @@ class PhpSearcherEntryPointTest extends TestCase
             $protcol,
             $process_searcher,
             $process_descriptor_retriever,
-            new ThreadEnumerator()
+            new ThreadEnumerator(),
+            new OnlyOnceCondition(),
         );
 
-        $generator = $entry_point->run();
-
-        $promise = $generator->current();
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(1, $result);
-
-        $promise = $generator->send(
-            new TargetPhpSettingsMessage(
-                'regex_to_search_process',
-                new TargetPhpSettings(),
-                getmypid(),
-            )
-        );
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(2, $result);
-
-        $promise = $generator->send(null);
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(3, $result);
+        $entry_point->run();
     }
 }

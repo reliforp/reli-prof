@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Amphp;
 
-use function Amp\Parallel\Context\create;
+use function Amp\Parallel\Context\startContext;
 
 final class ContextCreator implements ContextCreatorInterface
 {
@@ -37,7 +37,7 @@ final class ContextCreator implements ContextCreatorInterface
         string $worker_protocol_class,
         string $controller_protocol_class
     ): ContextInterface {
-        $amphp_cotext = create([
+        $amphp_cotext = startContext([
             self::ENTRY_SCRIPT,
             $entry_point_class,
             $worker_protocol_class,

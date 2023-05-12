@@ -11,18 +11,16 @@
 
 declare(strict_types=1);
 
-namespace Reli\Lib\DateTime;
+namespace Reli\Lib\Loop\LoopCondition;
 
 use PHPUnit\Framework\TestCase;
 
-class OnDemandClockTest extends TestCase
+class OnlyOnceConditionTest extends TestCase
 {
-    public function testNow()
+    public function testShouldContinue(): void
     {
-        $clock = new OnDemandClock();
-        $now = $clock->now();
-        time_nanosleep(0, 1);
-        $diff = $clock->now()->diff($now);
-        $this->assertGreaterThan(0, (int)$diff->format('%f'));
+        $condition = new OnlyOnceCondition();
+        $this->assertTrue($condition->shouldContinue());
+        $this->assertFalse($condition->shouldContinue());
     }
 }
