@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Reader\Worker;
 
-use Amp\Success;
 use Hamcrest\Matchers;
 use Mockery;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
@@ -24,6 +23,7 @@ use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Lib\Loop\LoopCondition\OnlyOnceCondition;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\CallFrame;
 use Reli\Lib\PhpProcessReader\CallTrace;
@@ -33,10 +33,22 @@ class PhpReaderEntryPointTest extends TestCase
 {
     public function testRun(): void
     {
+        $settings = new SetSettingsMessage(
+            new TraceLoopSettings(1, 'q', 10, false),
+            new GetTraceSettings(PHP_INT_MAX)
+        );
+        $attach = new AttachMessage(
+            new TargetProcessDescriptor(
+                123,
+                0,
+                0,
+                ZendTypeReader::V80
+            )
+        );
         $php_reader_task = Mockery::mock(PhpReaderTraceLoopInterface::class);
         $protocol = Mockery::mock(PhpReaderWorkerProtocolInterface::class);
-        $protocol->expects()->receiveSettings()->andReturns(new Success(1))->once();
-        $protocol->expects()->receiveAttach()->andReturns(new Success(2))->once();
+        $protocol->expects()->receiveSettings()->andReturns($settings)->once();
+        $protocol->expects()->receiveAttach()->andReturns($attach)->once();
         $php_reader_task->shouldReceive('run')
             ->withArgs(
                 function (
@@ -70,87 +82,27 @@ class PhpReaderEntryPointTest extends TestCase
         $protocol->expects()
             ->sendTrace()
             ->with(Matchers::equalTo($this->getTestTrace('abc')))
-            ->andReturns(
-                new Success(3),
-            )
         ;
         $protocol->expects()
             ->sendTrace()
             ->with(Matchers::equalTo($this->getTestTrace('def')))
-            ->andReturns(
-                new Success(4),
-            )
         ;
         $protocol->expects()
             ->sendTrace()
             ->with(Matchers::equalTo($this->getTestTrace('ghi')))
-            ->andReturns(
-                new Success(5),
-            )
         ;
         $protocol->expects()
             ->sendDetachWorker()
             ->with(Matchers::equalTo(new DetachWorkerMessage(123)))
-            ->andReturns(new Success(6))
             ->once();
 
         $php_reader_entry_point = new PhpReaderEntryPoint(
             $php_reader_task,
             $protocol,
+            new OnlyOnceCondition(),
         );
 
-        $generator = $php_reader_entry_point->run();
-
-        $promise = $generator->current();
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(1, $result);
-
-        $promise = $generator->send(
-            new SetSettingsMessage(
-                new TraceLoopSettings(1, 'q', 10, false),
-                new GetTraceSettings(PHP_INT_MAX)
-            )
-        );
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(2, $result);
-
-        $promise = $generator->send(
-            new AttachMessage(
-                new TargetProcessDescriptor(123, 0, 0, ZendTypeReader::V80)
-            )
-        );
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(3, $result);
-
-        $promise = $generator->send(null);
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(4, $result);
-
-        $promise = $generator->send(null);
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(5, $result);
-
-        $promise = $generator->send(null);
-        $this->assertInstanceOf(Success::class, $promise);
-        $promise->onResolve(function ($error, $value) use (&$result) {
-            $result = $value;
-        });
-        $this->assertSame(6, $result);
+        $php_reader_entry_point->run();
     }
 
     private function getTestTrace(string $function): TraceMessage

@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Controller;
 
-use Amp\Promise;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
+use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\Amphp\ContextInterface;
@@ -27,17 +27,17 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
     ) {
     }
 
-    public function start(): Promise
+    public function start(): void
     {
-        return $this->context->start();
+        $this->context->start();
     }
 
     public function sendTarget(
         string $regex,
         TargetPhpSettings $target_php_settings,
         int $pid,
-    ): Promise {
-        return $this->context->getProtocol()
+    ): void {
+        $this->context->getProtocol()
             ->sendTargetRegex(
                 new TargetPhpSettingsMessage(
                     $regex,
@@ -48,7 +48,7 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         ;
     }
 
-    public function receivePidList(): Promise
+    public function receivePidList(): UpdateTargetProcessMessage
     {
         return $this->context->getProtocol()->receiveUpdateTargetProcess();
     }

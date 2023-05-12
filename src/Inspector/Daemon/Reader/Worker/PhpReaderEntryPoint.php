@@ -14,27 +14,28 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Reader\Worker;
 
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
-use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
-use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
 use Reli\Lib\Amphp\WorkerEntryPointInterface;
 use Reli\Lib\Log\Log;
+use Reli\Lib\Loop\LoopCondition\InfiniteLoopCondition;
+use Reli\Lib\Loop\LoopCondition\LoopConditionInterface;
 
 final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 {
     public function __construct(
         private PhpReaderTraceLoopInterface $trace_loop,
         private PhpReaderWorkerProtocolInterface $protocol,
+        private LoopConditionInterface $loop_condition = new InfiniteLoopCondition(),
     ) {
     }
 
-    public function run(): \Generator
+    public function run(): void
     {
-        $set_settings_message = yield $this->protocol->receiveSettings();
+        $set_settings_message = $this->protocol->receiveSettings();
         Log::debug('settings_message', [$set_settings_message]);
 
-        while (1) {
-            $attach_message = yield $this->protocol->receiveAttach();
+        while ($this->loop_condition->shouldContinue()) {
+            $attach_message = $this->protocol->receiveAttach();
             Log::debug('attach_message', [$attach_message]);
 
             try {
@@ -45,7 +46,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 );
                 Log::debug('start trace');
                 foreach ($loop_runner as $message) {
-                    yield $this->protocol->sendTrace($message);
+                    $this->protocol->sendTrace($message);
                 }
                 Log::debug('end trace');
             } catch (\Throwable $e) {
@@ -56,7 +57,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             }
 
             Log::debug('detaching worker');
-            yield $this->protocol->sendDetachWorker(
+            $this->protocol->sendDetachWorker(
                 new DetachWorkerMessage($attach_message->process_descriptor->pid)
             );
             Log::debug('detached worker');

@@ -13,8 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Worker;
 
-use Amp\Parallel\Sync\Channel;
-use Amp\Promise;
+use Amp\Sync\Channel;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
@@ -31,14 +30,14 @@ final class PhpSearcherWorkerProtocol implements PhpSearcherWorkerProtocolInterf
         return new self($channel);
     }
 
-    public function receiveTargetPhpSettings(): Promise
+    public function receiveTargetPhpSettings(): TargetPhpSettingsMessage
     {
-        /** @var Promise<TargetPhpSettingsMessage> */
+        /** @var TargetPhpSettingsMessage */
         return $this->channel->receive();
     }
 
-    public function sendUpdateTargetProcess(UpdateTargetProcessMessage $message): Promise
+    public function sendUpdateTargetProcess(UpdateTargetProcessMessage $message): void
     {
-        return $this->channel->send($message);
+        $this->channel->send($message);
     }
 }

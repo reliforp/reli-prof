@@ -16,9 +16,10 @@ namespace Reli\Inspector\Daemon\Searcher\Worker;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
-use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
 use Reli\Lib\Amphp\WorkerEntryPointInterface;
+use Reli\Lib\Loop\LoopCondition\InfiniteLoopCondition;
+use Reli\Lib\Loop\LoopCondition\LoopConditionInterface;
 use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
 use Reli\Lib\Process\Search\ProcessSearcherInterface;
 
@@ -31,15 +32,16 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
         private ProcessSearcherInterface $process_searcher,
         private ProcessDescriptorRetriever $process_descriptor_retriever,
         private ThreadEnumerator $thread_enumerator,
+        private LoopConditionInterface $loop_condition = new InfiniteLoopCondition(),
     ) {
     }
 
-    public function run(): \Generator
+    public function run(): void
     {
-        $target_php_settings_message = yield $this->protocol->receiveTargetPhpSettings();
+        $target_php_settings_message = $this->protocol->receiveTargetPhpSettings();
         $cache = new ProcessDescriptorCache();
 
-        while (1) {
+        while ($this->loop_condition->shouldContinue()) {
             $searched_pids = array_diff(
                 $this->process_searcher->searchByRegex(
                     $target_php_settings_message->regex
@@ -52,7 +54,7 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
             );
             $cache->removeDisappeared(...$searched_pids);
 
-            yield $this->protocol->sendUpdateTargetProcess(
+            $this->protocol->sendUpdateTargetProcess(
                 new UpdateTargetProcessMessage(
                     new TargetProcessList(
                         ...array_filter(

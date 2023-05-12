@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Reader\Protocol;
 
-use Amp\Promise;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
@@ -22,17 +21,11 @@ use Reli\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpReaderWorkerProtocolInterface extends MessageProtocolInterface
 {
-    /**
-     * @return Promise<SetSettingsMessage>
-     */
-    public function receiveSettings(): Promise;
+    public function receiveSettings(): SetSettingsMessage;
 
-    /**
-     * @return Promise<AttachMessage>
-     */
-    public function receiveAttach(): Promise;
+    public function receiveAttach(): AttachMessage;
 
-    public function sendTrace(TraceMessage $message): Promise;
+    public function sendTrace(TraceMessage $message): void;
 
-    public function sendDetachWorker(DetachWorkerMessage $message): Promise;
+    public function sendDetachWorker(DetachWorkerMessage $message): void;
 }

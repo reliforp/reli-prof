@@ -13,13 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Amphp;
 
-use Amp\Promise;
-
 /** @template-covariant T of MessageProtocolInterface */
 interface ContextInterface
 {
-    /** @return Promise<null> */
-    public function start(): Promise;
+    public function start(): void;
 
     public function isRunning(): bool;
 

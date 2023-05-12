@@ -47,4 +47,4 @@ jobs:
         run: composer bin all install --prefer-dist --no-progress --no-suggest
 
       - name: Run psalm
-        run: ./vendor/bin/psalm --shepherd --show-info=true --output-format=github
+        run: ./vendor/bin/psalm.phar --shepherd --show-info=true --output-format=github

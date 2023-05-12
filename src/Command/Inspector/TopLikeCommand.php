@@ -13,8 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
-use Amp\Loop;
-use Amp\Promise;
+use Amp\DeferredCancellation;
 use Reli\Inspector\Daemon\Dispatcher\DispatchTable;
 use Reli\Inspector\Daemon\Dispatcher\WorkerPool;
 use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
@@ -29,11 +28,13 @@ use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use Reli\Lib\Console\EchoBackCanceller;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpProcessReader\CallTrace;
+use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-use function Amp\call;
+use function Amp\async;
+use function Amp\Future\await;
 
 final class TopLikeCommand extends Command
 {
@@ -74,13 +75,11 @@ final class TopLikeCommand extends Command
         );
 
         $searcher_context = $this->php_searcher_context_creator->create();
-        Promise\wait($searcher_context->start());
-        Promise\wait(
-            $searcher_context->sendTarget(
-                $daemon_settings->target_regex,
-                $target_php_settings,
-                getmypid(),
-            )
+        $searcher_context->start();
+        $searcher_context->sendTarget(
+            $daemon_settings->target_regex,
+            $target_php_settings,
+            getmypid(),
         );
 
         $worker_pool = WorkerPool::create(
@@ -96,51 +95,51 @@ final class TopLikeCommand extends Command
 
         $_echo_back_canceler = new EchoBackCanceller();
 
-        Loop::onReadable(
+        $cancellation = new DeferredCancellation();
+
+        EventLoop::onReadable(
             STDIN,
             /** @param resource $stream */
-            function (string $watcher_id, $stream) {
+            function (string $watcher_id, $stream) use ($cancellation) {
                 $key = fread($stream, 1);
                 if ($key === 'q') {
-                    Loop::cancel($watcher_id);
-                    Loop::stop();
+                    EventLoop::cancel($watcher_id);
+                    $cancellation->cancel();
                 }
             }
         );
-        Loop::run(function () use ($dispatch_table, $searcher_context, $worker_pool, $formatter) {
-            $promises = [];
-            $promises[] = call(function () use ($searcher_context, $dispatch_table) {
-                while (1) {
-                    Log::debug('receiving pid List');
-                    $update_target_message = yield $searcher_context->receivePidList();
-                    Log::debug('update targets', [
-                        'update' => $update_target_message->target_process_list->getArray(),
-                        'current' => $dispatch_table->worker_pool->debugDump(),
-                    ]);
-                    yield from $dispatch_table->updateTargets($update_target_message->target_process_list);
-                    Log::debug('target updated', [$dispatch_table->worker_pool->debugDump()]);
-                }
-            });
-            foreach ($worker_pool->getWorkers() as $reader) {
-                $promises[] = call(
-                    function () use ($reader, $dispatch_table, $formatter) {
-                        while (1) {
-                            $result = yield $reader->receiveTraceOrDetachWorker();
-                            if ($result instanceof TraceMessage) {
-                                $this->outputTrace($formatter, $result);
-                            } else {
-                                Log::debug('releaseOne', [$result]);
-                                $dispatch_table->releaseOne($result->pid);
-                                $this->outputTrace($formatter, new TraceMessage(
-                                    new CallTrace()
-                                ));
-                            }
+        $futures = [];
+        $futures[] = async(function () use ($searcher_context, $dispatch_table) {
+            while (1) {
+                Log::debug('receiving pid List');
+                $update_target_message = $searcher_context->receivePidList();
+                Log::debug('update targets', [
+                    'update' => $update_target_message->target_process_list->getArray(),
+                    'current' => $dispatch_table->worker_pool->debugDump(),
+                ]);
+                $dispatch_table->updateTargets($update_target_message->target_process_list);
+                Log::debug('target updated', [$dispatch_table->worker_pool->debugDump()]);
+            }
+        });
+        foreach ($worker_pool->getWorkers() as $reader) {
+            $futures[] = async(
+                function () use ($reader, $dispatch_table, $formatter) {
+                    while (1) {
+                        $result = $reader->receiveTraceOrDetachWorker();
+                        if ($result instanceof TraceMessage) {
+                            $this->outputTrace($formatter, $result);
+                        } else {
+                            Log::debug('releaseOne', [$result]);
+                            $dispatch_table->releaseOne($result->pid);
+                            $this->outputTrace($formatter, new TraceMessage(
+                                new CallTrace()
+                            ));
                         }
                     }
-                );
-            }
-            yield $promises;
-        });
+                }
+            );
+        }
+        await($futures, $cancellation->getCancellation());
 
         return 0;
     }

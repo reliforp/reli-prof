@@ -13,8 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Reader\Controller;
 
-use Amp\Parallel\Sync\Channel;
-use Amp\Promise;
+use Amp\Sync\Channel;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
@@ -33,20 +32,19 @@ final class PhpReaderControllerProtocol implements PhpReaderControllerProtocolIn
         return new self($channel);
     }
 
-    public function sendSettings(SetSettingsMessage $message): Promise
+    public function sendSettings(SetSettingsMessage $message): void
     {
-        return $this->channel->send($message);
+        $this->channel->send($message);
     }
 
-    public function sendAttach(AttachMessage $message): Promise
+    public function sendAttach(AttachMessage $message): void
     {
-        return $this->channel->send($message);
+        $this->channel->send($message);
     }
 
-    /** @return Promise<TraceMessage|DetachWorkerMessage> */
-    public function receiveTraceOrDetachWorker(): Promise
+    public function receiveTraceOrDetachWorker(): TraceMessage|DetachWorkerMessage
     {
-        /** @var Promise<TraceMessage|DetachWorkerMessage> */
+        /** @var TraceMessage|DetachWorkerMessage */
         return $this->channel->receive();
     }
 }

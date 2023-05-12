@@ -13,15 +13,13 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Protocol;
 
-use Amp\Promise;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpSearcherWorkerProtocolInterface extends MessageProtocolInterface
 {
-    /** @return Promise<TargetPhpSettingsMessage> */
-    public function receiveTargetPhpSettings(): Promise;
+    public function receiveTargetPhpSettings(): TargetPhpSettingsMessage;
 
-    public function sendUpdateTargetProcess(UpdateTargetProcessMessage $message): Promise;
+    public function sendUpdateTargetProcess(UpdateTargetProcessMessage $message): void;
 }

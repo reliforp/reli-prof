@@ -28,7 +28,7 @@ class ContextCreatorTest extends TestCase
         $class_definition = <<<CLASS_DEFINITION
         namespace {$namespace};
 
-        use Amp\Parallel\Sync\Channel;
+        use Amp\Sync\Channel;
 
         class ContextCreatorTestDummyProtocol implements MessageProtocolInterface {
             public static function createFromChannel(Channel \$channel): static
