@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ce6913a0757d2cc6ced4ac5d509d6a78",
+    "content-hash": "bd80e60eeba8beca79cbbc3f06a7e78a",
     "packages": [
         {
             "name": "amphp/amp",
@@ -316,16 +316,16 @@
         },
         {
             "name": "amphp/parallel",
-            "version": "v2.1.0",
+            "version": "v2.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/parallel.git",
-                "reference": "409a8f2a091a1eacf239695cb7f37bda4f635e83"
+                "reference": "37850ff591155c6f5c662173c3fc75682752c918"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/parallel/zipball/409a8f2a091a1eacf239695cb7f37bda4f635e83",
-                "reference": "409a8f2a091a1eacf239695cb7f37bda4f635e83",
+                "url": "https://api.github.com/repos/amphp/parallel/zipball/37850ff591155c6f5c662173c3fc75682752c918",
+                "reference": "37850ff591155c6f5c662173c3fc75682752c918",
                 "shasum": ""
             },
             "require": {
@@ -338,7 +338,7 @@
                 "amphp/socket": "^2",
                 "amphp/sync": "^2",
                 "php": ">=8.1",
-                "revolt/event-loop": "^1 || ^0.2.1"
+                "revolt/event-loop": "^1"
             },
             "require-dev": {
                 "amphp/php-cs-fixer-config": "^2",
@@ -387,7 +387,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/parallel/issues",
-                "source": "https://github.com/amphp/parallel/tree/v2.1.0"
+                "source": "https://github.com/amphp/parallel/tree/v2.2.0"
             },
             "funding": [
                 {
@@ -395,7 +395,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2023-03-02T22:01:04+00:00"
+            "time": "2023-05-12T22:42:36+00:00"
         },
         {
             "name": "amphp/parser",
