@@ -21,7 +21,7 @@ use Reli\Lib\Log\StateCollector\StateCollector;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 
-require 'vendor/autoload.php';
+require __DIR__ . '/vendor/autoload.php';
 
 $application = new Application();
 $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/config/di.php')->build();
