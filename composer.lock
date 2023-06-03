@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "bd80e60eeba8beca79cbbc3f06a7e78a",
+    "content-hash": "3b5e82bdc3d9819bc20d6b803ce2207e",
     "packages": [
         {
             "name": "amphp/amp",
@@ -316,16 +316,16 @@
         },
         {
             "name": "amphp/parallel",
-            "version": "v2.2.0",
+            "version": "v2.2.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/parallel.git",
-                "reference": "37850ff591155c6f5c662173c3fc75682752c918"
+                "reference": "ba11031b8664134b13c150530ae041a75e631858"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/parallel/zipball/37850ff591155c6f5c662173c3fc75682752c918",
-                "reference": "37850ff591155c6f5c662173c3fc75682752c918",
+                "url": "https://api.github.com/repos/amphp/parallel/zipball/ba11031b8664134b13c150530ae041a75e631858",
+                "reference": "ba11031b8664134b13c150530ae041a75e631858",
                 "shasum": ""
             },
             "require": {
@@ -387,7 +387,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/parallel/issues",
-                "source": "https://github.com/amphp/parallel/tree/v2.2.0"
+                "source": "https://github.com/amphp/parallel/tree/v2.2.1"
             },
             "funding": [
                 {
@@ -395,7 +395,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2023-05-12T22:42:36+00:00"
+            "time": "2023-05-22T03:33:27+00:00"
         },
         {
             "name": "amphp/parser",
