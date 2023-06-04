@@ -13,11 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Command\Converter;
 
-use PhpCast\Cast;
-use Reli\Lib\PhpInternals\Opcodes\OpcodeV80;
-use Reli\Lib\PhpInternals\Types\Zend\Opline;
-use Reli\Lib\PhpProcessReader\CallFrame;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Converter\ParsedCallTrace;
+use Reli\Converter\PhpSpyCompatibleParser;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -33,56 +30,18 @@ final class SpeedscopeCommand extends Command
 
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $parser = new PhpSpyCompatibleParser();
         $output->write(
             json_encode(
                 $this->collectFrames(
-                    $this->getTraceIterator(STDIN)
+                    $parser->parseFile(STDIN)
                 )
             )
         );
         return 0;
     }
 
-    /**
-     * @param resource $fp
-     * @return iterable<int, CallTrace>
-     */
-    private function getTraceIterator($fp): iterable
-    {
-        $buffer = [];
-        while (($line = fgets($fp)) !== false) {
-            $line = trim($line);
-            if ($line !== '') {
-                $buffer[] = $line;
-                continue;
-            }
-            yield $this->parsePhpSpyCompatible($buffer);
-            $buffer = [];
-        }
-    }
-
-    /** @param string[] $buffer */
-    private function parsePhpSpyCompatible(array $buffer): CallTrace
-    {
-        $frames = [];
-        foreach ($buffer as $line_buffer) {
-            $result = explode(' ', $line_buffer);
-            [$depth, $name, $file_line] = $result;
-            if ($depth === '#') { // comment
-                continue;
-            }
-            [$file, $line] = explode(':', $file_line);
-            $frames[] = new CallFrame(
-                '',
-                $name,
-                $file,
-                new Opline(0, 0, 0, 0, Cast::toInt($line), new OpcodeV80(0), 0, 0, 0),
-            );
-        }
-        return new CallTrace(...$frames);
-    }
-
-    /** @param iterable<CallTrace> $call_frames */
+    /** @param iterable<ParsedCallTrace> $call_frames */
     private function collectFrames(iterable $call_frames): array
     {
         $mapper = fn (array $value): string => \json_encode($value);
@@ -94,9 +53,9 @@ final class SpeedscopeCommand extends Command
             $sampled_stack = [];
             foreach ($frames->call_frames as $call_frame) {
                     $frame = [
-                    'name' => $call_frame->getFullyQualifiedFunctionName(),
+                    'name' => $call_frame->function_name,
                     'file' => $call_frame->file_name,
-                    'line' => $call_frame->getLineno(),
+                    'line' => $call_frame->lineno,
                     ];
                     $mapper_key = $mapper($frame);
                     if (!isset($trace_map[$mapper_key])) {
