@@ -33,7 +33,7 @@
   },
   "require-dev": {
     "ext-posix": "*",
-    "phpunit/phpunit": "10.2.0",
+    "phpunit/phpunit": "10.2.1",
     "squizlabs/php_codesniffer": "3.7.2",
     "mockery/mockery": "1.5.1",
     "jetbrains/phpstorm-stubs": "2023.1",
