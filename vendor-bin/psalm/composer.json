@@ -1,6 +1,0 @@
-{
-    "require": {
-        "vimeo/psalm": "^5.11",
-        "psalm/plugin-mockery": "^1.1"
-    }
-}
