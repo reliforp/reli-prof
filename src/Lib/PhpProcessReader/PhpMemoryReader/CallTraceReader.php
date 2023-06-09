@@ -127,7 +127,7 @@ final class CallTraceReader
         }
 
         $trace_cache->updateCacheKey($this->getGlobalRequestTime($sapi_globals_address, $php_version, $dereferencer));
-        $cached_deereferencer = $trace_cache->getDereferencer($dereferencer);
+        $cached_dereferencer = $trace_cache->getDereferencer($dereferencer);
 
         $current_execute_data = $dereferencer->deref($eg->current_execute_data);
 
@@ -152,11 +152,11 @@ final class CallTraceReader
                 );
                 continue;
             }
-            $current_function = $cached_deereferencer->deref($current_execute_data->func);
+            $current_function = $cached_dereferencer->deref($current_execute_data->func);
 
-            $function_name = $current_function->getFunctionName($cached_deereferencer) ?? '<main>';
-            $class_name = $current_function->getClassName($cached_deereferencer) ?? '';
-            $file_name = $current_function->getFileName($cached_deereferencer) ?? '<unknown>';
+            $function_name = $current_function->getFunctionName($cached_dereferencer) ?? '<main>';
+            $class_name = $current_function->getClassName($cached_dereferencer) ?? '';
+            $file_name = $current_function->getFileName($cached_dereferencer) ?? '<unknown>';
 
             $opline = null;
             if (
@@ -166,7 +166,7 @@ final class CallTraceReader
             ) {
                 $opline = $this->readOpline(
                     $php_version,
-                    $cached_deereferencer->deref($current_execute_data->opline)
+                    $cached_dereferencer->deref($current_execute_data->opline)
                 );
             }
 
