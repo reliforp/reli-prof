@@ -44,13 +44,13 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
-        $tsrm_lm_cache_cdata = $this->getSymbolReader(
+        $tsrm_ls_cache_cdata = $this->getSymbolReader(
             $process_specifier,
             $target_php_settings
         )->read('_tsrm_ls_cache');
-        if (isset($tsrm_lm_cache_cdata)) {
+        if (isset($tsrm_ls_cache_cdata)) {
             return $this->integer_reader->read64(
-                new CDataByteReader($tsrm_lm_cache_cdata),
+                new CDataByteReader($tsrm_ls_cache_cdata),
                 0
             )->toInt();
         }
