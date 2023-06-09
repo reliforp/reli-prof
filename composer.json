@@ -38,7 +38,6 @@
     "mockery/mockery": "1.6.2",
     "jetbrains/phpstorm-stubs": "2023.1",
     "php-coveralls/php-coveralls": "2.5.3",
-    "bamarni/composer-bin-plugin": "^1.8",
     "psalm/phar": "^5.11"
   },
   "autoload": {
@@ -68,8 +67,7 @@
   },
   "config": {
     "allow-plugins": {
-      "composer/package-versions-deprecated": true,
-      "bamarni/composer-bin-plugin": true
+      "composer/package-versions-deprecated": true
     }
   }
 }
