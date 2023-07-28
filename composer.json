@@ -35,7 +35,7 @@
     "ext-posix": "*",
     "phpunit/phpunit": "10.2.6",
     "squizlabs/php_codesniffer": "3.7.2",
-    "mockery/mockery": "1.6.2",
+    "mockery/mockery": "1.6.4",
     "jetbrains/phpstorm-stubs": "2023.1",
     "php-coveralls/php-coveralls": "2.5.3",
     "psalm/phar": "^5.11"
