@@ -18,7 +18,10 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 
 final class TargetPhpSettingsMessage
 {
-    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|'auto'> $target_php_settings */
+    /**
+     * @param non-empty-string $regex
+     * @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|'auto'> $target_php_settings
+     */
     public function __construct(
         public string $regex,
         public TargetPhpSettings $target_php_settings,

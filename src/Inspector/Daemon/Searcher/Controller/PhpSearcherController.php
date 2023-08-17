@@ -32,6 +32,7 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         $this->context->start();
     }
 
+    /** @param non-empty-string $regex */
     public function sendTarget(
         string $regex,
         TargetPhpSettings $target_php_settings,

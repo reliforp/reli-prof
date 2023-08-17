@@ -20,6 +20,7 @@ interface PhpSearcherControllerInterface
 {
     public function start(): void;
 
+    /** @param non-empty-string $regex */
     public function sendTarget(string $regex, TargetPhpSettings $target_php_settings, int $pid): void;
 
     public function receivePidList(): UpdateTargetProcessMessage;
