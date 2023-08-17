@@ -15,6 +15,7 @@ namespace Reli\Inspector\Settings\DaemonSettings;
 
 final class DaemonSettings
 {
+    /** @param non-empty-string $target_regex */
     public function __construct(
         public string $target_regex,
         public int $threads
