@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Converter;
 
 use PhpCast\Cast;
+use Webmozart\Assert\Assert;
 
 final class PhpSpyCompatibleParser
 {
@@ -45,13 +46,28 @@ final class PhpSpyCompatibleParser
             if ($depth === '#') { // comment
                 continue;
             }
-            [$file, $line] = explode(':', $file_line);
+            Assert::stringNotEmpty($file_line);
+            [$file, $line] = $this->splitLineNumberAndFilePath($file_line);
             $frames[] = new ParsedCallFrame(
                 $name,
                 $file,
-                Cast::toInt($line),
+                $line,
             );
         }
         return new ParsedCallTrace(...$frames);
+    }
+
+    /**
+     * @param non-empty-string $file_line
+     * @return array{non-empty-string, int}
+     */
+    private function splitLineNumberAndFilePath(string $file_line): array
+    {
+        $separator_position = strrpos($file_line, ':');
+        Assert::notFalse($separator_position);
+        $line = substr($file_line, $separator_position + 1);
+        $file = substr($file_line, 0, $separator_position);
+        Assert::stringNotEmpty($file);
+        return [$file, Cast::toInt($line)];
     }
 }
