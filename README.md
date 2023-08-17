@@ -52,7 +52,6 @@ On the other hand, there are a few things that phpspy can do but reli cannot yet
 - Redirecting output of child processes
 - Forcing the address of EG
 - Data retrieval from sapi_globals
-- callgrind support
 - Reading variables
 - Run more faster with lower overhead.
 - etc.
@@ -310,7 +309,7 @@ $ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid
 
 ### Generate flamegraphs from traces
 ```bash
-$ ./reli i:trace -o traces -- php ./vendor/bin/psalm --no-cache
+$ ./reli i:trace -o traces -- php ./vendor/bin/psalm.phar --no-cache
 $ ./reli c:flamegraph <traces >flame.svg
 $ google-chrome flame.svg
 ```
@@ -327,6 +326,12 @@ $ speedscope profile.speedscope.json
 ```
 
 See [#101](https://github.com/reliforp/reli-prof/pull/101).
+
+### Generate the callgrind format output from phpspy compatible traces and visualize it with kcachegrind
+```bash
+$ ./reli c:callgrind <traces >callgrind.out
+$ kcachegrind callgrind.out
+  ```
 
 ## Troubleshooting
 ### I get an error message "php module not found" and can't get a trace!
