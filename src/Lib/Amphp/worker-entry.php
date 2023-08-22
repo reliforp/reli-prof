@@ -20,12 +20,14 @@ use Reli\Lib\Log\StateCollector\StateCollector;
 use Psr\Log\LoggerInterface;
 
 return function (Channel $channel) use ($argv): void {
+    assert(count($argv) === 4);
     /**
      * @var class-string<WorkerEntryPointInterface> $entry_class
      * @var class-string<MessageProtocolInterface> $protocol_class
      * @var string $di_config
      */
     [, $entry_class, $protocol_class, $di_config] = $argv;
+    assert(is_string($di_config));
     $container = (new ContainerBuilder())->addDefinitions($di_config)->build();
     /** @var LoggerInterface $logger */
     $logger = $container->make(LoggerInterface::class);
