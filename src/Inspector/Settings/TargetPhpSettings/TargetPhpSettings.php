@@ -21,7 +21,7 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
  */
 final class TargetPhpSettings
 {
-    public const PHP_REGEX_DEFAULT = '.*/(php(74|7\.4|80|8\.0|81|8\.1|82|8\.2)?|php-fpm|libphp[78]?.*\.so)$';
+    public const PHP_REGEX_DEFAULT = '.*/((php|php-fpm)(7\.?[01234]|8\.?[012])?|libphp[78]?.*\.so)$';
     public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so';
     public const TARGET_PHP_VERSION_DEFAULT = 'auto';
 
