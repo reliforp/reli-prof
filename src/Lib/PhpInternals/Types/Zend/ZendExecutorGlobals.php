@@ -23,11 +23,30 @@ final class ZendExecutorGlobals implements Dereferencable
     /** @var Pointer<ZendExecuteData>|null */
     public ?Pointer $current_execute_data;
 
+    /** @var Pointer<ZendArray>|null */
+    public ?Pointer $function_table;
+
+    /** @var Pointer<ZendArray>|null */
+    public ?Pointer $class_table;
+
+    /** @var Pointer<ZendArray>|null */
+    public ?Pointer $zend_constants;
+
+    public ZendArray $symbol_table;
+
+    /** @var Pointer<ZendVmStack>|null  */
+    public ?Pointer $vm_stack;
+
     /** @param CastedCData<zend_executor_globals> $casted_cdata */
     public function __construct(
         private CastedCData $casted_cdata,
     ) {
         unset($this->current_execute_data);
+        unset($this->function_table);
+        unset($this->class_table);
+        unset($this->zend_constants);
+        unset($this->symbol_table);
+        unset($this->vm_stack);
     }
 
     public function __get(string $field_name): mixed
@@ -37,6 +56,40 @@ final class ZendExecutorGlobals implements Dereferencable
                 ? Pointer::fromCData(
                     ZendExecuteData::class,
                     $this->casted_cdata->casted->current_execute_data,
+                )
+                : null
+            ,
+            'function_table' => $this->casted_cdata->casted->function_table !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->function_table,
+                )
+                : null
+            ,
+            'class_table' => $this->casted_cdata->casted->class_table !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->class_table,
+                )
+                : null
+            ,
+            'zend_constants' => $this->casted_cdata->casted->zend_constants !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->zend_constants,
+                )
+                : null
+            ,
+            'symbol_table' => $this->symbol_table = new ZendArray(
+                new CastedCData(
+                    $this->casted_cdata->casted->symbol_table,
+                    $this->casted_cdata->casted->symbol_table
+                )
+            ),
+            'vm_stack' => $this->casted_cdata->casted->vm_stack !== null
+                ? Pointer::fromCData(
+                    ZendVmStack::class,
+                    $this->casted_cdata->casted->vm_stack,
                 )
                 : null
             ,

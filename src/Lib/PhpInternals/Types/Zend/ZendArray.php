@@ -53,6 +53,11 @@ final class ZendArray implements Dereferencable
      * @var Pointer<Bucket>
      */
     public Pointer $arData;
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<Zval>
+     */
+    public Pointer $arPacked;
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $nNumUsed;
     /** @psalm-suppress PropertyNotSetInConstructor */
@@ -71,6 +76,7 @@ final class ZendArray implements Dereferencable
         unset($this->flags);
         unset($this->nTableMask);
         unset($this->arData);
+        unset($this->arPacked);
         unset($this->nNumUsed);
         unset($this->nNumOfElements);
         unset($this->nTableSize);
@@ -86,6 +92,10 @@ final class ZendArray implements Dereferencable
             'arData' => $this->arData = Pointer::fromCData(
                 Bucket::class,
                 $this->casted_cdata->casted->arData,
+            ),
+            'arPacked' => $this->arPacked = Pointer::fromCData(
+                Bucket::class,
+                $this->casted_cdata->casted->arPacked,
             ),
             'nNumUsed' => $this->nNumUsed = $this->casted_cdata->casted->nNumUsed,
             'nNumOfElements' => $this->nNumOfElements = $this->casted_cdata->casted->nNumOfElements,
@@ -128,6 +138,46 @@ final class ZendArray implements Dereferencable
         return null;
     }
 
+    public function count(): int
+    {
+        return $this->nNumOfElements;
+    }
+
+    /** @return iterable<Bucket> */
+    public function getBucketIterator(Dereferencer $array_dereferencer): iterable
+    {
+        for ($i = 0; $i < $this->nNumUsed; $i++) {
+            yield $array_dereferencer->deref($this->arData->indexedAt($i));
+        }
+    }
+
+    /** @return iterable<Zval> */
+    public function getPackedIterator(Dereferencer $array_dereferencer): iterable
+    {
+        for ($i = 0; $i < $this->nNumUsed; $i++) {
+            yield $i => $array_dereferencer->deref($this->arPacked->indexedAt($i));
+        }
+    }
+
+    /** @return iterable<Zval> */
+    public function getItemIterator(Dereferencer $array_dereferencer): iterable
+    {
+        if ($this->isUninitialized()) {
+            return [];
+        } elseif ($this->isPacked()) {
+            return $this->getPackedIterator($array_dereferencer);
+        } else {
+            foreach ($this->getBucketIterator($array_dereferencer) as $bucket) {
+                if ($bucket->key === null or $bucket->val->isUndef()) {
+                    continue;
+                }
+                $key = $array_dereferencer->deref($bucket->key);
+                $raw_key = $key->getValuePointer($bucket->key);
+                yield (string)$array_dereferencer->deref($raw_key) => $bucket->val;
+            }
+        }
+    }
+
     /**
      * @param Pointer<Bucket> $pointer
      * @return Pointer<RawInt32>
@@ -149,6 +199,42 @@ final class ZendArray implements Dereferencable
         assert(!is_null($ffi));
 
         return $ffi->zend_hash_func($key, strlen($key));
+    }
+
+    public function dumpFlags(): string
+    {
+        $flags = $this->flags;
+        $flag_names = [];
+        if ($flags & (1 << 0)) {
+            $flag_names[] = 'HASH_FLAG_INITIALIZED';
+        }
+        if ($flags & (1 << 2)) {
+            $flag_names[] = 'HASH_FLAG_PACKED';
+        }
+        if ($flags & (1 << 3)) {
+            $flag_names[] = 'HASH_FLAG_UNINITIALIZED';
+        }
+        if ($flags & (1 << 4)) {
+            $flag_names[] = 'HASH_FLAG_STATIC_KEYS';
+        }
+        if ($flags & (1 << 5)) {
+            $flag_names[] = 'HASH_FLAG_HAS_EMPTY_IND';
+        }
+        if ($flags & (1 << 6)) {
+            $flag_names[] = 'HASH_FLAG_ALLOW_COW_VIOLATION';
+        }
+
+        return implode(' | ', $flag_names);
+    }
+
+    public function isPacked(): bool
+    {
+        return (bool)($this->flags & (1 << 2));
+    }
+
+    public function isUninitialized(): bool
+    {
+        return (bool)($this->flags & (1 << 3));
     }
 
     public static function getCTypeName(): string

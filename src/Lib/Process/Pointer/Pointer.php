@@ -22,13 +22,17 @@ use Reli\Lib\PhpInternals\CastedCData;
 /**
  * @template T of \Reli\Lib\Process\Pointer\Dereferencable
  */
-class Pointer
+class Pointer implements Dereferencable
 {
-    /** @param class-string<T> $type */
+    /**
+     * @param class-string<T> $type
+     * @param class-string<Dereferencable>|null $pointer_to_pointer_type
+     */
     public function __construct(
         public string $type,
         public int $address,
         public int $size,
+        public ?string $pointer_to_pointer_type = null,
     ) {
     }
 
@@ -38,11 +42,15 @@ class Pointer
             $this->type,
             $this->address + $n * $this->size,
             $this->size,
+            $this->pointer_to_pointer_type,
         );
     }
 
-    public function getCTypeName(): string
+    public function getCTypeNameOfType(): string
     {
+        if ($this->pointer_to_pointer_type !== null) {
+            return $this->pointer_to_pointer_type::getCTypeNameOfType() . '*';
+        }
         return $this->type::getCTypeName();
     }
 
@@ -51,7 +59,7 @@ class Pointer
      * @param Pointer<T> $pointer
      * @return T
      */
-    public function fromCastedCData(
+    public function fromCastedCDataOfType(
         CastedCData $casted_cdata,
         Pointer $pointer
     ): mixed {
@@ -67,6 +75,7 @@ class Pointer
     public static function fromCData(
         string $type,
         CData $c_pointer,
+        string $pointer_to_pointer_type = null
     ): self {
         /** @var CInteger $addr */
         $addr = \FFI::cast('long', $c_pointer);
@@ -82,6 +91,21 @@ class Pointer
             $type,
             $addr->cdata,
             \FFI::sizeof($ctype),
+            $pointer_to_pointer_type,
+        );
+    }
+
+    public static function getCTypeName(): string
+    {
+        return 'void*';
+    }
+
+    public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
+    {
+        return new self(
+            $pointer->pointer_to_pointer_type,
+            $casted_cdata->casted->cdata,
+            $pointer->size
         );
     }
 }

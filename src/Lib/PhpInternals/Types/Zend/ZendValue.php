@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
+use FFI\CInteger;
+use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 class ZendValue
@@ -24,9 +26,21 @@ class ZendValue
     public float $dval;
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Pointer $counted;
-    /** @psalm-suppress PropertyNotSetInConstructor */
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendString>
+     */
     public Pointer $str;
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendArray>
+     */
+    public Pointer $arr;
     /** @psalm-suppress PropertyNotSetInConstructor */
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendObject>
+     */
     public Pointer $obj;
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Pointer $res;
@@ -39,10 +53,15 @@ class ZendValue
     public Pointer $zv;
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Pointer $ptr;
-    /** @psalm-suppress PropertyNotSetInConstructor */
-    /** @psalm-suppress PropertyNotSetInConstructor */
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendClassEntry>
+     */
     public Pointer $ce;
-    /** @psalm-suppress PropertyNotSetInConstructor */
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendFunction>
+     */
     public Pointer $func;
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendValueWw $ww;
@@ -55,6 +74,7 @@ class ZendValue
         unset($this->dval);
         unset($this->counted);
         unset($this->str);
+        unset($this->arr);
         unset($this->obj);
         unset($this->res);
         unset($this->ref);
@@ -75,6 +95,32 @@ class ZendValue
                 ZendString::class,
                 $this->cdata->str,
             ),
+            'arr' => $this->str = Pointer::fromCData(
+                ZendArray::class,
+                $this->cdata->arr,
+            ),
+            'obj' => $this->str = Pointer::fromCData(
+                ZendObject::class,
+                $this->cdata->obj,
+            ),
+            'ce' => $this->str = Pointer::fromCData(
+                ZendClassEntry::class,
+                $this->cdata->ce,
+            ),
+            'func' => $this->str = Pointer::fromCData(
+                ZendFunction::class,
+                $this->cdata->func,
+            ),
         };
+    }
+
+    /** @param class-string<Dereferencable> $class_name */
+    public function getAsPointer(string $class_name, int $size): Pointer
+    {
+        return new Pointer(
+            $class_name,
+            $this->cdata->lval,
+            $size,
+        );
     }
 }

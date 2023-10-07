@@ -39,10 +39,10 @@ class RemoteProcessDereferencer implements Dereferencer
             $pointer->size
         );
         $casted_cdata = $this->ctype_provider->readAs(
-            $pointer->getCTypeName(),
+            $pointer->getCTypeNameOfType(),
             $buffer
         );
 
-        return $pointer->fromCastedCData($casted_cdata, $pointer);
+        return $pointer->fromCastedCDataOfType($casted_cdata, $pointer);
     }
 }

@@ -46,4 +46,25 @@ class ZvalU1
             'extra' => $this->cdata->v->u->extra,
         };
     }
+
+    public function getType(): string
+    {
+        return match ($this->type) {
+            0 => 'IS_UNDEF',
+            1 => 'IS_NULL',
+            2 => 'IS_FALSE',
+            3 => 'IS_TRUE',
+            4 => 'IS_LONG',
+            5 => 'IS_DOUBLE',
+            6 => 'IS_STRING',
+            7 => 'IS_ARRAY',
+            8 => 'IS_OBJECT',
+            9 => 'IS_RESOURCE',
+            10 => 'IS_REFERENCE',
+            11 => 'IS_CONSTANT_AST',
+            12 => 'IS_INDIRECT',
+            13 => 'IS_PTR',
+            default => 'UNKNOWN',
+        };
+    }
 }

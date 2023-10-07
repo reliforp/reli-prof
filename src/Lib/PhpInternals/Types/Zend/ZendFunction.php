@@ -139,4 +139,9 @@ final class ZendFunction implements Dereferencable
         }
         return $this->resolved_file_name_cache;
     }
+
+    public function isUserFunction(): bool
+    {
+        return $this->type === 2;
+    }
 }

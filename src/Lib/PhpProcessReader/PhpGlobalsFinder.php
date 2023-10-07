@@ -92,6 +92,23 @@ class PhpGlobalsFinder
         );
     }
 
+    /**
+     * @throws ElfParserException
+     * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
+     * @throws TlsFinderException
+     */
+    public function findCompilerGlobals(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings
+    ): int {
+        return $this->findGlobals(
+            $process_specifier,
+            $target_php_settings,
+            'compiler_globals'
+        );
+    }
+
     public function findModuleRegistry(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings

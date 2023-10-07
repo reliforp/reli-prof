@@ -26,9 +26,9 @@ final class Bucket implements Dereferencable
     public int $h;
     /**
      * @psalm-suppress PropertyNotSetInConstructor
-     * @var Pointer<ZendString>
+     * @var Pointer<ZendString>|null
      */
-    public Pointer $key;
+    public ?Pointer $key;
 
     /** @param CastedCData<ZendBucket> $casted_cdata */
     public function __construct(
@@ -42,12 +42,19 @@ final class Bucket implements Dereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'val' => $this->val = new Zval($this->casted_cdata->casted->val),
+            'val' => $this->val = new Zval(
+                new CastedCData(
+                    $this->casted_cdata->casted->val,
+                    $this->casted_cdata->casted->val,
+                ),
+            ),
             'h' => $this->h = 0xFFFF_FFFF & $this->casted_cdata->casted->h,
-            'key' => $this->key = Pointer::fromCData(
+            'key' => $this->key = $this->casted_cdata->casted->key !== null ? Pointer::fromCData(
                 ZendString::class,
                 $this->casted_cdata->casted->key
-            ),
+            )
+            : null
+            ,
         };
     }
 
