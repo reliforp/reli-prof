@@ -18,8 +18,8 @@ use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\CallTraceReader;
-use Reli\Lib\PhpProcessReader\TraceCache;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
+use Reli\Lib\PhpProcessReader\CallTraceReader\TraceCache;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 use function is_null;

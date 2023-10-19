@@ -11,11 +11,11 @@
 
 declare(strict_types=1);
 
-namespace Reli\Lib\PhpProcessReader;
+namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
+use PHPUnit\Framework\TestCase;
 use Reli\Lib\PhpInternals\Opcodes\OpcodeV70;
 use Reli\Lib\PhpInternals\Types\Zend\Opline;
-use PHPUnit\Framework\TestCase;
 
 class CallFrameTest extends TestCase
 {

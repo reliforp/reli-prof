@@ -15,8 +15,8 @@ namespace Reli\Inspector\Output\TraceFormatter\Compat;
 
 use Reli\Lib\PhpInternals\Opcodes\OpcodeV80;
 use Reli\Lib\PhpInternals\Types\Zend\Opline;
-use Reli\Lib\PhpProcessReader\CallFrame;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 class CompatCallTraceFormatterTest extends TestCase

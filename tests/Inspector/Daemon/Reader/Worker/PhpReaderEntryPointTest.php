@@ -25,8 +25,8 @@ use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Lib\Loop\LoopCondition\OnlyOnceCondition;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use Reli\Lib\PhpProcessReader\CallFrame;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 class PhpReaderEntryPointTest extends TestCase

@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\TopLike;
 
 use Reli\Lib\DateTime\FixedClock;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 use function PHPUnit\Framework\assertSame;

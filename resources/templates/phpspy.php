@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 /** @var CallTrace $call_trace */
 ?>
 <?php foreach ($call_trace->call_frames as $depth => $frame): ?>

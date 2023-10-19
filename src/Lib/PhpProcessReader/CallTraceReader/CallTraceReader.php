@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
+namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
 use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use Reli\Lib\PhpInternals\Types\C\RawDouble;
@@ -23,9 +23,6 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
 use Reli\Lib\PhpInternals\Types\Zend\ZendOp;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
-use Reli\Lib\PhpProcessReader\CallFrame;
-use Reli\Lib\PhpProcessReader\CallTrace;
-use Reli\Lib\PhpProcessReader\TraceCache;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\Pointer\Dereferencer;

@@ -16,8 +16,8 @@ namespace Reli\Inspector\Output\TraceOutput;
 use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use Reli\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
-use Reli\Lib\PhpProcessReader\CallFrame;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Output\StreamOutput;
 

@@ -24,8 +24,8 @@ use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Lib\Amphp\ContextInterface;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use PHPUnit\Framework\TestCase;
-use Reli\Lib\PhpProcessReader\CallFrame;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 final class PhpReaderControllerTest extends TestCase
 {

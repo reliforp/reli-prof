@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TopLike;
 
-use Reli\Lib\PhpProcessReader\CallFrame;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use PHPUnit\Framework\TestCase;
 
 class StatTest extends TestCase

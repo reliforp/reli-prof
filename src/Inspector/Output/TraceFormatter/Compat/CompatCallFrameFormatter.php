@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TraceFormatter\Compat;
 
-use Reli\Lib\PhpProcessReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
 
 use function is_null;
 
