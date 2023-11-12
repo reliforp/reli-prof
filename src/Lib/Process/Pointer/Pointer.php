@@ -17,9 +17,7 @@ use FFI\CData;
 use FFI\CInteger;
 use FFI\CPointer;
 
-/**
- * @template T of \Reli\Lib\Process\Pointer\Dereferencable
- */
+/** @template-covariant T of Dereferencable */
 class Pointer
 {
     /** @param class-string<T> $type */
