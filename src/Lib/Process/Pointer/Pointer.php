@@ -16,8 +16,6 @@ namespace Reli\Lib\Process\Pointer;
 use FFI\CData;
 use FFI\CInteger;
 use FFI\CPointer;
-use FFI\CType;
-use Reli\Lib\PhpInternals\CastedCData;
 
 /**
  * @template T of \Reli\Lib\Process\Pointer\Dereferencable
@@ -44,18 +42,6 @@ class Pointer
     public function getCTypeName(): string
     {
         return $this->type::getCTypeName();
-    }
-
-    /**
-     * @param CastedCData<CData> $casted_cdata
-     * @param Pointer<T> $pointer
-     * @return T
-     */
-    public function fromCastedCData(
-        CastedCData $casted_cdata,
-        Pointer $pointer
-    ): mixed {
-        return $this->type::fromCastedCData($casted_cdata, $pointer);
     }
 
     /**

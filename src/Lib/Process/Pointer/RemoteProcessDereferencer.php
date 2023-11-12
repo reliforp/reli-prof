@@ -13,7 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\Pointer;
 
+use FFI\CData;
 use Reli\Lib\FFI\CastedTypeProvider;
+use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\ProcessSpecifier;
 
@@ -43,6 +45,23 @@ class RemoteProcessDereferencer implements Dereferencer
             $buffer
         );
 
-        return $pointer->fromCastedCData($casted_cdata, $pointer);
+        return $this->fromCastedCDataOfType(
+            $casted_cdata,
+            $pointer
+        );
+    }
+
+    /**
+     * @template T of Dereferencable
+     * @param CastedCData<CData> $casted_cdata
+     * @param Pointer<T> $pointer
+     * @return T
+     */
+    public function fromCastedCDataOfType(
+        CastedCData $casted_cdata,
+        Pointer $pointer
+    ): mixed {
+        $type = $pointer->type;
+        return $type::fromCastedCData($casted_cdata, $pointer);
     }
 }
