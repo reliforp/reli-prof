@@ -219,6 +219,38 @@ typedef enum {
 
 typedef ZEND_RESULT_CODE zend_result;
 
+
+// zend_object_handlers.h
+struct _zend_object_handlers {
+	/* offset of real object header (usually zero) */
+	int  offset;
+	/* object handlers */
+	void *free_obj;             /* required */
+	void *dtor_obj;             /* required */
+	void *clone_obj;            /* optional */
+	void *read_property;        /* required */
+	void *write_property;       /* required */
+	void *read_dimension;       /* required */
+	void *write_dimension;      /* required */
+	void *get_property_ptr_ptr; /* required */
+	void *has_property;         /* required */
+	void *unset_property;       /* required */
+	void *has_dimension;        /* required */
+	void *unset_dimension;      /* required */
+	void *get_properties;       /* required */
+	void *get_method;           /* required */
+	void *get_constructor;      /* required */
+	void *get_class_name;       /* required */
+	void *cast_object;          /* required */
+	void *count_elements;       /* optional */
+	void *get_debug_info;       /* optional */
+	void *get_closure;          /* optional */
+	void *get_gc;               /* required */
+	void *do_operation;         /* optional */
+	void *compare;              /* required */
+	void *get_properties_for;   /* optional */
+};
+
 // zend_globals.h
 typedef struct _zend_vm_stack *zend_vm_stack;
 
@@ -361,6 +393,20 @@ typedef struct _zend_fcall_info_cache {
 	zend_object *object;
 } zend_fcall_info_cache;
 
+typedef struct _zend_fcall_info {
+	size_t size;
+	zval function_name;
+	zval *retval;
+	zval *params;
+	zend_object *object;
+	uint32_t param_count;
+	/* This hashtable can also contain positional arguments (with integer keys),
+	 * which will be appended to the normal params[]. This makes it easier to
+	 * integrate APIs like call_user_func_array(). The usual restriction that
+	 * there may not be position arguments after named arguments applies. */
+	HashTable *named_params;
+} zend_fcall_info;
+
 // zend_modules.h
 struct _zend_module_entry {
 	unsigned short size;
@@ -458,7 +504,7 @@ struct _zend_op_array {
 	zend_arg_info *arg_info;
 	HashTable *attributes;
 	uint32_t T;         /* number of temporary variables */
-	void ***run_time_cache__ptr;
+	void **run_time_cache__ptr;
     /* END of common elements */
 
 	int cache_size;     /* number of run_time_cache_slots * sizeof(void*) */
@@ -513,7 +559,7 @@ typedef struct _zend_internal_function {
 	zend_internal_arg_info *arg_info;
 	HashTable *attributes;
 	uint32_t T;         /* number of temporary variables */
-	void ***run_time_cache__ptr;
+	void **run_time_cache__ptr;
 	/* END of common elements */
 
 	zif_handler handler;
@@ -537,7 +583,7 @@ union _zend_function {
 		zend_arg_info *arg_info;  /* index -1 represents the return value info, if any */
 		HashTable   *attributes;
 		uint32_t T;         /* number of temporary variables */
-		void ***run_time_cache__ptr;
+		void **run_time_cache__ptr;
 	} common;
 
 	zend_op_array op_array;
@@ -641,6 +687,12 @@ struct _zend_arena {
 // zend_multibyte.h
 typedef struct _zend_encoding zend_encoding;
 
+// zend_constants.h
+typedef struct _zend_constant {
+	zval value;
+	zend_string *name;
+} zend_constant;
+
 // zend_globals.h
 typedef enum {
 	ZEND_MEMOIZE_NONE,
@@ -710,7 +762,7 @@ struct _zend_compiler_globals {
 	zend_memoize_mode memoize_mode;
 
 	void   *map_ptr_real_base;
-	void   *map_ptr_base;
+	unsigned long map_ptr_base;
 	size_t  map_ptr_size;
 	size_t  map_ptr_last;
 
@@ -1241,10 +1293,20 @@ struct _zend_mm_free_slot {
 };
 
 struct _zend_mm_huge_list {
-	void              *ptr;
+	intptr_t           ptr;
 	size_t             size;
 	zend_mm_huge_list *next;
 };
+
+/* zend_closures.c */
+typedef struct _zend_closure {
+	zend_object       std;
+	zend_function     func;
+	zval              this_ptr;
+	zend_class_entry *called_scope;
+	zif_handler       orig_internal_handler;
+} zend_closure;
+
 
 /* main/SAPI.h */
 /*

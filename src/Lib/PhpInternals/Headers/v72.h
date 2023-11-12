@@ -181,6 +181,41 @@ struct _zend_ast_ref {
 	zend_ast         *ast;
 };
 
+// zend_object_handlers.h
+struct _zend_object_handlers {
+	/* offset of real object header (usually zero) */
+	int  offset;
+	/* general object functions */
+	void *free_obj;
+	void *dtor_obj;
+	void *clone_obj;
+	/* individual object functions */
+	void *read_property;
+	void *write_property;
+	void *read_dimension;
+	void *write_dimension;
+	void *get_property_ptr_ptr;
+	void *get;
+	void *set;
+	void *has_property;
+	void *unset_property;
+	void *has_dimension;
+	void *unset_dimension;
+	void *get_properties;
+	void *get_method;
+	void *call_method;
+	void *get_constructor;
+	void *get_class_name;
+	void *compare_objects;
+	void *cast_object;
+	void *count_elements;
+	void *get_debug_info;
+	void *get_closure;
+	void *get_gc;
+	void *do_operation;
+	void *compare;
+};
+
 // zend_globals.h
 typedef struct _zend_vm_stack *zend_vm_stack;
 
@@ -305,6 +340,14 @@ typedef struct _zend_function_entry {
 	uint32_t num_args;
 	uint32_t flags;
 } zend_function_entry;
+
+typedef struct _zend_fcall_info_cache {
+	zend_bool initialized;
+	zend_function *function_handler;
+	zend_class_entry *calling_scope;
+	zend_class_entry *called_scope;
+	zend_object *object;
+} zend_fcall_info_cache;
 
 // zend_modules.h
 struct _zend_module_entry {
@@ -581,6 +624,14 @@ struct _zend_arena {
 
 // zend_multibyte.h
 typedef struct _zend_encoding zend_encoding;
+
+// zend_constants.h
+typedef struct _zend_constant {
+	zval value;
+	zend_string *name;
+	int flags;
+	int module_number;
+} zend_constant;
 
 // zend_globals.h
 struct _zend_compiler_globals {
@@ -972,10 +1023,19 @@ struct _zend_mm_free_slot {
 };
 
 struct _zend_mm_huge_list {
-	void              *ptr;
+	intptr_t           ptr;
 	size_t             size;
 	zend_mm_huge_list *next;
 };
+
+/* zend_closures.c */
+typedef struct _zend_closure {
+	zend_object       std;
+	zend_function     func;
+	zval              this_ptr;
+	zend_class_entry *called_scope;
+	zif_handler       orig_internal_handler;
+} zend_closure;
 
 // main/SAPI.h
 /*
