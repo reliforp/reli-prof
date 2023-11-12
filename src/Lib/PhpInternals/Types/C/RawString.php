@@ -27,6 +27,7 @@ final class RawString implements Dereferencable
     public function __construct(
         private CastedCData $cdata,
         private int $len,
+        private Pointer $pointer,
     ) {
         unset($this->value);
     }
@@ -57,6 +58,11 @@ final class RawString implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        return new self($casted_cdata, $pointer->size);
+        return new self($casted_cdata, $pointer->size, $pointer);
+    }
+
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 }

@@ -31,9 +31,13 @@ final class ZendModuleEntry implements Dereferencable
      */
     public Pointer $version;
 
-    /** @param CastedCData<zend_module_entry> $casted_cdata */
+    /**
+     * @param CastedCData<zend_module_entry> $casted_cdata
+     * @param Pointer<ZendModuleEntry> $pointer
+     */
     public function __construct(
         private CastedCData $casted_cdata,
+        private Pointer $pointer,
     ) {
         unset($this->zts);
         unset($this->version);
@@ -65,7 +69,15 @@ final class ZendModuleEntry implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        /** @var CastedCData<zend_module_entry> $casted_cdata */
-        return new self($casted_cdata);
+        /**
+         * @var CastedCData<zend_module_entry> $casted_cdata
+         * @var Pointer<ZendModuleEntry> $pointer
+         */
+        return new self($casted_cdata, $pointer);
+    }
+
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 }

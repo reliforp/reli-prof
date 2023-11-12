@@ -30,9 +30,13 @@ final class ZendExecuteData implements Dereferencable
     /** @var Pointer<ZendOp>|null */
     public ?Pointer $opline;
 
-    /** @param CastedCData<zend_execute_data> $casted_cdata */
+    /**
+     * @param CastedCData<zend_execute_data> $casted_cdata
+     * @param Pointer<ZendExecuteData> $pointer
+     */
     public function __construct(
         private CastedCData $casted_cdata,
+        private Pointer $pointer,
     ) {
         unset($this->func);
         unset($this->prev_execute_data);
@@ -78,8 +82,17 @@ final class ZendExecuteData implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        /** @var CastedCData<zend_execute_data> $casted_cdata */
-        return new self($casted_cdata);
+        /**
+         * @var CastedCData<zend_execute_data> $casted_cdata
+         * @var Pointer<ZendExecuteData> $pointer
+         */
+        return new self($casted_cdata, $pointer);
+    }
+
+    /** @return Pointer<ZendExecuteData> */
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 
     public function getFunctionName(Dereferencer $dereferencer): ?string

@@ -30,9 +30,13 @@ final class Bucket implements Dereferencable
      */
     public Pointer $key;
 
-    /** @param CastedCData<ZendBucket> $casted_cdata */
+    /**
+     * @param CastedCData<\FFI\PhpInternals\Bucket> $casted_cdata
+     * @param Pointer<Bucket> $pointer
+     */
     public function __construct(
-        private CastedCData $casted_cdata,
+        protected CastedCData $casted_cdata,
+        protected Pointer $pointer,
     ) {
         unset($this->val);
         unset($this->h);
@@ -60,7 +64,16 @@ final class Bucket implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        /** @var CastedCData<ZendBucket> $casted_cdata */
-        return new self($casted_cdata);
+        /**
+         * @var CastedCData<\FFI\PhpInternals\Bucket> $casted_cdata
+         * @var Pointer<Bucket> $pointer
+         */
+        return new static($casted_cdata, $pointer);
+    }
+
+    /** @return Pointer<Bucket> */
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 }

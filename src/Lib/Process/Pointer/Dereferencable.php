@@ -29,4 +29,6 @@ interface Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static;
+
+    public function getPointer(): Pointer;
 }

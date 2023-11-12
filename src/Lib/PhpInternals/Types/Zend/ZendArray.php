@@ -42,7 +42,8 @@ use Reli\Lib\Process\Pointer\Pointer;
 * zend_long         nNextFreeElement;
 * dtor_func_t       pDestructor;
 * }; */
-final class ZendArray implements Dereferencable
+/** @psalm-consistent-constructor */
+class ZendArray implements Dereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $flags;
@@ -64,9 +65,13 @@ final class ZendArray implements Dereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $nNextFreeElement;
 
-    /** @param CastedCData<zend_array> $casted_cdata */
+    /**
+     * @param CastedCData<zend_array> $casted_cdata
+     * @param Pointer<ZendArray> $pointer,
+     */
     public function __construct(
-        private CastedCData $casted_cdata
+        protected CastedCData $casted_cdata,
+        protected Pointer $pointer,
     ) {
         unset($this->flags);
         unset($this->nTableMask);
@@ -158,7 +163,15 @@ final class ZendArray implements Dereferencable
 
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
-        /** @var CastedCData<zend_array> $casted_cdata */
-        return new self($casted_cdata);
+        /**
+         * @var CastedCData<zend_array> $casted_cdata
+         * @var Pointer<ZendArray> $pointer
+         */
+        return new static($casted_cdata, $pointer);
+    }
+
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 }
