@@ -19,6 +19,10 @@ use Reli\Lib\FFI\CannotAllocateBufferException;
 use Reli\Lib\FFI\CannotCastCDataException;
 use Reli\Lib\FFI\CannotGetTypeForCDataException;
 use Reli\Lib\FFI\CannotLoadCHeaderException;
+use Reli\Lib\PhpInternals\Constants\VersionAwareConstants;
+use Reli\Lib\PhpInternals\Types\C\RawInt64;
+use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\Pointer;
 use Webmozart\Assert\Assert;
 
 final class ZendTypeReader
@@ -42,6 +46,8 @@ final class ZendTypeReader
         self::V81,
         self::V82,
     ];
+
+    public VersionAwareConstants $constants;
 
     private ?FFI $ffi = null;
 
@@ -77,6 +83,15 @@ final class ZendTypeReader
     public function __construct(
         private string $php_version
     ) {
+        $this->constants = VersionAwareConstants::getConstantsOfVersion($php_version);
+    }
+
+    /**
+     * @param value-of<self::ALL_SUPPORTED_VERSIONS> $php_version
+     */
+    public function isPhpVersionLowerThan(string $php_version): bool
+    {
+        return $this->php_version < $php_version;
     }
 
     private function loadHeader(string $php_version): FFI
@@ -152,5 +167,37 @@ final class ZendTypeReader
             ];
         }
         return $this->offset_cache[$type][$member];
+    }
+
+    public function resolveMapPtr(
+        int $map_ptr_base,
+        int $map_ptr,
+        Dereferencer $dereferencer,
+    ): int {
+        $address_candidate = $map_ptr;
+        if ($map_ptr_base === 0) {
+            return $map_ptr;
+        }
+
+        if ($map_ptr & 1) {
+            $pointer = new Pointer(
+                RawInt64::class,
+                $map_ptr_base + $map_ptr,
+                8,
+            );
+            $address_candidate = $dereferencer->deref($pointer)->value;
+        }
+        if ($address_candidate === 0) {
+            return 0;
+        }
+        if ($this->isPhpVersionLowerThan(ZendTypeReader::V82)) {
+            $pointer = new Pointer(
+                RawInt64::class,
+                $address_candidate,
+                8,
+            );
+            $address_candidate = $dereferencer->deref($pointer)->value;
+        }
+        return $address_candidate;
     }
 }

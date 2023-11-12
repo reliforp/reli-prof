@@ -64,9 +64,9 @@ final class TraceCache
     }
 
     /**
-     * @template T of \Reli\Lib\Process\Pointer\Dereferencable
-     * @param Pointer<T> $pointer
-     * @param T $item
+     * @template TCached of \Reli\Lib\Process\Pointer\Dereferencable
+     * @param Pointer<TCached> $pointer
+     * @param TCached $item
      */
     public function setCache(Pointer $pointer, mixed $item): void
     {
@@ -74,13 +74,13 @@ final class TraceCache
     }
 
     /**
-     * @template T of \Reli\Lib\Process\Pointer\Dereferencable
-     * @param Pointer<T> $pointer
-     * @return T|null
+     * @template TCached of \Reli\Lib\Process\Pointer\Dereferencable
+     * @param Pointer<TCached> $pointer
+     * @return TCached|null
      */
     public function getCache(Pointer $pointer): mixed
     {
-        /** @var T|null */
+        /** @var TCached|null */
         return $this->cache[$pointer->type][$pointer->address] ?? null;
     }
 }

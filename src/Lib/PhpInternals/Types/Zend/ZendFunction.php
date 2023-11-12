@@ -19,6 +19,7 @@ use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
+/** @psalm-consistent-constructor */
 final class ZendFunction implements Dereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
@@ -39,6 +40,9 @@ final class ZendFunction implements Dereferencable
      */
     public ?Pointer $scope;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $num_args;
+
     /**
      * @param CastedCData<zend_function> $casted_cdata
      * @param Pointer<ZendFunction> $pointer
@@ -50,6 +54,7 @@ final class ZendFunction implements Dereferencable
         unset($this->type);
         unset($this->function_name);
         unset($this->scope);
+        unset($this->num_args);
         unset($this->op_array);
     }
 
@@ -73,6 +78,7 @@ final class ZendFunction implements Dereferencable
                     )
                     : null
             ,
+            'num_args' => $this->num_args = $this->casted_cdata->casted->common->num_args,
             'op_array' => $this->op_array = new ZendOpArray($this->casted_cdata->casted->op_array),
         };
     }
@@ -148,5 +154,10 @@ final class ZendFunction implements Dereferencable
             $this->resolved_file_name_cache = $this->op_array->getFileName($dereferencer);
         }
         return $this->resolved_file_name_cache;
+    }
+
+    public function isUserFunction(): bool
+    {
+        return $this->type === 2;
     }
 }

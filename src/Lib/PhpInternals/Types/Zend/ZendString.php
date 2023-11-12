@@ -25,6 +25,9 @@ final class ZendString implements Dereferencable
     public const ZEND_STRING_HEADER_SIZE = 24;
 
     /** @psalm-suppress PropertyNotSetInConstructor */
+    public ZendRefcountedH $gc;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
     public int $h;
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $len;
@@ -43,6 +46,7 @@ final class ZendString implements Dereferencable
         private int $offset_to_val,
         private Pointer $pointer,
     ) {
+        unset($this->gc);
         unset($this->h);
         unset($this->len);
         unset($this->val);
@@ -51,6 +55,9 @@ final class ZendString implements Dereferencable
     public function __get(string $field_name)
     {
         return match ($field_name) {
+            'gc' => $this->gc = new ZendRefcountedH(
+                $this->casted_cdata->casted->gc,
+            ),
             'h' => $this->h = $this->casted_cdata->casted->h,
             'len' => $this->len = $this->casted_cdata->casted->len,
             'val' => $this->val = Pointer::fromCData(
@@ -92,6 +99,11 @@ final class ZendString implements Dereferencable
             $this->getPointer()->address + $this->offset_to_val,
             \min($this->len, $max_size)
         );
+    }
+
+    public function getSize(): int
+    {
+        return $this->len + self::ZEND_STRING_HEADER_SIZE;
     }
 
     public function toString(Dereferencer $dereferencer, int $max_size = 256): string
