@@ -40,7 +40,7 @@ final class ProcessMemoryMapParser
         $matches = [];
         preg_match(
             // phpcs:ignore Generic.Files.LineLength.TooLong
-            '/([0-9a-f]+)-([0-9a-f]+) ([r\-][w\-][x\-][sp\-]) ([0-9a-f]+) ([0-9][0-9][0-9]?:[0-9][0-9][0-9]?) ([0-9]+) +([^ ].+)/',
+            '/([0-9a-f]+)-([0-9a-f]+) ([r\-][w\-][x\-][sp\-]) ([0-9a-f]+) ([0-9a-f][0-9a-f][0-9a-f]?:[0-9a-f][0-9a-f][0-9a-f]?) ([0-9]+) +([^ ].+)?/',
             $line,
             $matches
         );
@@ -60,7 +60,7 @@ final class ProcessMemoryMapParser
             ),
             device_id: $matches[5],
             inode_num: Cast::toInt($matches[6]),
-            name: $matches[7],
+            name: $matches[7] ?? '',
         );
     }
 }
