@@ -118,8 +118,7 @@ final class ZendFunction implements Dereferencable
         }
         if (!isset($this->resolved_name_cache)) {
             $string = $dereferencer->deref($this->function_name);
-            $val = $string->getValuePointer($this->function_name);
-            $this->resolved_name_cache = (string)$dereferencer->deref($val);
+            $this->resolved_name_cache = $string->toString($dereferencer);
         }
         return $this->resolved_name_cache;
     }

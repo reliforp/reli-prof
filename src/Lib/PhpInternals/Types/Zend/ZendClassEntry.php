@@ -72,7 +72,6 @@ final class ZendClassEntry implements Dereferencable
     public function getClassName(Dereferencer $dereferencer): string
     {
         $string = $dereferencer->deref($this->name);
-        $val = $string->getValuePointer($this->name);
-        return (string)$dereferencer->deref($val);
+        return $string->toString($dereferencer);
     }
 }
