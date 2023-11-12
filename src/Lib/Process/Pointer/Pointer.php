@@ -28,6 +28,7 @@ class Pointer
     ) {
     }
 
+    /** @return self<T> */
     public function indexedAt(int $n): Pointer
     {
         return new Pointer(
