@@ -70,14 +70,7 @@ class Pointer
     ): self {
         /** @var CInteger $addr */
         $addr = \FFI::cast('long', $c_pointer);
-        /** @psalm-trace $addr */
-        /**
-         * @psalm-suppress InaccessibleMethod
-         * @var CData $element
-         */
-        $element = $c_pointer[0];
-        /** @param CType $ctype */
-        $ctype = \FFI::typeof($element);
+        $ctype = \FFI::typeof($c_pointer)->getPointerType();
         return new self(
             $type,
             $addr->cdata,
