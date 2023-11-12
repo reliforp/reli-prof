@@ -1,37 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:noNamespaceSchemaLocation="./vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
-         backupGlobals="false"
-         beStrictAboutCoversAnnotation="true"
-         beStrictAboutOutputDuringTests="true"
-         beStrictAboutTestsThatDoNotTestAnything="false"
-         beStrictAboutTodoAnnotatedTests="true"
-         colors="true"
-         verbose="true"
-         executionOrder="default"
->
-    <php>
-        <ini name="memory_limit" value="512M"/>
-    </php>
-    <testsuites>
-        <testsuite name="reli">
-            <directory>tests</directory>
-        </testsuite>
-    </testsuites>
-
-    <coverage>
-        <include>
-            <directory suffix=".php">src</directory>
-        </include>
-        <exclude>
-            <directory suffix=".php">src/Command/*/</directory>
-            <directory suffix="Interface.php">./src</directory>
-            <directory suffix="Message.php">./src</directory>
-            <directory suffix="Exception.php">./src</directory>
-            <directory suffix="LoopProvider.php">./src</directory>
-            <directory suffix="Protocol.php">./src</directory>
-            <directory suffix="worker-entry.php">./src/Lib/Amphp</directory>
-        </exclude>
-    </coverage>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.3/phpunit.xsd" bootstrap="vendor/autoload.php" backupGlobals="false" beStrictAboutOutputDuringTests="true" beStrictAboutTestsThatDoNotTestAnything="false" colors="true" executionOrder="default" cacheDirectory=".phpunit.cache" beStrictAboutCoverageMetadata="true">
+  <php>
+    <ini name="memory_limit" value="512M"/>
+  </php>
+  <testsuites>
+    <testsuite name="reli">
+      <directory>tests</directory>
+    </testsuite>
+  </testsuites>
+  <coverage/>
+  <source>
+    <include>
+      <directory suffix=".php">src</directory>
+    </include>
+    <exclude>
+      <directory suffix=".php">src/Command/*/</directory>
+      <directory suffix="Interface.php">./src</directory>
+      <directory suffix="Message.php">./src</directory>
+      <directory suffix="Exception.php">./src</directory>
+      <directory suffix="LoopProvider.php">./src</directory>
+      <directory suffix="Protocol.php">./src</directory>
+      <directory suffix="worker-entry.php">./src/Lib/Amphp</directory>
+    </exclude>
+  </source>
 </phpunit>
