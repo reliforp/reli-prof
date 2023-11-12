@@ -52,8 +52,6 @@ class ZendOpArray
             return null;
         }
         $filename = $dereferencer->deref($this->filename);
-        return (string)$dereferencer->deref(
-            $filename->getValuePointer($this->filename)
-        );
+        return $filename->toString($dereferencer);
     }
 }

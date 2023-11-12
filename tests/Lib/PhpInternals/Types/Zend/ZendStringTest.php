@@ -57,7 +57,7 @@ class ZendStringTest extends TestCase
                 },
                 (object)[
                     'h' => 123,
-                    'len' => 345,
+                    'len' => 256,
                     'val' => $string_addr,
                 ],
             ),
@@ -68,11 +68,9 @@ class ZendStringTest extends TestCase
                 280,
             )
         );
-        $value_pointer = $zend_string->getValuePointer(
-            new Pointer(RawString::class, 123, 16)
-        );
+        $value_pointer = $zend_string->getValuePointer();
         $this->assertSame(RawString::class, $value_pointer->type);
-        $this->assertSame(147, $value_pointer->address);
-        $this->assertSame(255, $value_pointer->size);
+        $this->assertSame(176, $value_pointer->address);
+        $this->assertSame(256, $value_pointer->size);
     }
 }

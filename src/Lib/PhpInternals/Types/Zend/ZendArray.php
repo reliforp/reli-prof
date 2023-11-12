@@ -122,8 +122,7 @@ class ZendArray implements Dereferencable
                 $this->arData->indexedAt($idx)
             );
             if ($bucket->h === $hash) {
-                $bucket_key_zstring = $dereferencer->deref($bucket->key)->getValuePointer($bucket->key);
-                $bucket_key = (string)$dereferencer->deref($bucket_key_zstring);
+                $bucket_key = $dereferencer->deref($bucket->key)->toString($dereferencer);
                 if ($bucket_key === $key) {
                     return $bucket;
                 }

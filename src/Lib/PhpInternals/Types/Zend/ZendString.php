@@ -17,10 +17,13 @@ use FFI\PhpInternals\zend_string;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawString;
 use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
 final class ZendString implements Dereferencable
 {
+    public const ZEND_STRING_HEADER_SIZE = 24;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $h;
     /** @psalm-suppress PropertyNotSetInConstructor */
@@ -71,7 +74,7 @@ final class ZendString implements Dereferencable
          * @var Pointer<ZendString> $pointer
          */
         // an almost safe assumption I think
-        return new self($casted_cdata, 24, $pointer);
+        return new self($casted_cdata, self::ZEND_STRING_HEADER_SIZE, $pointer);
     }
 
     public function getPointer(): Pointer
@@ -80,15 +83,24 @@ final class ZendString implements Dereferencable
     }
 
     /**
-     * @param Pointer<ZendString> $pointer
      * @return Pointer<RawString>
      */
-    public function getValuePointer(Pointer $pointer): Pointer
+    public function getValuePointer(int $max_size = 256): Pointer
     {
         return new Pointer(
             RawString::class,
-            $pointer->address + $this->offset_to_val,
-            \min($this->len, 255)
+            $this->getPointer()->address + $this->offset_to_val,
+            \min($this->len, $max_size)
+        );
+    }
+
+    public function toString(Dereferencer $dereferencer, int $max_size = 256): string
+    {
+        if ($this->len === 0) {
+            return '';
+        }
+        return (string)$dereferencer->deref(
+            $this->getValuePointer($max_size)
         );
     }
 }
