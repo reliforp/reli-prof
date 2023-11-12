@@ -31,10 +31,14 @@ final class ZendString implements Dereferencable
      */
     public Pointer $val;
 
-    /** @param CastedCData<zend_string> $casted_cdata */
+    /**
+     * @param CastedCData<zend_string> $casted_cdata
+     * @param Pointer<ZendString> $pointer
+     */
     public function __construct(
         private CastedCData $casted_cdata,
         private int $offset_to_val,
+        private Pointer $pointer,
     ) {
         unset($this->h);
         unset($this->len);
@@ -62,16 +66,17 @@ final class ZendString implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        /** @var CastedCData<zend_string> $casted_cdata */
-        /*
-        $head_addr = \FFI::cast('long', \FFI::addr($cdata))->cdata;
-        $val_addr = \FFI::cast('long', \FFI::addr($cdata->val))->cdata;
-        $offset_to_val = $val_addr - $head_addr;
-
-        return new self($cdata, $offset_to_val);
-        */
+        /**
+         * @var CastedCData<zend_string> $casted_cdata
+         * @var Pointer<ZendString> $pointer
+         */
         // an almost safe assumption I think
-        return new self($casted_cdata, 24);
+        return new self($casted_cdata, 24, $pointer);
+    }
+
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 
     /**

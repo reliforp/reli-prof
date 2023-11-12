@@ -23,9 +23,13 @@ final class ZendExecutorGlobals implements Dereferencable
     /** @var Pointer<ZendExecuteData>|null */
     public ?Pointer $current_execute_data;
 
-    /** @param CastedCData<zend_executor_globals> $casted_cdata */
+    /**
+     * @param CastedCData<zend_executor_globals> $casted_cdata
+     * @param Pointer<ZendExecutorGlobals> $pointer
+     */
     public function __construct(
         private CastedCData $casted_cdata,
+        private Pointer $pointer,
     ) {
         unset($this->current_execute_data);
     }
@@ -52,7 +56,16 @@ final class ZendExecutorGlobals implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        /** @var CastedCData<zend_executor_globals> $casted_cdata */
-        return new self($casted_cdata);
+        /**
+         * @var CastedCData<zend_executor_globals> $casted_cdata
+         * @var Pointer<ZendExecutorGlobals> $pointer
+         */
+        return new self($casted_cdata, $pointer);
+    }
+
+    /** @return Pointer<ZendExecutorGlobals> */
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 }

@@ -41,9 +41,11 @@ final class ZendFunction implements Dereferencable
 
     /**
      * @param CastedCData<zend_function> $casted_cdata
+     * @param Pointer<ZendFunction> $pointer
      */
     public function __construct(
         private CastedCData $casted_cdata,
+        private Pointer $pointer,
     ) {
         unset($this->type);
         unset($this->function_name);
@@ -84,8 +86,17 @@ final class ZendFunction implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        /** @var CastedCData<zend_function> $casted_cdata */
-        return new self($casted_cdata);
+        /**
+         * @var CastedCData<zend_function> $casted_cdata
+         * @var Pointer<ZendFunction> $pointer
+         */
+        return new static($casted_cdata, $pointer);
+    }
+
+    /** @return Pointer<ZendFunction> */
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 
     public function getFullyQualifiedFunctionName(Dereferencer $dereferencer): string

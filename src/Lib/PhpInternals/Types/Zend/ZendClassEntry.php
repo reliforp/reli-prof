@@ -27,9 +27,13 @@ final class ZendClassEntry implements Dereferencable
      */
     public Pointer $name;
 
-    /** @param CastedCData<zend_class_entry> $casted_cdata */
+    /**
+     * @param CastedCData<zend_class_entry> $casted_cdata
+     * @param Pointer<ZendClassEntry> $pointer
+     */
     public function __construct(
         private CastedCData $casted_cdata,
+        private Pointer $pointer,
     ) {
         unset($this->name);
     }
@@ -53,8 +57,16 @@ final class ZendClassEntry implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        /** @var CastedCData<zend_class_entry> $casted_cdata */
-        return new self($casted_cdata);
+        /**
+         * @var CastedCData<zend_class_entry> $casted_cdata
+         * @var Pointer<ZendClassEntry> $pointer
+         */
+        return new self($casted_cdata, $pointer);
+    }
+
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 
     public function getClassName(Dereferencer $dereferencer): string

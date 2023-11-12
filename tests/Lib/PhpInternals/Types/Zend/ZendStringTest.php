@@ -33,7 +33,12 @@ class ZendStringTest extends TestCase
                     'val' => $string_addr,
                 ],
             ),
-            24
+            24,
+            new Pointer(
+                ZendString::class,
+                147,
+                255,
+            )
         );
         $this->assertSame(123, $zend_string->h);
         $this->assertSame(234, $zend_string->len);
@@ -56,7 +61,12 @@ class ZendStringTest extends TestCase
                     'val' => $string_addr,
                 ],
             ),
-            24
+            24,
+            new Pointer(
+                ZendString::class,
+                152,
+                280,
+            )
         );
         $value_pointer = $zend_string->getValuePointer(
             new Pointer(RawString::class, 123, 16)

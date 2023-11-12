@@ -26,6 +26,7 @@ final class SapiGlobalsStruct implements Dereferencable
     /** @param CastedCData<sapi_globals_struct> $casted_cdata */
     public function __construct(
         private CastedCData $casted_cdata,
+        private Pointer $pointer,
     ) {
         unset($this->global_request_time);
     }
@@ -45,6 +46,11 @@ final class SapiGlobalsStruct implements Dereferencable
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /** @var CastedCData<sapi_globals_struct> $casted_cdata */
-        return new self($casted_cdata);
+        return new self($casted_cdata, $pointer);
+    }
+
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 }

@@ -25,6 +25,7 @@ final class RawDouble implements Dereferencable
     /** @param CastedCData<CInteger> $casted_cdata */
     public function __construct(
         private CastedCData $casted_cdata,
+        private Pointer $pointer,
     ) {
         $this->value = $this->casted_cdata->casted->cdata;
     }
@@ -39,6 +40,11 @@ final class RawDouble implements Dereferencable
         Pointer $pointer
     ): static {
         /** @var CastedCData<CInteger> $casted_cdata */
-        return new self($casted_cdata);
+        return new self($casted_cdata, $pointer);
+    }
+
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 }

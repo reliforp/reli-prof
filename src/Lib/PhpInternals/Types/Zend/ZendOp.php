@@ -39,9 +39,13 @@ final class ZendOp implements Dereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $extended_value;
 
-    /** @param CastedCData<zend_op> $casted_cdata */
+    /**
+     * @param CastedCData<zend_op> $casted_cdata
+     * @param Pointer<ZendOp> $pointer
+     */
     public function __construct(
         private CastedCData $casted_cdata,
+        private Pointer $pointer,
     ) {
         unset($this->op1);
         unset($this->op2);
@@ -79,7 +83,15 @@ final class ZendOp implements Dereferencable
         CastedCData $casted_cdata,
         Pointer $pointer
     ): static {
-        /** @var CastedCData<zend_op> $casted_cdata */
-        return new self($casted_cdata);
+        /**
+         * @var CastedCData<zend_op> $casted_cdata
+         * @var Pointer<ZendOp> $pointer
+         */
+        return new self($casted_cdata, $pointer);
+    }
+
+    public function getPointer(): Pointer
+    {
+        return $this->pointer;
     }
 }
