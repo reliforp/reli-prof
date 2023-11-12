@@ -39,7 +39,7 @@ class Pointer
         );
     }
 
-    public function getCTypeName(): string
+    public function getCTypeNameOfType(): string
     {
         return $this->type::getCTypeName();
     }
