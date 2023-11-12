@@ -25,6 +25,7 @@ class RemoteProcessDereferencer implements Dereferencer
         private MemoryReaderInterface $memory_reader,
         private ProcessSpecifier $process_specifier,
         private CastedTypeProvider $ctype_provider,
+        private ?PointedTypeResolver $pointed_type_resolver = null,
     ) {
     }
 
@@ -61,7 +62,11 @@ class RemoteProcessDereferencer implements Dereferencer
         CastedCData $casted_cdata,
         Pointer $pointer
     ): mixed {
-        $type = $pointer->type;
+        if (!is_null($this->pointed_type_resolver)) {
+            $type = $this->pointed_type_resolver->resolve($pointer->type);
+        } else {
+            $type = $pointer->type;
+        }
         return $type::fromCastedCData($casted_cdata, $pointer);
     }
 }
