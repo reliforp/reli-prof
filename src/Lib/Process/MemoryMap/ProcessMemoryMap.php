@@ -32,4 +32,16 @@ final class ProcessMemoryMap
         }
         return $result;
     }
+
+    /** @return ProcessMemoryArea[] */
+    public function findByAddress(int $address): array
+    {
+        $result = [];
+        foreach ($this->memory_areas as $memory_area) {
+            if ($memory_area->isInRange($address)) {
+                $result[] = $memory_area;
+            }
+        }
+        return $result;
+    }
 }

@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TraceOutput;
 
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 interface TraceOutput
 {

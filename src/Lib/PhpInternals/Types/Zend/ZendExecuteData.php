@@ -15,6 +15,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_execute_data;
 use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -30,6 +31,15 @@ final class ZendExecuteData implements Dereferencable
     /** @var Pointer<ZendOp>|null */
     public ?Pointer $opline;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public Zval $This;
+
+    /** @var Pointer<ZendArray>|null  */
+    public ?Pointer $symbol_table;
+
+    /** @var Pointer<ZendArray>|null  */
+    public ?Pointer $extra_named_params;
+
     /**
      * @param CastedCData<zend_execute_data> $casted_cdata
      * @param Pointer<ZendExecuteData> $pointer
@@ -41,6 +51,9 @@ final class ZendExecuteData implements Dereferencable
         unset($this->func);
         unset($this->prev_execute_data);
         unset($this->opline);
+        unset($this->This);
+        unset($this->symbol_table);
+        unset($this->extra_named_params);
     }
 
     public function __get(string $field_name): mixed
@@ -70,6 +83,35 @@ final class ZendExecuteData implements Dereferencable
                 )
                 : null
             ,
+            'This' => $this->This = new Zval(
+                new CastedCData(
+                    $this->casted_cdata->casted->This,
+                    $this->casted_cdata->casted->This,
+                ),
+                new Pointer(
+                    Zval::class,
+                    $this->pointer->address
+                    +
+                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('This'),
+                    \FFI::sizeof($this->casted_cdata->casted->This),
+                ),
+            ),
+            'symbol_table' => $this->symbol_table =
+                $this->casted_cdata->casted->symbol_table !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->symbol_table,
+                )
+                : null
+            ,
+            'extra_named_params' => $this->extra_named_params =
+                $this->casted_cdata->casted->extra_named_params !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->extra_named_params,
+                )
+                : null
+            ,
         };
     }
 
@@ -95,6 +137,23 @@ final class ZendExecuteData implements Dereferencable
         return $this->pointer;
     }
 
+    public function hasThis(): bool
+    {
+        return $this->This->value->obj !== null
+            and ($this->This->u1->type_info & (8 | ((1 << 0) << 8) | ((1 << 1) << 8)))
+        ;
+    }
+
+    public function hasSymbolTable(): bool
+    {
+        return (bool)($this->This->u1->type_info & (1 << 20));
+    }
+
+    public function hasExtraNamedParams(): bool
+    {
+        return (bool)($this->This->u1->type_info & (1 << 27));
+    }
+
     public function getFunctionName(Dereferencer $dereferencer): ?string
     {
         if (is_null($this->func)) {
@@ -102,5 +161,142 @@ final class ZendExecuteData implements Dereferencable
         }
         $func = $dereferencer->deref($this->func);
         return $func->getFullyQualifiedFunctionName($dereferencer);
+    }
+
+    /** @return iterable<int, ZendExecuteData> */
+    public function iterateStackChain(Dereferencer $dereferencer): iterable
+    {
+        yield $this;
+        $stack = $this;
+        while (!is_null($stack->prev_execute_data)) {
+            yield $stack = $dereferencer->deref($stack->prev_execute_data);
+        }
+    }
+
+    public function getVariableTableAddress(): int
+    {
+        return $this->pointer->indexedAt(1)->address;
+    }
+
+    public function getTotalVariablesNum(Dereferencer $dereferencer): int
+    {
+        if (is_null($this->func)) {
+            return 0;
+        }
+        $func = $dereferencer->deref($this->func);
+        if (!$func->isUserFunction()) {
+            return $this->This->u2->num_args;
+        }
+        $compiled_variables_num = $func->op_array->last_var;
+        $tmp_num = $func->op_array->T;
+        $arg_num = $func->op_array->num_args;
+        $real_arg_num = $this->This->u2->num_args;
+        $extra_arg_num = $real_arg_num - $arg_num;
+        return $compiled_variables_num + $tmp_num + $extra_arg_num;
+    }
+
+    /** @return Pointer<ZvalArray> */
+    public function getVariableTablePointer(Dereferencer $dereferencer): Pointer
+    {
+        return new Pointer(
+            ZvalArray::class,
+            $this->getVariableTableAddress(),
+            16 * $this->getTotalVariablesNum($dereferencer),
+        );
+    }
+
+    /** @return Pointer<ZvalArray> */
+    public function getInternalVariableTablePointer(Dereferencer $dereferencer): Pointer
+    {
+        return new Pointer(
+            ZvalArray::class,
+            $this->pointer->address + ($this->getCallFrameSlot()) * 16,
+            16 * $this->getTotalVariablesNum($dereferencer),
+        );
+    }
+
+    /** @return iterable<string, Zval> */
+    public function getVariablesInternal(
+        Dereferencer $dereferencer,
+    ): iterable {
+        $variable_table_pointer = $this->getInternalVariableTablePointer($dereferencer);
+        $variable_table = $dereferencer->deref($variable_table_pointer);
+        $passed_count = $this->getTotalVariablesNum($dereferencer);
+
+        for ($i = 0; $i < $passed_count; $i++) {
+            if (!isset($variable_table[$i])) {
+                continue;
+            }
+            $zval = $variable_table[$i];
+            if ($zval->isUndef()) {
+                continue;
+            }
+            yield '$args_to_internal_function[' . $i . ']' => $zval;
+        }
+    }
+
+    /** @return iterable<string, Zval> */
+    public function getVariables(Dereferencer $dereferencer, ZendTypeReader $zend_type_reader): iterable
+    {
+        if (is_null($this->func)) {
+            return [];
+        }
+        $func = $dereferencer->deref($this->func);
+
+        $total_variables_num = $this->getTotalVariablesNum($dereferencer);
+        if ($total_variables_num === 0) {
+            return [];
+        }
+        if (!$func->isUserFunction()) {
+            yield from $this->getVariablesInternal($dereferencer);
+            return [];
+        }
+
+        $variable_table_pointer = $this->getVariableTablePointer($dereferencer);
+        $variable_table = $dereferencer->deref($variable_table_pointer);
+        foreach ($func->op_array->getVariableNames($dereferencer, $zend_type_reader) as $key => $name) {
+            $zval = $variable_table->offsetGet($key);
+            if ($zval->isUndef()) {
+                continue;
+            }
+            yield $name => $zval;
+        }
+
+        $func = $dereferencer->deref($this->func);
+        $compiled_variables_num = $func->op_array->last_var;
+        $tmp_num = $func->op_array->T;
+        assert(!is_null($this->opline));
+        $current_op_num = $func->op_array->getOpNumFromOpline($this->opline);
+        $live_tmp_vars = $func->op_array->findLiveTmpVars($current_op_num, $dereferencer);
+        $live_tmp_vars_map = array_flip(array_map($this->liveTmpVarToNum(...), $live_tmp_vars));
+        for ($i = $compiled_variables_num; $i < $compiled_variables_num + $tmp_num; $i++) {
+            if (!isset($live_tmp_vars_map[$i])) {
+                continue;
+            }
+            $name = '$_T[' . ($i - $compiled_variables_num) . ']';
+            $zval = $variable_table->offsetGet($i);
+            if ($zval->isUndef()) {
+                continue;
+            }
+            yield $name => $zval;
+        }
+        for ($i = $compiled_variables_num + $tmp_num; $i < $total_variables_num; $i++) {
+            $name = '$_ExtraArgs[' . ($i - $compiled_variables_num - $tmp_num) . ']';
+            $zval = $variable_table->offsetGet($i);
+            if ($zval->isUndef()) {
+                continue;
+            }
+            yield $name => $zval;
+        }
+    }
+
+    public function liveTmpVarToNum(int $live_tmp_var): int
+    {
+        return (int)($live_tmp_var / 16) - $this->getCallFrameSlot();
+    }
+
+    public function getCallFrameSlot(): int
+    {
+        return (int)(($this->pointer->size + 16 - 1) / 16);
     }
 }

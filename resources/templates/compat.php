@@ -12,7 +12,7 @@
 declare(strict_types=1);
 
 use Reli\Inspector\Output\TraceFormatter\Compat\CompatCallTraceFormatter;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 /** @var CallTrace $call_trace */
 

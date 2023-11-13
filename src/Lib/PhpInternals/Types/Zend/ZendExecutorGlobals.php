@@ -23,6 +23,33 @@ final class ZendExecutorGlobals implements Dereferencable
     /** @var Pointer<ZendExecuteData>|null */
     public ?Pointer $current_execute_data;
 
+    /** @var Pointer<ZendArray>|null */
+    public ?Pointer $function_table;
+
+    /** @var Pointer<ZendArray>|null */
+    public ?Pointer $class_table;
+
+    /** @var Pointer<ZendArray>|null */
+    public ?Pointer $zend_constants;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public ZendArray $symbol_table;
+
+    /** @var Pointer<ZendVmStack>|null  */
+    public ?Pointer $vm_stack;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public ZendArray $included_files;
+
+    /** @var Pointer<ZendArray>|null */
+    public ?Pointer $ini_directives;
+
+    /** @var Pointer<ZendArray>|null */
+    public ?Pointer $modified_ini_directives;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public ZendObjectsStore $objects_store;
+
     /**
      * @param CastedCData<zend_executor_globals> $casted_cdata
      * @param Pointer<ZendExecutorGlobals> $pointer
@@ -32,6 +59,13 @@ final class ZendExecutorGlobals implements Dereferencable
         private Pointer $pointer,
     ) {
         unset($this->current_execute_data);
+        unset($this->function_table);
+        unset($this->class_table);
+        unset($this->zend_constants);
+        unset($this->symbol_table);
+        unset($this->vm_stack);
+        unset($this->objects_store);
+        unset($this->included_files);
     }
 
     public function __get(string $field_name): mixed
@@ -44,6 +78,63 @@ final class ZendExecutorGlobals implements Dereferencable
                 )
                 : null
             ,
+            'function_table' => $this->casted_cdata->casted->function_table !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->function_table,
+                )
+                : null
+            ,
+            'class_table' => $this->casted_cdata->casted->class_table !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->class_table,
+                )
+                : null
+            ,
+            'zend_constants' => $this->casted_cdata->casted->zend_constants !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->zend_constants,
+                )
+                : null
+            ,
+            'symbol_table' => $this->symbol_table = new ZendArray(
+                new CastedCData(
+                    $this->casted_cdata->casted->symbol_table,
+                    $this->casted_cdata->casted->symbol_table
+                ),
+                new Pointer(
+                    ZendArray::class,
+                    $this->pointer->address
+                    +
+                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('symbol_table'),
+                    \FFI::sizeof($this->casted_cdata->casted->symbol_table),
+                ),
+            ),
+            'vm_stack' => $this->casted_cdata->casted->vm_stack !== null
+                ? Pointer::fromCData(
+                    ZendVmStack::class,
+                    $this->casted_cdata->casted->vm_stack,
+                )
+                : null
+            ,
+            'objects_store' => $this->objects_store = new ZendObjectsStore(
+                $this->casted_cdata->casted->objects_store,
+            ),
+            'included_files' => $this->included_files = new ZendArray(
+                new CastedCData(
+                    $this->casted_cdata->casted->included_files,
+                    $this->casted_cdata->casted->included_files
+                ),
+                new Pointer(
+                    ZendArray::class,
+                    $this->pointer->address
+                    +
+                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('included_files'),
+                    \FFI::sizeof($this->casted_cdata->casted->included_files),
+                ),
+            ),
         };
     }
 

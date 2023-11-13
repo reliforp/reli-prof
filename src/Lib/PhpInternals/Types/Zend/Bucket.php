@@ -13,12 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use FFI\PhpInternals\Bucket as ZendBucket;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class Bucket implements Dereferencable
+/** @psalm-consistent-constructor */
+class Bucket implements Dereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $val;
@@ -26,9 +26,9 @@ final class Bucket implements Dereferencable
     public int $h;
     /**
      * @psalm-suppress PropertyNotSetInConstructor
-     * @var Pointer<ZendString>
+     * @var Pointer<ZendString>|null
      */
-    public Pointer $key;
+    public ?Pointer $key;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\Bucket> $casted_cdata
@@ -46,12 +46,26 @@ final class Bucket implements Dereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'val' => $this->val = new Zval($this->casted_cdata->casted->val),
+            'val' => $this->val = new Zval(
+                new CastedCData(
+                    $this->casted_cdata->casted->val,
+                    $this->casted_cdata->casted->val,
+                ),
+                new Pointer(
+                    Zval::class,
+                    $this->pointer->address
+                    +
+                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('val'),
+                    \FFI::sizeof($this->casted_cdata->casted->val),
+                )
+            ),
             'h' => $this->h = 0xFFFF_FFFF & $this->casted_cdata->casted->h,
-            'key' => $this->key = Pointer::fromCData(
+            'key' => $this->key = $this->casted_cdata->casted->key !== null ? Pointer::fromCData(
                 ZendString::class,
                 $this->casted_cdata->casted->key
-            ),
+            )
+            : null
+            ,
         };
     }
 

@@ -15,7 +15,7 @@ namespace Reli\Inspector\Output\TraceOutput;
 
 use Reli\Inspector\Output\OutputChannel\OutputChannel;
 use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 final class FormattedTraceOutput implements TraceOutput
 {

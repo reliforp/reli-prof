@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpInternals;
 
 use FFI\CData;
 
-/** @template T of CData */
+/** @template-covariant T of CData */
 final class CastedCData
 {
     /**

@@ -181,6 +181,41 @@ struct _zend_ast_ref {
 	zend_ast         *ast;
 };
 
+// zend_object_handlers.h
+struct _zend_object_handlers {
+	/* offset of real object header (usually zero) */
+	int  offset;
+	/* general object functions */
+	void *free_obj;
+	void *dtor_obj;
+	void *clone_obj;
+	/* individual object functions */
+	void *read_property;
+	void *write_property;
+	void *read_dimension;
+	void *write_dimension;
+	void *get_property_ptr_ptr;
+	void *get;
+	void *set;
+	void *has_property;
+	void *unset_property;
+	void *has_dimension;
+	void *unset_dimension;
+	void *get_properties;
+	void *get_method;
+	void *call_method;
+	void *get_constructor;
+	void *get_class_name;
+	void *compare_objects;
+	void *cast_object;
+	void *count_elements;
+	void *get_debug_info;
+	void *get_closure;
+	void *get_gc;
+	void *do_operation;
+	void *compare;
+};
+
 // zend_globals.h
 typedef struct _zend_vm_stack *zend_vm_stack;
 
@@ -305,6 +340,14 @@ typedef struct _zend_function_entry {
 	uint32_t num_args;
 	uint32_t flags;
 } zend_function_entry;
+
+typedef struct _zend_fcall_info_cache {
+	zend_bool initialized;
+	zend_function *function_handler;
+	zend_class_entry *calling_scope;
+	zend_class_entry *called_scope;
+	zend_object *object;
+} zend_fcall_info_cache;
 
 // zend_modules.h
 struct _zend_module_entry {
@@ -483,7 +526,177 @@ union _zend_function {
 	zend_internal_function internal_function;
 };
 
+// zend_compile.h
+typedef struct _zend_class_constant {
+	zval value; /* access flags are stored in reserved: zval.u2.access_flags */
+	zend_string *doc_comment;
+	zend_class_entry *ce;
+} zend_class_constant;
+
+struct _zend_execute_data {
+	const zend_op       *opline;           /* executed opline                */
+	zend_execute_data   *call;             /* current call                   */
+	zval                *return_value;
+	zend_function       *func;             /* executed function              */
+	zval                 This;             /* this + call_info + num_args    */
+	zend_execute_data   *prev_execute_data;
+	zend_array          *symbol_table;
+	void               **run_time_cache;   /* cache op_array->run_time_cache */
+	zval                *literals;         /* cache op_array->literals   */
+};
+
+typedef struct _zend_brk_cont_element {
+	int start;
+	int cont;
+	int brk;
+	int parent;
+} zend_brk_cont_element;
+
+typedef struct _zend_oparray_context {
+	uint32_t   opcodes_size;
+	int        vars_size;
+	int        literals_size;
+	int        backpatch_count;
+	uint32_t   fast_call_var;
+	uint32_t   try_catch_offset;
+	int        current_brk_cont;
+	int        last_brk_cont;
+	zend_brk_cont_element *brk_cont_array;
+	HashTable *labels;
+} zend_oparray_context;
+
+typedef struct _zend_declarables {
+	zend_long ticks;
+} zend_declarables;
+
+typedef struct _znode { /* used only during compilation */
+	zend_uchar op_type;
+	zend_uchar flag;
+	union {
+		znode_op op;
+		zval constant; /* replaced by literal/zv */
+	} u;
+} znode;
+
+typedef struct _zend_file_context {
+	zend_declarables declarables;
+	znode implementing_class;
+
+	zend_string *current_namespace;
+	zend_bool in_namespace;
+	zend_bool has_bracketed_namespaces;
+
+	HashTable *imports;
+	HashTable *imports_function;
+	HashTable *imports_const;
+
+	HashTable seen_symbols;
+} zend_file_context;
+
+/** zend_llist.h */
+
+typedef void (*llist_dtor_func_t)(void *);
+typedef struct _zend_llist_element {
+	struct _zend_llist_element *next;
+	struct _zend_llist_element *prev;
+	char data[1]; /* Needs to always be last in the struct */
+} zend_llist_element;
+
+typedef struct _zend_llist {
+	zend_llist_element *head;
+	zend_llist_element *tail;
+	size_t count;
+	size_t size;
+	llist_dtor_func_t dtor;
+	unsigned char persistent;
+	zend_llist_element *traverse_ptr;
+} zend_llist;
+
+// zend_arena.h
+
+typedef struct _zend_arena zend_arena;
+
+struct _zend_arena {
+	char		*ptr;
+	char		*end;
+	zend_arena  *prev;
+};
+
+// zend_multibyte.h
+typedef struct _zend_encoding zend_encoding;
+
+// zend_constants.h
+typedef struct _zend_constant {
+	zval value;
+	zend_string *name;
+	int flags;
+	int module_number;
+} zend_constant;
+
 // zend_globals.h
+struct _zend_compiler_globals {
+	zend_stack loop_var_stack;
+
+	zend_class_entry *active_class_entry;
+
+	zend_string *compiled_filename;
+
+	int zend_lineno;
+
+	zend_op_array *active_op_array;
+
+	HashTable *function_table;	/* function symbol table */
+	HashTable *class_table;		/* class table */
+
+	HashTable filenames_table;
+
+	HashTable *auto_globals;
+
+	zend_bool parse_error;
+	zend_bool in_compilation;
+	zend_bool short_tags;
+
+	zend_bool unclean_shutdown;
+
+	zend_bool ini_parser_unbuffered_errors;
+
+	zend_llist open_files;
+
+	struct _zend_ini_parser_param *ini_parser_param;
+
+	uint32_t start_lineno;
+	zend_bool increment_lineno;
+
+	zend_string *doc_comment;
+	uint32_t extra_fn_flags;
+
+	uint32_t compiler_options; /* set of ZEND_COMPILE_* constants */
+
+	zend_oparray_context context;
+	zend_file_context file_context;
+
+	zend_arena *arena;
+
+	HashTable interned_strings;
+
+	const zend_encoding **script_encoding_list;
+	size_t script_encoding_list_size;
+	zend_bool multibyte;
+	zend_bool detect_unicode;
+	zend_bool encoding_declared;
+
+	zend_ast *ast;
+	zend_arena *ast_arena;
+
+	zend_stack delayed_oplines_stack;
+};
+
+struct _zend_compiler_globals_zts {
+    struct _zend_compiler_globals cg;
+	zval **static_members_table;
+	int last_static_member;
+};
+
 struct _zend_executor_globals {
 	zval uninitialized_zval;
 	zval error_zval;
@@ -580,25 +793,6 @@ struct _zend_executor_globals {
 	void *reserved[6];
 };
 
-// zend_compile.h
-typedef struct _zend_class_constant {
-	zval value; /* access flags are stored in reserved: zval.u2.access_flags */
-	zend_string *doc_comment;
-	zend_class_entry *ce;
-} zend_class_constant;
-
-struct _zend_execute_data {
-	const zend_op       *opline;           /* executed opline                */
-	zend_execute_data   *call;             /* current call                   */
-	zval                *return_value;
-	zend_function       *func;             /* executed function              */
-	zval                 This;             /* this + call_info + num_args    */
-	zend_execute_data   *prev_execute_data;
-	zend_array          *symbol_table;
-	void               **run_time_cache;   /* cache op_array->run_time_cache */
-	zval                *literals;         /* cache op_array->literals   */
-};
-
 // zend.h
 typedef struct _zend_trait_method_reference {
 	zend_string *method_name;
@@ -645,7 +839,7 @@ struct _zend_class_entry {
 	int default_static_members_count;
 	zval *default_properties_table;
 	zval *default_static_members_table;
-	zval **static_members_table__ptr;
+	zval *static_members_table__ptr;
 	HashTable function_table;
 	HashTable properties_info;
 	HashTable constants_table;
@@ -741,24 +935,107 @@ struct stat
 /** zend_stream.h */
 typedef struct stat zend_stat_t;
 
-/** zend_llist.h */
+/** zend_alloc.h */
+typedef struct  _zend_mm_heap      zend_mm_heap;
 
-typedef void (*llist_dtor_func_t)(void *);
-typedef struct _zend_llist_element {
-	struct _zend_llist_element *next;
-	struct _zend_llist_element *prev;
-	char data[1]; /* Needs to always be last in the struct */
-} zend_llist_element;
+typedef struct _zend_mm_storage zend_mm_storage;
+typedef	void* (*zend_mm_chunk_alloc_t)(zend_mm_storage *storage, size_t size, size_t alignment);
+typedef void  (*zend_mm_chunk_free_t)(zend_mm_storage *storage, void *chunk, size_t size);
+typedef bool   (*zend_mm_chunk_truncate_t)(zend_mm_storage *storage, void *chunk, size_t old_size, size_t new_size);
+typedef bool   (*zend_mm_chunk_extend_t)(zend_mm_storage *storage, void *chunk, size_t old_size, size_t new_size);
+typedef struct _zend_mm_handlers {
+	zend_mm_chunk_alloc_t       chunk_alloc;
+	zend_mm_chunk_free_t        chunk_free;
+	zend_mm_chunk_truncate_t    chunk_truncate;
+	zend_mm_chunk_extend_t      chunk_extend;
+} zend_mm_handlers;
+struct _zend_mm_storage {
+	const zend_mm_handlers handlers;
+	void *data;
+};
 
-typedef struct _zend_llist {
-	zend_llist_element *head;
-	zend_llist_element *tail;
-	size_t count;
-	size_t size;
-	llist_dtor_func_t dtor;
-	unsigned char persistent;
-	zend_llist_element *traverse_ptr;
-} zend_llist;
+/** zend_alloc.c */
+typedef uint32_t   zend_mm_page_info; /* 4-byte integer */
+typedef zend_ulong zend_mm_bitset;    /* 4-byte or 8-byte integer */
+
+typedef zend_mm_bitset zend_mm_page_map[(((size_t) (2 * 1024 * 1024)) / (4 * 1024)) / (sizeof(zend_mm_bitset) * 8)];     /* 64B */
+
+typedef struct  _zend_mm_page      zend_mm_page;
+typedef struct  _zend_mm_bin       zend_mm_bin;
+typedef struct  _zend_mm_free_slot zend_mm_free_slot;
+typedef struct  _zend_mm_chunk     zend_mm_chunk;
+typedef struct  _zend_mm_huge_list zend_mm_huge_list;
+
+struct _zend_mm_heap {
+	int                use_custom_heap;
+	zend_mm_storage   *storage;
+	size_t             size;                    /* current memory usage */
+	size_t             peak;                    /* peak memory usage */
+	zend_mm_free_slot *free_slot[30];           /* free lists for small sizes */
+	size_t             real_size;               /* current size of allocated pages */
+	size_t             real_peak;               /* peak size of allocated pages */
+	size_t             limit;                   /* memory limit */
+	int                overflow;                /* memory overflow flag */
+
+	zend_mm_huge_list *huge_list;               /* list of huge allocated blocks */
+
+	zend_mm_chunk     *main_chunk;
+	zend_mm_chunk     *cached_chunks;			/* list of unused chunks */
+	int                chunks_count;			/* number of allocated chunks */
+	int                peak_chunks_count;		/* peak number of allocated chunks for current request */
+	int                cached_chunks_count;		/* number of cached chunks */
+	double             avg_chunks_count;		/* average number of chunks allocated per request */
+	int                last_chunks_delete_boundary; /* number of chunks after last deletion */
+	int                last_chunks_delete_count;    /* number of deletion over the last boundary */
+	union {
+		struct {
+			void      *(*_malloc)(size_t);
+			void       (*_free)(void*);
+			void      *(*_realloc)(void*, size_t);
+		} std;
+	} custom_heap;
+	HashTable *tracked_allocs;
+};
+
+struct _zend_mm_chunk {
+	zend_mm_heap      *heap;
+	zend_mm_chunk     *next;
+	zend_mm_chunk     *prev;
+	uint32_t           free_pages;				/* number of free pages */
+	uint32_t           free_tail;               /* number of free pages at the end of chunk */
+	uint32_t           num;
+	char               reserve[64 - (sizeof(void*) * 3 + sizeof(uint32_t) * 3)];
+	zend_mm_heap       heap_slot;               /* used only in main chunk */
+	zend_mm_page_map   free_map;                /* 512 bits or 64 bytes */
+	zend_mm_page_info  map[((size_t) (2 * 1024 * 1024)) / (4 * 1024)];      /* 2 KB = 512 * 4 */
+};
+
+struct _zend_mm_page {
+	char               bytes[(4 * 1024)];
+};
+
+struct _zend_mm_bin {
+	char               bytes[(4 * 1024) * 8];
+};
+
+struct _zend_mm_free_slot {
+	zend_mm_free_slot *next_free_slot;
+};
+
+struct _zend_mm_huge_list {
+	intptr_t           ptr;
+	size_t             size;
+	zend_mm_huge_list *next;
+};
+
+/* zend_closures.c */
+typedef struct _zend_closure {
+	zend_object       std;
+	zend_function     func;
+	zval              this_ptr;
+	zend_class_entry *called_scope;
+	zif_handler       orig_internal_handler;
+} zend_closure;
 
 // main/SAPI.h
 /*

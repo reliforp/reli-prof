@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\TopLike;
 
 use Reli\Lib\DateTime\Clock;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 final class TopLikeFormatter
 {

@@ -27,7 +27,7 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use Reli\Lib\Console\EchoBackCanceller;
 use Reli\Lib\Log\Log;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;

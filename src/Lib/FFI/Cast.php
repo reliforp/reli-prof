@@ -19,9 +19,12 @@ use FFI\CPointer;
 
 class Cast
 {
-    /** @param CPointer $cdata */
-    public static function castPointerToInt(CData &$cdata): int
+    /** @param CPointer|null $cdata */
+    public static function castPointerToInt(?CData &$cdata): int
     {
+        if ($cdata === null) {
+            return 0;
+        }
         /** @var CInteger $casted */
         $casted = \FFI::cast('long', $cdata);
         return $casted->cdata;

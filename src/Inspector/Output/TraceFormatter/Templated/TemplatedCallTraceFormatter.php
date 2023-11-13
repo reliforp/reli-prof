@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\TraceFormatter\Templated;
 
 use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
-use Reli\Lib\PhpProcessReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 use function assert;
 use function is_string;
