@@ -19,7 +19,7 @@ use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendMmChunk implements Dereferencable
+final class ZendMmChunk implements Dereferencable
 {
     public const SIZE = (2 * 1024 * 1024);
 
@@ -45,6 +45,7 @@ class ZendMmChunk implements Dereferencable
 
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $num;
+
     public ZendMmHeap $heap_slot;
 
     /** @psalm-suppress PropertyNotSetInConstructor */

@@ -81,15 +81,6 @@ class ZendArena implements Dereferencable
         }
     }
 
-    public function getSizeOfChain(Dereferencer $dereferencer): int
-    {
-        $size = 0;
-        foreach ($this->iterateChain($dereferencer) as $arena) {
-            $size += $arena->getSize();
-        }
-        return $size;
-    }
-
     public static function getCTypeName(): string
     {
         return 'zend_arena';

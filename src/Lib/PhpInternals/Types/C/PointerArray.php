@@ -97,16 +97,6 @@ final class PointerArray implements Dereferencable
         return $this->pointers_cache[$offset];
     }
 
-    public function offsetSet(mixed $offset, mixed $value): void
-    {
-        throw new \LogicException('not implemented');
-    }
-
-    public function offsetUnset(mixed $offset): void
-    {
-        throw new \LogicException('not implemented');
-    }
-
     /**
      * @template T of Dereferencable
      * @param class-string<T> $class_name

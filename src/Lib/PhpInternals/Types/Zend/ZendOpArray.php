@@ -244,13 +244,6 @@ class ZendOpArray
         return $result;
     }
 
-    public function hasHeapRuntimeCache(): bool
-    {
-        return $this->cache_size > 0
-            and $this->fn_flags & (1 << 26)
-        ;
-    }
-
     public function getRuntimeCacheAddress(): int
     {
         $ctype = FFI::typeof($this->cdata);

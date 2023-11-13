@@ -98,32 +98,6 @@ class ZendCompilerGlobals implements Dereferencable
         }
     }
 
-    public function getSizeOfArena(Dereferencer $dereferencer): int
-    {
-        if ($this->arena === null) {
-            return 0;
-        }
-        $size = 0;
-        $arena = $dereferencer->deref($this->arena);
-        foreach ($arena->iterateChain($dereferencer) as $arena) {
-            $size += $arena->getSize();
-        }
-        return $size;
-    }
-
-    public function getSizeOfAstArena(Dereferencer $dereferencer): int
-    {
-        if ($this->ast_arena === null) {
-            return 0;
-        }
-        $size = 0;
-        $arena = $dereferencer->deref($this->ast_arena);
-        foreach ($arena->iterateChain($dereferencer) as $arena) {
-            $size += $arena->getSize();
-        }
-        return $size;
-    }
-
     public static function getCTypeName(): string
     {
         return 'zend_compiler_globals';

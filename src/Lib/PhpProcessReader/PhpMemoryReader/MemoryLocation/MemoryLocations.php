@@ -66,15 +66,4 @@ class MemoryLocations
         }
         return null;
     }
-
-    public function getContainingMemoryLocations(MemoryLocation $memory_location): array
-    {
-        $result = [];
-        foreach ($this->memory_locations as $memory_location_in_this) {
-            if ($memory_location_in_this->contains($memory_location)) {
-                $result[] = $memory_location_in_this;
-            }
-        }
-        return $result;
-    }
 }
