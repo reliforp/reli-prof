@@ -123,7 +123,7 @@ final class MemoryCommand extends Command
                 ,
             ]
             + [
-                'php_version' => $target_php_settings->php_version,
+                'php_version' => $target_php_settings_version_decided->php_version,
             ]
         ];
 
