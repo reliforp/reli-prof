@@ -16,6 +16,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
   - [nikic/sample_prof](https://github.com/nikic/sample_prof)
 - Investigating the cause of a bug or performance failure
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
+- Finding memory bottlenecks or memory leaks
 
 ## How it works
 It's implemented by using following techniques:
@@ -44,6 +45,7 @@ Other features of reli that phpspy does not currently have include:
 - Get running opcodes of the PHP-VM
 - Automatic retrieval of the target PHP version from stripped PHP binaries
 - Output traces in speedscope format
+- Deeply analyzing memory usage of the target process
 
 There is no particular reason why these features cannot be implemented on the phpspy side, so it may be possible to do them on phpspy in the future.
 
@@ -363,10 +365,147 @@ $ ./reli c:callgrind <traces >callgrind.out
 $ kcachegrind callgrind.out
   ```
 
-### Dump the memory usage of the target process
+### Dump the memory usage of the target proces
+
 ```bash
 $ sudo php ./reli i:memory -p 2183131 >2183131.memory_dump.json
+$ cat 2183131.memory_dump.json | jq .summary
 ```
+
+Only NTS targets are supported for now.
+
+The output would be like the following.
+
+```bash
+[
+  {
+    "zend_mm_heap_total": 10485760,
+    "zend_mm_heap_usage": 7642504,
+    "zend_mm_chunk_total": 10485760,
+    "zend_mm_chunk_usage": 7642504,
+    "zend_mm_huge_total": 0,
+    "zend_mm_huge_usage": 0,
+    "vm_stack_total": 262144,
+    "vm_stack_usage": 8224,
+    "compiler_arena_total": 917504,
+    "compiler_arena_usage": 815480,
+    "possible_allocation_overhead_total": 549645,
+    "possible_array_overhead_total": 378768,
+    "memory_get_usage": 8263440,
+    "memory_get_real_usage": 12582912,
+    "cached_chunks_size": 2097152,
+    "heap_memory_analyzed_percentage": 92.48574443573136,
+    "php_version": "v82"
+  }
+]
+
+```
+
+And you can get the call trace from the dump.
+
+```bash
+$ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|."#function_name"'
+"time_nanosleep"
+"Reli\\Lib\\Loop\\LoopMiddleware\\NanoSleepMiddleware::invoke"
+"Reli\\Lib\\Loop\\LoopMiddleware\\KeyboardCancelMiddleware::invoke"
+"Reli\\Lib\\Loop\\LoopMiddleware\\RetryOnExceptionMiddleware::invoke"
+"Reli\\Lib\\Loop\\Loop::invoke"
+"Reli\\Command\\Inspector\\GetTraceCommand::execute"
+"Symfony\\Component\\Console\\Command\\Command::run"
+"Symfony\\Component\\Console\\Application::doRunCommand"
+"Symfony\\Component\\Console\\Application::doRun"
+"Symfony\\Component\\Console\\Application::run"
+""
+```
+
+You can also see the contents of the local variables of a specific call frame.
+
+```bash
+$ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|select(."#function_name"=="time_nanosleep")'
+{
+  "#node_id": 1,
+  "#type": "CallFrameContext",
+  "#function_name": "time_nanosleep",
+  "local_variables": {
+    "#node_id": 2,
+    "#type": "CallFrameVariableTableContext",
+    "$args_to_internal_function[0]": {
+      "#node_id": 3,
+      "#type": "ScalarValueContext",
+      "#value": 0
+    },
+    "$args_to_internal_function[1]": {
+      "#node_id": 4,
+      "#type": "ScalarValueContext",
+      "#value": 9743095
+    }
+  }
+}
+```
+
+If a context is referencing another location in the dump file, it can also be extracted with `jq`.
+
+```bash
+$ cat 2183131.memory_dump.json | jq '.context.call_frames["7"].local_variables'
+{
+  "#node_id": 1433,
+  "#type": "CallFrameVariableTableContext",
+  "command": {
+    "#reference_node_id": 368
+  },
+  "input": {
+    "#reference_node_id": 1395
+  },
+  "output": {
+    "#reference_node_id": 54
+  },
+  "helper": {
+    "#reference_node_id": 591
+  },
+  "commandSignals": {
+    "#reference_node_id": 69
+  }
+}
+
+$ cat 2183131.memory_dump.json | jq '..|objects|select(."#node_id"==368)|.' | head -n 20
+{
+  "#node_id": 368,
+  "#type": "ObjectContext",
+  "#locations": [
+    {
+      "address": 139988652434432,
+      "size": 472,
+      "refcount": 6,
+      "type_info": 3221409800,
+      "class_name": "Reli\\Command\\Inspector\\GetTraceCommand"
+    }
+  ],
+  "object_handlers": {
+    "#reference_node_id": 7
+  },
+  "php_globals_finder": {
+    "#node_id": 369,
+    "#type": "ObjectContext",
+    "#locations": [
+      {
+```
+
+You can also extract all references to a specific object.
+
+```bash
+$ cat 2183131.memory_dump.json | jq 'path(..|objects|select(."#reference_node_id"==368 or ."#node_id"==368))|join(".")'
+"context.call_frames.1.this.chain.callable.closure.this_ptr"
+"context.call_frames.1.this.chain.callable.closure.this_ptr.application.commands.array_elements.inspector:trace.value"
+"context.call_frames.1.this.chain.callable.closure.this_ptr.application.runningCommand"
+"context.call_frames.5.this"
+"context.call_frames.6.this"
+"context.call_frames.7.local_variables.command"
+"context.call_frames.8.local_variables.command"
+"context.objects_store.285"
+
+```
+
+The refcount of the object recorded in the memory location is 6 in this example. Calling methods via `$obj->call()` adds refcount by 1, but `$this->call()` doesn't add refcount. References from objects_store don't add refcount too. So all 6 references are analyzed here.
 
 See [#308](https://github.com/reliforp/reli-prof/pull/308) for more info.
 
