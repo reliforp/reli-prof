@@ -211,6 +211,36 @@ Options:
   -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
+## Dump the memory usage of the target process
+```bash
+./reli inspector:memory --help
+Description:
+  [experimental] get memory usage from an outer process
+
+Usage:
+  inspector:memory [options] [--] [<cmd> [<args>...]]
+
+Arguments:
+  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
+  args                                       command line arguments for cmd
+
+Options:
+      --stop-process[=STOP-PROCESS]          stop the process while inspecting [default: true]
+  -p, --pid=PID                              process id
+      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
+      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
+  -h, --help                                 Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                Do not output any message
+  -V, --version                              Display this application version
+      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                       Do not ask any interactive question
+  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+
+```
+
 ## Examples
 ### Trace a script
 ```bash
@@ -332,6 +362,13 @@ See [#101](https://github.com/reliforp/reli-prof/pull/101).
 $ ./reli c:callgrind <traces >callgrind.out
 $ kcachegrind callgrind.out
   ```
+
+### Dump the memory usage of the target process
+```bash
+$ sudo php ./reli i:memory -p 2183131 >2183131.memory_dump.json
+```
+
+See [#308](https://github.com/reliforp/reli-prof/pull/308) for more info.
 
 ## Troubleshooting
 ### I get an error message "php module not found" and can't get a trace!
