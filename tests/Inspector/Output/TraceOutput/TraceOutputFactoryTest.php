@@ -13,15 +13,15 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TraceOutput;
 
+use Reli\BaseTestCase;
 use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use Reli\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Output\StreamOutput;
 
-class TraceOutputFactoryTest extends TestCase
+class TraceOutputFactoryTest extends BaseTestCase
 {
     public function testFromSettingsAndConsoleOutput()
     {
@@ -61,6 +61,7 @@ class TraceOutputFactoryTest extends TestCase
         $call_trace_formatter->expects()
             ->format($test_trace)
             ->andReturns('formatted')
+            ->twice()
         ;
         $trace_output_factory = new TraceOutputFactory($trace_formatter_factory);
         $trace_output1 = $trace_output_factory->fromSettingsAndConsoleOutput(

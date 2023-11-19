@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryMap;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class ProcessMemoryMapTest extends TestCase
+class ProcessMemoryMapTest extends BaseTestCase
 {
     public function testFindByNameRegex()
     {

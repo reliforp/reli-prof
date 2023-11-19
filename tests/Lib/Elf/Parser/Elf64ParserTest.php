@@ -13,15 +13,15 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Parser;
 
+use Reli\BaseTestCase;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
 use Reli\Lib\Elf\Structure\Elf64\Elf64Header;
 use Reli\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderEntry;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SectionHeaderEntry;
-use PHPUnit\Framework\TestCase;
 
-class Elf64ParserTest extends TestCase
+class Elf64ParserTest extends BaseTestCase
 {
     public function testParseElfHeader()
     {

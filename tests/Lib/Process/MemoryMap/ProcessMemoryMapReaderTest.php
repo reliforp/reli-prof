@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryMap;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class ProcessMemoryMapReaderTest extends TestCase
+class ProcessMemoryMapReaderTest extends BaseTestCase
 {
     public function testRead()
     {

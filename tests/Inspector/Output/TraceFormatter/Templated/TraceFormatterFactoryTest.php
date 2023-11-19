@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\TraceFormatter\Templated;
 
 use Mockery;
+use Reli\BaseTestCase;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
-use PHPUnit\Framework\TestCase;
 
-class TraceFormatterFactoryTest extends TestCase
+class TraceFormatterFactoryTest extends BaseTestCase
 {
     public function testCreateFromSettingsCachedByName(): void
     {

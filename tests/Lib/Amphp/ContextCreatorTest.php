@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Amphp;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class ContextCreatorTest extends TestCase
+class ContextCreatorTest extends BaseTestCase
 {
     /**
      * @runInSeparateProcess

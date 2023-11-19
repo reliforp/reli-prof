@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Reader\Controller;
 
 use Mockery;
+use Reli\BaseTestCase;
+use Reli\Inspector\Daemon\AutoContextRecoveringInterface;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
@@ -23,11 +25,10 @@ use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Lib\Amphp\ContextInterface;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use PHPUnit\Framework\TestCase;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
-final class PhpReaderControllerTest extends TestCase
+final class PhpReaderControllerTest extends BaseTestCase
 {
     public function testStart(): void
     {
@@ -72,6 +73,7 @@ final class PhpReaderControllerTest extends TestCase
             ->andReturns($protocol)
         ;
         $php_reader_context = new PhpReaderController($context);
+        $php_reader_context->sendSettings($trace_loop_settings, $get_trace_settings);
     }
 
     public function testSendAttach(): void

@@ -13,11 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Reli\Lib\PhpInternals\Opcodes\OpcodeV70;
 use Reli\Lib\PhpInternals\Types\Zend\Opline;
 
-class CallFrameTest extends TestCase
+class CallFrameTest extends BaseTestCase
 {
     public function testGetFullyQualifiedFunctionName()
     {

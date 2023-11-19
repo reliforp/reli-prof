@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\TargetPhpSettings;
 
 use Mockery;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TargetPhpSettingsFromConsoleInputTest extends TestCase
+class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
 {
     public function testFromConsoleInput(): void
     {
@@ -51,11 +51,11 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
     public function testFromConsoleInputPhpVersionNotSupported(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('php-regex')->andReturns(null);
-        $input->expects()->getOption('libpthread-regex')->andReturns(null);
+        $input->allows()->getOption('php-regex')->andReturns(null);
+        $input->allows()->getOption('libpthread-regex')->andReturns(null);
         $input->expects()->getOption('php-version')->andReturns('v56');
-        $input->expects()->getOption('php-path')->andReturns(null);
-        $input->expects()->getOption('libpthread-path')->andReturns(null);
+        $input->allows()->getOption('php-path')->andReturns(null);
+        $input->allows()->getOption('libpthread-path')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
@@ -64,10 +64,10 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('php-regex')->andReturns(1);
-        $input->expects()->getOption('libpthread-regex')->andReturns(null);
-        $input->expects()->getOption('php-version')->andReturns(null);
-        $input->expects()->getOption('php-path')->andReturns(null);
-        $input->expects()->getOption('libpthread-path')->andReturns(null);
+        $input->allows()->getOption('libpthread-regex')->andReturns(null);
+        $input->allows()->getOption('php-version')->andReturns(null);
+        $input->allows()->getOption('php-path')->andReturns(null);
+        $input->allows()->getOption('libpthread-path')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
@@ -75,11 +75,11 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
     public function testFromConsoleInputPthreadRegexNonString(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('php-regex')->andReturns(null);
+        $input->allows()->getOption('php-regex')->andReturns(null);
         $input->expects()->getOption('libpthread-regex')->andReturns(1);
-        $input->expects()->getOption('php-version')->andReturns(null);
-        $input->expects()->getOption('php-path')->andReturns(null);
-        $input->expects()->getOption('libpthread-path')->andReturns(null);
+        $input->allows()->getOption('php-version')->andReturns(null);
+        $input->allows()->getOption('php-path')->andReturns(null);
+        $input->allows()->getOption('libpthread-path')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
@@ -87,11 +87,11 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
     public function testFromConsoleInputPhpPathNonString(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('php-regex')->andReturns(null);
-        $input->expects()->getOption('libpthread-regex')->andReturns(null);
-        $input->expects()->getOption('php-version')->andReturns(null);
+        $input->allows()->getOption('php-regex')->andReturns(null);
+        $input->allows()->getOption('libpthread-regex')->andReturns(null);
+        $input->allows()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(1);
-        $input->expects()->getOption('libpthread-path')->andReturns(null);
+        $input->allows()->getOption('libpthread-path')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
@@ -99,10 +99,10 @@ class TargetPhpSettingsFromConsoleInputTest extends TestCase
     public function testFromConsoleInputPthreadPathNonString(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('php-regex')->andReturns(null);
-        $input->expects()->getOption('libpthread-regex')->andReturns(null);
-        $input->expects()->getOption('php-version')->andReturns(null);
-        $input->expects()->getOption('php-path')->andReturns(null);
+        $input->allows()->getOption('php-regex')->andReturns(null);
+        $input->allows()->getOption('libpthread-regex')->andReturns(null);
+        $input->allows()->getOption('php-version')->andReturns(null);
+        $input->allows()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(1);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);

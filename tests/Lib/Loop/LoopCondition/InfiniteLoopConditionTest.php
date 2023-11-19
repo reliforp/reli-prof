@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Loop\LoopCondition;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class InfiniteLoopConditionTest extends TestCase
+class InfiniteLoopConditionTest extends BaseTestCase
 {
     public function testShouldContinue(): void
     {

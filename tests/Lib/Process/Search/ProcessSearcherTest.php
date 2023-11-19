@@ -13,11 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\Search;
 
+use Reli\BaseTestCase;
 use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
-use PHPUnit\Framework\TestCase;
 
-class ProcessSearcherTest extends TestCase
+class ProcessSearcherTest extends BaseTestCase
 {
     /** @var resource|null */
     private $child = null;

@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\ProcFileSystem;
 
+use Reli\BaseTestCase;
 use Reli\Lib\File\NativeFileReader;
-use PHPUnit\Framework\TestCase;
 
-class CommandLineEnumeratorTest extends TestCase
+class CommandLineEnumeratorTest extends BaseTestCase
 {
     /** @var resource|null */
     private $child = null;

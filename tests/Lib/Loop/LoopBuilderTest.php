@@ -15,11 +15,11 @@ namespace Reli\Lib\Loop;
 
 use Exception;
 use LogicException;
+use Reli\BaseTestCase;
 use Reli\Lib\Loop\LoopMiddleware\CallableMiddleware;
 use Reli\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
-use PHPUnit\Framework\TestCase;
 
-class LoopBuilderTest extends TestCase
+class LoopBuilderTest extends BaseTestCase
 {
     public function testBuild(): void
     {

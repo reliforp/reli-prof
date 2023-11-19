@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Searcher\Controller;
 
 use Mockery;
+use Reli\BaseTestCase;
+use Reli\Inspector\Daemon\AutoContextRecoveringInterface;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
@@ -23,7 +25,7 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
-class PhpSearcherControllerTest extends TestCase
+class PhpSearcherControllerTest extends BaseTestCase
 {
     public function testStart(): void
     {

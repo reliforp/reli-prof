@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Searcher\Context;
 
 use Mockery;
+use Reli\BaseTestCase;
 use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
 use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
 use Reli\Inspector\Daemon\Searcher\Worker\PhpSearcherEntryPoint;
@@ -22,7 +23,7 @@ use Reli\Lib\Amphp\ContextCreatorInterface;
 use Reli\Lib\Amphp\ContextInterface;
 use PHPUnit\Framework\TestCase;
 
-class PhpSearcherContextCreatorTest extends TestCase
+class PhpSearcherContextCreatorTest extends BaseTestCase
 {
     public function testCreate()
     {

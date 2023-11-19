@@ -13,12 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\C;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Pointer;
 
-class PointerArrayTest extends TestCase
+class PointerArrayTest extends BaseTestCase
 {
     public function testGetCTypeName(): void
     {

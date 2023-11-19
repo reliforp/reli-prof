@@ -14,15 +14,15 @@ declare(strict_types=1);
 namespace Reli\Lib\Process\Exec;
 
 use Hamcrest\Type\IsCallable;
+use Reli\BaseTestCase;
 use Reli\Lib\Libc\Errno\Errno;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
 use Reli\Lib\Libc\Unistd\Execvp;
 use Reli\Lib\Process\Exec\Internal\Pcntl;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Reli\Lib\System\OnShutdown;
-use PHPUnit\Framework\TestCase;
 
-class TraceeExecutorTest extends TestCase
+class TraceeExecutorTest extends BaseTestCase
 {
     public function testExecute()
     {

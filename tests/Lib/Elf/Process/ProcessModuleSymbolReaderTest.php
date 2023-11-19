@@ -15,6 +15,7 @@ namespace Reli\Lib\Elf\Process;
 
 use FFI;
 use Mockery;
+use Reli\BaseTestCase;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
@@ -22,9 +23,8 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Integer\UInt64;
-use PHPUnit\Framework\TestCase;
 
-class ProcessModuleSymbolReaderTest extends TestCase
+class ProcessModuleSymbolReaderTest extends BaseTestCase
 {
     public function testRead()
     {
@@ -106,7 +106,9 @@ class ProcessModuleSymbolReaderTest extends TestCase
                 0,
                 new UInt64(0, 0),
                 new UInt64(0, 0),
-            ));
+            ))
+            ->twice()
+        ;
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
 
         $process_symbol_reader = new ProcessModuleSymbolReader(

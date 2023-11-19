@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\TargetProcessSettings;
 
 use Mockery;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TargetProcessSettingsFromConsoleInputTest extends TestCase
+class TargetProcessSettingsFromConsoleInputTest extends BaseTestCase
 {
     public function testFromConsoleInput(): void
     {
@@ -30,7 +30,7 @@ class TargetProcessSettingsFromConsoleInputTest extends TestCase
         $this->assertSame(10, $settings->pid);
     }
 
-    public function testFromConsoleInputPidNotSpecified(): void
+    public function testFromConsoleInputTargetNotSpecified(): void
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns(null);
@@ -43,7 +43,7 @@ class TargetProcessSettingsFromConsoleInputTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('pid')->andReturns('abc');
-        $input->expects()->getArgument('cmd')->andReturns(null);
+        $input->allows()->getArgument('cmd')->andReturns(null);
         $this->expectException(TargetProcessSettingsException::class);
         (new TargetProcessSettingsFromConsoleInput())->createSettings($input);
     }

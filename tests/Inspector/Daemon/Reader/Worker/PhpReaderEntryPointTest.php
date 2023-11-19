@@ -15,6 +15,7 @@ namespace Reli\Inspector\Daemon\Reader\Worker;
 
 use Hamcrest\Matchers;
 use Mockery;
+use Reli\BaseTestCase;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
@@ -27,9 +28,8 @@ use Reli\Lib\Loop\LoopCondition\OnlyOnceCondition;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
-use PHPUnit\Framework\TestCase;
 
-class PhpReaderEntryPointTest extends TestCase
+class PhpReaderEntryPointTest extends BaseTestCase
 {
     public function testRun(): void
     {

@@ -14,13 +14,13 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Dispatcher;
 
 use Mockery;
+use Reli\BaseTestCase;
 use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
-use PHPUnit\Framework\TestCase;
 
-class WorkerPoolTest extends TestCase
+class WorkerPoolTest extends BaseTestCase
 {
     public function testCreate()
     {

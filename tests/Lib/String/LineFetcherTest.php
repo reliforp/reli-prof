@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\String;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class LineFetcherTest extends TestCase
+class LineFetcherTest extends BaseTestCase
 {
     public function testCreateGenerator()
     {

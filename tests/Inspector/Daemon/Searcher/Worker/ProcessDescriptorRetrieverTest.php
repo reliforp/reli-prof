@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Searcher\Worker;
 
 use Hamcrest\Matchers;
+use Reli\BaseTestCase;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -22,7 +23,7 @@ use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessSpecifier;
 use PHPUnit\Framework\TestCase;
 
-class ProcessDescriptorRetrieverTest extends TestCase
+class ProcessDescriptorRetrieverTest extends BaseTestCase
 {
     public function testGetProcessDescriptorCached(): void
     {

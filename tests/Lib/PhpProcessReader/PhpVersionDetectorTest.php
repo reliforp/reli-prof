@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader;
 
+use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
@@ -24,9 +25,8 @@ use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
-use PHPUnit\Framework\TestCase;
 
-class PhpVersionDetectorTest extends TestCase
+class PhpVersionDetectorTest extends BaseTestCase
 {
     public function testDetectVersion()
     {

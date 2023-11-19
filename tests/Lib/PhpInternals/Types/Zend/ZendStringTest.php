@@ -13,12 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
+use Reli\BaseTestCase;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawString;
 use Reli\Lib\Process\Pointer\Pointer;
-use PHPUnit\Framework\TestCase;
 
-class ZendStringTest extends TestCase
+class ZendStringTest extends BaseTestCase
 {
     public function testValues(): void
     {

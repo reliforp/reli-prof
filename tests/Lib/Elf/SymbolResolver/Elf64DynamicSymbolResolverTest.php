@@ -13,13 +13,13 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\SymbolResolver;
 
+use Reli\BaseTestCase;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
-use PHPUnit\Framework\TestCase;
 
-class Elf64DynamicSymbolResolverTest extends TestCase
+class Elf64DynamicSymbolResolverTest extends BaseTestCase
 {
     public function testLoad()
     {

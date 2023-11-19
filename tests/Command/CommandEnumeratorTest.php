@@ -14,9 +14,9 @@ declare(strict_types=1);
 namespace Reli\Command;
 
 use GlobIterator;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class CommandEnumeratorTest extends TestCase
+class CommandEnumeratorTest extends BaseTestCase
 {
     public function testCanEnumerateCommands()
     {

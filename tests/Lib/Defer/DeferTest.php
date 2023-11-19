@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Defer;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class DeferTest extends TestCase
+class DeferTest extends BaseTestCase
 {
     public function testDefer()
     {
