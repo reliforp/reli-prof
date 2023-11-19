@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\File;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class NativeFileReaderTest extends TestCase
+class NativeFileReaderTest extends BaseTestCase
 {
     public function testReadAll()
     {

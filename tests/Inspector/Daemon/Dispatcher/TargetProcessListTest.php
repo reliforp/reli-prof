@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Dispatcher;
 
+use Reli\BaseTestCase;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use PHPUnit\Framework\TestCase;
 
-class TargetProcessListTest extends TestCase
+class TargetProcessListTest extends BaseTestCase
 {
     public function testPickOne(): void
     {

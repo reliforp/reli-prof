@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Log\StateCollector;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class GroupedStateCollectorTest extends TestCase
+class GroupedStateCollectorTest extends BaseTestCase
 {
     public function testCollect()
     {

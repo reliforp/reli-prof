@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryMap;
 
+use Reli\BaseTestCase;
 use Reli\Lib\String\LineFetcher;
-use PHPUnit\Framework\TestCase;
 
-class ProcessMemoryMapParserTest extends TestCase
+class ProcessMemoryMapParserTest extends BaseTestCase
 {
     public function testParse()
     {

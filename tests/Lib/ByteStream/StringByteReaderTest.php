@@ -14,9 +14,9 @@ declare(strict_types=1);
 namespace Reli\Lib\ByteStream;
 
 use LogicException;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class StringByteReaderTest extends TestCase
+class StringByteReaderTest extends BaseTestCase
 {
     public function testRead()
     {

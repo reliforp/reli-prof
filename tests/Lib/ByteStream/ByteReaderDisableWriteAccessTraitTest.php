@@ -15,9 +15,9 @@ namespace Reli\Lib\ByteStream;
 
 use ArrayAccess;
 use LogicException;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class ByteReaderDisableWriteAccessTraitTest extends TestCase
+class ByteReaderDisableWriteAccessTraitTest extends BaseTestCase
 {
     public function testOffsetSet()
     {

@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\TraceLoopSettings;
 
 use Mockery;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class TraceLoopSettingsFromConsoleInputTest extends TestCase
+class TraceLoopSettingsFromConsoleInputTest extends BaseTestCase
 {
     public function testFromConsoleInput(): void
     {
@@ -47,8 +47,8 @@ class TraceLoopSettingsFromConsoleInputTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('sleep-ns')->andReturns('abc');
-        $input->expects()->getOption('max-retries')->andReturns(null);
-        $input->expects()->getOption('stop-process')->andReturns(null);
+        $input->allows()->getOption('max-retries')->andReturns(null);
+        $input->allows()->getOption('stop-process')->andReturns(null);
         $this->expectException(TraceLoopSettingsException::class);
         (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
     }
@@ -56,9 +56,9 @@ class TraceLoopSettingsFromConsoleInputTest extends TestCase
     public function testFromConsoleInputMaxRetriesNotInteger(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('sleep-ns')->andReturns(null);
+        $input->allows()->getOption('sleep-ns')->andReturns(null);
         $input->expects()->getOption('max-retries')->andReturns('abc');
-        $input->expects()->getOption('stop-process')->andReturns(null);
+        $input->allows()->getOption('stop-process')->andReturns(null);
         $this->expectException(TraceLoopSettingsException::class);
         (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
     }
@@ -66,8 +66,8 @@ class TraceLoopSettingsFromConsoleInputTest extends TestCase
     public function testFromConsoleInputStopProcessNotBoolean(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('sleep-ns')->andReturns(null);
-        $input->expects()->getOption('max-retries')->andReturns(null);
+        $input->allows()->getOption('sleep-ns')->andReturns(null);
+        $input->allows()->getOption('max-retries')->andReturns(null);
         $input->expects()->getOption('stop-process')->andReturns('abc');
         $this->expectException(TraceLoopSettingsException::class);
         (new TraceLoopSettingsFromConsoleInput())->createSettings($input);

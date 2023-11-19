@@ -14,9 +14,9 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals;
 
 use FFI;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class ZendTypeReaderTest extends TestCase
+class ZendTypeReaderTest extends BaseTestCase
 {
     public function testReadAsZendString()
     {

@@ -13,11 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Dispatcher;
 
+use Reli\BaseTestCase;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use PHPUnit\Framework\TestCase;
 
-class DispatchTableTest extends TestCase
+class DispatchTableTest extends BaseTestCase
 {
     public function testUpdateTarget()
     {
@@ -30,7 +30,9 @@ class DispatchTableTest extends TestCase
                     $attached[] = $process_descriptor->pid;
                     return true;
                 }
-            );
+            )
+            ->times(3)
+        ;
         $worker2 = clone $worker1;
         $worker3 = clone $worker1;
         $workers = [$worker1, $worker2, $worker3];

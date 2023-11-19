@@ -14,15 +14,13 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\TopLike;
 
 use Mockery;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Symfony\Component\Console\Formatter\OutputFormatter;
-use Symfony\Component\Console\Formatter\OutputFormatterInterface;
-use Symfony\Component\Console\Formatter\WrappableOutputFormatterInterface;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\ConsoleSectionOutput;
 use Symfony\Component\Console\Terminal;
 
-class TopLikeOutputterTest extends TestCase
+class TopLikeOutputterTest extends BaseTestCase
 {
     public function testDisplay()
     {
@@ -50,6 +48,8 @@ class TopLikeOutputterTest extends TestCase
             ->andReturns(
                 $formatter = new OutputFormatter()
             )
+            ->atLeast()
+            ->once()
         ;
         $section
             ->expects()

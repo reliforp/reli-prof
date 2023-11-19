@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\GetTraceSettings;
 
 use Mockery;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class GetTraceSettingsFromConsoleInputTest extends TestCase
+class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
 {
     public function testFromConsoleInput(): void
     {

@@ -15,9 +15,9 @@ namespace Reli\Inspector\Output\TraceFormatter\Templated;
 
 use Mockery;
 use Noodlehaus\Config;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class TemplatePathResolverTest extends TestCase
+class TemplatePathResolverTest extends BaseTestCase
 {
     public function testResolve(): void
     {

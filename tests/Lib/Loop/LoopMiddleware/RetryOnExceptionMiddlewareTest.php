@@ -15,10 +15,10 @@ namespace Reli\Lib\Loop\LoopMiddleware;
 
 use Exception;
 use LogicException;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use RuntimeException;
 
-class RetryOnExceptionMiddlewareTest extends TestCase
+class RetryOnExceptionMiddlewareTest extends BaseTestCase
 {
     public function testReturnIfChainReturn(): void
     {

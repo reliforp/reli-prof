@@ -13,11 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Worker;
 
+use Reli\BaseTestCase;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use PHPUnit\Framework\TestCase;
 
-class ProcessDescriptorCacheTest extends TestCase
+class ProcessDescriptorCacheTest extends BaseTestCase
 {
     public function testGetSet(): void
     {

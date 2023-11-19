@@ -13,11 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Lib\ByteStream;
 
+use Reli\BaseTestCase;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
-use PHPUnit\Framework\TestCase;
 
-class ProcessMemoryByteReaderTest extends TestCase
+class ProcessMemoryByteReaderTest extends BaseTestCase
 {
     public function testOffsetExists()
     {

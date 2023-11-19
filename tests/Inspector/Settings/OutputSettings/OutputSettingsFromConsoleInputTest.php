@@ -15,10 +15,10 @@ namespace Reli\Inspector\Settings\OutputSettings;
 
 use Mockery;
 use Noodlehaus\Config;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class OutputSettingsFromConsoleInputTest extends TestCase
+class OutputSettingsFromConsoleInputTest extends BaseTestCase
 {
     public function testCreateSettings(): void
     {
@@ -36,7 +36,7 @@ class OutputSettingsFromConsoleInputTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('template')->andReturns(null);
-        $input->expects()->getOption('output')->andReturns(null);
+        $input->allows()->getOption('output')->andReturns(null);
         $config = Mockery::mock(Config::class);
         $config->expects()->get('output.template.default')->andReturns('test');
 
@@ -48,7 +48,7 @@ class OutputSettingsFromConsoleInputTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('template')->andReturns(null);
-        $input->expects()->getOption('output')->andReturns(null);
+        $input->allows()->getOption('output')->andReturns(null);
         $config = Mockery::mock(Config::class);
         $config->expects()->get('output.template.default')->andReturns(null);
         $this->expectException(OutputSettingsException::class);
@@ -59,7 +59,7 @@ class OutputSettingsFromConsoleInputTest extends TestCase
     public function testCreateSettingsInvalidOutput(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('template')->andReturns('test');
+        $input->allows()->getOption('template')->andReturns('test');
         $input->expects()->getOption('output')->andReturns(123);
         $config = Mockery::mock(Config::class);
         $config->expects()->get()->never();

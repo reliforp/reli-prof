@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Structure\Elf64;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class Elf64GnuHashTableTest extends TestCase
+class Elf64GnuHashTableTest extends BaseTestCase
 {
     public function testHash()
     {

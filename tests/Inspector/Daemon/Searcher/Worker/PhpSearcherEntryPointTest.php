@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Searcher\Worker;
 
 use Mockery;
+use Reli\BaseTestCase;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
@@ -24,9 +25,8 @@ use Reli\Lib\Loop\LoopCondition\OnlyOnceCondition;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
 use Reli\Lib\Process\Search\ProcessSearcherInterface;
-use PHPUnit\Framework\TestCase;
 
-class PhpSearcherEntryPointTest extends TestCase
+class PhpSearcherEntryPointTest extends BaseTestCase
 {
     public function testRun()
     {

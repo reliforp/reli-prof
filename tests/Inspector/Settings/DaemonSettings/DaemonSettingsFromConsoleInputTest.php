@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\DaemonSettings;
 
 use Mockery;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Symfony\Component\Console\Input\InputInterface;
 
-class DaemonSettingsFromConsoleInputTest extends TestCase
+class DaemonSettingsFromConsoleInputTest extends BaseTestCase
 {
     public function testFromConsoleInput(): void
     {
@@ -33,7 +33,7 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
     public function testFromConsoleInputTargetRegexNotSpecified(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('threads')->andReturns(null);
+        $input->allows()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(null);
         $this->expectException(DaemonSettingsException::class);
         (new DaemonSettingsFromConsoleInput())->createSettings($input);
@@ -43,7 +43,7 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns('abc');
-        $input->expects()->getOption('target-regex')->andReturns(null);
+        $input->allows()->getOption('target-regex')->andReturns(null);
         $this->expectException(DaemonSettingsException::class);
         (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
@@ -51,7 +51,7 @@ class DaemonSettingsFromConsoleInputTest extends TestCase
     public function testFromConsoleInputTargetRegexNotString(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('threads')->andReturns(null);
+        $input->allows()->getOption('threads')->andReturns(null);
         $input->expects()->getOption('target-regex')->andReturns(1);
         $this->expectException(DaemonSettingsException::class);
         (new DaemonSettingsFromConsoleInput())->createSettings($input);

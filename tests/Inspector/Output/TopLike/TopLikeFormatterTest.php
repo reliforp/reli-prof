@@ -13,13 +13,13 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TopLike;
 
+use Reli\BaseTestCase;
 use Reli\Lib\DateTime\FixedClock;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
-use PHPUnit\Framework\TestCase;
 
 use function PHPUnit\Framework\assertSame;
 
-class TopLikeFormatterTest extends TestCase
+class TopLikeFormatterTest extends BaseTestCase
 {
     public function testFormat()
     {

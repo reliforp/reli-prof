@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Loop\LoopMiddleware;
 
-use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Reli\BaseTestCase;
 
-class KeyboardCancelLoopTest extends TestCase
+class KeyboardCancelLoopTest extends BaseTestCase
 {
     /**
      * @runInSeparateProcess

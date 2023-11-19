@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Loop\AsyncLoopMiddleware;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class CallableMiddlewareAsyncTest extends TestCase
+class CallableMiddlewareAsyncTest extends BaseTestCase
 {
     public function testInvoke(): void
     {

@@ -13,12 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Log\StateCollector;
 
+use Reli\BaseTestCase;
 use Reli\Lib\Log\Log;
 use Reli\Lib\Log\TestLoggerTrait;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-class CallerStateCollectorTest extends TestCase
+class CallerStateCollectorTest extends BaseTestCase
 {
     private LoggerInterface $logger_backup;
     private StateCollector $state_collector_backup;

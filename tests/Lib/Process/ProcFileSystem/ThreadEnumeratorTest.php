@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\ProcFileSystem;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class ThreadEnumeratorTest extends TestCase
+class ThreadEnumeratorTest extends BaseTestCase
 {
     public function testGetThreadIds()
     {

@@ -14,9 +14,9 @@ declare(strict_types=1);
 namespace Reli\Lib\ByteStream;
 
 use FFI;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class CDataByteReaderTest extends TestCase
+class CDataByteReaderTest extends BaseTestCase
 {
     public function testRead()
     {

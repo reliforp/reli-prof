@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Opcodes;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class OpcodeFactoryTest extends TestCase
+class OpcodeFactoryTest extends BaseTestCase
 {
     public function testCreate(): void
     {

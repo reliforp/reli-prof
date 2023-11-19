@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\DateTime;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class FixedClockTest extends TestCase
+class FixedClockTest extends BaseTestCase
 {
     public function testNow()
     {

@@ -13,11 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\TargetProcess;
 
+use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use Reli\Lib\Process\Exec\TraceeExecutor;
-use PHPUnit\Framework\TestCase;
 
-class TargetProcessResolverTest extends TestCase
+class TargetProcessResolverTest extends BaseTestCase
 {
     public function testResolve()
     {

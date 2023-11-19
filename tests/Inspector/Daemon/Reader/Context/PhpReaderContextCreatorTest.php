@@ -14,15 +14,16 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Reader\Context;
 
 use Mockery;
+use Reli\BaseTestCase;
+use Reli\Inspector\Daemon\AutoContextRecovering;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
 use Reli\Inspector\Daemon\Reader\Worker\PhpReaderEntryPoint;
 use Reli\Inspector\Daemon\Reader\Worker\PhpReaderWorkerProtocol;
 use Reli\Lib\Amphp\ContextCreatorInterface;
 use Reli\Lib\Amphp\ContextInterface;
-use PHPUnit\Framework\TestCase;
 
-class PhpReaderContextCreatorTest extends TestCase
+class PhpReaderContextCreatorTest extends BaseTestCase
 {
     public function testCreate()
     {

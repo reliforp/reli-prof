@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Loop;
 
+use Reli\BaseTestCase;
 use Reli\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;
-use PHPUnit\Framework\TestCase;
 
-class AsyncLoopBuilderTest extends TestCase
+class AsyncLoopBuilderTest extends BaseTestCase
 {
     public function testBuild(): void
     {

@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
@@ -30,7 +30,7 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
 
-class CallTraceReaderTest extends TestCase
+class CallTraceReaderTest extends BaseTestCase
 {
     /** @var resource|null */
     private $child = null;

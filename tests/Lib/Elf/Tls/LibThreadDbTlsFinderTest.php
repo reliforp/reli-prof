@@ -15,12 +15,12 @@ namespace Reli\Lib\Elf\Tls;
 
 use FFI\CData;
 use Mockery;
+use Reli\BaseTestCase;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
-use PHPUnit\Framework\TestCase;
 
-class LibThreadDbTlsFinderTest extends TestCase
+class LibThreadDbTlsFinderTest extends BaseTestCase
 {
     public function testFindTls()
     {
@@ -76,9 +76,28 @@ class LibThreadDbTlsFinderTest extends TestCase
         $this->expectException(TlsFinderException::class);
 
         $symbol_reader = Mockery::mock(ProcessSymbolReaderInterface::class);
-        $symbol_reader->expects()->read('_thread_db_pthread_dtvp')->andReturns($_thread_db_pthread_dtvp);
-        $symbol_reader->expects()->read('_thread_db_dtv_dtv')->andReturns($_thread_db_dtv_dtv);
-        $symbol_reader->expects()->read('_thread_db_dtv_t_pointer_val')->andReturns($_thread_db_dtv_t_pointer_val);
+        $symbol_reader->expects()
+            ->read('_thread_db_pthread_dtvp')
+            ->andReturns($_thread_db_pthread_dtvp)
+            ->zeroOrMoreTimes()
+        ;
+        $symbol_reader->expects()
+            ->read('_thread_db_dtv_dtv')
+            ->andReturns($_thread_db_dtv_dtv)
+            ->zeroOrMoreTimes()
+        ;
+        $symbol_reader->expects()
+            ->read('_thread_db_dtv_t_pointer_val')
+            ->andReturns($_thread_db_dtv_t_pointer_val)
+            ->zeroOrMoreTimes()
+        ;
+
+        // to test the testcase itself
+        $this->assertTrue(
+            is_null($_thread_db_pthread_dtvp)
+            or is_null($_thread_db_dtv_dtv)
+            or is_null($_thread_db_dtv_t_pointer_val)
+        );
 
         $thread_pointer_retriever = Mockery::mock(ThreadPointerRetrieverInterface::class);
         $thread_pointer_retriever->expects()->getThreadPointer(1)->andReturns(0x10000);

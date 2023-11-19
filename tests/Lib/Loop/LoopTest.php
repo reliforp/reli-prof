@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Loop;
 
+use Reli\BaseTestCase;
 use Reli\Lib\Loop\LoopMiddleware\CallableMiddleware;
-use PHPUnit\Framework\TestCase;
 
-class LoopTest extends TestCase
+class LoopTest extends BaseTestCase
 {
     public function testInvoke()
     {

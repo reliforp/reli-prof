@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader;
 
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class PhpBinaryFinderTest extends TestCase
+class PhpBinaryFinderTest extends BaseTestCase
 {
     public function testFindByProcessId()
     {
