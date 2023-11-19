@@ -94,6 +94,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\InternalFunctionD
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LocalVariableNameTableContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContextPool;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectPropertiesContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectsStoreContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\OpArrayContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\PhpReferenceContext;
@@ -862,6 +863,8 @@ final class MemoryLocationsCollector
             );
             $object_context->add('dynamic_properties', $dynamic_properties_context);
         }
+        $properties_exists = false;
+        $object_properties_context = new ObjectPropertiesContext();
         $properties_iterator = $object->getPropertiesIterator(
             $dereferencer,
             $zend_type_reader,
@@ -877,8 +880,12 @@ final class MemoryLocationsCollector
                 $context_pools,
             );
             if (!is_null($property_context)) {
-                $object_context->add($name, $property_context);
+                $object_properties_context->add($name, $property_context);
+                $properties_exists = true;
             }
+        }
+        if ($properties_exists) {
+            $object_context->add('object_properties', $object_properties_context);
         }
 
         assert(!is_null($object->ce));
