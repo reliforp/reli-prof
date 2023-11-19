@@ -37,11 +37,10 @@ class PhpSearcherContextCreatorTest extends BaseTestCase
             )
             ->andReturns($context)
         ;
+        $context->expects()->start();
 
         $php_searcher_context_creator = new PhpSearcherContextCreator($context_creator);
-        $this->assertInstanceOf(
-            PhpSearcherControllerInterface::class,
-            $php_searcher_context_creator->create()
-        );
+        $php_searcher_controller = $php_searcher_context_creator->create();
+        $php_searcher_controller->start();
     }
 }
