@@ -16,10 +16,12 @@ namespace Reli\Inspector\Daemon\Reader\Worker;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Lib\Loop\AsyncLoop;
 use Reli\Lib\Loop\AsyncLoopBuilder;
+use Reli\Lib\Loop\AsyncLoopMiddleware\ExitLoopOnSpecificExceptionMiddlewareAsync;
 use Reli\Lib\Loop\AsyncLoopMiddleware\CallableMiddlewareAsync;
 use Reli\Lib\Loop\AsyncLoopMiddleware\NanoSleepMiddlewareAsync;
 use Reli\Lib\Loop\AsyncLoopMiddleware\RetryOnExceptionMiddlewareAsync;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
+use Reli\Lib\Process\ProcessNotFoundException;
 
 final class ReaderLoopProvider
 {
@@ -31,6 +33,12 @@ final class ReaderLoopProvider
     public function getMainLoop(callable $main, TraceLoopSettings $settings): AsyncLoop
     {
         return $this->loop_builder
+            ->addProcess(
+                ExitLoopOnSpecificExceptionMiddlewareAsync::class,
+                [
+                    [ProcessNotFoundException::class]
+                ]
+            )
             ->addProcess(
                 RetryOnExceptionMiddlewareAsync::class,
                 [

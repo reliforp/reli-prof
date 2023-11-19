@@ -15,6 +15,8 @@ namespace Reli\Lib\Libc\Errno;
 
 class Errno
 {
+    public const ESRCH = 3;
+
     /** @var \FFI\Libc\errno_ffi  */
     private \FFI $ffi;
 

@@ -16,6 +16,8 @@ namespace Reli\Lib\Process\MemoryReader;
 use FFI;
 use FFI\CData;
 use Reli\Lib\FFI\CannotAllocateBufferException;
+use Reli\Lib\Libc\Errno\Errno;
+use Reli\Lib\Process\ProcessNotFoundException;
 
 final class MemoryReader implements MemoryReaderInterface
 {
@@ -83,6 +85,9 @@ final class MemoryReader implements MemoryReaderInterface
         if ($read === -1) {
             /** @var int $errno */
             $errno = $this->ffi->errno;
+            if ($errno === Errno::ESRCH) {
+                throw new ProcessNotFoundException("process not found. pid={$pid}");
+            }
             $log_address = dechex($remote_address);
             throw new MemoryReaderException(
                 "failed to read memory. target_pid={$pid}, remote_address=0x{$log_address}, errno={$errno}",
