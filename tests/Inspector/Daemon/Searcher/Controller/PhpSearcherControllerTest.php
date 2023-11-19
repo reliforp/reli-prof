@@ -29,19 +29,37 @@ class PhpSearcherControllerTest extends BaseTestCase
 {
     public function testStart(): void
     {
-        $context = Mockery::mock(ContextInterface::class);
+        $auto_context_recovering = Mockery::mock(AutoContextRecoveringInterface::class);
+        $auto_context_recovering->expects()
+            ->getContext()
+            ->andReturn($context = Mockery::mock(ContextInterface::class))
+            ->zeroOrMoreTimes()
+        ;
+        $auto_context_recovering->expects()->onRecover(Mockery::type('\Closure'));
         $context->expects()->start();
-        $php_searcher_context = new PhpSearcherController($context);
+        $php_searcher_context = new PhpSearcherController($auto_context_recovering);
         $php_searcher_context->start();
     }
 
     public function testSendTargetRegex(): void
     {
         $protocol = Mockery::mock(PhpSearcherControllerProtocolInterface::class);
-        $context = Mockery::mock(ContextInterface::class);
-        $context->expects()
-            ->getProtocol()
-            ->andReturns($protocol)
+        $auto_context_recovering = Mockery::mock(AutoContextRecoveringInterface::class);
+        $auto_context_recovering->expects()
+            ->getContext()
+            ->andReturn($context = Mockery::mock(ContextInterface::class))
+            ->zeroOrMoreTimes()
+        ;
+        $auto_context_recovering->expects()->onRecover(Mockery::type('\Closure'));
+        $auto_context_recovering->expects()
+            ->withAutoRecover()
+            ->with(
+                Mockery::on(function (\Closure $actual) use ($protocol, &$return_value) {
+                    $return_value = $actual($protocol);
+                    return true;
+                }),
+                'failed to send target'
+            )
         ;
         $protocol->shouldReceive('sendTargetRegex')
             ->once()
@@ -52,7 +70,7 @@ class PhpSearcherControllerTest extends BaseTestCase
                 }
             )
         ;
-        $php_searcher_context = new PhpSearcherController($context);
+        $php_searcher_context = new PhpSearcherController($auto_context_recovering);
         $php_searcher_context->sendTarget(
             'abcdefg',
             new TargetPhpSettings(),
@@ -62,20 +80,104 @@ class PhpSearcherControllerTest extends BaseTestCase
 
     public function testReceivePidList(): void
     {
-        $protocol = Mockery::mock(PhpSearcherControllerProtocolInterface::class);
-        $context = Mockery::mock(ContextInterface::class);
-        $context->expects()
-            ->getProtocol()
-            ->andReturns($protocol)
-        ;
         $message = new UpdateTargetProcessMessage(
             new TargetProcessList(
                 new TargetProcessDescriptor(1, 2, 3, 'v81'),
                 new TargetProcessDescriptor(4, 5, 6, 'v81'),
             )
         );
+        $protocol = Mockery::mock(PhpSearcherControllerProtocolInterface::class);
+        $auto_context_recovering = Mockery::mock(AutoContextRecoveringInterface::class);
+        $auto_context_recovering->expects()
+            ->getContext()
+            ->andReturn($context = Mockery::mock(ContextInterface::class))
+            ->zeroOrMoreTimes()
+        ;
+        $auto_context_recovering->expects()->onRecover(Mockery::type('\Closure'));
+        $auto_context_recovering->expects()
+            ->withAutoRecover()
+            ->with(
+                Mockery::on(function (\Closure $actual) use ($protocol, &$return_value) {
+                    $return_value = $actual($protocol);
+                    return true;
+                }),
+                'failed to receive pid list',
+            )
+            ->andReturns($message)
+        ;
         $protocol->expects()->receiveUpdateTargetProcess()->andReturn($message);
-        $php_searcher_context = new PhpSearcherController($context);
-        $this->assertSame($message, $php_searcher_context->receivePidList());
+        $php_searcher_context = new PhpSearcherController($auto_context_recovering);
+        $php_searcher_context->receivePidList();
+        $this->assertSame($message, $return_value);
+    }
+
+    public function testNothingIsSentOnRecoverIfTargetHasNotSent()
+    {
+        $auto_context_recovering = Mockery::mock(AutoContextRecoveringInterface::class);
+        $auto_context_recovering->expects()
+            ->onRecover()
+            ->with(
+                Mockery::on(function (\Closure $actual) use (&$handler) {
+                    $handler = $actual;
+                    return true;
+                })
+            )
+        ;
+        $auto_context_recovering->expects()
+            ->getContext()
+            ->never()
+        ;
+        $php_searcher_context = new PhpSearcherController($auto_context_recovering);
+        $handler();
+    }
+
+    public function testTargetIsResentIfOnceSent()
+    {
+        $protocol = Mockery::mock(PhpSearcherControllerProtocolInterface::class);
+        $auto_context_recovering = Mockery::mock(AutoContextRecoveringInterface::class);
+        $auto_context_recovering->expects()
+            ->onRecover()
+            ->with(
+                Mockery::on(function (\Closure $actual) use (&$handler) {
+                    $handler = $actual;
+                    return true;
+                })
+            )
+        ;
+        $auto_context_recovering->expects()
+            ->getContext()
+            ->andReturn($context = Mockery::mock(ContextInterface::class))
+            ->zeroOrMoreTimes()
+        ;
+        $auto_context_recovering->expects()
+            ->withAutoRecover()
+            ->with(
+                Mockery::on(function (\Closure $actual) use ($protocol, &$return_value) {
+                    $return_value = $actual($protocol);
+                    return true;
+                }),
+                'failed to send target'
+            )
+        ;
+        $context->expects()
+            ->getProtocol()
+            ->andReturns($protocol)
+        ;
+        $protocol->shouldReceive('sendTargetRegex')
+            ->twice()
+            ->withArgs(
+                function (TargetPhpSettingsMessage $message) {
+                    $this->assertSame('abcdefg', $message->regex);
+                    return true;
+                }
+            )
+        ;
+        $php_searcher_context = new PhpSearcherController($auto_context_recovering);
+        $php_searcher_context->sendTarget(
+            'abcdefg',
+            new TargetPhpSettings(),
+            getmypid(),
+        );
+        $handler();
     }
 }

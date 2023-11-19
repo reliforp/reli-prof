@@ -18,6 +18,8 @@ interface ContextInterface
 {
     public function start(): void;
 
+    public function stop(): void;
+
     public function isRunning(): bool;
 
     /** @return T */

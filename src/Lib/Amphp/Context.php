@@ -38,6 +38,11 @@ final class Context implements ContextInterface
         return !$this->amphp_context->isClosed();
     }
 
+    public function stop(): void
+    {
+        $this->amphp_context->close();
+    }
+
     /** @return T */
     public function getProtocol(): object
     {

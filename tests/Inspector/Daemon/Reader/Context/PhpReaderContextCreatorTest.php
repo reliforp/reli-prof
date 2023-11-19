@@ -35,12 +35,13 @@ class PhpReaderContextCreatorTest extends BaseTestCase
                 PhpReaderWorkerProtocol::class,
                 PhpReaderControllerProtocol::class
             )
-            ->andReturns($context);
+            ->andReturns($context)
+        ;
+        $context->expects()->start();
 
         $php_reader_context_creator = new PhpReaderContextCreator($context_creator);
-        $this->assertInstanceOf(
-            PhpReaderControllerInterface::class,
-            $php_reader_context_creator->create()
-        );
+        $php_reader_controller = $php_reader_context_creator->create();
+
+        $php_reader_controller->start();
     }
 }

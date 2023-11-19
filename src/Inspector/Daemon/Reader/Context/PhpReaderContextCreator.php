@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Reader\Context;
 
+use Reli\Inspector\Daemon\AutoContextRecovering;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderController;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerProtocol;
@@ -30,10 +31,12 @@ final class PhpReaderContextCreator implements PhpReaderContextCreatorInterface
     public function create(): PhpReaderControllerInterface
     {
         return new PhpReaderController(
-            $this->context_creator->create(
-                PhpReaderEntryPoint::class,
-                PhpReaderWorkerProtocol::class,
-                PhpReaderControllerProtocol::class
+            new AutoContextRecovering(
+                fn () => $this->context_creator->create(
+                    PhpReaderEntryPoint::class,
+                    PhpReaderWorkerProtocol::class,
+                    PhpReaderControllerProtocol::class
+                )
             )
         );
     }

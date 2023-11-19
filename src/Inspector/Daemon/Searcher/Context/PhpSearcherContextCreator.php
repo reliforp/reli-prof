@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Daemon\Searcher\Context;
 
+use Reli\Inspector\Daemon\AutoContextRecovering;
 use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherController;
 use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
 use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerProtocol;
@@ -30,10 +31,12 @@ final class PhpSearcherContextCreator
     public function create(): PhpSearcherControllerInterface
     {
         return new PhpSearcherController(
-            $this->context_creator->create(
-                PhpSearcherEntryPoint::class,
-                PhpSearcherWorkerProtocol::class,
-                PhpSearcherControllerProtocol::class
+            new AutoContextRecovering(
+                fn () => $this->context_creator->create(
+                    PhpSearcherEntryPoint::class,
+                    PhpSearcherWorkerProtocol::class,
+                    PhpSearcherControllerProtocol::class
+                )
             )
         );
     }
