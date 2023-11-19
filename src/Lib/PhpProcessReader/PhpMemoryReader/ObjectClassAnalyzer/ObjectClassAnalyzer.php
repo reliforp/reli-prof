@@ -36,6 +36,10 @@ final class ObjectClassAnalyzer
                 $per_class_usage[$class_name]['memory_usage'] += $memory_location->size;
             }
         }
+        uasort(
+            $per_class_usage,
+            fn (array $a, array $b) => $b['memory_usage'] <=> $a['memory_usage']
+        );
         return new ObjectClassAnalyzerResult($per_class_usage);
     }
 }

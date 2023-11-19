@@ -127,7 +127,7 @@ final class RegionAnalyzer
 
         uasort(
             $per_class_objects,
-            fn (array $a, array $b) => $b['count'] <=> $a['count']
+            fn (array $a, array $b) => $b['total_size'] <=> $a['total_size']
         );
 
         $heap_memory_usage += $possible_allocation_overhead_total;

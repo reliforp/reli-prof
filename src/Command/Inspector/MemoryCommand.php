@@ -135,8 +135,8 @@ final class MemoryCommand extends Command
         echo json_encode(
             [
                 'summary' => $summary,
-                "per_type_analysis" => $heap_location_type_summary->per_type_usage,
-                'per_class_analysis' => $object_class_summary->per_class_usage,
+                "location_types_summary" => $heap_location_type_summary->per_type_usage,
+                'class_objects_summary' => $object_class_summary->per_class_usage,
                 'context' => $analyzed_context,
             ],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
