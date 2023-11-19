@@ -43,7 +43,7 @@ class ProcessModuleMemoryMapTest extends BaseTestCase
         $this->assertSame($expected, $process_module_memoru_map->getMemoryAddressFromOffset($offset));
     }
 
-    public function addressAndOffsetProvider(): array
+    public static function addressAndOffsetProvider(): array
     {
         return [
             [0x10000000, 0x00000000],

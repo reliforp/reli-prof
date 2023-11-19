@@ -116,7 +116,7 @@ class LibThreadDbTlsFinderTest extends BaseTestCase
     /**
      * @return array<string, array<?CData>>
      */
-    public function casesDebugSymbolsFoundOrNot(): array
+    public static function casesDebugSymbolsFoundOrNot(): array
     {
         $_thread_db_pthread_dtvp = \FFI::new('unsigned char[12]');
         $_thread_db_dtv_dtv = \FFI::new('unsigned char[12]');
