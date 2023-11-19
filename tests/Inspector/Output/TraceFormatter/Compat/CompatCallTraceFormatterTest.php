@@ -28,7 +28,7 @@ class CompatCallTraceFormatterTest extends BaseTestCase
         $this->assertSame($expects, $formatter->format($call_trace));
     }
 
-    public function dataProvider(): array
+    public static function dataProvider(): array
     {
         return [
             'one_function_only_without_opline' => [

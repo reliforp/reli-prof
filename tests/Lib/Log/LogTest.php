@@ -57,7 +57,7 @@ class LogTest extends BaseTestCase
         Log::$method('test');
     }
 
-    public function logLevelsProvider(): array
+    public static function logLevelsProvider(): array
     {
         return [
             'emergency' => [LogLevel::EMERGENCY, 'emergency'],
