@@ -213,7 +213,7 @@ Options:
   -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
-## Dump the memory usage of the target process
+## [Experimental] Dump the memory usage of the target process
 ```bash
 ./reli inspector:memory --help
 Description:
@@ -367,6 +367,12 @@ $ kcachegrind callgrind.out
 
 ### Dump the memory usage of the target proces
 
+> [!CAUTION]
+> **Don't upload the output of this command to the internet, because it can contain sensitive information of the target script!!!**
+
+> [!WARNING]  
+> This feature is in an experimental stage and may be less stable than others. The contents of the output may change in the near future.
+
 ```bash
 $ sudo php ./reli i:memory -p 2183131 >2183131.memory_dump.json
 $ cat 2183131.memory_dump.json | jq .summary
@@ -483,11 +489,14 @@ $ cat 2183131.memory_dump.json | jq '..|objects|select(."#node_id"==368)|.' | he
   "object_handlers": {
     "#reference_node_id": 7
   },
-  "php_globals_finder": {
+  "object_properties": {
     "#node_id": 369,
-    "#type": "ObjectContext",
-    "#locations": [
-      {
+    "#type": "ObjectPropertiesContext",
+    "php_globals_finder": {
+      "#node_id": 370,
+      "#type": "ObjectContext",
+      "#locations": [
+        {
 ```
 
 You can also extract all references to a specific object.
