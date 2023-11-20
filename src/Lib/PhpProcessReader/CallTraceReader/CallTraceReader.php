@@ -151,7 +151,10 @@ final class CallTraceReader
             }
             $current_function = $cached_dereferencer->deref($current_execute_data->func);
 
-            $function_name = $current_function->getFunctionName($cached_dereferencer) ?? '<main>';
+            $function_name = $current_function->getFunctionName(
+                $cached_dereferencer,
+                $this->getTypeReader($php_version),
+            ) ?? '<main>';
             $class_name = $current_function->getClassName($cached_dereferencer) ?? '';
             $file_name = $current_function->getFileName($cached_dereferencer) ?? '<unknown>';
 

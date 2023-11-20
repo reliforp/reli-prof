@@ -18,6 +18,9 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 abstract class VersionAwareConstants
 {
     /** @var int */
+    public const ZEND_ACC_CLOSURE = (1 << 22);
+
+    /** @var int */
     public const ZEND_ACC_HAS_RETURN_TYPE = (1 << 13);
 
     /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */

@@ -154,13 +154,15 @@ final class ZendExecuteData implements Dereferencable
         return (bool)($this->This->u1->type_info & (1 << 27));
     }
 
-    public function getFunctionName(Dereferencer $dereferencer): ?string
-    {
+    public function getFunctionName(
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): ?string {
         if (is_null($this->func)) {
             return null;
         }
         $func = $dereferencer->deref($this->func);
-        return $func->getFullyQualifiedFunctionName($dereferencer);
+        return $func->getFullyQualifiedFunctionName($dereferencer, $zend_type_reader);
     }
 
     /** @return iterable<int, ZendExecuteData> */
