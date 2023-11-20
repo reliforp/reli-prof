@@ -660,7 +660,10 @@ final class MemoryLocationsCollector
             if (is_null($execute_data->func)) {
                 continue;
             }
-            $function_name = $execute_data->getFunctionName($dereferencer);
+            $function_name = $execute_data->getFunctionName(
+                $dereferencer,
+                $zend_type_reader,
+            );
             $call_frame_context = new CallFrameContext(
                 $function_name ?? '<main>',
             );
@@ -1057,7 +1060,8 @@ final class MemoryLocationsCollector
         ContextPools $context_pools
     ): UserFunctionDefinitionContext {
         $function_name = $func->getFullyQualifiedFunctionName(
-            $dereferencer
+            $dereferencer,
+            $zend_type_reader,
         );
         $op_array_header_memory_location = ZendOpArrayHeaderMemoryLocation::fromZendFunction(
             $func,

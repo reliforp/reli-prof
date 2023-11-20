@@ -15,6 +15,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_function;
 use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -105,10 +106,21 @@ final class ZendFunction implements Dereferencable
         return $this->pointer;
     }
 
-    public function getFullyQualifiedFunctionName(Dereferencer $dereferencer): string
-    {
+    public function getFullyQualifiedFunctionName(
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): string {
+        if (
+            $this->isUserFunction()
+            and $this->op_array->isClosure($zend_type_reader)
+        ) {
+            return $this->op_array->getDisplayNameForClosure($dereferencer);
+        }
         $class_name = $this->getClassName($dereferencer);
-        $function_name = $this->getFunctionName($dereferencer) ?? '';
+        $function_name = $this->getFunctionName(
+            $dereferencer,
+            $zend_type_reader,
+        ) ?? '';
         if (!is_null($class_name)) {
             return $class_name . '::' . $function_name;
         }
@@ -117,14 +129,23 @@ final class ZendFunction implements Dereferencable
 
     private ?string $resolved_name_cache = null;
 
-    public function getFunctionName(Dereferencer $dereferencer): ?string
-    {
+    public function getFunctionName(
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): ?string {
         if ($this->function_name === null) {
             return null;
         }
         if (!isset($this->resolved_name_cache)) {
-            $string = $dereferencer->deref($this->function_name);
-            $this->resolved_name_cache = $string->toString($dereferencer);
+            if (
+                $this->isUserFunction()
+                and $this->op_array->isClosure($zend_type_reader)
+            ) {
+                $this->resolved_name_cache = $this->op_array->getDisplayNameForClosure($dereferencer);
+            } else {
+                $string = $dereferencer->deref($this->function_name);
+                $this->resolved_name_cache = $string->toString($dereferencer);
+            }
         }
         return $this->resolved_name_cache;
     }
@@ -148,7 +169,7 @@ final class ZendFunction implements Dereferencable
     public function getFileName(Dereferencer $dereferencer): ?string
     {
         if (!isset($this->resolved_file_name_cache)) {
-            if ($this->type !== 2) {
+            if (!$this->isUserFunction()) {
                 $this->resolved_file_name_cache = '<internal>';
             }
             $this->resolved_file_name_cache = $this->op_array->getFileName($dereferencer);

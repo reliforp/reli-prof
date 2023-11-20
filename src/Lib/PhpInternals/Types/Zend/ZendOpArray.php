@@ -97,6 +97,12 @@ class ZendOpArray
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $run_time_cache__ptr;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $line_start;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $line_end;
+
     /** @param zend_op_array $cdata */
     public function __construct(
         private CData $cdata,
@@ -120,6 +126,8 @@ class ZendOpArray
         unset($this->dynamic_func_defs);
         unset($this->cache_size);
         unset($this->run_time_cache__ptr);
+        unset($this->line_start);
+        unset($this->line_end);
     }
 
     public function __get(string $field_name)
@@ -195,6 +203,8 @@ class ZendOpArray
             ,
             'cache_size' => $this->cache_size = $this->cdata->cache_size,
             'run_time_cache' => $this->getRuntimeCacheAddress(),
+            'line_start' => $this->line_start = $this->cdata->line_start,
+            'line_end' => $this->line_end = $this->cdata->line_end,
         };
     }
 
@@ -269,6 +279,18 @@ class ZendOpArray
         for ($i = 0; $i < $this->num_args; $i++) {
             yield $dereferencer->deref($this->arg_info->indexedAt($i));
         }
+    }
+
+    public function isClosure(ZendTypeReader $zend_type_reader): bool
+    {
+        return (bool)($this->fn_flags & (int)$zend_type_reader->constants::ZEND_ACC_CLOSURE);
+    }
+
+    public function getDisplayNameForClosure(
+        Dereferencer $dereferencer,
+    ): string {
+        $file_name = $this->getFileName($dereferencer) ?? '<unknown>';
+        return '{closure}(' . $file_name . ':' . $this->line_start . '-' . $this->line_end . ')';
     }
 
     public function hasReturnType(ZendTypeReader $zend_type_reader): bool
