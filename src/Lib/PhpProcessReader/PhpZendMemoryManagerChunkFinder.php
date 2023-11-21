@@ -30,6 +30,7 @@ class PhpZendMemoryManagerChunkFinder
         $zend_type_reader = $this->zend_type_reader_creator->create($target_php_settings->php_version);
         $memory_map = $this->process_memory_map_creator->getProcessMemoryMap($process_specifier->pid);
         $process_memory_area = $memory_map->findByNameRegex('\[anon:zend_alloc\]');
+        $execute_data_address = null;
         if (!count($process_memory_area)) {
             $eg_address = $this->php_globals_finder->findExecutorGlobals(
                 $process_specifier,
@@ -62,6 +63,13 @@ class PhpZendMemoryManagerChunkFinder
                     and $zend_mm_chunk->heap_slot->size > 0
                 ) {
                     return $p;
+                } elseif (
+                    isset($execute_data_address)
+                    and $zend_mm_chunk->isInRange($execute_data_address)
+                    and !is_null($zend_mm_chunk->heap)
+                ) {
+                    $heap = $dereferencer->deref($zend_mm_chunk->heap);
+                    return $heap->main_chunk?->address;
                 }
             }
         }

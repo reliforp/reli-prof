@@ -130,6 +130,12 @@ final class ZendMmChunk implements Dereferencable
         return $this->pointer;
     }
 
+    public function isInRange(int $address): bool
+    {
+        return $this->getPointer()->address <= $address
+            and $address < $this->getPointer()->address + self::SIZE;
+    }
+
     /**
      * @return iterable<ZendMmChunk>
      */
