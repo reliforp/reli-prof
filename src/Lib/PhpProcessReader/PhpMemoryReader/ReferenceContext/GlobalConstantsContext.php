@@ -28,4 +28,11 @@ class GlobalConstantsContext implements ReferenceContext
     {
         return [$this->memory_location];
     }
+
+    public function getContexts(): iterable
+    {
+        return [
+            '#count' => count($this->referencing_contexts),
+        ];
+    }
 }

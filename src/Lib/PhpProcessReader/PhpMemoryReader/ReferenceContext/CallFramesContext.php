@@ -16,4 +16,11 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 final class CallFramesContext implements ReferenceContext
 {
     use ReferenceContextDefault;
+
+    public function getContexts(): iterable
+    {
+        return [
+            '#count' => count($this->referencing_contexts),
+        ];
+    }
 }

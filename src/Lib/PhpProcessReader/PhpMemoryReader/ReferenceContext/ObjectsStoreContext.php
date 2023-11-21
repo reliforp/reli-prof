@@ -28,4 +28,11 @@ class ObjectsStoreContext implements ReferenceContext
     {
         return [$this->objects_store_memory_location];
     }
+
+    public function getContexts(): iterable
+    {
+        return [
+            '#count' => count($this->referencing_contexts),
+        ];
+    }
 }
