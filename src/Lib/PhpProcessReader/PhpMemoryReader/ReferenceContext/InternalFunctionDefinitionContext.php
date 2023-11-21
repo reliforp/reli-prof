@@ -19,4 +19,9 @@ class InternalFunctionDefinitionContext extends FunctionDefinitionContext
     {
         return ['#is_internal' => true];
     }
+
+    public function isInternal(): bool
+    {
+        return true;
+    }
 }

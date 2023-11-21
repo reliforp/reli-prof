@@ -23,6 +23,15 @@ abstract class VersionAwareConstants
     /** @var int */
     public const ZEND_ACC_HAS_RETURN_TYPE = (1 << 13);
 
+    /** @var int */
+    public const ZEND_CALL_CODE = (1 << 16);
+
+    /** @var int */
+    public const ZEND_CALL_TOP = (1 << 17);
+
+    /** @var int */
+    public const ZEND_CALL_GENERATOR = (1 << 24);
+
     /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
     public static function getConstantsOfVersion(string $php_version): self
     {

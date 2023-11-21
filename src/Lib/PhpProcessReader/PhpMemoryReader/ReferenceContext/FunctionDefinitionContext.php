@@ -16,4 +16,9 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 abstract class FunctionDefinitionContext implements ReferenceContext
 {
     use ReferenceContextDefault;
+
+    public function isInternal(): bool
+    {
+        return false;
+    }
 }

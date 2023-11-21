@@ -140,10 +140,15 @@ final class CallTraceReader
 
         $result = [];
         foreach ($stack as $current_execute_data) {
+            $function_name = $current_execute_data->getFunctionName(
+                $cached_dereferencer,
+                $this->getTypeReader($php_version),
+            );
+
             if (is_null($current_execute_data->func)) {
                 $result[] = new CallFrame(
                     '',
-                    '<unknown>',
+                    $function_name,
                     '<unknown>',
                     null
                 );
@@ -151,10 +156,6 @@ final class CallTraceReader
             }
             $current_function = $cached_dereferencer->deref($current_execute_data->func);
 
-            $function_name = $current_function->getFunctionName(
-                $cached_dereferencer,
-                $this->getTypeReader($php_version),
-            ) ?? '<main>';
             $class_name = $current_function->getClassName($cached_dereferencer) ?? '';
             $file_name = $current_function->getFileName($cached_dereferencer) ?? '<unknown>';
 
