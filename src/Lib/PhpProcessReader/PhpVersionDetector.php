@@ -100,7 +100,7 @@ class PhpVersionDetector
         int $pid,
         int $module_registry_address
     ): ?string {
-        $fake_php_version = ZendTypeReader::defaultVersion();
+        $fake_php_version = ZendTypeReader::V70;
         $dereferencer = $this->getDereferencer($pid, $fake_php_version);
         $module_registry = $this->getModuleRegistry(
             $module_registry_address,
