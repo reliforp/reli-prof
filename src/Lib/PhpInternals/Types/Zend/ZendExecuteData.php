@@ -144,6 +144,15 @@ final class ZendExecuteData implements Dereferencable
         ;
     }
 
+    public function isFunctionlessCall(ZendTypeReader $zend_type_reader): bool
+    {
+        return
+            (bool)($this->This->u1->type_info & (int)$zend_type_reader->constants::ZEND_CALL_CODE)
+            or
+            (bool)($this->This->u1->type_info & (int)$zend_type_reader->constants::ZEND_CALL_TOP)
+        ;
+    }
+
     public function hasSymbolTable(): bool
     {
         return (bool)($this->This->u1->type_info & (1 << 20));
@@ -157,12 +166,56 @@ final class ZendExecuteData implements Dereferencable
     public function getFunctionName(
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
-    ): ?string {
+    ): string {
+        $function_name = null;
         if (is_null($this->func)) {
-            return null;
+            if ($this->This->isObject() and !is_null($this->This->value->obj)) {
+                $object = $dereferencer->deref($this->This->value->obj);
+                if (!is_null($object->ce)) {
+                    $class_entry = $dereferencer->deref($object->ce);
+                    if ($class_entry->getClassName($dereferencer) === 'Generator') {
+                        $function_name = '<generator>';
+                    }
+                }
+            }
+        } else {
+            $func = $dereferencer->deref($this->func);
+            $function_name = $func->getFunctionName($dereferencer, $zend_type_reader);
+            $func = $dereferencer->deref($this->func);
+            if (is_null($function_name)) {
+                if ($this->isFunctionlessCall($zend_type_reader)) {
+                    $function_name = '<main>';
+                } elseif (!$func->isUserFunction()) {
+                    $function_name = '<internal>';
+                }
+            }
+        }
+        if ($function_name === '' or is_null($function_name)) {
+            $function_name = '<unknown>';
+        }
+        return $function_name;
+    }
+
+    public function getFunctionClassName(
+        Dereferencer $dereferencer,
+    ): string {
+        if (is_null($this->func)) {
+            return '';
         }
         $func = $dereferencer->deref($this->func);
-        return $func->getFullyQualifiedFunctionName($dereferencer, $zend_type_reader);
+        return $func->getClassName($dereferencer) ?? '';
+    }
+
+    public function getFullyQualifiedFunctionName(
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): string {
+        $class_name = $this->getFunctionClassName($dereferencer);
+        $function_name = $this->getFunctionName($dereferencer, $zend_type_reader);
+        if ($class_name === '') {
+            return $function_name;
+        }
+        return $class_name . '::' . $function_name;
     }
 
     /** @return iterable<int, ZendExecuteData> */

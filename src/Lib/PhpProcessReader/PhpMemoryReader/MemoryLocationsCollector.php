@@ -41,7 +41,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DynamicFuncDefsTabl
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\LocalVariableNameTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ObjectsStoreMemoryLocation;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ReferenceCountAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RuntimeCacheMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\StaticMembersTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackMemoryLocation;
@@ -65,7 +64,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendResourceMemoryL
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArgInfoContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArgInfosContext;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayElementContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayElementsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayHeaderContext;
@@ -93,12 +91,10 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\IncludedFilesCont
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\InternalFunctionDefinitionContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LocalVariableNameTableContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContext;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectPropertiesContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectsStoreContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\OpArrayContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\PhpReferenceContext;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\PhpReferenceContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\PropertiesInfoContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\PropertyInfoContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
@@ -106,7 +102,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ResourceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\RuntimeCacheContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ScalarValueContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContext;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\TopReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContext;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
@@ -657,15 +652,13 @@ final class MemoryLocationsCollector
         }
         $execute_data = $dereferencer->deref($eg->current_execute_data);
         foreach ($execute_data->iterateStackChain($dereferencer) as $key => $execute_data) {
-            if (is_null($execute_data->func)) {
-                continue;
-            }
-            $function_name = $execute_data->getFunctionName(
+            $function_name = $execute_data->getFullyQualifiedFunctionName(
                 $dereferencer,
                 $zend_type_reader,
             );
+
             $call_frame_context = new CallFrameContext(
-                $function_name ?? '<main>',
+                $function_name,
             );
             $call_frames_context->add((string)$key, $call_frame_context);
             $header_memory_location = CallFrameHeaderMemoryLocation::fromZendExecuteData(
