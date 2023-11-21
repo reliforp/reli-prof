@@ -844,21 +844,6 @@ final class MemoryLocationsCollector
         ;
         $object_context->add('object_handlers', $object_handlers_context);
 
-        if (
-            !is_null($object->properties)
-            and !is_null($object->ce)
-            and !$object->isEnum($dereferencer)
-        ) {
-            $dynamic_properties_context = $this->collectZendArray(
-                $dereferencer->deref($object->properties),
-                $map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-            );
-            $object_context->add('dynamic_properties', $dynamic_properties_context);
-        }
         $properties_exists = false;
         $object_properties_context = new ObjectPropertiesContext();
         $properties_iterator = $object->getPropertiesIterator(
@@ -882,6 +867,22 @@ final class MemoryLocationsCollector
         }
         if ($properties_exists) {
             $object_context->add('object_properties', $object_properties_context);
+        }
+
+        if (
+            !is_null($object->properties)
+            and !is_null($object->ce)
+            and !$object->isEnum($dereferencer)
+        ) {
+            $dynamic_properties_context = $this->collectZendArray(
+                $dereferencer->deref($object->properties),
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+            );
+            $object_context->add('dynamic_properties', $dynamic_properties_context);
         }
 
         assert(!is_null($object->ce));

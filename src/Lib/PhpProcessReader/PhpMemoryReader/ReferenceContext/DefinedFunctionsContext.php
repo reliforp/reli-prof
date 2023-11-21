@@ -30,4 +30,11 @@ class DefinedFunctionsContext implements ReferenceContext
     {
         return [$this->header_memory_location, $this->table_memory_location];
     }
+
+    public function getContexts(): iterable
+    {
+        return [
+            '#count' => count($this->referencing_contexts),
+        ];
+    }
 }
