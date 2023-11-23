@@ -242,8 +242,10 @@ class ZendOpArray
         int $op_num,
         Dereferencer $dereferencer,
     ): array {
+        if ($this->live_range === null) {
+            return [];
+        }
         $result = [];
-        assert($this->live_range !== null);
         for ($i = 0; $i < $this->last_live_range; $i++) {
             $live_range = $dereferencer->deref($this->live_range->indexedAt($i));
             if ($live_range->isInRange($op_num)) {
