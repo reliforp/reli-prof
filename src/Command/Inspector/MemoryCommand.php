@@ -24,6 +24,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAna
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
+use Reli\ReliProfiler;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -124,6 +125,7 @@ final class MemoryCommand extends Command
             ]
             + [
                 'php_version' => $target_php_settings_version_decided->php_version,
+                'analyzer' => ReliProfiler::toolSignature(),
             ]
         ];
 
