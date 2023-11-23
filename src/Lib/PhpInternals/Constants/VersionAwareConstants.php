@@ -44,6 +44,7 @@ abstract class VersionAwareConstants
             ZendTypeReader::V80 => PhpInternalsConstantsV80::class,
             ZendTypeReader::V81 => PhpInternalsConstantsV81::class,
             ZendTypeReader::V82 => PhpInternalsConstantsV82::class,
+            ZendTypeReader::V83 => PhpInternalsConstantsV83::class,
         });
     }
 }

@@ -1,0 +1,1476 @@
+/*
+   +----------------------------------------------------------------------+
+   | Zend Engine                                                          |
+   +----------------------------------------------------------------------+
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
+   +----------------------------------------------------------------------+
+   | This source file is subject to version 2.00 of the Zend license,     |
+   | that is bundled with this package in the file LICENSE, and is        |
+   | available through the world-wide-web at the following url:           |
+   | http://www.zend.com/license/2_00.txt.                                |
+   | If you did not receive a copy of the Zend license and are unable to  |
+   | obtain it through the world-wide-web, please send a note to          |
+   | license@zend.com so we can mail you a copy immediately.              |
+   +----------------------------------------------------------------------+
+   | The contents of this file are extracted from some headers in php-src |
+   +----------------------------------------------------------------------+
+*/
+
+// zend_atomic.h
+typedef struct zend_atomic_bool_s {
+	volatile bool value;
+} zend_atomic_bool;
+
+// zend_long.h
+typedef int64_t zend_long;
+typedef uint64_t zend_ulong;
+typedef int64_t zend_off_t;
+
+// zend_types.h
+typedef struct _zend_object_handlers zend_object_handlers;
+typedef struct _zend_class_entry     zend_class_entry;
+typedef union  _zend_function        zend_function;
+typedef struct _zend_execute_data    zend_execute_data;
+
+typedef struct _zval_struct     zval;
+
+typedef struct _zend_refcounted zend_refcounted;
+typedef struct _zend_string     zend_string;
+typedef struct _zend_array      zend_array;
+typedef struct _zend_object     zend_object;
+typedef struct _zend_resource   zend_resource;
+typedef struct _zend_reference  zend_reference;
+typedef struct _zend_ast_ref    zend_ast_ref;
+typedef struct _zend_ast        zend_ast;
+
+typedef int  (*compare_func_t)(const void *, const void *);
+typedef void (*swap_func_t)(void *, void *);
+typedef void (*sort_func_t)(void *, size_t, size_t, compare_func_t, swap_func_t);
+typedef void (*dtor_func_t)(zval *pDest);
+typedef void (*copy_ctor_func_t)(zval *pElement);
+
+typedef struct _zend_refcounted_h {
+	uint32_t         refcount;			/* reference counter 32-bit */
+	union {
+		uint32_t type_info;
+	} u;
+} zend_refcounted_h;
+
+struct _zend_refcounted {
+	zend_refcounted_h gc;
+};
+
+struct _zend_string {
+	zend_refcounted_h gc;
+	zend_ulong        h;                /* hash value */
+	size_t            len;
+	char              val[1];
+};
+
+typedef union _zend_value {
+	zend_long         lval;				/* long value */
+	double            dval;				/* double value */
+	zend_refcounted  *counted;
+	zend_string      *str;
+	zend_array       *arr;
+	zend_object      *obj;
+	zend_resource    *res;
+	zend_reference   *ref;
+	zend_ast_ref     *ast;
+	zval             *zv;
+	void             *ptr;
+	zend_class_entry *ce;
+	zend_function    *func;
+	struct {
+		uint32_t w1;
+		uint32_t w2;
+	} ww;
+} zend_value;
+
+struct _zval_struct {
+	zend_value        value;			/* value */
+	union {
+		uint32_t type_info;
+		struct {
+				uint8_t    type;			/* active type */
+				uint8_t    type_flags;
+				union {
+					uint16_t  extra;        /* not further specified */
+				} u
+		} v;
+	} u1;
+	union {
+		uint32_t     next;                 /* hash collision chain */
+		uint32_t     cache_slot;           /* cache slot (for RECV_INIT) */
+		uint32_t     opline_num;           /* opline number (for FAST_CALL) */
+		uint32_t     lineno;               /* line number (for ast nodes) */
+		uint32_t     num_args;             /* arguments number for EX(This) */
+		uint32_t     fe_pos;               /* foreach position */
+		uint32_t     fe_iter_idx;          /* foreach iterator index */
+		uint32_t     guard;                /* recursion and single property guard */
+		uint32_t     constant_flags;       /* constant flags */
+		uint32_t     extra;                /* not further specified */
+	} u2;
+};
+
+typedef struct _Bucket {
+	zval              val;
+	zend_ulong        h;                /* hash value (or numeric index)   */
+	zend_string      *key;              /* string key or NULL for numerics */
+} Bucket;
+
+struct _zend_array {
+	zend_refcounted_h gc;
+	union {
+		struct {
+				uint8_t    flags;
+				uint8_t    _unused;
+				uint8_t    nIteratorsCount;
+				uint8_t    _unused2;
+		} v;
+		uint32_t flags;
+	} u;
+	uint32_t          nTableMask;
+	union {
+		uint32_t     *arHash;   /* hash table (allocated above this pointer) */
+		Bucket       *arData;   /* array of hash buckets */
+		zval         *arPacked; /* packed array of zvals */
+	};
+	uint32_t          nNumUsed;
+	uint32_t          nNumOfElements;
+	uint32_t          nTableSize;
+	uint32_t          nInternalPointer;
+	zend_long         nNextFreeElement;
+	dtor_func_t       pDestructor;
+};
+
+typedef struct _zend_array HashTable;
+typedef uint32_t HashPosition;
+
+typedef struct _HashTableIterator {
+	HashTable    *ht;
+	HashPosition  pos;
+	uint32_t      next_copy; // circular linked list via index into EG(ht_iterators)
+} HashTableIterator;
+
+struct _zend_object {
+	zend_refcounted_h gc;
+	uint32_t          handle; // TODO: may be removed ???
+	zend_class_entry *ce;
+	const zend_object_handlers *handlers;
+	HashTable        *properties;
+	zval              properties_table[1];
+};
+
+struct _zend_resource {
+	zend_refcounted_h gc;
+	zend_long         handle; // TODO: may be removed ???
+	int               type;
+	void             *ptr;
+};
+
+typedef struct {
+	/* Not using a union here, because there's no good way to initialize them
+	 * in a way that is supported in both C and C++ (designated initializers
+	 * are only supported since C++20). */
+	void *ptr;
+	uint32_t type_mask;
+	/* TODO: We could use the extra 32-bit of padding on 64-bit systems. */
+} zend_type;
+
+// zend_compile.h
+typedef struct _zend_property_info {
+	uint32_t offset; /* property offset for object properties or
+	                      property index for static properties */
+	uint32_t flags;
+	zend_string *name;
+	zend_string *doc_comment;
+	HashTable *attributes;
+	zend_class_entry *ce;
+	zend_type type;
+} zend_property_info;
+
+// zend_types.h
+typedef struct {
+	size_t num;
+	size_t num_allocated;
+	struct _zend_property_info *ptr[1];
+} zend_property_info_list;
+
+typedef union {
+	struct _zend_property_info *ptr;
+	uintptr_t list;
+} zend_property_info_source_list;
+
+struct _zend_reference {
+	zend_refcounted_h              gc;
+	zval                           val;
+	zend_property_info_source_list sources;
+};
+
+struct _zend_ast_ref {
+	zend_refcounted_h gc;
+	/*zend_ast        ast; zend_ast follows the zend_ast_ref structure */
+};
+
+typedef enum {
+  SUCCESS =  0,
+  FAILURE = -1,		/* this MUST stay a negative number, or it may affect functions! */
+} ZEND_RESULT_CODE;
+
+typedef ZEND_RESULT_CODE zend_result;
+
+
+// zend_object_handlers.h
+struct _zend_object_handlers {
+	/* offset of real object header (usually zero) */
+	int  offset;
+	/* object handlers */
+	void *free_obj;             /* required */
+	void *dtor_obj;             /* required */
+	void *clone_obj;            /* optional */
+	void *read_property;        /* required */
+	void *write_property;       /* required */
+	void *read_dimension;       /* required */
+	void *write_dimension;      /* required */
+	void *get_property_ptr_ptr; /* required */
+	void *has_property;         /* required */
+	void *unset_property;       /* required */
+	void *has_dimension;        /* required */
+	void *unset_dimension;      /* required */
+	void *get_properties;       /* required */
+	void *get_method;           /* required */
+	void *get_constructor;      /* required */
+	void *get_class_name;       /* required */
+	void *cast_object;          /* required */
+	void *count_elements;       /* optional */
+	void *get_debug_info;       /* optional */
+	void *get_closure;          /* optional */
+	void *get_gc;               /* required */
+	void *do_operation;         /* optional */
+	void *compare;              /* required */
+	void *get_properties_for;   /* optional */
+};
+
+// zend_globals.h
+typedef struct _zend_vm_stack *zend_vm_stack;
+
+// zend_execute.h
+struct _zend_vm_stack {
+	zval *top;
+	zval *end;
+	zend_vm_stack prev;
+};
+
+// zend_globals_macros.h
+typedef struct _zend_compiler_globals zend_compiler_globals;
+typedef struct _zend_executor_globals zend_executor_globals;
+typedef struct _zend_php_scanner_globals zend_php_scanner_globals;
+typedef struct _zend_ini_scanner_globals zend_ini_scanner_globals;
+
+// zend_globals.h
+typedef struct _zend_ini_entry zend_ini_entry;
+
+// zend_ini.h
+struct _zend_ini_entry {
+	zend_string *name;
+	int (*on_modify)(zend_ini_entry *entry, zend_string *new_value, void *mh_arg1, void *mh_arg2, void *mh_arg3, int stage);
+	void *mh_arg1;
+	void *mh_arg2;
+	void *mh_arg3;
+	zend_string *value;
+	zend_string *orig_value;
+	void (*displayer)(zend_ini_entry *ini_entry, int type);
+
+	int module_number;
+
+	uint8_t modifiable;
+	uint8_t orig_modifiable;
+	uint8_t modified;
+
+};
+
+// zend_iterators.h
+typedef struct _zend_object_iterator zend_object_iterator;
+
+typedef struct _zend_object_iterator_funcs {
+	/* release all resources associated with this iterator instance */
+	void (*dtor)(zend_object_iterator *iter);
+
+	/* check for end of iteration (FAILURE or SUCCESS if data is valid) */
+	int (*valid)(zend_object_iterator *iter);
+
+	/* fetch the item data for the current element */
+	zval *(*get_current_data)(zend_object_iterator *iter);
+
+	/* fetch the key for the current element (optional, may be NULL). The key
+	 * should be written into the provided zval* using the ZVAL_* macros. If
+	 * this handler is not provided auto-incrementing integer keys will be
+	 * used. */
+	void (*get_current_key)(zend_object_iterator *iter, zval *key);
+
+	/* step forwards to next element */
+	void (*move_forward)(zend_object_iterator *iter);
+
+	/* rewind to start of data (optional, may be NULL) */
+	void (*rewind)(zend_object_iterator *iter);
+
+	/* invalidate current value/key (optional, may be NULL) */
+	void (*invalidate_current)(zend_object_iterator *iter);
+
+	/* Expose owned values to GC.
+	 * This has the same semantics as the corresponding object handler. */
+	HashTable *(*get_gc)(zend_object_iterator *iter, zval **table, int *n);
+} zend_object_iterator_funcs;
+
+struct _zend_object_iterator {
+	zend_object std;
+	zval data;
+	const zend_object_iterator_funcs *funcs;
+	zend_ulong index; /* private to fe_reset/fe_fetch opcodes */
+};
+
+typedef struct _zend_class_iterator_funcs {
+	zend_function *zf_new_iterator;
+	zend_function *zf_valid;
+	zend_function *zf_current;
+	zend_function *zf_key;
+	zend_function *zf_next;
+	zend_function *zf_rewind;
+} zend_class_iterator_funcs;
+
+// zend.h
+typedef enum {
+	EH_NORMAL = 0,
+	EH_THROW
+} zend_error_handling_t;
+
+typedef struct {
+	zend_error_handling_t  handling;
+	zend_class_entry       *exception;
+} zend_error_handling;
+
+typedef struct _zend_error_info {
+	int type;
+	uint32_t lineno;
+	zend_string *filename;
+	zend_string *message;
+} zend_error_info;
+
+// zend_objects_API.h
+typedef struct _zend_objects_store {
+	zend_object **object_buckets;
+	uint32_t top;
+	uint32_t size;
+	int free_list_head;
+} zend_objects_store;
+
+// zend_modules.h
+typedef struct _zend_module_entry zend_module_entry;
+typedef struct _zend_module_dep zend_module_dep;
+struct _zend_module_dep {
+	const char *name;		/* module name */
+	const char *rel;		/* version relationship: NULL (exists), lt|le|eq|ge|gt (to given version) */
+	const char *version;	/* version */
+	unsigned char type;		/* dependency type */
+};
+
+// zend_compile.h
+typedef void (*zif_handler)(zend_execute_data *execute_data, zval *return_value);
+
+// zend_API.h
+typedef struct _zend_function_entry {
+	const char *fname;
+	zif_handler handler;
+	const struct _zend_internal_arg_info *arg_info;
+	uint32_t num_args;
+	uint32_t flags;
+} zend_function_entry;
+
+typedef struct _zend_fcall_info_cache {
+	zend_function *function_handler;
+	zend_class_entry *calling_scope;
+	zend_class_entry *called_scope;
+	zend_object *object; /* Instance of object for method calls */
+	zend_object *closure; /* Closure reference, only if the callable *is* the object */
+} zend_fcall_info_cache;
+
+typedef struct _zend_fcall_info {
+	size_t size;
+	zval function_name;
+	zval *retval;
+	zval *params;
+	zend_object *object;
+	uint32_t param_count;
+	/* This hashtable can also contain positional arguments (with integer keys),
+	 * which will be appended to the normal params[]. This makes it easier to
+	 * integrate APIs like call_user_func_array(). The usual restriction that
+	 * there may not be position arguments after named arguments applies. */
+	HashTable *named_params;
+} zend_fcall_info;
+
+// zend_modules.h
+struct _zend_module_entry {
+	unsigned short size;
+	unsigned int zend_api;
+	unsigned char zend_debug;
+	unsigned char zts;
+	const struct _zend_ini_entry *ini_entry;
+	const struct _zend_module_dep *deps;
+	const char *name;
+	const struct _zend_function_entry *functions;
+	zend_result (*module_startup_func)(int type, int module_number);
+	zend_result (*module_shutdown_func)(int type, int module_number);
+	zend_result (*request_startup_func)(int type, int module_number);
+	zend_result (*request_shutdown_func)(int type, int module_number);
+	void (*info_func)(zend_module_entry *zend_module);
+	const char *version;
+	size_t globals_size;
+	void* globals_ptr; // ts_rsrc_id* globals_id_ptr; in ZTS
+	void (*globals_ctor)(void *global);
+	void (*globals_dtor)(void *global);
+	zend_result (*post_deactivate_func)(void);
+	int module_started;
+	unsigned char type;
+	void *handle;
+	int module_number;
+	const char *build_id;
+};
+
+// zend_stack.h
+typedef struct _zend_stack {
+	int size, top, max;
+	void *elements;
+} zend_stack;
+
+// zend_compile.h
+typedef struct _zend_op zend_op;
+typedef struct _zend_op_array zend_op_array;
+
+typedef union _znode_op {
+	uint32_t      constant;
+	uint32_t      var;
+	uint32_t      num;
+	uint32_t      opline_num; /*  Needs to be signed */
+	uint32_t      jmp_offset;
+} znode_op;
+
+struct _zend_op {
+	const void *handler;
+	znode_op op1;
+	znode_op op2;
+	znode_op result;
+	uint32_t extended_value;
+	uint32_t lineno;
+	uint8_t opcode;
+	uint8_t op1_type;
+	uint8_t op2_type;
+	uint8_t result_type;
+};
+
+typedef struct _zend_arg_info {
+	zend_string *name;
+	zend_type type;
+	zend_string *default_value;
+} zend_arg_info;
+
+typedef struct _zend_internal_arg_info {
+	const char *name;
+	zend_type type;
+	const char *default_value;
+} zend_internal_arg_info;
+
+typedef struct _zend_live_range {
+	uint32_t var; /* low bits are used for variable type (ZEND_LIVE_* macros) */
+	uint32_t start;
+	uint32_t end;
+} zend_live_range;
+
+typedef struct _zend_try_catch_element {
+	uint32_t try_op;
+	uint32_t catch_op;  /* ketchup! */
+	uint32_t finally_op;
+	uint32_t finally_end;
+} zend_try_catch_element;
+
+struct _zend_op_array {
+	/* Common elements */
+	uint8_t type;
+	uint8_t arg_flags[3]; /* bitset of arg_info.pass_by_reference */
+	uint32_t fn_flags;
+	zend_string *function_name;
+	zend_class_entry *scope;
+	zend_function *prototype;
+	uint32_t num_args;
+	uint32_t required_num_args;
+	zend_arg_info *arg_info;
+	HashTable *attributes;
+	void **run_time_cache__ptr;
+	uint32_t T;         /* number of temporary variables */
+    /* END of common elements */
+
+	int cache_size;     /* number of run_time_cache_slots * sizeof(void*) */
+	int last_var;       /* number of CV variables */
+	uint32_t last;      /* number of opcodes */
+
+	zend_op *opcodes;
+	HashTable **static_variables_ptr__ptr;
+	HashTable *static_variables;
+	zend_string **vars; /* names of CV variables */
+
+	uint32_t *refcount;
+
+	int last_live_range;
+	int last_try_catch;
+	zend_live_range *live_range;
+	zend_try_catch_element *try_catch_array;
+
+	zend_string *filename;
+	uint32_t line_start;
+	uint32_t line_end;
+	zend_string *doc_comment;
+
+	int last_literal;
+	uint32_t num_dynamic_func_defs;
+	zval *literals;
+
+	/* Functions that are declared dynamically are stored here and
+	 * referenced by index from opcodes. */
+	zend_op_array **dynamic_func_defs;
+
+	void *reserved[6];
+};
+
+typedef struct _zend_internal_function_info {
+	uintptr_t required_num_args;
+	zend_type type;
+	const char *default_value;
+} zend_internal_function_info;
+
+
+typedef struct _zend_internal_function {
+	/* Common elements */
+	uint8_t type;
+	uint8_t arg_flags[3]; /* bitset of arg_info.pass_by_reference */
+	uint32_t fn_flags;
+	zend_string* function_name;
+	zend_class_entry *scope;
+	zend_function *prototype;
+	uint32_t num_args;
+	uint32_t required_num_args;
+	zend_internal_arg_info *arg_info;
+	HashTable *attributes;
+	void **run_time_cache__ptr;
+	uint32_t T;         /* number of temporary variables */
+	/* END of common elements */
+
+	zif_handler handler;
+	struct _zend_module_entry *module;
+	void *reserved[6];
+} zend_internal_function;
+
+union _zend_function {
+	uint8_t type;	/* MUST be the first element of this struct! */
+	uint32_t   quick_arg_flags;
+
+	struct {
+		uint8_t type;  /* never used */
+		uint8_t arg_flags[3]; /* bitset of arg_info.pass_by_reference */
+		uint32_t fn_flags;
+		zend_string *function_name;
+		zend_class_entry *scope;
+		zend_function *prototype;
+		uint32_t num_args;
+		uint32_t required_num_args;
+		zend_arg_info *arg_info;  /* index -1 represents the return value info, if any */
+		HashTable   *attributes;
+		void **run_time_cache__ptr;
+		uint32_t T;         /* number of temporary variables */
+	} common;
+
+	zend_op_array op_array;
+	zend_internal_function internal_function;
+};
+
+// zend_gc.h
+typedef struct {
+	zval *cur;
+	zval *end;
+	zval *start;
+} zend_get_gc_buffer;
+
+
+// zend_compile.h
+typedef struct _zend_class_constant {
+	zval value; /* access flags are stored in reserved: zval.u2.access_flags */
+	zend_string *doc_comment;
+	HashTable *attributes;
+	zend_class_entry *ce;
+	zend_type type;
+} zend_class_constant;
+
+struct _zend_execute_data {
+	const zend_op       *opline;           /* executed opline                */
+	zend_execute_data   *call;             /* current call                   */
+	zval                *return_value;
+	zend_function       *func;             /* executed function              */
+	zval                 This;             /* this + call_info + num_args    */
+	zend_execute_data   *prev_execute_data;
+	zend_array          *symbol_table;
+	void               **run_time_cache;   /* cache op_array->run_time_cache */
+	zend_array          *extra_named_params;
+};
+
+typedef struct _zend_brk_cont_element {
+	int start;
+	int cont;
+	int brk;
+	int parent;
+	bool is_switch;
+} zend_brk_cont_element;
+
+typedef struct _zend_oparray_context {
+	uint32_t   opcodes_size;
+	int        vars_size;
+	int        literals_size;
+	uint32_t   fast_call_var;
+	uint32_t   try_catch_offset;
+	int        current_brk_cont;
+	int        last_brk_cont;
+	zend_brk_cont_element *brk_cont_array;
+	HashTable *labels;
+} zend_oparray_context;
+
+typedef struct _zend_declarables {
+	zend_long ticks;
+} zend_declarables;
+
+typedef struct _zend_file_context {
+	zend_declarables declarables;
+
+	zend_string *current_namespace;
+	bool in_namespace;
+	bool has_bracketed_namespaces;
+
+	HashTable *imports;
+	HashTable *imports_function;
+	HashTable *imports_const;
+
+	HashTable seen_symbols;
+} zend_file_context;
+
+/** zend_llist.h */
+
+typedef void (*llist_dtor_func_t)(void *);
+typedef struct _zend_llist_element {
+	struct _zend_llist_element *next;
+	struct _zend_llist_element *prev;
+	char data[1]; /* Needs to always be last in the struct */
+} zend_llist_element;
+
+typedef struct _zend_llist {
+	zend_llist_element *head;
+	zend_llist_element *tail;
+	size_t count;
+	size_t size;
+	llist_dtor_func_t dtor;
+	unsigned char persistent;
+	zend_llist_element *traverse_ptr;
+} zend_llist;
+
+// zend_arena.h
+typedef struct _zend_arena zend_arena;
+
+struct _zend_arena {
+	char		*ptr;
+	char		*end;
+	zend_arena  *prev;
+};
+
+// zend_multibyte.h
+typedef struct _zend_encoding zend_encoding;
+
+// zend_constants.h
+typedef struct _zend_constant {
+	zval value;
+	zend_string *name;
+} zend_constant;
+
+// zend_call_stack.h
+typedef struct _zend_call_stack {
+	void *base;
+	size_t max_size;
+} zend_call_stack;
+
+// zend_globals.h
+typedef enum {
+	ZEND_MEMOIZE_NONE,
+	ZEND_MEMOIZE_COMPILE,
+	ZEND_MEMOIZE_FETCH,
+} zend_memoize_mode;
+
+struct _zend_compiler_globals {
+	zend_stack loop_var_stack;
+
+	zend_class_entry *active_class_entry;
+
+	zend_string *compiled_filename;
+
+	int zend_lineno;
+
+	zend_op_array *active_op_array;
+
+	HashTable *function_table;	/* function symbol table */
+	HashTable *class_table;		/* class table */
+
+	HashTable *auto_globals;
+
+	/* Refer to zend_yytnamerr() in zend_language_parser.y for meaning of values */
+	uint8_t parse_error;
+	bool in_compilation;
+	bool short_tags;
+
+	bool unclean_shutdown;
+
+	bool ini_parser_unbuffered_errors;
+
+	zend_llist open_files;
+
+	struct _zend_ini_parser_param *ini_parser_param;
+
+	bool skip_shebang;
+	bool increment_lineno;
+
+	bool variable_width_locale;   /* UTF-8, Shift-JIS, Big5, ISO 2022, EUC, etc */
+	bool ascii_compatible_locale; /* locale uses ASCII characters as singletons */
+	                              /* and don't use them as lead/trail units     */
+
+	zend_string *doc_comment;
+	uint32_t extra_fn_flags;
+
+	uint32_t compiler_options; /* set of ZEND_COMPILE_* constants */
+
+	zend_oparray_context context;
+	zend_file_context file_context;
+
+	zend_arena *arena;
+
+	HashTable interned_strings;
+
+	const zend_encoding **script_encoding_list;
+	size_t script_encoding_list_size;
+	bool multibyte;
+	bool detect_unicode;
+	bool encoding_declared;
+
+	zend_ast *ast;
+	zend_arena *ast_arena;
+
+	zend_stack delayed_oplines_stack;
+	HashTable *memoized_exprs;
+	zend_memoize_mode memoize_mode;
+
+	void   *map_ptr_real_base;
+	unsigned long map_ptr_base;
+	size_t  map_ptr_size;
+	size_t  map_ptr_last;
+
+	HashTable *delayed_variance_obligations;
+	HashTable *delayed_autoloads;
+	HashTable *unlinked_uses;
+	zend_class_entry *current_linking_class;
+
+	uint32_t rtd_key_counter;
+
+	zend_stack short_circuiting_opnums;
+	/*uint32_t copied_functions_count;*/
+};
+
+typedef struct _zend_fiber_context zend_fiber_context;
+typedef struct _zend_fiber zend_fiber;
+
+struct _zend_executor_globals {
+	zval uninitialized_zval;
+	zval error_zval;
+
+	/* symbol table cache */
+	zend_array *symtable_cache[32];
+	/* Pointer to one past the end of the symtable_cache */
+	zend_array **symtable_cache_limit;
+	/* Pointer to first unused symtable_cache slot */
+	zend_array **symtable_cache_ptr;
+
+	zend_array symbol_table;		/* main symbol table */
+
+	HashTable included_files;	/* files already included */
+
+	void *bailout;
+
+	int error_reporting;
+	int exit_status;
+
+	HashTable *function_table;	/* function symbol table */
+	HashTable *class_table;		/* class table */
+	HashTable *zend_constants;	/* constants table */
+
+	zval          *vm_stack_top;
+	zval          *vm_stack_end;
+	zend_vm_stack  vm_stack;
+	size_t         vm_stack_page_size;
+
+	struct _zend_execute_data *current_execute_data;
+	zend_class_entry *fake_scope; /* used to avoid checks accessing properties */
+
+	uint32_t jit_trace_num; /* Used by tracing JIT to reference the currently running trace */
+
+	int ticks_count;
+
+	zend_long precision;
+
+	uint32_t persistent_constants_count;
+	uint32_t persistent_functions_count;
+	uint32_t persistent_classes_count;
+
+	/* for extended information support */
+	bool no_extensions;
+
+	bool full_tables_cleanup;
+
+	zend_atomic_bool vm_interrupt;
+	zend_atomic_bool timed_out;
+
+	HashTable *in_autoload;
+
+	zend_long hard_timeout;
+	void *stack_base;
+	void *stack_limit;
+
+	HashTable regular_list;
+	HashTable persistent_list;
+
+	int user_error_handler_error_reporting;
+	bool exception_ignore_args;
+	zval user_error_handler;
+	zval user_exception_handler;
+	zend_stack user_error_handlers_error_reporting;
+	zend_stack user_error_handlers;
+	zend_stack user_exception_handlers;
+
+	zend_class_entry      *exception_class;
+	zend_error_handling_t  error_handling;
+
+	int capture_warnings_during_sccp;
+
+	/* timeout support */
+	zend_long timeout_seconds;
+
+	HashTable *ini_directives;
+	HashTable *modified_ini_directives;
+	zend_ini_entry *error_reporting_ini_entry;
+
+	zend_objects_store objects_store;
+	zend_object *exception;
+	zend_object *prev_exception;
+	const zend_op *opline_before_exception;
+	zend_op exception_op[3];
+
+	struct _zend_module_entry *current_module;
+
+	bool active;
+	uint8_t flags;
+
+	zend_long assertions;
+
+	uint32_t           ht_iterators_count;     /* number of allocatd slots */
+	uint32_t           ht_iterators_used;      /* number of used slots */
+	HashTableIterator *ht_iterators;
+	HashTableIterator  ht_iterators_slots[16];
+
+	void *saved_fpu_cw_ptr;
+
+	zend_function trampoline;
+	zend_op       call_trampoline_op;
+
+	HashTable weakrefs;
+
+	zend_long exception_string_param_max_len;
+
+	zend_get_gc_buffer get_gc_buffer;
+
+	zend_fiber_context *main_fiber_context;
+	zend_fiber_context *current_fiber_context;
+
+	/* Active instance of Fiber. */
+	zend_fiber *active_fiber;
+
+	/* Default fiber C stack size. */
+	zend_long fiber_stack_size;
+
+	/* If record_errors is enabled, all emitted diagnostics will be recorded,
+	 * in addition to being processed as usual. */
+	bool record_errors;
+	uint32_t num_errors;
+	zend_error_info **errors;
+
+	/* Override filename or line number of thrown errors and exceptions */
+	zend_string *filename_override;
+	zend_long lineno_override;
+
+	zend_call_stack call_stack;
+	zend_long max_allowed_stack_size;
+	zend_ulong reserved_stack_size;
+
+/*
+	timer_t max_execution_timer_timer;
+	pid_t pid;
+	struct sigaction oldact;
+*/
+	void *reserved[6];
+};
+
+// zend_fibers.h
+typedef enum {
+	ZEND_FIBER_STATUS_INIT,
+	ZEND_FIBER_STATUS_RUNNING,
+	ZEND_FIBER_STATUS_SUSPENDED,
+	ZEND_FIBER_STATUS_DEAD,
+} zend_fiber_status;
+
+typedef enum {
+	ZEND_FIBER_FLAG_THREW     = 1 << 0,
+	ZEND_FIBER_FLAG_BAILOUT   = 1 << 1,
+	ZEND_FIBER_FLAG_DESTROYED = 1 << 2,
+} zend_fiber_flag;
+
+typedef enum {
+	ZEND_FIBER_TRANSFER_FLAG_ERROR = 1 << 0,
+	ZEND_FIBER_TRANSFER_FLAG_BAILOUT = 1 << 1
+} zend_fiber_transfer_flag;
+
+typedef struct _zend_fiber_stack zend_fiber_stack;
+
+/* Encapsulates data needed for a context switch. */
+typedef struct _zend_fiber_transfer {
+	/* Fiber that will be switched to / has resumed us. */
+	zend_fiber_context *context;
+
+	/* Value to that should be send to (or was received from) a fiber. */
+	zval value;
+
+	/* Bitmask of flags defined in enum zend_fiber_transfer_flag. */
+	uint8_t flags;
+} zend_fiber_transfer;
+
+/* Coroutine functions must populate the given transfer with a new context
+ * and (optional) data before they return. */
+typedef void (*zend_fiber_coroutine)(zend_fiber_transfer *transfer);
+typedef void (*zend_fiber_clean)(zend_fiber_context *context);
+
+struct _zend_fiber_context {
+	/* Pointer to boost.context or ucontext_t data. */
+	void *handle;
+
+	/* Pointer that identifies the fiber type. */
+	void *kind;
+
+	/* Entrypoint function of the fiber. */
+	zend_fiber_coroutine function;
+
+	/* Cleanup function for fiber. */
+	zend_fiber_clean cleanup;
+
+	/* Assigned C stack. */
+	zend_fiber_stack *stack;
+
+	/* Fiber status. */
+	zend_fiber_status status;
+
+	/* Observer state */
+	zend_execute_data *top_observed_frame;
+
+	/* Reserved for extensions */
+	void *reserved[6];
+};
+
+struct _zend_fiber {
+	/* PHP object handle. */
+	zend_object std;
+
+	/* Flags are defined in enum zend_fiber_flag. */
+	uint8_t flags;
+
+	/* Native C fiber context. */
+	zend_fiber_context context;
+
+	/* Fiber that resumed us. */
+	zend_fiber_context *caller;
+
+	/* Fiber that suspended us. */
+	zend_fiber_context *previous;
+
+	/* Callback and info / cache to be used when fiber is started. */
+	zend_fcall_info fci;
+	zend_fcall_info_cache fci_cache;
+
+	/* Current Zend VM execute data being run by the fiber. */
+	zend_execute_data *execute_data;
+
+	/* Frame on the bottom of the fiber vm stack. */
+	zend_execute_data *stack_bottom;
+
+	/* Active fiber vm stack. */
+	zend_vm_stack vm_stack;
+
+	/* Storage for fiber return value. */
+	zval result;
+};
+
+// zend.h
+typedef struct _zend_class_name {
+	zend_string *name;
+	zend_string *lc_name;
+} zend_class_name;
+
+typedef struct _zend_trait_method_reference {
+	zend_string *method_name;
+	zend_string *class_name;
+} zend_trait_method_reference;
+
+typedef struct _zend_trait_precedence {
+	zend_trait_method_reference trait_method;
+	uint32_t num_excludes;
+	zend_string *exclude_class_names[1];
+} zend_trait_precedence;
+
+typedef struct _zend_trait_alias {
+	zend_trait_method_reference trait_method;
+
+	/**
+	* name for method to be added
+	*/
+	zend_string *alias;
+
+	/**
+	* modifiers to be set on trait method
+	*/
+	uint32_t modifiers;
+} zend_trait_alias;
+
+typedef struct _zend_class_mutable_data {
+	zval      *default_properties_table;
+	HashTable *constants_table;
+	uint32_t   ce_flags;
+	HashTable *backed_enum_table;
+} zend_class_mutable_data;
+
+struct _zend_serialize_data;
+struct _zend_unserialize_data;
+
+typedef struct _zend_serialize_data zend_serialize_data;
+typedef struct _zend_unserialize_data zend_unserialize_data;
+
+typedef struct _zend_class_dependency {
+	zend_string      *name;
+	zend_class_entry *ce;
+} zend_class_dependency;
+
+typedef struct _zend_inheritance_cache_entry zend_inheritance_cache_entry;
+
+struct _zend_inheritance_cache_entry {
+	zend_inheritance_cache_entry *next;
+	zend_class_entry             *ce;
+	zend_class_entry             *parent;
+	zend_class_dependency        *dependencies;
+	uint32_t                      dependencies_count;
+	uint32_t                      num_warnings;
+	zend_error_info             **warnings;
+	zend_class_entry             *traits_and_interfaces[1];
+};
+
+typedef struct _zend_class_arrayaccess_funcs {
+	zend_function *zf_offsetget;
+	zend_function *zf_offsetexists;
+	zend_function *zf_offsetset;
+	zend_function *zf_offsetunset;
+} zend_class_arrayaccess_funcs;
+
+struct _zend_class_entry {
+	char type;
+	zend_string *name;
+	/* class_entry or string depending on ZEND_ACC_LINKED */
+	union {
+		zend_class_entry *parent;
+		zend_string *parent_name;
+	};
+	int refcount;
+	uint32_t ce_flags;
+
+	int default_properties_count;
+	int default_static_members_count;
+	zval *default_properties_table;
+	zval *default_static_members_table;
+	zval *static_members_table__ptr;
+	HashTable function_table;
+	HashTable properties_info;
+	HashTable constants_table;
+
+	zend_class_mutable_data *mutable_data__ptr;
+	zend_inheritance_cache_entry *inheritance_cache;
+
+	struct _zend_property_info **properties_info_table;
+
+	zend_function *constructor;
+	zend_function *destructor;
+	zend_function *clone;
+	zend_function *__get;
+	zend_function *__set;
+	zend_function *__unset;
+	zend_function *__isset;
+	zend_function *__call;
+	zend_function *__callstatic;
+	zend_function *__tostring;
+	zend_function *__debugInfo;
+	zend_function *__serialize;
+	zend_function *__unserialize;
+
+	const zend_object_handlers *default_object_handlers;
+
+	/* allocated only if class implements Iterator or IteratorAggregate interface */
+	zend_class_iterator_funcs *iterator_funcs_ptr;
+	/* allocated only if class implements ArrayAccess interface */
+	zend_class_arrayaccess_funcs *arrayaccess_funcs_ptr;
+
+	/* handlers */
+	union {
+		zend_object* (*create_object)(zend_class_entry *class_type);
+		int (*interface_gets_implemented)(zend_class_entry *iface, zend_class_entry *class_type); /* a class implements this interface */
+	};
+	zend_object_iterator *(*get_iterator)(zend_class_entry *ce, zval *object, int by_ref);
+	zend_function *(*get_static_method)(zend_class_entry *ce, zend_string* method);
+
+	/* serializer callbacks */
+	int (*serialize)(zval *object, unsigned char **buffer, size_t *buf_len, zend_serialize_data *data);
+	int (*unserialize)(zval *object, zend_class_entry *ce, const unsigned char *buf, size_t buf_len, zend_unserialize_data *data);
+
+	uint32_t num_interfaces;
+	uint32_t num_traits;
+
+	/* class_entry or string(s) depending on ZEND_ACC_LINKED */
+	union {
+		zend_class_entry **interfaces;
+		zend_class_name *interface_names;
+	};
+
+	zend_class_name *trait_names;
+	zend_trait_alias **trait_aliases;
+	zend_trait_precedence **trait_precedences;
+	HashTable *attributes;
+
+	uint32_t enum_backing_type;
+	HashTable *backed_enum_table;
+
+	union {
+		struct {
+			zend_string *filename;
+			uint32_t line_start;
+			uint32_t line_end;
+			zend_string *doc_comment;
+		} user;
+		struct {
+			const struct _zend_function_entry *builtin_functions;
+			struct _zend_module_entry *module;
+		} internal;
+	} info;
+};
+
+/** libc */
+typedef unsigned int mode_t;
+typedef unsigned long int dev_t;
+typedef unsigned long int ino_t;
+typedef long int off_t;
+typedef long int nlink_t;
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
+typedef int pid_t;
+typedef long int blksize_t;
+typedef long int blkcnt_t;
+typedef unsigned long int fsblkcnt64_t;
+typedef unsigned long int uint64_t;
+
+struct timespec
+{
+    long tv_sec;
+    long tv_nsec;
+};
+
+struct stat
+{
+    dev_t st_dev;
+    ino_t st_ino;
+    nlink_t st_nlink;
+    mode_t st_mode;
+    uid_t st_uid;
+    gid_t st_gid;
+    int __pad0;
+    dev_t st_rdev;
+    off_t st_size;
+    blksize_t st_blksize;
+    blkcnt_t st_blocks;
+    struct timespec st_atim;
+    struct timespec st_mtim;
+    struct timespec st_ctim;
+    long int reserved[3];
+};
+
+/** zend_stream.h */
+typedef struct stat zend_stat_t;
+
+/** zend_alloc.h */
+typedef struct  _zend_mm_heap zend_mm_heap;
+
+typedef struct _zend_mm_storage zend_mm_storage;
+typedef	void* (*zend_mm_chunk_alloc_t)(zend_mm_storage *storage, size_t size, size_t alignment);
+typedef void  (*zend_mm_chunk_free_t)(zend_mm_storage *storage, void *chunk, size_t size);
+typedef bool   (*zend_mm_chunk_truncate_t)(zend_mm_storage *storage, void *chunk, size_t old_size, size_t new_size);
+typedef bool   (*zend_mm_chunk_extend_t)(zend_mm_storage *storage, void *chunk, size_t old_size, size_t new_size);
+typedef struct _zend_mm_handlers {
+	zend_mm_chunk_alloc_t       chunk_alloc;
+	zend_mm_chunk_free_t        chunk_free;
+	zend_mm_chunk_truncate_t    chunk_truncate;
+	zend_mm_chunk_extend_t      chunk_extend;
+} zend_mm_handlers;
+struct _zend_mm_storage {
+	const zend_mm_handlers handlers;
+	void *data;
+};
+
+/** zend_alloc.c */
+typedef uint32_t   zend_mm_page_info; /* 4-byte integer */
+typedef zend_ulong zend_mm_bitset;    /* 4-byte or 8-byte integer */
+
+typedef zend_mm_bitset zend_mm_page_map[(((size_t) (2 * 1024 * 1024)) / (4 * 1024)) / (sizeof(zend_mm_bitset) * 8)];     /* 64B */
+
+typedef struct  _zend_mm_page      zend_mm_page;
+typedef struct  _zend_mm_bin       zend_mm_bin;
+typedef struct  _zend_mm_free_slot zend_mm_free_slot;
+typedef struct  _zend_mm_chunk     zend_mm_chunk;
+typedef struct  _zend_mm_huge_list zend_mm_huge_list;
+
+struct _zend_mm_heap {
+	int                use_custom_heap;
+	zend_mm_storage   *storage;
+	size_t             size;                    /* current memory usage */
+	size_t             peak;                    /* peak memory usage */
+	zend_mm_free_slot *free_slot[30];           /* free lists for small sizes */
+	size_t             real_size;               /* current size of allocated pages */
+	size_t             real_peak;               /* peak size of allocated pages */
+	size_t             limit;                   /* memory limit */
+	int                overflow;                /* memory overflow flag */
+
+	zend_mm_huge_list *huge_list;               /* list of huge allocated blocks */
+
+	zend_mm_chunk     *main_chunk;
+	zend_mm_chunk     *cached_chunks;			/* list of unused chunks */
+	int                chunks_count;			/* number of allocated chunks */
+	int                peak_chunks_count;		/* peak number of allocated chunks for current request */
+	int                cached_chunks_count;		/* number of cached chunks */
+	double             avg_chunks_count;		/* average number of chunks allocated per request */
+	int                last_chunks_delete_boundary; /* number of chunks after last deletion */
+	int                last_chunks_delete_count;    /* number of deletion over the last boundary */
+	union {
+		struct {
+			void      *(*_malloc)(size_t);
+			void       (*_free)(void*);
+			void      *(*_realloc)(void*, size_t);
+		} std;
+	} custom_heap;
+	HashTable *tracked_allocs;
+};
+
+struct _zend_mm_chunk {
+	zend_mm_heap      *heap;
+	zend_mm_chunk     *next;
+	zend_mm_chunk     *prev;
+	uint32_t           free_pages;				/* number of free pages */
+	uint32_t           free_tail;               /* number of free pages at the end of chunk */
+	uint32_t           num;
+	char               reserve[64 - (sizeof(void*) * 3 + sizeof(uint32_t) * 3)];
+	zend_mm_heap       heap_slot;               /* used only in main chunk */
+	zend_mm_page_map   free_map;                /* 512 bits or 64 bytes */
+	zend_mm_page_info  map[((size_t) (2 * 1024 * 1024)) / (4 * 1024)];      /* 2 KB = 512 * 4 */
+};
+
+struct _zend_mm_page {
+	char               bytes[(4 * 1024)];
+};
+
+struct _zend_mm_bin {
+	char               bytes[(4 * 1024) * 8];
+};
+
+struct _zend_mm_free_slot {
+	zend_mm_free_slot *next_free_slot;
+};
+
+struct _zend_mm_huge_list {
+	intptr_t           ptr;
+	size_t             size;
+	zend_mm_huge_list *next;
+};
+
+/* zend_closures.c */
+typedef struct _zend_closure {
+	zend_object       std;
+	zend_function     func;
+	zval              this_ptr;
+	zend_class_entry *called_scope;
+	zif_handler       orig_internal_handler;
+} zend_closure;
+
+/** zend_genereators.h */
+typedef struct _zend_generator zend_generator;
+typedef struct _zend_generator_node zend_generator_node;
+
+struct _zend_generator_node {
+	zend_generator *parent; /* NULL for root */
+	uint32_t children;
+	union {
+		HashTable *ht; /* if multiple children */
+		zend_generator *single; /* if one child */
+	} child;
+	/* One generator can cache a direct pointer to the current root.
+	 * The leaf member points back to the generator using the root cache. */
+	union {
+		zend_generator *leaf; /* if parent != NULL */
+		zend_generator *root; /* if parent == NULL */
+	} ptr;
+};
+
+struct _zend_generator {
+	zend_object std;
+
+	/* The suspended execution context. */
+	zend_execute_data *execute_data;
+
+	/* Frozen call stack for "yield" used in context of other calls */
+	zend_execute_data *frozen_call_stack;
+
+	/* Current value */
+	zval value;
+	/* Current key */
+	zval key;
+	/* Return value */
+	zval retval;
+	/* Variable to put sent value into */
+	zval *send_target;
+	/* Largest used integer key for auto-incrementing keys */
+	zend_long largest_used_integer_key;
+
+	/* Values specified by "yield from" to yield from this generator.
+	 * This is only used for arrays or non-generator Traversables.
+	 * This zval also uses the u2 structure in the same way as
+	 * by-value foreach. */
+	zval values;
+
+	/* Node of waiting generators when multiple "yield from" expressions
+	 * are nested. */
+	zend_generator_node node;
+
+	/* Fake execute_data for stacktraces */
+	zend_execute_data execute_fake;
+
+	/* ZEND_GENERATOR_* flags */
+	uint8_t flags;
+};
+
+/* main/SAPI.h */
+/*
+   +----------------------------------------------------------------------+
+   | Copyright (c) The PHP Group                                          |
+   +----------------------------------------------------------------------+
+   | This source file is subject to version 3.01 of the PHP license,      |
+   | that is bundled with this package in the file LICENSE, and is        |
+   | available through the world-wide-web at the following url:           |
+   | http://www.php.net/license/3_01.txt                                  |
+   | If you did not receive a copy of the PHP license and are unable to   |
+   | obtain it through the world-wide-web, please send a note to          |
+   | license@php.net so we can mail you a copy immediately.               |
+   +----------------------------------------------------------------------+
+   | Author:  Zeev Suraski <zeev@php.net>                                 |
+   +----------------------------------------------------------------------+
+*/
+
+typedef struct {
+	char *header;
+	size_t header_len;
+} sapi_header_struct;
+
+typedef struct {
+	zend_llist headers;
+	int http_response_code;
+	unsigned char send_default_content_type;
+	char *mimetype;
+	char *http_status_line;
+} sapi_headers_struct;
+
+typedef struct _sapi_post_entry sapi_post_entry;
+typedef struct _sapi_module_struct sapi_module_struct;
+
+typedef struct {
+	const char *request_method;
+	char *query_string;
+	char *cookie_data;
+	zend_long content_length;
+
+	char *path_translated;
+	char *request_uri;
+
+	/* Do not use request_body directly, but the php://input stream wrapper instead */
+	struct _php_stream *request_body;
+
+	const char *content_type;
+
+	bool headers_only;
+	bool no_headers;
+	bool headers_read;
+
+	sapi_post_entry *post_entry;
+
+	char *content_type_dup;
+
+	/* for HTTP authentication */
+	char *auth_user;
+	char *auth_password;
+	char *auth_digest;
+
+	/* this is necessary for the CGI SAPI module */
+	char *argv0;
+
+	char *current_user;
+	int current_user_length;
+
+	/* this is necessary for CLI module */
+	int argc;
+	char **argv;
+	int proto_num;
+} sapi_request_info;
+
+typedef struct _sapi_globals_struct {
+	void *server_context;
+	sapi_request_info request_info;
+	sapi_headers_struct sapi_headers;
+	int64_t read_post_bytes;
+	unsigned char post_read;
+	unsigned char headers_sent;
+	zend_stat_t global_stat;
+	char *default_mimetype;
+	char *default_charset;
+	HashTable *rfc1867_uploaded_files;
+	zend_long post_max_size;
+	int options;
+	bool sapi_started;
+	double global_request_time;
+	HashTable known_post_content_types;
+	zval callback_func;
+	zend_fcall_info_cache fci_cache;
+} sapi_globals_struct;

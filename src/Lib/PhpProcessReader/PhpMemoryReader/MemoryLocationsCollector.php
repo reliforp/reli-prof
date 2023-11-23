@@ -180,7 +180,8 @@ final class MemoryLocationsCollector
                             ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V80\ZendArray::class,
                             default => $type_name,
                         },
-                        ZendTypeReader::V82 => $type_name,
+                        ZendTypeReader::V82,
+                        ZendTypeReader::V83 => $type_name,
                     };
                 }
             }
