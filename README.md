@@ -516,7 +516,7 @@ $ cat 2183131.memory_dump.json | jq 'path(..|objects|select(."#reference_node_id
 
 The refcount of the object recorded in the memory location is 6 in this example. Calling methods via `$obj->call()` adds refcount by 1, but `$this->call()` doesn't add refcount. References from objects_store don't add refcount too. So all 6 references are analyzed here.
 
-See [#308](https://github.com/reliforp/reli-prof/pull/308) for more info.
+See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.9.x/docs/memory-profiler.md) for more info.
 
 ## Troubleshooting
 ### I get an error message "php module not found" and can't get a trace!
@@ -554,7 +554,7 @@ This product includes the Zend Engine, freely available at
 "Reli" means nothing, though you are free to think of this tool as a something reliable, or religious, or relishable, or whatever other reli-s as you like.
 
 Originally the name of this tool was just "php-profiler".
-Due to a licensing problem (#175), this simple good name had to be changed.
+Due to a licensing problem ([#175](https://github.com/reliforp/reli-prof/issues/175)), this simple good name had to be changed.
 
 So we applied a randomly chosen string manipulation function to the original name. `strrev('php-profiler')` results to `'reliforp-php'`, and it can be read as "reli for p(php)".
 Thus the name of this tool is "Reli for PH*" now. And you can also call it just "Reli".
