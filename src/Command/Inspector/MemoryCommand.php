@@ -57,6 +57,13 @@ final class MemoryCommand extends Command
             'stop the process while inspecting',
             true,
         );
+        $this->addOption(
+            'pretty-print',
+            null,
+            InputOption::VALUE_OPTIONAL,
+            'pretty print the result',
+            false,
+        );
         $this->target_process_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
     }
@@ -132,6 +139,10 @@ final class MemoryCommand extends Command
             $collected_memories->top_reference_context,
         );
 
+        $flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
+        if ($input->getOption('pretty-print')) {
+            $flags |= JSON_PRETTY_PRINT;
+        }
         echo json_encode(
             [
                 'summary' => $summary,
@@ -139,7 +150,7 @@ final class MemoryCommand extends Command
                 'class_objects_summary' => $object_class_summary->per_class_usage,
                 'context' => $analyzed_context,
             ],
-            JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+            $flags,
             2147483647
         );
         if (json_last_error() !== JSON_ERROR_NONE) {
