@@ -244,7 +244,7 @@ This section contains the summary of the memory usage of the target process. The
 - The return value of `memory_get_usage()` and `memory_get_real_usage()` in the target process, if they are called at the time of the analysis
 - `"heap_memory_analyzed_percentage"` === `"zend_mm_heap_usage"` / `"memory_get_usage"`
 - ZendMM tracks actual heap memory usage and has an aggregated value in the memory, and these fields shows the aggregated value
-- Ideally, `"zend_mm_heap_usage"` and `"memory_get_usage"` should be equal, but there is still a lot of area that the current Reli does not collect, such as the areas used in extensions internally. The smaller the difference between them, the more Reli is likely to know about the memory usage of the target process.
+- Ideally, `"zend_mm_heap_usage"` and `"memory_get_usage"` should be equal, but there are still a lot of areas that the current Reli does not collect, such as the areas used in extensions internally. The smaller the difference between them, the more Reli is likely to know about the memory usage of the target process.
 - `"zend_mm_heap_total"` + `"cached_chunks_size"` should be equal to `"memory_get_real_usage"`
 
 #### cached_chunks_size
@@ -373,7 +373,7 @@ Resources are opaque values that are not accessible from PHP userland, and curre
 #### The top-level children of the context tree
 
 ##### The "call_frames" field
-The call stack is represented by the `call_frames` field. The first frame is the current executing frame, and the last frame is the root of the call stack. Each call frame may have the following fields:
+The `call_frames` field represents `CallFramesContext`, that is the call stack at the time of the analysis. Each call frame is represented as `CallFrameContext`, corresponding to the `zend_execute_data` structure in the VM. The first frame is the current executing frame, and the last frame is the root of the call stack. Each `CallFrameContext` may have the following fields:
 
 - `"function_name"`
   - The name of the function called in this call frame
@@ -391,7 +391,7 @@ Each entry of the `"local_variables"` and `"this"` hold the contents of the corr
 This is the global variables table. The same table is referenced from the `"symbol_table"` field of the root call frame.
 
 ##### The "function_table" field
-The `"function_table"` field represents `DefinedFunctionsContext`, that is a table of functions defined globally, not belonging to any class. The table holds an array of information corresponding to the `zend_function` structure that represents the PHP function definition. The table key corresponds to the case-insensitive function name in PHP, so the function name in all lowercase letters is used. The `"name"` field of each element in the table holds a reference to the `StringContext` that represents the actual defined name. The first part of the table is followed by elements that represent built-in functions, whose `"#type"` is `"InternalFunctionDefinitionContext"`. After that, there are elements whose `"#type"` is `"UserFunctionDefinitionContext"` that represent functions defined in PHP scripts. Each element of `"UserFunctionDefinitionContext"` has the following fields:
+The `"function_table"` field represents `DefinedFunctionsContext`, that is a table of functions defined globally, not belonging to any class. The table holds an array of information corresponding to the `zend_function` structure that represents the PHP function definition. The table key corresponds to the case-insensitive function name in PHP, so the function name in all lowercase letters is used. The `"name"` field of each element in the table holds a reference to the `StringContext` that represents the actual defined name. The first part of the table is followed by elements that represent built-in functions, whose `"#type"` is `"InternalFunctionDefinitionContext"`. After that, there are elements whose `"#type"` is `"UserFunctionDefinitionContext"` that represent functions defined in PHP scripts. Each `"UserFunctionDefinitionContext"` has the following fields:
 
 - `"name"`
   - A reference to the `StringContext` that represents the function name
@@ -465,3 +465,11 @@ The `objects_store` is an important table that holds references to all objects i
 - Data that can only be reached from circular references that don't contain any objects
 - Support for the opcache SHM
 
+# See also
+- [PHP Internals Book](https://www.phpinternalsbook.com/)
+- [PHP's new hashtable implementation ](https://www.npopov.com/2014/12/22/PHPs-new-hashtable-implementation.html)
+- [PHP 7 Virtual Machine](https://www.npopov.com/2017/04/14/PHP-7-Virtual-machine.html) 
+- [Internal value representation in PHP 7 - Part 1 ](https://www.npopov.com/2015/05/05/Internal-value-representation-in-PHP-7-part-1.html)
+- [Internal value representation in PHP 7 - Part 2 ](https://www.npopov.com/2015/06/19/Internal-value-representation-in-PHP-7-part-2.html)
+- https://github.com/adsr/phpspy
+- https://github.com/BitOne/php-meminfo
