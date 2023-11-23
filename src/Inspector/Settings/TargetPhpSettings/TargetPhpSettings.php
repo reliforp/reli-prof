@@ -35,7 +35,7 @@ final class TargetPhpSettings
     ) {
     }
 
-    /** @psalm-assert-if-true self<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'> $this */
+    /** @psalm-assert-if-true self<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'> $this */
     public function isDecided(): bool
     {
         return $this->php_version !== 'auto';
