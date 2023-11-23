@@ -187,7 +187,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $this->assertSame(
             'fgets',
-            $contexts_analyzed['call_frames']['0']['#function_name']
+            $contexts_analyzed['call_frames']['0']['function_name']
         );
         $this->assertSame(
             'ResourceContext',
@@ -212,7 +212,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ['array_elements']
             ['dynamic_property']
             ['value']
-            ['#value']
+            ['value']
         );
         $this->assertSame(
             123,
@@ -224,7 +224,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ['array_elements']
             ['0']
             ['value']
-            ['#value']
+            ['value']
         );
         $this->assertSame(
             456,
@@ -235,11 +235,11 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ['array_elements']
             ['extra']
             ['value']
-            ['#value']
+            ['value']
         );
         $this->assertSame(
             'A::wait',
-            $contexts_analyzed['call_frames']['2']['#function_name']
+            $contexts_analyzed['call_frames']['2']['function_name']
         );
         $this->assertSame(
             $contexts_analyzed['call_frames']['3']['symbol_table']['array_elements']['object']['value']['#node_id'],
@@ -288,7 +288,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ['array_elements']
                 ['test_static_variable']
                 ['value']
-                ['#value']
+                ['value']
         );
         $this->assertSame(
             1,

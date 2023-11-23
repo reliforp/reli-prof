@@ -32,7 +32,7 @@ class ScalarValueContext implements ReferenceContext
     public function getContexts(): iterable
     {
         return [
-            '#value' => $this->value,
+            'value' => $this->value,
         ];
     }
 }

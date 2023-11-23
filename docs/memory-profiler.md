@@ -133,7 +133,7 @@ And the output is like below. The target process is [psalm](https://github.com/v
             "0": {
                 "#node_id": 1,
                 "#type": "CallFrameContext",
-                "#function_name": "Psalm\\IssueBuffer::finish",
+                "function_name": "Psalm\\IssueBuffer::finish",
                 "local_variables": {
                     "#node_id": 2,
                     "#type": "CallFrameVariableTableContext",
