@@ -14,7 +14,7 @@ The functionality of this mode is similar to [php-meminfo](https://github.com/Bi
 It captures the memory contents of the target from outside the process, and analyzing it with the knowledge of the internal structures of the PHP VM. Then dump them all. So target programs don't need any modifications, don't need to load a specific extension for this.
 
 # Requirements
-- FFI
+- FFI and PCNTL
 - PHP 8.1 or above for execution
 - PHP 7.0+ for targets
 - Only NTS targets are tested currently
