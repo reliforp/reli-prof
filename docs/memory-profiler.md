@@ -2,7 +2,7 @@
 Reli has a memory profiling mode, and it can be used with the command like below
 
 ```bash
-reli inspector:memory -P <pid_of_target_process>
+reli inspector:memory -p <pid_of_target_process>
 ```
 
 You can use this mode to analyze the memory usage of the target process, for finding out memory bottlenecks or memory leaks.
@@ -36,6 +36,7 @@ Arguments:
 
 Options:
       --stop-process[=STOP-PROCESS]          stop the process while inspecting [default: true]
+      --pretty-print[=PRETTY-PRINT]          pretty print the result [default: false]
   -p, --pid=PID                              process id
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
