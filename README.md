@@ -410,7 +410,7 @@ The output would be like the following.
 And you can get the call trace from the dump.
 
 ```bash
-$ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|."#function_name"'
+$ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|.function_name'
 "time_nanosleep"
 "Reli\\Lib\\Loop\\LoopMiddleware\\NanoSleepMiddleware::invoke"
 "Reli\\Lib\\Loop\\LoopMiddleware\\KeyboardCancelMiddleware::invoke"
@@ -438,12 +438,12 @@ $ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|select(.func
     "$args_to_internal_function[0]": {
       "#node_id": 3,
       "#type": "ScalarValueContext",
-      "#value": 0
+      "value": 0
     },
     "$args_to_internal_function[1]": {
       "#node_id": 4,
       "#type": "ScalarValueContext",
-      "#value": 9743095
+      "value": 9743095
     }
   }
 }
