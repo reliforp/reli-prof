@@ -11,7 +11,7 @@ For example, you can see statistics such as whether strings, arrays or objects a
 
 The functionality of this mode is similar to [php-meminfo](https://github.com/BitOne/php-meminfo), but works in the [phpspy](https://github.com/adsr/phpspy)-ish way.
 
-It captures the memory contents of the target from outside the process, and analyzing it with the knowledge of the internal structures of the PHP VM. Then dump them all. So target programs don't need any modifications, don't need to load a specific extension for this.
+It captures the memory contents of the target from outside the process, and analyzes it with the knowledge of the internal structures of the PHP VM, then dumps them all. So target programs don't need any modifications, don't need to load a specific extension for this.
 
 # Requirements
 - FFI and PCNTL
@@ -381,6 +381,7 @@ The `call_frames` field represents `CallFramesContext`, that is the call stack a
   - The local variables in this call frame
 - `"this"`
   - The `$this` in this call frame
+  - Note that calling methods via `$obj->call()` adds refcount by 1, but `$this->call()` doesn't add refcount. So the reference from this field may or may not increase the recount of the object, depending on whether the previous frame refers to the same object in the "this" field.
 - `"symbol_table"`
   - The symbol table in this call frame
   - This can be a hash table that holds the local variables, which is used by the engine to implement variable variables or similar features.
@@ -454,6 +455,8 @@ The `"included_files"` field holds an `IncludedFilesContext`, that represents th
 ##### The "objects_store" field
 
 The `objects_store` is an important table that holds references to all objects inside the script, and most references are represented by `"#reference_node_id"` only, as this is the last top-level child outputted. If there is an object in the objects_store that is represented by `"#node_id"` with its contents, it is most likely to be an object whose reference that is held by an internal structure not supported by this tool, such as `\Closure`s passed to `register_shutdown_function()`, or objects whose reference cannot be followed in the normal path due to circular references.
+
+The references in the objects_store don't add refcount to the objects.
 
 # Currently not yet supported
 - Variables captured in inactive Generators
