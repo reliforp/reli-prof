@@ -25,7 +25,7 @@ class CallFrameContext implements ReferenceContext
     public function getContexts(): iterable
     {
         return [
-            '#function_name' => $this->function_name,
+            'function_name' => $this->function_name,
         ];
     }
 }
