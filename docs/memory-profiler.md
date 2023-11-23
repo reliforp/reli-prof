@@ -203,6 +203,32 @@ $ cat memory_analized.json | jq 'path(..|objects|select(."#reference_node_id"==3
 
 ## Capturing the memory_limit violation
 
+If you can modify the target script, you can also capture the memory_limit violation via `register_shutdown_function()`, like this.
+
+```php
+<?php
+ini_set('memory_limit', '2M');
+
+register_shutdown_function(
+    function (): void {
+        $error = error_get_last();
+        if (is_null($error)) {
+            return;
+        }
+        if (strpos($error['message'], 'Allowed memory size of') !== 0) {
+            return;
+        }
+        $pid = getmypid();
+        system("sudo reli i:m -p {$pid} --stop-process=0 >dump.json");
+    }
+);
+
+$var = [];
+for ($i = 0; $i < 1000000; $i++) {
+    $var[] = array_fill(0, 0x10000, 0);
+}
+```
+
 ## More detailed explanation of the output
 ### The "summary" field
 ```bash
