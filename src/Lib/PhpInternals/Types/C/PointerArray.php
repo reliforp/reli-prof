@@ -108,7 +108,6 @@ final class PointerArray implements Dereferencable
         ZendTypeReader $zend_type_reader,
         ?int $size = null,
     ): Pointer {
-        assert(isset($this->casted_cdata->casted[$offset]));
         return new Pointer(
             $class_name,
             Cast::toInt($this->casted_cdata->casted[$offset]),
