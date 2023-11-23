@@ -276,7 +276,24 @@ This section contains the summary of the memory usage of the target process. The
 - This field is the sum of the possible wasted areas for the `zend_array` structure. The `zend_array` structure is used for the implementation of PHP arrays. Each `zend_array` has a pointer to a table for storing elements. And the table grows as the number of elements increases. When the table grows, the table size is increased by a factor of two to avoid performance degradation due to too many reallocations. So often an area considerably larger than the actual number of elements used is reserved for the table. Reli accounts for the difference between the actual area used in the table and the table size as wasted area.
 - The optimizer of the PHP VM may truncate table areas that do not change its size at runtime, such as function tables for classes, to the actual size used in memory. So Reli excludes the seemingly unused table areas from the calculation if they are overlaid by another area, but it is possible that other areas that Reli has not been able to find may be using the "unused" table areas. So the value of this field can be an overestimate.
 
-### The "context" field (the context tree)
+#### php_version
+- The version of the PHP that the target process is using
+
+### The `"location_types_summary"` field
+```bash
+cat memory_analyzed.json | jq .location_types_summary
+```
+This section contains the summary of the memory usage of the target process, grouped by the type of the memory area and sorted by total size.
+
+### The `"class_objects_summary"` field
+```bash
+cat memory_analyzed.json | jq .class_objects_summary
+```
+This section contains the summary of the objects memory usage of the target process, grouped by the class of the objects and sorted by total size.
+
+Currently, only the sizes of the user-defined classes are calculated correctly.
+
+### The `"context"` field (the context tree)
 The `context` field in the output JSON indicates in which context each memory area is referenced.
 
 Reli recursively dumps local variables and `$this` on the call stack from the running call frame to the root of the script invocation, and also dumps global variables and function tables etc... as well as the contents of complex values such as objects or arrays referenced by their zval, in the DFS manner. To avoid infinite recursion on circular references and dump data size explosion, each context is assigned a unique node ID, `#node_id`, and then references to the same output area are output as `"#reference_node_id": 4`. This means that the `contexts` field is effectively represented as a tree with the top-level children described below:
