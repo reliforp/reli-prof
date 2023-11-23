@@ -66,7 +66,7 @@ Much of what can be done with phpspy will be done with reli in the future.
 - PHP 8.1+ (NTS / ZTS)
 - 64bit Linux x86_64
 - FFI extension must be enabled.
-- If the target process is ZTS, PCNTL extension must be enabled.
+- PCNTL extension must be enabled.
 
 #### Target
 - PHP 7.0+ (NTS / ZTS)
@@ -427,11 +427,11 @@ $ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|."#function_
 You can also see the contents of the local variables of a specific call frame.
 
 ```bash
-$ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|select(."#function_name"=="time_nanosleep")'
+$ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|select(.function_name=="time_nanosleep")'
 {
   "#node_id": 1,
   "#type": "CallFrameContext",
-  "#function_name": "time_nanosleep",
+  "function_name": "time_nanosleep",
   "local_variables": {
     "#node_id": 2,
     "#type": "CallFrameVariableTableContext",
