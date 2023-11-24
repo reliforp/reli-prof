@@ -486,6 +486,23 @@ The references in the objects_store don't add refcount to the objects.
 - Data that can only be reached from circular references that don't contain any objects
 - Support for the opcache SHM
 
+# Troubleshooting
+## jq says "parse error: Exceeds depth limit for parsing at line 1"
+It's not a bug of Reli, but a limitation of `jq`. Currently, `jq` doesn't have a way to increase the limit without recompiling it. You can also try some other tools like `gojq` or `jj` instead.
+
+## Cannot find a way to use this tool in docker
+Try this.
+
+```bash
+$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof i:m -p <pid_of_target_process> >memory_analyzed.json
+```
+
+If you hit the memory_limit during the analysis, then you can increase the memory_limit like this.
+
+```bash
+$ docker run --entrypoint=php -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof -dmemory_limit=2G reli i:m -p <pid_of_target_process> >memory_analyzed.json
+```
+
 # See also
 - [PHP Internals Book](https://www.phpinternalsbook.com/)
 - [PHP's new hashtable implementation ](https://www.npopov.com/2014/12/22/PHPs-new-hashtable-implementation.html)
