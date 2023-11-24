@@ -1621,6 +1621,9 @@ final class MemoryLocationsCollector
             if ($bucket->address === 0) {
                 continue;
             }
+            if ($key >= $objects_store->top) {
+                break;
+            }
             $objects_store_bucket_context = $this->collectZendObjectPointer(
                 $bucket,
                 $map_ptr_base,
