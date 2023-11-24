@@ -17,7 +17,7 @@ final class ObjectClassAnalyzerResult
 {
     /**
      * @psalm-type PerClassUsage = array{count: int, memory_usage: int}
-     * @param array<class-string, PerClassUsage> $per_class_usage
+     * @param array<string, PerClassUsage> $per_class_usage
      */
     public function __construct(
         public array $per_class_usage,

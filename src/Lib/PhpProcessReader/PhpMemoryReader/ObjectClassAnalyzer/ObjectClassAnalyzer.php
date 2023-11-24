@@ -25,7 +25,6 @@ final class ObjectClassAnalyzer
         foreach ($memory_locations->memory_locations as $memory_location) {
             if ($memory_location instanceof ZendObjectMemoryLocation) {
                 $class_name = $memory_location->class_name;
-                assert(is_a($class_name, MemoryLocation::class, true));
                 if (!isset($per_class_usage[$class_name])) {
                     $per_class_usage[$class_name] = [
                         'count' => 0,
