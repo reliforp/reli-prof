@@ -21,7 +21,18 @@ use Reli\Lib\Log\StateCollector\StateCollector;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 
-require __DIR__ . '/vendor/autoload.php';
+$not_loaded = true;
+foreach ([__DIR__ . '/vendor/autoload.php', __DIR__ . '/../../autoload.php'] as $autoload) {
+    if (file_exists($autoload)) {
+        require $autoload;
+    }
+    $not_loaded = false;
+}
+
+if ($not_loaded) {
+    echo 'Autoloader was not loaded.', PHP_EOL;
+    exit(1);
+}
 
 $application = new Application();
 $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/config/di.php')->build();
