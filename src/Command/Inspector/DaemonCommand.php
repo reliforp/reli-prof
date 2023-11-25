@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
+use Amp\CancelledException;
 use Amp\DeferredCancellation;
 use Reli\Inspector\Daemon\Dispatcher\DispatchTable;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
@@ -138,7 +139,12 @@ final class DaemonCommand extends Command
                 }
             );
         }
-        await($futures, $cancellation->getCancellation());
+
+        try {
+            await($futures, $cancellation->getCancellation());
+        } catch (CancelledException $e) {
+            Log::debug('cancelled', ['exception' => $e->getMessage()]);
+        }
 
         return 0;
     }
