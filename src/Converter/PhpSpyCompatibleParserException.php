@@ -13,14 +13,16 @@ declare(strict_types=1);
 
 namespace Reli\Converter;
 
-/** @psalm-immutable */
-final class ParsedCallFrame
+use Throwable;
+
+final class PhpSpyCompatibleParserException extends \Exception
 {
     public function __construct(
-        public string $function_name,
-        public string $file_name,
-        public int $lineno,
-        public ?OriginalDataContext $original_context = null,
+        string $message,
+        public int $lineno_before_parse,
+        int $code = 0,
+        ?Throwable $previous = null
     ) {
+        parent::__construct($message, $code, $previous);
     }
 }
