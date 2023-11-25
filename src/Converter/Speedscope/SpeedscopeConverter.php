@@ -14,14 +14,18 @@ declare(strict_types=1);
 namespace Reli\Converter\Speedscope;
 
 use Reli\Converter\ParsedCallTrace;
+use Reli\Converter\Speedscope\Settings\SpeedscopeConverterSettings;
 
 class SpeedscopeConverter
 {
     /** @param iterable<ParsedCallTrace> $call_frames */
-    public function collectFrames(iterable $call_frames): array
-    {
+    public function collectFrames(
+        iterable $call_frames,
+        SpeedscopeConverterSettings $settings,
+    ): array {
         $mapper = fn(array $value): string | false => \json_encode(
             $value,
+            $settings->utf8_error_handling_type->toFlag()
         );
         $trace_map = [];
         $result_frames = [];
