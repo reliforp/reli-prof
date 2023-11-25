@@ -11,16 +11,15 @@
 
 declare(strict_types=1);
 
-namespace Reli\Converter;
+namespace Reli\Converter\Speedscope;
 
-/** @psalm-immutable */
-final class ParsedCallFrame
+final class SpeedscopeConverterException extends \Exception
 {
     public function __construct(
-        public string $function_name,
-        public string $file_name,
-        public int $lineno,
-        public ?OriginalDataContext $original_context = null,
+        string $message,
+        int $code = 0,
+        ?\Throwable $previous = null
     ) {
+        parent::__construct($message, $code, $previous);
     }
 }

@@ -13,14 +13,15 @@ declare(strict_types=1);
 
 namespace Reli\Converter;
 
-/** @psalm-immutable */
-final class ParsedCallFrame
+class PhpSpyCompatibleDataContext implements OriginalDataContext
 {
     public function __construct(
-        public string $function_name,
-        public string $file_name,
         public int $lineno,
-        public ?OriginalDataContext $original_context = null,
     ) {
+    }
+
+    public function toString(): string
+    {
+        return 'line:' . $this->lineno;
     }
 }
