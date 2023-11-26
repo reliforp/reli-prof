@@ -16,7 +16,7 @@ namespace Reli;
 final class ReliProfiler
 {
     public const TOOL_NAME = 'reli';
-    public const VERSION = '0.9.0';
+    public const VERSION = '0.10.0';
 
     public static function toolSignature(): string
     {
