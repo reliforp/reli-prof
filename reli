@@ -38,7 +38,7 @@ $application = new Application();
 $container = (new ContainerBuilder())->addDefinitions(__DIR__ . '/config/di.php')->build();
 
 $application->setName(ReliProfiler::TOOL_NAME);
-$application->setVersion(ReliProfiler::VERSION);
+$application->setVersion(ReliProfiler::getVersion());
 
 Log::initializeLogger(
     $container->make(LoggerInterface::class),
