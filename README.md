@@ -78,14 +78,14 @@ On targeting ZTS, the target process must load libpthread.so, and also you must 
 ### From Composer
 ```bash
 composer create-project reliforp/reli-prof
-cd reli
+cd reli-prof
 ./reli
 ```
 
 ### From Git
 ```bash
 git clone git@github.com:reliforp/reli-prof.git
-cd reli
+cd reli-prof
 composer install
 ./reli
 ```
