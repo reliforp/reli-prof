@@ -13,13 +13,19 @@ declare(strict_types=1);
 
 namespace Reli;
 
+use Composer\InstalledVersions;
+
 final class ReliProfiler
 {
     public const TOOL_NAME = 'reli';
-    public const VERSION = '0.10.0';
+
+    public static function getVersion(): string
+    {
+        return InstalledVersions::getPrettyVersion('reliforp/reli-prof') ?? 'unknown';
+    }
 
     public static function toolSignature(): string
     {
-        return self::TOOL_NAME . ' ' . self::VERSION;
+        return self::TOOL_NAME . ' ' . self::getVersion();
     }
 }
