@@ -15,6 +15,11 @@ namespace Reli\Lib\Elf\Structure\Elf64;
 
 use Reli\Lib\Integer\UInt64;
 
+use function array_key_last;
+use function max;
+use function ord;
+use function strlen;
+
 /**
  * @see https://flapenguin.me/2017/05/10/elf-lookup-dt-gnu-hash/
  */
@@ -41,11 +46,9 @@ final class Elf64GnuHashTable
     public function lookup(string $name, callable $symbol_table_checker): int
     {
         $hash = self::hash($name);
-/* this filter is buggy, so commenting out for now
         if (!$this->checkBloomFilter($hash)) {
             return Elf64SymbolTable::STN_UNDEF;
         }
-*/
         $chain_offset = max(0, $this->buckets[$hash % $this->nbuckets] - $this->symoffset);
 
         do {
