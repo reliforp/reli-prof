@@ -24,6 +24,16 @@ class ArrayElementsContext implements ReferenceContext
     ) {
     }
 
+    public function getCount(): int
+    {
+        return count($this->referencing_contexts);
+    }
+
+    public function getElementByKey(int|string $key): ?ReferenceContext
+    {
+        return $this->referencing_contexts[(string)$key] ?? null;
+    }
+
     public function getLocations(): iterable
     {
         return [$this->memory_location];
@@ -32,7 +42,7 @@ class ArrayElementsContext implements ReferenceContext
     public function getContexts(): iterable
     {
         return [
-            '#count' => count($this->referencing_contexts),
+            '#count' => $this->getCount(),
         ];
     }
 }

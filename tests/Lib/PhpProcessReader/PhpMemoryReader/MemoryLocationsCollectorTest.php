@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
 use Reli\BaseTestCase;
+use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
@@ -42,6 +43,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     private string $memory_limit_buckup;
     public function setUp(): void
     {
+        $this->child = null;
         $this->memory_limit_buckup = ini_get('memory_limit');
         ini_set('memory_limit', '1G');
     }
@@ -56,6 +58,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     posix_kill($child_status['pid'], SIGKILL);
                 }
             }
+            $this->child = null;
         }
     }
 
@@ -293,6 +296,146 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame(
             1,
             $contexts_analyzed['included_files']['#count']
+        );
+    }
+
+    public function testMemoryLimitViolation()
+    {
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $this->child = proc_open(
+            [
+                PHP_BINARY,
+                '-r',
+                <<<'CODE'
+                ini_set('memory_limit', '2M');
+                register_shutdown_function(function () {
+                    $error = error_get_last();
+                    if (is_null($error)) {
+                        return;
+                    }
+                    if (strpos($error['message'], 'Allowed memory size of') !== 0) {
+                        return;
+                    }
+                    fputs(STDOUT, json_encode($error) . "\n");
+                    fgets(STDIN);
+                });
+                function f() {
+                    $var = array_fill(0, 0x1000, 0);
+                    f();
+                }
+                f();
+                CODE
+            ],
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w']
+            ],
+            $pipes
+        );
+
+        $child_status = proc_get_status($this->child);
+        $error_json = fgets($pipes[1]);
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            $memory_reader,
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+            ),
+            ProcessMemoryMapCreator::create(),
+            new LittleEndianReader()
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            new LittleEndianReader(),
+            new MemoryReader()
+        );
+
+        /** @var int $child_status['pid'] */
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $error = json_decode($error_json, true);
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings(php_version: ZendTypeReader::V81),
+            $executor_globals_address,
+            $compiler_globals_address,
+            new MemoryLimitErrorDetails(
+                $error['file'],
+                $error['line'],
+                512
+            )
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
+        $this->assertGreaterThan(
+            2,
+            $collected_memories->top_reference_context->call_frames->getFrameCount()
+        );
+        $this->assertSame(
+            'f',
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->function_name
+        );
+        $this->assertSame(
+            15,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->lineno
+        );
+        $this->assertSame(
+            0x1000,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->getLocalVariable('var')
+                ->getElements()
+                ->getCount()
+        );
+        $this->assertSame(
+            0x1000,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(4)
+                ->getLocalVariable('var')
+                ->getElements()
+                ->getCount()
+        );
+        $last_frame = $collected_memories->top_reference_context->call_frames->getFrameCount() - 1;
+        $this->assertSame(
+            '<main>',
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt($last_frame)
+                ->function_name
+        );
+        $this->assertSame(
+            17,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt($last_frame)
+                ->lineno
         );
     }
 }

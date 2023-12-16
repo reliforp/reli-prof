@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\Types\C\PointerArray;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -120,5 +121,27 @@ class ZendVmStack implements Dereferencable
                 $stack = null;
             }
         }
+    }
+
+    public function getRootStack(Dereferencer $dereferencer): ZendVmStack
+    {
+        $stack = $this;
+        while ($stack->prev !== null) {
+            $stack = $dereferencer->deref($stack->prev);
+        }
+        return $stack;
+    }
+
+    public function materializeAsPointerArray(
+        Dereferencer $dereferencer,
+        int $end_address,
+    ): PointerArray {
+        assert($this->top !== null);
+        $pointer = new Pointer(
+            PointerArray::class,
+            $this->top->address,
+            $end_address - $this->top->address,
+        );
+        return $dereferencer->deref($pointer);
     }
 }

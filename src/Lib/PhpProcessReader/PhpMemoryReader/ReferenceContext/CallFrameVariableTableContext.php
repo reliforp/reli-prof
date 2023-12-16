@@ -17,6 +17,11 @@ final class CallFrameVariableTableContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
+    public function getVariable(string $variable_name): ?ReferenceContext
+    {
+        return $this->referencing_contexts[$variable_name] ?? null;
+    }
+
     public function getContexts(): iterable
     {
         return [

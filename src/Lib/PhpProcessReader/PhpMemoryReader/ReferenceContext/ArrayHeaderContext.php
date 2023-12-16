@@ -24,6 +24,17 @@ final class ArrayHeaderContext implements ReferenceContext
     ) {
     }
 
+    public function getElements(): ?ArrayElementsContext
+    {
+        /** @var ArrayElementsContext|null */
+        return $this->referencing_contexts['array_elements'] ?? null;
+    }
+
+    public function getElement(int|string $key): ?ReferenceContext
+    {
+        return $this->getElements()?->getElementByKey($key) ?? null;
+    }
+
     public function getLocations(): iterable
     {
         return [$this->memory_location];

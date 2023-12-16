@@ -17,6 +17,17 @@ final class CallFramesContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
+    public function getFrameAt(int $frame_no): CallFrameContext
+    {
+        /** @var CallFrameContext */
+        return $this->referencing_contexts[(string)$frame_no];
+    }
+
+    public function getFrameCount(): int
+    {
+        return count($this->referencing_contexts);
+    }
+
     public function getContexts(): iterable
     {
         return [
