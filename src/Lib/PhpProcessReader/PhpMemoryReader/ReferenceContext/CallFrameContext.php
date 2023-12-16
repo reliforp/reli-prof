@@ -19,13 +19,26 @@ class CallFrameContext implements ReferenceContext
 
     public function __construct(
         public string $function_name,
+        public int $lineno,
     ) {
+    }
+
+    public function getLocalVariables(): ?CallFrameVariableTableContext
+    {
+        /** @var CallFrameVariableTableContext|null */
+        return $this->referencing_contexts['local_variables'] ?? null;
+    }
+
+    public function getLocalVariable(string $variable_name): ?ReferenceContext
+    {
+        return $this->getLocalVariables()?->getVariable($variable_name) ?? null;
     }
 
     public function getContexts(): iterable
     {
         return [
             'function_name' => $this->function_name,
+            'lineno' => $this->lineno,
         ];
     }
 }

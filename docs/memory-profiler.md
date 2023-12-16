@@ -219,15 +219,20 @@ register_shutdown_function(
             return;
         }
         $pid = getmypid();
-        system("sudo reli i:m -p {$pid} --stop-process=0 >dump.json");
+        $file_opt = '--memory-limit-error-file=' . escapeshellarg($error['file']);
+        $line_opt = '--memory-limit-error-line=' . escapeshellarg($error['line']);
+        system("sudo reli i:m -p {$pid} --no-stop-process --pretty-print {$file_opt} {$line_opt} -vvvv >{pid}_memory_analyzed.json");
     }
 );
 
-$var = [];
-for ($i = 0; $i < 1000000; $i++) {
-    $var[] = array_fill(0, 0x10000, 0);
+function f() {
+    $var = array_fill(0, 0x1000, 0);
+    f();
 }
+f();
 ```
+
+Like [`debug_backtrace()` in shutdown handlers](https://3v4l.org/YlHMA), normally Reli can only capture the call stack with the shutdown handler as the root, so we cannot get the real stack trace at the time of the memory_limit violation without a hack. If you specify the file name and line number of the violation with `--memory-limit-error-file` and `--memory-limit-error-line` options, Reli first search the corresponding op_array (the compiled VM codes) in the process memory, and then search the call frame referencing the op_array by scanning the VM stack in reverse order. And by assuming it is the actual call frame lastly executed before the memory_limit violation and challenging whether it could be able to reach the root of the VM stack by tracing back from there, Reli can get the real stack trace including local variables.
 
 ## More detailed explanation of the output
 ### The `"summary"` field

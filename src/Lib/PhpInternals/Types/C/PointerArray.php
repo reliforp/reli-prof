@@ -8,6 +8,7 @@ use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Traversable;
 
 final class PointerArray implements Dereferencable
 {
@@ -125,5 +126,13 @@ final class PointerArray implements Dereferencable
             $address,
             8 * $len,
         );
+    }
+
+    /** @return \Traversable<int, int> */
+    public function getReverseIteratorAsInt(): Traversable
+    {
+        for ($i = $this->len - 1; $i >= 0; $i--) {
+            yield $i => Cast::toInt($this->casted_cdata->casted[$i]);
+        }
     }
 }

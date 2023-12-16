@@ -163,6 +163,15 @@ final class ZendExecuteData implements Dereferencable
         return (bool)($this->This->u1->type_info & (1 << 27));
     }
 
+    public function isInternalCall(Dereferencer $dereferencer): bool
+    {
+        if (is_null($this->func)) {
+            return false;
+        }
+        $func = $dereferencer->deref($this->func);
+        return $func->isInternalFunction();
+    }
+
     public function getFunctionName(
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
@@ -210,8 +219,15 @@ final class ZendExecuteData implements Dereferencable
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
     ): string {
-        $class_name = $this->getFunctionClassName($dereferencer);
         $function_name = $this->getFunctionName($dereferencer, $zend_type_reader);
+        if (
+            $function_name === '<internal>'
+            or $function_name === '<main>'
+            or $function_name === '<generator>'
+        ) {
+            return $function_name;
+        }
+        $class_name = $this->getFunctionClassName($dereferencer);
         if ($class_name === '') {
             return $function_name;
         }
@@ -226,6 +242,19 @@ final class ZendExecuteData implements Dereferencable
         while (!is_null($stack->prev_execute_data)) {
             yield $stack = $dereferencer->deref($stack->prev_execute_data);
         }
+    }
+
+    public function getRootFrame(
+        Dereferencer $dereferencer,
+        int $max_depth,
+    ): ZendExecuteData {
+        $depth = 0;
+        $stack = $this;
+        while (!is_null($stack->prev_execute_data) and ($depth < $max_depth or $max_depth === -1)) {
+            $stack = $dereferencer->deref($stack->prev_execute_data);
+            $depth++;
+        }
+        return $stack;
     }
 
     public function getVariableTableAddress(): int

@@ -23,6 +23,9 @@ use Reli\Lib\Process\Pointer\Pointer;
 /** @psalm-consistent-constructor */
 final class ZendFunction implements Dereferencable
 {
+    public const ZEND_INTERNAL_FUNCTION = 1;
+    public const ZEND_USER_FUNCTION = 2;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $type;
 
@@ -179,6 +182,11 @@ final class ZendFunction implements Dereferencable
 
     public function isUserFunction(): bool
     {
-        return $this->type === 2;
+        return $this->type === self::ZEND_USER_FUNCTION;
+    }
+
+    public function isInternalFunction(): bool
+    {
+        return $this->type === self::ZEND_INTERNAL_FUNCTION;
     }
 }

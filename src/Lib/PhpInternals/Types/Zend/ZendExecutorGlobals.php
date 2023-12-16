@@ -38,6 +38,9 @@ final class ZendExecutorGlobals implements Dereferencable
     /** @var Pointer<ZendVmStack>|null  */
     public ?Pointer $vm_stack;
 
+    /** @var Pointer<Zval>|null  */
+    public ?Pointer $vm_stack_top;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendArray $included_files;
 
@@ -64,6 +67,7 @@ final class ZendExecutorGlobals implements Dereferencable
         unset($this->zend_constants);
         unset($this->symbol_table);
         unset($this->vm_stack);
+        unset($this->vm_stack_top);
         unset($this->objects_store);
         unset($this->included_files);
     }
@@ -112,10 +116,17 @@ final class ZendExecutorGlobals implements Dereferencable
                     \FFI::sizeof($this->casted_cdata->casted->symbol_table),
                 ),
             ),
-            'vm_stack' => $this->casted_cdata->casted->vm_stack !== null
+            'vm_stack' => $this->vm_stack = $this->casted_cdata->casted->vm_stack !== null
                 ? Pointer::fromCData(
                     ZendVmStack::class,
                     $this->casted_cdata->casted->vm_stack,
+                )
+                : null
+            ,
+            'vm_stack_top' => $this->vm_stack_top = $this->casted_cdata->casted->vm_stack_top !== null
+                ? Pointer::fromCData(
+                    Zval::class,
+                    $this->casted_cdata->casted->vm_stack_top,
                 )
                 : null
             ,

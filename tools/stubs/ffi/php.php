@@ -24,6 +24,7 @@ class zend_executor_globals extends CData
     public ?CPointer $zend_constants;
     public zend_array $symbol_table;
     public ?CPointer $vm_stack;
+    public ?CPointer $vm_stack_top;
     public zend_array $included_files;
     public ?CPointer $ini_directives;
     public ?CPointer $modified_ini_directives;
