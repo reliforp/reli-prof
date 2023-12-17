@@ -184,14 +184,14 @@ And the output is like below. The target process is [psalm](https://github.com/v
 ```
 
 ## A quick tour of each part of the output
-- ZendMM allocates 153092096 byte of chunks in total
-- 126947784 bytes of them are located by this tool
-- If the target process calls `memory_get_usage(false)` at this moment, the return value would be 129053816
+- ZendMM allocates 153,092,096 byte of chunks in total
+- 126,947,784 bytes of them are located by this tool
+- If the target process calls `memory_get_usage(false)` at this moment, the return value would be 129,053,816
 - So 98.36809784842008% of areas reported by `memory_get_usage()` is analyzed
 - The kind of the top most memory area is the locations for `zend_object`, which corresponding to the PHP objects in the target process
-  - The number of objects is 124341, and the total analyzed size of them is 45245784 bytes
+  - The number of objects is 124,341, and the total analyzed size of them is 45,245,784 bytes
 - The class with the most number of instances is `Psalm\CodeLocation`
-  - The number of instances is 32875, and the total analyzed size of them is 13413000 bytes
+  - The number of instances is 32,875, and the total analyzed size of them is 13,413,000 bytes
 - The "context" field can be used to find out which areas in the script are used in what context. For example, the executing function at this moment is `Psalm\IssueBuffer::finish()`. Its local variables contain `$project_analyzer`, which is an instance of `Psalm\Internal\Analyzer\ProjectAnalyzer`. And you can extract all references to the same instance with `jq`.
 ```bash
 $ cat memory_analized.json | jq 'path(..|objects|select(."#reference_node_id"==3 or ."#node_id"==3))|join(".")'
