@@ -463,8 +463,8 @@ final class MemoryLocationsCollector
             or $zval->isNull()
         ) {
             return match ($zval->getType()) {
-                'IS_TRUE', 'IS_FALSE'
-                    => new ScalarValueContext((bool)$zval->value->lval),
+                'IS_TRUE' => new ScalarValueContext(true),
+                'IS_FALSE' => new ScalarValueContext(false),
                 'IS_LONG' => new ScalarValueContext($zval->value->lval),
                 'IS_DOUBLE' => new ScalarValueContext($zval->value->dval),
                 'IS_NULL' => new ScalarValueContext(null),
