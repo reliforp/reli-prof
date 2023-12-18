@@ -518,7 +518,7 @@ $ cat 2183131.memory_dump.json | jq 'path(..|objects|select(."#reference_node_id
 
 The refcount of the object recorded in the memory location is 6 in this example. Calling methods via `$obj->call()` adds refcount by 1, but `$this->call()` doesn't add refcount. References from objects_store don't add refcount too. So all 6 references are analyzed here.
 
-See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.9.x/docs/memory-profiler.md) for more info.
+See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md) for more info.
 
 ## Troubleshooting
 ### I get an error message "php module not found" and can't get a trace!
