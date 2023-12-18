@@ -369,7 +369,7 @@ $ ./reli c:callgrind <traces >callgrind.out
 $ kcachegrind callgrind.out
   ```
 
-### Dump the memory usage of the target proces
+### Dump the memory usage of the target process
 
 > [!CAUTION]
 > **Don't upload the output of this command to the internet, because it can contain sensitive information of the target script!!!**
