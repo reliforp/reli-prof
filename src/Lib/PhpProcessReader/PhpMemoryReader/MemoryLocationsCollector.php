@@ -334,6 +334,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
 
         $call_frames_context = $this->collectCallFrames(
@@ -343,6 +344,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
 
         $defined_functions_context = $this->collectFunctionTable(
@@ -362,6 +364,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
 
         $global_constants_context = $this->collectGlobalConstants(
@@ -371,6 +374,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
 
         $objects_store_context = $this->collectObjectsStore(
@@ -380,6 +384,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
 
         if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
@@ -426,7 +431,8 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ?ReferenceContext {
         if ($zval->isArray()) {
             assert(!is_null($zval->value->arr));
@@ -437,6 +443,7 @@ final class MemoryLocationsCollector
                 $dereferencer,
                 $zend_type_reader,
                 $context_pools,
+                $memory_limit_error_details,
             );
         } elseif ($zval->isObject()) {
             assert(!is_null($zval->value->obj));
@@ -447,6 +454,7 @@ final class MemoryLocationsCollector
                 $dereferencer,
                 $zend_type_reader,
                 $context_pools,
+                $memory_limit_error_details,
             );
         } elseif ($zval->isString()) {
             assert(!is_null($zval->value->str));
@@ -478,6 +486,7 @@ final class MemoryLocationsCollector
                 $dereferencer,
                 $zend_type_reader,
                 $context_pools,
+                $memory_limit_error_details,
             );
         } elseif ($zval->isResource()) {
             assert(!is_null($zval->value->res));
@@ -498,6 +507,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
         }
         return null;
@@ -536,7 +546,8 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): PhpReferenceContext {
         if ($memory_locations->has($pointer->address)) {
             $memory_location = $memory_locations->get($pointer->address);
@@ -561,6 +572,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
         if (!is_null($zval_context)) {
             $php_referencecontext->add('referenced', $zval_context);
@@ -575,7 +587,8 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ArrayHeaderContext {
         if ($memory_locations->has($pointer->address)) {
             $memory_location = $memory_locations->get($pointer->address);
@@ -594,6 +607,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
     }
 
@@ -604,7 +618,8 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ObjectContext {
         if ($memory_locations->has($pointer->address)) {
             $memory_location = $memory_locations->get($pointer->address);
@@ -626,6 +641,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
     }
 
@@ -666,6 +682,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): CallFramesContext {
         $call_frames_context = new CallFramesContext();
         if (is_null($eg->current_execute_data)) {
@@ -680,6 +697,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             $call_frames_context->add((string)$key, $call_frame_context);
         }
@@ -757,6 +775,7 @@ final class MemoryLocationsCollector
                             $zend_type_reader,
                             $memory_locations,
                             $context_pools,
+                            null,
                         );
                         $call_frames_context->add((string)($frame_no + $frame_start), $call_frame_context);
                     }
@@ -783,6 +802,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): CallFrameContext {
         $function_name = $execute_data->getFullyQualifiedFunctionName(
             $dereferencer,
@@ -817,6 +837,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             if (!is_null($this_context)) {
                 $call_frame_context->add('this', $this_context);
@@ -834,6 +855,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             if (!is_null($local_variable_context)) {
                 $variable_table_context->add($name, $local_variable_context);
@@ -852,6 +874,7 @@ final class MemoryLocationsCollector
                 $dereferencer,
                 $zend_type_reader,
                 $context_pools,
+                $memory_limit_error_details,
             );
             $call_frame_context->add('symbol_table', $symbol_table_context);
         }
@@ -863,6 +886,7 @@ final class MemoryLocationsCollector
                 $dereferencer,
                 $zend_type_reader,
                 $context_pools,
+                $memory_limit_error_details,
             );
             $call_frame_context->add('extra_named_params', $extra_named_params_context);
         }
@@ -875,7 +899,8 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): GlobalVariablesContext {
         return GlobalVariablesContext::fromArrayContext(
             $this->collectZendArray(
@@ -885,6 +910,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             )
         );
     }
@@ -895,7 +921,8 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ArrayHeaderContext {
         $array_header_location = ZendArrayMemoryLocation::fromZendArray($array);
         $array_table_location = ZendArrayTableMemoryLocation::fromZendArray($array);
@@ -938,6 +965,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             if (!is_null($value_context)) {
                 $element_context->add('value', $value_context);
@@ -954,7 +982,8 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ObjectContext {
         $object_location = ZendObjectMemoryLocation::fromZendObject(
             $object,
@@ -996,6 +1025,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             if (!is_null($property_context)) {
                 $object_properties_context->add($name, $property_context);
@@ -1018,6 +1048,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             $object_context->add('dynamic_properties', $dynamic_properties_context);
         }
@@ -1037,6 +1068,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             $object_context->add('closure', $closure_context);
         }
@@ -1051,6 +1083,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ClosureContext {
         $closure_context = new ClosureContext();
         $closure_context->add(
@@ -1062,6 +1095,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             )
         );
         $zval_context = $this->collectZval(
@@ -1071,6 +1105,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
         if (!is_null($zval_context)) {
             $closure_context->add(
@@ -1088,7 +1123,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
-        MemoryLimitErrorDetails $memory_limit_error_details = null,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): DefinedFunctionsContext {
         $array_header_location = ZendArrayMemoryLocation::fromZendArray($array);
         $array_table_location = ZendArrayTableMemoryLocation::fromZendArray($array);
@@ -1131,7 +1166,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
-        MemoryLimitErrorDetails $memory_limit_error_details = null,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): FunctionDefinitionContext {
         if ($memory_locations->has($pointer->address)) {
             $memory_location = $memory_locations->get($pointer->address);
@@ -1161,7 +1196,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
-        MemoryLimitErrorDetails $memory_limit_error_details = null,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): FunctionDefinitionContext {
         if ($func->isUserFunction()) {
             $function_definition_context = $this->collectUserFunctionDefinition(
@@ -1195,7 +1230,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
-        MemoryLimitErrorDetails $memory_limit_error_details = null,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): UserFunctionDefinitionContext {
         $function_name = $func->getFullyQualifiedFunctionName(
             $dereferencer,
@@ -1292,6 +1327,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             $op_array_context->add('static_variables', $static_variables_context);
         }
@@ -1372,7 +1408,8 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ClassConstantsContext {
         $array_table_location = ZendArrayTableMemoryLocation::fromZendArray($array);
         $array_table_overhead_location = ZendArrayTableOverheadMemoryLocation::fromZendArrayAndUsedLocation(
@@ -1423,6 +1460,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             if (!is_null($value_context)) {
                 $constant_context->add('value', $value_context);
@@ -1439,7 +1477,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
-        ?MemoryLimitErrorDetails $memory_limit_error_details = null,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): DefinedClassesContext {
         $defined_classes_context = new DefinedClassesContext();
         foreach ($array->getItemIterator($dereferencer) as $class_name => $zval) {
@@ -1468,7 +1506,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
-        ?MemoryLimitErrorDetails $memory_limit_error_details = null,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ?ClassDefinitionContext {
         if ($memory_locations->has($pointer->address)) {
             return null;
@@ -1492,7 +1530,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
-        ?MemoryLimitErrorDetails $memory_limit_error_details = null,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ClassDefinitionContext {
         $class_definition_context = new ClassDefinitionContext($class_entry->isInternal());
         $memory_location = ZendClassEntryMemoryLocation::fromZendClassEntry($class_entry);
@@ -1557,6 +1595,7 @@ final class MemoryLocationsCollector
                     $zend_type_reader,
                     $memory_locations,
                     $context_pools,
+                    $memory_limit_error_details,
                 );
                 if (!is_null($static_property_context)) {
                     $static_properties_context->add($name, $static_property_context);
@@ -1614,6 +1653,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            $memory_limit_error_details,
         );
         $class_definition_context->add('constants', $class_constants_context);
 
@@ -1667,7 +1707,8 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): GlobalConstantsContext {
         $memory_location = ZendArrayTableMemoryLocation::fromZendArray($array);
         $memory_locations->add($memory_location);
@@ -1704,6 +1745,7 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+                $memory_limit_error_details,
             );
             if (!is_null($value_context)) {
                 $constant_context->add('value', $value_context);
@@ -1753,6 +1795,7 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $memory_locations,
             $context_pools,
+            null
         );
     }
 
@@ -1762,7 +1805,8 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
-        ContextPools $context_pools
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ObjectsStoreContext {
         $objects_store_memory_location = ObjectsStoreMemoryLocation::fromZendObjectsStore(
             $objects_store,
@@ -1797,6 +1841,7 @@ final class MemoryLocationsCollector
                 $dereferencer,
                 $zend_type_reader,
                 $context_pools,
+                $memory_limit_error_details,
             );
             $objects_store_context->add((string)$key, $objects_store_bucket_context);
         }
