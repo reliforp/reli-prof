@@ -438,4 +438,291 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ->lineno
         );
     }
+
+    public function testMemoryLimitViolationOnMethod()
+    {
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $this->child = proc_open(
+            [
+                PHP_BINARY,
+                '-r',
+                <<<'CODE'
+                ini_set('memory_limit', '2M');
+                register_shutdown_function(function () {
+                    $error = error_get_last();
+                    if (is_null($error)) {
+                        return;
+                    }
+                    if (strpos($error['message'], 'Allowed memory size of') !== 0) {
+                        return;
+                    }
+                    fputs(STDOUT, json_encode($error) . "\n");
+                    fgets(STDIN);
+                });
+                class C {
+                    public function f() {
+                        $var = array_fill(0, 0x1000, 0);
+                        $this->f();
+                    }
+                }
+                (new C)->f();
+                CODE
+            ],
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w']
+            ],
+            $pipes
+        );
+
+        $child_status = proc_get_status($this->child);
+        $error_json = fgets($pipes[1]);
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            $memory_reader,
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+            ),
+            ProcessMemoryMapCreator::create(),
+            new LittleEndianReader()
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            new LittleEndianReader(),
+            new MemoryReader()
+        );
+
+        /** @var int $child_status['pid'] */
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $error = json_decode($error_json, true);
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings(php_version: ZendTypeReader::V81),
+            $executor_globals_address,
+            $compiler_globals_address,
+            new MemoryLimitErrorDetails(
+                $error['file'],
+                $error['line'],
+                512
+            )
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
+        $this->assertGreaterThan(
+            2,
+            $collected_memories->top_reference_context->call_frames->getFrameCount()
+        );
+        $this->assertSame(
+            'C::f',
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->function_name
+        );
+        $this->assertSame(
+            16,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->lineno
+        );
+        $this->assertSame(
+            0x1000,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->getLocalVariable('var')
+                ->getElements()
+                ->getCount()
+        );
+        $this->assertSame(
+            0x1000,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(4)
+                ->getLocalVariable('var')
+                ->getElements()
+                ->getCount()
+        );
+        $last_frame = $collected_memories->top_reference_context->call_frames->getFrameCount() - 1;
+        $this->assertSame(
+            '<main>',
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt($last_frame)
+                ->function_name
+        );
+        $this->assertSame(
+            19,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt($last_frame)
+                ->lineno
+        );
+    }
+
+    public function testMemoryLimitViolationOnClosure()
+    {
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $this->child = proc_open(
+            [
+                PHP_BINARY,
+                '-r',
+                <<<'CODE'
+                ini_set('memory_limit', '2M');
+                register_shutdown_function(function () {
+                    $error = error_get_last();
+                    if (is_null($error)) {
+                        return;
+                    }
+                    if (strpos($error['message'], 'Allowed memory size of') !== 0) {
+                        return;
+                    }
+                    fputs(STDOUT, json_encode($error) . "\n");
+                    fgets(STDIN);
+                });
+                class C {
+                    public function f() {
+                        $f = static function () use (&$f) {
+                            $var = array_fill(0, 0x1000, 0);
+                            $f();
+                        };
+                        $f();
+                    }
+                }
+                (new C)->f();
+                CODE
+            ],
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w']
+            ],
+            $pipes
+        );
+
+        $child_status = proc_get_status($this->child);
+        $error_json = fgets($pipes[1]);
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            $memory_reader,
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+            ),
+            ProcessMemoryMapCreator::create(),
+            new LittleEndianReader()
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            new LittleEndianReader(),
+            new MemoryReader()
+        );
+
+        /** @var int $child_status['pid'] */
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings()
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $error = json_decode($error_json, true);
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($child_status['pid']),
+            new TargetPhpSettings(php_version: ZendTypeReader::V81),
+            $executor_globals_address,
+            $compiler_globals_address,
+            new MemoryLimitErrorDetails(
+                $error['file'],
+                $error['line'],
+                512
+            )
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
+        $this->assertGreaterThan(
+            2,
+            $collected_memories->top_reference_context->call_frames->getFrameCount()
+        );
+        $this->assertSame(
+            'C::{closure}(Command line code:15-18)',
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->function_name
+        );
+        $this->assertSame(
+            17,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->lineno
+        );
+        $this->assertSame(
+            0x1000,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(3)
+                ->getLocalVariable('var')
+                ->getElements()
+                ->getCount()
+        );
+        $this->assertSame(
+            0x1000,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt(4)
+                ->getLocalVariable('var')
+                ->getElements()
+                ->getCount()
+        );
+        $last_frame = $collected_memories->top_reference_context->call_frames->getFrameCount() - 1;
+        $this->assertSame(
+            '<main>',
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt($last_frame)
+                ->function_name
+        );
+        $this->assertSame(
+            22,
+            $collected_memories->top_reference_context->call_frames
+                ->getFrameAt($last_frame)
+                ->lineno
+        );
+    }
 }
