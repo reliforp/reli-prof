@@ -55,20 +55,25 @@ class CallTraceReaderTest extends BaseTestCase
             new ZendTypeReaderCreator(),
             new OpcodeFactory()
         );
+        $tmp_file = tempnam(sys_get_temp_dir(), 'reli-prof-test');
+        file_put_contents(
+            $tmp_file,
+            <<<CODE
+            <?php
+            class A {
+                public function wait() {
+                    fgets(STDIN);
+                }
+            }
+            \$object = new A;
+            fputs(STDOUT, "a\n");
+            \$object->wait();
+            CODE
+        );
         $this->child = proc_open(
             [
                 PHP_BINARY,
-                '-r',
-                <<<CODE
-                class A {
-                    public function wait() {
-                        fgets(STDIN);
-                    }
-                }
-                \$object = new A;
-                fputs(STDOUT, "a\n");
-                \$object->wait();
-                CODE
+                $tmp_file,
             ],
             [
                 ['pipe', 'r'],
@@ -113,7 +118,7 @@ class CallTraceReaderTest extends BaseTestCase
 
         $call_trace = $executor_globals_reader->readCallTrace(
             $child_status['pid'],
-            ZendTypeReader::V74,
+            ZendTypeReader::V81,
             $executor_globals_address,
             $sapi_globals_address,
             PHP_INT_MAX,
@@ -125,12 +130,36 @@ class CallTraceReaderTest extends BaseTestCase
             $call_trace->call_frames[0]->getFullyQualifiedFunctionName()
         );
         $this->assertSame(
+            '<internal>',
+            $call_trace->call_frames[0]->file_name
+        );
+        $this->assertSame(
+            null,
+            $call_trace->call_frames[0]->opline
+        );
+        $this->assertSame(
             'A::wait',
             $call_trace->call_frames[1]->getFullyQualifiedFunctionName()
         );
         $this->assertSame(
+            $tmp_file,
+            $call_trace->call_frames[1]->file_name
+        );
+        $this->assertSame(
+            4,
+            $call_trace->call_frames[1]->opline->lineno
+        );
+        $this->assertSame(
             '<main>',
             $call_trace->call_frames[2]->getFullyQualifiedFunctionName()
+        );
+        $this->assertSame(
+            $tmp_file,
+            $call_trace->call_frames[2]->file_name
+        );
+        $this->assertSame(
+            10,
+            $call_trace->call_frames[2]->opline->lineno
         );
     }
 }

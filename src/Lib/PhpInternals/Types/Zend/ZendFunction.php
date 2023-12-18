@@ -172,10 +172,11 @@ final class ZendFunction implements Dereferencable
     public function getFileName(Dereferencer $dereferencer): ?string
     {
         if (!isset($this->resolved_file_name_cache)) {
-            if (!$this->isUserFunction()) {
+            if ($this->isInternalFunction()) {
                 $this->resolved_file_name_cache = '<internal>';
+            } else {
+                $this->resolved_file_name_cache = $this->op_array->getFileName($dereferencer);
             }
-            $this->resolved_file_name_cache = $this->op_array->getFileName($dereferencer);
         }
         return $this->resolved_file_name_cache;
     }
