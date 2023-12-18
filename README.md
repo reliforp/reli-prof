@@ -53,8 +53,6 @@ On the other hand, there are a few things that phpspy can do but reli cannot yet
 
 - Redirecting output of child processes
 - Forcing the address of EG
-- Data retrieval from sapi_globals
-- Reading variables
 - Run more faster with lower overhead.
 - etc.
 
