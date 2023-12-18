@@ -223,23 +223,27 @@ Usage:
   inspector:memory [options] [--] [<cmd> [<args>...]]
 
 Arguments:
-  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                       command line arguments for cmd
+  cmd                                                                command to execute as a target: either pid (via -p/--pid) or cmd must be specified
+  args                                                               command line arguments for cmd
 
 Options:
-      --stop-process[=STOP-PROCESS]          stop the process while inspecting [default: true]
-  -p, --pid=PID                              process id
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                 Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+      --stop-process|--no-stop-process                               stop the process while inspecting (default: on)
+      --pretty-print|--no-pretty-print                               pretty print the result (default: off)
+      --memory-limit-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
+      --memory-limit-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
+      --memory-limit-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
+  -p, --pid=PID                                                      process id
+      --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
+      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[0123]) of the target (default: auto)
+      --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
+  -h, --help                                                         Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                                        Do not output any message
+  -V, --version                                                      Display this application version
+      --ansi|--no-ansi                                               Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                                               Do not ask any interactive question
+  -v|vv|vvv, --verbose                                               Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 
 ```
 

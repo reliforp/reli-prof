@@ -31,24 +31,27 @@ Usage:
   inspector:memory [options] [--] [<cmd> [<args>...]]
 
 Arguments:
-  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                       command line arguments for cmd
+  cmd                                                                command to execute as a target: either pid (via -p/--pid) or cmd must be specified
+  args                                                               command line arguments for cmd
 
 Options:
-      --stop-process[=STOP-PROCESS]          stop the process while inspecting [default: true]
-      --pretty-print[=PRETTY-PRINT]          pretty print the result [default: false]
-  -p, --pid=PID                              process id
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                 Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+      --stop-process|--no-stop-process                               stop the process while inspecting (default: on)
+      --pretty-print|--no-pretty-print                               pretty print the result (default: off)
+      --memory-limit-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
+      --memory-limit-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
+      --memory-limit-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
+  -p, --pid=PID                                                      process id
+      --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
+      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
+      --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
+  -h, --help                                                         Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                                        Do not output any message
+  -V, --version                                                      Display this application version
+      --ansi|--no-ansi                                               Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                                               Do not ask any interactive question
+  -v|vv|vvv, --verbose                                               Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 
 ```
 
@@ -62,7 +65,7 @@ Options:
 This tool can be used like this.
 
 ```
-sudo ./reli i:m --pretty-print=1 -p <pid_of_target_process> >memory_analyzed.json
+sudo ./reli i:m --pretty-print -p <pid_of_target_process> >memory_analyzed.json
 ```
 
 The analysis takes seconds in many case. During the analysis, the target process is stopped by default.
@@ -221,7 +224,7 @@ register_shutdown_function(
         $pid = getmypid();
         $file_opt = '--memory-limit-error-file=' . escapeshellarg($error['file']);
         $line_opt = '--memory-limit-error-line=' . escapeshellarg($error['line']);
-        system("sudo reli i:m -p {$pid} --no-stop-process --pretty-print {$file_opt} {$line_opt} -vvvv >{pid}_memory_analyzed.json");
+        system("sudo reli i:m -p {$pid} --no-stop-process {$file_opt} {$line_opt} >{$pid}_memory_analyzed.json");
     }
 );
 
@@ -232,7 +235,8 @@ function f() {
 f();
 ```
 
-Like [`debug_backtrace()` in shutdown handlers](https://3v4l.org/YlHMA), normally Reli can only capture the call stack with the shutdown handler as the root, so we cannot get the real stack trace at the time of the memory_limit violation without a hack. If you specify the file name and line number of the violation with `--memory-limit-error-file` and `--memory-limit-error-line` options, Reli first search the corresponding op_array (the compiled VM codes) in the process memory, and then search the call frame referencing the op_array by scanning the VM stack in reverse order. And by assuming it is the actual call frame lastly executed before the memory_limit violation and challenging whether it could be able to reach the root of the VM stack by tracing back from there, Reli can get the real stack trace including local variables.
+[#384](https://github.com/reliforp/reli-prof/pull/384) explains this a bit more. 
+
 
 ## More detailed explanation of the output
 ### The `"summary"` field
