@@ -2,8 +2,8 @@
 ![Minimum PHP version: 8.1.0](https://img.shields.io/badge/php-8.1.0%2B-blue.svg)
 [![Packagist](https://img.shields.io/packagist/v/reliforp/reli-prof.svg)](https://packagist.org/packages/reliforp/reli-prof)
 [![Github Actions](https://github.com/reliforp/reli-prof/workflows/build/badge.svg)](https://github.com/reliforp/reli-prof/actions)
-[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/reliforp/reli-prof/badges/quality-score.png?b=0.9.x)](https://scrutinizer-ci.com/g/reliforp/reli-prof/?branch=0.9.x)
-[![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.9.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.9.x)
+[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/reliforp/reli-prof/badges/quality-score.png?b=0.11.x)](https://scrutinizer-ci.com/g/reliforp/reli-prof/?branch=0.11.x)
+[![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.11.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.11.x)
 ![Psalm coverage](https://shepherd.dev/github/reliforp/reli-prof/coverage.svg?)
 
 Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler. 
@@ -53,8 +53,6 @@ On the other hand, there are a few things that phpspy can do but reli cannot yet
 
 - Redirecting output of child processes
 - Forcing the address of EG
-- Data retrieval from sapi_globals
-- Reading variables
 - Run more faster with lower overhead.
 - etc.
 
@@ -112,7 +110,7 @@ Options:
   -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[0123]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
@@ -143,7 +141,7 @@ Options:
   -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[0123]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
@@ -174,7 +172,7 @@ Options:
   -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[0123]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
@@ -202,7 +200,7 @@ Options:
   -p, --pid=PID                              process id
       --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
+      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[0123]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
@@ -223,23 +221,27 @@ Usage:
   inspector:memory [options] [--] [<cmd> [<args>...]]
 
 Arguments:
-  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                       command line arguments for cmd
+  cmd                                                                command to execute as a target: either pid (via -p/--pid) or cmd must be specified
+  args                                                               command line arguments for cmd
 
 Options:
-      --stop-process[=STOP-PROCESS]          stop the process while inspecting [default: true]
-  -p, --pid=PID                              process id
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                 Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+      --stop-process|--no-stop-process                               stop the process while inspecting (default: on)
+      --pretty-print|--no-pretty-print                               pretty print the result (default: off)
+      --memory-limit-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
+      --memory-limit-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
+      --memory-limit-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
+  -p, --pid=PID                                                      process id
+      --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
+      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[0123]) of the target (default: auto)
+      --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
+  -h, --help                                                         Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                                        Do not output any message
+  -V, --version                                                      Display this application version
+      --ansi|--no-ansi                                               Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                                               Do not ask any interactive question
+  -v|vv|vvv, --verbose                                               Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 
 ```
 
@@ -365,7 +367,7 @@ $ ./reli c:callgrind <traces >callgrind.out
 $ kcachegrind callgrind.out
   ```
 
-### Dump the memory usage of the target proces
+### Dump the memory usage of the target process
 
 > [!CAUTION]
 > **Don't upload the output of this command to the internet, because it can contain sensitive information of the target script!!!**

@@ -31,24 +31,27 @@ Usage:
   inspector:memory [options] [--] [<cmd> [<args>...]]
 
 Arguments:
-  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                       command line arguments for cmd
+  cmd                                                                command to execute as a target: either pid (via -p/--pid) or cmd must be specified
+  args                                                               command line arguments for cmd
 
 Options:
-      --stop-process[=STOP-PROCESS]          stop the process while inspecting [default: true]
-      --pretty-print[=PRETTY-PRINT]          pretty print the result [default: false]
-  -p, --pid=PID                              process id
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                 Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+      --stop-process|--no-stop-process                               stop the process while inspecting (default: on)
+      --pretty-print|--no-pretty-print                               pretty print the result (default: off)
+      --memory-limit-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
+      --memory-limit-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
+      --memory-limit-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
+  -p, --pid=PID                                                      process id
+      --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
+      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
+      --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
+  -h, --help                                                         Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                                        Do not output any message
+  -V, --version                                                      Display this application version
+      --ansi|--no-ansi                                               Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                                               Do not ask any interactive question
+  -v|vv|vvv, --verbose                                               Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 
 ```
 
@@ -62,7 +65,7 @@ Options:
 This tool can be used like this.
 
 ```
-sudo ./reli i:m --pretty-print=1 -p <pid_of_target_process> >memory_analyzed.json
+sudo ./reli i:m --pretty-print -p <pid_of_target_process> >memory_analyzed.json
 ```
 
 The analysis takes seconds in many case. During the analysis, the target process is stopped by default.
@@ -184,14 +187,14 @@ And the output is like below. The target process is [psalm](https://github.com/v
 ```
 
 ## A quick tour of each part of the output
-- ZendMM allocates 153092096 byte of chunks in total
-- 126947784 bytes of them are located by this tool
-- If the target process calls `memory_get_usage(false)` at this moment, the return value would be 129053816
+- ZendMM allocates 153,092,096 byte of chunks in total
+- 126,947,784 bytes of them are located by this tool
+- If the target process calls `memory_get_usage(false)` at this moment, the return value would be 129,053,816
 - So 98.36809784842008% of areas reported by `memory_get_usage()` is analyzed
 - The kind of the top most memory area is the locations for `zend_object`, which corresponding to the PHP objects in the target process
-  - The number of objects is 124341, and the total analyzed size of them is 45245784 bytes
+  - The number of objects is 124,341, and the total analyzed size of them is 45,245,784 bytes
 - The class with the most number of instances is `Psalm\CodeLocation`
-  - The number of instances is 32875, and the total analyzed size of them is 13413000 bytes
+  - The number of instances is 32,875, and the total analyzed size of them is 13,413,000 bytes
 - The "context" field can be used to find out which areas in the script are used in what context. For example, the executing function at this moment is `Psalm\IssueBuffer::finish()`. Its local variables contain `$project_analyzer`, which is an instance of `Psalm\Internal\Analyzer\ProjectAnalyzer`. And you can extract all references to the same instance with `jq`.
 ```bash
 $ cat memory_analized.json | jq 'path(..|objects|select(."#reference_node_id"==3 or ."#node_id"==3))|join(".")'
@@ -199,6 +202,192 @@ $ cat memory_analized.json | jq 'path(..|objects|select(."#reference_node_id"==3
 "context.call_frames.1.local_variables.project_analyzer"
 "context.class_table.psalm\\internal\\analyzer\\projectanalyzer.static_properties.instance"
 "context.objects_store.17"
+```
+
+## Useful snippets for analyzing the output
+### Extracting the summary
+```bash
+cat memory_analyzed.json | jq .summary
+```
+
+### Extracting top 20 most memory-consuming types of memory locations
+```bash
+cat memory_analyzed.json | jq .location_types_summary | jq -r '(["location_type", "count", "memory_usage"] | (., map(length*"="))),(to_entries|.[:20]|.[]|[.key,.value.count,.value.memory_usage])|@tsv' | column -t -o ' | '
+```
+
+The example of the output is like below.
+
+```bash
+location_type                           | count | memory_usage
+=============                           | ===== | ============
+ZendStringMemoryLocation                | 38045 | 1992633
+ZendArrayTableMemoryLocation            | 538   | 991352
+ZendOpArrayBodyMemoryLocation           | 1323  | 921840
+ZendArrayTableOverheadMemoryLocation    | 416   | 370896
+ZendOpArrayHeaderMemoryLocation         | 1356  | 325440
+ZendClassEntryMemoryLocation            | 179   | 88784
+ZendArgInfosMemoryLocation              | 1228  | 82080
+RuntimeCacheMemoryLocation              | 354   | 42976
+ZendObjectMemoryLocation                | 273   | 40744
+ZendPropertyInfoMemoryLocation          | 371   | 20776
+LocalVariableNameTableMemoryLocation    | 1010  | 19696
+ZendArrayMemoryLocation                 | 244   | 13664
+ObjectsStoreMemoryLocation              | 1     | 8192
+DefaultPropertiesTableMemoryLocation    | 106   | 8128
+CallFrameVariableTableMemoryLocation    | 22    | 7920
+ZendClassConstantMemoryLocation         | 72    | 2880
+CallFrameHeaderMemoryLocation           | 26    | 2080
+ZendReferenceMemoryLocation             | 45    | 1440
+DynamicFuncDefsTableMemoryLocation      | 68    | 736
+DefaultStaticMembersTableMemoryLocation | 12    | 416
+```
+
+### Extracting top 20 most memory-consuming classes of instances
+```bash
+cat memory_analyzed.json | jq .class_objects_summary | jq -r '(["class_name", "count", "memory_usage"] | (., map(length*"="))),(to_entries|.[:20]|.[]|[.key,.value.count,.value.memory_usage])|@tsv' | column -t -o ' | '
+```
+
+The example of the output is like below.
+
+```bash
+class_name                                            | count | memory_usage
+==========                                            | ===== | ============
+Closure                                               | 62    | 20336
+DI\\Definition\\ObjectDefinition                      | 12    | 2016
+Fiber                                                 | 5     | 1480
+DI\\Definition\\Helper\\AutowireDefinitionHelper      | 10    | 1200
+Revolt\\EventLoop\\Internal\\SignalCallback           | 7     | 952
+DI\\Definition\\Reference                             | 12    | 864
+Amp\\Internal\\FutureState                            | 6     | 816
+Amp\\ByteStream\\ReadableResourceStream               | 3     | 696
+DI\\Definition\\ObjectDefinition\\MethodInjection     | 9     | 648
+Monolog\\Level                                        | 8     | 576
+Revolt\\EventLoop\\Driver\\StreamSelectDriver         | 1     | 488
+SplQueue                                              | 11    | 440
+Revolt\\EventLoop\\Internal\\StreamReadableCallback   | 3     | 408
+Amp\\DeferredFuture                                   | 5     | 360
+DI\\Definition\\AutowireDefinition                    | 2     | 336
+Amp\\Socket\\ResourceSocket                           | 2     | 336
+Revolt\\EventLoop\\Internal\\AbstractDriver@anonymous | 1     | 328
+Amp\\ByteStream\\WritableResourceStream               | 2     | 304
+Generator                                             | 7     | 280
+Amp\\Future                                           | 5     | 280
+```
+
+### Extracting the references of top 20 largest arrays
+```bash
+cat memory_analyzed.json | jq '. as $root | path(..|objects|select(."#type"=="ArrayHeaderContext"))| . as $path | $root|getpath($path) as $header | $header.array_elements as $elements | {path: $path|join("."), size: $elements."#locations"[0].size, count: $elements."#count", node_id:$header."#node_id"}' | jq -rs '(["size", "count", "node_id" ,"path"] | (., map(length*"="))),(sort_by(.size) | .[-20:] | reverse | .[] | [.size, .count, .node_id, .path])|@tsv' | column -t -o ' | '
+```
+
+The example of the output is like below.
+
+```bash
+size   | count | node_id | path
+====   | ===== | ======= | ====
+319520 | 7937  | 42380   | context.class_table.jetbrains\\phpstormstub\\phpstormstubsmap.constants.CONSTANTS.value
+222944 | 4919  | 27618   | context.class_table.jetbrains\\phpstormstub\\phpstormstubsmap.constants.FUNCTIONS.value
+203616 | 3917  | 82513   | context.interned_strings
+59424  | 1345  | 23577   | context.class_table.jetbrains\\phpstormstub\\phpstormstubsmap.constants.CLASSES.value
+54944  | 1205  | 19586   | context.class_table.composerautoloaderinitfa3d2d2c0bbb9c2389347803a32247de.static_properties.loader.object_properties.classMap
+1984   | 46    | 19254   | context.class_table.composerautoloaderinitfa3d2d2c0bbb9c2389347803a32247de.static_properties.loader.object_properties.prefixDirsPsr4
+1248   | 31    | 23472   | context.class_table.composer\\autoload\\composerstaticinitfa3d2d2c0bbb9c2389347803a32247de.static_properties.files
+1248   | 31    | 1845    | context.call_frames.25.symbol_table.array_elements.__composer_autoload_files.value
+1216   | 30    | 1754    | context.call_frames.25.symbol_table.array_elements._SERVER.value
+800    | 17    | 620     | context.call_frames.7.local_variables.container.object_properties.fetchedDefinitions
+768    | 8     | 1726    | context.call_frames.25.symbol_table
+608    | 15    | 338     | context.call_frames.7.local_variables.container.object_properties.resolvedEntries
+576    | 14    | 471     | context.call_frames.7.local_variables.container.object_properties.definitionSource.object_properties.sources.referenced.array_elements.1.value.object_properties.definitions
+544    | 12    | 1394    | context.call_frames.9.this.object_properties.callbacks
+512    | 12    | 19215   | context.class_table.composerautoloaderinitfa3d2d2c0bbb9c2389347803a32247de.static_properties.loader.object_properties.prefixLengthsPsr4.array_elements.A.value
+512    | 12    | 19053   | context.class_table.composerautoloaderinitfa3d2d2c0bbb9c2389347803a32247de.static_properties.loader.object_properties.prefixLengthsPsr4
+480    | 11    | 19066   | context.class_table.composerautoloaderinitfa3d2d2c0bbb9c2389347803a32247de.static_properties.loader.object_properties.prefixLengthsPsr4.array_elements.S.value
+320    | 8     | 74667   | context.class_table.reli\\lib\\phpinternals\\opcodes\\opcodefactory.constants.VERSION_MAP.value
+320    | 8     | 72734   | context.class_table.monolog\\logger.constants.RFC_5424_LEVELS.value
+288    | 7     | 19115   | context.class_table.composerautoloaderinitfa3d2d2c0bbb9c2389347803a32247de.static_properties.loader.object_properties.prefixLengthsPsr4.array_elements.P.value
+```
+
+### Extracting the context node of a given context node_id
+```bash
+cat memory_analyzed.json |  jq '..|objects|select(."#node_id"==1838)'
+```
+
+The example of the output is like below.
+
+```bash
+{
+  "#node_id": 1838,
+  "#type": "StringContext",
+  "#locations": [
+    {
+      "address": 140332673364688,
+      "size": 36,
+      "refcount": 1,
+      "type_info": 86,
+      "value": "REQUEST_TIME"
+    }
+  ]
+}
+```
+
+### Extracting all references to a given context node_id
+```bash
+cat memory_analized.json | jq 'path(..|objects|select(."#reference_node_id"==3 or ."#node_id"==3))|join(".")'
+```
+
+The example of the output is like below.
+
+```
+"context.call_frames.0.local_variables.project_analyzer"
+"context.call_frames.1.local_variables.project_analyzer"
+"context.class_table.psalm\\internal\\analyzer\\projectanalyzer.static_properties.instance"
+"context.objects_store.17"
+```
+
+### Extracting the call trace
+```bash
+cat memory_analyzed.json | jq -r '(["frame_no", "function", "line"] | (., map(length*"="))),(path(.context.call_frames[]|objects) as $path | [$path[2], getpath($path).function_name, getpath($path).lineno])|@tsv' | column -t
+```
+
+The example of the output is like below.
+
+```bash
+frame_no  function                                                         line
+========  ========                                                         ====
+0         system                                                           4
+1         {closure}(/home/sji/work/oss/tmp/pdfparser_test/test.php:11-21)  20
+2         Smalot\\PdfParser\\Font::uchr                                    150
+3         Smalot\\PdfParser\\Font::loadTranslateTable                      230
+4         Smalot\\PdfParser\\Font::init                                    78
+5         Smalot\\PdfParser\\Document::init                                90
+6         Smalot\\PdfParser\\Document::setObjects                          316
+7         Smalot\\PdfParser\\Parser::parseContent                          122
+8         Smalot\\PdfParser\\Parser::parseFile                             90
+9         <main>
+```
+
+### Extracting specific local variables of a given call frame
+
+If the names of variables are `$abc` and `$def`:
+
+```bash
+cat memory_analyzed.json | jq '.context.call_frames."1".local_variables|{abc, def}'
+```
+
+The example of the output is like below.
+
+```bash
+{
+  "abc": {
+    "#node_id": 142,
+    "#type": "ScalarValueContext",
+    "#value": 506895433343375
+  },
+  "def": {
+    "#node_id": 143,
+    "#type": "ScalarValueContext",
+    "#value": 9958150
+  }
+}
 ```
 
 ## Capturing the memory_limit violation
@@ -221,7 +410,7 @@ register_shutdown_function(
         $pid = getmypid();
         $file_opt = '--memory-limit-error-file=' . escapeshellarg($error['file']);
         $line_opt = '--memory-limit-error-line=' . escapeshellarg($error['line']);
-        system("sudo reli i:m -p {$pid} --no-stop-process --pretty-print {$file_opt} {$line_opt} -vvvv >{pid}_memory_analyzed.json");
+        system("sudo reli i:m -p {$pid} --no-stop-process {$file_opt} {$line_opt} >{$pid}_memory_analyzed.json");
     }
 );
 
@@ -232,7 +421,23 @@ function f() {
 f();
 ```
 
-Like [`debug_backtrace()` in shutdown handlers](https://3v4l.org/YlHMA), normally Reli can only capture the call stack with the shutdown handler as the root, so we cannot get the real stack trace at the time of the memory_limit violation without a hack. If you specify the file name and line number of the violation with `--memory-limit-error-file` and `--memory-limit-error-line` options, Reli first search the corresponding op_array (the compiled VM codes) in the process memory, and then search the call frame referencing the op_array by scanning the VM stack in reverse order. And by assuming it is the actual call frame lastly executed before the memory_limit violation and challenging whether it could be able to reach the root of the VM stack by tracing back from there, Reli can get the real stack trace including local variables.
+[#384](https://github.com/reliforp/reli-prof/pull/384) explains this a bit more. 
+
+## Memory analysis at the exact timing you want
+
+Reli can analyze the target from outside the process without touching the target code. This in itself is one of the benefits of using Reli, but it also means that you normally cannot choose the exact timing of the analysis, for example what line of the file the target is executing.
+
+If you need to analyze the target at the exact timing you want, you have to touch the target script, like embedding the code which invokes Reli as the previous example for memory_limit violations.
+
+```php
+$pid = getmypid();
+system("sudo reli i:m -p {$pid} --no-stop-process >{$pid}_memory_analyzed.json");
+```
+
+And you can also use [Xdebug](https://xdebug.org/). If the target is stopped at one of the breakpoints you set, then it's a good timing to analyze the target by Reli. This way you don't have to change the target code, though the behavior of the PHP VM isn't exactly same as the production enviornment in this case. Xdebug itself can be used to get the content of variables, but if you use Reli in addition to it, you can also get the statical data of the memory usage or reference graphs. 
+
+## Examples of diagnosing memory issues in the wild
+- https://github.com/smalot/pdfparser/issues/631#issuecomment-1847772214
 
 ## More detailed explanation of the output
 ### The `"summary"` field
