@@ -1,6 +1,6 @@
 {
   "name": "reliforp/reli-prof",
-  "description": "A sampling profiler for PHP written in PHP, which reads information about running PHP VM from outside of the process.",
+  "description": "A sampling profiler or a memory profiler for PHP written in PHP, which reads information about running PHP VM from outside of the process.",
   "type": "project",
   "license": "MIT",
   "keywords": [
