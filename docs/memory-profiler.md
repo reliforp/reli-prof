@@ -437,6 +437,7 @@ system("sudo reli i:m -p {$pid} --no-stop-process >{$pid}_memory_analyzed.json")
 And you can also use [Xdebug](https://xdebug.org/). If the target is stopped at one of the breakpoints you set, then it's a good timing to analyze the target by Reli. This way you don't have to change the target code, though the behavior of the PHP VM isn't exactly same as the production enviornment in this case. Xdebug itself can be used to get the content of variables, but if you use Reli in addition to it, you can also get the statical data of the memory usage or reference graphs. 
 
 ## Examples of diagnosing memory issues in the wild
+- https://github.com/PHPOffice/PhpSpreadsheet/issues/3814#issuecomment-1862367771
 - https://github.com/smalot/pdfparser/issues/631#issuecomment-1847772214
 
 ## More detailed explanation of the output
