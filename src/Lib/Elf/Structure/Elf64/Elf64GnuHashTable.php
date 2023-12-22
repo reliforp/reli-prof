@@ -71,7 +71,7 @@ final class Elf64GnuHashTable
 
     public function checkBloomFilter(int $hash): bool
     {
-        $bloom = $this->bloom[($hash / self::ELFCLASS_BITS) % $this->bloom_size];
+        $bloom = $this->bloom[(int)($hash / self::ELFCLASS_BITS) % $this->bloom_size];
         $bloom_hash1 = $hash % self::ELFCLASS_BITS;
         $bloom_hash2 = ($hash >> $this->bloom_shift) % self::ELFCLASS_BITS;
         return $bloom->checkBitSet($bloom_hash1) and $bloom->checkBitSet($bloom_hash2);
