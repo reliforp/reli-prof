@@ -558,8 +558,8 @@ This product includes the Zend Engine, freely available at
 ```
 
 ```
-"This product includes PHP software, freely available from
-     <http://www.php.net/software/>"
+This product includes PHP software, freely available from
+     <http://www.php.net/software/>
 ```
 
 ## What does the name "Reli" mean?
