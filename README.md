@@ -88,6 +88,12 @@ composer install
 ./reli
 ```
 
+### From Docker
+```bash
+docker pull reliforp/reli-prof
+docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof
+```
+
 ## Usage
 ### Get call traces
 ```bash
