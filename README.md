@@ -551,10 +551,15 @@ We would like to achieve the following 5 goals through this project.
 ## LICENSE
 - MIT (mostly)
 - tools/flamegraph/flamegraph.pl is copied from https://github.com/brendangregg/FlameGraph and licenced under the CDDL 1.0. See tools/flamegraph/docs/cddl1.txt and the header of the script.
-- Some C headers defining internal structures are extracted from php-src. They are licensed under the zend engine license. See src/Lib/PhpInternals/Headers . So here are the words required by the zend engine license.
+- Some C headers defining internal structures are extracted from php-src. They are licensed under the Zend Engine License or the PHP License. See src/Lib/PhpInternals/Headers . So here are the words required by the Zend Engine License and the PHP License.
 ```
 This product includes the Zend Engine, freely available at
      http://www.zend.com
+```
+
+```
+"This product includes PHP software, freely available from
+     <http://www.php.net/software/>"
 ```
 
 ## What does the name "Reli" mean?
