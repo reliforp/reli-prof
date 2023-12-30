@@ -558,14 +558,16 @@ This product includes the Zend Engine, freely available at
 ```
 
 ## What does the name "Reli" mean?
+Given its functionality, you might naturally think that the name stands for "Reverse Elephpantineer's Lovable Infrastructure". But unfortunately, it's not true.
 
-"Reli" means nothing, though you are free to think of this tool as a something reliable, or religious, or relishable, or whatever other reli-s as you like.
+"Reli" means nothing, though you are free to think of this tool as something reliable, religious, relishable, or whatever other reli-s you like.
 
-Originally the name of this tool was just "php-profiler".
+Initially, the name of this tool was just "php-profiler".
 Due to a licensing problem ([#175](https://github.com/reliforp/reli-prof/issues/175)), this simple good name had to be changed.
 
 So we applied a randomly chosen string manipulation function to the original name. `strrev('php-profiler')` results to `'reliforp-php'`, and it can be read as "reli for p(php)".
-Thus the name of this tool is "Reli for PH*" now. And you can also call it just "Reli".
+
+Thus, the name of this tool is "Reli for PH*" now. And you can also call it just "Reli".
 
 ## See also
 - [adsr/phpspy](https://github.com/adsr/phpspy)
