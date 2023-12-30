@@ -16,7 +16,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
   - [nikic/sample_prof](https://github.com/nikic/sample_prof)
 - Investigating the cause of a bug or performance failure
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
-- Finding memory bottlenecks or memory leaks
+- [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md)
 
 ## How it works
 It's implemented by using following techniques:
