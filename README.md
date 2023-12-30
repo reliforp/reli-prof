@@ -16,7 +16,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
   - [nikic/sample_prof](https://github.com/nikic/sample_prof)
 - Investigating the cause of a bug or performance failure
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
-- Finding memory bottlenecks or memory leaks
+- [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md)
 
 ## How it works
 It's implemented by using following techniques:
@@ -86,6 +86,12 @@ git clone git@github.com:reliforp/reli-prof.git
 cd reli-prof
 composer install
 ./reli
+```
+
+### From Docker
+```bash
+docker pull reliforp/reli-prof
+docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof
 ```
 
 ## Usage
@@ -545,21 +551,28 @@ We would like to achieve the following 5 goals through this project.
 ## LICENSE
 - MIT (mostly)
 - tools/flamegraph/flamegraph.pl is copied from https://github.com/brendangregg/FlameGraph and licenced under the CDDL 1.0. See tools/flamegraph/docs/cddl1.txt and the header of the script.
-- Some C headers defining internal structures are extracted from php-src. They are licensed under the zend engine license. See src/Lib/PhpInternals/Headers . So here are the words required by the zend engine license.
+- Some C headers defining internal structures are extracted from php-src. They are licensed under the Zend Engine License or the PHP License. See src/Lib/PhpInternals/Headers . So here are the words required by the Zend Engine License and the PHP License.
 ```
 This product includes the Zend Engine, freely available at
      http://www.zend.com
 ```
 
+```
+This product includes PHP software, freely available from
+     <http://www.php.net/software/>
+```
+
 ## What does the name "Reli" mean?
+Given its functionality, you might naturally think that the name stands for "Reverse Elephpantineer's Lovable Infrastructure". But unfortunately, it's not true.
 
-"Reli" means nothing, though you are free to think of this tool as a something reliable, or religious, or relishable, or whatever other reli-s as you like.
+"Reli" means nothing, though you are free to think of this tool as something reliable, religious, relishable, or whatever other reli-s you like.
 
-Originally the name of this tool was just "php-profiler".
+Initially, the name of this tool was just "php-profiler".
 Due to a licensing problem ([#175](https://github.com/reliforp/reli-prof/issues/175)), this simple good name had to be changed.
 
 So we applied a randomly chosen string manipulation function to the original name. `strrev('php-profiler')` results to `'reliforp-php'`, and it can be read as "reli for p(php)".
-Thus the name of this tool is "Reli for PH*" now. And you can also call it just "Reli".
+
+Thus, the name of this tool is "Reli for PH*" now. And you can also call it just "Reli".
 
 ## See also
 - [adsr/phpspy](https://github.com/adsr/phpspy)

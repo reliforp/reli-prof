@@ -111,7 +111,7 @@ class ZendObject implements Dereferencable
             ZendObject::getCTypeName(),
             'properties_table',
         );
-        $property_count = $class_entry->properties_info->count();
+        $property_count = $class_entry->default_properties_count;
         if ($property_count === 0) {
             return;
         }

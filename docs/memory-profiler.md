@@ -21,6 +21,28 @@ It captures the memory contents of the target from outside the process, and anal
 - The capability to stab the target process with ptrace (CAP_SYS_PTRACE)
   - Usually running as root is enough
 
+# Installation
+## From Composer
+```bash
+composer create-project reliforp/reli-prof
+cd reli-prof
+./reli
+```
+
+## From Git
+```bash
+git clone git@github.com:reliforp/reli-prof.git
+cd reli-prof
+composer install
+./reli
+```
+
+## From Docker
+```bash
+docker pull reliforp/reli-prof
+docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof
+```
+
 # Options
 ```bash
 ./reli inspector:memory --help
