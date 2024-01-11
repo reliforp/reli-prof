@@ -135,7 +135,8 @@ final class GetTraceCommand extends Command
                     $eg_address,
                     $sg_address,
                     $get_trace_settings->depth,
-                    $trace_cache
+                    $trace_cache,
+                    $get_trace_settings->start_with_trigger,
                 );
                 if (!is_null($call_trace)) {
                     $trace_output->output($call_trace);

@@ -30,6 +30,12 @@ class CPointer extends CData
     public int $cdata;
 }
 
+/** @extends CData<int> */
+class CChar extends CData
+{
+    public string $cdata;
+}
+
 /**
  * Class CArray
  *

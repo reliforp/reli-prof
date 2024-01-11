@@ -63,7 +63,8 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                     $target_process_descriptor->eg_address,
                     $target_process_descriptor->sg_address,
                     $get_trace_settings->depth,
-                    $trace_cache
+                    $trace_cache,
+                    $get_trace_settings->start_with_trigger,
                 );
                 if (is_null($call_trace)) {
                     return;

@@ -23,6 +23,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns(10);
+        $input->expects()->getOption('start-with-trigger')->andReturns(false);
 
         $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
 
@@ -33,6 +34,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
     {
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns(null);
+        $input->expects()->getOption('start-with-trigger')->andReturns(false);
         $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
         $this->assertSame(PHP_INT_MAX, $settings->depth);
     }
