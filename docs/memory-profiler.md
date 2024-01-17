@@ -431,7 +431,7 @@ register_shutdown_function(
         }
         $pid = getmypid();
         $file_opt = '--memory-limit-error-file=' . escapeshellarg($error['file']);
-        $line_opt = '--memory-limit-error-line=' . escapeshellarg($error['line']);
+        $line_opt = '--memory-limit-error-line=' . escapeshellarg((string)$error['line']);
         system("sudo reli i:m -p {$pid} --no-stop-process {$file_opt} {$line_opt} >{$pid}_memory_analyzed.json");
     }
 );
