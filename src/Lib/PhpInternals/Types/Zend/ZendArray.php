@@ -131,7 +131,7 @@ class ZendArray implements Dereferencable
         if ($this->arData === null) {
             return null;
         }
-        $hash ??= $this->calculateHash($key);
+        $hash ??= $this->calculateHash($key) & 0xFFFF_FFFF;
         $hash_index = $hash | $this->nTableMask;
         $hash_index = $hash_index & 0xFFFF_FFFF;
         if ($hash_index & 0x8000_0000) {
