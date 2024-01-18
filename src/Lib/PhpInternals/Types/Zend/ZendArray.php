@@ -154,6 +154,9 @@ class ZendArray implements Dereferencable
                 }
             }
             $idx = $bucket->val->u2->next;
+            if ($idx === 0xFFFF_FFFF) {
+                $idx = -1;
+            }
         }
         return null;
     }
