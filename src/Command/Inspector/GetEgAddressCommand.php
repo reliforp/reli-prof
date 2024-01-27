@@ -21,6 +21,7 @@ use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Tls\TlsFinderException;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
+use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Symfony\Component\Console\Command\Command;
@@ -37,6 +38,7 @@ final class GetEgAddressCommand extends Command
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         private TargetProcessSettingsFromConsoleInput $target_process_settings_from_console_input,
         private TargetProcessResolver $target_process_resolver,
+        private PhpVersionDetector $php_version_detector,
         private RetryingLoopProvider $retrying_loop_provider,
     ) {
         parent::__construct();
@@ -65,11 +67,16 @@ final class GetEgAddressCommand extends Command
 
         $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
 
+        $target_php_settings_version_decided = $this->php_version_detector->decidePhpVersion(
+            $process_specifier,
+            $target_php_settings
+        );
+
         // see the comment at GetTraceCommand::execute()
         $eg_address = $this->retrying_loop_provider->do(
             try: fn () => $this->php_globals_finder->findExecutorGlobals(
                 $process_specifier,
-                $target_php_settings
+                $target_php_settings_version_decided
             ),
             retry_on: [\Throwable::class],
             max_retry: 10,

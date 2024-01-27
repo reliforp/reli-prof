@@ -77,8 +77,14 @@ final class MemoryCommand extends Command
             defer($scope_guard, fn () => $this->process_stopper->resume($process_specifier->pid));
         }
 
-        $eg_address = $this->php_globals_finder->findExecutorGlobals($process_specifier, $target_php_settings);
-        $cg_address = $this->php_globals_finder->findCompilerGlobals($process_specifier, $target_php_settings);
+        $eg_address = $this->php_globals_finder->findExecutorGlobals(
+            $process_specifier,
+            $target_php_settings_version_decided
+        );
+        $cg_address = $this->php_globals_finder->findCompilerGlobals(
+            $process_specifier,
+            $target_php_settings_version_decided
+        );
 
         $collected_memories = $this->memory_locations_collector->collectAll(
             $process_specifier,
