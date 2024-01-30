@@ -63,7 +63,7 @@ final class PhpReaderControllerTest extends BaseTestCase
     public function testSendSettings(): void
     {
         $trace_loop_settings = new TraceLoopSettings(1, 'q', 1, false);
-        $get_trace_settings = new GetTraceSettings(1);
+        $get_trace_settings = new GetTraceSettings(1, false);
 
         $expected = new SetSettingsMessage(
             $trace_loop_settings,
@@ -184,7 +184,7 @@ final class PhpReaderControllerTest extends BaseTestCase
     public function testSettingsIsResentOnRecoverIfOnceSent()
     {
         $trace_loop_settings = new TraceLoopSettings(1, 'q', 1, false);
-        $get_trace_settings = new GetTraceSettings(1);
+        $get_trace_settings = new GetTraceSettings(1, false);
 
         $expected = new SetSettingsMessage(
             $trace_loop_settings,

@@ -123,6 +123,7 @@ class CallTraceReaderTest extends BaseTestCase
             $sapi_globals_address,
             PHP_INT_MAX,
             new TraceCache(),
+            false,
         );
         $this->assertCount(3, $call_trace->call_frames);
         $this->assertSame(

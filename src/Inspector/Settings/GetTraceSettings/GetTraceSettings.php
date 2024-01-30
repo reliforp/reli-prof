@@ -16,7 +16,8 @@ namespace Reli\Inspector\Settings\GetTraceSettings;
 final class GetTraceSettings
 {
     public function __construct(
-        public int $depth
+        public int $depth,
+        public bool $start_with_trigger,
     ) {
     }
 }

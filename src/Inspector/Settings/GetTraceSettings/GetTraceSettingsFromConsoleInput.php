@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Settings\GetTraceSettings;
 
+use PhpCast\Cast;
 use PhpCast\NullableCast;
 use Reli\Inspector\Settings\InspectorSettingsException;
 use Symfony\Component\Console\Command\Command;
@@ -37,6 +38,16 @@ final class GetTraceSettingsFromConsoleInput
                 'max depth'
             )
         ;
+
+        $command
+            ->addOption(
+                'start-with-trigger',
+                null,
+                InputOption::VALUE_NEGATABLE,
+                'Profile only requests containing trigger query parameter',
+                false
+            )
+        ;
     }
 
     /**
@@ -45,6 +56,7 @@ final class GetTraceSettingsFromConsoleInput
     public function createSettings(InputInterface $input): GetTraceSettings
     {
         $depth = NullableCast::toString($input->getOption('depth'));
+        $start_with_trigger = Cast::toBool($input->getOption('start-with-trigger'));
         if (is_null($depth)) {
             $depth = PHP_INT_MAX;
         }
@@ -52,6 +64,6 @@ final class GetTraceSettingsFromConsoleInput
         if ($depth === false) {
             throw GetTraceSettingsException::create(GetTraceSettingsException::DEPTH_IS_NOT_INTEGER);
         }
-        return new GetTraceSettings($depth);
+        return new GetTraceSettings($depth, $start_with_trigger);
     }
 }

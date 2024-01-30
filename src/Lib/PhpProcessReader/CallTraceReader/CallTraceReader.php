@@ -14,12 +14,12 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
 use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
+use Reli\Lib\PhpInternals\Types\C\RawChar;
 use Reli\Lib\PhpInternals\Types\C\RawDouble;
+use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\PhpInternals\Types\Zend\Opline;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
-use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
-use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
 use Reli\Lib\PhpInternals\Types\Zend\ZendOp;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
@@ -32,6 +32,8 @@ use Reli\Lib\Process\ProcessSpecifier;
 
 final class CallTraceReader
 {
+    private const TRIGGER_QUERY_PARAM = 'RELI_PROFILE';
+
     private ?ZendTypeReader $zend_type_reader = null;
 
     public function __construct(
@@ -107,6 +109,53 @@ final class CallTraceReader
 
     /**
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     */
+    public function getQueryString(
+        int $sg_address,
+        string $php_version,
+        Dereferencer $dereferencer,
+    ): string {
+        $zend_type_reader = $this->getTypeReader($php_version);
+        [$request_info_offset, ] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'sapi_globals_struct',
+            'request_info'
+        );
+
+        [$query_string_offset, ] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'sapi_request_info',
+            'query_string'
+        );
+
+        $query_string_pointer_pointer = new Pointer(
+            RawInt64::class,
+            $sg_address + $request_info_offset + $query_string_offset,
+            8
+        );
+
+        $query_string_pointer = new Pointer(
+            RawChar::class,
+            $dereferencer->deref($query_string_pointer_pointer)->value,
+            1,
+        );
+
+        $pointer_index = 0;
+        $query_string = '';
+
+        while (true) {
+            $query_char = $dereferencer->deref($query_string_pointer->indexedAt($pointer_index++))->value;
+
+            if ($query_char === "\x00") {
+                break;
+            }
+
+            $query_string .= $query_char;
+        }
+
+        return $query_string;
+    }
+
+    /**
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
     public function readCallTrace(
@@ -116,11 +165,20 @@ final class CallTraceReader
         int $sapi_globals_address,
         int $depth,
         TraceCache $trace_cache,
+        bool $start_with_trigger,
     ): ?CallTrace {
         $dereferencer = $this->getDereferencer($pid, $php_version);
         $eg = $this->getExecutorGlobals($executor_globals_address, $php_version, $dereferencer);
         if (is_null($eg->current_execute_data)) {
             return null;
+        }
+
+        if ($start_with_trigger) {
+            $query_string = $this->getQueryString($sapi_globals_address, $php_version, $dereferencer);
+
+            if (!str_contains($query_string, self::TRIGGER_QUERY_PARAM)) {
+                return null;
+            }
         }
 
         $trace_cache->updateCacheKey($this->getGlobalRequestTime($sapi_globals_address, $php_version, $dereferencer));
