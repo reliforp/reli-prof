@@ -1639,7 +1639,7 @@ final class MemoryLocationsCollector
         }
 
         $methods_context = $this->collectFunctionTable(
-            $class_entry->function_table,
+            $dereferencer->deref($class_entry->function_table->getPointer()),
             $map_ptr_base,
             $dereferencer,
             $zend_type_reader,
@@ -1650,7 +1650,7 @@ final class MemoryLocationsCollector
         $class_definition_context->add('methods', $methods_context);
 
         $class_constants_context = $this->collectClassConstantsTable(
-            $class_entry->constants_table,
+            $dereferencer->deref($class_entry->constants_table->getPointer()),
             $map_ptr_base,
             $dereferencer,
             $zend_type_reader,
