@@ -51,6 +51,9 @@ jobs:
           mkdir -p build/logs
           composer test-for-ci
 
+      - name: Fix absolute paths in the coverage report
+        run: sed -i "s|<file name=\"/app/|<file name=\"`pwd`/|g" build/logs/clover.xml
+
       - name: Send to coveralls
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
