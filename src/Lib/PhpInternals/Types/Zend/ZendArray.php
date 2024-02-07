@@ -351,6 +351,7 @@ class ZendArray implements Dereferencable
         return new static($casted_cdata, $pointer);
     }
 
+    /** @return Pointer<ZendArray> */
     public function getPointer(): Pointer
     {
         return $this->pointer;

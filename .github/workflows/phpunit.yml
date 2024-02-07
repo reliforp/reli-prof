@@ -34,6 +34,11 @@ jobs:
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
           restore-keys: ${{ runner.os }}-composer-
 
+      - name: Cache Docker images
+        uses: ScribeMD/docker-cache@0.3.7
+        with:
+          key: docker-${{ runner.os }}-${{ hashFiles('Dockerfile-dev','tests/TargetPhpVmProvider.php') }}
+
       - name: Validate composer.json and composer.lock
         run: composer validate
 
@@ -49,7 +54,10 @@ jobs:
       - name: Run test suite
         run: |
           mkdir -p build/logs
-          ./vendor/bin/phpunit --coverage-clover build/logs/clover.xml
+          composer test-for-ci
+
+      - name: Fix absolute paths in the coverage report
+        run: sed -i "s|<file name=\"/app/|<file name=\"`pwd`/|g" build/logs/clover.xml
 
       - name: Send to coveralls
         env:

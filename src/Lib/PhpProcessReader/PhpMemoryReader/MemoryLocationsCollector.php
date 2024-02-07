@@ -1055,7 +1055,10 @@ final class MemoryLocationsCollector
 
         assert(!is_null($object->ce));
         $class_entry = $dereferencer->deref($object->ce);
-        if ($class_entry->getClassName($dereferencer) === 'Closure') {
+        if (
+            $class_entry->getClassName($dereferencer) === 'Closure'
+            and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
+        ) {
             $closure_context = $this->collectClosure(
                 $dereferencer->deref(
                     ZendClosure::getPointerFromZendObjectPointer(
@@ -1636,7 +1639,7 @@ final class MemoryLocationsCollector
         }
 
         $methods_context = $this->collectFunctionTable(
-            $class_entry->function_table,
+            $dereferencer->deref($class_entry->function_table->getPointer()),
             $map_ptr_base,
             $dereferencer,
             $zend_type_reader,
@@ -1647,7 +1650,7 @@ final class MemoryLocationsCollector
         $class_definition_context->add('methods', $methods_context);
 
         $class_constants_context = $this->collectClassConstantsTable(
-            $class_entry->constants_table,
+            $dereferencer->deref($class_entry->constants_table->getPointer()),
             $map_ptr_base,
             $dereferencer,
             $zend_type_reader,

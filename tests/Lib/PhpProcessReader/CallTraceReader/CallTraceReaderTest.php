@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
@@ -22,13 +23,13 @@ use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\File\CatFileReader;
 use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
-use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
+use Reli\TargetPhpVmProvider;
 
 class CallTraceReaderTest extends BaseTestCase
 {
@@ -47,7 +48,8 @@ class CallTraceReaderTest extends BaseTestCase
         }
     }
 
-    public function testReadCallTrace()
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testReadCallTrace(string $php_version, string $docker_image_name): void
     {
         $memory_reader = new MemoryReader();
         $executor_globals_reader = new CallTraceReader(
@@ -55,9 +57,7 @@ class CallTraceReaderTest extends BaseTestCase
             new ZendTypeReaderCreator(),
             new OpcodeFactory()
         );
-        $tmp_file = tempnam(sys_get_temp_dir(), 'reli-prof-test');
-        file_put_contents(
-            $tmp_file,
+        $target_script =
             <<<CODE
             <?php
             class A {
@@ -69,22 +69,18 @@ class CallTraceReaderTest extends BaseTestCase
             fputs(STDOUT, "a\n");
             \$object->wait();
             CODE
-        );
-        $this->child = proc_open(
-            [
-                PHP_BINARY,
-                $tmp_file,
-            ],
-            [
-                ['pipe', 'r'],
-                ['pipe', 'w'],
-                ['pipe', 'w']
-            ],
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
             $pipes
         );
 
-        fgets($pipes[1]);
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
         $child_status = proc_get_status($this->child);
+        $this->assertSame(true, $child_status['running']);
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             $memory_reader,
             new ProcessModuleSymbolReaderCreator(
@@ -108,17 +104,21 @@ class CallTraceReaderTest extends BaseTestCase
 
         /** @var int $child_status['pid'] */
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
         $sapi_globals_address = $php_globals_finder->findSAPIGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
 
         $call_trace = $executor_globals_reader->readCallTrace(
-            $child_status['pid'],
-            ZendTypeReader::V81,
+            $pid,
+            $php_version,
             $executor_globals_address,
             $sapi_globals_address,
             PHP_INT_MAX,
@@ -142,7 +142,7 @@ class CallTraceReaderTest extends BaseTestCase
             $call_trace->call_frames[1]->getFullyQualifiedFunctionName()
         );
         $this->assertSame(
-            $tmp_file,
+            '/source',
             $call_trace->call_frames[1]->file_name
         );
         $this->assertSame(
@@ -154,7 +154,7 @@ class CallTraceReaderTest extends BaseTestCase
             $call_trace->call_frames[2]->getFullyQualifiedFunctionName()
         );
         $this->assertSame(
-            $tmp_file,
+            '/source',
             $call_trace->call_frames[2]->file_name
         );
         $this->assertSame(
