@@ -198,7 +198,8 @@ final class ZendClassEntry implements Dereferencable
         Dereferencer $dereferencer,
         ZendTypeReader $type_reader,
     ): iterable {
-        foreach ($this->properties_info->getItemIterator($dereferencer) as $name => $item) {
+        $property_info = $dereferencer->deref($this->properties_info->getPointer());
+        foreach ($property_info->getItemIterator($dereferencer) as $name => $item) {
             $property_info_pointer = $item->value->getAsPointer(
                 ZendPropertyInfo::class,
                 $type_reader->sizeOf(ZendPropertyInfo::getCTypeName()),

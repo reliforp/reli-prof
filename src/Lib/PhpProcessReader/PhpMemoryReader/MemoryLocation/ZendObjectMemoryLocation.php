@@ -39,7 +39,10 @@ class ZendObjectMemoryLocation extends RefcountedMemoryLocation
         $class_name = $ce->getClassName($dereferencer);
         if ($class_name === \Fiber::class) {
             $size = $zend_type_reader->sizeOf('zend_fiber');
-        } elseif ($class_name === \Closure::class) {
+        } elseif (
+            $class_name === \Closure::class
+            and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
+        ) {
             $size = $zend_type_reader->sizeOf('zend_closure');
         } else {
             $size = $zend_object->getMemorySize($dereferencer);

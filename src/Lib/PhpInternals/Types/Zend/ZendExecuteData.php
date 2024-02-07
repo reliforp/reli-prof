@@ -259,7 +259,9 @@ final class ZendExecuteData implements Dereferencable
 
     public function getVariableTableAddress(): int
     {
-        return $this->pointer->indexedAt(1)->address;
+        return (int)($this->pointer->address
+            + (int)((($this->pointer->size) + 16 - 1) / 16) * 16
+        );
     }
 
     public function getTotalVariablesNum(Dereferencer $dereferencer): int

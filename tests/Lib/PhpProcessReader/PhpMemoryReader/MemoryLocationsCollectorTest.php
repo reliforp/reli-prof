@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
@@ -34,6 +36,7 @@ use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
+use Reli\TargetPhpVmProvider;
 
 class MemoryLocationsCollectorTest extends BaseTestCase
 {
@@ -62,50 +65,54 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         }
     }
 
-    public function testCollectAll()
+    public static function provideFromV80()
+    {
+        yield from TargetPhpVmProvider::from(ZendTypeReader::V80);
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testCollectAllFromV80(string $php_version, string $docker_image_name): void
     {
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
-        $this->child = proc_open(
-            [
-                PHP_BINARY,
-                '-r',
-                <<<'CODE'
-                /** class doc_comment */
-                class A {
-                    public static $output = STDOUT;
+        $target_script =
+            <<<'CODE'
+            <?php
+            error_reporting(E_ALL & ~E_DEPRECATED);
+            /** class doc_comment */
+            class A {
+                public static $output = STDOUT;
 
-                    /** property doc_comment */
-                    public string $result = '';
+                /** property doc_comment */
+                public string $result = '';
 
-                    /** function doc_comment */
-                    public function wait($input): void {
-                        static $test_static_variable = 0xdeadbeef;
-                        (function (...$_) use ($input) {
-                            $this->result = fgets($input);
-                        })(123, extra: 456);
-                    }
+                /** function doc_comment */
+                public function wait($input): void {
+                    static $test_static_variable = 0xdeadbeef;
+                    (function (...$_) use ($input) {
+                        $this->result = fgets($input);
+                    })(123, extra: 456);
                 }
-                $tempfile = tempnam('', '');
-                include $tempfile;
-                $object = new A;
-                $ref_object =& $object;
-                $object->dynamic_property = 42;
-                fputs(A::$output, "a\n");
-                $object->wait(STDIN);
-                CODE
-            ],
-            [
-                ['pipe', 'r'],
-                ['pipe', 'w'],
-                ['pipe', 'w']
-            ],
+            }
+            $tempfile = tempnam('', '');
+            include $tempfile;
+            $object = new A;
+            $ref_object =& $object;
+            $object->dynamic_property = 42;
+            fputs(A::$output, "a\n");
+            $object->wait(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
             $pipes
         );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
 
-        fgets($pipes[1]);
-        $child_status = proc_get_status($this->child);
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             $memory_reader,
             new ProcessModuleSymbolReaderCreator(
@@ -127,14 +134,17 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new MemoryReader()
         );
 
-        /** @var int $child_status['pid'] */
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
         $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
 
         $memory_locations_collector = new MemoryLocationsCollector(
@@ -147,8 +157,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             )
         );
         $collected_memories = $memory_locations_collector->collectAll(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings(php_version: ZendTypeReader::V81),
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
             $compiler_globals_address
         );
@@ -245,7 +255,12 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $contexts_analyzed['call_frames']['2']['function_name']
         );
         $this->assertSame(
-            $contexts_analyzed['call_frames']['3']['symbol_table']['array_elements']['object']['value']['#node_id'],
+            $contexts_analyzed
+                ['call_frames']
+                ['3']
+                ['local_variables']
+                ['object']
+                ['#node_id'],
             $contexts_analyzed
                 ['call_frames']
                 ['3']
@@ -282,62 +297,63 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame(
             0xdeadbeef,
             $contexts_analyzed
-                ['class_table']
-                ['a']
-                ['methods']
-                ['wait']
-                ['op_array']
-                ['static_variables']
-                ['array_elements']
-                ['test_static_variable']
-                ['value']
-                ['value']
+            ['call_frames']
+            ['2']
+            ['local_variables']
+            ['test_static_variable']
+            ['referenced']
+            ['value']
         );
         $this->assertSame(
-            1,
-            $contexts_analyzed['included_files']['#count']
+            3,
+            $contexts_analyzed
+                ['included_files']
+                ['#count']
         );
     }
 
-    public function testMemoryLimitViolation()
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testMemoryLimitViolation(string $php_version, string $docker_image_name)
     {
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
-        $this->child = proc_open(
-            [
-                PHP_BINARY,
-                '-r',
-                <<<'CODE'
-                ini_set('memory_limit', '2M');
-                register_shutdown_function(function () {
-                    $error = error_get_last();
-                    if (is_null($error)) {
-                        return;
-                    }
-                    if (strpos($error['message'], 'Allowed memory size of') !== 0) {
-                        return;
-                    }
-                    fputs(STDOUT, json_encode($error) . "\n");
-                    fgets(STDIN);
-                });
-                function f() {
-                    $var = array_fill(0, 0x1000, 0);
-                    f();
+        $target_script =
+            <<<'CODE'
+            <?php
+            ini_set('memory_limit', '2M');
+            register_shutdown_function(function () {
+                $error = error_get_last();
+                if (is_null($error)) {
+                    return;
                 }
+                if (strpos($error['message'], 'Allowed memory size of') !== 0) {
+                    return;
+                }
+                fputs(STDOUT, json_encode($error) . "\n");
+                fgets(STDIN);
+            });
+            function f() {
+                $var = array_fill(0, 0x1000, 0);
                 f();
-                CODE
-            ],
-            [
-                ['pipe', 'r'],
-                ['pipe', 'w'],
-                ['pipe', 'w']
-            ],
+            }
+            f();
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
             $pipes
         );
-
-        $child_status = proc_get_status($this->child);
+        fgets($pipes[1]);
+        $error_message = fgets($pipes[1]);
+        $this->assertStringStartsWith(
+            'Fatal error: Allowed memory size of',
+            $error_message
+        );
         $error_json = fgets($pipes[1]);
+
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             $memory_reader,
             new ProcessModuleSymbolReaderCreator(
@@ -359,14 +375,17 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new MemoryReader()
         );
 
-        /** @var int $child_status['pid'] */
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
         $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
 
         $memory_locations_collector = new MemoryLocationsCollector(
@@ -380,8 +399,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $error = json_decode($error_json, true);
         $collected_memories = $memory_locations_collector->collectAll(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings(php_version: ZendTypeReader::V81),
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
             $compiler_globals_address,
             new MemoryLimitErrorDetails(
@@ -393,7 +412,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
         $this->assertGreaterThan(
-            2,
+            3,
             $collected_memories->top_reference_context->call_frames->getFrameCount()
         );
         $this->assertSame(
@@ -403,7 +422,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ->function_name
         );
         $this->assertSame(
-            15,
+            $php_version >= ZendTypeReader::V81 ? 16 : 15,
             $collected_memories->top_reference_context->call_frames
                 ->getFrameAt(3)
                 ->lineno
@@ -411,7 +430,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame(
             0x1000,
             $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
+                ->getFrameAt(4)
                 ->getLocalVariable('var')
                 ->getElements()
                 ->getCount()
@@ -419,7 +438,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame(
             0x1000,
             $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(4)
+                ->getFrameAt(5)
                 ->getLocalVariable('var')
                 ->getElements()
                 ->getCount()
@@ -432,54 +451,57 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ->function_name
         );
         $this->assertSame(
-            17,
+            18,
             $collected_memories->top_reference_context->call_frames
                 ->getFrameAt($last_frame)
                 ->lineno
         );
     }
 
-    public function testMemoryLimitViolationOnMethod()
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testMemoryLimitViolationOnMethod(string $php_version, string $docker_image_name)
     {
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
-        $this->child = proc_open(
-            [
-                PHP_BINARY,
-                '-r',
-                <<<'CODE'
-                ini_set('memory_limit', '2M');
-                register_shutdown_function(function () {
-                    $error = error_get_last();
-                    if (is_null($error)) {
-                        return;
-                    }
-                    if (strpos($error['message'], 'Allowed memory size of') !== 0) {
-                        return;
-                    }
-                    fputs(STDOUT, json_encode($error) . "\n");
-                    fgets(STDIN);
-                });
-                class C {
-                    public function f() {
-                        $var = array_fill(0, 0x1000, 0);
-                        $this->f();
-                    }
+        $target_script =
+            <<<'CODE'
+            <?php
+            ini_set('memory_limit', '2M');
+            register_shutdown_function(function () {
+                $error = error_get_last();
+                if (is_null($error)) {
+                    return;
                 }
-                (new C)->f();
-                CODE
-            ],
-            [
-                ['pipe', 'r'],
-                ['pipe', 'w'],
-                ['pipe', 'w']
-            ],
+                if (strpos($error['message'], 'Allowed memory size of') !== 0) {
+                    return;
+                }
+                fputs(STDOUT, json_encode($error) . "\n");
+                fgets(STDIN);
+            });
+            class C {
+                public function f() {
+                    $var = array_fill(0, 0x1000, 0);
+                    $this->f();
+                }
+            }
+            (new C)->f();
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
             $pipes
         );
-
-        $child_status = proc_get_status($this->child);
+        fgets($pipes[1]);
+        $error_message = fgets($pipes[1]);
+        $this->assertStringStartsWith(
+            'Fatal error: Allowed memory size of',
+            $error_message
+        );
         $error_json = fgets($pipes[1]);
+
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             $memory_reader,
             new ProcessModuleSymbolReaderCreator(
@@ -501,14 +523,17 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new MemoryReader()
         );
 
-        /** @var int $child_status['pid'] */
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
         $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
 
         $memory_locations_collector = new MemoryLocationsCollector(
@@ -522,8 +547,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $error = json_decode($error_json, true);
         $collected_memories = $memory_locations_collector->collectAll(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings(php_version: ZendTypeReader::V81),
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
             $compiler_globals_address,
             new MemoryLimitErrorDetails(
@@ -535,7 +560,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
         $this->assertGreaterThan(
-            2,
+            3,
             $collected_memories->top_reference_context->call_frames->getFrameCount()
         );
         $this->assertSame(
@@ -545,7 +570,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ->function_name
         );
         $this->assertSame(
-            16,
+            $php_version >= ZendTypeReader::V81 ? 17 : 16,
             $collected_memories->top_reference_context->call_frames
                 ->getFrameAt(3)
                 ->lineno
@@ -553,7 +578,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame(
             0x1000,
             $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
+                ->getFrameAt(4)
                 ->getLocalVariable('var')
                 ->getElements()
                 ->getCount()
@@ -561,7 +586,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame(
             0x1000,
             $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(4)
+                ->getFrameAt(5)
                 ->getLocalVariable('var')
                 ->getElements()
                 ->getCount()
@@ -574,57 +599,71 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ->function_name
         );
         $this->assertSame(
-            19,
+            20,
             $collected_memories->top_reference_context->call_frames
                 ->getFrameAt($last_frame)
                 ->lineno
         );
     }
 
-    public function testMemoryLimitViolationOnClosure()
+
+    public static function provideFromV71()
     {
+        yield from TargetPhpVmProvider::from(ZendTypeReader::V71);
+    }
+
+    #[DataProvider('provideFromV71')]
+    public function testMemoryLimitViolationOnClosure(string $php_version, string $docker_image_name)
+    {
+        if ($php_version === ZendTypeReader::V70) {
+            $this->markTestSkipped('V70 does not support closure frame');
+        }
+
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
-        $this->child = proc_open(
-            [
-                PHP_BINARY,
-                '-r',
-                <<<'CODE'
-                ini_set('memory_limit', '2M');
-                register_shutdown_function(function () {
-                    $error = error_get_last();
-                    if (is_null($error)) {
-                        return;
-                    }
-                    if (strpos($error['message'], 'Allowed memory size of') !== 0) {
-                        return;
-                    }
-                    fputs(STDOUT, json_encode($error) . "\n");
-                    fgets(STDIN);
-                });
-                class C {
-                    public function f() {
-                        $f = static function () use (&$f) {
-                            $var = array_fill(0, 0x1000, 0);
-                            $f();
-                        };
-                        $f();
-                    }
+        $target_script =
+            <<<'CODE'
+            <?php
+            ini_set('memory_limit', '2M');
+            register_shutdown_function(function () {
+                $error = error_get_last();
+                if (is_null($error)) {
+                    return;
                 }
-                (new C)->f();
-                CODE
-            ],
-            [
-                ['pipe', 'r'],
-                ['pipe', 'w'],
-                ['pipe', 'w']
-            ],
+                if (strpos($error['message'], 'Allowed memory size of') !== 0) {
+                    return;
+                }
+                fputs(STDOUT, json_encode($error) . "\n");
+                fgets(STDIN);
+            });
+            class C {
+                public function f() {
+                    $f = static function () use (&$f) {
+                        $var = array_fill(0, 0x1000, 0);
+                        $f();
+                    };
+                    $f();
+                }
+            }
+            (new C)->f();
+            CODE
+        ;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
             $pipes
         );
-
-        $child_status = proc_get_status($this->child);
+        fgets($pipes[1]);
+        $error_message = fgets($pipes[1]);
+        $this->assertStringStartsWith(
+            'Fatal error: Allowed memory size of',
+            $error_message
+        );
         $error_json = fgets($pipes[1]);
+
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             $memory_reader,
             new ProcessModuleSymbolReaderCreator(
@@ -646,14 +685,17 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new MemoryReader()
         );
 
-        /** @var int $child_status['pid'] */
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
         $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
         );
 
         $memory_locations_collector = new MemoryLocationsCollector(
@@ -667,8 +709,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $error = json_decode($error_json, true);
         $collected_memories = $memory_locations_collector->collectAll(
-            new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings(php_version: ZendTypeReader::V81),
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
             $compiler_globals_address,
             new MemoryLimitErrorDetails(
@@ -684,13 +726,13 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $collected_memories->top_reference_context->call_frames->getFrameCount()
         );
         $this->assertSame(
-            'C::{closure}(Command line code:15-18)',
+            'C::{closure}(/source:16-19)',
             $collected_memories->top_reference_context->call_frames
                 ->getFrameAt(3)
                 ->function_name
         );
         $this->assertSame(
-            17,
+            $php_version >= ZendTypeReader::V81 ? 18 : 17,
             $collected_memories->top_reference_context->call_frames
                 ->getFrameAt(3)
                 ->lineno
@@ -698,7 +740,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame(
             0x1000,
             $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
+                ->getFrameAt(4)
                 ->getLocalVariable('var')
                 ->getElements()
                 ->getCount()
@@ -706,7 +748,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame(
             0x1000,
             $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(4)
+                ->getFrameAt(5)
                 ->getLocalVariable('var')
                 ->getElements()
                 ->getCount()
@@ -719,7 +761,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ->function_name
         );
         $this->assertSame(
-            22,
+            23,
             $collected_memories->top_reference_context->call_frames
                 ->getFrameAt($last_frame)
                 ->lineno

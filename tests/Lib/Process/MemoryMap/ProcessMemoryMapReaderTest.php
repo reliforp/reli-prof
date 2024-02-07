@@ -22,7 +22,8 @@ class ProcessMemoryMapReaderTest extends BaseTestCase
         $result = (new ProcessMemoryMapReader())->read(getmypid());
         $first_line = strtok($result, "\n");
         $this->assertMatchesRegularExpression(
-            '/[0-9a-f]+-[0-9a-f]+ [r\-][w\-][x\-][sp\-] [0-9a-f]+ [0-9][0-9][0-9]?:[0-9][0-9][0-9]? [0-9]+ +[^ ].*/',
+            // phpcs:ignore Generic.Files.LineLength.TooLong
+            '/[0-9a-f]+-[0-9a-f]+ [r\-][w\-][x\-][sp\-] [0-9a-f]+ [0-9a-z][0-9a-z][0-9a-z]?:[0-9a-z][0-9a-z][0-9a-z]? [0-9]+ +[^ ].*/',
             $first_line
         );
     }

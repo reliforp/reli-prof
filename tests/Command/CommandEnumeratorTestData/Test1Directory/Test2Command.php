@@ -11,8 +11,10 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\CommandEnumeratorTestData\Test1Directory;
+namespace Reli\Command\Test1Directory;
 
-final class Test2Command
+use Symfony\Component\Console\Command\Command;
+
+final class Test2Command extends Command
 {
 }

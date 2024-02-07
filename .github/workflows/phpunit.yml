@@ -49,7 +49,10 @@ jobs:
       - name: Run test suite
         run: |
           mkdir -p build/logs
-          ./vendor/bin/phpunit --coverage-clover build/logs/clover.xml
+          composer test-for-ci
+
+      - name: Fix absolute paths in the coverage report
+        run: sed -i "s|<file name=\"/app/|<file name=\"`pwd`/|g" build/logs/clover.xml
 
       - name: Send to coveralls
         env:
