@@ -168,6 +168,17 @@ struct _zend_resource {
 
 typedef uintptr_t zend_type;
 
+// zend_compile.h
+typedef struct _zend_property_info {
+	uint32_t offset; /* property offset for object properties or
+	                      property index for static properties */
+	uint32_t flags;
+	zend_string *name;
+	zend_string *doc_comment;
+	zend_class_entry *ce;
+} zend_property_info;
+
+// zend_types.h
 struct _zend_reference {
 	zend_refcounted_h              gc;
 	zval                           val;
