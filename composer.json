@@ -48,7 +48,8 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "Reli\\": "tests"
+      "Reli\\": "tests",
+      "Reli\\Command\\": "tests/Command/CommandEnumeratorTestData"
     }
   },
   "bin": [
@@ -56,7 +57,13 @@
   ],
   "scripts": {
     "test": [
-      "phpunit"
+      "docker-compose run reli-test"
+    ],
+    "test-with-coverage": [
+      "docker-compose run reli-test-with-coverage"
+    ],
+    "test-for-ci": [
+      "docker-compose run reli-test-for-ci"
     ],
     "psalm": [
       "psalm.phar"

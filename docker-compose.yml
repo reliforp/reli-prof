@@ -1,0 +1,49 @@
+version: '3.9'
+services:
+  reli-test:
+    build:
+      context: .
+      dockerfile: Dockerfile-dev
+    pid: "host"
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/reli-test:/tmp/reli-test
+    container_name: reli-test
+    command: ["vendor/bin/phpunit" , "--colors=always", "--testdox"]
+  reli-test-with-coverage:
+    build:
+      context: .
+      dockerfile: Dockerfile-dev
+    pid: "host"
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/reli-test:/tmp/reli-test
+      - ./build:/app/build
+    container_name: reli-test
+    command: ["vendor/bin/phpunit" , "--colors=always", "--testdox", "--coverage-clover", "build/logs/clover.xml"]
+  reli-test-for-ci:
+    build:
+      context: .
+      dockerfile: Dockerfile-dev
+    pid: "host"
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/reli-test:/tmp/reli-test
+      - ./build:/app/build
+    container_name: reli-test
+    command: ["vendor/bin/phpunit" , "--coverage-clover", "build/logs/clover.xml"]

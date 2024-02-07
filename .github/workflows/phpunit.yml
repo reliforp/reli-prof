@@ -49,7 +49,7 @@ jobs:
       - name: Run test suite
         run: |
           mkdir -p build/logs
-          ./vendor/bin/phpunit --coverage-clover build/logs/clover.xml
+          composer test-for-ci
 
       - name: Send to coveralls
         env:
