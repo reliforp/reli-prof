@@ -15,17 +15,19 @@ namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
 use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use Reli\Lib\PhpInternals\Types\C\RawDouble;
+use Reli\Lib\PhpInternals\Types\Zend\Bucket;
 use Reli\Lib\PhpInternals\Types\Zend\Opline;
+use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
-use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
-use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
 use Reli\Lib\PhpInternals\Types\Zend\ZendOp;
+use Reli\Lib\PhpInternals\Types\Zend\Zval;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -62,7 +64,46 @@ final class CallTraceReader
             new ProcessSpecifier($pid),
             new ZendCastedTypeProvider(
                 $this->getTypeReader($php_version),
-            )
+            ),
+            new class ($php_version) implements PointedTypeResolver {
+                public function __construct(
+                    private string $php_version,
+                ) {
+                }
+
+                public function resolve(string $type_name): string
+                {
+                    return match ($this->php_version) {
+                        ZendTypeReader::V70,
+                        ZendTypeReader::V71,
+                        ZendTypeReader::V72 => match ($type_name) {
+                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Bucket::class,
+                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V70\ZendArray::class,
+                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Zval::class,
+                            default => $type_name,
+                        },
+                        ZendTypeReader::V73 => match ($type_name) {
+                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Bucket::class,
+                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V73\ZendArray::class,
+                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Zval::class,
+                            default => $type_name,
+                        },
+                        ZendTypeReader::V74 => match ($type_name) {
+                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Bucket::class,
+                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V74\ZendArray::class,
+                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Zval::class,
+                            default => $type_name,
+                        },
+                        ZendTypeReader::V80,
+                        ZendTypeReader::V81 => match ($type_name) {
+                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V80\ZendArray::class,
+                            default => $type_name,
+                        },
+                        ZendTypeReader::V82,
+                        ZendTypeReader::V83 => $type_name,
+                    };
+                }
+            }
         );
     }
 
