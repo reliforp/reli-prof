@@ -33,6 +33,37 @@ final class ZendArray extends BaseZendArray implements Dereferencable
         };
     }
 
+    public function dumpFlags(): string
+    {
+        $flags = $this->flags;
+        $flag_names = [];
+        if ($flags & ((1 << 0) | (1 << 1))) {
+            $flag_names[] = 'HASH_FLAG_CONSISTENCY';
+        }
+        if ($flags & (1 << 2)) {
+            $flag_names[] = 'HASH_FLAG_PACKED';
+        }
+        if ($flags & (1 << 3)) {
+            $flag_names[] = 'HASH_FLAG_UNINITIALIZED';
+        }
+        if ($flags & (1 << 4)) {
+            $flag_names[] = 'HASH_FLAG_STATIC_KEYS';
+        }
+        if ($flags & (1 << 5)) {
+            $flag_names[] = 'HASH_FLAG_HAS_EMPTY_IND';
+        }
+        if ($flags & (1 << 6)) {
+            $flag_names[] = 'HASH_FLAG_ALLOW_COW_VIOLATION';
+        }
+
+        return implode(' | ', $flag_names);
+    }
+
+    public function isUninitialized(): bool
+    {
+        return (bool)($this->flags & (1 << 3));
+    }
+
     public function getDataSize(): int
     {
         return $this->nTableSize * self::BUCKET_SIZE_IN_BYTES;
