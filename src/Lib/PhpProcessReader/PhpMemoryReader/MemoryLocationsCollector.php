@@ -1055,7 +1055,10 @@ final class MemoryLocationsCollector
 
         assert(!is_null($object->ce));
         $class_entry = $dereferencer->deref($object->ce);
-        if ($class_entry->getClassName($dereferencer) === 'Closure') {
+        if (
+            $class_entry->getClassName($dereferencer) === 'Closure'
+            and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
+        ) {
             $closure_context = $this->collectClosure(
                 $dereferencer->deref(
                     ZendClosure::getPointerFromZendObjectPointer(
