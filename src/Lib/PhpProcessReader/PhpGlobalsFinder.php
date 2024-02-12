@@ -49,10 +49,14 @@ class PhpGlobalsFinder
             $target_php_settings
         )->read('_tsrm_ls_cache');
         if (isset($tsrm_ls_cache_cdata)) {
-            return $this->integer_reader->read64(
+            $tsrm_ls_cache_address = $this->integer_reader->read64(
                 new CDataByteReader($tsrm_ls_cache_cdata),
                 0
             )->toInt();
+            if ($tsrm_ls_cache_address === 0) {
+                return null;
+            }
+            return $tsrm_ls_cache_address;
         }
         return null;
     }
@@ -69,6 +73,19 @@ class PhpGlobalsFinder
         return $this->php_symbol_reader_creator->create(
             $process_specifier->pid,
             $target_php_settings->php_regex,
+            $target_php_settings->libpthread_regex,
+            $target_php_settings->php_path,
+            $target_php_settings->libpthread_path
+        );
+    }
+
+    public function getZtsGlobalsSymbolReader(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings
+    ): ProcessSymbolReaderInterface {
+        return $this->php_symbol_reader_creator->create(
+            $process_specifier->pid,
+            $target_php_settings->zts_globals_regex,
             $target_php_settings->libpthread_regex,
             $target_php_settings->php_path,
             $target_php_settings->libpthread_path
@@ -115,7 +132,7 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
-        $symbol_reader = $this->getSymbolReader(
+        $symbol_reader = $this->getZtsGlobalsSymbolReader(
             $process_specifier,
             $target_php_settings
         );
@@ -136,7 +153,7 @@ class PhpGlobalsFinder
                 case ZendTypeReader::V72:
                 case ZendTypeReader::V73:
                     $id_symbol = $symbol_name . '_id';
-                    $globals_id_cdata = $this->getSymbolReader($process_specifier, $target_php_settings)
+                    $globals_id_cdata = $this->getZtsGlobalsSymbolReader($process_specifier, $target_php_settings)
                         ->read($id_symbol);
                     if (is_null($globals_id_cdata)) {
                         throw new RuntimeException('global symbol id not found');
@@ -172,7 +189,7 @@ class PhpGlobalsFinder
                 case ZendTypeReader::V82:
                 case ZendTypeReader::V83:
                     $offset = $symbol_name . '_offset';
-                    $globals_offset_cdata = $this->getSymbolReader(
+                    $globals_offset_cdata = $this->getZtsGlobalsSymbolReader(
                         $process_specifier,
                         $target_php_settings
                     )->read($offset);

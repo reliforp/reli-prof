@@ -44,4 +44,14 @@ final class Elf64SectionHeaderTable
         }
         return null;
     }
+
+    public function findDynamicEntry(): ?Elf64SectionHeaderEntry
+    {
+        foreach ($this->entries as $entry) {
+            if ($entry->isDynamic()) {
+                return $entry;
+            }
+        }
+        return null;
+    }
 }

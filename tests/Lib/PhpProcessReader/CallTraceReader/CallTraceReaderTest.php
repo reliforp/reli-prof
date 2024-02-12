@@ -18,6 +18,7 @@ use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\LinkMapLoader;
 use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
@@ -82,7 +83,6 @@ class CallTraceReaderTest extends BaseTestCase
         $child_status = proc_get_status($this->child);
         $this->assertSame(true, $child_status['running']);
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
-            $memory_reader,
             new ProcessModuleSymbolReaderCreator(
                 new Elf64SymbolResolverCreator(
                     new CatFileReader(),
@@ -92,9 +92,13 @@ class CallTraceReaderTest extends BaseTestCase
                 ),
                 $memory_reader,
                 new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
             ),
             ProcessMemoryMapCreator::create(),
-            new LittleEndianReader()
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,

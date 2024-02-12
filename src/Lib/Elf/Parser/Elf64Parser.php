@@ -26,6 +26,7 @@ use Reli\Lib\Elf\Structure\Elf64\Elf64SectionHeaderTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64StringTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\Integer\UInt64;
 
 final class Elf64Parser
 {
@@ -111,16 +112,19 @@ final class Elf64Parser
 
     public function parseDynamicStructureArray(
         ByteReaderInterface $data,
-        Elf64ProgramHeaderEntry $pt_dynamic
+        UInt64 $dynamic_offset,
+        UInt64 $dynamic_v_addr,
     ): Elf64DynamicStructureArray {
         $dynamic_array = [];
-        $offset = $pt_dynamic->p_offset->lo;
+        $offset = $dynamic_offset->toInt();
+        $v_addr = $dynamic_v_addr->toInt();
         do {
             $d_tag = $this->integer_reader->read64($data, $offset);
             $d_un = $this->integer_reader->read64($data, $offset + 8);
-            $dynamic_structure = new Elf64DynamicStructure($d_tag, $d_un);
+            $dynamic_structure = new Elf64DynamicStructure($offset, $v_addr, $d_tag, $d_un);
             $dynamic_array[] = $dynamic_structure;
             $offset += 16;
+            $v_addr += 16;
         } while (!$dynamic_structure->isEnd());
 
         return new Elf64DynamicStructureArray(...$dynamic_array);
@@ -128,6 +132,7 @@ final class Elf64Parser
 
     public function parseStringTable(
         ByteReaderInterface $data,
+        UInt64 $base_address,
         Elf64DynamicStructureArray $dynamic_structure_array
     ): Elf64StringTable {
         /**
@@ -138,7 +143,7 @@ final class Elf64Parser
             Elf64DynamicStructure::DT_STRTAB => $dt_strtab,
             Elf64DynamicStructure::DT_STRSZ => $dt_strsz
         ] = $dynamic_structure_array->findStringTableEntries();
-        $offset = $dt_strtab->d_un->toInt();
+        $offset = $dt_strtab->d_un->toInt() - $base_address->toInt();
         $size = $dt_strsz->d_un->toInt();
         $string_table_region = $data->createSliceAsString($offset, $size);
 
@@ -159,6 +164,7 @@ final class Elf64Parser
 
     public function parseSymbolTableFromDynamic(
         ByteReaderInterface $data,
+        UInt64 $base_address,
         Elf64DynamicStructureArray $dynamic_structure_array,
         int $number_of_symbols
     ): Elf64SymbolTable {
@@ -171,7 +177,7 @@ final class Elf64Parser
             Elf64DynamicStructure::DT_SYMENT => $dt_syment
         ] = $dynamic_structure_array->findSymbolTablEntries();
 
-        $start_offset = $dt_symtab->d_un->toInt();
+        $start_offset = $dt_symtab->d_un->toInt() - $base_address->toInt();
         $entry_size = $dt_syment->d_un->toInt();
 
         return $this->parseSymbolTable($data, $start_offset, $number_of_symbols, $entry_size);
@@ -223,13 +229,14 @@ final class Elf64Parser
      */
     public function parseGnuHashTable(
         ByteReaderInterface $data,
+        Uint64 $base_address,
         Elf64DynamicStructureArray $dynamic_structure_array
     ): ?Elf64GnuHashTable {
         $dt_gnu_hash = $dynamic_structure_array->findGnuHashTableEntry();
         if (is_null($dt_gnu_hash)) {
             return null;
         }
-        $offset = $dt_gnu_hash->d_un->toInt();
+        $offset = $dt_gnu_hash->d_un->toInt() - $base_address->toInt();
         $nbuckets = $this->integer_reader->read32($data, $offset);
         $symoffset = $this->integer_reader->read32($data, $offset + 4);
         $bloom_size = $this->integer_reader->read32($data, $offset + 8);

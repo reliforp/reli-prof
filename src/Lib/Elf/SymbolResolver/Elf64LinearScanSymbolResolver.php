@@ -16,12 +16,15 @@ namespace Reli\Lib\Elf\SymbolResolver;
 use Reli\Lib\Elf\Structure\Elf64\Elf64StringTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\Integer\UInt64;
 
 final class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
 {
     public function __construct(
         private Elf64SymbolTable $symbol_table,
         private Elf64StringTable $string_table,
+        private UInt64 $base_address,
+        private ?int $dt_debug_address,
     ) {
     }
 
@@ -35,5 +38,15 @@ final class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
             }
         }
         return $all_symbols[Elf64SymbolTable::STN_UNDEF];
+    }
+
+    public function getDtDebugAddress(): ?int
+    {
+        return $this->dt_debug_address;
+    }
+
+    public function getBaseAddress(): UInt64
+    {
+        return $this->base_address;
     }
 }

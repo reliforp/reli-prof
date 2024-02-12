@@ -196,11 +196,13 @@ final class MemoryLocationsCollector
     private function getMainChunkAddress(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
+        int $eg_address,
         Dereferencer $dereferencer,
     ): int {
         $chunk_address = $this->chunk_finder->findAddress(
             $process_specifier,
             $target_php_settings,
+            $eg_address,
             $dereferencer,
         );
         if (is_null($chunk_address)) {
@@ -227,6 +229,7 @@ final class MemoryLocationsCollector
             $this->getMainChunkAddress(
                 $process_specifier,
                 $target_php_settings,
+                $eg_address,
                 $dereferencer,
             ),
             $zend_type_reader->sizeOf('zend_mm_chunk'),
@@ -446,7 +449,9 @@ final class MemoryLocationsCollector
                 $memory_limit_error_details,
             );
         } elseif ($zval->isObject()) {
-            assert(!is_null($zval->value->obj));
+            if ($zval->value->obj === null) {
+                return null;
+            }
             return $this->collectZendObjectPointer(
                 $zval->value->obj,
                 $map_ptr_base,

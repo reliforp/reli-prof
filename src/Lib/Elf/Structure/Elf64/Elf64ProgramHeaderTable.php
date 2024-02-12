@@ -41,7 +41,7 @@ final class Elf64ProgramHeaderTable
 
     public function findBaseAddress(): UInt64
     {
-        $base_address = new UInt64(0, 0);
+        $base_address = new UInt64(0xffff_ffff, 0xffff_ffff);
         foreach ($this->findLoad() as $pt_load) {
             if ($pt_load->p_vaddr->hi < $base_address->hi) {
                 $base_address = $pt_load->p_vaddr;
@@ -50,6 +50,9 @@ final class Elf64ProgramHeaderTable
                     $base_address = $pt_load->p_vaddr;
                 }
             }
+        }
+        if ($base_address->hi === 0xffff_ffff and $base_address->lo === 0xffff_ffff) {
+            $base_address = new UInt64(0, 0);
         }
         return $base_address;
     }

@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
+use Reli\Inspector\RetryingLoopProvider;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
@@ -72,11 +73,6 @@ final class MemoryCommand extends Command
             $target_php_settings
         );
 
-        if ($memory_profiler_settings->stop_process) {
-            $this->process_stopper->stop($process_specifier->pid);
-            defer($scope_guard, fn () => $this->process_stopper->resume($process_specifier->pid));
-        }
-
         $eg_address = $this->php_globals_finder->findExecutorGlobals(
             $process_specifier,
             $target_php_settings_version_decided
@@ -85,6 +81,11 @@ final class MemoryCommand extends Command
             $process_specifier,
             $target_php_settings_version_decided
         );
+
+        if ($memory_profiler_settings->stop_process) {
+            $this->process_stopper->stop($process_specifier->pid);
+            defer($scope_guard, fn () => $this->process_stopper->resume($process_specifier->pid));
+        }
 
         $collected_memories = $this->memory_locations_collector->collectAll(
             $process_specifier,

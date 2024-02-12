@@ -27,6 +27,7 @@ class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('php-version')->andReturns('v74');
         $input->expects()->getOption('php-path')->andReturns('ghi');
         $input->expects()->getOption('libpthread-path')->andReturns('jkl');
+        $input->expects()->getOption('zts-globals-regex')->andReturns('mno');
 
         $settings = (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
 
@@ -35,6 +36,7 @@ class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
         $this->assertSame('v74', $settings->php_version);
         $this->assertSame('ghi', $settings->php_path);
         $this->assertSame('jkl', $settings->libpthread_path);
+        $this->assertSame('mno', $settings->zts_globals_regex);
     }
 
     public function testFromConsoleInputDefault(): void
@@ -45,6 +47,7 @@ class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(null);
+        $input->expects()->getOption('zts-globals-regex')->andReturns(null);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
 
@@ -56,6 +59,7 @@ class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('php-version')->andReturns('v56');
         $input->allows()->getOption('php-path')->andReturns(null);
         $input->allows()->getOption('libpthread-path')->andReturns(null);
+        $input->allows()->getOption('zts-globals-regex')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
@@ -68,6 +72,7 @@ class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
         $input->allows()->getOption('php-version')->andReturns(null);
         $input->allows()->getOption('php-path')->andReturns(null);
         $input->allows()->getOption('libpthread-path')->andReturns(null);
+        $input->allows()->getOption('zts-globals-regex')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
@@ -80,6 +85,7 @@ class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
         $input->allows()->getOption('php-version')->andReturns(null);
         $input->allows()->getOption('php-path')->andReturns(null);
         $input->allows()->getOption('libpthread-path')->andReturns(null);
+        $input->allows()->getOption('zts-globals-regex')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
@@ -92,6 +98,7 @@ class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
         $input->allows()->getOption('php-version')->andReturns(null);
         $input->expects()->getOption('php-path')->andReturns(1);
         $input->allows()->getOption('libpthread-path')->andReturns(null);
+        $input->allows()->getOption('zts-globals-regex')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }
@@ -104,6 +111,7 @@ class TargetPhpSettingsFromConsoleInputTest extends BaseTestCase
         $input->allows()->getOption('php-version')->andReturns(null);
         $input->allows()->getOption('php-path')->andReturns(null);
         $input->expects()->getOption('libpthread-path')->andReturns(1);
+        $input->allows()->getOption('zts-globals-regex')->andReturns(null);
         $this->expectException(TargetPhpSettingsException::class);
         (new TargetPhpSettingsFromConsoleInput())->createSettings($input);
     }

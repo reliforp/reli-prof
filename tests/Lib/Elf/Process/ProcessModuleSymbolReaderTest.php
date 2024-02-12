@@ -16,6 +16,7 @@ namespace Reli\Lib\Elf\Process;
 use FFI;
 use Mockery;
 use Reli\BaseTestCase;
+use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
@@ -57,7 +58,12 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
                 1,
                 new UInt64(0, 0x1000),
                 new UInt64(0, 8),
-            ));
+            ))
+        ;
+        $symbol_resolver->expects()
+            ->getBaseAddress()
+            ->andReturns(new UInt64(0, 0))
+        ;
         $return = FFI::new('unsigned char[8]');
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
         $memory_reader->expects()->read(1, 0x10001000, 8)->andReturns($return);
@@ -67,6 +73,7 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
             $symbol_resolver,
             new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
+            new LittleEndianReader(),
             null
         );
         $this->assertSame(
@@ -109,6 +116,10 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
             ))
             ->twice()
         ;
+        $symbol_resolver->expects()
+            ->getBaseAddress()
+            ->andReturns(new UInt64(0, 0))
+        ;
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
 
         $process_symbol_reader = new ProcessModuleSymbolReader(
@@ -116,6 +127,7 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
             $symbol_resolver,
             new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
+            new LittleEndianReader(),
             null
         );
 
@@ -159,7 +171,12 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
                 1,
                 new UInt64(0, 0x1000),
                 new UInt64(0, 8),
-            ));
+            ))
+        ;
+        $symbol_resolver->expects()
+            ->getBaseAddress()
+            ->andReturns(new UInt64(0, 0))
+        ;
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
 
         $process_symbol_reader = new ProcessModuleSymbolReader(
@@ -167,6 +184,7 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
             $symbol_resolver,
             new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
+            new LittleEndianReader(),
             null
         );
         $address = $process_symbol_reader->resolveAddress('test_symbol');
@@ -204,7 +222,12 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
                 1,
                 new UInt64(0, 0x1000),
                 new UInt64(0, 8),
-            ));
+            ))
+        ;
+        $symbol_resolver->expects()
+            ->getBaseAddress()
+            ->andReturns(new UInt64(0, 0))
+        ;
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
 
         $process_symbol_reader = new ProcessModuleSymbolReader(
@@ -212,6 +235,7 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
             $symbol_resolver,
             new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
+            new LittleEndianReader(),
             0x10000
         );
         $this->assertSame(
@@ -251,7 +275,12 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
                 1,
                 new UInt64(0, 0x1000),
                 new UInt64(0, 8),
-            ));
+            ))
+        ;
+        $symbol_resolver->expects()
+            ->getBaseAddress()
+            ->andReturns(new UInt64(0, 0))
+        ;
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
 
         $process_symbol_reader = new ProcessModuleSymbolReader(
@@ -259,6 +288,7 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
             $symbol_resolver,
             new ProcessModuleMemoryMap($memory_areas),
             $memory_reader,
+            new LittleEndianReader(),
             null
         );
         $this->expectException(ProcessSymbolReaderException::class);

@@ -27,4 +27,6 @@ interface ProcessSymbolReaderInterface
      * @throws ProcessSymbolReaderException
      */
     public function resolveAddress(string $symbol_name): ?int;
+
+    public function getLinkMapAddress(): ?int;
 }

@@ -41,6 +41,12 @@ final class TargetPhpSettingsFromConsoleInput
                 'regex to find the libpthread.so loaded in the target process'
             )
             ->addOption(
+                'zts-globals-regex',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'regex to find the binary containing globals symbols for ZTS loaded in the target process'
+            )
+            ->addOption(
                 'php-version',
                 null,
                 InputOption::VALUE_OPTIONAL,
@@ -77,6 +83,13 @@ final class TargetPhpSettingsFromConsoleInput
             );
         }
 
+        $zts_globals_regex = $input->getOption('zts-globals-regex') ?? $php_regex;
+        if (!is_string($zts_globals_regex)) {
+            throw TargetPhpSettingsException::create(
+                TargetPhpSettingsException::ZTS_GLOBALS_REGEX_IS_NOT_STRING
+            );
+        }
+
         $php_version = $input->getOption('php-version') ?? TargetPhpSettings::TARGET_PHP_VERSION_DEFAULT;
         if ($php_version !== 'auto' and !in_array($php_version, ZendTypeReader::ALL_SUPPORTED_VERSIONS, true)) {
             throw TargetPhpSettingsException::create(
@@ -98,6 +111,13 @@ final class TargetPhpSettingsFromConsoleInput
             );
         }
 
-        return new TargetPhpSettings($php_regex, $libpthread_regex, $php_version, $php_path, $libpthread_path);
+        return new TargetPhpSettings(
+            $php_regex,
+            $libpthread_regex,
+            $zts_globals_regex,
+            $php_version,
+            $php_path,
+            $libpthread_path
+        );
     }
 }

@@ -39,20 +39,35 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
      */
-    public function findTlsBlock(int $pid, int $module_index): int
+    public function findTlsBlock(int $pid, ?int $link_map_address): int
     {
         $thread_pointer = $this->thread_pointer_retriever->getThreadPointer($pid);
 
         [,,$thread_db_pthread_dtvp_offset] = $this->getLibThreadDbDescriptor('_thread_db_pthread_dtvp');
         [$thread_db_dtv_dtv_size,,] = $this->getLibThreadDbDescriptor('_thread_db_dtv_dtv');
         [,,$thread_db_dtv_t_pointer_val_offset] = $this->getLibThreadDbDescriptor('_thread_db_dtv_t_pointer_val');
-//        [,,] = $this->getLibThreadDbDescriptor($pid, '_thread_db_link_map_l_tls_modid');
+        [,,$thread_db_link_map_l_tls_modid_offset] = $this->getLibThreadDbDescriptor('_thread_db_link_map_l_tls_modid');
 
         $dtv_pointer_address = $thread_pointer + $thread_db_pthread_dtvp_offset;
         $dtv_pointer_cdata = $this->memory_reader->read($pid, $dtv_pointer_address, 8);
         $dtv_pointer = $this->integer_reader->read64(new CDataByteReader($dtv_pointer_cdata), 0)->toInt();
 
-        $dtv_slot = $thread_db_dtv_dtv_size * $module_index;
+        $module_id = 1;
+        if (!is_null($link_map_address)) {
+            $module_id_address = $thread_db_link_map_l_tls_modid_offset + $link_map_address;
+            $module_id = $this->integer_reader->read32(
+                new CDataByteReader(
+                    $this->memory_reader->read(
+                        $pid,
+                        $module_id_address,
+                        4
+                    )
+                ),
+                0
+            );
+        }
+
+        $dtv_slot = $thread_db_dtv_dtv_size * $module_id;
         $tls_address_pointer = $dtv_pointer + $dtv_slot + $thread_db_dtv_t_pointer_val_offset;
 
         $tls_address_cdata = $this->memory_reader->read($pid, $tls_address_pointer, 8);
