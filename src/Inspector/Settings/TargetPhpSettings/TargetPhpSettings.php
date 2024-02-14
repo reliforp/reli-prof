@@ -23,12 +23,14 @@ final class TargetPhpSettings
 {
     public const PHP_REGEX_DEFAULT = '.*/((php|php-fpm)(7\.?[01234]|8\.?[0123])?|libphp[78]?.*\.so)$';
     public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so';
+    public const ZTS_GLOBALS_REGEX_DEFAULT = self::PHP_REGEX_DEFAULT;
     public const TARGET_PHP_VERSION_DEFAULT = 'auto';
 
     /** @param TVersion $php_version */
     public function __construct(
         public string $php_regex = self::PHP_REGEX_DEFAULT,
         public string $libpthread_regex = self::LIBPTHREAD_REGEX_DEFAULT,
+        public string $zts_globals_regex = self::ZTS_GLOBALS_REGEX_DEFAULT,
         public string $php_version = self::TARGET_PHP_VERSION_DEFAULT,
         public ?string $php_path = null,
         public ?string $libpthread_path = null

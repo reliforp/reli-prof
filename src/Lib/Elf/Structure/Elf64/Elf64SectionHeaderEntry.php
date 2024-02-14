@@ -64,4 +64,9 @@ final class Elf64SectionHeaderEntry
     {
         return $this->sh_type === self::SHT_STRTAB;
     }
+
+    public function isDynamic(): bool
+    {
+        return $this->sh_type === self::SHT_DYNAMIC;
+    }
 }

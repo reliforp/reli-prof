@@ -130,7 +130,12 @@ class Elf64ParserTest extends BaseTestCase
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
-        $dynamic_array = $parser->parseDynamicStructureArray($test_binary, $program_header_table->findDynamic()[0]);
+        $dynamic_entry = $program_header_table->findDynamic()[0];
+        $dynamic_array = $parser->parseDynamicStructureArray(
+            $test_binary,
+            $dynamic_entry->p_offset,
+            $dynamic_entry->p_vaddr,
+        );
         $this->assertCount(7, $dynamic_array->findAll());
 
         $actual = [];
@@ -157,8 +162,14 @@ class Elf64ParserTest extends BaseTestCase
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
-        $dynamic_array = $parser->parseDynamicStructureArray($test_binary, $program_header_table->findDynamic()[0]);
-        $string_table = $parser->parseStringTable($test_binary, $dynamic_array);
+        $dynamic_entry = $program_header_table->findDynamic()[0];
+        $dynamic_array = $parser->parseDynamicStructureArray(
+            $test_binary,
+            $dynamic_entry->p_offset,
+            $dynamic_entry->p_vaddr,
+        );
+        $base_address = $program_header_table->findBaseAddress();
+        $string_table = $parser->parseStringTable($test_binary, $base_address, $dynamic_array);
         $this->assertSame(
             'main',
             $string_table->lookup(1)
@@ -171,8 +182,14 @@ class Elf64ParserTest extends BaseTestCase
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
-        $dynamic_array = $parser->parseDynamicStructureArray($test_binary, $program_header_table->findDynamic()[0]);
-        $gnu_hash_table = $parser->parseGnuHashTable($test_binary, $dynamic_array);
+        $dynamic_entry = $program_header_table->findDynamic()[0];
+        $dynamic_array = $parser->parseDynamicStructureArray(
+            $test_binary,
+            $dynamic_entry->p_offset,
+            $dynamic_entry->p_vaddr,
+        );
+        $base_address = $program_header_table->findBaseAddress();
+        $gnu_hash_table = $parser->parseGnuHashTable($test_binary, $base_address, $dynamic_array);
         $this->assertNotNull($gnu_hash_table);
         $this->assertSame(2, $gnu_hash_table->getNumberOfSymbols());
         $index = $gnu_hash_table->lookup('main', fn ($unused) => true);
@@ -188,11 +205,18 @@ class Elf64ParserTest extends BaseTestCase
         $test_binary = $this->getTestBinary('test000.so');
         $elf_header = $parser->parseElfHeader($test_binary);
         $program_header_table = $parser->parseProgramHeader($test_binary, $elf_header);
-        $dynamic_array = $parser->parseDynamicStructureArray($test_binary, $program_header_table->findDynamic()[0]);
-        $gnu_hash_table = $parser->parseGnuHashTable($test_binary, $dynamic_array);
+        $dynamic_entry = $program_header_table->findDynamic()[0];
+        $dynamic_array = $parser->parseDynamicStructureArray(
+            $test_binary,
+            $dynamic_entry->p_offset,
+            $dynamic_entry->p_vaddr,
+        );
+        $base_address = $program_header_table->findBaseAddress();
+        $gnu_hash_table = $parser->parseGnuHashTable($test_binary, $base_address, $dynamic_array);
         $number_of_symbols = $gnu_hash_table->getNumberOfSymbols();
         $symbol_table = $parser->parseSymbolTableFromDynamic(
             $test_binary,
+            $base_address,
             $dynamic_array,
             $number_of_symbols
         );
@@ -205,7 +229,8 @@ class Elf64ParserTest extends BaseTestCase
         $this->assertSame(0, $all_symbols[0]->st_value->toInt());
         $this->assertSame(0, $all_symbols[0]->st_size->toInt());
 
-        $string_table = $parser->parseStringTable($test_binary, $dynamic_array);
+        $base_address = $program_header_table->findBaseAddress();
+        $string_table = $parser->parseStringTable($test_binary, $base_address, $dynamic_array);
         $index = $gnu_hash_table->lookup('main', fn ($unused) => true);
         $main_symbol = $symbol_table->lookup($index);
         $this->assertSame($all_symbols[1], $main_symbol);

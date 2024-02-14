@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Lib\Elf\Process;
 
 use FFI\CData;
+use Reli\Lib\ByteStream\CDataByteReader;
+use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\Elf\SymbolResolver\Elf64AllSymbolResolver;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
@@ -31,9 +33,10 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
         private Elf64SymbolResolver $symbol_resolver,
         ProcessModuleMemoryMap $module_memory_map,
         private MemoryReaderInterface $memory_reader,
+        private IntegerByteSequenceReader $integer_reader,
         private ?int $tls_block_address
     ) {
-        $this->base_address = $module_memory_map->getBaseAddress();
+        $this->base_address = $module_memory_map->getBaseAddress() - $this->symbol_resolver->getBaseAddress()->toInt();
     }
 
     /**
@@ -85,7 +88,42 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
             }
             $base_address = $this->tls_block_address;
         }
+
         return [$base_address + $symbol->st_value->toInt(), $symbol->st_size->toInt()];
+    }
+
+    public function getLinkMapAddress(): ?int
+    {
+        $dt_debug_address = $this->symbol_resolver->getDtDebugAddress();
+        if (is_null($dt_debug_address)) {
+            return null;
+        }
+        $dt_debug_un_pointer = $this->base_address + $dt_debug_address + 8;
+        $r_debug_pointer = $this->integer_reader->read64(
+            new CDataByteReader(
+                $this->memory_reader->read(
+                    $this->pid,
+                    $dt_debug_un_pointer,
+                    8
+                ),
+            ),
+            0,
+        )->toInt();
+        $root_link_map_address_pointer =  $r_debug_pointer + 8;
+        $root_link_map_address = $this->integer_reader->read64(
+            new CDataByteReader(
+                $this->memory_reader->read(
+                    $this->pid,
+                    $root_link_map_address_pointer,
+                    8
+                ),
+            ),
+            0,
+        )->toInt();
+        if ($root_link_map_address === 0) {
+            return null;
+        }
+        return $root_link_map_address;
     }
 
     public function isAllSymbolResolvable(): bool

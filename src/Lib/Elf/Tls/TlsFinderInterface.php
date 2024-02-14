@@ -15,5 +15,5 @@ namespace Reli\Lib\Elf\Tls;
 
 interface TlsFinderInterface
 {
-    public function findTlsBlock(int $pid, int $module_index): int;
+    public function findTlsBlock(int $pid, int $link_map_address): int;
 }

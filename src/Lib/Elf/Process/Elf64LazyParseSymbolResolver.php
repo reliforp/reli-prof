@@ -17,6 +17,7 @@ use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
+use Reli\Lib\Integer\UInt64;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
@@ -56,5 +57,21 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
             $this->resolver_cache = $this->loadResolver();
         }
         return $this->resolver_cache->resolve($symbol_name);
+    }
+
+    public function getDtDebugAddress(): ?int
+    {
+        if (!isset($this->resolver_cache)) {
+            $this->resolver_cache = $this->loadResolver();
+        }
+        return $this->resolver_cache->getDtDebugAddress();
+    }
+
+    public function getBaseAddress(): UInt64
+    {
+        if (!isset($this->resolver_cache)) {
+            $this->resolver_cache = $this->loadResolver();
+        }
+        return $this->resolver_cache->getBaseAddress();
     }
 }

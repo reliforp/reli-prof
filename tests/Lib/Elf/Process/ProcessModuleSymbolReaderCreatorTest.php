@@ -15,6 +15,7 @@ namespace Reli\Lib\Elf\Process;
 
 use Mockery;
 use Reli\BaseTestCase;
+use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
@@ -52,11 +53,20 @@ class ProcessModuleSymbolReaderCreatorTest extends BaseTestCase
                 )
             )
         ;
+        $symbol_resolver->expects()
+            ->getBaseAddress()
+            ->andReturns(new UInt64(0, 0))
+        ;
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
         $symbol_reader_creator = new ProcessModuleSymbolReaderCreator(
             $symbol_resolver_creator,
             $memory_reader,
             new PerBinarySymbolCacheRetriever(),
+            new LittleEndianReader(),
+            new LinkMapLoader(
+                $memory_reader,
+                new LittleEndianReader(),
+            ),
         );
         $process_memory_map = new ProcessMemoryMap([
             new ProcessMemoryArea(
@@ -112,6 +122,11 @@ class ProcessModuleSymbolReaderCreatorTest extends BaseTestCase
             ->andReturns($symbol_resolver = Mockery::mock(Elf64SymbolResolver::class))
         ;
         $symbol_resolver->expects()
+            ->getBaseAddress()
+            ->andReturns(new UInt64(0, 0))
+        ;
+
+        $symbol_resolver->expects()
             ->resolve('test')
             ->andReturns(
                 new Elf64SymbolTableEntry(
@@ -129,6 +144,11 @@ class ProcessModuleSymbolReaderCreatorTest extends BaseTestCase
             $symbol_resolver_creator,
             $memory_reader,
             new PerBinarySymbolCacheRetriever(),
+            new LittleEndianReader(),
+            new LinkMapLoader(
+                $memory_reader,
+                new LittleEndianReader(),
+            ),
         );
         $process_memory_map = new ProcessMemoryMap([
             new ProcessMemoryArea(
@@ -164,6 +184,11 @@ class ProcessModuleSymbolReaderCreatorTest extends BaseTestCase
             $symbol_resolver_creator,
             $memory_reader,
             new PerBinarySymbolCacheRetriever(),
+            new LittleEndianReader(),
+            new LinkMapLoader(
+                $memory_reader,
+                new LittleEndianReader(),
+            ),
         );
         $process_memory_map = new ProcessMemoryMap([]);
 

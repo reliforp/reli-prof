@@ -13,25 +13,20 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader;
 
-use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
-use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReader;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
-use Reli\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use Reli\Lib\Elf\Tls\TlsFinderException;
-use Reli\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
-use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+
+use function readlink;
 
 final class PhpSymbolReaderCreator
 {
     public function __construct(
-        private MemoryReaderInterface $memory_reader,
         private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
         private ProcessMemoryMapCreator $process_memory_map_creator,
-        private IntegerByteSequenceReader $integer_reader,
     ) {
     }
 
@@ -49,25 +44,27 @@ final class PhpSymbolReaderCreator
     ): ProcessModuleSymbolReader {
         $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
 
-        $tls_block_address = null;
         $libpthread_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
             $pid,
             $process_memory_map,
             $libpthread_finder_regex,
             $libpthread_binary_path
         );
+        $root_link_map_address = null;
         if (!is_null($libpthread_symbol_reader)) {
-            try {
-                $tls_finder = new LibThreadDbTlsFinder(
-                    $libpthread_symbol_reader,
-                    X64LinuxThreadPointerRetriever::createDefault(),
-                    $this->memory_reader,
-                    $this->integer_reader
-                );
-                $tls_block_address = $tls_finder->findTlsBlock($pid, 1);
-            } catch (TlsFinderException $e) {
-                $tls_block_address = null;
+            $executable_path = readlink("/proc/{$pid}/exe");
+            $full_executable_path = "/proc/{$pid}/root{$executable_path}";
+            $main_executable_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
+                $pid,
+                $process_memory_map,
+                $executable_path,
+                $full_executable_path,
+                $libpthread_symbol_reader,
+            );
+            if (is_null($main_executable_reader)) {
+                throw new ProcessSymbolReaderException('main executable not found');
             }
+            $root_link_map_address = $main_executable_reader->getLinkMapAddress();
         }
 
         $php_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
@@ -75,7 +72,8 @@ final class PhpSymbolReaderCreator
             $process_memory_map,
             $php_finder_regex,
             $php_binar_path,
-            $tls_block_address
+            $libpthread_symbol_reader,
+            $root_link_map_address,
         );
         if (is_null($php_symbol_reader)) {
             throw new \RuntimeException('php module not found');

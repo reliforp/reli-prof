@@ -20,6 +20,7 @@ use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\LinkMapLoader;
 use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
@@ -114,7 +115,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertSame("a\n", $s);
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
-            $memory_reader,
             new ProcessModuleSymbolReaderCreator(
                 new Elf64SymbolResolverCreator(
                     new CatFileReader(),
@@ -124,9 +124,13 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ),
                 $memory_reader,
                 new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                )
             ),
             ProcessMemoryMapCreator::create(),
-            new LittleEndianReader()
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -355,7 +359,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $error_json = fgets($pipes[1]);
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
-            $memory_reader,
             new ProcessModuleSymbolReaderCreator(
                 new Elf64SymbolResolverCreator(
                     new CatFileReader(),
@@ -365,9 +368,13 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ),
                 $memory_reader,
                 new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
             ),
             ProcessMemoryMapCreator::create(),
-            new LittleEndianReader()
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -503,7 +510,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $error_json = fgets($pipes[1]);
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
-            $memory_reader,
             new ProcessModuleSymbolReaderCreator(
                 new Elf64SymbolResolverCreator(
                     new CatFileReader(),
@@ -513,9 +519,13 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ),
                 $memory_reader,
                 new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
             ),
             ProcessMemoryMapCreator::create(),
-            new LittleEndianReader()
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -665,7 +675,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $error_json = fgets($pipes[1]);
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
-            $memory_reader,
             new ProcessModuleSymbolReaderCreator(
                 new Elf64SymbolResolverCreator(
                     new CatFileReader(),
@@ -675,9 +684,13 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ),
                 $memory_reader,
                 new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
             ),
             ProcessMemoryMapCreator::create(),
-            new LittleEndianReader()
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,

@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Elf\SymbolResolver;
 
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\Integer\UInt64;
 
 final class Elf64CachedSymbolResolver implements Elf64SymbolResolver
 {
@@ -32,5 +33,15 @@ final class Elf64CachedSymbolResolver implements Elf64SymbolResolver
             );
         }
         return $this->symbol_cache->get($symbol_name);
+    }
+
+    public function getDtDebugAddress(): ?int
+    {
+        return $this->resolver->getDtDebugAddress();
+    }
+
+    public function getBaseAddress(): UInt64
+    {
+        return $this->resolver->getBaseAddress();
     }
 }

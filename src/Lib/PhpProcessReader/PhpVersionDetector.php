@@ -89,6 +89,7 @@ class PhpVersionDetector
         return new TargetPhpSettings(
             php_regex: $target_php_settings->php_regex,
             libpthread_regex: $target_php_settings->libpthread_regex,
+            zts_globals_regex: $target_php_settings->zts_globals_regex,
             php_version: $version,
             php_path: $target_php_settings->php_path,
             libpthread_path: $target_php_settings->libpthread_path,

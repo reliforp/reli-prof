@@ -14,8 +14,13 @@ declare(strict_types=1);
 namespace Reli\Lib\Elf\SymbolResolver;
 
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\Integer\UInt64;
 
 interface Elf64SymbolResolver
 {
     public function resolve(string $symbol_name): Elf64SymbolTableEntry;
+
+    public function getDtDebugAddress(): ?int;
+
+    public function getBaseAddress(): UInt64;
 }

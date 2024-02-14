@@ -68,6 +68,8 @@ final class Elf64DynamicStructure
     public const DF_BIND_NOW = 8;
 
     public function __construct(
+        public int $offset,
+        public int $v_addr,
         public UInt64 $d_tag,
         public UInt64 $d_un
     ) {
@@ -76,6 +78,11 @@ final class Elf64DynamicStructure
     public function isEnd(): bool
     {
         return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_NULL;
+    }
+
+    public function isPltGot(): bool
+    {
+        return $this->d_tag->hi === 0 and $this->d_tag->lo === self::DT_PLTGOT;
     }
 
     public function isHashTable(): bool
