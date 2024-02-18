@@ -39,6 +39,18 @@ final class Elf64ProgramHeaderTable
         return $result;
     }
 
+    /** @return Elf64ProgramHeaderEntry[] */
+    public function findNote(): array
+    {
+        $result = [];
+        foreach ($this->entries as $entry) {
+            if ($entry->isNote()) {
+                $result[] = $entry;
+            }
+        }
+        return $result;
+    }
+
     public function findBaseAddress(): UInt64
     {
         $base_address = new UInt64(0xffff_ffff, 0xffff_ffff);

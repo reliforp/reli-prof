@@ -24,6 +24,11 @@ class StringContext implements ReferenceContext
     ) {
     }
 
+    public function getValue(): string
+    {
+        return $this->memory_location->value;
+    }
+
     public function add(string $link_name, ReferenceContext $reference_context): void
     {
         throw new \LogicException("StringContext cannot have reference to another context");

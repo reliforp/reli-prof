@@ -78,4 +78,9 @@ final class Elf64Header
     {
         return $this->e_shnum > 0;
     }
+
+    public function isCore(): bool
+    {
+        return $this->e_type === self::ET_CORE;
+    }
 }

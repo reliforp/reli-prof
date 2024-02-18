@@ -7,6 +7,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -15,7 +16,7 @@ use Reli\Lib\Process\ProcessSpecifier;
 class PhpZendMemoryManagerChunkFinder
 {
     public function __construct(
-        private ProcessMemoryMapCreator $process_memory_map_creator,
+        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
         private ZendTypeReaderCreator $zend_type_reader_creator,
     ) {
     }

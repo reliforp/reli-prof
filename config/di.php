@@ -24,10 +24,14 @@ use Reli\Lib\Amphp\ContextCreator;
 use Reli\Lib\Amphp\ContextCreatorInterface;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreatorInterface;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\NativeFileReader;
+use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
+use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
 use Reli\Lib\Log\StateCollector\CallerStateCollector;
@@ -35,6 +39,8 @@ use Reli\Lib\Log\StateCollector\GroupedStateCollector;
 use Reli\Lib\Log\StateCollector\ProcessStateCollector;
 use Reli\Lib\Log\StateCollector\StateCollector;
 use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Search\ProcessSearcher;
@@ -44,6 +50,9 @@ use function DI\autowire;
 
 return [
     MemoryReaderInterface::class => autowire(MemoryReader::class),
+    ProcessMemoryMapCreatorInterface::class => autowire(ProcessMemoryMapCreator::class),
+    ProcessModuleSymbolReaderCreatorInterface::class => autowire(ProcessModuleSymbolReaderCreator::class),
+    ProcessPathResolver::class => autowire(ContainerAwarePathResolver::class),
     ZendTypeReader::class => function () {
         return new ZendTypeReader(ZendTypeReader::V80);
     },
