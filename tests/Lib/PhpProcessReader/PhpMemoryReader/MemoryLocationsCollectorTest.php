@@ -25,6 +25,7 @@ use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\File\CatFileReader;
+use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -128,7 +129,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 new LinkMapLoader(
                     $memory_reader,
                     new LittleEndianReader()
-                )
+                ),
+                new ContainerAwarePathResolver(),
             ),
             ProcessMemoryMapCreator::create(),
         );
@@ -373,6 +375,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     $memory_reader,
                     new LittleEndianReader()
                 ),
+                new ContainerAwarePathResolver(),
             ),
             ProcessMemoryMapCreator::create(),
         );
@@ -524,6 +527,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     $memory_reader,
                     new LittleEndianReader()
                 ),
+                new ContainerAwarePathResolver(),
             ),
             ProcessMemoryMapCreator::create(),
         );
@@ -689,6 +693,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     $memory_reader,
                     new LittleEndianReader()
                 ),
+                new ContainerAwarePathResolver(),
             ),
             ProcessMemoryMapCreator::create(),
         );

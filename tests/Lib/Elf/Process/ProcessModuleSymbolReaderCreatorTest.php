@@ -20,6 +20,8 @@ use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
+use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
+use Reli\Lib\File\PathResolver\PassthroughPathResolver;
 use Reli\Lib\Integer\UInt64;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
@@ -67,6 +69,7 @@ class ProcessModuleSymbolReaderCreatorTest extends BaseTestCase
                 $memory_reader,
                 new LittleEndianReader(),
             ),
+            new ContainerAwarePathResolver(),
         );
         $process_memory_map = new ProcessMemoryMap([
             new ProcessMemoryArea(
@@ -149,6 +152,7 @@ class ProcessModuleSymbolReaderCreatorTest extends BaseTestCase
                 $memory_reader,
                 new LittleEndianReader(),
             ),
+            new ContainerAwarePathResolver(),
         );
         $process_memory_map = new ProcessMemoryMap([
             new ProcessMemoryArea(
@@ -189,6 +193,7 @@ class ProcessModuleSymbolReaderCreatorTest extends BaseTestCase
                 $memory_reader,
                 new LittleEndianReader(),
             ),
+            new ContainerAwarePathResolver(),
         );
         $process_memory_map = new ProcessMemoryMap([]);
 
