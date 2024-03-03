@@ -25,7 +25,7 @@ class NtFileEntry
     ) {
     }
 
-    public function isInRange(UInt64 $address)
+    public function isInRange(UInt64 $address): bool
     {
         return $address->toInt() >= $this->start->toInt()
             and $address->toInt() <= $this->end->toInt();

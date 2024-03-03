@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\CoreDumpReader;
 
+use DI\Container;
 use DI\ContainerBuilder;
 use FFI\CData;
 use Reli\Lib\ByteStream\ByteReaderInterface;
@@ -159,7 +160,11 @@ class CoreDumpReaderFactory
                             }
                             fclose($fp);
                             $cdata_buffer = \FFI::new("char[$size]");
+                            if (is_null($cdata_buffer)) {
+                                throw new \RuntimeException("failed to allocate memory");
+                            }
                             \FFI::memcpy($cdata_buffer, $data, $size);
+                            /** @var \FFI\CArray<int> */
                             return $cdata_buffer;
                         }
                     }
@@ -197,7 +202,11 @@ class CoreDumpReaderFactory
                     }
                 }
                 $cdata_buffer = \FFI::new("char[$size]");
+                if (is_null($cdata_buffer)) {
+                    throw new \RuntimeException("failed to allocate memory");
+                }
                 \FFI::memcpy($cdata_buffer, $data, $size);
+                /** @var \FFI\CArray<int> */
                 return $cdata_buffer;
             }
         };

@@ -16,6 +16,7 @@ use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
 use Noodlehaus\Config;
+use Psr\Log\LogLevel;
 use Reli\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoop;
 use Reli\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoopInterface;
 use Reli\Inspector\Output\TraceFormatter\Templated\TemplatePathResolver;
@@ -75,9 +76,13 @@ return [
     },
     LoggerInterface::class => function (Config $config) {
         $logger = new Logger('default');
+        $path = $config->get('log.path.default');
+        assert(is_string($path));
+        /** @var LogLevel::* $log_level */
+        $log_level = $config->get('log.level');
         $handler = new StreamHandler(
-            $config->get('log.path.default'),
-            Logger::toMonologLevel($config->get('log.level'))
+            $path,
+            Logger::toMonologLevel($log_level),
         );
         $handler->setFormatter(new JsonFormatter());
         $logger->pushHandler($handler);

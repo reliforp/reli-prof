@@ -44,12 +44,12 @@ class Elf64Note
         return $this->type === self::NT_FILE;
     }
 
-    public function isPrStatus()
+    public function isPrStatus(): bool
     {
         return $this->type === self::NT_PRSTATUS;
     }
 
-    public function isPrPsInfo()
+    public function isPrPsInfo(): bool
     {
         return $this->type === self::NT_PRPSINFO;
     }
