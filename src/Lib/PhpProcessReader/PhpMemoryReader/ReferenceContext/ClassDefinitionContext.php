@@ -26,4 +26,10 @@ class ClassDefinitionContext implements ReferenceContext
     {
         return ['#is_internal' => $this->is_internal];
     }
+
+    public function getMethods(): ?DefinedFunctionsContext
+    {
+        /** @var DefinedFunctionsContext|null */
+        return $this->referencing_contexts['methods'] ?? null;
+    }
 }

@@ -18,6 +18,7 @@ use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Elf\Tls\TlsFinderException;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 
 use function readlink;
@@ -26,7 +27,7 @@ final class PhpSymbolReaderCreator
 {
     public function __construct(
         private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
-        private ProcessMemoryMapCreator $process_memory_map_creator,
+        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
     ) {
     }
 

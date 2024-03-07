@@ -22,6 +22,7 @@ use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\File\CatFileReader;
+use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
@@ -62,7 +63,8 @@ class PhpVersionDetectorTest extends BaseTestCase
                 new LinkMapLoader(
                     $memory_reader,
                     new LittleEndianReader()
-                )
+                ),
+                new ContainerAwarePathResolver(),
             ),
             ProcessMemoryMapCreator::create(),
         );

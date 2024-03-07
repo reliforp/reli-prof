@@ -15,7 +15,7 @@ namespace Reli\Lib\Process\MemoryMap;
 
 use Reli\Lib\String\LineFetcher;
 
-final class ProcessMemoryMapCreator
+final class ProcessMemoryMapCreator implements ProcessMemoryMapCreatorInterface
 {
     public static function create(): self
     {

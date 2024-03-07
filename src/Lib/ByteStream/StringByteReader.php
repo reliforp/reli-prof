@@ -21,7 +21,7 @@ final class StringByteReader implements ByteReaderInterface
     use ByteReaderDisableWriteAccessTrait;
 
     public function __construct(
-        private string $source
+        public string $source
     ) {
     }
 
@@ -32,6 +32,9 @@ final class StringByteReader implements ByteReaderInterface
 
     public function offsetGet($offset): int
     {
+        if (!isset($this->source[$offset])) {
+            throw new \OutOfBoundsException();
+        }
         return ord($this->source[$offset]);
     }
 

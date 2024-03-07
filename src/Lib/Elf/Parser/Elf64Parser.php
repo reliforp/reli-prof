@@ -15,17 +15,21 @@ namespace Reli\Lib\Elf\Parser;
 
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\ByteStream\ByteReaderInterface;
+use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Structure\Elf64\Elf64DynamicStructure;
 use Reli\Lib\Elf\Structure\Elf64\Elf64DynamicStructureArray;
 use Reli\Lib\Elf\Structure\Elf64\Elf64GnuHashTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64Header;
+use Reli\Lib\Elf\Structure\Elf64\Elf64Note;
 use Reli\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderEntry;
 use Reli\Lib\Elf\Structure\Elf64\Elf64ProgramHeaderTable;
+use Reli\Lib\Elf\Structure\Elf64\Elf64PrStatus;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SectionHeaderEntry;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SectionHeaderTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64StringTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTable;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
+use Reli\Lib\Elf\Structure\Elf64\NtFileEntry;
 use Reli\Lib\Integer\UInt64;
 
 final class Elf64Parser
@@ -320,5 +324,115 @@ final class Elf64Parser
             ),
             ...$section_header_array
         );
+    }
+
+    /** @return array<Elf64Note> */
+    public function parseNote(ByteReaderInterface $data, Elf64ProgramHeaderEntry $elf64ProgramHeaderEntry): array
+    {
+        $offset = $elf64ProgramHeaderEntry->p_offset->toInt();
+        $size = $elf64ProgramHeaderEntry->p_filesz->toInt();
+        $end = $offset + $size;
+        $notes = [];
+        while ($offset < $end) {
+            $name_size = $this->integer_reader->read32($data, $offset);
+            $desc_size = $this->integer_reader->read32($data, $offset + 4);
+            $type = $this->integer_reader->read32($data, $offset + 8);
+            $name = $data->createSliceAsString($offset + 12, $name_size);
+            $aligned_desc_offset = 4 * ((int)(($offset + 12 + $name_size + 3) / 4));
+            $desc = $data->createSliceAsString($aligned_desc_offset, $desc_size);
+            $notes[] = new Elf64Note(
+                $name_size,
+                $desc_size,
+                $type,
+                $name,
+                $desc
+            );
+            $offset += 12 + $name_size + $desc_size;
+            $offset += 4 - ($offset % 4);
+        }
+        return $notes;
+    }
+
+    public function parsePrStatus(
+        Elf64Note $note
+    ): Elf64PrStatus {
+        $desc = new StringByteReader($note->desc);
+        $offset = 0;
+        $pr_si_signo = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+        $pr_si_code = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+        $pr_si_errno = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+        $pr_cursig = $this->integer_reader->read16($desc, $offset);
+        $offset += 2;
+        $offset += 2; // padding
+        $pr_sigpend = $this->integer_reader->read64($desc, $offset);
+        $offset += 8;
+        $pr_sighold = $this->integer_reader->read64($desc, $offset);
+        $offset += 8;
+        $pr_pid = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+        $pr_ppid = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+        $pr_pgrp = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+        $pr_sid = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+        $pr_utime = $this->integer_reader->read64($desc, $offset);
+        $offset += 8;
+        $pr_stime = $this->integer_reader->read64($desc, $offset);
+        $offset += 8;
+        $pr_cutime = $this->integer_reader->read64($desc, $offset);
+        $offset += 8;
+        $pr_cstime = $this->integer_reader->read64($desc, $offset);
+        $offset += 8;
+        $pr_signal = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+        $pr_exit_signal = $this->integer_reader->read32($desc, $offset);
+        $offset += 4;
+
+        return new Elf64PrStatus(
+            $pr_pid,
+            $pr_ppid
+        );
+    }
+
+    /** @return array<NtFileEntry> */
+    public function parseNtFile(Elf64Note $note): array
+    {
+        $desc = new StringByteReader($note->desc);
+        $offset = 0;
+        $count = $this->integer_reader->read64($desc, $offset);
+        $offset += 8;
+        $page_size = $this->integer_reader->read64($desc, $offset);
+        $offset += 8;
+        $string_table_offset = (2 + 3 * $count->toInt()) * 8;
+        $file_entries = [];
+        for ($i = 0; $i < $count->toInt(); $i++) {
+            $start = $this->integer_reader->read64($desc, $offset);
+            $offset += 8;
+            $end = $this->integer_reader->read64($desc, $offset);
+            $offset += 8;
+            $file_offset = $this->integer_reader->read64($desc, $offset);
+            $offset += 8;
+            $name_length = 0;
+            $null_terminator_searching_offset = $string_table_offset;
+            while ($desc[$null_terminator_searching_offset++] !== 0) {
+                $name_length++;
+            }
+            $file_name = $desc->createSliceAsString(
+                $string_table_offset,
+                $name_length,
+            );
+            $string_table_offset += $name_length + 1;
+            $file_entries[] = new NtFileEntry(
+                $file_name,
+                $start,
+                $end,
+                $file_offset
+            );
+        }
+        return $file_entries;
     }
 }

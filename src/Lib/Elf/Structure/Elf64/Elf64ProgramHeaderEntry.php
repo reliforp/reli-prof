@@ -44,6 +44,21 @@ final class Elf64ProgramHeaderEntry
     ) {
     }
 
+    public function isReadable(): bool
+    {
+        return ($this->p_flags & self::PF_R) !== 0;
+    }
+
+    public function isWritable(): bool
+    {
+        return ($this->p_flags & self::PF_W) !== 0;
+    }
+
+    public function isExecutable(): bool
+    {
+        return ($this->p_flags & self::PF_X) !== 0;
+    }
+
     public function isLoad(): bool
     {
         return $this->p_type === self::PT_LOAD;
@@ -52,5 +67,10 @@ final class Elf64ProgramHeaderEntry
     public function isDynamic(): bool
     {
         return $this->p_type === self::PT_DYNAMIC;
+    }
+
+    public function isNote(): bool
+    {
+        return $this->p_type === self::PT_NOTE;
     }
 }

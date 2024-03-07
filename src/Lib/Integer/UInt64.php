@@ -32,6 +32,11 @@ final class UInt64
         $this->packed_value = $this->pack($hi, $lo);
     }
 
+    public static function fromInt(int $i): self
+    {
+        return new self($i >> 32, $i & 0xffffffff);
+    }
+
     private function pack(int $hi, int $lo): string
     {
         return pack('ll', $lo, $hi);

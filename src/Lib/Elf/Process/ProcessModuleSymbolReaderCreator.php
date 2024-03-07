@@ -20,11 +20,12 @@ use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use Reli\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use Reli\Lib\Elf\Tls\TlsFinderException;
 use Reli\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
+use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
-final class ProcessModuleSymbolReaderCreator
+final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReaderCreatorInterface
 {
     public function __construct(
         private SymbolResolverCreatorInterface $symbol_resolver_creator,
@@ -32,6 +33,7 @@ final class ProcessModuleSymbolReaderCreator
         private PerBinarySymbolCacheRetriever $per_binary_symbol_cache_retriever,
         private IntegerByteSequenceReader $integer_reader,
         private LinkMapLoader $link_map_loader,
+        private ProcessPathResolver $process_path_resolver,
     ) {
     }
 
@@ -50,7 +52,7 @@ final class ProcessModuleSymbolReaderCreator
         $module_memory_map = new ProcessModuleMemoryMap($memory_areas);
 
         $module_name = $module_memory_map->getModuleName();
-        $path = $binary_path ?? $this->createContainerAwarePath($pid, $module_name);
+        $path = $binary_path ?? $this->process_path_resolver->resolve($pid, $module_name);
 
         $symbol_resolver = new Elf64CachedSymbolResolver(
             new Elf64LazyParseSymbolResolver(
@@ -92,10 +94,5 @@ final class ProcessModuleSymbolReaderCreator
             $this->integer_reader,
             $tls_block_address
         );
-    }
-
-    private function createContainerAwarePath(int $pid, string $path): string
-    {
-        return "/proc/{$pid}/root{$path}";
     }
 }

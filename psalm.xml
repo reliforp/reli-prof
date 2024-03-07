@@ -21,6 +21,7 @@
         </PossiblyNullArgument>
     </issueHandlers>
     <stubs>
+        <file name="tools/stubs/container.php"/>
         <file name="tools/stubs/ffi/ffi.php"/>
         <file name="tools/stubs/ffi/libc.php"/>
         <file name="tools/stubs/ffi/scalar.php"/>
