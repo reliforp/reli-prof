@@ -187,12 +187,8 @@ final class ZendTypeReader
                 $map_ptr_base + $map_ptr,
                 8,
             );
-            $address_candidate = $dereferencer->deref($pointer)->value;
-        }
-        if ($address_candidate === 0) {
-            return 0;
-        }
-        if ($this->isPhpVersionLowerThan(ZendTypeReader::V82)) {
+            return $dereferencer->deref($pointer)->value;
+        } elseif ($this->isPhpVersionLowerThan(ZendTypeReader::V82)) {
             $pointer = new Pointer(
                 RawInt64::class,
                 $address_candidate,
