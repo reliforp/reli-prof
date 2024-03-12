@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature request
+    url: https://github.com/reliforp/reli-prof/discussions
+    about: 'For ideas or feature requests, start a new discussion'
+  - name: Support Questions & Other
+    url: https://github.com/reliforp/reli-prof/discussions
+    about: 'If you have a question or need help using Reli use discussion:'
