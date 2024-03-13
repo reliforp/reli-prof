@@ -35,7 +35,7 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Cache Docker images
-        uses: ScribeMD/docker-cache@0.3.7
+        uses: ScribeMD/docker-cache@0.4.0
         with:
           key: docker-${{ runner.os }}-${{ hashFiles('Dockerfile-dev','tests/TargetPhpVmProvider.php') }}
 
