@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a0d979c28bf90873ad251098506cfb13",
+    "content-hash": "610b092d66ecad34d226e199d1cc4bb0",
     "packages": [
         {
             "name": "amphp/amp",
@@ -89,16 +89,16 @@
         },
         {
             "name": "amphp/byte-stream",
-            "version": "v2.1.0",
+            "version": "v2.1.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/byte-stream.git",
-                "reference": "0a4b0e80dad92c75e6131f8ad253919211540338"
+                "reference": "daa00f2efdbd71565bf64ffefa89e37542addf93"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/byte-stream/zipball/0a4b0e80dad92c75e6131f8ad253919211540338",
-                "reference": "0a4b0e80dad92c75e6131f8ad253919211540338",
+                "url": "https://api.github.com/repos/amphp/byte-stream/zipball/daa00f2efdbd71565bf64ffefa89e37542addf93",
+                "reference": "daa00f2efdbd71565bf64ffefa89e37542addf93",
                 "shasum": ""
             },
             "require": {
@@ -114,7 +114,7 @@
                 "amphp/php-cs-fixer-config": "^2",
                 "amphp/phpunit-util": "^3",
                 "phpunit/phpunit": "^9",
-                "psalm/phar": "^5.4"
+                "psalm/phar": "5.22.1"
             },
             "type": "library",
             "autoload": {
@@ -152,7 +152,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/byte-stream/issues",
-                "source": "https://github.com/amphp/byte-stream/tree/v2.1.0"
+                "source": "https://github.com/amphp/byte-stream/tree/v2.1.1"
             },
             "funding": [
                 {
@@ -160,7 +160,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2023-11-19T14:34:16+00:00"
+            "time": "2024-02-17T04:49:38+00:00"
         },
         {
             "name": "amphp/cache",
@@ -317,16 +317,16 @@
         },
         {
             "name": "amphp/parallel",
-            "version": "v2.2.6",
+            "version": "v2.2.7",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/parallel.git",
-                "reference": "5aeaad20297507cc754859236720501b54306eba"
+                "reference": "ffda869c33c30627b6eb5c25f096882d885681dc"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/parallel/zipball/5aeaad20297507cc754859236720501b54306eba",
-                "reference": "5aeaad20297507cc754859236720501b54306eba",
+                "url": "https://api.github.com/repos/amphp/parallel/zipball/ffda869c33c30627b6eb5c25f096882d885681dc",
+                "reference": "ffda869c33c30627b6eb5c25f096882d885681dc",
                 "shasum": ""
             },
             "require": {
@@ -388,7 +388,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/parallel/issues",
-                "source": "https://github.com/amphp/parallel/tree/v2.2.6"
+                "source": "https://github.com/amphp/parallel/tree/v2.2.7"
             },
             "funding": [
                 {
@@ -396,7 +396,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2024-01-07T18:12:13+00:00"
+            "time": "2024-03-16T16:15:46+00:00"
         },
         {
             "name": "amphp/parser",
@@ -462,16 +462,16 @@
         },
         {
             "name": "amphp/pipeline",
-            "version": "v1.1.0",
+            "version": "v1.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/pipeline.git",
-                "reference": "8a0ecc281bb0932d6b4a786453aff18c55756e63"
+                "reference": "f1c2ce35d27ae86ead018adb803eccca7421dd9b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/pipeline/zipball/8a0ecc281bb0932d6b4a786453aff18c55756e63",
-                "reference": "8a0ecc281bb0932d6b4a786453aff18c55756e63",
+                "url": "https://api.github.com/repos/amphp/pipeline/zipball/f1c2ce35d27ae86ead018adb803eccca7421dd9b",
+                "reference": "f1c2ce35d27ae86ead018adb803eccca7421dd9b",
                 "shasum": ""
             },
             "require": {
@@ -517,7 +517,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/pipeline/issues",
-                "source": "https://github.com/amphp/pipeline/tree/v1.1.0"
+                "source": "https://github.com/amphp/pipeline/tree/v1.2.0"
             },
             "funding": [
                 {
@@ -525,20 +525,20 @@
                     "type": "github"
                 }
             ],
-            "time": "2023-12-23T04:34:28+00:00"
+            "time": "2024-03-10T14:48:16+00:00"
         },
         {
             "name": "amphp/process",
-            "version": "v2.0.1",
+            "version": "v2.0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/process.git",
-                "reference": "a65d3bc1f36ef12d44df42a68f0f0643183f1052"
+                "reference": "a79dc87100be857db2c4bbfd5369585a6d1e658c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/process/zipball/a65d3bc1f36ef12d44df42a68f0f0643183f1052",
-                "reference": "a65d3bc1f36ef12d44df42a68f0f0643183f1052",
+                "url": "https://api.github.com/repos/amphp/process/zipball/a79dc87100be857db2c4bbfd5369585a6d1e658c",
+                "reference": "a79dc87100be857db2c4bbfd5369585a6d1e658c",
                 "shasum": ""
             },
             "require": {
@@ -585,7 +585,7 @@
             "homepage": "https://amphp.org/process",
             "support": {
                 "issues": "https://github.com/amphp/process/issues",
-                "source": "https://github.com/amphp/process/tree/v2.0.1"
+                "source": "https://github.com/amphp/process/tree/v2.0.2"
             },
             "funding": [
                 {
@@ -593,7 +593,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2023-01-15T16:00:57+00:00"
+            "time": "2024-02-13T20:38:21+00:00"
         },
         {
             "name": "amphp/serialization",
@@ -655,16 +655,16 @@
         },
         {
             "name": "amphp/socket",
-            "version": "v2.2.3",
+            "version": "v2.2.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/socket.git",
-                "reference": "40c80bdc67a9f975ecb5f4083e3c84ef9f23eace"
+                "reference": "4223324c627cc26d44800630411e64856d3344bc"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/socket/zipball/40c80bdc67a9f975ecb5f4083e3c84ef9f23eace",
-                "reference": "40c80bdc67a9f975ecb5f4083e3c84ef9f23eace",
+                "url": "https://api.github.com/repos/amphp/socket/zipball/4223324c627cc26d44800630411e64856d3344bc",
+                "reference": "4223324c627cc26d44800630411e64856d3344bc",
                 "shasum": ""
             },
             "require": {
@@ -727,7 +727,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/socket/issues",
-                "source": "https://github.com/amphp/socket/tree/v2.2.3"
+                "source": "https://github.com/amphp/socket/tree/v2.2.4"
             },
             "funding": [
                 {
@@ -735,20 +735,20 @@
                     "type": "github"
                 }
             ],
-            "time": "2024-02-13T21:03:09+00:00"
+            "time": "2024-02-28T15:56:06+00:00"
         },
         {
             "name": "amphp/sync",
-            "version": "v2.1.0",
+            "version": "v2.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/sync.git",
-                "reference": "50ddc7392cc8034b3e4798cef3cc90d3f4c0441c"
+                "reference": "375ef5b54a0d12c38e12728dde05a55e30f2fbec"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/sync/zipball/50ddc7392cc8034b3e4798cef3cc90d3f4c0441c",
-                "reference": "50ddc7392cc8034b3e4798cef3cc90d3f4c0441c",
+                "url": "https://api.github.com/repos/amphp/sync/zipball/375ef5b54a0d12c38e12728dde05a55e30f2fbec",
+                "reference": "375ef5b54a0d12c38e12728dde05a55e30f2fbec",
                 "shasum": ""
             },
             "require": {
@@ -762,7 +762,7 @@
                 "amphp/php-cs-fixer-config": "^2",
                 "amphp/phpunit-util": "^3",
                 "phpunit/phpunit": "^9",
-                "psalm/phar": "^5.4"
+                "psalm/phar": "5.23"
             },
             "type": "library",
             "autoload": {
@@ -802,7 +802,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/sync/issues",
-                "source": "https://github.com/amphp/sync/tree/v2.1.0"
+                "source": "https://github.com/amphp/sync/tree/v2.2.0"
             },
             "funding": [
                 {
@@ -810,7 +810,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2023-08-19T13:53:40+00:00"
+            "time": "2024-03-12T01:00:01+00:00"
         },
         {
             "name": "amphp/windows-registry",
