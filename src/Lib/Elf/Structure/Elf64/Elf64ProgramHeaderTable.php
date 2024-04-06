@@ -82,4 +82,22 @@ final class Elf64ProgramHeaderTable
         }
         return $result;
     }
+
+    /** @return Elf64ProgramHeaderEntry[] */
+    public function findTls(): array
+    {
+        $result = [];
+        foreach ($this->entries as $entry) {
+            if ($entry->isTls()) {
+                $result[] = $entry;
+            }
+        }
+        return $result;
+    }
+
+    /** @return Elf64ProgramHeaderEntry[] */
+    public function getAllEntries(): array
+    {
+        return $this->entries;
+    }
 }
