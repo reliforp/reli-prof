@@ -68,4 +68,9 @@ class ZvalU1
             default => 'UNKNOWN',
         };
     }
+
+    public function isError(): bool
+    {
+        return $this->type === 15;
+    }
 }
