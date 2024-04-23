@@ -39,9 +39,6 @@ final class CoreDumpCommand extends Command
     public function __construct(
         private MemoryProfilerSettingsFromConsoleInput $memory_profiler_settings_from_console_input,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
-        private PhpGlobalsFinder $php_globals_finder,
-        private PhpVersionDetector $php_version_detector,
-        private MemoryLocationsCollector $memory_locations_collector,
         private CoreDumpReaderFactory $core_dump_reader_factory,
     ) {
         parent::__construct();
@@ -65,6 +62,12 @@ final class CoreDumpCommand extends Command
             InputArgument::REQUIRED,
             'path to the core file'
         );
+        $this->addOption(
+            'dependency-root',
+            'r',
+            InputOption::VALUE_REQUIRED,
+            'dependency root directory'
+        );
     }
 
     public function execute(InputInterface $input, OutputInterface $output): int
@@ -80,9 +83,13 @@ final class CoreDumpCommand extends Command
         if (is_null($core_file)) {
             throw new \RuntimeException('core-file is not specified');
         }
-        $process_specifier = new ProcessSpecifier($pid);
+        $path_mapping = [];
+        $dependency_root = NullableCast::toString($input->getOption('dependency-root'));
+        if (!is_null($dependency_root)) {
+            $path_mapping['/'] = $dependency_root;
+        }
 
-        $core_dump_reader = $this->core_dump_reader_factory->createFromPath($core_file);
+        $core_dump_reader = $this->core_dump_reader_factory->createFromPath($core_file, $path_mapping);
         $core_dump_reader->read(
             $pid,
             $target_php_settings,
