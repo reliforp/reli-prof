@@ -21,7 +21,7 @@ use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Structure\Elf64\Elf64Note;
 use Reli\Lib\Elf\Structure\Elf64\NtFileEntry;
-use Reli\Lib\File\PathResolver\PassthroughPathResolver;
+use Reli\Lib\File\PathResolver\MappedPathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Integer\UInt64;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -48,7 +48,8 @@ class CoreDumpReaderFactory
     ) {
     }
 
-    public function createFromPath(string $file_path): CoreDumpReader
+    /** @param array<string, string> $path_mapping */
+    public function createFromPath(string $file_path, array $path_mapping): CoreDumpReader
     {
         $contents = file_get_contents($file_path);
         if ($contents === false) {
@@ -228,7 +229,8 @@ class CoreDumpReaderFactory
                             return $this->process_memory_map;
                         }
                     },
-                ProcessPathResolver::class => autowire(PassthroughPathResolver::class),
+                ProcessPathResolver::class => autowire(MappedPathResolver::class)
+                    ->constructorParameter('path_map', $path_mapping)
             ])
             ->build()
         ;
