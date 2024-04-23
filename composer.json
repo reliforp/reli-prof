@@ -28,7 +28,7 @@
     "amphp/amp": "3.0.1",
     "hassankhan/config": "3.1.0",
     "sj-i/php-cast": "1.0.0",
-    "monolog/monolog": "3.5.0",
+    "monolog/monolog": "3.6.0",
     "webmozart/assert": "1.11.0"
   },
   "require-dev": {
