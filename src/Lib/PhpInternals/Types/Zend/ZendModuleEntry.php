@@ -80,4 +80,11 @@ final class ZendModuleEntry implements Dereferencable
     {
         return $this->pointer;
     }
+
+
+
+	public function isZts(): bool
+	{
+		return $this->zts;
+	}
 }

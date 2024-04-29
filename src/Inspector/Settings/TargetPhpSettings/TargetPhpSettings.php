@@ -33,7 +33,8 @@ final class TargetPhpSettings
         public string $zts_globals_regex = self::ZTS_GLOBALS_REGEX_DEFAULT,
         public string $php_version = self::TARGET_PHP_VERSION_DEFAULT,
         public ?string $php_path = null,
-        public ?string $libpthread_path = null
+        public ?string $libpthread_path = null,
+		public bool $zts = false,
     ) {
     }
 

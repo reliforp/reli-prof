@@ -53,6 +53,9 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
 
         $module_name = $module_memory_map->getModuleName();
         $path = $binary_path ?? $this->process_path_resolver->resolve($pid, $module_name);
+		if (file_exists($path) === false) {
+			return null;
+		}
 
         $symbol_resolver = new Elf64CachedSymbolResolver(
             new Elf64LazyParseSymbolResolver(

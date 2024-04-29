@@ -75,16 +75,19 @@ class PhpVersionDetector
             $process_specifier,
             $target_php_settings,
         );
-        $version = null;
+		$version_and_zts = null;
         if (!is_null($module_registry_address)) {
-            $version = $this->detectPhpVersion($process_specifier->pid, $module_registry_address);
+            $version_and_zts = $this->detectPhpVersion($process_specifier->pid, $module_registry_address);
         }
 
-        if (is_null($version)) {
+        if (is_null($version_and_zts)) {
             /** @var value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $version */
             $version = 'v' . PHP_MAJOR_VERSION . PHP_MINOR_VERSION;
             Assert::true(ZendTypeReader::isSupported($version));
-        }
+			$is_zts = false;
+        } else {
+			[$version, $is_zts] = $version_and_zts;
+		}
 
         return new TargetPhpSettings(
             php_regex: $target_php_settings->php_regex,
@@ -93,14 +96,15 @@ class PhpVersionDetector
             php_version: $version,
             php_path: $target_php_settings->php_path,
             libpthread_path: $target_php_settings->libpthread_path,
+			zts: $is_zts,
         );
     }
 
-    /** @return value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|null */
+    /** @return array{value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>, bool}|null */
     public function detectPhpVersion(
         int $pid,
         int $module_registry_address
-    ): ?string {
+    ): ?array {
         $fake_php_version = ZendTypeReader::V70;
         $dereferencer = $this->getDereferencer($pid, $fake_php_version);
         $module_registry = $this->getModuleRegistry(
@@ -127,7 +131,7 @@ class PhpVersionDetector
         $result_string = 'v' . str_replace('.', '', $version);
         if (ZendTypeReader::isSupported($result_string)) {
             /** @var value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> */
-            return $result_string;
+            return [$result_string, $basic_module_entry->isZts()];
         }
         return null;
     }

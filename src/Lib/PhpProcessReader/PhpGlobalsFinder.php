@@ -44,6 +44,9 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
+		if (!$target_php_settings->zts) {
+			return null;
+		}
         $tsrm_ls_cache_cdata = $this->getSymbolReader(
             $process_specifier,
             $target_php_settings
