@@ -53,7 +53,11 @@ class PhpZendMemoryManagerChunkFinder
                     $zend_mm_chunk->isInRange($execute_data_address)
                     and !is_null($zend_mm_chunk->heap)
                 ) {
-                    $heap = $dereferencer->deref($zend_mm_chunk->heap);
+                    try {
+                        $heap = $dereferencer->deref($zend_mm_chunk->heap);
+                    } catch (\Throwable $e) {
+                        continue;
+                    }
                     return $heap->main_chunk?->address;
                 }
             }
