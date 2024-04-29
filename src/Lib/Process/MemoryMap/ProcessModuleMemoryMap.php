@@ -27,12 +27,16 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
 
     public function getBaseAddress(): int
     {
+        $base_area = null;
         if (!isset($this->base_address)) {
             $base_address = PHP_INT_MAX;
             foreach ($this->memory_areas as $memory_area) {
-                $base_address = min($base_address, hexdec($memory_area->begin));
+                if ($base_address > hexdec($memory_area->begin)) {
+                    $base_address = hexdec($memory_area->begin);
+                    $base_area = $memory_area;
+                }
             }
-            $this->base_address = $base_address;
+            $this->base_address = hexdec($base_area->begin) - hexdec($base_area->file_offset);
         }
         return $this->base_address;
     }
