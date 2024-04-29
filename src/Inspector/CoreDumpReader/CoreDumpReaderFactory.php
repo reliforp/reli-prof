@@ -114,7 +114,7 @@ class CoreDumpReaderFactory
                 }
             }
             $file_path = $corresponding_file?->name ?? '';
-            $file_inode = $file_path === '' ? 0 : fileinode($file_path);
+            $file_inode = $file_path === '' ? 0 : (file_exists($file_path) ? fileinode($file_path) : 0);
 
             $memory_areas[] = new ProcessMemoryArea(
                 dechex($load_segment->p_vaddr->toInt()),
@@ -131,13 +131,20 @@ class CoreDumpReaderFactory
                 $file_path,
             );
         }
+        $path_resolver = new MappedPathResolver($path_mapping);
         $process_memory_map = new ProcessMemoryMap($memory_areas);
-        $memory_reader = new class ($binary, $process_memory_map, $file_maps) implements MemoryReaderInterface {
+        $memory_reader = new class (
+            $binary,
+            $process_memory_map,
+            $file_maps,
+            $path_resolver
+        ) implements MemoryReaderInterface {
             /** @param NtFileEntry[] $file_maps */
             public function __construct(
                 private ByteReaderInterface $core_dump_file,
                 private ProcessMemoryMap $process_memory_map,
                 private array $file_maps,
+                private MappedPathResolver $path_resolver,
             ) {
             }
             public function read(int $pid, int $remote_address, int $size): CData
@@ -146,7 +153,7 @@ class CoreDumpReaderFactory
                 if ($memory_areas === []) {
                     foreach ($this->file_maps as $file_map) {
                         if ($file_map->isInRange(UInt64::fromInt($remote_address))) {
-                            $fp = fopen($file_map->name, 'rb');
+                            $fp = fopen($this->path_resolver->resolve($pid, $file_map->name), 'rb');
                             if ($fp === false) {
                                 throw new \RuntimeException("failed to open file: $file_map->name");
                             }
