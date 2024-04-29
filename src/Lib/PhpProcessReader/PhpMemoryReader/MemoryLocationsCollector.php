@@ -930,20 +930,24 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ArrayHeaderContext {
         $array_header_location = ZendArrayMemoryLocation::fromZendArray($array);
+        $memory_locations->add($array_header_location);
+        $array_header_context = $context_pools
+            ->array_context_pool
+            ->getContextForLocation($array_header_location)
+        ;
+        if (is_null($array->arData)) {
+            return $array_header_context;
+        }
+
         $array_table_location = ZendArrayTableMemoryLocation::fromZendArray($array);
         $array_table_overhead_location = ZendArrayTableOverheadMemoryLocation::fromZendArrayAndUsedLocation(
             $array,
             $array_table_location
         );
 
-        $memory_locations->add($array_header_location);
         $memory_locations->add($array_table_location);
         $memory_locations->add($array_table_overhead_location);
 
-        $array_header_context = $context_pools
-            ->array_context_pool
-            ->getContextForLocation($array_header_location)
-        ;
         $array_context = new ArrayElementsContext($array_table_location);
         $overhead_context = new ArrayPossibleOverheadContext($array_table_overhead_location);
 
