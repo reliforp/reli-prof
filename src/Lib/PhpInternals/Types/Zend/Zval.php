@@ -92,6 +92,11 @@ class Zval implements Dereferencable
         return $this->getType() === 'IS_NULL';
     }
 
+    public function isError(): bool
+    {
+        return $this->u1->isError();
+    }
+
     public function isScalar(): bool
     {
         return $this->isLong() || $this->isDouble() || $this->isBool() || $this->isNull();

@@ -31,7 +31,8 @@ class PhpGlobalsFinder
     public function __construct(
         private PhpSymbolReaderCreator $php_symbol_reader_creator,
         private IntegerByteSequenceReader $integer_reader,
-        private MemoryReaderInterface $memory_reader
+        private MemoryReaderInterface $memory_reader,
+        private PhpTsrmLsCacheFinder $tsrm_ls_cache_finder,
     ) {
     }
 
@@ -58,7 +59,7 @@ class PhpGlobalsFinder
             }
             return $tsrm_ls_cache_address;
         }
-        return null;
+        return $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
     }
 
     /**
