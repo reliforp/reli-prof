@@ -23,7 +23,7 @@
     "ext-json": "*",
     "ext-pcntl": "*",
     "symfony/console": "6.3.8",
-    "php-di/php-di": "7.0.6",
+    "php-di/php-di": "7.0.7",
     "amphp/parallel": "2.2.9",
     "amphp/amp": "3.0.2",
     "hassankhan/config": "3.1.0",
