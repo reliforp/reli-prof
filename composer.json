@@ -22,7 +22,7 @@
     "ext-filter": "*",
     "ext-json": "*",
     "ext-pcntl": "*",
-    "symfony/console": "6.3.8",
+    "symfony/console": "6.4.12",
     "php-di/php-di": "7.0.6",
     "amphp/parallel": "2.2.9",
     "amphp/amp": "3.0.2",
