@@ -22,6 +22,7 @@ use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
@@ -81,6 +82,7 @@ class PhpTsrmLsCacheFinder
         return [$tls_block_address, $pt_tls->p_memsz->toInt()];
     }
 
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function findByBruteForcing(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
