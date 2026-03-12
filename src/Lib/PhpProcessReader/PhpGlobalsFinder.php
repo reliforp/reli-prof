@@ -62,7 +62,11 @@ class PhpGlobalsFinder
             return $tsrm_ls_cache_address;
         }
         assert($target_php_settings->isDecided());
-        return $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
+        try {
+            return $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
