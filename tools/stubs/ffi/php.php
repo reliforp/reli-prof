@@ -18,6 +18,8 @@ use Reli\Lib\Process\Pointer\Pointer;
 
 class zend_executor_globals extends CData
 {
+    public zval $uninitialized_zval;
+    public zval $error_zval;
     public ?CPointer $current_execute_data;
     public ?CPointer $function_table;
     public ?CPointer $class_table;

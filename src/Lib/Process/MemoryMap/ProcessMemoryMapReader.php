@@ -13,10 +13,16 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryMap;
 
+use Reli\Lib\File\FileReaderInterface;
+
 final class ProcessMemoryMapReader
 {
+    public function __construct(
+        private FileReaderInterface $file_reader,
+    ) {
+    }
     public function read(int $process_id): string
     {
-        return file_get_contents("/proc/{$process_id}/maps");
+        return $this->file_reader->readAll("/proc/{$process_id}/maps");
     }
 }

@@ -126,6 +126,11 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
         return $root_link_map_address;
     }
 
+    public function getTlsBlockAddress(): ?int
+    {
+        return $this->tls_block_address;
+    }
+
     public function isAllSymbolResolvable(): bool
     {
         return $this->symbol_resolver instanceof Elf64AllSymbolResolver;

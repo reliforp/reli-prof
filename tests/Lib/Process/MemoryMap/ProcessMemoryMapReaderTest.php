@@ -14,12 +14,13 @@ declare(strict_types=1);
 namespace Reli\Lib\Process\MemoryMap;
 
 use Reli\BaseTestCase;
+use Reli\Lib\File\CatFileReader;
 
 class ProcessMemoryMapReaderTest extends BaseTestCase
 {
     public function testRead()
     {
-        $result = (new ProcessMemoryMapReader())->read(getmypid());
+        $result = (new ProcessMemoryMapReader(new CatFileReader()))->read(getmypid());
         $first_line = strtok($result, "\n");
         $this->assertMatchesRegularExpression(
             // phpcs:ignore Generic.Files.LineLength.TooLong

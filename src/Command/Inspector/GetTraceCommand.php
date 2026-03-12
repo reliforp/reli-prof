@@ -125,7 +125,6 @@ final class GetTraceCommand extends Command
                 $trace_output,
                 $trace_cache,
             ): bool {
-                assert($target_php_settings->isDecided());
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
                 }

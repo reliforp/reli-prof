@@ -24,6 +24,7 @@ final class Elf64ProgramHeaderEntry
     public const PT_NOTE = 4;
     public const PT_SHLIB = 5;
     public const PT_PHDR = 6;
+    public const PT_TLS = 7;
     public const PT_LOPROC = 0x70000000;
     public const PT_HIPROC = 0x7fffffff;
 
@@ -72,5 +73,10 @@ final class Elf64ProgramHeaderEntry
     public function isNote(): bool
     {
         return $this->p_type === self::PT_NOTE;
+    }
+
+    public function isTls(): bool
+    {
+        return $this->p_type === self::PT_TLS;
     }
 }

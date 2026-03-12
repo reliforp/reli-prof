@@ -20,6 +20,12 @@ use Reli\Lib\Process\Pointer\Pointer;
 
 final class ZendExecutorGlobals implements Dereferencable
 {
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public Zval $uninitialized_zval;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public Zval $error_zval;
+
     /** @var Pointer<ZendExecuteData>|null */
     public ?Pointer $current_execute_data;
 
@@ -61,6 +67,8 @@ final class ZendExecutorGlobals implements Dereferencable
         private CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
+        unset($this->uninitialized_zval);
+        unset($this->error_zval);
         unset($this->current_execute_data);
         unset($this->function_table);
         unset($this->class_table);
@@ -75,6 +83,32 @@ final class ZendExecutorGlobals implements Dereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
+            'uninitialized_zval' => $this->uninitialized_zval = new Zval(
+                new CastedCData(
+                    $this->casted_cdata->casted->uninitialized_zval,
+                    $this->casted_cdata->casted->uninitialized_zval
+                ),
+                new Pointer(
+                    Zval::class,
+                    $this->pointer->address
+                    +
+                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('uninitialized_zval'),
+                    \FFI::sizeof($this->casted_cdata->casted->uninitialized_zval),
+                ),
+            ),
+            'error_zval' => $this->error_zval = new Zval(
+                new CastedCData(
+                    $this->casted_cdata->casted->error_zval,
+                    $this->casted_cdata->casted->error_zval
+                ),
+                new Pointer(
+                    Zval::class,
+                    $this->pointer->address
+                    +
+                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('error_zval'),
+                    \FFI::sizeof($this->casted_cdata->casted->error_zval),
+                ),
+            ),
             'current_execute_data' => $this->casted_cdata->casted->current_execute_data !== null
                 ? Pointer::fromCData(
                     ZendExecuteData::class,

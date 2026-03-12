@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryMap;
 
+use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\String\LineFetcher;
 
 final class ProcessMemoryMapCreator implements ProcessMemoryMapCreatorInterface
@@ -20,7 +21,7 @@ final class ProcessMemoryMapCreator implements ProcessMemoryMapCreatorInterface
     public static function create(): self
     {
         return new self(
-            new ProcessMemoryMapReader(),
+            new ProcessMemoryMapReader(new NativeFileReader()),
             new ProcessMemoryMapParser(new LineFetcher())
         );
     }
