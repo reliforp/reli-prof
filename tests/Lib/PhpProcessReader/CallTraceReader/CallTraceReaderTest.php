@@ -104,14 +104,13 @@ class CallTraceReaderTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
+        $tsrm_ls_cache_finder = \Mockery::mock(PhpTsrmLsCacheFinder::class);
+        $tsrm_ls_cache_finder->shouldReceive('findByBruteForcing')->andReturnNull();
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
             new MemoryReader(),
-            \Mockery::mock(PhpTsrmLsCacheFinder::class)
-                ->shouldReceive('findByBruteForcing')
-                ->andReturnNull()
-                ->getMock(),
+            $tsrm_ls_cache_finder,
             \Mockery::mock(TsrmGlobalsResolver::class),
         );
 
