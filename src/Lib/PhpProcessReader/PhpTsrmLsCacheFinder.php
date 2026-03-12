@@ -46,11 +46,11 @@ class PhpTsrmLsCacheFinder
     ) {
     }
 
-    /** @return array{int, int} */
+    /** @return array{int, int}|null */
     public function resolveTlsBlock(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
-    ): array {
+    ): ?array {
         $php_symbol_reader = $this->php_symbol_reader_creator->create(
             $process_specifier->pid,
             $target_php_settings->php_regex,
@@ -61,7 +61,7 @@ class PhpTsrmLsCacheFinder
 
         $tls_block_address = $php_symbol_reader->getTlsBlockAddress();
         if (is_null($tls_block_address)) {
-            throw new \RuntimeException('TLS block address not found');
+            return null;
         }
 
         $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap($process_specifier->pid);
@@ -87,10 +87,14 @@ class PhpTsrmLsCacheFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
-        [$tls_block_address, $tls_block_size] = $this->resolveTlsBlock(
+        $tls_block = $this->resolveTlsBlock(
             $process_specifier,
             $target_php_settings,
         );
+        if (is_null($tls_block)) {
+            return null;
+        }
+        [$tls_block_address, $tls_block_size] = $tls_block;
         for ($current = $tls_block_address; $current < $tls_block_address + $tls_block_size; $current += 8) {
             $tsrm_ls_cache_candidate = $this->memory_reader->read(
                 $process_specifier->pid,

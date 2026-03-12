@@ -104,12 +104,30 @@ class CallTraceReaderTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader(),
-            new MemoryReader(),
-            \Mockery::mock(PhpTsrmLsCacheFinder::class),
-            \Mockery::mock(TsrmGlobalsResolver::class),
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
         );
 
         /** @var int $child_status['pid'] */
