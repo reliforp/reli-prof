@@ -38,6 +38,7 @@ class PhpGlobalsFinder
     }
 
     /**
+     * @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException

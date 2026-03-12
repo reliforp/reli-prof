@@ -108,6 +108,7 @@ class PhpTsrmLsCacheFinder
         return null;
     }
 
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function validateCandidate(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
