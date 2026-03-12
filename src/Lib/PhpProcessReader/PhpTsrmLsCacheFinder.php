@@ -116,10 +116,6 @@ class PhpTsrmLsCacheFinder
             return false;
         }
 
-        if (!$target_php_settings->isDecided()) {
-            return false;
-        }
-
         try {
             $executor_globals_address = $this->tsrm_globals_resolver->resolveGlobalsAddress(
                 $process_specifier,
@@ -128,6 +124,9 @@ class PhpTsrmLsCacheFinder
                 $tsrm_ls_cache,
             );
 
+            if (!$target_php_settings->isDecided()) {
+                return false;
+            }
             $zend_type_reader = $this->zend_type_reader_creator->create($target_php_settings->php_version);
             $eg_pointer = new Pointer(
                 ZendExecutorGlobals::class,
