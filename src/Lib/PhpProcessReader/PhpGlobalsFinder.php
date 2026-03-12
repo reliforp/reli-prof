@@ -47,6 +47,7 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
+        assert($target_php_settings->isDecided());
         $tsrm_ls_cache_cdata = $this->getSymbolReader(
             $process_specifier,
             $target_php_settings
@@ -135,6 +136,7 @@ class PhpGlobalsFinder
         TargetPhpSettings $target_php_settings,
         string $symbol_name,
     ): int {
+        assert($target_php_settings->isDecided());
         $tsrm_ls_cache = $this->findTsrmLsCache($process_specifier, $target_php_settings);
         if (isset($tsrm_ls_cache)) {
             return $this->tsrm_globals_resolver->resolveGlobalsAddress(
@@ -157,6 +159,7 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): int {
+        assert($target_php_settings->isDecided());
         return $this->findGlobals(
             $process_specifier,
             $target_php_settings,

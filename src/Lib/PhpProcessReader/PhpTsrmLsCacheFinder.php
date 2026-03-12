@@ -87,6 +87,7 @@ class PhpTsrmLsCacheFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
+        assert($target_php_settings->isDecided());
         [$tls_block_address, $tls_block_size] = $this->resolveTlsBlock(
             $process_specifier,
             $target_php_settings,
@@ -114,6 +115,7 @@ class PhpTsrmLsCacheFinder
         TargetPhpSettings $target_php_settings,
         int $tsrm_ls_cache
     ): bool {
+        assert($target_php_settings->isDecided());
         if ($tsrm_ls_cache === 0) {
             return false;
         }
