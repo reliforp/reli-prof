@@ -78,7 +78,10 @@ class PhpVersionDetectorTest extends BaseTestCase
             $php_symbol_reader_creator,
             new LittleEndianReader(),
             $memory_reader,
-            \Mockery::mock(PhpTsrmLsCacheFinder::class),
+            \Mockery::mock(PhpTsrmLsCacheFinder::class)
+                ->shouldReceive('findByBruteForcing')
+                ->andReturnNull()
+                ->getMock(),
             $tsrm_globals_resolver,
         );
         $module_registry_address = $php_globals_finder->findModuleRegistry(

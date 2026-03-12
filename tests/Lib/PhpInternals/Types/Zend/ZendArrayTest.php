@@ -104,7 +104,10 @@ class ZendArrayTest extends BaseTestCase
             $php_symbol_reader_creator,
             new LittleEndianReader(),
             new MemoryReader(),
-            \Mockery::mock(PhpTsrmLsCacheFinder::class),
+            \Mockery::mock(PhpTsrmLsCacheFinder::class)
+                ->shouldReceive('findByBruteForcing')
+                ->andReturnNull()
+                ->getMock(),
             \Mockery::mock(TsrmGlobalsResolver::class),
         );
 
