@@ -38,6 +38,7 @@ class PhpGlobalsFinder
     }
 
     /**
+     * @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
@@ -59,9 +60,6 @@ class PhpGlobalsFinder
                 return null;
             }
             return $tsrm_ls_cache_address;
-        }
-        if (!$target_php_settings->isDecided()) {
-            return null;
         }
         return $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
     }
@@ -131,6 +129,7 @@ class PhpGlobalsFinder
         return $symbol_reader->resolveAddress('module_registry');
     }
 
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function findGlobals(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
@@ -153,6 +152,7 @@ class PhpGlobalsFinder
         return $globals_address;
     }
 
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function findSAPIGlobals(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
