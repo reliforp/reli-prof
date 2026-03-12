@@ -87,7 +87,6 @@ class PhpTsrmLsCacheFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
-        assert($target_php_settings->isDecided());
         [$tls_block_address, $tls_block_size] = $this->resolveTlsBlock(
             $process_specifier,
             $target_php_settings,
@@ -102,6 +101,7 @@ class PhpTsrmLsCacheFinder
                 new CDataByteReader($tsrm_ls_cache_candidate),
                 0
             )->toInt();
+            assert($target_php_settings->isDecided());
             if ($this->validateCandidate($process_specifier, $target_php_settings, $tsrm_ls_cache_address_candidate)) {
                 return $tsrm_ls_cache_address_candidate;
             }
@@ -115,7 +115,6 @@ class PhpTsrmLsCacheFinder
         TargetPhpSettings $target_php_settings,
         int $tsrm_ls_cache
     ): bool {
-        assert($target_php_settings->isDecided());
         if ($tsrm_ls_cache === 0) {
             return false;
         }
@@ -128,6 +127,7 @@ class PhpTsrmLsCacheFinder
                 $tsrm_ls_cache,
             );
 
+            assert($target_php_settings->isDecided());
             $zend_type_reader = $this->zend_type_reader_creator->create($target_php_settings->php_version);
             $eg_pointer = new Pointer(
                 ZendExecutorGlobals::class,
