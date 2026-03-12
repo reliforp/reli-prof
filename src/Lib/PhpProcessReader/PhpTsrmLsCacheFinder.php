@@ -77,9 +77,12 @@ class PhpTsrmLsCacheFinder
         $byte_reader = new StringByteReader($this->file_reader->readAll($php_path));
         $php_elf_header = $this->elf64_parser->parseElfHeader($byte_reader);
         $program_headers = $this->elf64_parser->parseProgramHeader($byte_reader, $php_elf_header);
-        $pt_tls = $program_headers->findTls()[0];
+        $tls_entries = $program_headers->findTls();
+        if ($tls_entries === []) {
+            return null;
+        }
 
-        return [$tls_block_address, $pt_tls->p_memsz->toInt()];
+        return [$tls_block_address, $tls_entries[0]->p_memsz->toInt()];
     }
 
     /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */

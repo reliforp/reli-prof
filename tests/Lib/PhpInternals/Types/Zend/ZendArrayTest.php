@@ -129,7 +129,7 @@ class ZendArrayTest extends BaseTestCase
         /** @var int $child_status['pid'] */
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
             new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new TargetPhpSettings(php_version: ZendTypeReader::V81)
         );
 
         $zend_type_reader = $type_reader_creator->create(ZendTypeReader::V81);
