@@ -28,6 +28,8 @@ use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
+use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
+use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -105,7 +107,9 @@ class CallTraceReaderTest extends BaseTestCase
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
-            new MemoryReader()
+            new MemoryReader(),
+            \Mockery::mock(PhpTsrmLsCacheFinder::class),
+            \Mockery::mock(TsrmGlobalsResolver::class),
         );
 
         /** @var int $child_status['pid'] */

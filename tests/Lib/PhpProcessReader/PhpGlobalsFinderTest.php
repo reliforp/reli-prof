@@ -67,10 +67,20 @@ class PhpGlobalsFinderTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+        );
+        $tsrm_ls_cache_finder = \Mockery::mock(PhpTsrmLsCacheFinder::class);
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader(),
-            new MemoryReader()
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
         );
         $module_registry = $php_globals_finder->findModuleRegistry(
             new ProcessSpecifier($child_status['pid']),

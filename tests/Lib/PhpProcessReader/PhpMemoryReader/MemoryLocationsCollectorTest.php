@@ -29,6 +29,8 @@ use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
+use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
+use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
@@ -137,7 +139,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
-            new MemoryReader()
+            new MemoryReader(),
+            \Mockery::mock(PhpTsrmLsCacheFinder::class),
+            \Mockery::mock(TsrmGlobalsResolver::class),
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -382,7 +386,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
-            new MemoryReader()
+            new MemoryReader(),
+            \Mockery::mock(PhpTsrmLsCacheFinder::class),
+            \Mockery::mock(TsrmGlobalsResolver::class),
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -534,7 +540,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
-            new MemoryReader()
+            new MemoryReader(),
+            \Mockery::mock(PhpTsrmLsCacheFinder::class),
+            \Mockery::mock(TsrmGlobalsResolver::class),
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -700,7 +708,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
-            new MemoryReader()
+            new MemoryReader(),
+            \Mockery::mock(PhpTsrmLsCacheFinder::class),
+            \Mockery::mock(TsrmGlobalsResolver::class),
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
