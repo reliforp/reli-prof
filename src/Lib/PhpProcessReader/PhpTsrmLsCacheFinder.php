@@ -82,6 +82,7 @@ class PhpTsrmLsCacheFinder
         return [$tls_block_address, $pt_tls->p_memsz->toInt()];
     }
 
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function findByBruteForcing(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
@@ -107,6 +108,7 @@ class PhpTsrmLsCacheFinder
         return null;
     }
 
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function validateCandidate(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
@@ -124,9 +126,6 @@ class PhpTsrmLsCacheFinder
                 $tsrm_ls_cache,
             );
 
-            if (!$target_php_settings->isDecided()) {
-                return false;
-            }
             $zend_type_reader = $this->zend_type_reader_creator->create($target_php_settings->php_version);
             $eg_pointer = new Pointer(
                 ZendExecutorGlobals::class,

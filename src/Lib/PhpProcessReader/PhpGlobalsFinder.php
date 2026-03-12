@@ -60,6 +60,9 @@ class PhpGlobalsFinder
             }
             return $tsrm_ls_cache_address;
         }
+        if (!$target_php_settings->isDecided()) {
+            return null;
+        }
         return $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
     }
 
