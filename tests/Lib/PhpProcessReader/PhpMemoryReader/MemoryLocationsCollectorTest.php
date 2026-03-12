@@ -29,6 +29,8 @@ use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
+use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
+use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
@@ -134,10 +136,30 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader(),
-            new MemoryReader()
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -379,10 +401,30 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader(),
-            new MemoryReader()
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -531,10 +573,30 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader(),
-            new MemoryReader()
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -697,10 +759,30 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader(),
-            new MemoryReader()
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(

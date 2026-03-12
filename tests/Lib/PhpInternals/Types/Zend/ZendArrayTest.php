@@ -27,6 +27,8 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
+use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
+use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -98,16 +100,36 @@ class ZendArrayTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader(),
-            new MemoryReader()
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
         );
 
         /** @var int $child_status['pid'] */
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
             new ProcessSpecifier($child_status['pid']),
-            new TargetPhpSettings()
+            new TargetPhpSettings(php_version: ZendTypeReader::V81)
         );
 
         $zend_type_reader = $type_reader_creator->create(ZendTypeReader::V81);

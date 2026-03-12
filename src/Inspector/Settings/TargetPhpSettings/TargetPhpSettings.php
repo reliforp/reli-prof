@@ -16,6 +16,7 @@ namespace Reli\Inspector\Settings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 
 /**
+ * @psalm-immutable
  * @psalm-type VersionDecided=value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>
  * @template TVersion of VersionDecided|'auto'
  */

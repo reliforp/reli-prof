@@ -68,10 +68,30 @@ class PhpVersionDetectorTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
         );
-        $php_globals_finder = new PhpGlobalsFinder(
+        $memory_reader = new MemoryReader();
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
-            $memory_reader = new MemoryReader()
+            $memory_reader,
+        );
+        $integer_reader = new LittleEndianReader();
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
         );
         $module_registry_address = $php_globals_finder->findModuleRegistry(
             new ProcessSpecifier($child_status['pid']),

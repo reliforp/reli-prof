@@ -33,10 +33,12 @@ class PhpGlobalsFinder
         private IntegerByteSequenceReader $integer_reader,
         private MemoryReaderInterface $memory_reader,
         private PhpTsrmLsCacheFinder $tsrm_ls_cache_finder,
+        private TsrmGlobalsResolver $tsrm_globals_resolver,
     ) {
     }
 
     /**
+     * @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
@@ -59,6 +61,7 @@ class PhpGlobalsFinder
             }
             return $tsrm_ls_cache_address;
         }
+        assert($target_php_settings->isDecided());
         return $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
     }
 
@@ -74,19 +77,6 @@ class PhpGlobalsFinder
         return $this->php_symbol_reader_creator->create(
             $process_specifier->pid,
             $target_php_settings->php_regex,
-            $target_php_settings->libpthread_regex,
-            $target_php_settings->php_path,
-            $target_php_settings->libpthread_path
-        );
-    }
-
-    public function getZtsGlobalsSymbolReader(
-        ProcessSpecifier $process_specifier,
-        TargetPhpSettings $target_php_settings
-    ): ProcessSymbolReaderInterface {
-        return $this->php_symbol_reader_creator->create(
-            $process_specifier->pid,
-            $target_php_settings->zts_globals_regex,
             $target_php_settings->libpthread_regex,
             $target_php_settings->php_path,
             $target_php_settings->libpthread_path
@@ -133,14 +123,14 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
-        $symbol_reader = $this->getZtsGlobalsSymbolReader(
+        $symbol_reader = $this->tsrm_globals_resolver->getZtsGlobalsSymbolReader(
             $process_specifier,
             $target_php_settings
         );
-        $module_registry = $symbol_reader->resolveAddress('module_registry');
-        return $module_registry;
+        return $symbol_reader->resolveAddress('module_registry');
     }
 
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function findGlobals(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
@@ -148,64 +138,12 @@ class PhpGlobalsFinder
     ): int {
         $tsrm_ls_cache = $this->findTsrmLsCache($process_specifier, $target_php_settings);
         if (isset($tsrm_ls_cache)) {
-            switch ($target_php_settings->php_version) {
-                case ZendTypeReader::V70:
-                case ZendTypeReader::V71:
-                case ZendTypeReader::V72:
-                case ZendTypeReader::V73:
-                    $id_symbol = $symbol_name . '_id';
-                    $globals_id_cdata = $this->getZtsGlobalsSymbolReader($process_specifier, $target_php_settings)
-                        ->read($id_symbol);
-                    if (is_null($globals_id_cdata)) {
-                        throw new RuntimeException('global symbol id not found');
-                    }
-                    $tsrm_ls_cache_dereferenced = $this->integer_reader->read64(
-                        new CDataByteReader(
-                            $this->memory_reader->read(
-                                $process_specifier->pid,
-                                $tsrm_ls_cache,
-                                8
-                            )
-                        ),
-                        0
-                    )->toInt();
-                    $globals_id = $this->integer_reader->read32(
-                        new CDataByteReader($globals_id_cdata),
-                        0
-                    );
-                    return $this->integer_reader->read64(
-                        new CDataByteReader(
-                            $this->memory_reader->read(
-                                $process_specifier->pid,
-                                $tsrm_ls_cache_dereferenced + ($globals_id - 1) * 8,
-                                8
-                            )
-                        ),
-                        0
-                    )->toInt();
-
-                case ZendTypeReader::V74:
-                case ZendTypeReader::V80:
-                case ZendTypeReader::V81:
-                case ZendTypeReader::V82:
-                case ZendTypeReader::V83:
-                case ZendTypeReader::V84:
-                    $offset = $symbol_name . '_offset';
-                    $globals_offset_cdata = $this->getZtsGlobalsSymbolReader(
-                        $process_specifier,
-                        $target_php_settings
-                    )->read($offset);
-                    if (is_null($globals_offset_cdata)) {
-                        throw new RuntimeException('globals offset not found');
-                    }
-                    $globals_offset = $this->integer_reader->read64(
-                        new CDataByteReader($globals_offset_cdata),
-                        0
-                    )->toInt();
-                    return $tsrm_ls_cache + $globals_offset;
-                default:
-                    throw new \LogicException('this should never happen');
-            }
+            return $this->tsrm_globals_resolver->resolveGlobalsAddress(
+                $process_specifier,
+                $target_php_settings,
+                $symbol_name,
+                $tsrm_ls_cache,
+            );
         }
         $globals_address = $this->getSymbolReader($process_specifier, $target_php_settings)
             ->resolveAddress($symbol_name);
@@ -215,6 +153,7 @@ class PhpGlobalsFinder
         return $globals_address;
     }
 
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function findSAPIGlobals(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
