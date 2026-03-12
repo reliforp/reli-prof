@@ -23,6 +23,7 @@ use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\File\CatFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
+use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -74,7 +75,17 @@ class PhpGlobalsFinderTest extends BaseTestCase
             $integer_reader,
             $memory_reader_for_finder,
         );
-        $tsrm_ls_cache_finder = \Mockery::mock(PhpTsrmLsCacheFinder::class);
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
             $integer_reader,
