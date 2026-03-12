@@ -74,11 +74,21 @@ class PhpVersionDetectorTest extends BaseTestCase
             new LittleEndianReader(),
             $memory_reader,
         );
-        $tsrm_ls_cache_finder = \Mockery::mock(PhpTsrmLsCacheFinder::class);
-        $tsrm_ls_cache_finder->shouldReceive('findByBruteForcing')->andReturnNull();
+        $integer_reader = new LittleEndianReader();
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+        );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
-            new LittleEndianReader(),
+            $integer_reader,
             $memory_reader,
             $tsrm_ls_cache_finder,
             $tsrm_globals_resolver,
