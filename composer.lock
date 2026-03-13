@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2bfa290cdec9816b92b64e4b3257a1c4",
+    "content-hash": "bf098ef0a9a26fa2cb1999aacfbc163a",
     "packages": [
         {
             "name": "amphp/amp",
@@ -3636,16 +3636,16 @@
         },
         {
             "name": "phpunit/phpunit",
-            "version": "10.5.62",
+            "version": "10.5.63",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/phpunit.git",
-                "reference": "3f7dd5066ebde5809296a81f0b19e8b00e5aab49"
+                "reference": "33198268dad71e926626b618f3ec3966661e4d90"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/3f7dd5066ebde5809296a81f0b19e8b00e5aab49",
-                "reference": "3f7dd5066ebde5809296a81f0b19e8b00e5aab49",
+                "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/33198268dad71e926626b618f3ec3966661e4d90",
+                "reference": "33198268dad71e926626b618f3ec3966661e4d90",
                 "shasum": ""
             },
             "require": {
@@ -3717,7 +3717,7 @@
             "support": {
                 "issues": "https://github.com/sebastianbergmann/phpunit/issues",
                 "security": "https://github.com/sebastianbergmann/phpunit/security/policy",
-                "source": "https://github.com/sebastianbergmann/phpunit/tree/10.5.62"
+                "source": "https://github.com/sebastianbergmann/phpunit/tree/10.5.63"
             },
             "funding": [
                 {
@@ -3741,7 +3741,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-01-27T05:32:38+00:00"
+            "time": "2026-01-27T05:48:37+00:00"
         },
         {
             "name": "psalm/phar",
