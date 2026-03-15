@@ -91,6 +91,7 @@ class TsrmGlobalsResolver
             case ZendTypeReader::V81:
             case ZendTypeReader::V82:
             case ZendTypeReader::V83:
+            case ZendTypeReader::V84:
                 $offset = $symbol_name . '_offset';
                 $globals_offset_cdata = $this->getZtsGlobalsSymbolReader(
                     $process_specifier,
