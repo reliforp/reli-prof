@@ -19,6 +19,8 @@ final class MemoryProfilerSettings
         public bool $stop_process,
         public bool $pretty_print,
         public ?MemoryLimitErrorDetails $memory_exhaustion_error_details = null,
+        public string $output_format = 'json',
+        public ?string $output_path = null,
     ) {
     }
 }

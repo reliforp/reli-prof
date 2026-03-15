@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\MemoryProfilerSettings;
 
 use PhpCast\Cast;
+use PhpCast\NullableCast;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -36,6 +37,19 @@ final class MemoryProfilerSettingsFromConsoleInput
             InputOption::VALUE_NEGATABLE,
             'pretty print the result (default: off)',
             false,
+        );
+        $command->addOption(
+            'output-format',
+            'f',
+            InputOption::VALUE_REQUIRED,
+            'output format (json, sqlite3)',
+            'json',
+        );
+        $command->addOption(
+            'output',
+            'o',
+            InputOption::VALUE_REQUIRED,
+            'output file path (required for sqlite3 format)',
         );
         $command->addOption(
             'memory-limit-error-file',
@@ -91,10 +105,15 @@ final class MemoryProfilerSettingsFromConsoleInput
                 $memory_limit_error_max_depth,
             );
         }
+        $output_format = Cast::toString($input->getOption('output-format'));
+        $output_path = NullableCast::toString($input->getOption('output'));
+
         return new MemoryProfilerSettings(
             $stop_process,
             $pretty_print,
-            $memory_exhaustion_error_details
+            $memory_exhaustion_error_details,
+            $output_format,
+            $output_path,
         );
     }
 }

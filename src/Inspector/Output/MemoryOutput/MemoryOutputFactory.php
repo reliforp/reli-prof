@@ -1,0 +1,35 @@
+<?php
+
+/**
+ * This file is part of the reliforp/reli-prof package.
+ *
+ * (c) sji <sji@sj-i.dev>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+declare(strict_types=1);
+
+namespace Reli\Inspector\Output\MemoryOutput;
+
+final class MemoryOutputFactory
+{
+    public function create(
+        string $format,
+        bool $pretty_print,
+        ?string $output_path,
+    ): MemoryOutputInterface {
+        return match ($format) {
+            'json' => new JsonMemoryOutput($pretty_print, $output_path),
+            'sqlite3' => new SqliteMemoryOutput(
+                $output_path ?? throw new \RuntimeException(
+                    '--output is required when using sqlite3 format'
+                )
+            ),
+            default => throw new \RuntimeException(
+                "unsupported output format: {$format} (supported: json, sqlite3)"
+            ),
+        };
+    }
+}

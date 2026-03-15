@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\CoreDumpReader;
 
+use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
+use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -108,22 +110,19 @@ final class CoreDumpReader
             $collected_memories->top_reference_context,
         );
 
-        $flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
-        if ($memory_profiler_settings->pretty_print) {
-            $flags |= JSON_PRETTY_PRINT;
-        }
-        echo json_encode(
-            [
-                'summary' => $summary,
-                "location_types_summary" => $heap_location_type_summary->per_type_usage,
-                'class_objects_summary' => $object_class_summary->per_class_usage,
-                'context' => $analyzed_context,
-            ],
-            $flags,
-            2147483647
+        $result = new MemoryAnalysisResult(
+            $summary,
+            $heap_location_type_summary->per_type_usage,
+            $object_class_summary->per_class_usage,
+            $analyzed_context,
         );
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \RuntimeException(json_last_error_msg());
-        }
+
+        $output_factory = new MemoryOutputFactory();
+        $memory_output = $output_factory->create(
+            $memory_profiler_settings->output_format,
+            $memory_profiler_settings->pretty_print,
+            $memory_profiler_settings->output_path,
+        );
+        $memory_output->output($result);
     }
 }

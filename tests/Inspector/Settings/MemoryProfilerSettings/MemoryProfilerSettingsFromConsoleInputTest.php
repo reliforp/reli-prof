@@ -28,6 +28,8 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-line')->andReturns(20)->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-max-depth')->andReturns(512)->atLeast()->once();
+        $input->expects()->getOption('output-format')->andReturns('json')->atLeast()->once();
+        $input->expects()->getOption('output')->andReturns(null)->atLeast()->once();
 
         $settings = (new MemoryProfilerSettingsFromConsoleInput())->createSettings($input);
 
@@ -36,6 +38,8 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
         $this->assertSame('abc.php', $settings->memory_exhaustion_error_details->file);
         $this->assertSame(20, $settings->memory_exhaustion_error_details->line);
         $this->assertSame(512, $settings->memory_exhaustion_error_details->max_challenge_depth);
+        $this->assertSame('json', $settings->output_format);
+        $this->assertNull($settings->output_path);
     }
 
     public function testFromConsoleInputDepthNotInteger()
@@ -46,6 +50,8 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-line')->andReturns(20)->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-max-depth')->andReturns('abc');
+        $input->expects()->getOption('output-format')->andReturns('json')->zeroOrMoreTimes();
+        $input->expects()->getOption('output')->andReturns(null)->zeroOrMoreTimes();
         $this->expectException(MemoryProfilerSettingsException::class);
         $this->expectExceptionCode(
             MemoryProfilerSettingsException::MEMORY_LIMIT_ERROR_MAX_DEPTH_IS_NOT_POSITIVE_INTEGER
@@ -61,6 +67,8 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-line')->andReturns(20)->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-max-depth')->andReturns(-1);
+        $input->expects()->getOption('output-format')->andReturns('json')->zeroOrMoreTimes();
+        $input->expects()->getOption('output')->andReturns(null)->zeroOrMoreTimes();
         $this->expectException(MemoryProfilerSettingsException::class);
         $this->expectExceptionCode(
             MemoryProfilerSettingsException::MEMORY_LIMIT_ERROR_MAX_DEPTH_IS_NOT_POSITIVE_INTEGER
@@ -76,6 +84,8 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-line')->andReturns('abc')->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-max-depth')->andReturns(512)->zeroOrMoreTimes();
+        $input->expects()->getOption('output-format')->andReturns('json')->zeroOrMoreTimes();
+        $input->expects()->getOption('output')->andReturns(null)->zeroOrMoreTimes();
         $this->expectException(MemoryProfilerSettingsException::class);
         $this->expectExceptionCode(
             MemoryProfilerSettingsException::MEMORY_LIMIT_ERROR_LINE_IS_NOT_INTEGER
