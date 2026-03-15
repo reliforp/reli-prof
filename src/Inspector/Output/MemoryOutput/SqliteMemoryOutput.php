@@ -13,6 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
+use Reli\Lib\Process\MemoryLocation;
 use SQLite3;
 
 final class SqliteMemoryOutput implements MemoryOutputInterface
@@ -91,7 +94,10 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                 node_id INTEGER NOT NULL,
                 address INTEGER,
                 size INTEGER,
-                name TEXT,
+                location_type TEXT NOT NULL,
+                class_name TEXT,
+                refcount INTEGER,
+                type_info INTEGER,
                 FOREIGN KEY (node_id) REFERENCES context_nodes(node_id)
             )
         ');
@@ -109,6 +115,7 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_nodes_parent ON context_nodes(parent_node_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_nodes_type ON context_nodes(type)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_node ON context_node_locations(node_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_class ON context_node_locations(class_name)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_attributes_node ON context_node_attributes(node_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_location_types_memory ON location_types_summary(memory_usage DESC)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_class_objects_memory ON class_objects_summary(memory_usage DESC)');
@@ -174,8 +181,8 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             . ' VALUES (:node_id, :parent_node_id, :link_name, :type, :reference_node_id)'
         );
         $location_stmt = $db->prepare(
-            'INSERT INTO context_node_locations (node_id, address, size, name)'
-            . ' VALUES (:node_id, :address, :size, :name)'
+            'INSERT INTO context_node_locations (node_id, address, size, location_type, class_name, refcount, type_info)'
+            . ' VALUES (:node_id, :address, :size, :location_type, :class_name, :refcount, :type_info)'
         );
         $attr_stmt = $db->prepare(
             'INSERT INTO context_node_attributes (node_id, key, value)'
@@ -233,29 +240,33 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             $node_stmt->reset();
 
             // Insert locations
-            if (isset($node['#locations']) && is_array($node['#locations'])) {
+            if (isset($node['#locations']) && is_iterable($node['#locations'])) {
                 foreach ($node['#locations'] as $location) {
-                    if (!is_array($location)) {
-                        continue;
+                    if ($location instanceof MemoryLocation) {
+                        $location_stmt->bindValue(':node_id', $node_id, SQLITE3_INTEGER);
+                        $location_stmt->bindValue(':address', $location->address, SQLITE3_INTEGER);
+                        $location_stmt->bindValue(':size', $location->size, SQLITE3_INTEGER);
+
+                        $short_class = (new \ReflectionClass($location))->getShortName();
+                        $location_stmt->bindValue(':location_type', $short_class, SQLITE3_TEXT);
+
+                        if ($location instanceof ZendObjectMemoryLocation) {
+                            $location_stmt->bindValue(':class_name', $location->class_name, SQLITE3_TEXT);
+                        } else {
+                            $location_stmt->bindValue(':class_name', null, SQLITE3_NULL);
+                        }
+
+                        if ($location instanceof RefcountedMemoryLocation) {
+                            $location_stmt->bindValue(':refcount', $location->refcount, SQLITE3_INTEGER);
+                            $location_stmt->bindValue(':type_info', $location->type_info, SQLITE3_INTEGER);
+                        } else {
+                            $location_stmt->bindValue(':refcount', null, SQLITE3_NULL);
+                            $location_stmt->bindValue(':type_info', null, SQLITE3_NULL);
+                        }
+
+                        $location_stmt->execute();
+                        $location_stmt->reset();
                     }
-                    $location_stmt->bindValue(':node_id', $node_id, SQLITE3_INTEGER);
-                    $location_stmt->bindValue(
-                        ':address',
-                        $location['address'] ?? null,
-                        isset($location['address']) ? SQLITE3_INTEGER : SQLITE3_NULL
-                    );
-                    $location_stmt->bindValue(
-                        ':size',
-                        $location['size'] ?? null,
-                        isset($location['size']) ? SQLITE3_INTEGER : SQLITE3_NULL
-                    );
-                    $location_stmt->bindValue(
-                        ':name',
-                        $location['name'] ?? null,
-                        isset($location['name']) ? SQLITE3_TEXT : SQLITE3_NULL
-                    );
-                    $location_stmt->execute();
-                    $location_stmt->reset();
                 }
             }
 
