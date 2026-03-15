@@ -18,16 +18,20 @@ use Reli\Lib\Process\MemoryLocation;
 
 final class LocationTypeAnalyzer
 {
+    private const NAMESPACE_PREFIX = 'Reli\\Lib\\PhpProcessReader\\PhpMemoryReader\\MemoryLocation\\';
+    private const NAMESPACE_PREFIX_LEN = 62; // strlen of NAMESPACE_PREFIX
+
+    /** @var array<class-string, string> */
+    private array $type_name_cache = [];
+
     public function analyze(
         MemoryLocations $memory_locations,
     ): LocationTypeAnalyzerResult {
         $per_type_analysis = [];
         foreach ($memory_locations->memory_locations as $memory_location) {
-            $type = str_replace(
-                'Reli\\Lib\\PhpProcessReader\\PhpMemoryReader\\MemoryLocation\\',
-                '',
-                $memory_location::class,
-            );
+            $class = $memory_location::class;
+            $type = $this->type_name_cache[$class]
+                ??= substr($class, self::NAMESPACE_PREFIX_LEN);
             if (!isset($per_type_analysis[$type])) {
                 $per_type_analysis[$type] = [
                     'count' => 0,

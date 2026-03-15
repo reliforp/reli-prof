@@ -86,13 +86,23 @@ final class RegionAnalyzer
 
         $filtered_locations = $this->filterOverlappingLocations($memory_locations);
 
+        // Pre-build address sets for O(1) membership checks
+        $vm_stack_addresses = [];
+        foreach ($this->vm_stack_memory_locations->memory_locations as $loc) {
+            $vm_stack_addresses[$loc->address] = true;
+        }
+        $compiler_arena_addresses = [];
+        foreach ($this->compiler_arena_memory_locations->memory_locations as $loc) {
+            $compiler_arena_addresses[$loc->address] = true;
+        }
+
         foreach ($filtered_locations as $memory_location) {
             $chunk = $this->chunk_memory_locations->getContainingMemoryLocation($memory_location);
             if (!is_null($chunk)) {
-                if ($this->vm_stack_memory_locations->contains($memory_location)) {
+                if (isset($vm_stack_addresses[$memory_location->address])) {
                     $vm_stack_memory_usage += $memory_location->size;
                     $regional_memory_locations->locations_in_vm_stack->add($memory_location);
-                } elseif ($this->compiler_arena_memory_locations->contains($memory_location)) {
+                } elseif (isset($compiler_arena_addresses[$memory_location->address])) {
                     $compiler_arena_memory_usage += $memory_location->size;
                     $regional_memory_locations->locations_in_compiler_arena->add($memory_location);
                 } else {
@@ -164,15 +174,19 @@ final class RegionAnalyzer
         });
 
         $filtered_locations = [];
+        $filtered_last = null;
+        $last_key = -1;
         foreach ($locations as $location) {
-            $last_key = array_key_last($filtered_locations);
-            if (is_null($last_key)) {
+            if ($filtered_last === null) {
                 $filtered_locations[] = $location;
+                $filtered_last = $location;
+                $last_key = 0;
                 continue;
             }
-            $filtered_last = $filtered_locations[$last_key];
-            if (empty($filtered_locations) || $location->address >= ($filtered_last->address + $filtered_last->size)) {
+            if ($location->address >= ($filtered_last->address + $filtered_last->size)) {
                 $filtered_locations[] = $location;
+                $last_key++;
+                $filtered_last = $location;
             } elseif (
                 $filtered_last instanceof ZendClassEntryMemoryLocation
                 and $location instanceof ZendArrayMemoryLocation
@@ -182,14 +196,13 @@ final class RegionAnalyzer
                 $filtered_last instanceof ZendArrayTableOverheadMemoryLocation
             ) {
                 $filtered_locations[$last_key] = $location;
+                $filtered_last = $location;
             } elseif (
                 $filtered_last instanceof ZendObjectMemoryLocation
                 and $location instanceof ZendOpArrayHeaderMemoryLocation
                 and $filtered_last->class_name === \Closure::class
             ) {
                 continue;
-            } else {
-//                var_dump([$filtered_last, $location]);
             }
         }
 
