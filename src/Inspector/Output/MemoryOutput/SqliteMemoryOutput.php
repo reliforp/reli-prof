@@ -15,6 +15,7 @@ namespace Reli\Inspector\Output\MemoryOutput;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\Process\MemoryLocation;
 use SQLite3;
 
@@ -96,6 +97,7 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                 size INTEGER,
                 location_type TEXT NOT NULL,
                 class_name TEXT,
+                string_value TEXT,
                 refcount INTEGER,
                 type_info INTEGER,
                 FOREIGN KEY (node_id) REFERENCES context_nodes(node_id)
@@ -116,9 +118,30 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_nodes_type ON context_nodes(type)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_node ON context_node_locations(node_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_class ON context_node_locations(class_name)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_type ON context_node_locations(location_type)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_size ON context_node_locations(size DESC)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_attributes_node ON context_node_attributes(node_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_location_types_memory ON location_types_summary(memory_usage DESC)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_class_objects_memory ON class_objects_summary(memory_usage DESC)');
+
+        $this->createViews($db);
+    }
+
+    private function createViews(SQLite3 $db): void
+    {
+        $db->exec("
+            CREATE VIEW IF NOT EXISTS v_node_paths AS
+            WITH RECURSIVE node_paths(node_id, path, depth) AS (
+                SELECT node_id, link_name, 0
+                FROM context_nodes
+                WHERE parent_node_id IS NULL
+              UNION ALL
+                SELECT cn.node_id, np.path || ' -> ' || cn.link_name, np.depth + 1
+                FROM context_nodes cn
+                JOIN node_paths np ON cn.parent_node_id = np.node_id
+            )
+            SELECT node_id, path, depth FROM node_paths
+        ");
     }
 
     /**
@@ -181,8 +204,9 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             . ' VALUES (:node_id, :parent_node_id, :link_name, :type, :reference_node_id)'
         );
         $location_stmt = $db->prepare(
-            'INSERT INTO context_node_locations (node_id, address, size, location_type, class_name, refcount, type_info)'
-            . ' VALUES (:node_id, :address, :size, :location_type, :class_name, :refcount, :type_info)'
+            'INSERT INTO context_node_locations'
+            . ' (node_id, address, size, location_type, class_name, string_value, refcount, type_info)'
+            . ' VALUES (:node_id, :address, :size, :location_type, :class_name, :string_value, :refcount, :type_info)'
         );
         $attr_stmt = $db->prepare(
             'INSERT INTO context_node_attributes (node_id, key, value)'
@@ -254,6 +278,12 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                             $location_stmt->bindValue(':class_name', $location->class_name, SQLITE3_TEXT);
                         } else {
                             $location_stmt->bindValue(':class_name', null, SQLITE3_NULL);
+                        }
+
+                        if ($location instanceof ZendStringMemoryLocation) {
+                            $location_stmt->bindValue(':string_value', $location->value, SQLITE3_TEXT);
+                        } else {
+                            $location_stmt->bindValue(':string_value', null, SQLITE3_NULL);
                         }
 
                         if ($location instanceof RefcountedMemoryLocation) {
