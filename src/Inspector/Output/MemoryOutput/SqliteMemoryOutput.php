@@ -142,6 +142,31 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             )
             SELECT node_id, path, depth FROM node_paths
         ");
+
+        $db->exec("
+            CREATE VIEW IF NOT EXISTS v_arrays AS
+            SELECT
+                header_cn.node_id,
+                header_loc.address,
+                header_loc.size AS header_size,
+                COALESCE(table_loc.size, 0) AS table_size,
+                header_loc.size + COALESCE(table_loc.size, 0) AS total_size,
+                CAST(cnt.value AS INTEGER) AS element_count,
+                header_loc.refcount
+            FROM context_nodes header_cn
+            JOIN context_node_locations header_loc
+                ON header_loc.node_id = header_cn.node_id
+                AND header_loc.location_type = 'ZendArrayMemoryLocation'
+            LEFT JOIN context_nodes elements_cn
+                ON elements_cn.parent_node_id = header_cn.node_id
+                AND elements_cn.link_name = 'array_elements'
+            LEFT JOIN context_node_locations table_loc
+                ON table_loc.node_id = elements_cn.node_id
+                AND table_loc.location_type = 'ZendArrayTableMemoryLocation'
+            LEFT JOIN context_node_attributes cnt
+                ON cnt.node_id = elements_cn.node_id
+                AND cnt.key = '#count'
+        ");
     }
 
     /**
@@ -300,17 +325,33 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                 }
             }
 
-            // Insert child contexts (non-# prefixed keys that are arrays)
+            // Insert child contexts and attributes
+            $standard_keys = ['#node_id', '#type', '#locations', '#reference_node_id'];
             $children = [];
             foreach ($node as $key => $value) {
-                if (is_string($key) && !str_starts_with($key, '#') && is_array($value)) {
-                    // Check if this is a context node or an attribute
+                if (is_string($key) && str_starts_with($key, '#')) {
+                    // Store non-standard #-prefixed scalar values as attributes (e.g. #count)
+                    if (!in_array($key, $standard_keys, true) && !is_array($value) && !($value instanceof MemoryLocation)) {
+                        $attr_stmt->bindValue(':node_id', $node_id, SQLITE3_INTEGER);
+                        $attr_stmt->bindValue(':key', $key, SQLITE3_TEXT);
+                        $attr_stmt->bindValue(
+                            ':value',
+                            is_scalar($value) ? (string)$value : json_encode($value),
+                            SQLITE3_TEXT
+                        );
+                        $attr_stmt->execute();
+                        $attr_stmt->reset();
+                    }
+                    continue;
+                }
+
+                if (is_array($value)) {
                     if (isset($value['#node_id']) || isset($value['#reference_node_id'])) {
                         $children[$key] = $value;
                     } else {
-                        // Could be nested children or a scalar attribute encoded as array
+                        // Could be nested children or a non-node attribute
                         $has_node_children = false;
-                        foreach ($value as $sub_key => $sub_value) {
+                        foreach ($value as $sub_value) {
                             if (is_array($sub_value) && (isset($sub_value['#node_id']) || isset($sub_value['#reference_node_id']))) {
                                 $has_node_children = true;
                                 break;
@@ -320,15 +361,11 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                             $children[$key] = $value;
                         } else {
                             $attr_stmt->bindValue(':node_id', $node_id, SQLITE3_INTEGER);
-                            $attr_stmt->bindValue(':key', $key, SQLITE3_TEXT);
+                            $attr_stmt->bindValue(':key', (string)$key, SQLITE3_TEXT);
                             $attr_stmt->bindValue(':value', json_encode($value), SQLITE3_TEXT);
                             $attr_stmt->execute();
                             $attr_stmt->reset();
                         }
-                    }
-                } elseif (is_int($key) && is_array($value)) {
-                    if (isset($value['#node_id']) || isset($value['#reference_node_id'])) {
-                        $children[$key] = $value;
                     }
                 }
             }
