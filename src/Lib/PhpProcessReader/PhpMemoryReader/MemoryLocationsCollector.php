@@ -165,23 +165,27 @@ final class MemoryLocationsCollector
                             Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Bucket::class,
                             ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V70\ZendArray::class,
                             Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Zval::class,
+                            ZendExecutorGlobals::class => \Reli\Lib\PhpInternals\Types\Zend\V70\ZendExecutorGlobals::class,
                             default => $type_name,
                         },
                         ZendTypeReader::V73 => match ($type_name) {
                             Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Bucket::class,
                             ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V73\ZendArray::class,
                             Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Zval::class,
+                            ZendExecutorGlobals::class => \Reli\Lib\PhpInternals\Types\Zend\V73\ZendExecutorGlobals::class,
                             default => $type_name,
                         },
                         ZendTypeReader::V74 => match ($type_name) {
                             Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Bucket::class,
                             ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V74\ZendArray::class,
                             Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Zval::class,
+                            ZendExecutorGlobals::class => \Reli\Lib\PhpInternals\Types\Zend\V74\ZendExecutorGlobals::class,
                             default => $type_name,
                         },
                         ZendTypeReader::V80,
                         ZendTypeReader::V81 => match ($type_name) {
                             ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V80\ZendArray::class,
+                            ZendExecutorGlobals::class => \Reli\Lib\PhpInternals\Types\Zend\V80\ZendExecutorGlobals::class,
                             default => $type_name,
                         },
                         ZendTypeReader::V82,
@@ -308,7 +312,7 @@ final class MemoryLocationsCollector
         $context_pools = ContextPools::createDefault();
 
         $included_files_context = $this->collectIncludedFiles(
-            $dereferencer->deref($eg->included_files),
+            $eg->included_files,
             $dereferencer,
             $memory_locations,
             $context_pools,
@@ -332,7 +336,7 @@ final class MemoryLocationsCollector
         $zend_constants = $dereferencer->deref($eg->zend_constants);
 
         $global_variables_context = $this->collectGlobalVariables(
-            $dereferencer->deref($eg->symbol_table),
+            $eg->symbol_table,
             $cg->map_ptr_base,
             $dereferencer,
             $zend_type_reader,

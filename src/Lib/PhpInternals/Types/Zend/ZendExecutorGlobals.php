@@ -18,7 +18,8 @@ use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendExecutorGlobals implements Dereferencable
+/** @psalm-consistent-constructor */
+class ZendExecutorGlobals implements Dereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $uninitialized_zval;
@@ -38,8 +39,8 @@ final class ZendExecutorGlobals implements Dereferencable
     /** @var Pointer<ZendArray>|null */
     public ?Pointer $zend_constants;
 
-    /** @var Pointer<ZendArray>  */
-    public Pointer $symbol_table;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public ZendArray $symbol_table;
 
     /** @var Pointer<ZendVmStack>|null  */
     public ?Pointer $vm_stack;
@@ -47,8 +48,8 @@ final class ZendExecutorGlobals implements Dereferencable
     /** @var Pointer<Zval>|null  */
     public ?Pointer $vm_stack_top;
 
-    /** @var Pointer<ZendArray> */
-    public Pointer $included_files;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public ZendArray $included_files;
 
     /** @var Pointer<ZendArray>|null */
     public ?Pointer $ini_directives;
@@ -64,8 +65,8 @@ final class ZendExecutorGlobals implements Dereferencable
      * @param Pointer<ZendExecutorGlobals> $pointer
      */
     public function __construct(
-        private CastedCData $casted_cdata,
-        private Pointer $pointer,
+        protected CastedCData $casted_cdata,
+        protected Pointer $pointer,
     ) {
         unset($this->uninitialized_zval);
         unset($this->error_zval);
@@ -137,12 +138,18 @@ final class ZendExecutorGlobals implements Dereferencable
                 )
                 : null
             ,
-            'symbol_table' => $this->symbol_table = new Pointer(
-                ZendArray::class,
-                $this->pointer->address
-                +
-                \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('symbol_table'),
-                \FFI::sizeof($this->casted_cdata->casted->symbol_table),
+            'symbol_table' => $this->symbol_table = new ZendArray(
+                new CastedCData(
+                    $this->casted_cdata->casted->symbol_table,
+                    $this->casted_cdata->casted->symbol_table
+                ),
+                new Pointer(
+                    ZendArray::class,
+                    $this->pointer->address
+                    +
+                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('symbol_table'),
+                    \FFI::sizeof($this->casted_cdata->casted->symbol_table),
+                ),
             ),
             'vm_stack' => $this->vm_stack = $this->casted_cdata->casted->vm_stack !== null
                 ? Pointer::fromCData(
@@ -161,12 +168,18 @@ final class ZendExecutorGlobals implements Dereferencable
             'objects_store' => $this->objects_store = new ZendObjectsStore(
                 $this->casted_cdata->casted->objects_store,
             ),
-            'included_files' => $this->included_files = new Pointer(
-                ZendArray::class,
-                $this->pointer->address
-                +
-                \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('included_files'),
-                \FFI::sizeof($this->casted_cdata->casted->included_files),
+            'included_files' => $this->included_files = new ZendArray(
+                new CastedCData(
+                    $this->casted_cdata->casted->included_files,
+                    $this->casted_cdata->casted->included_files
+                ),
+                new Pointer(
+                    ZendArray::class,
+                    $this->pointer->address
+                    +
+                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('included_files'),
+                    \FFI::sizeof($this->casted_cdata->casted->included_files),
+                ),
             ),
         };
     }
@@ -184,7 +197,7 @@ final class ZendExecutorGlobals implements Dereferencable
          * @var CastedCData<zend_executor_globals> $casted_cdata
          * @var Pointer<ZendExecutorGlobals> $pointer
          */
-        return new self($casted_cdata, $pointer);
+        return new static($casted_cdata, $pointer);
     }
 
     /** @return Pointer<ZendExecutorGlobals> */

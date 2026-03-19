@@ -144,8 +144,7 @@ class ZendArrayTest extends BaseTestCase
             new ZendCastedTypeProvider($zend_type_reader),
         );
         $eg = $dereferencer->deref($eg_pointer);
-        $symbol_table = $dereferencer->deref($eg->symbol_table);
-        $server_array_bucket = $symbol_table->findByKey($dereferencer, '_SERVER');
+        $server_array_bucket = $eg->symbol_table->findByKey($dereferencer, '_SERVER');
         $this->assertNotNull($server_array_bucket);
         /** @var ZendArray */
         $server_array = $dereferencer->deref($server_array_bucket->val->value->arr);
