@@ -17,10 +17,12 @@ use FFI;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendClosure implements Dereferencable
+class ZendClosure implements Dereferencable, PointedTypeResolverAware
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObject $std;
@@ -34,6 +36,7 @@ class ZendClosure implements Dereferencable
     /** @var Pointer<ZendClassEntry>|null */
     public ?Pointer $called_scope;
 
+    private ?PointedTypeResolver $pointed_type_resolver = null;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_closure> $casted_cdata
@@ -49,8 +52,16 @@ class ZendClosure implements Dereferencable
         unset($this->called_scope);
     }
 
+    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
+    {
+        $this->pointed_type_resolver = $resolver;
+    }
+
     public function __get(string $field_name): mixed
     {
+        $zval_class = $this->pointed_type_resolver !== null
+            ? $this->pointed_type_resolver->resolve(Zval::class)
+            : Zval::class;
         return match ($field_name) {
             'std' => $this->std = new ZendObject(
                 new CastedCData(
@@ -76,13 +87,13 @@ class ZendClosure implements Dereferencable
                     FFI::typeof($this->casted_cdata->casted->func)->getSize(),
                 ),
             ),
-            'this_ptr' => $this->this_ptr = new Zval(
+            'this_ptr' => $this->this_ptr = $zval_class::fromCastedCData(
                 new CastedCData(
                     $this->casted_cdata->casted->this_ptr,
                     $this->casted_cdata->casted->this_ptr,
                 ),
                 new Pointer(
-                    Zval::class,
+                    $zval_class,
                     $this->pointer->address
                     +
                     FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('this_ptr'),

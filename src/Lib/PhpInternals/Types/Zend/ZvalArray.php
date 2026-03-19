@@ -16,13 +16,17 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI\CData;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @implements \ArrayAccess<int, Zval> */
-final class ZvalArray implements \ArrayAccess, Dereferencable
+final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolverAware
 {
     /** @var array<int, Zval> */
     private array $zvals_cache = [];
+
+    private ?PointedTypeResolver $pointed_type_resolver = null;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zval_array> $casted_cdata
@@ -33,6 +37,11 @@ final class ZvalArray implements \ArrayAccess, Dereferencable
         private int $len,
         private Pointer $pointer,
     ) {
+    }
+
+    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
+    {
+        $this->pointed_type_resolver = $resolver;
     }
 
     public static function getCTypeName(): string
@@ -92,13 +101,16 @@ final class ZvalArray implements \ArrayAccess, Dereferencable
 
     private function getZval(int $offset): Zval
     {
-        return new Zval(
+        $zval_class = $this->pointed_type_resolver !== null
+            ? $this->pointed_type_resolver->resolve(Zval::class)
+            : Zval::class;
+        return $zval_class::fromCastedCData(
             new CastedCData(
                 $this->casted_cdata->casted[$offset],
                 $this->casted_cdata->casted[$offset],
             ),
             new Pointer(
-                Zval::class,
+                $zval_class,
                 $this->pointer->address + 16 * $offset,
                 16,
             ),
