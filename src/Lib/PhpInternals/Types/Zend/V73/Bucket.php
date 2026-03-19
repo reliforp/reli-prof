@@ -15,11 +15,17 @@ namespace Reli\Lib\PhpInternals\Types\Zend\V73;
 
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\Zend\Bucket as BaseBucket;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 final class Bucket extends BaseBucket implements Dereferencable
 {
+    public static function getPhpVersion(): string
+    {
+        return ZendTypeReader::V73;
+    }
+
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {

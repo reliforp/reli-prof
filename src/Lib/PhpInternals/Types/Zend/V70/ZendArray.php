@@ -16,12 +16,18 @@ namespace Reli\Lib\PhpInternals\Types\Zend\V70;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray as BaseZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendString;
 use Reli\Lib\PhpInternals\Types\Zend\Zval;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
 final class ZendArray extends BaseZendArray implements Dereferencable
 {
+    public static function getPhpVersion(): string
+    {
+        return ZendTypeReader::V70;
+    }
+
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {

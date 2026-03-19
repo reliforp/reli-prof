@@ -17,6 +17,7 @@ use FFI\PhpInternals\zend_array;
 use FFI\PhpInternals\zend_hash_func_ffi;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawInt32;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -43,7 +44,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 * dtor_func_t       pDestructor;
 * }; */
 /** @psalm-consistent-constructor */
-class ZendArray implements Dereferencable
+class ZendArray implements Dereferencable, PhpVersionAware
 {
     public const BUCKET_SIZE_IN_BYTES = 32;
 
@@ -335,6 +336,11 @@ class ZendArray implements Dereferencable
     public function isUninitialized(): bool
     {
         return (bool)($this->flags & (1 << 3));
+    }
+
+    public static function getPhpVersion(): string
+    {
+        return ZendTypeReader::V84;
     }
 
     public static function getCTypeName(): string

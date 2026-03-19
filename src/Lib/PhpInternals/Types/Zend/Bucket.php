@@ -14,11 +14,12 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class Bucket implements Dereferencable
+class Bucket implements Dereferencable, PhpVersionAware
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $val;
@@ -67,6 +68,11 @@ class Bucket implements Dereferencable
             : null
             ,
         };
+    }
+
+    public static function getPhpVersion(): string
+    {
+        return ZendTypeReader::V84;
     }
 
     public static function getCTypeName(): string

@@ -14,10 +14,16 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend\V70;
 
 use Reli\Lib\PhpInternals\Types\Zend\Zval as BaseZval;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 
 final class Zval extends BaseZval implements Dereferencable
 {
+    public static function getPhpVersion(): string
+    {
+        return ZendTypeReader::V70;
+    }
+
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {

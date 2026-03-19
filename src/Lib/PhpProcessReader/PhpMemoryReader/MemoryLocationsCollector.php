@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\Log\Log;
-use Reli\Lib\PhpInternals\Types\Zend\Bucket;
+use Reli\Lib\PhpInternals\Types\Zend\VersionedTypeMap;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
@@ -158,40 +158,7 @@ final class MemoryLocationsCollector
 
                 public function resolve(string $type_name): string
                 {
-                    return match ($this->php_version) {
-                        ZendTypeReader::V70,
-                        ZendTypeReader::V71,
-                        ZendTypeReader::V72 => match ($type_name) {
-                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Bucket::class,
-                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V70\ZendArray::class,
-                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Zval::class,
-                            ZendExecutorGlobals::class => \Reli\Lib\PhpInternals\Types\Zend\V70\ZendExecutorGlobals::class,
-                            default => $type_name,
-                        },
-                        ZendTypeReader::V73 => match ($type_name) {
-                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Bucket::class,
-                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V73\ZendArray::class,
-                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Zval::class,
-                            ZendExecutorGlobals::class => \Reli\Lib\PhpInternals\Types\Zend\V73\ZendExecutorGlobals::class,
-                            default => $type_name,
-                        },
-                        ZendTypeReader::V74 => match ($type_name) {
-                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Bucket::class,
-                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V74\ZendArray::class,
-                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Zval::class,
-                            ZendExecutorGlobals::class => \Reli\Lib\PhpInternals\Types\Zend\V74\ZendExecutorGlobals::class,
-                            default => $type_name,
-                        },
-                        ZendTypeReader::V80,
-                        ZendTypeReader::V81 => match ($type_name) {
-                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V80\ZendArray::class,
-                            ZendExecutorGlobals::class => \Reli\Lib\PhpInternals\Types\Zend\V80\ZendExecutorGlobals::class,
-                            default => $type_name,
-                        },
-                        ZendTypeReader::V82,
-                        ZendTypeReader::V83,
-                        ZendTypeReader::V84 => $type_name,
-                    };
+                    return VersionedTypeMap::resolve($this->php_version, $type_name);
                 }
             }
         );

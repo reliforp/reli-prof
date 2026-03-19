@@ -15,13 +15,14 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
 use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
  * @psalm-consistent-constructor
  */
-class Zval implements Dereferencable
+class Zval implements Dereferencable, PhpVersionAware
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendValue $value;
@@ -120,6 +121,11 @@ class Zval implements Dereferencable
     public function isUndef(): bool
     {
         return $this->getType() === 'IS_UNDEF';
+    }
+
+    public static function getPhpVersion(): string
+    {
+        return ZendTypeReader::V84;
     }
 
     public static function getCTypeName(): string

@@ -13,43 +13,14 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend\V73;
 
-use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals as BaseZendExecutorGlobals;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
-use Reli\Lib\Process\Pointer\Pointer;
 
 final class ZendExecutorGlobals extends BaseZendExecutorGlobals implements Dereferencable
 {
-    public function __get(string $field_name): mixed
+    public static function getPhpVersion(): string
     {
-        return match ($field_name) {
-            'symbol_table' => $this->symbol_table = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->symbol_table,
-                    $this->casted_cdata->casted->symbol_table
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('symbol_table'),
-                    \FFI::sizeof($this->casted_cdata->casted->symbol_table),
-                ),
-            ),
-            'included_files' => $this->included_files = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->included_files,
-                    $this->casted_cdata->casted->included_files
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('included_files'),
-                    \FFI::sizeof($this->casted_cdata->casted->included_files),
-                ),
-            ),
-            default => parent::__get($field_name),
-        };
+        return ZendTypeReader::V73;
     }
 }

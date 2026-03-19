@@ -15,12 +15,16 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_executor_globals;
 use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendExecutorGlobals implements Dereferencable
+class ZendExecutorGlobals implements Dereferencable, PhpVersionAware
 {
+    use ZendArrayFactory;
+    use ZvalFactory;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $uninitialized_zval;
 
@@ -81,10 +85,15 @@ class ZendExecutorGlobals implements Dereferencable
         unset($this->included_files);
     }
 
+    public static function getPhpVersion(): string
+    {
+        return ZendTypeReader::V84;
+    }
+
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'uninitialized_zval' => $this->uninitialized_zval = new Zval(
+            'uninitialized_zval' => $this->uninitialized_zval = $this->newZval(
                 new CastedCData(
                     $this->casted_cdata->casted->uninitialized_zval,
                     $this->casted_cdata->casted->uninitialized_zval
@@ -97,7 +106,7 @@ class ZendExecutorGlobals implements Dereferencable
                     \FFI::sizeof($this->casted_cdata->casted->uninitialized_zval),
                 ),
             ),
-            'error_zval' => $this->error_zval = new Zval(
+            'error_zval' => $this->error_zval = $this->newZval(
                 new CastedCData(
                     $this->casted_cdata->casted->error_zval,
                     $this->casted_cdata->casted->error_zval
@@ -138,7 +147,7 @@ class ZendExecutorGlobals implements Dereferencable
                 )
                 : null
             ,
-            'symbol_table' => $this->symbol_table = new ZendArray(
+            'symbol_table' => $this->symbol_table = $this->newZendArray(
                 new CastedCData(
                     $this->casted_cdata->casted->symbol_table,
                     $this->casted_cdata->casted->symbol_table
@@ -168,7 +177,7 @@ class ZendExecutorGlobals implements Dereferencable
             'objects_store' => $this->objects_store = new ZendObjectsStore(
                 $this->casted_cdata->casted->objects_store,
             ),
-            'included_files' => $this->included_files = new ZendArray(
+            'included_files' => $this->included_files = $this->newZendArray(
                 new CastedCData(
                     $this->casted_cdata->casted->included_files,
                     $this->casted_cdata->casted->included_files
