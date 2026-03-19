@@ -308,7 +308,7 @@ final class MemoryLocationsCollector
         $context_pools = ContextPools::createDefault();
 
         $included_files_context = $this->collectIncludedFiles(
-            $eg->included_files,
+            $dereferencer->deref($eg->included_files),
             $dereferencer,
             $memory_locations,
             $context_pools,
@@ -332,7 +332,7 @@ final class MemoryLocationsCollector
         $zend_constants = $dereferencer->deref($eg->zend_constants);
 
         $global_variables_context = $this->collectGlobalVariables(
-            $eg->symbol_table,
+            $dereferencer->deref($eg->symbol_table),
             $cg->map_ptr_base,
             $dereferencer,
             $zend_type_reader,
