@@ -23,8 +23,8 @@ final class XdgDirectory
 
     public static function getConfigHome(): string
     {
-        $xdgConfigHome = getenv('XDG_CONFIG_HOME');
-        if ($xdgConfigHome !== false && $xdgConfigHome !== '') {
+        $xdgConfigHome = self::getAbsoluteEnv('XDG_CONFIG_HOME');
+        if ($xdgConfigHome !== null) {
             return $xdgConfigHome . '/' . ReliProfiler::TOOL_NAME;
         }
         return self::getHome() . '/.config/' . ReliProfiler::TOOL_NAME;
@@ -32,8 +32,8 @@ final class XdgDirectory
 
     public static function getCacheHome(): string
     {
-        $xdgCacheHome = getenv('XDG_CACHE_HOME');
-        if ($xdgCacheHome !== false && $xdgCacheHome !== '') {
+        $xdgCacheHome = self::getAbsoluteEnv('XDG_CACHE_HOME');
+        if ($xdgCacheHome !== null) {
             return $xdgCacheHome . '/' . ReliProfiler::TOOL_NAME;
         }
         return self::getHome() . '/.cache/' . ReliProfiler::TOOL_NAME;
@@ -41,8 +41,8 @@ final class XdgDirectory
 
     public static function getDataHome(): string
     {
-        $xdgDataHome = getenv('XDG_DATA_HOME');
-        if ($xdgDataHome !== false && $xdgDataHome !== '') {
+        $xdgDataHome = self::getAbsoluteEnv('XDG_DATA_HOME');
+        if ($xdgDataHome !== null) {
             return $xdgDataHome . '/' . ReliProfiler::TOOL_NAME;
         }
         return self::getHome() . '/.local/share/' . ReliProfiler::TOOL_NAME;
@@ -50,17 +50,66 @@ final class XdgDirectory
 
     public static function getStateHome(): string
     {
-        $xdgStateHome = getenv('XDG_STATE_HOME');
-        if ($xdgStateHome !== false && $xdgStateHome !== '') {
+        $xdgStateHome = self::getAbsoluteEnv('XDG_STATE_HOME');
+        if ($xdgStateHome !== null) {
             return $xdgStateHome . '/' . ReliProfiler::TOOL_NAME;
         }
         return self::getHome() . '/.local/state/' . ReliProfiler::TOOL_NAME;
     }
 
+    public static function getRuntimeDir(): ?string
+    {
+        $xdgRuntimeDir = self::getAbsoluteEnv('XDG_RUNTIME_DIR');
+        if ($xdgRuntimeDir !== null) {
+            return $xdgRuntimeDir . '/' . ReliProfiler::TOOL_NAME;
+        }
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function getConfigDirs(): array
+    {
+        $dirs = [self::getConfigHome()];
+        $xdgConfigDirs = getenv('XDG_CONFIG_DIRS');
+        if ($xdgConfigDirs === false || $xdgConfigDirs === '') {
+            $xdgConfigDirs = '/etc/xdg';
+        }
+        foreach (explode(':', $xdgConfigDirs) as $dir) {
+            if (self::isAbsolutePath($dir)) {
+                $dirs[] = $dir . '/' . ReliProfiler::TOOL_NAME;
+            }
+        }
+        return $dirs;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function getDataDirs(): array
+    {
+        $dirs = [self::getDataHome()];
+        $xdgDataDirs = getenv('XDG_DATA_DIRS');
+        if ($xdgDataDirs === false || $xdgDataDirs === '') {
+            $xdgDataDirs = '/usr/local/share:/usr/share';
+        }
+        foreach (explode(':', $xdgDataDirs) as $dir) {
+            if (self::isAbsolutePath($dir)) {
+                $dirs[] = $dir . '/' . ReliProfiler::TOOL_NAME;
+            }
+        }
+        return $dirs;
+    }
+
     public static function ensureDirectoryExists(string $path): string
     {
         if (!is_dir($path)) {
-            mkdir($path, 0700, true);
+            if (!mkdir($path, 0700, true) && !is_dir($path)) {
+                throw new \RuntimeException(
+                    sprintf('Failed to create directory: %s', $path)
+                );
+            }
         }
         return $path;
     }
@@ -72,5 +121,26 @@ final class XdgDirectory
             return $home;
         }
         throw new \RuntimeException('HOME environment variable is not set');
+    }
+
+    /**
+     * Returns the value of an environment variable only if it is set, non-empty, and an absolute path.
+     * Per the XDG Base Directory Specification, relative paths must be ignored.
+     */
+    private static function getAbsoluteEnv(string $name): ?string
+    {
+        $value = getenv($name);
+        if ($value === false || $value === '') {
+            return null;
+        }
+        if (!self::isAbsolutePath($value)) {
+            return null;
+        }
+        return $value;
+    }
+
+    private static function isAbsolutePath(string $path): bool
+    {
+        return str_starts_with($path, '/');
     }
 }
