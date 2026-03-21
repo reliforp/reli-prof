@@ -12,11 +12,12 @@
 declare(strict_types=1);
 
 use Psr\Log\LogLevel;
+use Reli\Lib\Directory\XdgDirectory;
 
 return [
     'log' => [
         'path' => [
-            'default' => 'reli.log',
+            'default' => XdgDirectory::getStateHome() . '/reli.log',
         ],
         'level' => LogLevel::INFO,
     ],
