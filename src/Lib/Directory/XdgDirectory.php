@@ -21,6 +21,7 @@ final class XdgDirectory
     {
     }
 
+    /** @throws HomeNotFoundException */
     public static function getConfigHome(): string
     {
         $xdgConfigHome = self::getAbsoluteEnv('XDG_CONFIG_HOME');
@@ -30,6 +31,7 @@ final class XdgDirectory
         return self::getHome() . '/.config/' . ReliProfiler::TOOL_NAME;
     }
 
+    /** @throws HomeNotFoundException */
     public static function getCacheHome(): string
     {
         $xdgCacheHome = self::getAbsoluteEnv('XDG_CACHE_HOME');
@@ -39,6 +41,7 @@ final class XdgDirectory
         return self::getHome() . '/.cache/' . ReliProfiler::TOOL_NAME;
     }
 
+    /** @throws HomeNotFoundException */
     public static function getDataHome(): string
     {
         $xdgDataHome = self::getAbsoluteEnv('XDG_DATA_HOME');
@@ -48,6 +51,7 @@ final class XdgDirectory
         return self::getHome() . '/.local/share/' . ReliProfiler::TOOL_NAME;
     }
 
+    /** @throws HomeNotFoundException */
     public static function getStateHome(): string
     {
         $xdgStateHome = self::getAbsoluteEnv('XDG_STATE_HOME');
@@ -68,6 +72,7 @@ final class XdgDirectory
 
     /**
      * @return list<string>
+     * @throws HomeNotFoundException
      */
     public static function getConfigDirs(): array
     {
@@ -86,6 +91,7 @@ final class XdgDirectory
 
     /**
      * @return list<string>
+     * @throws HomeNotFoundException
      */
     public static function getDataDirs(): array
     {
@@ -114,13 +120,44 @@ final class XdgDirectory
         return $path;
     }
 
+    /**
+     * Resolves the home directory following XDG conventions.
+     *
+     * 1. HOME environment variable (Unix) / USERPROFILE / HOMEDRIVE+HOMEPATH (Windows)
+     * 2. POSIX passwd database lookup (Unix/Mac)
+     * 3. HomeNotFoundException
+     *
+     * @throws HomeNotFoundException
+     */
     private static function getHome(): string
     {
         $home = getenv('HOME');
         if ($home !== false && $home !== '') {
             return $home;
         }
-        throw new \RuntimeException('HOME environment variable is not set');
+
+        // Windows fallbacks
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $profile = getenv('USERPROFILE');
+            if ($profile !== false && $profile !== '') {
+                return $profile;
+            }
+            $drive = getenv('HOMEDRIVE');
+            $homePath = getenv('HOMEPATH');
+            if ($drive !== false && $homePath !== false && $homePath !== '') {
+                return $drive . $homePath;
+            }
+        }
+
+        // POSIX passwd database fallback
+        if (function_exists('posix_getpwuid') && function_exists('posix_getuid')) {
+            $info = posix_getpwuid(posix_getuid());
+            if ($info !== false && ($info['dir'] ?? '') !== '') {
+                return $info['dir'];
+            }
+        }
+
+        throw new HomeNotFoundException();
     }
 
     /**

@@ -33,7 +33,7 @@ use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
-use Reli\Lib\Directory\XdgDirectory;
+use Reli\Lib\Directory\AppDirectory;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
 use Reli\Lib\Log\StateCollector\CallerStateCollector;
@@ -79,7 +79,7 @@ return [
         $logger = new Logger('default');
         $path = $config->get('log.path.default');
         assert(is_string($path));
-        XdgDirectory::ensureDirectoryExists(dirname($path));
+        AppDirectory::ensureDirectoryExists(dirname($path));
         /** @var LogLevel::* $log_level */
         $log_level = $config->get('log.level');
         $handler = new StreamHandler(

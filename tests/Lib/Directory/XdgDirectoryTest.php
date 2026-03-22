@@ -111,13 +111,17 @@ class XdgDirectoryTest extends BaseTestCase
         $this->assertSame('/tmp/xdg-test-home/.local/state/reli', XdgDirectory::getStateHome());
     }
 
-    public function testGetHomeThrowsWhenNotSet(): void
+    public function testGetHomeFallsBackToPasswd(): void
     {
+        if (!function_exists('posix_getpwuid')) {
+            $this->markTestSkipped('posix extension not available');
+        }
         putenv('HOME');
         putenv('XDG_CONFIG_HOME');
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('HOME environment variable is not set');
-        XdgDirectory::getConfigHome();
+        // passwd fallback should resolve a home directory
+        $result = XdgDirectory::getConfigHome();
+        $this->assertStringEndsWith('/reli', $result);
+        $this->assertStringStartsWith('/', $result);
     }
 
     public function testEnsureDirectoryExists(): void
