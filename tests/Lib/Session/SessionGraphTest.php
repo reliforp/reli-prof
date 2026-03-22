@@ -39,10 +39,10 @@ final class SessionGraphTest extends TestCase
         // ?A . !B (simple ping-pong loop)
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Recv, 'MsgA', 'S1'),
+                new SessionTransition(Direction::Recv, \stdClass::class, 'S1'),
             ],
             'S1' => [
-                new SessionTransition(Direction::Send, 'MsgB', 'S0'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'S0'),
             ],
         ]);
 
@@ -54,10 +54,10 @@ final class SessionGraphTest extends TestCase
     {
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Recv, 'MsgA', 'S0'),
+                new SessionTransition(Direction::Recv, \stdClass::class, 'S0'),
             ],
             'Orphan' => [
-                new SessionTransition(Direction::Send, 'MsgB', 'Orphan'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'Orphan'),
             ],
         ]);
 
@@ -72,7 +72,7 @@ final class SessionGraphTest extends TestCase
     {
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Recv, 'MsgA', 'Dead'),
+                new SessionTransition(Direction::Recv, \stdClass::class, 'Dead'),
             ],
             'Dead' => [],
         ]);
@@ -88,8 +88,8 @@ final class SessionGraphTest extends TestCase
     {
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Send, 'MsgA', 'S0'),
-                new SessionTransition(Direction::Recv, 'MsgB', 'S0'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'S0'),
+                new SessionTransition(Direction::Recv, \ArrayObject::class, 'S0'),
             ],
         ]);
 
@@ -104,7 +104,7 @@ final class SessionGraphTest extends TestCase
     {
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Send, 'MsgA', 'NoSuchState'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'NoSuchState'),
             ],
         ]);
 
@@ -119,15 +119,15 @@ final class SessionGraphTest extends TestCase
     {
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Send, 'MsgA', 'S0'),
-                new SessionTransition(Direction::Send, 'MsgA', 'S0'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'S0'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'S0'),
             ],
         ]);
 
         $errors = $graph->verify();
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('duplicate message type', $errors[0]);
-        $this->assertStringContainsString('MsgA', $errors[0]);
+        $this->assertStringContainsString('stdClass', $errors[0]);
     }
 
     #[Test]
@@ -136,8 +136,8 @@ final class SessionGraphTest extends TestCase
         // ⊕{ !A.S0, !B.S0 }
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Send, 'MsgA', 'S0'),
-                new SessionTransition(Direction::Send, 'MsgB', 'S0'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'S0'),
+                new SessionTransition(Direction::Send, \ArrayObject::class, 'S0'),
             ],
         ]);
 
@@ -149,8 +149,8 @@ final class SessionGraphTest extends TestCase
     {
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Send, 'MsgA', 'Missing'),
-                new SessionTransition(Direction::Recv, 'MsgB', 'S0'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'Missing'),
+                new SessionTransition(Direction::Recv, \ArrayObject::class, 'S0'),
             ],
             'Orphan' => [],
         ]);
@@ -179,10 +179,10 @@ final class SessionGraphTest extends TestCase
     {
         $graph = $this->graph('S0', [
             'S0' => [
-                new SessionTransition(Direction::Recv, 'MsgA', 'S1'),
+                new SessionTransition(Direction::Recv, \stdClass::class, 'S1'),
             ],
             'S1' => [
-                new SessionTransition(Direction::Send, 'MsgB', 'S0'),
+                new SessionTransition(Direction::Send, \stdClass::class, 'S0'),
             ],
         ]);
 
@@ -199,5 +199,33 @@ final class SessionGraphTest extends TestCase
 
         $this->expectException(\LogicException::class);
         $graph->getDirection('S0');
+    }
+
+    #[Test]
+    public function detects_nonexistent_message_class(): void
+    {
+        $graph = $this->graph('S0', [
+            'S0' => [
+                new SessionTransition(Direction::Send, 'App\\NoSuch\\FakeMessage', 'S0'),
+            ],
+        ]);
+
+        $errors = $graph->verify();
+        $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('FakeMessage', $errors[0]);
+        $this->assertStringContainsString('does not exist', $errors[0]);
+    }
+
+    #[Test]
+    public function accepts_existing_message_class(): void
+    {
+        $graph = $this->graph('S0', [
+            'S0' => [
+                new SessionTransition(Direction::Send, \stdClass::class, 'S0'),
+            ],
+        ]);
+
+        $errors = $graph->verify();
+        $this->assertSame([], $errors);
     }
 }

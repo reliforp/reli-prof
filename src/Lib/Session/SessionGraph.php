@@ -142,6 +142,15 @@ final class SessionGraph
             }
         }
 
+        // 6. All message classes exist
+        foreach ($this->transitions as $state => $trans) {
+            foreach ($trans as $t) {
+                if (!class_exists($t->messageClass)) {
+                    $errors[] = "State '{$state}': message class '{$t->messageClass}' does not exist";
+                }
+            }
+        }
+
         return $errors;
     }
 

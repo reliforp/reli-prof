@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Command\Generator;
 
+use Reli\Lib\Session\Attribute\SessionProtocol;
 use Reli\Lib\Session\Generator\ProtocolGenerator;
 use Reli\Lib\Session\SessionGraph;
 use Symfony\Component\Console\Command\Command;
@@ -21,12 +22,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class GenerateProtocolCommand extends Command
 {
-    /** @var list<class-string<\UnitEnum>> */
-    private const SESSION_ENUMS = [
-        \Reli\Inspector\Daemon\Reader\Protocol\PhpReaderSession::class,
-        \Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherSession::class,
-    ];
-
     public function __construct()
     {
         parent::__construct();
@@ -41,8 +36,14 @@ final class GenerateProtocolCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $generator = new ProtocolGenerator();
+        $enumClasses = $this->discoverSessionEnums();
 
-        foreach (self::SESSION_ENUMS as $enumClass) {
+        if ($enumClasses === []) {
+            $output->writeln('<comment>No session protocol enums found.</comment>');
+            return 0;
+        }
+
+        foreach ($enumClasses as $enumClass) {
             $output->writeln("Processing {$enumClass}...");
 
             $graph = SessionGraph::fromEnum($enumClass);
@@ -71,5 +72,75 @@ final class GenerateProtocolCommand extends Command
 
         $output->writeln('<info>Done.</info>');
         return 0;
+    }
+
+    /**
+     * Discover all enums annotated with #[SessionProtocol] under src/.
+     *
+     * @return list<class-string<\UnitEnum>>
+     */
+    private function discoverSessionEnums(): array
+    {
+        $srcDir = dirname(__DIR__, 3) . '/src';
+        $enums = [];
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($srcDir, \FilesystemIterator::SKIP_DOTS),
+        );
+
+        foreach ($iterator as $file) {
+            assert($file instanceof \SplFileInfo);
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $content = file_get_contents($file->getPathname());
+            if ($content === false) {
+                continue;
+            }
+
+            // Quick pre-filter: skip files that don't mention SessionProtocol
+            if (!str_contains($content, 'SessionProtocol')) {
+                continue;
+            }
+
+            $className = $this->extractFullyQualifiedName($content);
+            if ($className === null) {
+                continue;
+            }
+
+            if (!enum_exists($className)) {
+                continue;
+            }
+
+            $ref = new \ReflectionEnum($className);
+            if ($ref->getAttributes(SessionProtocol::class) !== []) {
+                $enums[] = $className;
+            }
+        }
+
+        sort($enums);
+        return $enums;
+    }
+
+    /**
+     * Extract FQCN from a PHP file's namespace + enum/class declaration.
+     *
+     * @return class-string|null
+     */
+    private function extractFullyQualifiedName(string $content): ?string
+    {
+        $namespace = null;
+        if (preg_match('/^namespace\s+([^\s;]+)/m', $content, $m)) {
+            $namespace = $m[1];
+        }
+
+        if (preg_match('/^(?:enum|class|interface)\s+(\w+)/m', $content, $m)) {
+            $name = $m[1];
+            /** @var class-string */
+            return $namespace !== null ? "{$namespace}\\{$name}" : $name;
+        }
+
+        return null;
     }
 }
