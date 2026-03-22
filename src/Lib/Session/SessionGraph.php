@@ -180,4 +180,28 @@ final class SessionGraph
         }
         return $trans[0]->direction;
     }
+
+    public function toMermaid(): string
+    {
+        $lines = ['stateDiagram-v2'];
+
+        // Mark initial state
+        $lines[] = "    [*] --> {$this->initialState}";
+
+        foreach ($this->transitions as $state => $trans) {
+            foreach ($trans as $t) {
+                $short = $this->shortName($t->messageClass);
+                $prefix = $t->direction === Direction::Send ? '!' : '?';
+                $lines[] = "    {$state} --> {$t->nextState} : {$prefix}{$short}";
+            }
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    private function shortName(string $fqcn): string
+    {
+        $parts = explode('\\', $fqcn);
+        return end($parts);
+    }
 }

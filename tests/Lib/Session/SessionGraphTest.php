@@ -228,4 +228,40 @@ final class SessionGraphTest extends TestCase
         $errors = $graph->verify();
         $this->assertSame([], $errors);
     }
+
+    #[Test]
+    public function toMermaid_outputs_state_diagram(): void
+    {
+        $graph = $this->graph('S0', [
+            'S0' => [
+                new SessionTransition(Direction::Recv, \stdClass::class, 'S1'),
+            ],
+            'S1' => [
+                new SessionTransition(Direction::Send, \ArrayObject::class, 'S0'),
+            ],
+        ]);
+
+        $mermaid = $graph->toMermaid();
+
+        $this->assertStringContainsString('stateDiagram-v2', $mermaid);
+        $this->assertStringContainsString('[*] --> S0', $mermaid);
+        $this->assertStringContainsString('S0 --> S1 : ?stdClass', $mermaid);
+        $this->assertStringContainsString('S1 --> S0 : !ArrayObject', $mermaid);
+    }
+
+    #[Test]
+    public function toMermaid_shows_branching_transitions(): void
+    {
+        $graph = $this->graph('S0', [
+            'S0' => [
+                new SessionTransition(Direction::Send, \stdClass::class, 'S0'),
+                new SessionTransition(Direction::Send, \ArrayObject::class, 'S0'),
+            ],
+        ]);
+
+        $mermaid = $graph->toMermaid();
+
+        $this->assertStringContainsString('S0 --> S0 : !stdClass', $mermaid);
+        $this->assertStringContainsString('S0 --> S0 : !ArrayObject', $mermaid);
+    }
 }
