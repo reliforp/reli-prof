@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Command\Generator;
 
 use Reli\Lib\Session\Generator\ProtocolGenerator;
+use Reli\Lib\Session\RecvBranchExhaustivenessChecker;
 use Reli\Lib\Session\SessionEnumDiscoverer;
 use Reli\Lib\Session\SessionGraph;
 use Symfony\Component\Console\Command\Command;
@@ -68,6 +69,26 @@ final class GenerateProtocolCommand extends Command
                 file_put_contents($fullPath, $content);
                 $output->writeln("  Generated: {$path}");
             }
+        }
+
+        // Exhaustiveness check: verify all branch recv call sites handle all message types
+        $exhaustivenessChecker = new RecvBranchExhaustivenessChecker();
+        $rootDir = dirname(__DIR__, 3);
+        $hasWarnings = false;
+
+        foreach ($enumClasses as $enumClass) {
+            $graph = SessionGraph::fromEnum($enumClass);
+            $branchMethods = RecvBranchExhaustivenessChecker::extractBranchRecvMethods($graph);
+            $warnings = $exhaustivenessChecker->check($branchMethods, $rootDir . '/src');
+
+            foreach ($warnings as $warning) {
+                $output->writeln("<comment>  [exhaustiveness] {$warning}</comment>");
+                $hasWarnings = true;
+            }
+        }
+
+        if (!$hasWarnings) {
+            $output->writeln('  Recv branch exhaustiveness: <info>OK</info>');
         }
 
         $output->writeln('<info>Done.</info>');
