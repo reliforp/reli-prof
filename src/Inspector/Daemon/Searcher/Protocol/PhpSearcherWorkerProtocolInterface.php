@@ -17,11 +17,23 @@ namespace Reli\Inspector\Daemon\Searcher\Protocol;
 
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
+use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherSession;
 use Reli\Lib\Amphp\MessageProtocolInterface;
 
+/**
+ * @template TState of PhpSearcherSession
+ */
 interface PhpSearcherWorkerProtocolInterface extends MessageProtocolInterface
 {
+    /**
+     * @psalm-if-this-is PhpSearcherWorkerProtocolInterface<PhpSearcherSession::Reporting>
+     * @psalm-this-out PhpSearcherWorkerProtocolInterface<PhpSearcherSession::Reporting>
+     */
     public function sendUpdateTargetProcess(UpdateTargetProcessMessage $message): void;
 
+    /**
+     * @psalm-if-this-is PhpSearcherWorkerProtocolInterface<PhpSearcherSession::AwaitingSettings>
+     * @psalm-this-out PhpSearcherWorkerProtocolInterface<PhpSearcherSession::Reporting>
+     */
     public function receiveTargetPhpSettings(): TargetPhpSettingsMessage;
 }

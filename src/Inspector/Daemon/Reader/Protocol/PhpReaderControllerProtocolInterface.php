@@ -19,13 +19,29 @@ use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderSession;
 use Reli\Lib\Amphp\MessageProtocolInterface;
 
+/**
+ * @template TState of PhpReaderSession
+ */
 interface PhpReaderControllerProtocolInterface extends MessageProtocolInterface
 {
+    /**
+     * @psalm-if-this-is PhpReaderControllerProtocolInterface<PhpReaderSession::AwaitingSettings>
+     * @psalm-this-out PhpReaderControllerProtocolInterface<PhpReaderSession::AwaitingAttach>
+     */
     public function sendSetSettings(SetSettingsMessage $message): void;
 
+    /**
+     * @psalm-if-this-is PhpReaderControllerProtocolInterface<PhpReaderSession::AwaitingAttach>
+     * @psalm-this-out PhpReaderControllerProtocolInterface<PhpReaderSession::Tracing>
+     */
     public function sendAttach(AttachMessage $message): void;
 
+    /**
+     * @psalm-if-this-is PhpReaderControllerProtocolInterface<PhpReaderSession::Tracing>
+     * @psalm-this-out PhpReaderControllerProtocolInterface<PhpReaderSession::Tracing|PhpReaderSession::AwaitingAttach>
+     */
     public function receiveTraceOrDetachWorker(): TraceMessage|DetachWorkerMessage;
 }

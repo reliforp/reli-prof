@@ -21,7 +21,12 @@ use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
+use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderSession;
 
+/**
+ * @template TState of PhpReaderSession
+ * @implements PhpReaderControllerProtocolInterface<TState>
+ */
 final class PhpReaderControllerProtocol implements PhpReaderControllerProtocolInterface
 {
     public function __construct(
@@ -29,24 +34,37 @@ private Channel $channel
     ) {
     }
 
+    /** @return self<PhpReaderSession::AwaitingSettings> */
     public static function createFromChannel(Channel $channel): static
     {
 return new self($channel);
     }
 
-public function sendSetSettings(SetSettingsMessage $message): void
-{
-    $this->channel->send($message);
-}
+    /**
+     * @psalm-if-this-is PhpReaderControllerProtocol<PhpReaderSession::AwaitingSettings>
+     * @psalm-this-out PhpReaderControllerProtocol<PhpReaderSession::AwaitingAttach>
+     */
+    public function sendSetSettings(SetSettingsMessage $message): void
+    {
+$this->channel->send($message);
+    }
 
-public function sendAttach(AttachMessage $message): void
-{
-    $this->channel->send($message);
-}
+    /**
+     * @psalm-if-this-is PhpReaderControllerProtocol<PhpReaderSession::AwaitingAttach>
+     * @psalm-this-out PhpReaderControllerProtocol<PhpReaderSession::Tracing>
+     */
+    public function sendAttach(AttachMessage $message): void
+    {
+$this->channel->send($message);
+    }
 
-public function receiveTraceOrDetachWorker(): TraceMessage|DetachWorkerMessage
-{
-    /** @var TraceMessage|DetachWorkerMessage */
-    return $this->channel->receive();
-}
+    /**
+     * @psalm-if-this-is PhpReaderControllerProtocol<PhpReaderSession::Tracing>
+     * @psalm-this-out PhpReaderControllerProtocol<PhpReaderSession::Tracing|PhpReaderSession::AwaitingAttach>
+     */
+    public function receiveTraceOrDetachWorker(): TraceMessage|DetachWorkerMessage
+    {
+/** @var TraceMessage|DetachWorkerMessage */
+return $this->channel->receive();
+    }
 }

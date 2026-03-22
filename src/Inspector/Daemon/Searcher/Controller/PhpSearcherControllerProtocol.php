@@ -19,7 +19,12 @@ use Amp\Sync\Channel;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\TargetPhpSettingsMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherControllerProtocolInterface;
+use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherSession;
 
+/**
+ * @template TState of PhpSearcherSession
+ * @implements PhpSearcherControllerProtocolInterface<TState>
+ */
 final class PhpSearcherControllerProtocol implements PhpSearcherControllerProtocolInterface
 {
     public function __construct(
@@ -27,19 +32,28 @@ private Channel $channel
     ) {
     }
 
+    /** @return self<PhpSearcherSession::AwaitingSettings> */
     public static function createFromChannel(Channel $channel): static
     {
 return new self($channel);
     }
 
-public function sendTargetPhpSettings(TargetPhpSettingsMessage $message): void
-{
-    $this->channel->send($message);
-}
+    /**
+     * @psalm-if-this-is PhpSearcherControllerProtocol<PhpSearcherSession::AwaitingSettings>
+     * @psalm-this-out PhpSearcherControllerProtocol<PhpSearcherSession::Reporting>
+     */
+    public function sendTargetPhpSettings(TargetPhpSettingsMessage $message): void
+    {
+$this->channel->send($message);
+    }
 
-public function receiveUpdateTargetProcess(): UpdateTargetProcessMessage
-{
-    /** @var UpdateTargetProcessMessage */
-    return $this->channel->receive();
-}
+    /**
+     * @psalm-if-this-is PhpSearcherControllerProtocol<PhpSearcherSession::Reporting>
+     * @psalm-this-out PhpSearcherControllerProtocol<PhpSearcherSession::Reporting>
+     */
+    public function receiveUpdateTargetProcess(): UpdateTargetProcessMessage
+    {
+/** @var UpdateTargetProcessMessage */
+return $this->channel->receive();
+    }
 }

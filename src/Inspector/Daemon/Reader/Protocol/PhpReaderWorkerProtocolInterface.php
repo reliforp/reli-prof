@@ -19,15 +19,35 @@ use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderSession;
 use Reli\Lib\Amphp\MessageProtocolInterface;
 
+/**
+ * @template TState of PhpReaderSession
+ */
 interface PhpReaderWorkerProtocolInterface extends MessageProtocolInterface
 {
+    /**
+     * @psalm-if-this-is PhpReaderWorkerProtocolInterface<PhpReaderSession::Tracing>
+     * @psalm-this-out PhpReaderWorkerProtocolInterface<PhpReaderSession::Tracing>
+     */
     public function sendTrace(TraceMessage $message): void;
 
+    /**
+     * @psalm-if-this-is PhpReaderWorkerProtocolInterface<PhpReaderSession::Tracing>
+     * @psalm-this-out PhpReaderWorkerProtocolInterface<PhpReaderSession::AwaitingAttach>
+     */
     public function sendDetachWorker(DetachWorkerMessage $message): void;
 
+    /**
+     * @psalm-if-this-is PhpReaderWorkerProtocolInterface<PhpReaderSession::AwaitingSettings>
+     * @psalm-this-out PhpReaderWorkerProtocolInterface<PhpReaderSession::AwaitingAttach>
+     */
     public function receiveSetSettings(): SetSettingsMessage;
 
+    /**
+     * @psalm-if-this-is PhpReaderWorkerProtocolInterface<PhpReaderSession::AwaitingAttach>
+     * @psalm-this-out PhpReaderWorkerProtocolInterface<PhpReaderSession::Tracing>
+     */
     public function receiveAttach(): AttachMessage;
 }

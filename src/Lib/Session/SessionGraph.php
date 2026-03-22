@@ -26,11 +26,13 @@ final class SessionGraph
      * @param SessionProtocol $protocol
      * @param string $initialState
      * @param array<string, list<SessionTransition>> $transitions state name => transitions
+     * @param class-string<\UnitEnum>|null $enumClass
      */
     public function __construct(
         public readonly SessionProtocol $protocol,
         public readonly string $initialState,
         public readonly array $transitions,
+        public readonly ?string $enumClass = null,
     ) {
     }
 
@@ -86,7 +88,7 @@ final class SessionGraph
             throw new \LogicException("No initial state found in {$enumClass}");
         }
 
-        return new self($protocol, $initialState, $transitions);
+        return new self($protocol, $initialState, $transitions, $enumClass);
     }
 
     /** @return list<string> */

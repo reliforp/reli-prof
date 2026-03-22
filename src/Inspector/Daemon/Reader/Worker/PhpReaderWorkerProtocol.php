@@ -20,8 +20,13 @@ use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
+use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderSession;
 use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
 
+/**
+ * @template TState of PhpReaderSession
+ * @implements PhpReaderWorkerProtocolInterface<TState>
+ */
 final class PhpReaderWorkerProtocol implements PhpReaderWorkerProtocolInterface
 {
     public function __construct(
@@ -29,30 +34,47 @@ private Channel $channel
     ) {
     }
 
+    /** @return self<PhpReaderSession::AwaitingSettings> */
     public static function createFromChannel(Channel $channel): static
     {
 return new self($channel);
     }
 
-public function sendTrace(TraceMessage $message): void
-{
-    $this->channel->send($message);
-}
+    /**
+     * @psalm-if-this-is PhpReaderWorkerProtocol<PhpReaderSession::Tracing>
+     * @psalm-this-out PhpReaderWorkerProtocol<PhpReaderSession::Tracing>
+     */
+    public function sendTrace(TraceMessage $message): void
+    {
+$this->channel->send($message);
+    }
 
-public function sendDetachWorker(DetachWorkerMessage $message): void
-{
-    $this->channel->send($message);
-}
+    /**
+     * @psalm-if-this-is PhpReaderWorkerProtocol<PhpReaderSession::Tracing>
+     * @psalm-this-out PhpReaderWorkerProtocol<PhpReaderSession::AwaitingAttach>
+     */
+    public function sendDetachWorker(DetachWorkerMessage $message): void
+    {
+$this->channel->send($message);
+    }
 
-public function receiveSetSettings(): SetSettingsMessage
-{
-    /** @var SetSettingsMessage */
-    return $this->channel->receive();
-}
+    /**
+     * @psalm-if-this-is PhpReaderWorkerProtocol<PhpReaderSession::AwaitingSettings>
+     * @psalm-this-out PhpReaderWorkerProtocol<PhpReaderSession::AwaitingAttach>
+     */
+    public function receiveSetSettings(): SetSettingsMessage
+    {
+/** @var SetSettingsMessage */
+return $this->channel->receive();
+    }
 
-public function receiveAttach(): AttachMessage
-{
-    /** @var AttachMessage */
-    return $this->channel->receive();
-}
+    /**
+     * @psalm-if-this-is PhpReaderWorkerProtocol<PhpReaderSession::AwaitingAttach>
+     * @psalm-this-out PhpReaderWorkerProtocol<PhpReaderSession::Tracing>
+     */
+    public function receiveAttach(): AttachMessage
+    {
+/** @var AttachMessage */
+return $this->channel->receive();
+    }
 }

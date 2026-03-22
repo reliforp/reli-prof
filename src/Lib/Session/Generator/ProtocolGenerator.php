@@ -50,14 +50,16 @@ final class ProtocolGenerator
     private function generateInterface(SessionGraph $graph, Side $side): array
     {
         $name = $graph->protocol->name;
-        $namespace = $side === Side::Worker
-            ? $this->protocolNamespace($graph)
-            : $this->protocolNamespace($graph);
+        $namespace = $this->protocolNamespace($graph);
         $className = "{$name}{$side->label()}ProtocolInterface";
+        $enumShort = $this->shortName($graph->enumClass ?? '');
 
         $uses = [
             'Reli\Lib\Amphp\MessageProtocolInterface',
         ];
+        if ($graph->enumClass !== null) {
+            $uses[] = $graph->enumClass;
+        }
         $methods = [];
 
         foreach ($graph->transitions as $state => $transitions) {
@@ -68,7 +70,8 @@ final class ProtocolGenerator
 
                 if ($dir === Direction::Send) {
                     $methodName = $this->sendMethodName($graph, $state, $transition);
-                    $methods[] = "    public function {$methodName}({$messageShort} \$message): void;";
+                    $doc = $this->psalmMethodDoc($className, $enumShort, $state, [$transition->nextState], '    ');
+                    $methods[] = "{$doc}\n    public function {$methodName}({$messageShort} \$message): void;";
                 }
             }
         }
@@ -83,18 +86,21 @@ final class ProtocolGenerator
                 continue;
             }
 
+            $nextStates = array_unique(array_map(fn (SessionTransition $t) => $t->nextState, $transitions));
+            $doc = $this->psalmMethodDoc($className, $enumShort, $state, $nextStates, '    ');
+
             if (count($transitions) === 1) {
                 $t = $transitions[0];
                 $messageShort = $this->shortName($t->messageClass);
                 $methodName = $this->recvMethodName($graph, $state, $transitions);
-                $methods[] = "    public function {$methodName}(): {$messageShort};";
+                $methods[] = "{$doc}\n    public function {$methodName}(): {$messageShort};";
             } else {
                 $returnTypes = array_map(
                     fn (SessionTransition $t) => $this->shortName($t->messageClass),
                     $transitions
                 );
                 $methodName = $this->recvMethodName($graph, $state, $transitions);
-                $methods[] = "    public function {$methodName}(): " . implode('|', $returnTypes) . ";";
+                $methods[] = "{$doc}\n    public function {$methodName}(): " . implode('|', $returnTypes) . ";";
             }
         }
 
@@ -103,6 +109,9 @@ final class ProtocolGenerator
 
         $useLines = implode("\n", array_map(fn (string $u) => "use {$u};", $uses));
         $methodBlock = implode("\n\n", $methods);
+        $templateDoc = $graph->enumClass !== null
+            ? "/**\n * @template TState of {$enumShort}\n */\n"
+            : '';
 
         $content = <<<PHP
         <?php
@@ -124,7 +133,7 @@ final class ProtocolGenerator
 
         {$useLines}
 
-        interface {$className} extends MessageProtocolInterface
+        {$templateDoc}interface {$className} extends MessageProtocolInterface
         {
         {$methodBlock}
         }
@@ -147,11 +156,15 @@ final class ProtocolGenerator
             : $graph->protocol->controllerNamespace;
         $interfaceName = "{$name}{$side->label()}ProtocolInterface";
         $className = "{$name}{$side->label()}Protocol";
+        $enumShort = $this->shortName($graph->enumClass ?? '');
 
         $uses = [
             'Amp\Sync\Channel',
             "{$protocolNamespace}\\{$interfaceName}",
         ];
+        if ($graph->enumClass !== null) {
+            $uses[] = $graph->enumClass;
+        }
 
         $methods = [];
 
@@ -164,12 +177,12 @@ final class ProtocolGenerator
 
                 if ($dir === Direction::Send) {
                     $methodName = $this->sendMethodName($graph, $state, $transition);
-                    $methods[] = <<<PHP
-                        public function {$methodName}({$messageShort} \$message): void
-                        {
-                            \$this->channel->send(\$message);
-                        }
-                    PHP;
+                    $doc = $this->psalmMethodDoc($className, $enumShort, $state, [$transition->nextState]);
+                    $methods[] = ($doc !== '' ? $doc . "\n" : '') .
+                        "public function {$methodName}({$messageShort} \$message): void\n" .
+                        "{\n" .
+                        "    \$this->channel->send(\$message);\n" .
+                        '}';
                 }
             }
         }
@@ -184,17 +197,19 @@ final class ProtocolGenerator
                 continue;
             }
 
+            $nextStates = array_unique(array_map(fn (SessionTransition $t) => $t->nextState, $transitions));
+            $doc = $this->psalmMethodDoc($className, $enumShort, $state, $nextStates);
+
             if (count($transitions) === 1) {
                 $t = $transitions[0];
                 $messageShort = $this->shortName($t->messageClass);
                 $methodName = $this->recvMethodName($graph, $state, $transitions);
-                $methods[] = <<<PHP
-                    public function {$methodName}(): {$messageShort}
-                    {
-                        /** @var {$messageShort} */
-                        return \$this->channel->receive();
-                    }
-                PHP;
+                $methods[] = ($doc !== '' ? $doc . "\n" : '') .
+                    "public function {$methodName}(): {$messageShort}\n" .
+                    "{\n" .
+                    "    /** @var {$messageShort} */\n" .
+                    "    return \$this->channel->receive();\n" .
+                    '}';
             } else {
                 $returnTypes = array_map(
                     fn (SessionTransition $t) => $this->shortName($t->messageClass),
@@ -202,13 +217,12 @@ final class ProtocolGenerator
                 );
                 $returnType = implode('|', $returnTypes);
                 $methodName = $this->recvMethodName($graph, $state, $transitions);
-                $methods[] = <<<PHP
-                    public function {$methodName}(): {$returnType}
-                    {
-                        /** @var {$returnType} */
-                        return \$this->channel->receive();
-                    }
-                PHP;
+                $methods[] = ($doc !== '' ? $doc . "\n" : '') .
+                    "public function {$methodName}(): {$returnType}\n" .
+                    "{\n" .
+                    "    /** @var {$returnType} */\n" .
+                    "    return \$this->channel->receive();\n" .
+                    '}';
             }
         }
 
@@ -217,6 +231,14 @@ final class ProtocolGenerator
 
         $useLines = implode("\n", array_map(fn (string $u) => "use {$u};", $uses));
         $methodBlock = implode("\n\n", array_map(fn (string $m) => $this->indentBlock($m, 1), $methods));
+
+        $templateDoc = '';
+        $implementsClause = "implements {$interfaceName}";
+        $createFromChannelDoc = '';
+        if ($graph->enumClass !== null) {
+            $templateDoc = "/**\n * @template TState of {$enumShort}\n * @implements {$interfaceName}<TState>\n */\n";
+            $createFromChannelDoc = "    /** @return self<{$enumShort}::{$graph->initialState}> */\n";
+        }
 
         $content = <<<PHP
         <?php
@@ -238,14 +260,14 @@ final class ProtocolGenerator
 
         {$useLines}
 
-        final class {$className} implements {$interfaceName}
+        {$templateDoc}final class {$className} {$implementsClause}
         {
             public function __construct(
                 private Channel \$channel
             ) {
             }
 
-            public static function createFromChannel(Channel \$channel): static
+        {$createFromChannelDoc}    public static function createFromChannel(Channel \$channel): static
             {
                 return new self(\$channel);
             }
@@ -284,6 +306,24 @@ final class ProtocolGenerator
         }, $transitions);
 
         return 'receive' . implode('Or', $names);
+    }
+
+    /**
+     * @param list<string> $nextStates
+     */
+    private function psalmMethodDoc(string $className, string $enumShort, string $state, array $nextStates, string $indent = ''): string
+    {
+        if ($enumShort === '') {
+            return '';
+        }
+        $ifThis = "{$className}<{$enumShort}::{$state}>";
+        $outStates = implode('|', array_map(fn (string $s) => "{$enumShort}::{$s}", $nextStates));
+        $thisOut = "{$className}<{$outStates}>";
+
+        return "{$indent}/**\n" .
+            "{$indent} * @psalm-if-this-is {$ifThis}\n" .
+            "{$indent} * @psalm-this-out {$thisOut}\n" .
+            "{$indent} */";
     }
 
     private function shortName(string $fqcn): string
