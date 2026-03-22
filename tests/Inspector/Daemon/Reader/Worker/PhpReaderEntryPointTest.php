@@ -47,7 +47,7 @@ class PhpReaderEntryPointTest extends BaseTestCase
         );
         $php_reader_task = Mockery::mock(PhpReaderTraceLoopInterface::class);
         $protocol = Mockery::mock(PhpReaderWorkerProtocolInterface::class);
-        $protocol->expects()->receiveSettings()->andReturns($settings)->once();
+        $protocol->expects()->receiveSetSettings()->andReturns($settings)->once();
         $protocol->expects()->receiveAttach()->andReturns($attach)->once();
         $php_reader_task->shouldReceive('run')
             ->withArgs(

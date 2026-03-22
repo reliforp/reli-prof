@@ -33,7 +33,7 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
                     $this->auto_context_recovering
                         ->getContext()
                         ->getProtocol()
-                        ->sendTargetRegex($this->settings_already_sent)
+                        ->sendTargetPhpSettings($this->settings_already_sent)
                     ;
                 }
             }
@@ -58,7 +58,7 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         );
         $this->auto_context_recovering->withAutoRecover(
             function (PhpSearcherControllerProtocolInterface $protocol) use ($message) {
-                $protocol->sendTargetRegex($message);
+                $protocol->sendTargetPhpSettings($message);
             },
             'failed to send target',
         );

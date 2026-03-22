@@ -72,7 +72,7 @@ final class PhpReaderControllerTest extends BaseTestCase
 
         $protocol = Mockery::mock(PhpReaderControllerProtocolInterface::class);
         $protocol->expects()
-            ->sendSettings()
+            ->sendSetSettings()
             ->with(
                 Mockery::on(function (SetSettingsMessage $actual) use ($expected) {
                     $this->assertEquals($expected, $actual);
@@ -193,7 +193,7 @@ final class PhpReaderControllerTest extends BaseTestCase
 
         $protocol = Mockery::mock(PhpReaderControllerProtocolInterface::class);
         $protocol->expects()
-            ->sendSettings()
+            ->sendSetSettings()
             ->with(
                 Mockery::on(function (SetSettingsMessage $actual) use ($expected) {
                     $this->assertEquals($expected, $actual);

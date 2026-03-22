@@ -61,7 +61,7 @@ class PhpSearcherControllerTest extends BaseTestCase
                 'failed to send target'
             )
         ;
-        $protocol->shouldReceive('sendTargetRegex')
+        $protocol->shouldReceive('sendTargetPhpSettings')
             ->once()
             ->withArgs(
                 function (TargetPhpSettingsMessage $message) {
@@ -163,7 +163,7 @@ class PhpSearcherControllerTest extends BaseTestCase
             ->getProtocol()
             ->andReturns($protocol)
         ;
-        $protocol->shouldReceive('sendTargetRegex')
+        $protocol->shouldReceive('sendTargetPhpSettings')
             ->twice()
             ->withArgs(
                 function (TargetPhpSettingsMessage $message) {

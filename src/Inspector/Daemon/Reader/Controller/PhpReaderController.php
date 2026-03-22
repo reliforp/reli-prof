@@ -40,7 +40,7 @@ final class PhpReaderController implements PhpReaderControllerInterface
                     $this->auto_context_recovering
                         ->getContext()
                         ->getProtocol()
-                        ->sendSettings($this->settings_already_sent)
+                        ->sendSetSettings($this->settings_already_sent)
                     ;
                 }
                 if ($this->attach_already_sent !== null) {
@@ -74,7 +74,7 @@ final class PhpReaderController implements PhpReaderControllerInterface
         );
         $this->auto_context_recovering->withAutoRecover(
             function (PhpReaderControllerProtocolInterface $protocol) use ($settings_message) {
-                $protocol->sendSettings($settings_message);
+                $protocol->sendSetSettings($settings_message);
                 $this->settings_already_sent = $settings_message;
             },
             'failed on sending settings to worker'

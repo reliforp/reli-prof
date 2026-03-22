@@ -31,7 +31,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 
     public function run(): void
     {
-        $set_settings_message = $this->protocol->receiveSettings();
+        $set_settings_message = $this->protocol->receiveSetSettings();
         Log::debug('settings_message', [$set_settings_message]);
 
         while ($this->loop_condition->shouldContinue()) {
