@@ -21,11 +21,10 @@ final class Send
 {
     /**
      * @param class-string $messageClass
-     * @param class-string<UnitEnum>|string $next enum case name or class-string
      */
     public function __construct(
         public readonly string $messageClass,
-        public readonly string $next,
+        public readonly UnitEnum $next,
     ) {
     }
 }

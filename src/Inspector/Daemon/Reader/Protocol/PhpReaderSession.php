@@ -36,13 +36,13 @@ use Reli\Lib\Session\Attribute\SessionProtocol;
 enum PhpReaderSession
 {
     #[Initial]
-    #[Recv(SetSettingsMessage::class, next: 'AwaitingAttach')]
+    #[Recv(SetSettingsMessage::class, next: self::AwaitingAttach)]
     case AwaitingSettings;
 
-    #[Recv(AttachMessage::class, next: 'Tracing')]
+    #[Recv(AttachMessage::class, next: self::Tracing)]
     case AwaitingAttach;
 
-    #[Send(TraceMessage::class, next: 'Tracing')]
-    #[Send(DetachWorkerMessage::class, next: 'AwaitingAttach')]
+    #[Send(TraceMessage::class, next: self::Tracing)]
+    #[Send(DetachWorkerMessage::class, next: self::AwaitingAttach)]
     case Tracing;
 }

@@ -34,9 +34,9 @@ use Reli\Lib\Session\Attribute\SessionProtocol;
 enum PhpSearcherSession
 {
     #[Initial]
-    #[Recv(TargetPhpSettingsMessage::class, next: 'Reporting')]
+    #[Recv(TargetPhpSettingsMessage::class, next: self::Reporting)]
     case AwaitingSettings;
 
-    #[Send(UpdateTargetProcessMessage::class, next: 'Reporting')]
+    #[Send(UpdateTargetProcessMessage::class, next: self::Reporting)]
     case Reporting;
 }

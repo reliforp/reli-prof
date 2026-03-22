@@ -68,7 +68,7 @@ final class SessionGraph
                 $transitions[$stateName][] = new SessionTransition(
                     direction: Direction::Send,
                     messageClass: $send->messageClass,
-                    nextState: $send->next,
+                    nextState: $send->next->name,
                 );
             }
 
@@ -77,7 +77,7 @@ final class SessionGraph
                 $transitions[$stateName][] = new SessionTransition(
                     direction: Direction::Recv,
                     messageClass: $recv->messageClass,
-                    nextState: $recv->next,
+                    nextState: $recv->next->name,
                 );
             }
         }
