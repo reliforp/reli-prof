@@ -67,7 +67,7 @@ return [
         ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
     PhpReaderTraceLoopInterface::class => autowire(PhpReaderTraceLoop::class),
     ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
-    Config::class => fn () => Config::load(__DIR__ . '/config.php'),
+    Config::class => fn () => AppDirectory::loadConfig(__DIR__ . '/config.php'),
     TemplatePathResolverInterface::class => autowire(TemplatePathResolver::class),
     StateCollector::class => function (Container $container) {
         $collectors = [];

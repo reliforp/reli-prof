@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Directory;
 
+use Noodlehaus\Config;
 use Reli\ReliProfiler;
 
 /**
@@ -81,6 +82,30 @@ final class AppDirectory
     public static function getLogPath(): string
     {
         return self::getStateDir() . '/reli.log';
+    }
+
+    /**
+     * Loads application configuration.
+     *
+     * 1. Load the default config from the install directory (always)
+     * 2. If a user config exists in XDG config dir, merge it on top
+     *
+     * User config values override defaults via array_replace_recursive.
+     */
+    public static function loadConfig(string $defaultConfigPath): Config
+    {
+        $config = Config::load($defaultConfigPath);
+
+        try {
+            $userConfigPath = self::getConfigDir() . '/config.php';
+            if (is_file($userConfigPath)) {
+                $config->merge(Config::load($userConfigPath));
+            }
+        } catch (HomeNotFoundException) {
+            // No home directory — use defaults only
+        }
+
+        return $config;
     }
 
     public static function ensureDirectoryExists(string $path): string

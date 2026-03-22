@@ -158,4 +158,81 @@ class AppDirectoryTest extends BaseTestCase
 
         rmdir($testDir);
     }
+
+    // --- loadConfig ---
+
+    public function testLoadConfigReturnsDefaultWhenNoUserConfig(): void
+    {
+        $defaultConfig = sys_get_temp_dir() . '/reli-test-config-' . uniqid();
+        mkdir($defaultConfig, 0700, true);
+        $defaultConfigFile = $defaultConfig . '/config.php';
+        file_put_contents($defaultConfigFile, '<?php return ["log" => ["level" => "info"]];');
+
+        // Point XDG config to a directory with no config.php
+        $emptyConfigDir = sys_get_temp_dir() . '/reli-test-xdg-empty-' . uniqid() . '/reli';
+        mkdir($emptyConfigDir, 0700, true);
+        putenv('XDG_CONFIG_HOME=' . dirname($emptyConfigDir));
+
+        $config = AppDirectory::loadConfig($defaultConfigFile);
+
+        $this->assertSame('info', $config->get('log.level'));
+
+        unlink($defaultConfigFile);
+        rmdir($defaultConfig);
+        rmdir($emptyConfigDir);
+        rmdir(dirname($emptyConfigDir));
+    }
+
+    public function testLoadConfigMergesUserConfig(): void
+    {
+        $defaultConfig = sys_get_temp_dir() . '/reli-test-config-' . uniqid();
+        mkdir($defaultConfig, 0700, true);
+        $defaultConfigFile = $defaultConfig . '/config.php';
+        file_put_contents(
+            $defaultConfigFile,
+            '<?php return ["log" => ["level" => "info"], "output" => ["template" => ["default" => "phpspy"]]];'
+        );
+
+        // Create user config that overrides log level
+        $userConfigBase = sys_get_temp_dir() . '/reli-test-xdg-user-' . uniqid();
+        $userConfigDir = $userConfigBase . '/reli';
+        mkdir($userConfigDir, 0700, true);
+        file_put_contents(
+            $userConfigDir . '/config.php',
+            '<?php return ["log" => ["level" => "debug"]];'
+        );
+        putenv('XDG_CONFIG_HOME=' . $userConfigBase);
+
+        $config = AppDirectory::loadConfig($defaultConfigFile);
+
+        // User override takes effect
+        $this->assertSame('debug', $config->get('log.level'));
+        // Default value preserved for non-overridden keys
+        $this->assertSame('phpspy', $config->get('output.template.default'));
+
+        unlink($defaultConfigFile);
+        rmdir($defaultConfig);
+        unlink($userConfigDir . '/config.php');
+        rmdir($userConfigDir);
+        rmdir($userConfigBase);
+    }
+
+    public function testLoadConfigWorksWithoutHome(): void
+    {
+        $defaultConfig = sys_get_temp_dir() . '/reli-test-config-' . uniqid();
+        mkdir($defaultConfig, 0700, true);
+        $defaultConfigFile = $defaultConfig . '/config.php';
+        file_put_contents($defaultConfigFile, '<?php return ["log" => ["level" => "warning"]];');
+
+        putenv('HOME');
+        putenv('XDG_CONFIG_HOME');
+
+        $config = AppDirectory::loadConfig($defaultConfigFile);
+
+        // Should fall back to defaults without throwing
+        $this->assertSame('warning', $config->get('log.level'));
+
+        unlink($defaultConfigFile);
+        rmdir($defaultConfig);
+    }
 }
