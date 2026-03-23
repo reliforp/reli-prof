@@ -19,9 +19,11 @@ use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\FieldReader;
+use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendClassEntry implements Dereferencable
+final class ZendClassEntry implements LazyDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $type;
@@ -83,13 +85,14 @@ final class ZendClassEntry implements Dereferencable
     public ?Pointer $doc_comment;
 
     private ?ZvalArray $static_properties_table_cache = null;
+    private ?FieldReader $field_reader = null;
 
     /**
-     * @param CastedCData<zend_class_entry> $casted_cdata
+     * @param CastedCData<zend_class_entry>|null $casted_cdata
      * @param Pointer<ZendClassEntry> $pointer
      */
     public function __construct(
-        private CastedCData $casted_cdata,
+        private ?CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
         unset($this->type);
@@ -107,11 +110,48 @@ final class ZendClassEntry implements Dereferencable
         unset($this->num_interfaces);
         unset($this->num_traits);
         unset($this->doc_comment);
-        $this->info = new ZendClassEntryInfo($this->casted_cdata->casted->info);
+        if ($this->casted_cdata !== null) {
+            $this->info = new ZendClassEntryInfo($this->casted_cdata->casted->info);
+        }
+    }
+
+    /**
+     * @param Pointer<ZendClassEntry> $pointer
+     */
+    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
+    {
+        $self = new self(null, $pointer);
+        $self->field_reader = $field_reader;
+        return $self;
     }
 
     public function __get(string $field_name)
     {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
+        }
+        return $this->getFieldEager($field_name);
+    }
+
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'type' => $this->type = $this->field_reader->readIntField($this->pointer, 'type'),
+            'name' => $this->name = $this->field_reader->readPointerField(
+                $this->pointer,
+                'name',
+                ZendString::class,
+            ) ?? throw new \RuntimeException('null name pointer in zend_class_entry'),
+            default => throw new \LogicException(
+                "Field '{$field_name}' is not available in lazy deref mode for ZendClassEntry"
+            ),
+        };
+    }
+
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
         return match ($field_name) {
             'type' => $this->type = ord($this->casted_cdata->casted->type),
             'name' => $this->name = Pointer::fromCData(
