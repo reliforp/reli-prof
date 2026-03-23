@@ -12,11 +12,12 @@
 declare(strict_types=1);
 
 use Psr\Log\LogLevel;
+use Reli\Lib\Directory\AppDirectory;
 
 return [
     'log' => [
         'path' => [
-            'default' => 'reli.log',
+            'default' => AppDirectory::getLogPath(),
         ],
         'level' => LogLevel::INFO,
     ],

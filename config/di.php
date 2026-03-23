@@ -33,6 +33,7 @@ use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
+use Reli\Lib\Directory\AppDirectory;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
 use Reli\Lib\Log\StateCollector\CallerStateCollector;
@@ -66,7 +67,7 @@ return [
         ->constructorParameter('di_config_file', __DIR__ . '/di.php'),
     PhpReaderTraceLoopInterface::class => autowire(PhpReaderTraceLoop::class),
     ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
-    Config::class => fn () => Config::load(__DIR__ . '/config.php'),
+    Config::class => fn () => AppDirectory::loadConfig(__DIR__ . '/config.php'),
     TemplatePathResolverInterface::class => autowire(TemplatePathResolver::class),
     StateCollector::class => function (Container $container) {
         $collectors = [];
@@ -78,6 +79,7 @@ return [
         $logger = new Logger('default');
         $path = $config->get('log.path.default');
         assert(is_string($path));
+        AppDirectory::ensureDirectoryExists(dirname($path));
         /** @var LogLevel::* $log_level */
         $log_level = $config->get('log.level');
         $handler = new StreamHandler(
