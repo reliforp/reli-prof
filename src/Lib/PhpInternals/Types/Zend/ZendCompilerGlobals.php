@@ -16,10 +16,12 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\FieldReader;
+use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendCompilerGlobals implements Dereferencable
+class ZendCompilerGlobals implements LazyDereferencable
 {
     /**
      * @psalm-suppress PropertyNotSetInConstructor
@@ -39,12 +41,14 @@ class ZendCompilerGlobals implements Dereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $map_ptr_base;
 
+    private ?FieldReader $field_reader = null;
+
     /**
-     * @param CastedCData<\FFI\PhpInternals\zend_compiler_globals> $casted_cdata
+     * @param CastedCData<\FFI\PhpInternals\zend_compiler_globals>|null $casted_cdata
      * @param Pointer<ZendCompilerGlobals> $pointer
      */
     public function __construct(
-        public CastedCData $casted_cdata,
+        public ?CastedCData $casted_cdata,
         public Pointer $pointer,
     ) {
         unset($this->arena);
@@ -53,8 +57,46 @@ class ZendCompilerGlobals implements Dereferencable
         unset($this->interned_strings);
     }
 
+    /**
+     * @param Pointer<ZendCompilerGlobals> $pointer
+     */
+    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
+    {
+        $self = new static(null, $pointer);
+        $self->field_reader = $field_reader;
+        return $self;
+    }
+
     public function __get(string $field_name): mixed
     {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
+        }
+        return $this->getFieldEager($field_name);
+    }
+
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'arena' => $this->arena = $this->field_reader->readPointerField(
+                $this->pointer, 'arena', ZendArena::class,
+            ),
+            'ast_arena' => $this->ast_arena = $this->field_reader->readPointerField(
+                $this->pointer, 'ast_arena', ZendArena::class,
+            ),
+            'map_ptr_base' => $this->map_ptr_base = $this->field_reader->readIntField(
+                $this->pointer, 'map_ptr_base',
+            ),
+            default => throw new \LogicException(
+                "Field '{$field_name}' is not available in lazy deref mode for ZendCompilerGlobals"
+            ),
+        };
+    }
+
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
         return match ($field_name) {
             'arena' => $this->arena = $this->casted_cdata->casted->arena !== null
                 ? Pointer::fromCData(
@@ -90,6 +132,11 @@ class ZendCompilerGlobals implements Dereferencable
 
     public function getMapPtrBase(): int
     {
+        if ($this->casted_cdata === null) {
+            return $this->field_reader !== null
+                ? $this->field_reader->readIntField($this->pointer, 'map_ptr_base')
+                : 0;
+        }
         $ctype = \FFI::typeof($this->casted_cdata->casted);
         if (in_array('map_ptr_base', $ctype->getStructFieldNames(), true)) {
             return $this->casted_cdata->casted->map_ptr_base;
@@ -106,7 +153,7 @@ class ZendCompilerGlobals implements Dereferencable
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
-         * @var CastedCData<\FFI\PhpInternals\zend_compiler_globals> $casted_cdata
+         * @var CastedCData<\FFI\PhpInternals\zend_compiler_globals>|null $casted_cdata
          * @var Pointer<ZendCompilerGlobals> $pointer
          */
         return new static($casted_cdata, $pointer);

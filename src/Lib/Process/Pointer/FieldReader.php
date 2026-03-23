@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Lib\Process\Pointer;
 
 use FFI;
+use FFI\CData;
+use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -37,9 +39,11 @@ final class FieldReader
         Pointer $struct_pointer,
         string $field_name,
         string $pointed_type,
+        ?string $struct_type_override = null,
     ): ?Pointer {
+        $struct_type = $struct_type_override ?? $struct_pointer->getCTypeNameOfType();
         [$offset, $size] = $this->type_reader->getOffsetAndSizeOfMember(
-            $struct_pointer->getCTypeNameOfType(),
+            $struct_type,
             $field_name,
         );
         $buffer = $this->memory_reader->read(
@@ -66,9 +70,11 @@ final class FieldReader
     public function readIntField(
         Pointer $struct_pointer,
         string $field_name,
+        ?string $struct_type_override = null,
     ): int {
+        $struct_type = $struct_type_override ?? $struct_pointer->getCTypeNameOfType();
         [$offset, $size] = $this->type_reader->getOffsetAndSizeOfMember(
-            $struct_pointer->getCTypeNameOfType(),
+            $struct_type,
             $field_name,
         );
         $buffer = $this->memory_reader->read(
@@ -84,5 +90,30 @@ final class FieldReader
             default => FFI::cast('long', $buffer),
         };
         return $casted->cdata;
+    }
+
+    /**
+     * Read an embedded struct (or union member) from the remote process
+     * and return it as cast CData suitable for constructing wrapper objects.
+     *
+     * @param Pointer<Dereferencable> $struct_pointer
+     * @return CastedCData<CData>
+     */
+    public function readEmbeddedStructCData(
+        Pointer $struct_pointer,
+        string $field_name,
+        string $embedded_type,
+    ): CastedCData {
+        [$offset,] = $this->type_reader->getOffsetAndSizeOfMember(
+            $struct_pointer->getCTypeNameOfType(),
+            $field_name,
+        );
+        $size = $this->type_reader->sizeOf($embedded_type);
+        $buffer = $this->memory_reader->read(
+            $this->process_specifier->pid,
+            $struct_pointer->address + $offset,
+            $size,
+        );
+        return $this->type_reader->readAs($embedded_type, $buffer);
     }
 }

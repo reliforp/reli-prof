@@ -18,10 +18,12 @@ use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\FieldReader;
+use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-final class ZendFunction implements Dereferencable
+final class ZendFunction implements LazyDereferencable
 {
     public const ZEND_INTERNAL_FUNCTION = 1;
     public const ZEND_USER_FUNCTION = 2;
@@ -47,12 +49,14 @@ final class ZendFunction implements Dereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $num_args;
 
+    private ?FieldReader $field_reader = null;
+
     /**
-     * @param CastedCData<zend_function> $casted_cdata
+     * @param CastedCData<zend_function>|null $casted_cdata
      * @param Pointer<ZendFunction> $pointer
      */
     public function __construct(
-        private CastedCData $casted_cdata,
+        private ?CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
         unset($this->type);
@@ -62,8 +66,51 @@ final class ZendFunction implements Dereferencable
         unset($this->op_array);
     }
 
+    /**
+     * @param Pointer<ZendFunction> $pointer
+     */
+    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
+    {
+        $self = new self(null, $pointer);
+        $self->field_reader = $field_reader;
+        return $self;
+    }
+
     public function __get(string $field_name): mixed
     {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
+        }
+        return $this->getFieldEager($field_name);
+    }
+
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'type' => $this->type = $this->field_reader->readIntField(
+                $this->pointer, 'type',
+            ),
+            'function_name' => $this->function_name = $this->field_reader->readPointerField(
+                $this->pointer, 'function_name', ZendString::class, 'zend_op_array',
+            ),
+            'scope' => $this->scope = $this->field_reader->readPointerField(
+                $this->pointer, 'scope', ZendClassEntry::class, 'zend_op_array',
+            ),
+            'num_args' => $this->num_args = $this->field_reader->readIntField(
+                $this->pointer, 'num_args', 'zend_op_array',
+            ),
+            'op_array' => $this->op_array = new ZendOpArray(
+                $this->field_reader->readEmbeddedStructCData(
+                    $this->pointer, 'op_array', 'zend_op_array',
+                )->casted,
+            ),
+        };
+    }
+
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
         return match ($field_name) {
             'type' => $this->type = $this->casted_cdata->casted->type,
             'function_name' => $this->function_name
@@ -97,7 +144,7 @@ final class ZendFunction implements Dereferencable
         Pointer $pointer
     ): static {
         /**
-         * @var CastedCData<zend_function> $casted_cdata
+         * @var CastedCData<zend_function>|null $casted_cdata
          * @var Pointer<ZendFunction> $pointer
          */
         return new static($casted_cdata, $pointer);
