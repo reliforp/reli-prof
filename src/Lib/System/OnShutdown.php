@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\System;
 
+/** @psalm-suppress ClassMustBeFinal */
 class OnShutdown
 {
     public function register(callable $callback): void

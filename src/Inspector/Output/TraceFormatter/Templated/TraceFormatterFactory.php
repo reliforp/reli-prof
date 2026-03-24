@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\TraceFormatter\Templated;
 use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 
+/** @psalm-suppress ClassMustBeFinal */
 class TraceFormatterFactory
 {
     /** @var array<string, TemplatedCallTraceFormatter> */
