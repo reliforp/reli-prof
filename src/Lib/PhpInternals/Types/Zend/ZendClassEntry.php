@@ -281,27 +281,25 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
         $this->pointed_type_resolver = $resolver;
     }
 
-    /**
-     * @psalm-suppress MixedArgument
-     * @psalm-suppress MixedArgumentTypeCoercion
-     */
     private function createInlineZendArray(string $field_name): ZendArray
     {
         assert($this->casted_cdata !== null);
+        /** @var \FFI\CData $field_cdata */
+        $field_cdata = $this->casted_cdata->casted->$field_name;
         $zend_array_class = $this->pointed_type_resolver !== null
             ? $this->pointed_type_resolver->resolve(ZendArray::class)
             : ZendArray::class;
         return $zend_array_class::fromCastedCData(
             new CastedCData(
-                $this->casted_cdata->casted->$field_name,
-                $this->casted_cdata->casted->$field_name,
+                $field_cdata,
+                $field_cdata,
             ),
             new Pointer(
                 $zend_array_class,
                 $this->pointer->address
                 +
                 \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset($field_name),
-                \FFI::sizeof($this->casted_cdata->casted->$field_name),
+                \FFI::sizeof($field_cdata),
             ),
         );
     }
