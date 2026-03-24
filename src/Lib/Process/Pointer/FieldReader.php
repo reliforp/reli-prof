@@ -26,7 +26,7 @@ final class FieldReader
         private MemoryReaderInterface $memory_reader,
         private ProcessSpecifier $process_specifier,
         private ZendTypeReader $type_reader,
-        private ?PointedTypeResolver $pointed_type_resolver = null,
+        private PointedTypeResolver $pointed_type_resolver,
     ) {
     }
 
@@ -145,9 +145,7 @@ final class FieldReader
         );
         $casted_cdata = $this->type_reader->readAs($c_type, $buffer);
         $pointer = new Pointer($php_type, $struct_pointer->address + $offset, $size);
-        $resolved_type = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve($php_type)
-            : $php_type;
+        $resolved_type = $this->pointed_type_resolver->resolve($php_type);
         if (is_a($resolved_type, PointedTypeResolverAware::class, true)) {
             /**
              * @psalm-suppress TooManyArguments

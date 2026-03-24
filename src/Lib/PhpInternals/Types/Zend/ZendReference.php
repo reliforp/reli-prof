@@ -70,6 +70,7 @@ class ZendReference implements Dereferencable, PointedTypeResolverAware
          * @var Pointer<self> $pointer
          */
         $self = new static($casted_cdata, $pointer);
+        assert($pointed_type_resolver !== null);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

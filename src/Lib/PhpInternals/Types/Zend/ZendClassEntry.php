@@ -129,6 +129,7 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
     ): static {
         $self = new self(null, $pointer);
         $self->field_reader = $field_reader;
+        assert($pointed_type_resolver !== null);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
@@ -307,6 +308,7 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
          * @var Pointer<ZendClassEntry> $pointer
          */
         $self = new self($casted_cdata, $pointer);
+        assert($pointed_type_resolver !== null);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

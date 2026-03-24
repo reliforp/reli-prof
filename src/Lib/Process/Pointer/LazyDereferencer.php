@@ -18,7 +18,7 @@ final class LazyDereferencer implements Dereferencer
     public function __construct(
         private Dereferencer $inner,
         private FieldReader $field_reader,
-        private ?PointedTypeResolver $pointed_type_resolver = null,
+        private PointedTypeResolver $pointed_type_resolver,
     ) {
     }
 

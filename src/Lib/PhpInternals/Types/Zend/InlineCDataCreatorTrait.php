@@ -20,7 +20,8 @@ use Reli\Lib\Process\Pointer\PointedTypeResolver;
 
 trait InlineCDataCreatorTrait
 {
-    private ?PointedTypeResolver $pointed_type_resolver = null;
+    /** @psalm-suppress PropertyNotSetInConstructor set via factory methods */
+    private PointedTypeResolver $pointed_type_resolver;
 
     /**
      * @template T of Dereferencable
@@ -33,9 +34,7 @@ trait InlineCDataCreatorTrait
         assert($this->casted_cdata !== null);
         /** @var \FFI\CData $field_cdata */
         $field_cdata = $this->casted_cdata->casted->$field_name;
-        $resolved_class = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve($target_class)
-            : $target_class;
+        $resolved_class = $this->pointed_type_resolver->resolve($target_class);
         return $resolved_class::fromCastedCData(
             new CastedCData(
                 $field_cdata,

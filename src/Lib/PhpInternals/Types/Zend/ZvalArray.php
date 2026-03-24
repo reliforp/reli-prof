@@ -64,6 +64,7 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
             (int)($pointer->size / 16),
             $pointer
         );
+        assert($pointed_type_resolver !== null);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
@@ -106,9 +107,7 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
 
     private function getZval(int $offset): Zval
     {
-        $zval_class = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve(Zval::class)
-            : Zval::class;
+        $zval_class = $this->pointed_type_resolver->resolve(Zval::class);
         return $zval_class::fromCastedCData(
             new CastedCData(
                 $this->casted_cdata->casted[$offset],
