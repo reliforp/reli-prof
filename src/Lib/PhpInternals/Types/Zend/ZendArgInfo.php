@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of thefinal  reliforp/reli-prof package.
+ * This file is part of the reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
