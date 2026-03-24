@@ -49,6 +49,15 @@ final class ZendFunction implements LazyDereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $num_args;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $fn_flags;
+
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendString>|null
+     */
+    public ?Pointer $op_array_filename;
+
     private ?FieldReader $field_reader = null;
 
     /**
@@ -64,6 +73,8 @@ final class ZendFunction implements LazyDereferencable
         unset($this->scope);
         unset($this->num_args);
         unset($this->op_array);
+        unset($this->fn_flags);
+        unset($this->op_array_filename);
     }
 
     /**
@@ -100,6 +111,12 @@ final class ZendFunction implements LazyDereferencable
             'num_args' => $this->num_args = $this->field_reader->readIntField(
                 $this->pointer, 'num_args', 'zend_op_array',
             ),
+            'fn_flags' => $this->fn_flags = $this->field_reader->readIntField(
+                $this->pointer, 'fn_flags', 'zend_op_array',
+            ),
+            'op_array_filename' => $this->op_array_filename = $this->field_reader->readPointerField(
+                $this->pointer, 'filename', ZendString::class, 'zend_op_array',
+            ),
             'op_array' => $this->op_array = new ZendOpArray(
                 $this->field_reader->readEmbeddedStructCData(
                     $this->pointer, 'op_array', 'zend_op_array',
@@ -130,6 +147,15 @@ final class ZendFunction implements LazyDereferencable
                     : null
             ,
             'num_args' => $this->num_args = $this->casted_cdata->casted->common->num_args,
+            'fn_flags' => $this->fn_flags = $this->casted_cdata->casted->op_array->fn_flags,
+            'op_array_filename' => $this->op_array_filename
+                = $this->casted_cdata->casted->op_array->filename !== null
+                    ? Pointer::fromCData(
+                        ZendString::class,
+                        $this->casted_cdata->casted->op_array->filename,
+                    )
+                    : null
+            ,
             'op_array' => $this->op_array = new ZendOpArray($this->casted_cdata->casted->op_array),
         };
     }
@@ -162,7 +188,7 @@ final class ZendFunction implements LazyDereferencable
     ): string {
         if (
             $this->isUserFunction()
-            and $this->op_array->isClosure($zend_type_reader)
+            and $this->isClosure($zend_type_reader)
         ) {
             return $this->op_array->getDisplayNameForClosure($dereferencer);
         }
@@ -179,6 +205,11 @@ final class ZendFunction implements LazyDereferencable
 
     private ?string $resolved_name_cache = null;
 
+    public function isClosure(ZendTypeReader $zend_type_reader): bool
+    {
+        return (bool)($this->fn_flags & (int)$zend_type_reader->constants::ZEND_ACC_CLOSURE);
+    }
+
     public function getFunctionName(
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
@@ -189,7 +220,7 @@ final class ZendFunction implements LazyDereferencable
         if (!isset($this->resolved_name_cache)) {
             if (
                 $this->isUserFunction()
-                and $this->op_array->isClosure($zend_type_reader)
+                and $this->isClosure($zend_type_reader)
             ) {
                 $this->resolved_name_cache = $this->op_array->getDisplayNameForClosure($dereferencer);
             } else {
@@ -221,8 +252,11 @@ final class ZendFunction implements LazyDereferencable
         if (!isset($this->resolved_file_name_cache)) {
             if ($this->isInternalFunction()) {
                 $this->resolved_file_name_cache = '<internal>';
+            } elseif ($this->op_array_filename === null) {
+                $this->resolved_file_name_cache = null;
             } else {
-                $this->resolved_file_name_cache = $this->op_array->getFileName($dereferencer);
+                $string = $dereferencer->deref($this->op_array_filename);
+                $this->resolved_file_name_cache = $string->toString($dereferencer);
             }
         }
         return $this->resolved_file_name_cache;

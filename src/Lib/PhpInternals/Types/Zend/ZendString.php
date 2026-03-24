@@ -18,9 +18,11 @@ use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawString;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\FieldReader;
+use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendString implements Dereferencable
+final class ZendString implements LazyDereferencable
 {
     public const ZEND_STRING_HEADER_SIZE = 24;
 
@@ -37,12 +39,14 @@ final class ZendString implements Dereferencable
      */
     public Pointer $val;
 
+    private ?FieldReader $field_reader = null;
+
     /**
-     * @param CastedCData<zend_string> $casted_cdata
+     * @param CastedCData<zend_string>|null $casted_cdata
      * @param Pointer<ZendString> $pointer
      */
     public function __construct(
-        private CastedCData $casted_cdata,
+        private ?CastedCData $casted_cdata,
         private int $offset_to_val,
         private Pointer $pointer,
     ) {
@@ -52,8 +56,43 @@ final class ZendString implements Dereferencable
         unset($this->val);
     }
 
+    /**
+     * @param Pointer<ZendString> $pointer
+     */
+    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
+    {
+        $self = new self(null, self::ZEND_STRING_HEADER_SIZE, $pointer);
+        $self->field_reader = $field_reader;
+        return $self;
+    }
+
     public function __get(string $field_name)
     {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
+        }
+        return $this->getFieldEager($field_name);
+    }
+
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'len' => $this->len = $this->field_reader->readIntField(
+                $this->pointer, 'len',
+            ),
+            'h' => $this->h = $this->field_reader->readIntField(
+                $this->pointer, 'h',
+            ),
+            default => throw new \LogicException(
+                "Field '{$field_name}' is not available in lazy deref mode for ZendString"
+            ),
+        };
+    }
+
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
         return match ($field_name) {
             'gc' => $this->gc = new ZendRefcountedH(
                 $this->casted_cdata->casted->gc,
