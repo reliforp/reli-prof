@@ -56,6 +56,7 @@ final class ZendString implements LazyDereferencable
         unset($this->val);
     }
 
+    #[\Override]
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new self(null, self::ZEND_STRING_HEADER_SIZE, $pointer);

@@ -26,6 +26,7 @@ final class LazyDereferencer implements Dereferencer
      * @param Pointer<T> $pointer
      * @return T
      */
+    #[\Override]
     public function deref(Pointer $pointer): mixed
     {
         if (is_a($pointer->type, LazyDereferencable::class, true)) {

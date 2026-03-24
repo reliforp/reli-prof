@@ -77,6 +77,7 @@ final class ZendFunction implements LazyDereferencable
         unset($this->op_array_filename);
     }
 
+    #[\Override]
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new self(null, $pointer);

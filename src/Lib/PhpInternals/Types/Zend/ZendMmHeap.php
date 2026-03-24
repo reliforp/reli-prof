@@ -86,6 +86,7 @@ final class ZendMmHeap implements LazyDereferencable
         unset($this->cached_chunks_count);
     }
 
+    #[\Override]
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new static(null, $pointer);

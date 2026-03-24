@@ -57,6 +57,7 @@ final class ZendCompilerGlobals implements LazyDereferencable
         unset($this->interned_strings);
     }
 
+    #[\Override]
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new static(null, $pointer);
