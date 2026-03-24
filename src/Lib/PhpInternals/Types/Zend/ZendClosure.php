@@ -100,13 +100,18 @@ class ZendClosure implements Dereferencable, PointedTypeResolverAware
     }
 
     #[\Override]
-    public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
-    {
+    public static function fromCastedCData(
+        CastedCData $casted_cdata,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zend_closure> $casted_cdata
          * @var Pointer<ZendClosure> $pointer
          */
-        return new static($casted_cdata, $pointer);
+        $self = new static($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /** @return Pointer<ZendClosure> */

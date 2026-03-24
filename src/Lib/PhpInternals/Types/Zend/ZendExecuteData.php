@@ -175,13 +175,16 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
     #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
-        Pointer $pointer
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
     ): static {
         /**
          * @var CastedCData<zend_execute_data> $casted_cdata
          * @var Pointer<ZendExecuteData> $pointer
          */
-        return new self($casted_cdata, $pointer);
+        $self = new self($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /** @return Pointer<ZendExecuteData> */

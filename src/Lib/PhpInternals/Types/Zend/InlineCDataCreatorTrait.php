@@ -22,12 +22,6 @@ trait InlineCDataCreatorTrait
 {
     private ?PointedTypeResolver $pointed_type_resolver = null;
 
-    #[\Override]
-    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
-    {
-        $this->pointed_type_resolver = $resolver;
-    }
-
     /**
      * @template T of Dereferencable
      * @param class-string<T> $target_class

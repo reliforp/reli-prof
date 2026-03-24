@@ -219,13 +219,16 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
-        Pointer $pointer
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
     ): static {
         /**
          * @var CastedCData<zend_executor_globals>|null $casted_cdata
          * @var Pointer<ZendExecutorGlobals> $pointer
          */
-        return new self($casted_cdata, $pointer);
+        $self = new self($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /** @return Pointer<ZendExecutorGlobals> */

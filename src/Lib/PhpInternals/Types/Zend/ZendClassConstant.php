@@ -98,13 +98,16 @@ class ZendClassConstant implements Dereferencable, PointedTypeResolverAware
     #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
-        Pointer $pointer
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
     ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zend_class_constant> $casted_cdata
          * @var Pointer<self> $pointer
          */
-        return new static($casted_cdata, $pointer);
+        $self = new static($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /** @return Pointer<ZendClassConstant> */

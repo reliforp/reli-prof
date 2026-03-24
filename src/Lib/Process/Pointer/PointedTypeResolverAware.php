@@ -13,7 +13,14 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\Pointer;
 
-interface PointedTypeResolverAware
+use Reli\Lib\PhpInternals\CastedCData;
+
+interface PointedTypeResolverAware extends Dereferencable
 {
-    public function setPointedTypeResolver(PointedTypeResolver $resolver): void;
+    #[\Override]
+    public static function fromCastedCData(
+        CastedCData $casted_cdata,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static;
 }

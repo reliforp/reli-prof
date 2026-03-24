@@ -52,17 +52,20 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
     #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
-        Pointer $pointer
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
     ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zval_array> $casted_cdata
          * @var Pointer<self> $pointer
          */
-        return new static(
+        $self = new static(
             $casted_cdata,
             (int)($pointer->size / 16),
             $pointer
         );
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /**

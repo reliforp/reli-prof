@@ -285,13 +285,16 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
     #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
-        Pointer $pointer
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
     ): static {
         /**
          * @var CastedCData<zend_class_entry> $casted_cdata
          * @var Pointer<ZendClassEntry> $pointer
          */
-        return new self($casted_cdata, $pointer);
+        $self = new self($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     #[\Override]

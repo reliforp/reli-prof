@@ -58,6 +58,7 @@ final class RemoteProcessDereferencer implements Dereferencer
      * @param CastedCData<CData> $casted_cdata
      * @param Pointer<T> $pointer
      * @return T
+     * @psalm-suppress InvalidReturnType psalm cannot narrow T through is_a for static calls
      */
     public function fromCastedCDataOfType(
         CastedCData $casted_cdata,
@@ -68,10 +69,14 @@ final class RemoteProcessDereferencer implements Dereferencer
         } else {
             $type = $pointer->type;
         }
-        $result = $type::fromCastedCData($casted_cdata, $pointer);
-        if ($result instanceof PointedTypeResolverAware && !is_null($this->pointed_type_resolver)) {
-            $result->setPointedTypeResolver($this->pointed_type_resolver);
+        if (is_a($type, PointedTypeResolverAware::class, true)) {
+            /**
+             * @var class-string<PointedTypeResolverAware&T> $type
+             * @psalm-suppress TooManyArguments psalm sees Dereferencable::fromCastedCData(2 args)
+             * @psalm-suppress InvalidReturnStatement
+             */
+            return $type::fromCastedCData($casted_cdata, $pointer, $this->pointed_type_resolver);
         }
-        return $result;
+        return $type::fromCastedCData($casted_cdata, $pointer);
     }
 }
