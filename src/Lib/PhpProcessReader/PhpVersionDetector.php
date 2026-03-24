@@ -26,7 +26,7 @@ use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
 use Reli\Lib\Process\ProcessSpecifier;
 use Webmozart\Assert\Assert;
 
-final class PhpVersionDetector
+class PhpVersionDetector
 {
     private ?ZendTypeReader $zend_type_reader = null;
 

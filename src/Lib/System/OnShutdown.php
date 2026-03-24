@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\System;
 
-final class OnShutdown
+class OnShutdown
 {
     public function register(callable $callback): void
     {

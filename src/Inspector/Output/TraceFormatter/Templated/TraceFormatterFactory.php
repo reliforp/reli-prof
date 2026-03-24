@@ -16,7 +16,7 @@ namespace Reli\Inspector\Output\TraceFormatter\Templated;
 use Reli\Inspector\Output\TraceFormatter\CallTraceFormatter;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 
-final class TraceFormatterFactory
+class TraceFormatterFactory
 {
     /** @var array<string, TemplatedCallTraceFormatter> */
     private array $cache = [];

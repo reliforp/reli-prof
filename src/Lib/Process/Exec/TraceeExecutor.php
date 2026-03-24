@@ -20,7 +20,7 @@ use Reli\Lib\Libc\Unistd\Execvp;
 use Reli\Lib\Process\Exec\Internal\Pcntl;
 use Reli\Lib\System\OnShutdown;
 
-final class TraceeExecutor
+class TraceeExecutor
 {
     public function __construct(
         private Pcntl $pcntl,
