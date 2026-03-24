@@ -21,13 +21,13 @@ use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
 final class ZendConstant implements Dereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $value;
 
     /** @var Pointer<ZendString>|null */
     public ?Pointer $name;
-
-    use InlineCDataCreatorTrait;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_constants> $casted_cdata

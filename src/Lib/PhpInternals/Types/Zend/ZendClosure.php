@@ -27,6 +27,8 @@ use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
  */
 class ZendClosure implements Dereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObject $std;
 
@@ -38,8 +40,6 @@ class ZendClosure implements Dereferencable, PointedTypeResolverAware
 
     /** @var Pointer<ZendClassEntry>|null */
     public ?Pointer $called_scope;
-
-    use InlineCDataCreatorTrait;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_closure> $casted_cdata

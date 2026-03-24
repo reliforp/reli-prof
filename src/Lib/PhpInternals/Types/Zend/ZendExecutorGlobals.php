@@ -24,6 +24,8 @@ use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
 final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $uninitialized_zval;
 
@@ -62,8 +64,6 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
 
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObjectsStore $objects_store;
-
-    use InlineCDataCreatorTrait;
 
     private ?FieldReader $field_reader = null;
 
@@ -158,8 +158,14 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     {
         assert($this->casted_cdata !== null);
         return match ($field_name) {
-            'uninitialized_zval' => $this->uninitialized_zval = $this->createInlineDereferencable('uninitialized_zval', Zval::class),
-            'error_zval' => $this->error_zval = $this->createInlineDereferencable('error_zval', Zval::class),
+            'uninitialized_zval' => $this->uninitialized_zval = $this->createInlineDereferencable(
+                'uninitialized_zval',
+                Zval::class,
+            ),
+            'error_zval' => $this->error_zval = $this->createInlineDereferencable(
+                'error_zval',
+                Zval::class,
+            ),
             'current_execute_data' => $this->casted_cdata->casted->current_execute_data !== null
                 ? Pointer::fromCData(
                     ZendExecuteData::class,
@@ -188,7 +194,10 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
                 )
                 : null
             ,
-            'symbol_table' => $this->symbol_table = $this->createInlineDereferencable('symbol_table', ZendArray::class),
+            'symbol_table' => $this->symbol_table = $this->createInlineDereferencable(
+                'symbol_table',
+                ZendArray::class,
+            ),
             'vm_stack' => $this->vm_stack = $this->casted_cdata->casted->vm_stack !== null
                 ? Pointer::fromCData(
                     ZendVmStack::class,
@@ -206,7 +215,10 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
             'objects_store' => $this->objects_store = new ZendObjectsStore(
                 $this->casted_cdata->casted->objects_store,
             ),
-            'included_files' => $this->included_files = $this->createInlineDereferencable('included_files', ZendArray::class),
+            'included_files' => $this->included_files = $this->createInlineDereferencable(
+                'included_files',
+                ZendArray::class,
+            ),
         };
     }
 

@@ -26,6 +26,8 @@ use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
 final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @var Pointer<ZendFunction>|null */
     public ?Pointer $func;
 
@@ -43,8 +45,6 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
 
     /** @var Pointer<ZendArray>|null  */
     public ?Pointer $extra_named_params;
-
-    use InlineCDataCreatorTrait;
 
     private ?FieldReader $field_reader = null;
 

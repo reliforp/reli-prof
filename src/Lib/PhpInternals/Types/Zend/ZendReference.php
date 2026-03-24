@@ -25,13 +25,13 @@ use Reli\Lib\Process\Pointer\Pointer;
  */
 class ZendReference implements Dereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendRefcountedH $gc;
 
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $val;
-
-    use InlineCDataCreatorTrait;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_reference> $casted_cdata

@@ -27,6 +27,8 @@ use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
 final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $type;
 
@@ -88,7 +90,6 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
     public ?Pointer $doc_comment;
 
     private ?ZvalArray $static_properties_table_cache = null;
-    use InlineCDataCreatorTrait;
 
     private ?FieldReader $field_reader = null;
 
@@ -172,10 +173,19 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
                 )
                 : null
             ,
-            'function_table' => $this->function_table = $this->createInlineDereferencable('function_table', ZendArray::class),
-            'constants_table' => $this->constants_table = $this->createInlineDereferencable('constants_table', ZendArray::class),
+            'function_table' => $this->function_table = $this->createInlineDereferencable(
+                'function_table',
+                ZendArray::class,
+            ),
+            'constants_table' => $this->constants_table = $this->createInlineDereferencable(
+                'constants_table',
+                ZendArray::class,
+            ),
             'ce_flags' => $this->ce_flags = $this->casted_cdata->casted->ce_flags,
-            'properties_info' => $this->properties_info = $this->createInlineDereferencable('properties_info', ZendArray::class),
+            'properties_info' => $this->properties_info = $this->createInlineDereferencable(
+                'properties_info',
+                ZendArray::class,
+            ),
             'info' => $this->info = new ZendClassEntryInfo($this->casted_cdata->casted->info),
             'default_properties_count' => $this->default_properties_count =
                 $this->casted_cdata->casted->default_properties_count
