@@ -68,6 +68,10 @@ final class RemoteProcessDereferencer implements Dereferencer
         } else {
             $type = $pointer->type;
         }
-        return $type::fromCastedCData($casted_cdata, $pointer);
+        $result = $type::fromCastedCData($casted_cdata, $pointer);
+        if ($result instanceof PointedTypeResolverAware && !is_null($this->pointed_type_resolver)) {
+            $result->setPointedTypeResolver($this->pointed_type_resolver);
+        }
+        return $result;
     }
 }

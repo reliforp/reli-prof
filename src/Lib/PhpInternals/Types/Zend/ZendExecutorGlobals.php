@@ -19,8 +19,10 @@ use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-final class ZendExecutorGlobals implements LazyDereferencable
+final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolverAware
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $uninitialized_zval;
@@ -61,7 +63,13 @@ final class ZendExecutorGlobals implements LazyDereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObjectsStore $objects_store;
 
+    private ?PointedTypeResolver $pointed_type_resolver = null;
     private ?FieldReader $field_reader = null;
+
+    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
+    {
+        $this->pointed_type_resolver = $resolver;
+    }
 
     /**
      * @param CastedCData<zend_executor_globals>|null $casted_cdata
@@ -154,32 +162,8 @@ final class ZendExecutorGlobals implements LazyDereferencable
     {
         assert($this->casted_cdata !== null);
         return match ($field_name) {
-            'uninitialized_zval' => $this->uninitialized_zval = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->uninitialized_zval,
-                    $this->casted_cdata->casted->uninitialized_zval
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('uninitialized_zval'),
-                    \FFI::sizeof($this->casted_cdata->casted->uninitialized_zval),
-                ),
-            ),
-            'error_zval' => $this->error_zval = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->error_zval,
-                    $this->casted_cdata->casted->error_zval
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('error_zval'),
-                    \FFI::sizeof($this->casted_cdata->casted->error_zval),
-                ),
-            ),
+            'uninitialized_zval' => $this->uninitialized_zval = $this->createInlineZval('uninitialized_zval'),
+            'error_zval' => $this->error_zval = $this->createInlineZval('error_zval'),
             'current_execute_data' => $this->casted_cdata->casted->current_execute_data !== null
                 ? Pointer::fromCData(
                     ZendExecuteData::class,
@@ -208,19 +192,7 @@ final class ZendExecutorGlobals implements LazyDereferencable
                 )
                 : null
             ,
-            'symbol_table' => $this->symbol_table = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->symbol_table,
-                    $this->casted_cdata->casted->symbol_table
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('symbol_table'),
-                    \FFI::sizeof($this->casted_cdata->casted->symbol_table),
-                ),
-            ),
+            'symbol_table' => $this->symbol_table = $this->createInlineZendArray('symbol_table'),
             'vm_stack' => $this->vm_stack = $this->casted_cdata->casted->vm_stack !== null
                 ? Pointer::fromCData(
                     ZendVmStack::class,
@@ -238,20 +210,50 @@ final class ZendExecutorGlobals implements LazyDereferencable
             'objects_store' => $this->objects_store = new ZendObjectsStore(
                 $this->casted_cdata->casted->objects_store,
             ),
-            'included_files' => $this->included_files = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->included_files,
-                    $this->casted_cdata->casted->included_files
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('included_files'),
-                    \FFI::sizeof($this->casted_cdata->casted->included_files),
-                ),
-            ),
+            'included_files' => $this->included_files = $this->createInlineZendArray('included_files'),
         };
+    }
+
+    private function createInlineZval(string $field_name): Zval
+    {
+        assert($this->casted_cdata !== null);
+        $zval_class = $this->pointed_type_resolver !== null
+            ? $this->pointed_type_resolver->resolve(Zval::class)
+            : Zval::class;
+        return $zval_class::fromCastedCData(
+            new CastedCData(
+                $this->casted_cdata->casted->$field_name,
+                $this->casted_cdata->casted->$field_name
+            ),
+            new Pointer(
+                $zval_class,
+                $this->pointer->address
+                +
+                \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset($field_name),
+                \FFI::sizeof($this->casted_cdata->casted->$field_name),
+            ),
+        );
+    }
+
+    private function createInlineZendArray(string $field_name): ZendArray
+    {
+        assert($this->casted_cdata !== null);
+        $zend_array_class = $this->pointed_type_resolver !== null
+            ? $this->pointed_type_resolver->resolve(ZendArray::class)
+            : ZendArray::class;
+        return $zend_array_class::fromCastedCData(
+            new CastedCData(
+                $this->casted_cdata->casted->$field_name,
+                $this->casted_cdata->casted->$field_name
+            ),
+            new Pointer(
+                $zend_array_class,
+                $this->pointer->address
+                +
+                \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset($field_name),
+                \FFI::sizeof($this->casted_cdata->casted->$field_name),
+            ),
+        );
     }
 
     #[\Override]

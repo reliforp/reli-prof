@@ -18,9 +18,11 @@ use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
 /** @psalm-consistent-constructor */
-final class ZendClosure implements Dereferencable
+class ZendClosure implements Dereferencable, PointedTypeResolverAware
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObject $std;
@@ -33,6 +35,8 @@ final class ZendClosure implements Dereferencable
 
     /** @var Pointer<ZendClassEntry>|null */
     public ?Pointer $called_scope;
+
+    private ?PointedTypeResolver $pointed_type_resolver = null;
 
 
     /**
@@ -76,19 +80,7 @@ final class ZendClosure implements Dereferencable
                     FFI::typeof($this->casted_cdata->casted->func)->getSize(),
                 ),
             ),
-            'this_ptr' => $this->this_ptr = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->this_ptr,
-                    $this->casted_cdata->casted->this_ptr,
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('this_ptr'),
-                    FFI::typeof($this->casted_cdata->casted->this_ptr)->getSize(),
-                ),
-            ),
+            'this_ptr' => $this->this_ptr = $this->createInlineZval(),
             'called_scope' => $this->called_scope = $this->casted_cdata->casted->called_scope !== null
                 ? Pointer::fromCData(
                     ZendClassEntry::class,
@@ -97,6 +89,31 @@ final class ZendClosure implements Dereferencable
                 : null
             ,
         };
+    }
+
+    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
+    {
+        $this->pointed_type_resolver = $resolver;
+    }
+
+    private function createInlineZval(): Zval
+    {
+        $zval_class = $this->pointed_type_resolver !== null
+            ? $this->pointed_type_resolver->resolve(Zval::class)
+            : Zval::class;
+        return $zval_class::fromCastedCData(
+            new CastedCData(
+                $this->casted_cdata->casted->this_ptr,
+                $this->casted_cdata->casted->this_ptr,
+            ),
+            new Pointer(
+                $zval_class,
+                $this->pointer->address
+                +
+                FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('this_ptr'),
+                FFI::typeof($this->casted_cdata->casted->this_ptr)->getSize(),
+            ),
+        );
     }
 
     #[\Override]

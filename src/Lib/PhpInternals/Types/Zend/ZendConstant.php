@@ -16,14 +16,18 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-final class ZendConstant implements Dereferencable
+final class ZendConstant implements Dereferencable, PointedTypeResolverAware
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $value;
 
     /** @var Pointer<ZendString>|null */
     public ?Pointer $name;
+
+    private ?PointedTypeResolver $pointed_type_resolver = null;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_constants> $casted_cdata
@@ -40,19 +44,7 @@ final class ZendConstant implements Dereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'value' => $this->value = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->value,
-                    $this->casted_cdata->casted->value,
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted->value)->getStructFieldOffset('value'),
-                    \FFI::sizeof($this->casted_cdata->casted->value),
-                ),
-            ),
+            'value' => $this->value = $this->createInlineZval(),
             'name' => $this->name = $this->casted_cdata->casted->name !== null
                 ? Pointer::fromCData(
                     ZendString::class,
@@ -61,6 +53,31 @@ final class ZendConstant implements Dereferencable
                 : null
             ,
         };
+    }
+
+    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
+    {
+        $this->pointed_type_resolver = $resolver;
+    }
+
+    private function createInlineZval(): Zval
+    {
+        $zval_class = $this->pointed_type_resolver !== null
+            ? $this->pointed_type_resolver->resolve(Zval::class)
+            : Zval::class;
+        return $zval_class::fromCastedCData(
+            new CastedCData(
+                $this->casted_cdata->casted->value,
+                $this->casted_cdata->casted->value,
+            ),
+            new Pointer(
+                $zval_class,
+                $this->pointer->address
+                +
+                \FFI::typeof($this->casted_cdata->casted->value)->getStructFieldOffset('value'),
+                \FFI::sizeof($this->casted_cdata->casted->value),
+            ),
+        );
     }
 
     #[\Override]
