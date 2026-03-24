@@ -16,9 +16,11 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI\PhpInternals\zend_executor_globals;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\FieldReader;
+use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendExecutorGlobals implements Dereferencable
+final class ZendExecutorGlobals implements LazyDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $uninitialized_zval;
@@ -59,12 +61,14 @@ final class ZendExecutorGlobals implements Dereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObjectsStore $objects_store;
 
+    private ?FieldReader $field_reader = null;
+
     /**
-     * @param CastedCData<zend_executor_globals> $casted_cdata
+     * @param CastedCData<zend_executor_globals>|null $casted_cdata
      * @param Pointer<ZendExecutorGlobals> $pointer
      */
     public function __construct(
-        private CastedCData $casted_cdata,
+        private ?CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
         unset($this->uninitialized_zval);
@@ -80,8 +84,74 @@ final class ZendExecutorGlobals implements Dereferencable
         unset($this->included_files);
     }
 
+    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
+    {
+        $self = new self(null, $pointer);
+        $self->field_reader = $field_reader;
+        return $self;
+    }
+
     public function __get(string $field_name): mixed
     {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
+        }
+        return $this->getFieldEager($field_name);
+    }
+
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'current_execute_data' => $this->current_execute_data = $this->field_reader->readPointerField(
+                $this->pointer,
+                'current_execute_data',
+                ZendExecuteData::class,
+            ),
+            'function_table' => $this->function_table = $this->field_reader->readPointerField(
+                $this->pointer,
+                'function_table',
+                ZendArray::class,
+            ),
+            'class_table' => $this->class_table = $this->field_reader->readPointerField(
+                $this->pointer,
+                'class_table',
+                ZendArray::class,
+            ),
+            'zend_constants' => $this->zend_constants = $this->field_reader->readPointerField(
+                $this->pointer,
+                'zend_constants',
+                ZendArray::class,
+            ),
+            'vm_stack' => $this->vm_stack = $this->field_reader->readPointerField(
+                $this->pointer,
+                'vm_stack',
+                ZendVmStack::class,
+            ),
+            'vm_stack_top' => $this->vm_stack_top = $this->field_reader->readPointerField(
+                $this->pointer,
+                'vm_stack_top',
+                Zval::class,
+            ),
+            'ini_directives' => $this->ini_directives = $this->field_reader->readPointerField(
+                $this->pointer,
+                'ini_directives',
+                ZendArray::class,
+            ),
+            'modified_ini_directives' => $this->modified_ini_directives = $this->field_reader->readPointerField(
+                $this->pointer,
+                'modified_ini_directives',
+                ZendArray::class,
+            ),
+            default => throw new \LogicException(
+                "Field '{$field_name}' is not available in lazy deref mode for ZendExecutorGlobals"
+            ),
+        };
+    }
+
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
         return match ($field_name) {
             'uninitialized_zval' => $this->uninitialized_zval = new Zval(
                 new CastedCData(
@@ -193,7 +263,7 @@ final class ZendExecutorGlobals implements Dereferencable
         Pointer $pointer
     ): static {
         /**
-         * @var CastedCData<zend_executor_globals> $casted_cdata
+         * @var CastedCData<zend_executor_globals>|null $casted_cdata
          * @var Pointer<ZendExecutorGlobals> $pointer
          */
         return new self($casted_cdata, $pointer);

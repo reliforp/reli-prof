@@ -15,11 +15,12 @@ namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
 use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use Reli\Lib\PhpInternals\Types\C\RawDouble;
+use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\PhpInternals\Types\Zend\Bucket;
 use Reli\Lib\PhpInternals\Types\Zend\Opline;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
-use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendOp;
 use Reli\Lib\PhpInternals\Types\Zend\Zval;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -27,6 +28,8 @@ use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\FieldReader;
+use Reli\Lib\Process\Pointer\LazyDereferencer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
@@ -59,12 +62,13 @@ final class CallTraceReader
      */
     private function getDereferencer(int $pid, string $php_version): Dereferencer
     {
-        return new RemoteProcessDereferencer(
+        $process_specifier = new ProcessSpecifier($pid);
+        $type_reader = $this->getTypeReader($php_version);
+
+        $base = new RemoteProcessDereferencer(
             $this->memory_reader,
-            new ProcessSpecifier($pid),
-            new ZendCastedTypeProvider(
-                $this->getTypeReader($php_version),
-            ),
+            $process_specifier,
+            new ZendCastedTypeProvider($type_reader),
             new class ($php_version) implements PointedTypeResolver {
                 public function __construct(
                     private string $php_version,
@@ -106,23 +110,41 @@ final class CallTraceReader
                 }
             }
         );
+
+        return new LazyDereferencer(
+            $base,
+            new FieldReader($this->memory_reader, $process_specifier, $type_reader),
+        );
     }
 
     /**
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @return Pointer<ZendExecuteData>|null
      */
-    private function getExecutorGlobals(
+    private function getCurrentExecuteDataPointer(
         int $eg_address,
         string $php_version,
-        Dereferencer $dereferencer
-    ): ZendExecutorGlobals {
+        Dereferencer $dereferencer,
+    ): ?Pointer {
         $zend_type_reader = $this->getTypeReader($php_version);
-        $eg_pointer = new Pointer(
-            ZendExecutorGlobals::class,
-            $eg_address,
-            $zend_type_reader->sizeOf('zend_executor_globals')
+        [$offset, $size] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_executor_globals',
+            'current_execute_data'
         );
-        return $dereferencer->deref($eg_pointer);
+        $pointer = new Pointer(
+            RawInt64::class,
+            $eg_address + $offset,
+            $size
+        );
+        $raw = $dereferencer->deref($pointer);
+        if ($raw->value === 0) {
+            return null;
+        }
+        return new Pointer(
+            ZendExecuteData::class,
+            $raw->value,
+            $zend_type_reader->sizeOf('zend_execute_data'),
+        );
     }
 
     /**
@@ -160,15 +182,19 @@ final class CallTraceReader
         TraceCache $trace_cache,
     ): ?CallTrace {
         $dereferencer = $this->getDereferencer($pid, $php_version);
-        $eg = $this->getExecutorGlobals($executor_globals_address, $php_version, $dereferencer);
-        if (is_null($eg->current_execute_data)) {
+        $current_execute_data_pointer = $this->getCurrentExecuteDataPointer(
+            $executor_globals_address,
+            $php_version,
+            $dereferencer,
+        );
+        if (is_null($current_execute_data_pointer)) {
             return null;
         }
 
         $trace_cache->updateCacheKey($this->getGlobalRequestTime($sapi_globals_address, $php_version, $dereferencer));
         $cached_dereferencer = $trace_cache->getDereferencer($dereferencer);
 
-        $current_execute_data = $dereferencer->deref($eg->current_execute_data);
+        $current_execute_data = $dereferencer->deref($current_execute_data_pointer);
 
         $stack = [];
         $stack[] = $current_execute_data;
@@ -230,15 +256,15 @@ final class CallTraceReader
     private function readOpline(string $php_version, ZendOp $zend_op): Opline
     {
         return new Opline(
-            $zend_op->op1,
-            $zend_op->op2,
-            $zend_op->result,
-            $zend_op->extended_value,
+            0,
+            0,
+            0,
+            0,
             $zend_op->lineno,
             $this->opcode_factory->create($php_version, $zend_op->opcode),
-            $zend_op->op1_type,
-            $zend_op->op2_type,
-            $zend_op->result_type
+            0,
+            0,
+            0
         );
     }
 }

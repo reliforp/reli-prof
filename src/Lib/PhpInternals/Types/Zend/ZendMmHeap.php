@@ -16,10 +16,12 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
+use Reli\Lib\Process\Pointer\FieldReader;
+use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendMmHeap implements Dereferencable
+class ZendMmHeap implements LazyDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $use_custom_heap;
@@ -60,12 +62,14 @@ class ZendMmHeap implements Dereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $cached_chunks_count;
 
+    private ?FieldReader $field_reader = null;
+
     /**
-     * @param CastedCData<\FFI\PhpInternals\zend_mm_heap> $casted_cdata
+     * @param CastedCData<\FFI\PhpInternals\zend_mm_heap>|null $casted_cdata
      * @param Pointer<ZendMmHeap> $pointer
      */
     public function __construct(
-        private CastedCData $casted_cdata,
+        private ?CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
         unset($this->use_custom_heap);
@@ -82,8 +86,72 @@ class ZendMmHeap implements Dereferencable
         unset($this->cached_chunks_count);
     }
 
+    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
+    {
+        $self = new static(null, $pointer);
+        $self->field_reader = $field_reader;
+        return $self;
+    }
+
     public function __get(string $field_name): mixed
     {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
+        }
+        return $this->getFieldEager($field_name);
+    }
+
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'use_custom_heap' => $this->use_custom_heap = $this->field_reader->readIntField(
+                $this->pointer,
+                'use_custom_heap',
+            ),
+            'size' => $this->size = $this->field_reader->readIntField($this->pointer, 'size'),
+            'peak' => $this->peak = $this->field_reader->readIntField($this->pointer, 'peak'),
+            'real_size' => $this->real_size = $this->field_reader->readIntField(
+                $this->pointer,
+                'real_size',
+            ),
+            'real_peak' => $this->real_peak = $this->field_reader->readIntField(
+                $this->pointer,
+                'real_peak',
+            ),
+            'limit' => $this->limit = $this->field_reader->readIntField($this->pointer, 'limit'),
+            'overflow' => $this->overflow = $this->field_reader->readIntField(
+                $this->pointer,
+                'overflow',
+            ),
+            'huge_list' => $this->huge_list = $this->field_reader->readPointerField(
+                $this->pointer,
+                'huge_list',
+                ZendMmHugeList::class,
+            ),
+            'main_chunk' => $this->main_chunk = $this->field_reader->readPointerField(
+                $this->pointer,
+                'main_chunk',
+                ZendMmChunk::class,
+            ),
+            'chunks_count' => $this->chunks_count = $this->field_reader->readIntField(
+                $this->pointer,
+                'chunks_count',
+            ),
+            'peak_chunks_count' => $this->peak_chunks_count = $this->field_reader->readIntField(
+                $this->pointer,
+                'peak_chunks_count',
+            ),
+            'cached_chunks_count' => $this->cached_chunks_count = $this->field_reader->readIntField(
+                $this->pointer,
+                'cached_chunks_count',
+            ),
+        };
+    }
+
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
         return match ($field_name) {
             'use_custom_heap' => $this->use_custom_heap = $this->casted_cdata->casted->use_custom_heap,
             'size' => $this->size = $this->casted_cdata->casted->size,
@@ -120,7 +188,7 @@ class ZendMmHeap implements Dereferencable
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
-         * @var CastedCData<\FFI\PhpInternals\zend_mm_heap> $casted_cdata
+         * @var CastedCData<\FFI\PhpInternals\zend_mm_heap>|null $casted_cdata
          * @var Pointer<ZendMmHeap> $pointer
          */
         return new static($casted_cdata, $pointer);

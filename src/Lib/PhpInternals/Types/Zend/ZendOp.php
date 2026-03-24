@@ -16,9 +16,11 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI\PhpInternals\zend_op;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\FieldReader;
+use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendOp implements Dereferencable
+final class ZendOp implements LazyDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $op1;
@@ -39,12 +41,14 @@ final class ZendOp implements Dereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $extended_value;
 
+    private ?FieldReader $field_reader = null;
+
     /**
-     * @param CastedCData<zend_op> $casted_cdata
+     * @param CastedCData<zend_op>|null $casted_cdata
      * @param Pointer<ZendOp> $pointer
      */
     public function __construct(
-        private CastedCData $casted_cdata,
+        private ?CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
         unset($this->op1);
@@ -58,9 +62,43 @@ final class ZendOp implements Dereferencable
         unset($this->extended_value);
     }
 
+    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
+    {
+        $self = new self(null, $pointer);
+        $self->field_reader = $field_reader;
+        return $self;
+    }
 
     public function __get(string $field_name)
     {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
+        }
+        return $this->getFieldEager($field_name);
+    }
+
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'op1' => $this->op1 = $this->field_reader->readIntField($this->pointer, 'op1'),
+            'op2' => $this->op2 = $this->field_reader->readIntField($this->pointer, 'op2'),
+            'result' => $this->result = $this->field_reader->readIntField($this->pointer, 'result'),
+            'op1_type' => $this->op1_type = $this->field_reader->readIntField($this->pointer, 'op1_type'),
+            'op2_type' => $this->op2_type = $this->field_reader->readIntField($this->pointer, 'op2_type'),
+            'result_type' => $this->result_type = $this->field_reader->readIntField($this->pointer, 'result_type'),
+            'lineno' => $this->lineno = $this->field_reader->readIntField($this->pointer, 'lineno'),
+            'opcode' => $this->opcode = $this->field_reader->readIntField($this->pointer, 'opcode'),
+            'extended_value' => $this->extended_value = $this->field_reader->readIntField(
+                $this->pointer,
+                'extended_value',
+            ),
+        };
+    }
+
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
         return match ($field_name) {
             'op1' => $this->op1 = (int)(\FFI::cast('int', $this->casted_cdata->casted->op1)?->cdata ?? -1),
             'op2' => $this->op2 = (int)(\FFI::cast('int', $this->casted_cdata->casted->op2)?->cdata ?? -1),
