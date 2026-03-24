@@ -256,15 +256,15 @@ final class CallTraceReader
     private function readOpline(string $php_version, ZendOp $zend_op): Opline
     {
         return new Opline(
-            $zend_op->op1,
-            $zend_op->op2,
-            $zend_op->result,
-            $zend_op->extended_value,
+            0,
+            0,
+            0,
+            0,
             $zend_op->lineno,
             $this->opcode_factory->create($php_version, $zend_op->opcode),
-            $zend_op->op1_type,
-            $zend_op->op2_type,
-            $zend_op->result_type
+            0,
+            0,
+            0
         );
     }
 }

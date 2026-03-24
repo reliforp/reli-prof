@@ -116,4 +116,33 @@ final class FieldReader
         );
         return $this->type_reader->readAs($embedded_type, $buffer);
     }
+
+    /**
+     * Read an embedded struct field and return a fully constructed Dereferencable.
+     *
+     * @template T of Dereferencable
+     * @param Pointer<Dereferencable> $struct_pointer
+     * @param class-string<T> $php_type
+     * @return T
+     */
+    public function readEmbeddedDereferencable(
+        Pointer $struct_pointer,
+        string $field_name,
+        string $c_type,
+        string $php_type,
+    ): mixed {
+        [$offset,] = $this->type_reader->getOffsetAndSizeOfMember(
+            $struct_pointer->getCTypeNameOfType(),
+            $field_name,
+        );
+        $size = $this->type_reader->sizeOf($c_type);
+        $buffer = $this->memory_reader->read(
+            $this->process_specifier->pid,
+            $struct_pointer->address + $offset,
+            $size,
+        );
+        $casted_cdata = $this->type_reader->readAs($c_type, $buffer);
+        $pointer = new Pointer($php_type, $struct_pointer->address + $offset, $size);
+        return $php_type::fromCastedCData($casted_cdata, $pointer);
+    }
 }
