@@ -66,6 +66,7 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     private ?PointedTypeResolver $pointed_type_resolver = null;
     private ?FieldReader $field_reader = null;
 
+    #[\Override]
     public function setPointedTypeResolver(PointedTypeResolver $resolver): void
     {
         $this->pointed_type_resolver = $resolver;
@@ -214,6 +215,11 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
         };
     }
 
+    /**
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedArgumentTypeCoercion
+     * @psalm-suppress PossiblyNullPropertyFetch
+     */
     private function createInlineZval(string $field_name): Zval
     {
         assert($this->casted_cdata !== null);
@@ -235,6 +241,11 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
         );
     }
 
+    /**
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedArgumentTypeCoercion
+     * @psalm-suppress PossiblyNullPropertyFetch
+     */
     private function createInlineZendArray(string $field_name): ZendArray
     {
         assert($this->casted_cdata !== null);

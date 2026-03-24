@@ -55,6 +55,7 @@ final class ZendConstant implements Dereferencable, PointedTypeResolverAware
         };
     }
 
+    #[\Override]
     public function setPointedTypeResolver(PointedTypeResolver $resolver): void
     {
         $this->pointed_type_resolver = $resolver;

@@ -165,11 +165,16 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         };
     }
 
+    #[\Override]
     public function setPointedTypeResolver(PointedTypeResolver $resolver): void
     {
         $this->pointed_type_resolver = $resolver;
     }
 
+    /**
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress PossiblyNullArgument
+     */
     private function createInlineZval(): Zval
     {
         $zval_class = $this->pointed_type_resolver !== null

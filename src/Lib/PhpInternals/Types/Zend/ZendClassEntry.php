@@ -275,11 +275,18 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
         }
     }
 
+    #[\Override]
     public function setPointedTypeResolver(PointedTypeResolver $resolver): void
     {
         $this->pointed_type_resolver = $resolver;
     }
 
+    /**
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedArgumentTypeCoercion
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress PossiblyNullArgument
+     */
     private function createInlineZendArray(string $field_name): ZendArray
     {
         $zend_array_class = $this->pointed_type_resolver !== null

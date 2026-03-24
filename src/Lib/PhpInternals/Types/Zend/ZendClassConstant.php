@@ -19,7 +19,10 @@ use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-/** @psalm-consistent-constructor */
+/**
+ * @psalm-consistent-constructor
+ * @psalm-suppress ClassMustBeFinal
+ */
 class ZendClassConstant implements Dereferencable, PointedTypeResolverAware
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
@@ -86,6 +89,7 @@ class ZendClassConstant implements Dereferencable, PointedTypeResolverAware
     }
 
 
+    #[\Override]
     public function setPointedTypeResolver(PointedTypeResolver $resolver): void
     {
         $this->pointed_type_resolver = $resolver;

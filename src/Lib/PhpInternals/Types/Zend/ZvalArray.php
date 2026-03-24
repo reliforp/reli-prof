@@ -28,6 +28,7 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
 
     private ?PointedTypeResolver $pointed_type_resolver = null;
 
+    #[\Override]
     public function setPointedTypeResolver(PointedTypeResolver $resolver): void
     {
         $this->pointed_type_resolver = $resolver;

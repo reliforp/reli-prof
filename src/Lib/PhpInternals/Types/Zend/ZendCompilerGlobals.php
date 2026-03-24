@@ -22,7 +22,10 @@ use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-/** @psalm-consistent-constructor */
+/**
+ * @psalm-consistent-constructor
+ * @psalm-suppress ClassMustBeFinal
+ */
 class ZendCompilerGlobals implements LazyDereferencable, PointedTypeResolverAware
 {
     /**
@@ -123,11 +126,18 @@ class ZendCompilerGlobals implements LazyDereferencable, PointedTypeResolverAwar
         };
     }
 
+    #[\Override]
     public function setPointedTypeResolver(PointedTypeResolver $resolver): void
     {
         $this->pointed_type_resolver = $resolver;
     }
 
+    /**
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedArgumentTypeCoercion
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress PossiblyNullArgument
+     */
     private function createInlineZendArray(): ZendArray
     {
         $zend_array_class = $this->pointed_type_resolver !== null
