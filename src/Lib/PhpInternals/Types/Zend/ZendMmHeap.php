@@ -108,22 +108,47 @@ class ZendMmHeap implements LazyDereferencable
     {
         assert($this->field_reader !== null);
         return match ($field_name) {
-            'use_custom_heap' => $this->use_custom_heap = $this->field_reader->readIntField($this->pointer, 'use_custom_heap'),
+            'use_custom_heap' => $this->use_custom_heap = $this->field_reader->readIntField(
+                $this->pointer,
+                'use_custom_heap',
+            ),
             'size' => $this->size = $this->field_reader->readIntField($this->pointer, 'size'),
             'peak' => $this->peak = $this->field_reader->readIntField($this->pointer, 'peak'),
-            'real_size' => $this->real_size = $this->field_reader->readIntField($this->pointer, 'real_size'),
-            'real_peak' => $this->real_peak = $this->field_reader->readIntField($this->pointer, 'real_peak'),
+            'real_size' => $this->real_size = $this->field_reader->readIntField(
+                $this->pointer,
+                'real_size',
+            ),
+            'real_peak' => $this->real_peak = $this->field_reader->readIntField(
+                $this->pointer,
+                'real_peak',
+            ),
             'limit' => $this->limit = $this->field_reader->readIntField($this->pointer, 'limit'),
-            'overflow' => $this->overflow = $this->field_reader->readIntField($this->pointer, 'overflow'),
+            'overflow' => $this->overflow = $this->field_reader->readIntField(
+                $this->pointer,
+                'overflow',
+            ),
             'huge_list' => $this->huge_list = $this->field_reader->readPointerField(
-                $this->pointer, 'huge_list', ZendMmHugeList::class,
+                $this->pointer,
+                'huge_list',
+                ZendMmHugeList::class,
             ),
             'main_chunk' => $this->main_chunk = $this->field_reader->readPointerField(
-                $this->pointer, 'main_chunk', ZendMmChunk::class,
+                $this->pointer,
+                'main_chunk',
+                ZendMmChunk::class,
             ),
-            'chunks_count' => $this->chunks_count = $this->field_reader->readIntField($this->pointer, 'chunks_count'),
-            'peak_chunks_count' => $this->peak_chunks_count = $this->field_reader->readIntField($this->pointer, 'peak_chunks_count'),
-            'cached_chunks_count' => $this->cached_chunks_count = $this->field_reader->readIntField($this->pointer, 'cached_chunks_count'),
+            'chunks_count' => $this->chunks_count = $this->field_reader->readIntField(
+                $this->pointer,
+                'chunks_count',
+            ),
+            'peak_chunks_count' => $this->peak_chunks_count = $this->field_reader->readIntField(
+                $this->pointer,
+                'peak_chunks_count',
+            ),
+            'cached_chunks_count' => $this->cached_chunks_count = $this->field_reader->readIntField(
+                $this->pointer,
+                'cached_chunks_count',
+            ),
         };
     }
 

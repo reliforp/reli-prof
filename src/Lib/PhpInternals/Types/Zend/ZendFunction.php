@@ -100,26 +100,42 @@ final class ZendFunction implements LazyDereferencable
         assert($this->field_reader !== null);
         return match ($field_name) {
             'type' => $this->type = $this->field_reader->readIntField(
-                $this->pointer, 'type',
+                $this->pointer,
+                'type',
             ),
             'function_name' => $this->function_name = $this->field_reader->readPointerField(
-                $this->pointer, 'function_name', ZendString::class, 'zend_op_array',
+                $this->pointer,
+                'function_name',
+                ZendString::class,
+                'zend_op_array',
             ),
             'scope' => $this->scope = $this->field_reader->readPointerField(
-                $this->pointer, 'scope', ZendClassEntry::class, 'zend_op_array',
+                $this->pointer,
+                'scope',
+                ZendClassEntry::class,
+                'zend_op_array',
             ),
             'num_args' => $this->num_args = $this->field_reader->readIntField(
-                $this->pointer, 'num_args', 'zend_op_array',
+                $this->pointer,
+                'num_args',
+                'zend_op_array',
             ),
             'fn_flags' => $this->fn_flags = $this->field_reader->readIntField(
-                $this->pointer, 'fn_flags', 'zend_op_array',
+                $this->pointer,
+                'fn_flags',
+                'zend_op_array',
             ),
             'op_array_filename' => $this->op_array_filename = $this->field_reader->readPointerField(
-                $this->pointer, 'filename', ZendString::class, 'zend_op_array',
+                $this->pointer,
+                'filename',
+                ZendString::class,
+                'zend_op_array',
             ),
             'op_array' => $this->op_array = new ZendOpArray(
                 $this->field_reader->readEmbeddedStructCData(
-                    $this->pointer, 'op_array', 'zend_op_array',
+                    $this->pointer,
+                    'op_array',
+                    'zend_op_array',
                 )->casted,
             ),
         };
