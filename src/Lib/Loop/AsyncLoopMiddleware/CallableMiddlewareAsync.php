@@ -24,6 +24,7 @@ final class CallableMiddlewareAsync implements AsyncLoopMiddlewareInterface
         $this->callable = $callable;
     }
 
+    #[\Override]
     public function invoke(): \Generator
     {
         /** @var bool */

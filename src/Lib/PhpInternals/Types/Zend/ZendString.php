@@ -105,11 +105,13 @@ final class ZendString implements LazyDereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_string';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -122,6 +124,7 @@ final class ZendString implements LazyDereferencable
         return new self($casted_cdata, self::ZEND_STRING_HEADER_SIZE, $pointer);
     }
 
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

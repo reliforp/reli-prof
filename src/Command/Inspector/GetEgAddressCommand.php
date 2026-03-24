@@ -44,6 +44,7 @@ final class GetEgAddressCommand extends Command
         parent::__construct();
     }
 
+    #[\Override]
     public function configure(): void
     {
         $this->setName('inspector:eg_address')
@@ -60,6 +61,7 @@ final class GetEgAddressCommand extends Command
      * @throws TlsFinderException
      * @throws InspectorSettingsException
      */
+    #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);

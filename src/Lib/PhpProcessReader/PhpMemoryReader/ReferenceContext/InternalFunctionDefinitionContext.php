@@ -13,13 +13,15 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
-class InternalFunctionDefinitionContext extends FunctionDefinitionContext
+final class InternalFunctionDefinitionContext extends FunctionDefinitionContext
 {
+    #[\Override]
     public function getContexts(): iterable
     {
         return ['#is_internal' => true];
     }
 
+    #[\Override]
     public function isInternal(): bool
     {
         return true;

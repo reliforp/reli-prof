@@ -27,6 +27,7 @@ final class FlameGraphCommand extends Command
         parent::__construct();
     }
 
+    #[\Override]
     public function configure(): void
     {
         $this->setName('converter:flamegraph')
@@ -34,6 +35,7 @@ final class FlameGraphCommand extends Command
         ;
     }
 
+    #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $tools_path = Cast::toString($this->config->get('paths.tools'));
@@ -52,6 +54,9 @@ final class FlameGraphCommand extends Command
             ],
             $stackcollapse_pipes
         );
+        if ($stackcollapse_process === false) {
+            throw new \RuntimeException('Failed to open stackcollapse process');
+        }
         $flamegraph_process = proc_open(
             [
                 $flamegraph,
@@ -63,6 +68,10 @@ final class FlameGraphCommand extends Command
             ],
             $stackcollapse_pipes
         );
+        if ($flamegraph_process === false) {
+            proc_close($stackcollapse_process);
+            throw new \RuntimeException('Failed to open flamegraph process');
+        }
 
         proc_close($stackcollapse_process);
         proc_close($flamegraph_process);

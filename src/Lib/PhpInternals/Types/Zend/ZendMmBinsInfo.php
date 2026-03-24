@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-class ZendMmBinsInfo
+final class ZendMmBinsInfo
 {
     private const SIZES = [
         0 => 8,

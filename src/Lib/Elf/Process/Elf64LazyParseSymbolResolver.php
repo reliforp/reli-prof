@@ -51,6 +51,7 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         }
     }
 
+    #[\Override]
     public function resolve(string $symbol_name): Elf64SymbolTableEntry
     {
         if (!isset($this->resolver_cache)) {
@@ -59,6 +60,7 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         return $this->resolver_cache->resolve($symbol_name);
     }
 
+    #[\Override]
     public function getDtDebugAddress(): ?int
     {
         if (!isset($this->resolver_cache)) {
@@ -67,6 +69,7 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         return $this->resolver_cache->getDtDebugAddress();
     }
 
+    #[\Override]
     public function getBaseAddress(): UInt64
     {
         if (!isset($this->resolver_cache)) {

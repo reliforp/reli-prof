@@ -16,7 +16,7 @@ namespace Reli\Lib\Loop\AsyncLoopMiddleware;
 use Reli\Lib\Log\Log;
 use Reli\Lib\Loop\AsyncLoopMiddlewareInterface;
 
-class ExitLoopOnSpecificExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterface
+final class ExitLoopOnSpecificExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterface
 {
     /** @param array<class-string<\Throwable>> $exception_names */
     public function __construct(
@@ -25,6 +25,7 @@ class ExitLoopOnSpecificExceptionMiddlewareAsync implements AsyncLoopMiddlewareI
     ) {
     }
 
+    #[\Override]
     public function invoke(): \Generator
     {
         try {

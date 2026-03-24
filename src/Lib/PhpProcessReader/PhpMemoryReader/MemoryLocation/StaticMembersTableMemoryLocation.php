@@ -19,7 +19,7 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\Process\Pointer\Dereferencer;
 
-class StaticMembersTableMemoryLocation extends MemoryLocation
+final class StaticMembersTableMemoryLocation extends MemoryLocation
 {
     public static function fromZendClassEntry(
         ZendClassEntry $zend_class_entry,

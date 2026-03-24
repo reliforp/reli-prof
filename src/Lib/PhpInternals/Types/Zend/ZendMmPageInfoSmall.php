@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-class ZendMmPageInfoSmall
+final class ZendMmPageInfoSmall
 {
     public function __construct(
         public int $info,

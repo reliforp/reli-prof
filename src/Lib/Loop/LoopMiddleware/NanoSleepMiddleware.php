@@ -27,6 +27,7 @@ final class NanoSleepMiddleware implements LoopMiddlewareInterface
     ) {
     }
 
+    #[\Override]
     public function invoke(): bool
     {
         $start = hrtime(true);

@@ -18,13 +18,14 @@ use Reli\Lib\FFI\CastedTypeProvider;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 
-class ZendCastedTypeProvider implements CastedTypeProvider
+final class ZendCastedTypeProvider implements CastedTypeProvider
 {
     public function __construct(
         private ZendTypeReader $zend_type_reader,
     ) {
     }
 
+    #[\Override]
     public function readAs(string $ctype_name, CData $buffer): CastedCData
     {
         /** @var CastedCData<CData> */

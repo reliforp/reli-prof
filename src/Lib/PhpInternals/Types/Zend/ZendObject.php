@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the reliforp/reli-prof package.
+ * This file is part of the refinal liforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -24,7 +24,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 /**
  * @psalm-consistent-constructor
  */
-class ZendObject implements Dereferencable
+final class ZendObject implements Dereferencable
 {
     public ZendRefcountedH $zend_refcounted_h;
 
@@ -148,11 +148,13 @@ class ZendObject implements Dereferencable
         $ce = $dereferencer->deref($this->ce);
         return $ce->isEnum();
     }
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_object';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -163,6 +165,7 @@ class ZendObject implements Dereferencable
     }
 
     /** @return Pointer<ZendObject> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

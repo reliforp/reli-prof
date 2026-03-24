@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RuntimeCacheMemoryLocation;
 
-class RuntimeCacheContext implements ReferenceContext
+final class RuntimeCacheContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -24,6 +24,7 @@ class RuntimeCacheContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];

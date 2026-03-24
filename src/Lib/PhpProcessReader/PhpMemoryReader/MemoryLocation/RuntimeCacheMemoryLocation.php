@@ -18,7 +18,7 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\Process\Pointer\Dereferencer;
 
-class RuntimeCacheMemoryLocation extends MemoryLocation
+final class RuntimeCacheMemoryLocation extends MemoryLocation
 {
     public static function fromZendOpArray(
         ZendOpArray $zend_op_array,

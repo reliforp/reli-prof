@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI\CData;
 use FFI\PhpInternals\zend_value_ww;
 
-class ZendValueWw
+final class ZendValueWw
 {
     public int $w1;
     public int $w2;

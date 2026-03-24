@@ -32,6 +32,7 @@ final class ProcessMemoryMapCreator implements ProcessMemoryMapCreatorInterface
     ) {
     }
 
+    #[\Override]
     public function getProcessMemoryMap(int $pid): ProcessMemoryMap
     {
         $memory_map_raw = $this->memory_map_reader->read($pid);

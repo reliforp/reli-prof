@@ -25,16 +25,19 @@ final class UnrelocatedProcessMemoryByteReader implements ByteReaderInterface
     ) {
     }
 
+    #[\Override]
     public function offsetExists($offset): bool
     {
         return isset($this->byte_reader[$this->module_memory_map->getMemoryAddressFromOffset($offset)]);
     }
 
+    #[\Override]
     public function offsetGet($offset): int
     {
         return $this->byte_reader[$this->module_memory_map->getMemoryAddressFromOffset($offset)];
     }
 
+    #[\Override]
     public function createSliceAsString(int $offset, int $size): string
     {
         return $this->byte_reader->createSliceAsString(

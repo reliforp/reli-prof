@@ -44,6 +44,7 @@ final class CoreDumpCommand extends Command
         parent::__construct();
     }
 
+    #[\Override]
     public function configure(): void
     {
         $this->setName('inspector:coredump')
@@ -70,6 +71,7 @@ final class CoreDumpCommand extends Command
         );
     }
 
+    #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         Log::info('start core-dump command');

@@ -13,6 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Process;
 
-class ProcessSymbolReaderException extends \Exception
+final class ProcessSymbolReaderException extends \Exception
 {
 }

@@ -38,7 +38,7 @@
     "mockery/mockery": "1.6.12",
     "jetbrains/phpstorm-stubs": "2025.3",
     "php-coveralls/php-coveralls": "2.7.0",
-    "psalm/phar": "^5.11"
+    "psalm/phar": "^6.0"
   },
   "autoload": {
     "files": ["src/Lib/Defer/defer.php"],

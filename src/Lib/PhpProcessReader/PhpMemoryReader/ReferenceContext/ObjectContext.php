@@ -24,6 +24,7 @@ final class ObjectContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): array
     {
         return [$this->memory_location];

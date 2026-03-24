@@ -38,6 +38,7 @@ final class X64LinuxThreadPointerRetriever implements ThreadPointerRetrieverInte
     /**
      * @throws TlsFinderException
      */
+    #[\Override]
     public function getThreadPointer(int $pid): int
     {
         try {

@@ -17,7 +17,7 @@ use Reli\Lib\ByteStream\CDataByteReader;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
-class LinkMapLoader
+final class LinkMapLoader
 {
     public function __construct(
         private MemoryReaderInterface $memory_reader,

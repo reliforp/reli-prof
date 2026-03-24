@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ObjectsStoreMemoryLocation;
 
-class ObjectsStoreContext implements ReferenceContext
+final class ObjectsStoreContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -24,11 +24,13 @@ class ObjectsStoreContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->objects_store_memory_location];
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return [

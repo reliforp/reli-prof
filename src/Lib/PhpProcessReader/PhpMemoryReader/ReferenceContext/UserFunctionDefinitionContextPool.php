@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayHeaderMemoryLocation;
 
-class UserFunctionDefinitionContextPool
+final class UserFunctionDefinitionContextPool
 {
     /** @var array<int, UserFunctionDefinitionContext> */
     private array $contexts = [];

@@ -29,6 +29,7 @@ final class TopReferenceContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLinks(): iterable
     {
         return [

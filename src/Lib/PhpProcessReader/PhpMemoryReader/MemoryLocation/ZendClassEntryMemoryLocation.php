@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendClassEntryMemoryLocation extends MemoryLocation
+final class ZendClassEntryMemoryLocation extends MemoryLocation
 {
     public static function fromZendClassEntry(
         ZendClassEntry $zend_class_entry

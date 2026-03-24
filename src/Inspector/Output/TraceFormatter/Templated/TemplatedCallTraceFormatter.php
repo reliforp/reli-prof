@@ -29,6 +29,7 @@ final class TemplatedCallTraceFormatter implements CallTraceFormatter
     ) {
     }
 
+    #[\Override]
     public function format(CallTrace $call_trace): string
     {
         ob_start();

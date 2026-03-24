@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the reliforp/reli-prof package.
+ * This file is part of the reliforpfinal /reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -18,7 +18,7 @@ use FFI\CInteger;
 use FFI\CPointer;
 
 /** @template-covariant T of Dereferencable */
-class Pointer
+final class Pointer
 {
     /** @param class-string<T> $type */
     public function __construct(

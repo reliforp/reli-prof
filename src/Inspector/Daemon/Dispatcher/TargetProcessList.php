@@ -26,6 +26,7 @@ final class TargetProcessList implements TargetProcessListInterface
         $this->process_list = $process_list;
     }
 
+    #[\Override]
     public function pickOne(): ?TargetProcessDescriptor
     {
         if ($this->process_list === []) {
@@ -37,11 +38,13 @@ final class TargetProcessList implements TargetProcessListInterface
         return $value;
     }
 
+    #[\Override]
     public function putOne(TargetProcessDescriptor $process_descriptor): void
     {
         $this->process_list[] = $process_descriptor;
     }
 
+    #[\Override]
     public function getDiff(TargetProcessListInterface $compare_list): self
     {
         /** @var TargetProcessDescriptor[] $diff */
@@ -56,11 +59,13 @@ final class TargetProcessList implements TargetProcessListInterface
     }
 
     /** @return TargetProcessDescriptor[] */
+    #[\Override]
     public function getArray(): array
     {
         return $this->process_list;
     }
 
+    #[\Override]
     public function removeByPid(int $pid): void
     {
         foreach ($this->process_list as $key => $process_descriptor) {

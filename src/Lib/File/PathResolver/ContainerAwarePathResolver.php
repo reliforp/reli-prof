@@ -13,8 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\File\PathResolver;
 
-class ContainerAwarePathResolver implements ProcessPathResolver
+final class ContainerAwarePathResolver implements ProcessPathResolver
 {
+    #[\Override]
     public function resolve(int $pid, string $path): string
     {
         return "/proc/{$pid}/root{$path}";

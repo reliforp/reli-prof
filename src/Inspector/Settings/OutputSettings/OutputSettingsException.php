@@ -15,7 +15,7 @@ namespace Reli\Inspector\Settings\OutputSettings;
 
 use Reli\Inspector\Settings\InspectorSettingsException;
 
-class OutputSettingsException extends InspectorSettingsException
+final class OutputSettingsException extends InspectorSettingsException
 {
     public const OUTPUT_IS_NOT_STRING = 1;
     public const TEMPLATE_NOT_SPECIFIED = 2;

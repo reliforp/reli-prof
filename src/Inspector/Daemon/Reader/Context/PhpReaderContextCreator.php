@@ -28,6 +28,7 @@ final class PhpReaderContextCreator implements PhpReaderContextCreatorInterface
     ) {
     }
 
+    #[\Override]
     public function create(): PhpReaderControllerInterface
     {
         return new PhpReaderController(

@@ -54,6 +54,9 @@ final class PhpSymbolReaderCreator
         $root_link_map_address = null;
         if (!is_null($libpthread_symbol_reader)) {
             $executable_path = readlink("/proc/{$pid}/exe");
+            if ($executable_path === false) {
+                throw new ProcessSymbolReaderException('failed to readlink /proc/' . $pid . '/exe');
+            }
             $full_executable_path = "/proc/{$pid}/root{$executable_path}";
             $main_executable_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
                 $pid,

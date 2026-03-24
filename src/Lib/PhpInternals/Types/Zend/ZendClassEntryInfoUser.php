@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI\CData;
 use Reli\Lib\Process\Pointer\Pointer;
 
-class ZendClassEntryInfoUser
+final class ZendClassEntryInfoUser
 {
     /** @var Pointer<ZendString>|null  */
     public ?Pointer $filename;

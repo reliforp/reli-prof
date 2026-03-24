@@ -1,7 +1,7 @@
 <?php
 
 /**
- * This file is part of the reliforp/reli-prof package.
+ * This file is part of thfinal e reliforp/reli-prof package.
  *
  * (c) sji <sji@sj-i.dev>
  *
@@ -21,7 +21,7 @@ use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendCompilerGlobals implements LazyDereferencable
+final class ZendCompilerGlobals implements LazyDereferencable
 {
     /**
      * @psalm-suppress PropertyNotSetInConstructor
@@ -147,11 +147,13 @@ class ZendCompilerGlobals implements LazyDereferencable
         }
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_compiler_globals';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -162,6 +164,7 @@ class ZendCompilerGlobals implements LazyDereferencable
     }
 
     /** @return Pointer<ZendCompilerGlobals> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

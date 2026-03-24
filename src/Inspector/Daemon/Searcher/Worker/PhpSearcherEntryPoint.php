@@ -36,6 +36,7 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
     ) {
     }
 
+    #[\Override]
     public function run(): void
     {
         $target_php_settings_message = $this->protocol->receiveTargetPhpSettings();

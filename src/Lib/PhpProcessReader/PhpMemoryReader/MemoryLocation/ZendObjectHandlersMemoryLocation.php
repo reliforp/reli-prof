@@ -17,7 +17,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendObjectHandlersMemoryLocation extends MemoryLocation
+final class ZendObjectHandlersMemoryLocation extends MemoryLocation
 {
     public static function fromZendObject(
         ZendObject $zend_object,

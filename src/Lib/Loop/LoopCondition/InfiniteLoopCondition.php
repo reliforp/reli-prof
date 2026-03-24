@@ -15,6 +15,7 @@ namespace Reli\Lib\Loop\LoopCondition;
 
 final class InfiniteLoopCondition implements LoopConditionInterface
 {
+    #[\Override]
     public function shouldContinue(): bool
     {
         return true;

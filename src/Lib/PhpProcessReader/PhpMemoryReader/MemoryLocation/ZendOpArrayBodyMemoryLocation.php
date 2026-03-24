@@ -17,7 +17,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendOpArrayBodyMemoryLocation extends MemoryLocation
+final class ZendOpArrayBodyMemoryLocation extends MemoryLocation
 {
     public function __construct(
         int $address,

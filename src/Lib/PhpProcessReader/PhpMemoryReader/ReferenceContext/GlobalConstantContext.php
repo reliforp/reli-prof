@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendConstantMemoryLocation;
 
-class GlobalConstantContext implements ReferenceContext
+final class GlobalConstantContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -24,6 +24,7 @@ class GlobalConstantContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];

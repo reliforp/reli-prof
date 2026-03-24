@@ -63,11 +63,13 @@ final class ZendConstant implements Dereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_constant';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -78,6 +80,7 @@ final class ZendConstant implements Dereferencable
     }
 
     /** @return Pointer<ZendConstant> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

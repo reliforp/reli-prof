@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 
-class StringContext implements ReferenceContext
+final class StringContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -29,11 +29,13 @@ class StringContext implements ReferenceContext
         return $this->memory_location->value;
     }
 
+    #[\Override]
     public function add(string $link_name, ReferenceContext $reference_context): void
     {
         throw new \LogicException("StringContext cannot have reference to another context");
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];

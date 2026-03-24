@@ -27,6 +27,7 @@ final class TopLikeOutputter implements Outputter
     ) {
     }
 
+    #[\Override]
     public function display(string $trace_target, Stat $stat): void
     {
         $stat->updateStat();
@@ -91,16 +92,16 @@ final class TopLikeOutputter implements Outputter
         $table->setStyle('compact');
         $table->getStyle()->setCellHeaderFormat('%s');
         $table->render();
-        $output->overwrite(
-            preg_replace(
-                '/( *total_incl.*)/',
-                '<bg=bright-white;fg=black>$1</>',
-                preg_replace(
-                    '/\e[[][A-Za-z0-9]*;?[0-9]*m?/',
-                    '',
-                    $output->getContent()
-                )
-            )
-        );
+        $stripped = preg_replace(
+            '/\e[[][A-Za-z0-9]*;?[0-9]*m?/',
+            '',
+            $output->getContent()
+        ) ?? '';
+        $highlighted = preg_replace(
+            '/( *total_incl.*)/',
+            '<bg=bright-white;fg=black>$1</>',
+            $stripped
+        ) ?? '';
+        $output->overwrite($highlighted);
     }
 }

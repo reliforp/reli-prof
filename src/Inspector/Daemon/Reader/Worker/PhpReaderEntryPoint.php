@@ -29,6 +29,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
     ) {
     }
 
+    #[\Override]
     public function run(): void
     {
         $set_settings_message = $this->protocol->receiveSettings();

@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DefaultPropertiesTableMemoryLocation;
 
-class DefaultPropertiesTableContext implements ReferenceContext
+final class DefaultPropertiesTableContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -24,6 +24,7 @@ class DefaultPropertiesTableContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];

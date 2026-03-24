@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
-class CallFrameContext implements ReferenceContext
+final class CallFrameContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -34,6 +34,7 @@ class CallFrameContext implements ReferenceContext
         return $this->getLocalVariables()?->getVariable($variable_name) ?? null;
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return [

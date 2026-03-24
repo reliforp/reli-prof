@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\StaticMembersTableMemoryLocation;
 
-class ClassStaticPropertiesContext implements ReferenceContext
+final class ClassStaticPropertiesContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -24,11 +24,13 @@ class ClassStaticPropertiesContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return [

@@ -25,16 +25,19 @@ final class PhpSearcherControllerProtocol implements PhpSearcherControllerProtoc
     ) {
     }
 
+    #[\Override]
     public static function createFromChannel(Channel $channel): static
     {
         return new self($channel);
     }
 
+    #[\Override]
     public function sendTargetRegex(TargetPhpSettingsMessage $message): void
     {
         $this->channel->send($message);
     }
 
+    #[\Override]
     public function receiveUpdateTargetProcess(): UpdateTargetProcessMessage
     {
         /** @var UpdateTargetProcessMessage */

@@ -22,7 +22,7 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
-class ZendOpArray
+final class ZendOpArray
 {
     /**
      * @var Pointer<ZendString>|null

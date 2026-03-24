@@ -40,7 +40,7 @@ use function fopen;
 use function fread;
 use function fseek;
 
-class CoreDumpReaderFactory
+final class CoreDumpReaderFactory
 {
     public function __construct(
         private ContainerBuilder $container_builder,
@@ -114,7 +114,8 @@ class CoreDumpReaderFactory
                 }
             }
             $file_path = $corresponding_file?->name ?? '';
-            $file_inode = $file_path === '' ? 0 : (file_exists($file_path) ? fileinode($file_path) : 0);
+            $inode_result = $file_path !== '' && file_exists($file_path) ? fileinode($file_path) : false;
+            $file_inode = $inode_result !== false ? $inode_result : 0;
 
             $memory_areas[] = new ProcessMemoryArea(
                 dechex($load_segment->p_vaddr->toInt()),
@@ -147,6 +148,7 @@ class CoreDumpReaderFactory
                 private MappedPathResolver $path_resolver,
             ) {
             }
+            #[\Override]
             public function read(int $pid, int $remote_address, int $size): CData
             {
                 $memory_areas = $this->process_memory_map->findByAddress($remote_address);
@@ -231,6 +233,7 @@ class CoreDumpReaderFactory
                             private ProcessMemoryMap $process_memory_map,
                         ) {
                         }
+                        #[\Override]
                         public function getProcessMemoryMap(int $pid): ProcessMemoryMap
                         {
                             return $this->process_memory_map;

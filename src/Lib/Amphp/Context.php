@@ -28,22 +28,26 @@ final class Context implements ContextInterface
     ) {
     }
 
+    #[\Override]
     public function start(): void
     {
         ;
     }
 
+    #[\Override]
     public function isRunning(): bool
     {
         return !$this->amphp_context->isClosed();
     }
 
+    #[\Override]
     public function stop(): void
     {
         $this->amphp_context->close();
     }
 
     /** @return T */
+    #[\Override]
     public function getProtocol(): object
     {
         return $this->protocol_interface;

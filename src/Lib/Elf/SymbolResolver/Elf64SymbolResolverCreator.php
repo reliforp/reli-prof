@@ -33,6 +33,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     /**
      * @throws ElfParserException
      */
+    #[\Override]
     public function createLinearScanResolverFromPath(string $path): Elf64LinearScanSymbolResolver
     {
         $binary_raw = $this->file_reader->readAll($path);
@@ -86,6 +87,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     /**
      * @throws ElfParserException
      */
+    #[\Override]
     public function createDynamicResolverFromPath(string $path): Elf64DynamicSymbolResolver
     {
         $binary_raw = $this->file_reader->readAll($path);
@@ -99,6 +101,7 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     /**
      * @throws ElfParserException
      */
+    #[\Override]
     public function createDynamicResolverFromProcessMemory(
         MemoryReaderInterface $memory_reader,
         int $pid,

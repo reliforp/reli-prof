@@ -17,7 +17,7 @@ use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettings;
 use Reli\Lib\Process\Exec\TraceeExecutor;
 use Reli\Lib\Process\ProcessSpecifier;
 
-class TargetProcessResolver
+final class TargetProcessResolver
 {
     public function __construct(
         private TraceeExecutor $tracee_executor,

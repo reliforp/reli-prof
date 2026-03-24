@@ -19,7 +19,7 @@ use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\ProcessSpecifier;
 
-class RemoteProcessDereferencer implements Dereferencer
+final class RemoteProcessDereferencer implements Dereferencer
 {
     public function __construct(
         private MemoryReaderInterface $memory_reader,
@@ -34,6 +34,7 @@ class RemoteProcessDereferencer implements Dereferencer
      * @param Pointer<T> $pointer
      * @return T
      */
+    #[\Override]
     public function deref(Pointer $pointer): mixed
     {
         $buffer = $this->memory_reader->read(

@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DynamicFuncDefsTableMemoryLocation;
 
-class DynamicFuncDefsContext implements ReferenceContext
+final class DynamicFuncDefsContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -24,6 +24,7 @@ class DynamicFuncDefsContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];

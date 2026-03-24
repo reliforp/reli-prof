@@ -27,21 +27,25 @@ final class PhpReaderControllerProtocol implements PhpReaderControllerProtocolIn
     ) {
     }
 
+    #[\Override]
     public static function createFromChannel(Channel $channel): static
     {
         return new self($channel);
     }
 
+    #[\Override]
     public function sendSettings(SetSettingsMessage $message): void
     {
         $this->channel->send($message);
     }
 
+    #[\Override]
     public function sendAttach(AttachMessage $message): void
     {
         $this->channel->send($message);
     }
 
+    #[\Override]
     public function receiveTraceOrDetachWorker(): TraceMessage|DetachWorkerMessage
     {
         /** @var TraceMessage|DetachWorkerMessage */

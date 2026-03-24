@@ -35,6 +35,7 @@ final class CompatCallTraceFormatter implements CallTraceFormatter
         return self::$cache;
     }
 
+    #[\Override]
     public function format(CallTrace $call_trace): string
     {
         $frames = [];

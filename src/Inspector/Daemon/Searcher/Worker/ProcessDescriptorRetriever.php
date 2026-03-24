@@ -21,7 +21,7 @@ use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessSpecifier;
 
-class ProcessDescriptorRetriever
+final class ProcessDescriptorRetriever
 {
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,

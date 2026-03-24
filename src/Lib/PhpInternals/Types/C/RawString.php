@@ -48,12 +48,14 @@ final class RawString implements Dereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'char[0]';
     }
 
     /** @param CastedCData<CData> $casted_cdata */
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -61,6 +63,7 @@ final class RawString implements Dereferencable
         return new self($casted_cdata, $pointer->size, $pointer);
     }
 
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

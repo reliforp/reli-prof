@@ -28,6 +28,7 @@ final class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
     ) {
     }
 
+    #[\Override]
     public function resolve(string $symbol_name): Elf64SymbolTableEntry
     {
         $all_symbols = $this->symbol_table->findAll();
@@ -40,11 +41,13 @@ final class Elf64LinearScanSymbolResolver implements Elf64AllSymbolResolver
         return $all_symbols[Elf64SymbolTable::STN_UNDEF];
     }
 
+    #[\Override]
     public function getDtDebugAddress(): ?int
     {
         return $this->dt_debug_address;
     }
 
+    #[\Override]
     public function getBaseAddress(): UInt64
     {
         return $this->base_address;

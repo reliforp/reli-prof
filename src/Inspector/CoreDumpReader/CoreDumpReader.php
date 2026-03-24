@@ -25,7 +25,7 @@ use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\ReliProfiler;
 
-class CoreDumpReader
+final class CoreDumpReader
 {
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
@@ -92,9 +92,9 @@ class CoreDumpReader
             ]
             + [
                 'heap_memory_analyzed_percentage' =>
-                    $analyzed_regions->summary->zend_mm_heap_usage
+                    (float)$analyzed_regions->summary->zend_mm_heap_usage
                     /
-                    $collected_memories->memory_get_usage_size * 100
+                    (float)$collected_memories->memory_get_usage_size * 100.0
                 ,
             ]
             + [

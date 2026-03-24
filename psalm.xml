@@ -14,11 +14,6 @@
         <directory name="src" />
     </projectFiles>
     <issueHandlers>
-        <PossiblyNullArgument>
-            <errorLevel type="suppress">
-                <file name="vendor/symfony/console/Command/Command.php"/>
-            </errorLevel>
-        </PossiblyNullArgument>
     </issueHandlers>
     <stubs>
         <file name="tools/stubs/container.php"/>

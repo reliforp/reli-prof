@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayHeaderMemoryLocation;
 
-class UserFunctionDefinitionContext extends FunctionDefinitionContext
+final class UserFunctionDefinitionContext extends FunctionDefinitionContext
 {
     public function __construct(
         public ZendOpArrayHeaderMemoryLocation $memory_location,
@@ -56,6 +56,7 @@ class UserFunctionDefinitionContext extends FunctionDefinitionContext
         return true;
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return ['#is_internal' => false];

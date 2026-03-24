@@ -13,7 +13,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\ProcessSpecifier;
 
 /** @psalm-import-type VersionDecided from TargetPhpSettings */
-class PhpZendMemoryManagerChunkFinder
+final class PhpZendMemoryManagerChunkFinder
 {
     public function __construct(
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,

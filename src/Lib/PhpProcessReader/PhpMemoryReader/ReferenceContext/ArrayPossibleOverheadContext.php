@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableOverheadMemoryLocation;
 
-class ArrayPossibleOverheadContext implements ReferenceContext
+final class ArrayPossibleOverheadContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -24,6 +24,7 @@ class ArrayPossibleOverheadContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];

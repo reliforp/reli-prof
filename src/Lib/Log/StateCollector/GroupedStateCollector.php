@@ -23,6 +23,7 @@ final class GroupedStateCollector implements StateCollector
         $this->collectors = $collectors;
     }
 
+    #[\Override]
     public function collect(): array
     {
         $result = [];

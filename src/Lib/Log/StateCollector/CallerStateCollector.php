@@ -19,6 +19,7 @@ use function debug_backtrace;
 
 final class CallerStateCollector implements StateCollector
 {
+    #[\Override]
     public function collect(): array
     {
         $backtrace = debug_backtrace(limit: 5);

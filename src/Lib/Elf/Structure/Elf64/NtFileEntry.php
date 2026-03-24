@@ -15,7 +15,7 @@ namespace Reli\Lib\Elf\Structure\Elf64;
 
 use Reli\Lib\Integer\UInt64;
 
-class NtFileEntry
+final class NtFileEntry
 {
     public function __construct(
         public string $name,

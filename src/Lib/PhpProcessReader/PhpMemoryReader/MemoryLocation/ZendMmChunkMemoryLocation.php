@@ -19,7 +19,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoLarge;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoSmall;
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendMmChunkMemoryLocation extends MemoryLocation
+final class ZendMmChunkMemoryLocation extends MemoryLocation
 {
     public function __construct(
         int $address,

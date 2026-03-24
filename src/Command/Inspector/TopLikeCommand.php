@@ -51,6 +51,7 @@ final class TopLikeCommand extends Command
         parent::__construct();
     }
 
+    #[\Override]
     public function configure(): void
     {
         $this->setName('inspector:top')
@@ -64,6 +65,7 @@ final class TopLikeCommand extends Command
         $this->target_php_settings_from_console_input->setOptions($this);
     }
 
+    #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);
@@ -77,10 +79,14 @@ final class TopLikeCommand extends Command
 
         $searcher_context = $this->php_searcher_context_creator->create();
         $searcher_context->start();
+        $my_pid = getmypid();
+        if ($my_pid === false) {
+            throw new \RuntimeException('Failed to get current process ID');
+        }
         $searcher_context->sendTarget(
             $daemon_settings->target_regex,
             $target_php_settings,
-            getmypid(),
+            $my_pid,
         );
 
         $worker_pool = WorkerPool::create(

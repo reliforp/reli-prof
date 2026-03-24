@@ -86,7 +86,7 @@ final class Stat
             $function_entry->percent_exclusive =
                 $this->sample_count < 1
                 ? 0.0
-                : 100.0 * $function_entry->count_exclusive / $this->sample_count
+                : 100.0 * (float)$function_entry->count_exclusive / (float)$this->sample_count
             ;
         }
     }

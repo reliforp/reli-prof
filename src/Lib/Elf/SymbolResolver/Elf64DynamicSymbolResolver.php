@@ -74,6 +74,7 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
     ) {
     }
 
+    #[\Override]
     public function resolve(string $symbol_name): Elf64SymbolTableEntry
     {
         $index = $this->hash_table->lookup($symbol_name, function (string $name, int $index) {
@@ -83,11 +84,13 @@ final class Elf64DynamicSymbolResolver implements Elf64SymbolResolver
         return $this->symbol_table->lookup($index);
     }
 
+    #[\Override]
     public function getDtDebugAddress(): ?int
     {
         return $this->dt_debug_address;
     }
 
+    #[\Override]
     public function getBaseAddress(): UInt64
     {
         return $this->base_address;

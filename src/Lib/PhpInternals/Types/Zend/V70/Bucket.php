@@ -21,6 +21,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 
 final class Bucket extends BaseBucket implements Dereferencable
 {
+    #[\Override]
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {

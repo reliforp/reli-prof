@@ -29,6 +29,7 @@ final class MappedPathResolver implements ProcessPathResolver
         }
     }
 
+    #[\Override]
     public function resolve(int $pid, string $path): string
     {
         if (isset($this->path_map[$path])) {

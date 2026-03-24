@@ -25,6 +25,7 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
     ) {
     }
 
+    #[\Override]
     public function getBaseAddress(): int
     {
         if (!isset($this->base_address)) {
@@ -37,6 +38,7 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
         return $this->base_address;
     }
 
+    #[\Override]
     public function getMemoryAddressFromOffset(int $offset): int
     {
         $ranges = $this->getSortedOffsetToMemoryAreaMap();
@@ -49,6 +51,7 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
         return $ranges[$file_offset_decided] + ($offset - $file_offset_decided);
     }
 
+    #[\Override]
     public function isInRange(int $address): bool
     {
         foreach ($this->memory_areas as $memory_area) {
@@ -73,16 +76,19 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
         return $this->sorted_offset_to_memory_map;
     }
 
+    #[\Override]
     public function getDeviceId(): string
     {
         return $this->memory_areas[0]->device_id;
     }
 
+    #[\Override]
     public function getInodeNumber(): int
     {
         return $this->memory_areas[0]->inode_num;
     }
 
+    #[\Override]
     public function getModuleName(): string
     {
         return $this->memory_areas[0]->name;

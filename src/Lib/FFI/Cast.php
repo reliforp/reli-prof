@@ -17,7 +17,7 @@ use FFI\CData;
 use FFI\CInteger;
 use FFI\CPointer;
 
-class Cast
+final class Cast
 {
     /** @param CPointer|null $cdata */
     public static function castPointerToInt(?CData &$cdata): int

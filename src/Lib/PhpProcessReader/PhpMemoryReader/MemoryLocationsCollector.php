@@ -156,6 +156,7 @@ final class MemoryLocationsCollector
                 ) {
                 }
 
+                #[\Override]
                 public function resolve(string $type_name): string
                 {
                     return match ($this->php_version) {

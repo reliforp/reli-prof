@@ -16,7 +16,7 @@ namespace Reli\Lib\File;
 use FFI;
 use Reli\Lib\FFI\CannotAllocateBufferException;
 
-class NativeFileReader implements FileReaderInterface
+final class NativeFileReader implements FileReaderInterface
 {
     /** @var FFI\Libc\libc_file_ffi  */
     private FFI $ffi;
@@ -31,6 +31,7 @@ class NativeFileReader implements FileReaderInterface
         ');
     }
 
+    #[\Override]
     public function readAll(string $path): string
     {
         $buffer = $this->ffi->new("unsigned char[4096]")

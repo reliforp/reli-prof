@@ -23,12 +23,14 @@ interface ByteReaderInterface extends ArrayAccess
      * Whether a offset exists
      * @param int $offset
      */
+    #[\Override]
     public function offsetExists($offset): bool;
 
     /**
      * Offset to retrieve
      * @param int $offset
      */
+    #[\Override]
     public function offsetGet($offset): int;
 
     /** create a slice as string */
@@ -43,6 +45,7 @@ interface ByteReaderInterface extends ArrayAccess
      * @param mixed $value
      * @throws LogicException
      */
+    #[\Override]
     public function offsetSet($offset, $value): void;
 
     /**
@@ -53,5 +56,6 @@ interface ByteReaderInterface extends ArrayAccess
      * @param int $offset
      * @throws LogicException
      */
+    #[\Override]
     public function offsetUnset($offset): void;
 }

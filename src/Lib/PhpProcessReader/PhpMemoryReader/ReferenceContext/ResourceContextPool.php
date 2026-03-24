@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendResourceMemoryLocation;
 
-class ResourceContextPool
+final class ResourceContextPool
 {
     /** @var array<int, ResourceContext> */
     private array $contexts = [];

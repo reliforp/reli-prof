@@ -30,11 +30,13 @@ final class RawDouble implements Dereferencable
         $this->value = $this->casted_cdata->casted->cdata;
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'double';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -43,6 +45,7 @@ final class RawDouble implements Dereferencable
         return new self($casted_cdata, $pointer);
     }
 
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

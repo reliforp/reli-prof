@@ -37,6 +37,7 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
     ) {
     }
 
+    #[\Override]
     public function createModuleReaderByNameRegex(
         int $pid,
         ProcessMemoryMap $process_memory_map,

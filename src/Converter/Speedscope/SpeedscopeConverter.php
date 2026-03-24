@@ -16,7 +16,7 @@ namespace Reli\Converter\Speedscope;
 use Reli\Converter\ParsedCallTrace;
 use Reli\Converter\Speedscope\Settings\SpeedscopeConverterSettings;
 
-class SpeedscopeConverter
+final class SpeedscopeConverter
 {
     /** @param iterable<ParsedCallTrace> $call_frames */
     public function collectFrames(

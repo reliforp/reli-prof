@@ -253,11 +253,13 @@ final class ZendExecutorGlobals implements LazyDereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_executor_globals';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -270,6 +272,7 @@ final class ZendExecutorGlobals implements LazyDereferencable
     }
 
     /** @return Pointer<ZendExecutorGlobals> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

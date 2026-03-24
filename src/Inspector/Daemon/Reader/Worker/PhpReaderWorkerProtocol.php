@@ -27,28 +27,33 @@ final class PhpReaderWorkerProtocol implements PhpReaderWorkerProtocolInterface
     ) {
     }
 
+    #[\Override]
     public static function createFromChannel(Channel $channel): static
     {
         return new self($channel);
     }
 
+    #[\Override]
     public function receiveSettings(): SetSettingsMessage
     {
         /** @var SetSettingsMessage */
         return $this->channel->receive();
     }
 
+    #[\Override]
     public function receiveAttach(): AttachMessage
     {
         /** @var AttachMessage */
         return $this->channel->receive();
     }
 
+    #[\Override]
     public function sendTrace(TraceMessage $message): void
     {
         $this->channel->send($message);
     }
 
+    #[\Override]
     public function sendDetachWorker(DetachWorkerMessage $message): void
     {
         $this->channel->send($message);

@@ -23,6 +23,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class CallgrindCommand extends Command
 {
+    #[\Override]
     public function configure(): void
     {
         $this->setName('converter:callgrind')
@@ -30,6 +31,7 @@ final class CallgrindCommand extends Command
         ;
     }
 
+    #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $parser = new PhpSpyCompatibleParser();

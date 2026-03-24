@@ -20,6 +20,7 @@ final class FixedClock implements Clock
     ) {
     }
 
+    #[\Override]
     public function now(): \DateTimeImmutable
     {
         return $this->now;

@@ -28,8 +28,8 @@ final class TargetProcessDescriptor
 
     public static function getInvalid(): self
     {
+        /** @var ?self $invalid */
         static $invalid = null;
-        /** @var self */
         $invalid ??= new self(0, 0, 0, ZendTypeReader::V80);
         return $invalid;
     }

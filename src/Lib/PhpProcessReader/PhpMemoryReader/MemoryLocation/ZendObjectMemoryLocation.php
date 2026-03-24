@@ -17,7 +17,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencer;
 
-class ZendObjectMemoryLocation extends RefcountedMemoryLocation
+final class ZendObjectMemoryLocation extends RefcountedMemoryLocation
 {
     public function __construct(
         int $address,

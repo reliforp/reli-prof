@@ -174,11 +174,13 @@ final class ZendFunction implements LazyDereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_function';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -191,6 +193,7 @@ final class ZendFunction implements LazyDereferencable
     }
 
     /** @return Pointer<ZendFunction> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

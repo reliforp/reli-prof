@@ -17,7 +17,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendOpArray;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendArgInfosMemoryLocation extends MemoryLocation
+final class ZendArgInfosMemoryLocation extends MemoryLocation
 {
     public static function fromZendOpArray(ZendOpArray $zend_op_array, ZendTypeReader $zend_type_reader): self
     {

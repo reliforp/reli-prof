@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 use Reli\Lib\PhpInternals\Types\Zend\ZendPropertyInfo;
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendPropertyInfoMemoryLocation extends MemoryLocation
+final class ZendPropertyInfoMemoryLocation extends MemoryLocation
 {
     public static function fromZendPropertyInfo(ZendPropertyInfo $zend_property_info): self
     {

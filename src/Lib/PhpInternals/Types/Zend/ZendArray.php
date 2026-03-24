@@ -293,11 +293,14 @@ class ZendArray implements Dereferencable
 
     private function calculateHash(string $key): int
     {
-        static $ffi = null;
         /** @var ?zend_hash_func_ffi $ffi */
-        $ffi ??= \FFI::cdef('int zend_hash_func(const char *str, int len);');
-        assert(!is_null($ffi));
+        static $ffi = null;
+        if ($ffi === null) {
+            /** @var zend_hash_func_ffi */
+            $ffi = \FFI::cdef('int zend_hash_func(const char *str, int len);');
+        }
 
+        /** @var int */
         return $ffi->zend_hash_func($key, strlen($key));
     }
 
@@ -337,11 +340,13 @@ class ZendArray implements Dereferencable
         return (bool)($this->flags & (1 << 3));
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_array';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -352,6 +357,7 @@ class ZendArray implements Dereferencable
     }
 
     /** @return Pointer<ZendArray> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

@@ -22,7 +22,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\ProcessSpecifier;
 use RuntimeException;
 
-class TsrmGlobalsResolver
+final class TsrmGlobalsResolver
 {
     public function __construct(
         private PhpSymbolReaderCreator $php_symbol_reader_creator,

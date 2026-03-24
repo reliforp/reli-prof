@@ -15,7 +15,7 @@ namespace Reli\Lib\Libc\Unistd;
 
 use FFI\CInteger;
 
-class Execvp
+final class Execvp
 {
     /** @var \FFI\Libc\execvp_ffi */
     private \FFI $ffi;

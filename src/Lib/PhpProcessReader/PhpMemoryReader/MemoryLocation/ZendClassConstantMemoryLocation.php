@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendClassConstantMemoryLocation extends MemoryLocation
+final class ZendClassConstantMemoryLocation extends MemoryLocation
 {
     public static function fromZendClassConstant(
         ZendClassConstant $zend_class_constant
