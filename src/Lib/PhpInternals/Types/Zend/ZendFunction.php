@@ -77,6 +77,7 @@ final class ZendFunction implements LazyDereferencable
         unset($this->op_array_filename);
     }
 
+    #[\Override]
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new self(null, $pointer);
@@ -174,11 +175,13 @@ final class ZendFunction implements LazyDereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_function';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -191,6 +194,7 @@ final class ZendFunction implements LazyDereferencable
     }
 
     /** @return Pointer<ZendFunction> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

@@ -69,11 +69,13 @@ class Bucket implements Dereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'Bucket';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -86,6 +88,7 @@ class Bucket implements Dereferencable
     }
 
     /** @return Pointer<Bucket> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

@@ -13,13 +13,14 @@ declare(strict_types=1);
 
 namespace Reli\Converter;
 
-class PhpSpyCompatibleDataContext implements OriginalDataContext
+final class PhpSpyCompatibleDataContext implements OriginalDataContext
 {
     public function __construct(
         public int $lineno,
     ) {
     }
 
+    #[\Override]
     public function toString(): string
     {
         return 'line:' . $this->lineno;

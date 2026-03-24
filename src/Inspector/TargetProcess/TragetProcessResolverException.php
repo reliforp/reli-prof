@@ -13,6 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\TargetProcess;
 
-class TragetProcessResolverException extends \Exception
+final class TragetProcessResolverException extends \Exception
 {
 }

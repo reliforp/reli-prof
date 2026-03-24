@@ -21,6 +21,7 @@ use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessSpecifier;
 
+/** @psalm-suppress ClassMustBeFinal */
 class ProcessDescriptorRetriever
 {
     public function __construct(

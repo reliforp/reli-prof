@@ -19,7 +19,7 @@ use Reli\Lib\FFI\CannotAllocateBufferException;
 use Reli\Lib\FFI\CannotCastCDataException;
 use Reli\Lib\Libc\Addressable;
 
-class PtraceX64 implements Ptrace
+final class PtraceX64 implements Ptrace
 {
     /** @var \FFI\Libc\ptrace_ffi */
     private \FFI $ffi;
@@ -89,6 +89,7 @@ class PtraceX64 implements Ptrace
        ', 'libc.so.6');
     }
 
+    #[\Override]
     public function ptrace(
         PtraceRequest $request,
         int $pid,

@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\Exec\Internal;
 
-class Pcntl
+final class Pcntl
 {
     public function fork(): int
     {

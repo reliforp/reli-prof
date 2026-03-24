@@ -22,6 +22,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 
 class ZendArray extends BaseZendArray implements Dereferencable
 {
+    #[\Override]
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
@@ -37,6 +38,7 @@ class ZendArray extends BaseZendArray implements Dereferencable
     }
 
     /** @return iterable<array-key|Pointer<ZendString>, Zval> */
+    #[\Override]
     public function getItemIteratorWithZendStringKeyIfAssoc(Dereferencer $array_dereferencer): iterable
     {
         if (!$this->isUninitialized()) {
@@ -49,6 +51,7 @@ class ZendArray extends BaseZendArray implements Dereferencable
         }
     }
 
+    #[\Override]
     public function dumpFlags(): string
     {
         $flags = $this->flags;
@@ -75,11 +78,13 @@ class ZendArray extends BaseZendArray implements Dereferencable
         return implode(' | ', $flag_names);
     }
 
+    #[\Override]
     public function isUninitialized(): bool
     {
         return !($this->flags & (1 << 3));
     }
 
+    #[\Override]
     public function getDataSize(): int
     {
         return $this->nTableSize * self::BUCKET_SIZE_IN_BYTES;

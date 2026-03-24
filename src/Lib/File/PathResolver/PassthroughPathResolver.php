@@ -13,8 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\File\PathResolver;
 
-class PassthroughPathResolver implements ProcessPathResolver
+final class PassthroughPathResolver implements ProcessPathResolver
 {
+    #[\Override]
     public function resolve(int $pid, string $path): string
     {
         return $path;

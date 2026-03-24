@@ -18,6 +18,7 @@ use Reli\Lib\Process\Pointer\Dereferencable;
 
 final class Zval extends BaseZval implements Dereferencable
 {
+    #[\Override]
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {

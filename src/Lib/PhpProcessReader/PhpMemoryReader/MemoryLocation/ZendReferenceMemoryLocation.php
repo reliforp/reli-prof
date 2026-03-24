@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 
 use Reli\Lib\PhpInternals\Types\Zend\ZendReference;
 
-class ZendReferenceMemoryLocation extends RefcountedMemoryLocation
+final class ZendReferenceMemoryLocation extends RefcountedMemoryLocation
 {
     public static function fromZendReference(ZendReference $zend_reference): self
     {

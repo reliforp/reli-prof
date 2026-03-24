@@ -28,6 +28,7 @@ final class CallFramesContext implements ReferenceContext
         return count($this->referencing_contexts);
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return [

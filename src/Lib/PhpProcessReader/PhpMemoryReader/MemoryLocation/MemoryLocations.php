@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 
 use Reli\Lib\Process\MemoryLocation;
 
-class MemoryLocations
+final class MemoryLocations
 {
     /** @param array<MemoryLocation> $memory_locations */
     public function __construct(

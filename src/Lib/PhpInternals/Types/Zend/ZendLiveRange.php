@@ -18,7 +18,7 @@ use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendLiveRange implements Dereferencable
+final class ZendLiveRange implements Dereferencable
 {
     public const ZEND_LIVE_TMPVAR = 0;
     public const ZEND_LIVE_LOOP = 1;
@@ -68,11 +68,13 @@ class ZendLiveRange implements Dereferencable
         return $this->start <= $offset and $offset < $this->end;
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_live_range';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -85,6 +87,7 @@ class ZendLiveRange implements Dereferencable
     }
 
     /** @return Pointer<ZendLiveRange> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

@@ -18,7 +18,7 @@ use Reli\Lib\Loop\LoopMiddleware\CallableMiddleware;
 use Reli\Lib\Loop\LoopMiddleware\NanoSleepMiddleware;
 use Reli\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
 
-class RetryingLoopProvider
+final class RetryingLoopProvider
 {
     public function __construct(
         private LoopBuilder $loop_builder

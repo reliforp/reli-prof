@@ -32,6 +32,7 @@ final class ContextCreator implements ContextCreatorInterface
      * @param class-string<TControllerProtocol> $controller_protocol_class
      * @return ContextInterface<TControllerProtocol>
      */
+    #[\Override]
     public function create(
         string $entry_point_class,
         string $worker_protocol_class,

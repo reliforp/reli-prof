@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
 
-class ZendType
+final class ZendType
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ?int $ptr;

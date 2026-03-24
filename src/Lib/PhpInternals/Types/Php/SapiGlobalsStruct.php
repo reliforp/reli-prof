@@ -38,17 +38,20 @@ final class SapiGlobalsStruct implements Dereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'sapi_globals_struct';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /** @var CastedCData<sapi_globals_struct> $casted_cdata */
         return new self($casted_cdata, $pointer);
     }
 
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

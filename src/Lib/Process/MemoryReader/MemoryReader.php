@@ -54,6 +54,7 @@ final class MemoryReader implements MemoryReaderInterface
      * @return \FFI\CArray<int>
      * @throws MemoryReaderException
      */
+    #[\Override]
     public function read(int $pid, int $remote_address, int $size): CData
     {
         $buffer = $this->ffi->new("unsigned char[{$size}]")

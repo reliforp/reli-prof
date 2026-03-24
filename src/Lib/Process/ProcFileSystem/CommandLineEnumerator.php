@@ -24,7 +24,10 @@ final class CommandLineEnumerator implements IteratorAggregate
     ) {
     }
 
-    /** @return \Generator<int, string> */
+    /**
+     * @psalm-return \Generator<int, string, mixed, void>
+     */
+    #[\Override]
     public function getIterator(): \Generator
     {
         /**
@@ -42,7 +45,7 @@ final class CommandLineEnumerator implements IteratorAggregate
             if (!is_numeric(basename($item->getPath()))) {
                 continue;
             }
-            yield (int)basename($item->getPath()) => preg_replace('/\0/', ' ', $command_line);
+            yield (int)basename($item->getPath()) => (preg_replace('/\0/', ' ', $command_line) ?? $command_line);
         }
     }
 }

@@ -24,6 +24,7 @@ final class CallableMiddleware implements LoopMiddlewareInterface
         $this->callable = $callable;
     }
 
+    #[\Override]
     public function invoke(): bool
     {
         /** @var bool */

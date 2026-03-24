@@ -22,6 +22,7 @@ final class CallFrameVariableTableContext implements ReferenceContext
         return $this->referencing_contexts[$variable_name] ?? null;
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return [

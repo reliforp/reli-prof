@@ -31,6 +31,7 @@ final class RetryOnExceptionMiddlewareAsync implements AsyncLoopMiddlewareInterf
     ) {
     }
 
+    #[\Override]
     public function invoke(): \Generator
     {
         while ($this->current_retry_count <= $this->max_retry or $this->max_retry === -1) {

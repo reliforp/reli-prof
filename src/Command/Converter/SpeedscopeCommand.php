@@ -30,6 +30,7 @@ final class SpeedscopeCommand extends Command
         parent::__construct();
     }
 
+    #[\Override]
     public function configure(): void
     {
         $this->setName('converter:speedscope')
@@ -38,19 +39,22 @@ final class SpeedscopeCommand extends Command
         $this->settings_from_console_input->setOptions($this);
     }
 
+    #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $settings = $this->settings_from_console_input->createSettings($input);
 
-        $output->write(
-            \json_encode(
-                $this->speedscope_converter->collectFrames(
-                    $this->parser->parseFile(STDIN),
-                    $settings,
-                ),
-                JSON_THROW_ON_ERROR | $settings->utf8_error_handling_type->toFlag(),
+        $encoded = \json_encode(
+            $this->speedscope_converter->collectFrames(
+                $this->parser->parseFile(STDIN),
+                $settings,
             ),
+            JSON_THROW_ON_ERROR | $settings->utf8_error_handling_type->toFlag(),
         );
+        if ($encoded === false) {
+            throw new \RuntimeException('Failed to encode JSON');
+        }
+        $output->write($encoded);
         return 0;
     }
 }

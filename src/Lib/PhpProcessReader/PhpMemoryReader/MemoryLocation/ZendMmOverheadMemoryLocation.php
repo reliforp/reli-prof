@@ -15,6 +15,6 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendMmOverheadMemoryLocation extends MemoryLocation
+final class ZendMmOverheadMemoryLocation extends MemoryLocation
 {
 }

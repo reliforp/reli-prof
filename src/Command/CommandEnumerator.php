@@ -27,6 +27,7 @@ final class CommandEnumerator implements IteratorAggregate
     }
 
     /** @return \Generator<class-string<Command>> */
+    #[\Override]
     public function getIterator(): \Generator
     {
         /** @var SplFileInfo $command_file_info */

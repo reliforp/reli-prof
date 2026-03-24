@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArena;
 use Reli\Lib\Process\MemoryLocation;
 
-class ZendArenaMemoryLocation extends MemoryLocation
+final class ZendArenaMemoryLocation extends MemoryLocation
 {
     public static function fromZendArena(ZendArena $arena): self
     {

@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayMemoryLocation;
 
-class GlobalVariablesContext implements ReferenceContext
+final class GlobalVariablesContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 

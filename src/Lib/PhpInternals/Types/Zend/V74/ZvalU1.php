@@ -19,6 +19,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZvalU1 as BaseZvalU1;
 
 final class ZvalU1 extends BaseZvalU1
 {
+    #[\Override]
     public function getType(): string
     {
         return match ($this->type) {

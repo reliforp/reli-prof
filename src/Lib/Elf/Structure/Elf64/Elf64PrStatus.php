@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Structure\Elf64;
 
-class Elf64PrStatus
+final class Elf64PrStatus
 {
     public function __construct(
         public int $pid, // Elf64_Word

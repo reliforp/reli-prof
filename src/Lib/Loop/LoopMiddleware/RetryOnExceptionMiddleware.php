@@ -31,6 +31,7 @@ final class RetryOnExceptionMiddleware implements LoopMiddlewareInterface
     ) {
     }
 
+    #[\Override]
     public function invoke(): bool
     {
         while ($this->current_retry_count <= $this->max_retry or $this->max_retry === -1) {

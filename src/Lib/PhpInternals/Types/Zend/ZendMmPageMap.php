@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
 
-class ZendMmPageMap
+final class ZendMmPageMap
 {
     /** @param \FFI\PhpInternals\zend_mm_page_map $cdata */
     public function __construct(

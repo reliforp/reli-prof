@@ -19,7 +19,7 @@ use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Output\StreamOutput;
 
-class TraceOutputFactory
+final class TraceOutputFactory
 {
     public function __construct(
         private TraceFormatterFactory $trace_formatter_factory,
@@ -31,9 +31,11 @@ class TraceOutputFactory
         OutputSettings $output_settings,
     ): TraceOutput {
         if (!is_null($output_settings->output_path)) {
-            $output = new StreamOutput(
-                fopen($output_settings->output_path, 'w', false)
-            );
+            $stream = fopen($output_settings->output_path, 'w', false);
+            if ($stream === false) {
+                throw new \RuntimeException("Failed to open output file: {$output_settings->output_path}");
+            }
+            $output = new StreamOutput($stream);
         }
         return new FormattedTraceOutput(
             new ConsoleOutputChannel($output),

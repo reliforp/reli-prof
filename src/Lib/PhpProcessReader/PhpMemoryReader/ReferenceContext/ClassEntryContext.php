@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendClassEntryMemoryLocation;
 
-class ClassEntryContext implements ReferenceContext
+final class ClassEntryContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -24,6 +24,7 @@ class ClassEntryContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): array
     {
         return [$this->memory_location];

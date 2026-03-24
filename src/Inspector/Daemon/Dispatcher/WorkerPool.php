@@ -61,6 +61,7 @@ final class WorkerPool implements WorkerPoolInterface
         return new self(...$contexts);
     }
 
+    #[\Override]
     public function getFreeWorker(): ?PhpReaderControllerInterface
     {
         foreach ($this->contexts as $key => $context) {
@@ -73,6 +74,7 @@ final class WorkerPool implements WorkerPoolInterface
     }
 
     /** @return iterable<int, PhpReaderControllerInterface> */
+    #[\Override]
     public function getWorkers(): iterable
     {
         foreach ($this->contexts as $key => $context) {
@@ -80,6 +82,7 @@ final class WorkerPool implements WorkerPoolInterface
         }
     }
 
+    #[\Override]
     public function returnWorkerToPool(PhpReaderControllerInterface $context_to_return): void
     {
         foreach ($this->contexts as $key => $context) {
@@ -89,6 +92,7 @@ final class WorkerPool implements WorkerPoolInterface
         }
     }
 
+    #[\Override]
     public function debugDump(): array
     {
         return [

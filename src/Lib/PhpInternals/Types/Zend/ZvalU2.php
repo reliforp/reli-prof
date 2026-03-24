@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
 
-class ZvalU2
+final class ZvalU2
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $next;

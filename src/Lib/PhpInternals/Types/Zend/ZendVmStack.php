@@ -22,7 +22,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 /**
  * @psalm-consistent-constructor
  */
-class ZendVmStack implements Dereferencable
+final class ZendVmStack implements Dereferencable
 {
     /**
      * @psalm-suppress PropertyNotSetInConstructor
@@ -82,11 +82,13 @@ class ZendVmStack implements Dereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'struct _zend_vm_stack';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -97,6 +99,7 @@ class ZendVmStack implements Dereferencable
     }
 
     /** @return Pointer<ZendVmStack> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

@@ -25,6 +25,7 @@ final class FormattedTraceOutput implements TraceOutput
     ) {
     }
 
+    #[\Override]
     public function output(CallTrace $call_trace): void
     {
         $this->output_channel->output(

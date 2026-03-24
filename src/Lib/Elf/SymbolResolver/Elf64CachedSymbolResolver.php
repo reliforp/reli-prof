@@ -24,6 +24,7 @@ final class Elf64CachedSymbolResolver implements Elf64SymbolResolver
     ) {
     }
 
+    #[\Override]
     public function resolve(string $symbol_name): Elf64SymbolTableEntry
     {
         if (!$this->symbol_cache->has($symbol_name)) {
@@ -35,11 +36,13 @@ final class Elf64CachedSymbolResolver implements Elf64SymbolResolver
         return $this->symbol_cache->get($symbol_name);
     }
 
+    #[\Override]
     public function getDtDebugAddress(): ?int
     {
         return $this->resolver->getDtDebugAddress();
     }
 
+    #[\Override]
     public function getBaseAddress(): UInt64
     {
         return $this->resolver->getBaseAddress();

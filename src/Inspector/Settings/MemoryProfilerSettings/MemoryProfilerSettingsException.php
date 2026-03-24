@@ -15,7 +15,7 @@ namespace Reli\Inspector\Settings\MemoryProfilerSettings;
 
 use Reli\Inspector\Settings\InspectorSettingsException;
 
-class MemoryProfilerSettingsException extends InspectorSettingsException
+final class MemoryProfilerSettingsException extends InspectorSettingsException
 {
     public const MEMORY_LIMIT_ERROR_MAX_DEPTH_IS_NOT_POSITIVE_INTEGER = 1;
     public const MEMORY_LIMIT_ERROR_LINE_IS_NOT_INTEGER = 2;

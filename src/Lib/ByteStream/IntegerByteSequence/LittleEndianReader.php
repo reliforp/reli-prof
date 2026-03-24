@@ -18,16 +18,19 @@ use Reli\Lib\Integer\UInt64;
 
 final class LittleEndianReader implements IntegerByteSequenceReader
 {
+    #[\Override]
     public function read8(ByteReaderInterface $data, int $offset): int
     {
         return $data[$offset];
     }
 
+    #[\Override]
     public function read16(ByteReaderInterface $data, int $offset): int
     {
         return ($data[$offset + 1] << 8) | $data[$offset];
     }
 
+    #[\Override]
     public function read32(ByteReaderInterface $data, int $offset): int
     {
         return ($data[$offset + 3] << 24)
@@ -36,6 +39,7 @@ final class LittleEndianReader implements IntegerByteSequenceReader
             | $data[$offset];
     }
 
+    #[\Override]
     public function read64(ByteReaderInterface $data, int $offset): UInt64
     {
         return new UInt64(

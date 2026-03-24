@@ -84,6 +84,7 @@ final class ZendExecutorGlobals implements LazyDereferencable
         unset($this->included_files);
     }
 
+    #[\Override]
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new self(null, $pointer);
@@ -253,11 +254,13 @@ final class ZendExecutorGlobals implements LazyDereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_executor_globals';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -270,6 +273,7 @@ final class ZendExecutorGlobals implements LazyDereferencable
     }
 
     /** @return Pointer<ZendExecutorGlobals> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

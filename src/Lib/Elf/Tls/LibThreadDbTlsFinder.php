@@ -39,6 +39,7 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
      */
+    #[\Override]
     public function findTlsBlock(int $pid, ?int $link_map_address): int
     {
         $thread_pointer = $this->thread_pointer_retriever->getThreadPointer($pid);

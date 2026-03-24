@@ -35,6 +35,7 @@ final class ArrayHeaderContext implements ReferenceContext
         return $this->getElements()?->getElementByKey($key) ?? null;
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];

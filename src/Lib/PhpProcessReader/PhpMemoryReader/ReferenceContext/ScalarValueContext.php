@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
-class ScalarValueContext implements ReferenceContext
+final class ScalarValueContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -29,6 +29,7 @@ class ScalarValueContext implements ReferenceContext
         }
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return [

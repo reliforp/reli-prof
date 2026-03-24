@@ -25,11 +25,13 @@ final class StringByteReader implements ByteReaderInterface
     ) {
     }
 
+    #[\Override]
     public function offsetExists($offset): bool
     {
         return isset($this->source[$offset]);
     }
 
+    #[\Override]
     public function offsetGet($offset): int
     {
         if (!isset($this->source[$offset])) {
@@ -38,6 +40,7 @@ final class StringByteReader implements ByteReaderInterface
         return ord($this->source[$offset]);
     }
 
+    #[\Override]
     public function createSliceAsString(int $offset, int $size): string
     {
         return substr($this->source, $offset, $size);

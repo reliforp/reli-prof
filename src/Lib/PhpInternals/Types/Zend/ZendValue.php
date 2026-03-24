@@ -18,7 +18,7 @@ use FFI\CInteger;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-class ZendValue
+final class ZendValue
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $lval;

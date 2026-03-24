@@ -29,6 +29,7 @@ final class ProcessSearcher implements ProcessSearcherInterface
      * @param non-empty-string $regex
      * @return int[]
      */
+    #[\Override]
     public function searchByRegex(string $regex): array
     {
         $result = [];

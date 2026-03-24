@@ -18,7 +18,7 @@ use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendClassConstant implements Dereferencable
+final class ZendClassConstant implements Dereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $value;
@@ -94,11 +94,13 @@ class ZendClassConstant implements Dereferencable
     }
 
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_class_constant';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -111,6 +113,7 @@ class ZendClassConstant implements Dereferencable
     }
 
     /** @return Pointer<ZendClassConstant> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

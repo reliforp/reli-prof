@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
-class ClassDefinitionContext implements ReferenceContext
+final class ClassDefinitionContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -22,6 +22,7 @@ class ClassDefinitionContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return ['#is_internal' => $this->is_internal];

@@ -39,6 +39,7 @@ final class AutoContextRecovering implements AutoContextRecoveringInterface
     ) {
     }
 
+    #[\Override]
     public function recreateContext(): void
     {
         if (!is_null($this->context) and $this->context->isRunning()) {
@@ -47,6 +48,7 @@ final class AutoContextRecovering implements AutoContextRecoveringInterface
         $this->context = null;
     }
 
+    #[\Override]
     public function getContext(): ContextInterface
     {
         if (is_null($this->context)) {
@@ -58,6 +60,7 @@ final class AutoContextRecovering implements AutoContextRecoveringInterface
         return $this->context;
     }
 
+    #[\Override]
     public function withAutoRecover(
         \Closure $callback,
         string $log_message_on_retry,
@@ -79,6 +82,7 @@ final class AutoContextRecovering implements AutoContextRecoveringInterface
         throw $e;
     }
 
+    #[\Override]
     public function onRecover(\Closure $callback): void
     {
         $this->on_recover_callback = $callback;

@@ -19,6 +19,7 @@ use function memory_get_usage;
 
 final class ProcessStateCollector implements StateCollector
 {
+    #[\Override]
     public function collect(): array
     {
         return [

@@ -122,11 +122,13 @@ class Zval implements Dereferencable
         return $this->getType() === 'IS_UNDEF';
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zval';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -139,6 +141,7 @@ class Zval implements Dereferencable
     /**
      * @return Pointer<Zval>
      */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

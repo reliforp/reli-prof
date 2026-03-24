@@ -13,10 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
-class ObjectPropertiesContext implements ReferenceContext
+final class ObjectPropertiesContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return [

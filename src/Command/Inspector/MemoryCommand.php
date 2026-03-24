@@ -48,6 +48,7 @@ final class MemoryCommand extends Command
         parent::__construct();
     }
 
+    #[\Override]
     public function configure(): void
     {
         $this->setName('inspector:memory')
@@ -58,6 +59,7 @@ final class MemoryCommand extends Command
         $this->target_php_settings_from_console_input->setOptions($this);
     }
 
+    #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         Log::info('start memory command');
@@ -123,9 +125,9 @@ final class MemoryCommand extends Command
             ]
             + [
                 'heap_memory_analyzed_percentage' =>
-                    $analyzed_regions->summary->zend_mm_heap_usage
+                    (float)$analyzed_regions->summary->zend_mm_heap_usage
                     /
-                    $collected_memories->memory_get_usage_size * 100
+                    (float)$collected_memories->memory_get_usage_size * 100.0
                 ,
             ]
             + [

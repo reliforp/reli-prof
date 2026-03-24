@@ -25,17 +25,20 @@ final class PhpSearcherWorkerProtocol implements PhpSearcherWorkerProtocolInterf
     ) {
     }
 
+    #[\Override]
     public static function createFromChannel(Channel $channel): static
     {
         return new self($channel);
     }
 
+    #[\Override]
     public function receiveTargetPhpSettings(): TargetPhpSettingsMessage
     {
         /** @var TargetPhpSettingsMessage */
         return $this->channel->receive();
     }
 
+    #[\Override]
     public function sendUpdateTargetProcess(UpdateTargetProcessMessage $message): void
     {
         $this->channel->send($message);

@@ -48,6 +48,7 @@ final class TraceCache
             ) {
             }
 
+            #[\Override]
             public function deref(Pointer $pointer): mixed
             {
                 $item = $this->trace_cache->getCache($pointer);

@@ -41,6 +41,7 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
      * @throws \Reli\Lib\Elf\Tls\TlsFinderException
      * @throws \Reli\Lib\Process\MemoryReader\MemoryReaderException
      */
+    #[\Override]
     public function run(
         TraceLoopSettings $loop_settings,
         TargetProcessDescriptor $target_process_descriptor,

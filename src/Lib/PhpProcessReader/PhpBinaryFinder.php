@@ -15,7 +15,10 @@ namespace Reli\Lib\PhpProcessReader;
 
 final class PhpBinaryFinder
 {
-    public function findByProcessId(int $pid): string
+    /**
+     * @return false|string
+     */
+    public function findByProcessId(int $pid): string|false
     {
         return readlink("/proc/{$pid}/exe");
     }

@@ -15,6 +15,7 @@ namespace Reli\Lib\Log\StateCollector;
 
 final class NullStateCollector implements StateCollector
 {
+    #[\Override]
     public function collect(): array
     {
         return [];

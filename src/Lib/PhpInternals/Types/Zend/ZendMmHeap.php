@@ -21,7 +21,7 @@ use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendMmHeap implements LazyDereferencable
+final class ZendMmHeap implements LazyDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $use_custom_heap;
@@ -86,6 +86,7 @@ class ZendMmHeap implements LazyDereferencable
         unset($this->cached_chunks_count);
     }
 
+    #[\Override]
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new static(null, $pointer);
@@ -180,11 +181,13 @@ class ZendMmHeap implements LazyDereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_mm_heap';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -195,6 +198,7 @@ class ZendMmHeap implements LazyDereferencable
     }
 
     /** @return Pointer<ZendMmHeap> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

@@ -22,6 +22,7 @@ final class ConsoleOutputChannel implements OutputChannel
     ) {
     }
 
+    #[\Override]
     public function output(string $content): void
     {
         $this->output->write($content);

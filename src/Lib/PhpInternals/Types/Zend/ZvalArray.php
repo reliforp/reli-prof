@@ -35,6 +35,7 @@ final class ZvalArray implements \ArrayAccess, Dereferencable
     ) {
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zval[0]';
@@ -44,6 +45,7 @@ final class ZvalArray implements \ArrayAccess, Dereferencable
      * @param CastedCData<CData> $casted_cdata
      * @param Pointer<Dereferencable> $pointer
      */
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -62,16 +64,19 @@ final class ZvalArray implements \ArrayAccess, Dereferencable
     /**
      * @return Pointer<self>
      */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;
     }
 
+    #[\Override]
     public function offsetExists(mixed $offset): bool
     {
         return $offset < $this->len;
     }
 
+    #[\Override]
     public function offsetGet(mixed $offset): Zval
     {
         if (!isset($this->zvals_cache[$offset])) {
@@ -80,11 +85,13 @@ final class ZvalArray implements \ArrayAccess, Dereferencable
         return $this->zvals_cache[$offset];
     }
 
+    #[\Override]
     public function offsetSet(mixed $offset, mixed $value): void
     {
         throw new \LogicException('not implemented');
     }
 
+    #[\Override]
     public function offsetUnset(mixed $offset): void
     {
         throw new \LogicException('not implemented');

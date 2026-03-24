@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 use Reli\Lib\PhpInternals\Types\Zend\ZendOpArray;
 use Reli\Lib\Process\MemoryLocation;
 
-class LocalVariableNameTableMemoryLocation extends MemoryLocation
+final class LocalVariableNameTableMemoryLocation extends MemoryLocation
 {
     public static function fromZendOpArray(ZendOpArray $zend_op_array): self
     {

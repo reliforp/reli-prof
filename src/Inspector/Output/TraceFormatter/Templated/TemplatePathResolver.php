@@ -25,6 +25,7 @@ final class TemplatePathResolver implements TemplatePathResolverInterface
     ) {
     }
 
+    #[\Override]
     public function resolve(string $template_name): string
     {
         $path = $this->config->get('paths.templates');

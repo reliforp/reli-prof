@@ -21,7 +21,7 @@ use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class ZendCompilerGlobals implements LazyDereferencable
+final class ZendCompilerGlobals implements LazyDereferencable
 {
     /**
      * @psalm-suppress PropertyNotSetInConstructor
@@ -57,6 +57,7 @@ class ZendCompilerGlobals implements LazyDereferencable
         unset($this->interned_strings);
     }
 
+    #[\Override]
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new static(null, $pointer);
@@ -147,11 +148,13 @@ class ZendCompilerGlobals implements LazyDereferencable
         }
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_compiler_globals';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -162,6 +165,7 @@ class ZendCompilerGlobals implements LazyDereferencable
     }
 
     /** @return Pointer<ZendCompilerGlobals> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

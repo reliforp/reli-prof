@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 use Reli\Lib\PhpInternals\Types\Zend\ZendObjectsStore;
 use Reli\Lib\Process\MemoryLocation;
 
-class ObjectsStoreMemoryLocation extends MemoryLocation
+final class ObjectsStoreMemoryLocation extends MemoryLocation
 {
     public static function fromZendObjectsStore(ZendObjectsStore $zend_objects_store): self
     {

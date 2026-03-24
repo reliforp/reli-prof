@@ -16,7 +16,7 @@ namespace Reli\Lib\Loop\LoopMiddleware;
 use Reli\Lib\Log\Log;
 use Reli\Lib\Loop\LoopMiddlewareInterface;
 
-class ExitLoopOnSpecificExceptionMiddleware implements LoopMiddlewareInterface
+final class ExitLoopOnSpecificExceptionMiddleware implements LoopMiddlewareInterface
 {
     /** @param list<class-string<\Throwable>> $exception_names */
     public function __construct(
@@ -24,6 +24,7 @@ class ExitLoopOnSpecificExceptionMiddleware implements LoopMiddlewareInterface
         private LoopMiddlewareInterface $chain,
     ) {
     }
+    #[\Override]
     public function invoke(): bool
     {
         try {

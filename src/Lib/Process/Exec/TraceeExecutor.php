@@ -20,6 +20,7 @@ use Reli\Lib\Libc\Unistd\Execvp;
 use Reli\Lib\Process\Exec\Internal\Pcntl;
 use Reli\Lib\System\OnShutdown;
 
+/** @psalm-suppress ClassMustBeFinal */
 class TraceeExecutor
 {
     public function __construct(

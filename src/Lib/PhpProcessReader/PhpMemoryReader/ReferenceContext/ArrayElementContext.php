@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
-class ArrayElementContext implements ReferenceContext
+final class ArrayElementContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 }

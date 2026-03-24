@@ -17,6 +17,7 @@ final class OnlyOnceCondition implements LoopConditionInterface
 {
     private bool $has_run = false;
 
+    #[\Override]
     public function shouldContinue(): bool
     {
         if ($this->has_run) {

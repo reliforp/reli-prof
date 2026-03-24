@@ -22,7 +22,8 @@ final class EchoBackCanceller
     public function __construct()
     {
         /** @psalm-suppress ForbiddenCode */
-        $this->stty_settings = shell_exec('stty -g');
+        $result = shell_exec('stty -g');
+        $this->stty_settings = $result !== false ? $result : null;
         exec('stty -icanon -echo');
     }
 

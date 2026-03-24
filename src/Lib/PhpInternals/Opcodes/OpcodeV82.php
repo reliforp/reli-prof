@@ -636,6 +636,7 @@ final class OpcodeV82 implements Opcode
     ) {
     }
 
+    #[\Override]
     public function getName(): string
     {
         return self::OPCODE_NAMES[$this->opcode] ?? '';

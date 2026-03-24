@@ -26,6 +26,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\ProcessSpecifier;
 use RuntimeException;
 
+/** @psalm-suppress ClassMustBeFinal */
 class PhpGlobalsFinder
 {
     public function __construct(

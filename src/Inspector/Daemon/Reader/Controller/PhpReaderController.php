@@ -54,16 +54,19 @@ final class PhpReaderController implements PhpReaderControllerInterface
         );
     }
 
+    #[\Override]
     public function start(): void
     {
         $this->auto_context_recovering->getContext()->start();
     }
 
+    #[\Override]
     public function isRunning(): bool
     {
         return $this->auto_context_recovering->getContext()->isRunning();
     }
 
+    #[\Override]
     public function sendSettings(
         TraceLoopSettings $loop_settings,
         GetTraceSettings $get_trace_settings
@@ -81,6 +84,7 @@ final class PhpReaderController implements PhpReaderControllerInterface
         );
     }
 
+    #[\Override]
     public function sendAttach(TargetProcessDescriptor $process_descriptor): void
     {
         $attach_message = new AttachMessage($process_descriptor);
@@ -93,6 +97,7 @@ final class PhpReaderController implements PhpReaderControllerInterface
         );
     }
 
+    #[\Override]
     public function receiveTraceOrDetachWorker(): TraceMessage|DetachWorkerMessage
     {
         return $this->auto_context_recovering->withAutoRecover(

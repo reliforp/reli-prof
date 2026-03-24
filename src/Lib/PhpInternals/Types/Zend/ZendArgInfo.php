@@ -18,7 +18,7 @@ use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor  */
-class ZendArgInfo implements Dereferencable
+final class ZendArgInfo implements Dereferencable
 {
     /** @var Pointer<ZendString>|null */
     public ?Pointer $name;
@@ -47,11 +47,13 @@ class ZendArgInfo implements Dereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_arg_info';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -64,6 +66,7 @@ class ZendArgInfo implements Dereferencable
     }
 
     /** @return Pointer<ZendArgInfo> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

@@ -18,6 +18,7 @@ namespace Reli\Lib\File;
  */
 final class CatFileReader implements FileReaderInterface
 {
+    #[\Override]
     public function readAll(string $path): string
     {
         /** @psalm-suppress InvalidArgument */
@@ -33,8 +34,15 @@ final class CatFileReader implements FileReaderInterface
             ],
             $pipes
         );
+        if ($process === false) {
+            throw new \RuntimeException("Failed to open process for: {$path}");
+        }
         $contents = stream_get_contents($pipes[1]);
         proc_close($process);
+
+        if ($contents === false) {
+            throw new \RuntimeException("Failed to read contents of: {$path}");
+        }
 
         return $contents;
     }

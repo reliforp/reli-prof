@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Structure\Elf64;
 
-class Elf64Note
+final class Elf64Note
 {
     public const NT_PRSTATUS = 1;
     public const NT_FPREGSET = 2;

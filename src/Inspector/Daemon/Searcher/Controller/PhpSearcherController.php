@@ -40,12 +40,14 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         );
     }
 
+    #[\Override]
     public function start(): void
     {
         $this->auto_context_recovering->getContext()->start();
     }
 
     /** @param non-empty-string $regex */
+    #[\Override]
     public function sendTarget(
         string $regex,
         TargetPhpSettings $target_php_settings,
@@ -65,6 +67,7 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         $this->settings_already_sent = $message;
     }
 
+    #[\Override]
     public function receivePidList(): UpdateTargetProcessMessage
     {
         return $this->auto_context_recovering->withAutoRecover(

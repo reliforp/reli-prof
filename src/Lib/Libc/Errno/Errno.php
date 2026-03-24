@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Libc\Errno;
 
-class Errno
+final class Errno
 {
     public const ESRCH = 3;
 

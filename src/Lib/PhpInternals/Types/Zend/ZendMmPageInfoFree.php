@@ -13,6 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-class ZendMmPageInfoFree
+final class ZendMmPageInfoFree
 {
 }

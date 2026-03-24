@@ -27,6 +27,7 @@ final class NanoSleepMiddlewareAsync implements AsyncLoopMiddlewareInterface
     ) {
     }
 
+    #[\Override]
     public function invoke(): \Generator
     {
         $start = hrtime(true);

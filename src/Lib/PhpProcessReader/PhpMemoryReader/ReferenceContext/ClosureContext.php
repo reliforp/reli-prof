@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
-class ClosureContext implements ReferenceContext
+final class ClosureContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 }

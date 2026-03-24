@@ -18,7 +18,7 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\Process\Pointer\Dereferencer;
 
-class ZendOpArrayHeaderMemoryLocation extends MemoryLocation
+final class ZendOpArrayHeaderMemoryLocation extends MemoryLocation
 {
     public function __construct(
         int $address,

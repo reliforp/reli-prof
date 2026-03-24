@@ -44,6 +44,7 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      */
+    #[\Override]
     public function read(string $symbol_name): ?CData
     {
         $address_and_size = $this->resolveAddressAndSize($symbol_name);
@@ -57,6 +58,7 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
     /**
      * @throws ProcessSymbolReaderException
      */
+    #[\Override]
     public function resolveAddress(string $symbol_name): ?int
     {
         $address_and_size = $this->resolveAddressAndSize($symbol_name);
@@ -92,6 +94,7 @@ final class ProcessModuleSymbolReader implements ProcessSymbolReaderInterface
         return [$base_address + $symbol->st_value->toInt(), $symbol->st_size->toInt()];
     }
 
+    #[\Override]
     public function getLinkMapAddress(): ?int
     {
         $dt_debug_address = $this->symbol_resolver->getDtDebugAddress();

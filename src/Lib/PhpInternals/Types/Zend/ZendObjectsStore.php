@@ -18,7 +18,7 @@ use Reli\Lib\FFI\Cast;
 use Reli\Lib\PhpInternals\Types\C\PointerArray;
 use Reli\Lib\Process\Pointer\Pointer;
 
-class ZendObjectsStore
+final class ZendObjectsStore
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $size;

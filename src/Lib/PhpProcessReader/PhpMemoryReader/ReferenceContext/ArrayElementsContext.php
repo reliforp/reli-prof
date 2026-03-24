@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableMemoryLocation;
 
-class ArrayElementsContext implements ReferenceContext
+final class ArrayElementsContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -34,11 +34,13 @@ class ArrayElementsContext implements ReferenceContext
         return $this->referencing_contexts[(string)$key] ?? null;
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->memory_location];
     }
 
+    #[\Override]
     public function getContexts(): iterable
     {
         return [

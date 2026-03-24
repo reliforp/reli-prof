@@ -36,11 +36,13 @@ final class ProcessMemoryByteReader implements ByteReaderInterface
     ) {
     }
 
+    #[\Override]
     public function offsetExists($offset): bool
     {
         return $this->memory_map->isInRange($offset);
     }
 
+    #[\Override]
     public function offsetGet($offset): int
     {
         if (!isset($this[$offset])) {
@@ -74,6 +76,7 @@ final class ProcessMemoryByteReader implements ByteReaderInterface
         return $this->pages[$page];
     }
 
+    #[\Override]
     public function createSliceAsString(int $offset, int $size): string
     {
         $result = '';

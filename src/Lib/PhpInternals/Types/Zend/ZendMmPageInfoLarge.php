@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-class ZendMmPageInfoLarge
+final class ZendMmPageInfoLarge
 {
     public const PAGE_SIZE = (4 * 1024);
 

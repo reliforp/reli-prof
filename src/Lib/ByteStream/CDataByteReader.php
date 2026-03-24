@@ -30,6 +30,7 @@ final class CDataByteReader implements ByteReaderInterface
     ) {
     }
 
+    #[\Override]
     public function offsetExists($offset): bool
     {
         if (count($this->source) <= $offset) {
@@ -38,12 +39,14 @@ final class CDataByteReader implements ByteReaderInterface
         return !is_null($this->source[$offset]);
     }
 
+    #[\Override]
     public function offsetGet($offset): int
     {
         /** @var int */
         return $this->source[$offset];
     }
 
+    #[\Override]
     public function createSliceAsString(int $offset, int $size): string
     {
         $result = '';

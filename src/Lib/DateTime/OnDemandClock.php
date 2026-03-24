@@ -15,6 +15,7 @@ namespace Reli\Lib\DateTime;
 
 final class OnDemandClock implements Clock
 {
+    #[\Override]
     public function now(): \DateTimeImmutable
     {
         return new \DateTimeImmutable();

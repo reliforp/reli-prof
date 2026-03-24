@@ -56,11 +56,13 @@ final class ZendMmHugeList implements Dereferencable
         };
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'zend_mm_huge_list';
     }
 
+    #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
@@ -71,6 +73,7 @@ final class ZendMmHugeList implements Dereferencable
     }
 
     /** @return Pointer<ZendMmHugeList> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

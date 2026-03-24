@@ -28,11 +28,13 @@ final class PointerArray implements Dereferencable
         $this->len = (int)($pointer->size / 8);
     }
 
+    #[\Override]
     public static function getCTypeName(): string
     {
         return 'intptr_t[0]';
     }
 
+    #[\Override]
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer
@@ -45,6 +47,7 @@ final class PointerArray implements Dereferencable
     }
 
     /** @return Pointer<PointerArray> */
+    #[\Override]
     public function getPointer(): Pointer
     {
         return $this->pointer;

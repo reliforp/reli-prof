@@ -26,10 +26,15 @@ final class KeyboardCancelMiddleware implements LoopMiddlewareInterface
         private EchoBackCanceller $echo_back_canceller,
         private LoopMiddlewareInterface $chain
     ) {
-        $this->keyboard_input = fopen('php://stdin', 'r');
+        $stdin = fopen('php://stdin', 'r');
+        if ($stdin === false) {
+            throw new \RuntimeException('Failed to open stdin');
+        }
+        $this->keyboard_input = $stdin;
         stream_set_blocking($this->keyboard_input, false);
     }
 
+    #[\Override]
     public function invoke(): bool
     {
         $key = fread($this->keyboard_input, 1);

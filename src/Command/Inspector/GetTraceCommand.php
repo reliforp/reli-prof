@@ -58,6 +58,7 @@ final class GetTraceCommand extends Command
         parent::__construct();
     }
 
+    #[\Override]
     public function configure(): void
     {
         $this->setName('inspector:trace')
@@ -77,6 +78,7 @@ final class GetTraceCommand extends Command
      * @throws TlsFinderException
      * @throws InspectorSettingsException
      */
+    #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);

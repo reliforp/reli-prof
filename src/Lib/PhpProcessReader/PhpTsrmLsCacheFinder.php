@@ -31,7 +31,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
 use Reli\Lib\Process\ProcessSpecifier;
 
-class PhpTsrmLsCacheFinder
+final class PhpTsrmLsCacheFinder
 {
     public function __construct(
         private PhpSymbolReaderCreator $php_symbol_reader_creator,

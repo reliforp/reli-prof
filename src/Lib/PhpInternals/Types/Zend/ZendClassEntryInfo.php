@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
 
-class ZendClassEntryInfo
+final class ZendClassEntryInfo
 {
     public ZendClassEntryInfoUser $user;
 

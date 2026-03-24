@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayBodyMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayHeaderMemoryLocation;
 
-class OpArrayContext implements ReferenceContext
+final class OpArrayContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
@@ -26,6 +26,7 @@ class OpArrayContext implements ReferenceContext
     ) {
     }
 
+    #[\Override]
     public function getLocations(): iterable
     {
         return [$this->header_memory_location, $this->body_memory_location];
