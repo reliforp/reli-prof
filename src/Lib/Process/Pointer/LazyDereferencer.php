@@ -31,7 +31,10 @@ final class LazyDereferencer implements Dereferencer
         if (is_a($pointer->type, LazyDereferencable::class, true)) {
             /** @var class-string<LazyDereferencable&T> $type */
             $type = $pointer->type;
-            /** @var T */
+            /**
+             * @psalm-suppress ArgumentTypeCoercion
+             * @var T
+             */
             return $type::fromLazy($this->field_reader, $pointer);
         }
         return $this->inner->deref($pointer);

@@ -60,9 +60,6 @@ final class ZendExecuteData implements LazyDereferencable
         unset($this->extra_named_params);
     }
 
-    /**
-     * @param Pointer<LazyDereferencable> $pointer
-     */
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new self(null, $pointer);

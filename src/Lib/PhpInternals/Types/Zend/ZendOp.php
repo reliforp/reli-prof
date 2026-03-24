@@ -62,9 +62,6 @@ final class ZendOp implements LazyDereferencable
         unset($this->extended_value);
     }
 
-    /**
-     * @param Pointer<LazyDereferencable> $pointer
-     */
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new self(null, $pointer);

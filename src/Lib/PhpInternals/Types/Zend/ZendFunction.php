@@ -77,9 +77,6 @@ final class ZendFunction implements LazyDereferencable
         unset($this->op_array_filename);
     }
 
-    /**
-     * @param Pointer<LazyDereferencable> $pointer
-     */
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
         $self = new self(null, $pointer);
@@ -95,6 +92,7 @@ final class ZendFunction implements LazyDereferencable
         return $this->getFieldEager($field_name);
     }
 
+    /** @psalm-suppress ArgumentTypeCoercion */
     private function getFieldLazy(string $field_name): mixed
     {
         assert($this->field_reader !== null);
@@ -132,7 +130,6 @@ final class ZendFunction implements LazyDereferencable
                 'zend_op_array',
             ),
             'op_array' => $this->op_array = new ZendOpArray(
-                /** @psalm-suppress ArgumentTypeCoercion */
                 $this->field_reader->readEmbeddedStructCData(
                     $this->pointer,
                     'op_array',

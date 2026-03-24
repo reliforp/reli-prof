@@ -16,7 +16,7 @@ namespace Reli\Lib\Process\Pointer;
 interface LazyDereferencable extends Dereferencable
 {
     /**
-     * @param Pointer<LazyDereferencable> $pointer
+     * @param Pointer<static> $pointer
      */
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static;
 }
