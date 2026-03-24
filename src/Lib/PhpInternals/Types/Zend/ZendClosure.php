@@ -39,8 +39,7 @@ class ZendClosure implements Dereferencable, PointedTypeResolverAware
     /** @var Pointer<ZendClassEntry>|null */
     public ?Pointer $called_scope;
 
-    private ?PointedTypeResolver $pointed_type_resolver = null;
-
+    use InlineCDataCreatorTrait;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_closure> $casted_cdata
@@ -83,7 +82,7 @@ class ZendClosure implements Dereferencable, PointedTypeResolverAware
                     FFI::typeof($this->casted_cdata->casted->func)->getSize(),
                 ),
             ),
-            'this_ptr' => $this->this_ptr = $this->createInlineZval(),
+            'this_ptr' => $this->this_ptr = $this->createInlineDereferencable('this_ptr', Zval::class),
             'called_scope' => $this->called_scope = $this->casted_cdata->casted->called_scope !== null
                 ? Pointer::fromCData(
                     ZendClassEntry::class,
@@ -92,32 +91,6 @@ class ZendClosure implements Dereferencable, PointedTypeResolverAware
                 : null
             ,
         };
-    }
-
-    #[\Override]
-    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
-    {
-        $this->pointed_type_resolver = $resolver;
-    }
-
-    private function createInlineZval(): Zval
-    {
-        $zval_class = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve(Zval::class)
-            : Zval::class;
-        return $zval_class::fromCastedCData(
-            new CastedCData(
-                $this->casted_cdata->casted->this_ptr,
-                $this->casted_cdata->casted->this_ptr,
-            ),
-            new Pointer(
-                $zval_class,
-                $this->pointer->address
-                +
-                FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('this_ptr'),
-                FFI::typeof($this->casted_cdata->casted->this_ptr)->getSize(),
-            ),
-        );
     }
 
     #[\Override]

@@ -63,14 +63,9 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObjectsStore $objects_store;
 
-    private ?PointedTypeResolver $pointed_type_resolver = null;
-    private ?FieldReader $field_reader = null;
+    use InlineCDataCreatorTrait;
 
-    #[\Override]
-    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
-    {
-        $this->pointed_type_resolver = $resolver;
-    }
+    private ?FieldReader $field_reader = null;
 
     /**
      * @param CastedCData<zend_executor_globals>|null $casted_cdata
@@ -163,8 +158,8 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     {
         assert($this->casted_cdata !== null);
         return match ($field_name) {
-            'uninitialized_zval' => $this->uninitialized_zval = $this->createInlineZval('uninitialized_zval'),
-            'error_zval' => $this->error_zval = $this->createInlineZval('error_zval'),
+            'uninitialized_zval' => $this->uninitialized_zval = $this->createInlineDereferencable('uninitialized_zval', Zval::class),
+            'error_zval' => $this->error_zval = $this->createInlineDereferencable('error_zval', Zval::class),
             'current_execute_data' => $this->casted_cdata->casted->current_execute_data !== null
                 ? Pointer::fromCData(
                     ZendExecuteData::class,
@@ -193,7 +188,7 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
                 )
                 : null
             ,
-            'symbol_table' => $this->symbol_table = $this->createInlineZendArray('symbol_table'),
+            'symbol_table' => $this->symbol_table = $this->createInlineDereferencable('symbol_table', ZendArray::class),
             'vm_stack' => $this->vm_stack = $this->casted_cdata->casted->vm_stack !== null
                 ? Pointer::fromCData(
                     ZendVmStack::class,
@@ -211,54 +206,8 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
             'objects_store' => $this->objects_store = new ZendObjectsStore(
                 $this->casted_cdata->casted->objects_store,
             ),
-            'included_files' => $this->included_files = $this->createInlineZendArray('included_files'),
+            'included_files' => $this->included_files = $this->createInlineDereferencable('included_files', ZendArray::class),
         };
-    }
-
-    private function createInlineZval(string $field_name): Zval
-    {
-        assert($this->casted_cdata !== null);
-        /** @var \FFI\CData $field_cdata */
-        $field_cdata = $this->casted_cdata->casted->$field_name;
-        $zval_class = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve(Zval::class)
-            : Zval::class;
-        return $zval_class::fromCastedCData(
-            new CastedCData(
-                $field_cdata,
-                $field_cdata
-            ),
-            new Pointer(
-                $zval_class,
-                $this->pointer->address
-                +
-                \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset($field_name),
-                \FFI::sizeof($field_cdata),
-            ),
-        );
-    }
-
-    private function createInlineZendArray(string $field_name): ZendArray
-    {
-        assert($this->casted_cdata !== null);
-        /** @var \FFI\CData $field_cdata */
-        $field_cdata = $this->casted_cdata->casted->$field_name;
-        $zend_array_class = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve(ZendArray::class)
-            : ZendArray::class;
-        return $zend_array_class::fromCastedCData(
-            new CastedCData(
-                $field_cdata,
-                $field_cdata
-            ),
-            new Pointer(
-                $zend_array_class,
-                $this->pointer->address
-                +
-                \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset($field_name),
-                \FFI::sizeof($field_cdata),
-            ),
-        );
     }
 
     #[\Override]

@@ -46,7 +46,8 @@ class ZendCompilerGlobals implements LazyDereferencable, PointedTypeResolverAwar
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $map_ptr_base;
 
-    private ?PointedTypeResolver $pointed_type_resolver = null;
+    use InlineCDataCreatorTrait;
+
     private ?FieldReader $field_reader = null;
 
     /**
@@ -122,36 +123,8 @@ class ZendCompilerGlobals implements LazyDereferencable, PointedTypeResolverAwar
                 : null
             ,
             'map_ptr_base' => $this->getMapPtrBase(),
-            'interned_strings' => $this->interned_strings = $this->createInlineZendArray(),
+            'interned_strings' => $this->interned_strings = $this->createInlineDereferencable('interned_strings', ZendArray::class),
         };
-    }
-
-    #[\Override]
-    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
-    {
-        $this->pointed_type_resolver = $resolver;
-    }
-
-    private function createInlineZendArray(): ZendArray
-    {
-        assert($this->casted_cdata !== null);
-        $zend_array_class = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve(ZendArray::class)
-            : ZendArray::class;
-        return $zend_array_class::fromCastedCData(
-            new CastedCData(
-                $this->casted_cdata->casted->interned_strings,
-                $this->casted_cdata->casted->interned_strings,
-            ),
-            new Pointer(
-                $zend_array_class,
-                $this->pointer->address
-                +
-                \FFI::typeof($this->casted_cdata->casted)
-                    ->getStructFieldOffset('interned_strings'),
-                \FFI::sizeof($this->casted_cdata->casted->interned_strings),
-            ),
-        );
     }
 
     public function getMapPtrBase(): int

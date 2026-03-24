@@ -88,7 +88,8 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
     public ?Pointer $doc_comment;
 
     private ?ZvalArray $static_properties_table_cache = null;
-    private ?PointedTypeResolver $pointed_type_resolver = null;
+    use InlineCDataCreatorTrait;
+
     private ?FieldReader $field_reader = null;
 
     /**
@@ -171,10 +172,10 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
                 )
                 : null
             ,
-            'function_table' => $this->function_table = $this->createInlineZendArray('function_table'),
-            'constants_table' => $this->constants_table = $this->createInlineZendArray('constants_table'),
+            'function_table' => $this->function_table = $this->createInlineDereferencable('function_table', ZendArray::class),
+            'constants_table' => $this->constants_table = $this->createInlineDereferencable('constants_table', ZendArray::class),
             'ce_flags' => $this->ce_flags = $this->casted_cdata->casted->ce_flags,
-            'properties_info' => $this->properties_info = $this->createInlineZendArray('properties_info'),
+            'properties_info' => $this->properties_info = $this->createInlineDereferencable('properties_info', ZendArray::class),
             'info' => $this->info = new ZendClassEntryInfo($this->casted_cdata->casted->info),
             'default_properties_count' => $this->default_properties_count =
                 $this->casted_cdata->casted->default_properties_count
@@ -273,35 +274,6 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
             $real_offset = $property_info->offset;
             yield $name => $this->static_properties_table_cache[$real_offset];
         }
-    }
-
-    #[\Override]
-    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
-    {
-        $this->pointed_type_resolver = $resolver;
-    }
-
-    private function createInlineZendArray(string $field_name): ZendArray
-    {
-        assert($this->casted_cdata !== null);
-        /** @var \FFI\CData $field_cdata */
-        $field_cdata = $this->casted_cdata->casted->$field_name;
-        $zend_array_class = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve(ZendArray::class)
-            : ZendArray::class;
-        return $zend_array_class::fromCastedCData(
-            new CastedCData(
-                $field_cdata,
-                $field_cdata,
-            ),
-            new Pointer(
-                $zend_array_class,
-                $this->pointer->address
-                +
-                \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset($field_name),
-                \FFI::sizeof($field_cdata),
-            ),
-        );
     }
 
     #[\Override]

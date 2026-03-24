@@ -23,16 +23,10 @@ use Reli\Lib\Process\Pointer\Pointer;
 /** @implements \ArrayAccess<int, Zval> */
 final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @var array<int, Zval> */
     private array $zvals_cache = [];
-
-    private ?PointedTypeResolver $pointed_type_resolver = null;
-
-    #[\Override]
-    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
-    {
-        $this->pointed_type_resolver = $resolver;
-    }
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zval_array> $casted_cdata

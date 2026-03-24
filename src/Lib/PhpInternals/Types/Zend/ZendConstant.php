@@ -27,7 +27,7 @@ final class ZendConstant implements Dereferencable, PointedTypeResolverAware
     /** @var Pointer<ZendString>|null */
     public ?Pointer $name;
 
-    private ?PointedTypeResolver $pointed_type_resolver = null;
+    use InlineCDataCreatorTrait;
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_constants> $casted_cdata
@@ -44,7 +44,7 @@ final class ZendConstant implements Dereferencable, PointedTypeResolverAware
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'value' => $this->value = $this->createInlineZval(),
+            'value' => $this->value = $this->createInlineDereferencable('value', Zval::class),
             'name' => $this->name = $this->casted_cdata->casted->name !== null
                 ? Pointer::fromCData(
                     ZendString::class,
@@ -53,32 +53,6 @@ final class ZendConstant implements Dereferencable, PointedTypeResolverAware
                 : null
             ,
         };
-    }
-
-    #[\Override]
-    public function setPointedTypeResolver(PointedTypeResolver $resolver): void
-    {
-        $this->pointed_type_resolver = $resolver;
-    }
-
-    private function createInlineZval(): Zval
-    {
-        $zval_class = $this->pointed_type_resolver !== null
-            ? $this->pointed_type_resolver->resolve(Zval::class)
-            : Zval::class;
-        return $zval_class::fromCastedCData(
-            new CastedCData(
-                $this->casted_cdata->casted->value,
-                $this->casted_cdata->casted->value,
-            ),
-            new Pointer(
-                $zval_class,
-                $this->pointer->address
-                +
-                \FFI::typeof($this->casted_cdata->casted->value)->getStructFieldOffset('value'),
-                \FFI::sizeof($this->casted_cdata->casted->value),
-            ),
-        );
     }
 
     #[\Override]
