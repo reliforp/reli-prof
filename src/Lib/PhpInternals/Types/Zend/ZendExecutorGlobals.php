@@ -22,6 +22,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
+/** @psalm-suppress MethodSignatureMismatch */
 final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolverAware
 {
     use InlineCDataCreatorTrait;
@@ -237,14 +238,13 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer,
-        ?PointedTypeResolver $pointed_type_resolver = null,
+        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<zend_executor_globals>|null $casted_cdata
          * @var Pointer<ZendExecutorGlobals> $pointer
          */
         $self = new self($casted_cdata, $pointer);
-        assert($pointed_type_resolver !== null);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

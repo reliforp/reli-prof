@@ -25,6 +25,7 @@ use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 /**
  * @psalm-consistent-constructor
  * @psalm-suppress ClassMustBeFinal
+ * @psalm-suppress MethodSignatureMismatch
  */
 class ZendCompilerGlobals implements LazyDereferencable, PointedTypeResolverAware
 {
@@ -160,14 +161,13 @@ class ZendCompilerGlobals implements LazyDereferencable, PointedTypeResolverAwar
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer,
-        ?PointedTypeResolver $pointed_type_resolver = null,
+        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zend_compiler_globals>|null $casted_cdata
          * @var Pointer<ZendCompilerGlobals> $pointer
          */
         $self = new static($casted_cdata, $pointer);
-        assert($pointed_type_resolver !== null);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

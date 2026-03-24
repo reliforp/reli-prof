@@ -20,7 +20,10 @@ use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 use Reli\Lib\Process\Pointer\Pointer;
 
-/** @implements \ArrayAccess<int, Zval> */
+/**
+ * @implements \ArrayAccess<int, Zval>
+ * @psalm-suppress MethodSignatureMismatch
+ */
 final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolverAware
 {
     use InlineCDataCreatorTrait;
@@ -53,7 +56,7 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer,
-        ?PointedTypeResolver $pointed_type_resolver = null,
+        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zval_array> $casted_cdata
@@ -64,7 +67,6 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
             (int)($pointer->size / 16),
             $pointer
         );
-        assert($pointed_type_resolver !== null);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

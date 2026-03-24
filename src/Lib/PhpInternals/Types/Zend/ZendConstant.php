@@ -19,6 +19,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
+/** @psalm-suppress MethodSignatureMismatch */
 final class ZendConstant implements Dereferencable, PointedTypeResolverAware
 {
     use InlineCDataCreatorTrait;
@@ -65,14 +66,13 @@ final class ZendConstant implements Dereferencable, PointedTypeResolverAware
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer,
-        ?PointedTypeResolver $pointed_type_resolver = null,
+        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zend_constants> $casted_cdata
          * @var Pointer<ZendConstant> $pointer
          */
         $self = new static($casted_cdata, $pointer);
-        assert($pointed_type_resolver !== null);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
