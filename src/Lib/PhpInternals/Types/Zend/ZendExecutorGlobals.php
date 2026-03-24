@@ -107,28 +107,44 @@ final class ZendExecutorGlobals implements LazyDereferencable
         assert($this->field_reader !== null);
         return match ($field_name) {
             'current_execute_data' => $this->current_execute_data = $this->field_reader->readPointerField(
-                $this->pointer, 'current_execute_data', ZendExecuteData::class,
+                $this->pointer,
+                'current_execute_data',
+                ZendExecuteData::class,
             ),
             'function_table' => $this->function_table = $this->field_reader->readPointerField(
-                $this->pointer, 'function_table', ZendArray::class,
+                $this->pointer,
+                'function_table',
+                ZendArray::class,
             ),
             'class_table' => $this->class_table = $this->field_reader->readPointerField(
-                $this->pointer, 'class_table', ZendArray::class,
+                $this->pointer,
+                'class_table',
+                ZendArray::class,
             ),
             'zend_constants' => $this->zend_constants = $this->field_reader->readPointerField(
-                $this->pointer, 'zend_constants', ZendArray::class,
+                $this->pointer,
+                'zend_constants',
+                ZendArray::class,
             ),
             'vm_stack' => $this->vm_stack = $this->field_reader->readPointerField(
-                $this->pointer, 'vm_stack', ZendVmStack::class,
+                $this->pointer,
+                'vm_stack',
+                ZendVmStack::class,
             ),
             'vm_stack_top' => $this->vm_stack_top = $this->field_reader->readPointerField(
-                $this->pointer, 'vm_stack_top', Zval::class,
+                $this->pointer,
+                'vm_stack_top',
+                Zval::class,
             ),
             'ini_directives' => $this->ini_directives = $this->field_reader->readPointerField(
-                $this->pointer, 'ini_directives', ZendArray::class,
+                $this->pointer,
+                'ini_directives',
+                ZendArray::class,
             ),
             'modified_ini_directives' => $this->modified_ini_directives = $this->field_reader->readPointerField(
-                $this->pointer, 'modified_ini_directives', ZendArray::class,
+                $this->pointer,
+                'modified_ini_directives',
+                ZendArray::class,
             ),
             default => throw new \LogicException(
                 "Field '{$field_name}' is not available in lazy deref mode for ZendExecutorGlobals"

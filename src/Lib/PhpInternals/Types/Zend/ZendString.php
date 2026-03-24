@@ -79,10 +79,12 @@ final class ZendString implements LazyDereferencable
         assert($this->field_reader !== null);
         return match ($field_name) {
             'len' => $this->len = $this->field_reader->readIntField(
-                $this->pointer, 'len',
+                $this->pointer,
+                'len',
             ),
             'h' => $this->h = $this->field_reader->readIntField(
-                $this->pointer, 'h',
+                $this->pointer,
+                'h',
             ),
             default => throw new \LogicException(
                 "Field '{$field_name}' is not available in lazy deref mode for ZendString"

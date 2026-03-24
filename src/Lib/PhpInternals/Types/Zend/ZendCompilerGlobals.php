@@ -80,13 +80,18 @@ class ZendCompilerGlobals implements LazyDereferencable
         assert($this->field_reader !== null);
         return match ($field_name) {
             'arena' => $this->arena = $this->field_reader->readPointerField(
-                $this->pointer, 'arena', ZendArena::class,
+                $this->pointer,
+                'arena',
+                ZendArena::class,
             ),
             'ast_arena' => $this->ast_arena = $this->field_reader->readPointerField(
-                $this->pointer, 'ast_arena', ZendArena::class,
+                $this->pointer,
+                'ast_arena',
+                ZendArena::class,
             ),
             'map_ptr_base' => $this->map_ptr_base = $this->field_reader->readIntField(
-                $this->pointer, 'map_ptr_base',
+                $this->pointer,
+                'map_ptr_base',
             ),
             default => throw new \LogicException(
                 "Field '{$field_name}' is not available in lazy deref mode for ZendCompilerGlobals"
