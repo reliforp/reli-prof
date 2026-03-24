@@ -135,11 +135,10 @@ class ZendCompilerGlobals implements LazyDereferencable, PointedTypeResolverAwar
     /**
      * @psalm-suppress MixedArgument
      * @psalm-suppress MixedArgumentTypeCoercion
-     * @psalm-suppress PossiblyNullPropertyFetch
-     * @psalm-suppress PossiblyNullArgument
      */
     private function createInlineZendArray(): ZendArray
     {
+        assert($this->casted_cdata !== null);
         $zend_array_class = $this->pointed_type_resolver !== null
             ? $this->pointed_type_resolver->resolve(ZendArray::class)
             : ZendArray::class;

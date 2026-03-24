@@ -218,7 +218,6 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     /**
      * @psalm-suppress MixedArgument
      * @psalm-suppress MixedArgumentTypeCoercion
-     * @psalm-suppress PossiblyNullPropertyFetch
      */
     private function createInlineZval(string $field_name): Zval
     {
@@ -244,7 +243,6 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     /**
      * @psalm-suppress MixedArgument
      * @psalm-suppress MixedArgumentTypeCoercion
-     * @psalm-suppress PossiblyNullPropertyFetch
      */
     private function createInlineZendArray(string $field_name): ZendArray
     {
