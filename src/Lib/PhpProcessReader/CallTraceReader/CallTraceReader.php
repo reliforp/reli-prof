@@ -65,54 +65,57 @@ final class CallTraceReader
         $process_specifier = new ProcessSpecifier($pid);
         $type_reader = $this->getTypeReader($php_version);
 
+        $pointed_type_resolver = new class ($php_version) implements PointedTypeResolver {
+            public function __construct(
+                private string $php_version,
+            ) {
+            }
+
+            #[\Override]
+            public function resolve(string $type_name): string
+            {
+                return match ($this->php_version) {
+                    ZendTypeReader::V70,
+                    ZendTypeReader::V71,
+                    ZendTypeReader::V72 => match ($type_name) {
+                        Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Bucket::class,
+                        ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V70\ZendArray::class,
+                        Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Zval::class,
+                        default => $type_name,
+                    },
+                    ZendTypeReader::V73 => match ($type_name) {
+                        Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Bucket::class,
+                        ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V73\ZendArray::class,
+                        Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Zval::class,
+                        default => $type_name,
+                    },
+                    ZendTypeReader::V74 => match ($type_name) {
+                        Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Bucket::class,
+                        ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V74\ZendArray::class,
+                        Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Zval::class,
+                        default => $type_name,
+                    },
+                    ZendTypeReader::V80,
+                    ZendTypeReader::V81 => match ($type_name) {
+                        ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V80\ZendArray::class,
+                        default => $type_name,
+                    },
+                    default => $type_name,
+                };
+            }
+        };
+
         $base = new RemoteProcessDereferencer(
             $this->memory_reader,
             $process_specifier,
             new ZendCastedTypeProvider($type_reader),
-            new class ($php_version) implements PointedTypeResolver {
-                public function __construct(
-                    private string $php_version,
-                ) {
-                }
-
-                #[\Override]
-                public function resolve(string $type_name): string
-                {
-                    return match ($this->php_version) {
-                        ZendTypeReader::V70,
-                        ZendTypeReader::V71,
-                        ZendTypeReader::V72 => match ($type_name) {
-                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Bucket::class,
-                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V70\ZendArray::class,
-                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V70\Zval::class,
-                            default => $type_name,
-                        },
-                        ZendTypeReader::V73 => match ($type_name) {
-                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Bucket::class,
-                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V73\ZendArray::class,
-                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V73\Zval::class,
-                            default => $type_name,
-                        },
-                        ZendTypeReader::V74 => match ($type_name) {
-                            Bucket::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Bucket::class,
-                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V74\ZendArray::class,
-                            Zval::class => \Reli\Lib\PhpInternals\Types\Zend\V74\Zval::class,
-                            default => $type_name,
-                        },
-                        ZendTypeReader::V80,
-                        ZendTypeReader::V81 => match ($type_name) {
-                            ZendArray::class => \Reli\Lib\PhpInternals\Types\Zend\V80\ZendArray::class,
-                            default => $type_name,
-                        },
-                        default => $type_name,
-                    };
-                }
-            }
+            $pointed_type_resolver,
         );
 
         return new LazyDereferencer(
             $base,
-            new FieldReader($this->memory_reader, $process_specifier, $type_reader),
+            new FieldReader($this->memory_reader, $process_specifier, $type_reader, $pointed_type_resolver),
+            $pointed_type_resolver,
         );
     }
 

@@ -122,10 +122,14 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
     }
 
     #[\Override]
-    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
-    {
+    public static function fromLazy(
+        FieldReader $field_reader,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static {
         $self = new self(null, $pointer);
         $self->field_reader = $field_reader;
+        $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
 

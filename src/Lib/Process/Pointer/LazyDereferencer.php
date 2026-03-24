@@ -18,6 +18,7 @@ final class LazyDereferencer implements Dereferencer
     public function __construct(
         private Dereferencer $inner,
         private FieldReader $field_reader,
+        private ?PointedTypeResolver $pointed_type_resolver = null,
     ) {
     }
 
@@ -36,7 +37,7 @@ final class LazyDereferencer implements Dereferencer
              * @psalm-suppress ArgumentTypeCoercion
              * @var T
              */
-            return $type::fromLazy($this->field_reader, $pointer);
+            return $type::fromLazy($this->field_reader, $pointer, $this->pointed_type_resolver);
         }
         return $this->inner->deref($pointer);
     }

@@ -18,5 +18,9 @@ interface LazyDereferencable extends Dereferencable
     /**
      * @param Pointer<static> $pointer
      */
-    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static;
+    public static function fromLazy(
+        FieldReader $field_reader,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static;
 }

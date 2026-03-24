@@ -26,6 +26,7 @@ final class FieldReader
         private MemoryReaderInterface $memory_reader,
         private ProcessSpecifier $process_specifier,
         private ZendTypeReader $type_reader,
+        private ?PointedTypeResolver $pointed_type_resolver = null,
     ) {
     }
 
@@ -124,6 +125,7 @@ final class FieldReader
      * @param Pointer<Dereferencable> $struct_pointer
      * @param class-string<T> $php_type
      * @return T
+     * @psalm-suppress InvalidReturnType psalm cannot narrow T through resolve()
      */
     public function readEmbeddedDereferencable(
         Pointer $struct_pointer,
@@ -143,6 +145,17 @@ final class FieldReader
         );
         $casted_cdata = $this->type_reader->readAs($c_type, $buffer);
         $pointer = new Pointer($php_type, $struct_pointer->address + $offset, $size);
-        return $php_type::fromCastedCData($casted_cdata, $pointer);
+        $resolved_type = $this->pointed_type_resolver !== null
+            ? $this->pointed_type_resolver->resolve($php_type)
+            : $php_type;
+        if (is_a($resolved_type, PointedTypeResolverAware::class, true)) {
+            /**
+             * @psalm-suppress TooManyArguments
+             * @psalm-suppress InvalidReturnStatement
+             */
+            return $resolved_type::fromCastedCData($casted_cdata, $pointer, $this->pointed_type_resolver);
+        }
+        /** @psalm-suppress InvalidReturnStatement */
+        return $resolved_type::fromCastedCData($casted_cdata, $pointer);
     }
 }
