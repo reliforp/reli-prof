@@ -26,7 +26,8 @@ use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\ProcessSpecifier;
 use RuntimeException;
 
-final class PhpGlobalsFinder
+/** @psalm-suppress ClassMustBeFinal */
+class PhpGlobalsFinder
 {
     public function __construct(
         private PhpSymbolReaderCreator $php_symbol_reader_creator,
