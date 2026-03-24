@@ -61,7 +61,7 @@ final class ZendExecuteData implements LazyDereferencable
     }
 
     /**
-     * @param Pointer<ZendExecuteData> $pointer
+     * @param Pointer<LazyDereferencable> $pointer
      */
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {

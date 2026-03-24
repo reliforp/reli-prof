@@ -57,7 +57,7 @@ final class ZendString implements LazyDereferencable
     }
 
     /**
-     * @param Pointer<ZendString> $pointer
+     * @param Pointer<LazyDereferencable> $pointer
      */
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {

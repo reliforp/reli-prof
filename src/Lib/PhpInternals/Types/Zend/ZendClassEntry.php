@@ -76,6 +76,7 @@ final class ZendClassEntry implements LazyDereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $ce_flags;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendClassEntryInfo $info;
 
     /**
@@ -116,7 +117,7 @@ final class ZendClassEntry implements LazyDereferencable
     }
 
     /**
-     * @param Pointer<ZendClassEntry> $pointer
+     * @param Pointer<LazyDereferencable> $pointer
      */
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {

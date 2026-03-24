@@ -63,7 +63,7 @@ final class ZendOp implements LazyDereferencable
     }
 
     /**
-     * @param Pointer<ZendOp> $pointer
+     * @param Pointer<LazyDereferencable> $pointer
      */
     public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
     {
