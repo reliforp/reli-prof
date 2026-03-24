@@ -92,7 +92,10 @@ final class ZendOp implements LazyDereferencable
             'result_type' => $this->result_type = $this->field_reader->readIntField($this->pointer, 'result_type'),
             'lineno' => $this->lineno = $this->field_reader->readIntField($this->pointer, 'lineno'),
             'opcode' => $this->opcode = $this->field_reader->readIntField($this->pointer, 'opcode'),
-            'extended_value' => $this->extended_value = $this->field_reader->readIntField($this->pointer, 'extended_value'),
+            'extended_value' => $this->extended_value = $this->field_reader->readIntField(
+                $this->pointer,
+                'extended_value',
+            ),
         };
     }
 

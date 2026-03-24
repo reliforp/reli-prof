@@ -83,22 +83,35 @@ final class ZendExecuteData implements LazyDereferencable
         assert($this->field_reader !== null);
         return match ($field_name) {
             'func' => $this->func = $this->field_reader->readPointerField(
-                $this->pointer, 'func', ZendFunction::class,
+                $this->pointer,
+                'func',
+                ZendFunction::class,
             ),
             'prev_execute_data' => $this->prev_execute_data = $this->field_reader->readPointerField(
-                $this->pointer, 'prev_execute_data', ZendExecuteData::class,
+                $this->pointer,
+                'prev_execute_data',
+                ZendExecuteData::class,
             ),
             'opline' => $this->opline = $this->field_reader->readPointerField(
-                $this->pointer, 'opline', ZendOp::class,
+                $this->pointer,
+                'opline',
+                ZendOp::class,
             ),
             'This' => $this->This = $this->field_reader->readEmbeddedDereferencable(
-                $this->pointer, 'This', 'zval', Zval::class,
+                $this->pointer,
+                'This',
+                'zval',
+                Zval::class,
             ),
             'symbol_table' => $this->symbol_table = $this->field_reader->readPointerField(
-                $this->pointer, 'symbol_table', ZendArray::class,
+                $this->pointer,
+                'symbol_table',
+                ZendArray::class,
             ),
             'extra_named_params' => $this->extra_named_params = $this->field_reader->readPointerField(
-                $this->pointer, 'extra_named_params', ZendArray::class,
+                $this->pointer,
+                'extra_named_params',
+                ZendArray::class,
             ),
         };
     }
