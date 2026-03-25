@@ -95,7 +95,7 @@ jobs:
 
       - name: Build and push dev image
         if: steps.check.outputs.exists == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile-dev
