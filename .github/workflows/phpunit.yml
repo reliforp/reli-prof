@@ -56,8 +56,28 @@ jobs:
           COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./vendor/bin/php-coveralls -v
 
+  build-dev-image:
+    name: Build dev image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build dev image
+        run: docker compose build reli-test-for-ci
+
+      - name: Save dev image
+        run: docker save reli-dev | gzip > /tmp/reli-dev-image.tar.gz
+
+      - name: Upload dev image
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-image
+          path: /tmp/reli-dev-image.tar.gz
+          retention-days: 1
+
   phpunit-target-version:
     name: phpunit (${{ matrix.name }})
+    needs: build-dev-image
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -86,34 +106,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup PHP Action
-        uses: shivammathur/setup-php@v2
+      - name: Download dev image
+        uses: actions/download-artifact@v4
         with:
-          php-version: 8.2
-          extensions: ffi, dom, mbstring
-          coverage: none
+          name: dev-image
+          path: /tmp
 
-      - name: Get Composer Cache Directory
-        id: composer-cache
-        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
+      - name: Load dev image
+        run: docker load < /tmp/reli-dev-image.tar.gz
 
-      - name: Cache dependencies
-        uses: actions/cache@v5
-        with:
-          path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
-          restore-keys: ${{ runner.os }}-composer-
-
-      - name: Cache Docker images
+      - name: Cache target Docker image
         uses: ScribeMD/docker-cache@0.5.0
         with:
-          key: docker-${{ runner.os }}-${{ hashFiles('Dockerfile-dev','tests/TargetPhpVmProvider.php') }}
-
-      - name: Validate composer.json and composer.lock
-        run: composer validate
+          key: docker-${{ runner.os }}-target-${{ matrix.targets }}
 
       - name: Install dependencies
-        run: composer install --prefer-dist --no-progress --no-suggest
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app reli-dev composer install --prefer-dist --no-progress --no-suggest
 
       - name: Setup problem matchers for PHP
         run: echo "::add-matcher::${{ runner.tool_cache }}/php.json"
@@ -125,4 +133,4 @@ jobs:
         env:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
         run: |
-          docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version
+          docker compose run --no-build reli-test-for-ci vendor/bin/phpunit --group target-version
