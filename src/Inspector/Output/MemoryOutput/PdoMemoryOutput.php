@@ -108,12 +108,12 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 id {$autoId},
                 node_id INTEGER NOT NULL,
                 address BIGINT,
-                size INTEGER,
+                size BIGINT,
                 location_type TEXT NOT NULL,
                 class_name TEXT,
                 string_value TEXT,
-                refcount INTEGER,
-                type_info INTEGER,
+                refcount BIGINT,
+                type_info BIGINT,
                 region TEXT
             )
         ");
@@ -140,11 +140,12 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     private function createViews(\PDO $db): void
     {
         $concat = fn (string $a, string $b) => $this->driver->concatExpr($a, $b);
+        $createView = fn (string $name) => $this->driver->createViewSql($name);
 
         $pathExpr = $concat('np.path', $concat("' -> '", 'e.link_name'));
 
         $db->exec("
-            CREATE VIEW IF NOT EXISTS v_node_paths AS
+            {$createView('v_node_paths')}
             WITH RECURSIVE node_paths(node_id, path, depth) AS (
                 SELECT child_node_id, link_name, 0
                 FROM context_edges
@@ -159,7 +160,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         ");
 
         $db->exec("
-            CREATE VIEW IF NOT EXISTS v_arrays AS
+            {$createView('v_arrays')}
             SELECT
                 header_cn.node_id,
                 header_loc.address,

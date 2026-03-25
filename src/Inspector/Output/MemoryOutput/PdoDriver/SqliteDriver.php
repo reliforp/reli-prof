@@ -55,4 +55,9 @@ final class SqliteDriver implements PdoDriverInterface
     public function afterBulkInsert(\PDO $db): void
     {
     }
+
+    public function createViewSql(string $view_name): string
+    {
+        return "CREATE VIEW IF NOT EXISTS {$view_name} AS";
+    }
 }

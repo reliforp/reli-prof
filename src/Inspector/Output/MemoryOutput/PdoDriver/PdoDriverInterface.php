@@ -31,4 +31,7 @@ interface PdoDriverInterface
 
     /** Statements to execute after bulk insert completes */
     public function afterBulkInsert(\PDO $db): void;
+
+    /** SQL prefix for creating a view (handles dialect differences) */
+    public function createViewSql(string $view_name): string;
 }

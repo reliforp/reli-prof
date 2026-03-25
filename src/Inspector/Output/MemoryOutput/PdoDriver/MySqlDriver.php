@@ -58,4 +58,9 @@ final class MySqlDriver implements PdoDriverInterface
         $db->exec('SET unique_checks=1');
         $db->exec('SET foreign_key_checks=1');
     }
+
+    public function createViewSql(string $view_name): string
+    {
+        return "CREATE OR REPLACE VIEW {$view_name} AS";
+    }
 }

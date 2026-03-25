@@ -96,11 +96,11 @@ final class CoreDumpReader
             ]
         ];
 
-        $is_sqlite = $memory_profiler_settings->output_format === 'sqlite3';
+        $is_db = in_array($memory_profiler_settings->output_format, ['sqlite3', 'mysql', 'postgresql'], true);
 
         $location_types_summary = null;
         $class_objects_summary = null;
-        if (!$is_sqlite) {
+        if (!$is_db) {
             $location_type_analyzer = new LocationTypeAnalyzer();
             $location_types_summary = $location_type_analyzer->analyze(
                 $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,

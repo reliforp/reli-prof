@@ -56,4 +56,9 @@ final class PostgreSqlDriver implements PdoDriverInterface
     {
         $db->exec('SET synchronous_commit=on');
     }
+
+    public function createViewSql(string $view_name): string
+    {
+        return "CREATE OR REPLACE VIEW {$view_name} AS";
+    }
 }
