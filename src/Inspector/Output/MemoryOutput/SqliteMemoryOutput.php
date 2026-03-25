@@ -46,6 +46,7 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             $sink = new PdoContextTreeSink($db, $this->region_boundaries);
             $analyzer = new ContextAnalyzer();
             $analyzer->analyze($result->context, $sink);
+            $sink->flush();
 
             // Compute type/class summaries from DB via GROUP BY
             $this->insertLocationTypesSummaryFromDb($db);

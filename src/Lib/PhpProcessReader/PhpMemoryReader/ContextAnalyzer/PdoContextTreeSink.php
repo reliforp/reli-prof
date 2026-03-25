@@ -21,29 +21,36 @@ use Reli\Lib\Process\MemoryLocation;
 
 final class PdoContextTreeSink implements ContextTreeSink
 {
+    private const LOCATION_BATCH_SIZE = 200;
+    private const ATTR_BATCH_SIZE = 200;
+    private const LOCATION_COLUMNS = 9;
+    private const ATTR_COLUMNS = 3;
+
     private \PDOStatement $node_stmt;
-    private \PDOStatement $location_stmt;
-    private \PDOStatement $attr_stmt;
 
     /** @var array<class-string, string> */
     private array $short_name_cache = [];
 
+    /** @var list<mixed> */
+    private array $location_buffer = [];
+    private int $location_row_count = 0;
+
+    /** @var list<mixed> */
+    private array $attr_buffer = [];
+    private int $attr_row_count = 0;
+
+    /** @var array<int, \PDOStatement> */
+    private array $location_batch_stmts = [];
+    /** @var array<int, \PDOStatement> */
+    private array $attr_batch_stmts = [];
+
     public function __construct(
-        \PDO $db,
+        private \PDO $db,
         private ?RegionBoundaries $region_boundaries = null,
     ) {
         $this->node_stmt = $db->prepare(
             'INSERT OR IGNORE INTO context_nodes (node_id, parent_node_id, link_name, type, reference_node_id)'
-            . ' VALUES (:node_id, :parent_node_id, :link_name, :type, :reference_node_id)'
-        );
-        $this->location_stmt = $db->prepare(
-            'INSERT INTO context_node_locations'
-            . ' (node_id, address, size, location_type, class_name, string_value, refcount, type_info, region)'
-            . ' VALUES (:node_id, :address, :size, :location_type, :class_name, :string_value, :refcount, :type_info, :region)'
-        );
-        $this->attr_stmt = $db->prepare(
-            'INSERT INTO context_node_attributes (node_id, key, value)'
-            . ' VALUES (:node_id, :key, :value)'
+            . ' VALUES (?, ?, ?, ?, ?)'
         );
     }
 
@@ -60,43 +67,43 @@ final class PdoContextTreeSink implements ContextTreeSink
         iterable $locations,
         array $attributes,
     ): void {
-        $this->node_stmt->execute([
-            ':node_id' => $node_id,
-            ':parent_node_id' => $parent_node_id,
-            ':link_name' => $link_name,
-            ':type' => $type,
-            ':reference_node_id' => null,
-        ]);
+        $this->node_stmt->execute([$node_id, $parent_node_id, $link_name, $type, null]);
 
         foreach ($locations as $location) {
             if ($location instanceof MemoryLocation) {
                 $class = $location::class;
                 $short_class = $this->short_name_cache[$class]
                     ??= (new \ReflectionClass($class))->getShortName();
-                $this->location_stmt->execute([
-                    ':node_id' => $node_id,
-                    ':address' => $location->address,
-                    ':size' => $location->size,
-                    ':location_type' => $short_class,
-                    ':class_name' => $location instanceof ZendObjectMemoryLocation
-                        ? $location->class_name : null,
-                    ':string_value' => $location instanceof ZendStringMemoryLocation
-                        ? $location->value : null,
-                    ':refcount' => $location instanceof RefcountedMemoryLocation
-                        ? $location->refcount : null,
-                    ':type_info' => $location instanceof RefcountedMemoryLocation
-                        ? $location->type_info : null,
-                    ':region' => $this->region_boundaries?->classifyRegion($location),
-                ]);
+                $this->location_buffer[] = $node_id;
+                $this->location_buffer[] = $location->address;
+                $this->location_buffer[] = $location->size;
+                $this->location_buffer[] = $short_class;
+                $this->location_buffer[] = $location instanceof ZendObjectMemoryLocation
+                    ? $location->class_name : null;
+                $this->location_buffer[] = $location instanceof ZendStringMemoryLocation
+                    ? $location->value : null;
+                $this->location_buffer[] = $location instanceof RefcountedMemoryLocation
+                    ? $location->refcount : null;
+                $this->location_buffer[] = $location instanceof RefcountedMemoryLocation
+                    ? $location->type_info : null;
+                $this->location_buffer[] = $this->region_boundaries?->classifyRegion($location);
+                $this->location_row_count++;
+
+                if ($this->location_row_count >= self::LOCATION_BATCH_SIZE) {
+                    $this->flushLocations();
+                }
             }
         }
 
         foreach ($attributes as $key => $value) {
-            $this->attr_stmt->execute([
-                ':node_id' => $node_id,
-                ':key' => (string)$key,
-                ':value' => is_scalar($value) ? (string)$value : json_encode($value),
-            ]);
+            $this->attr_buffer[] = $node_id;
+            $this->attr_buffer[] = (string)$key;
+            $this->attr_buffer[] = is_scalar($value) ? (string)$value : json_encode($value);
+            $this->attr_row_count++;
+
+            if ($this->attr_row_count >= self::ATTR_BATCH_SIZE) {
+                $this->flushAttributes();
+            }
         }
     }
 
@@ -112,12 +119,53 @@ final class PdoContextTreeSink implements ContextTreeSink
         ?int $parent_node_id,
         string $link_name,
     ): void {
-        $this->node_stmt->execute([
-            ':node_id' => $reference_node_id,
-            ':parent_node_id' => $parent_node_id,
-            ':link_name' => $link_name,
-            ':type' => null,
-            ':reference_node_id' => $reference_node_id,
-        ]);
+        $this->node_stmt->execute([$reference_node_id, $parent_node_id, $link_name, null, $reference_node_id]);
+    }
+
+    public function flush(): void
+    {
+        if ($this->location_row_count > 0) {
+            $this->flushLocations();
+        }
+        if ($this->attr_row_count > 0) {
+            $this->flushAttributes();
+        }
+    }
+
+    private function flushLocations(): void
+    {
+        $count = $this->location_row_count;
+        $stmt = $this->getLocationBatchStmt($count);
+        $stmt->execute($this->location_buffer);
+        $this->location_buffer = [];
+        $this->location_row_count = 0;
+    }
+
+    private function flushAttributes(): void
+    {
+        $count = $this->attr_row_count;
+        $stmt = $this->getAttrBatchStmt($count);
+        $stmt->execute($this->attr_buffer);
+        $this->attr_buffer = [];
+        $this->attr_row_count = 0;
+    }
+
+    private function getLocationBatchStmt(int $row_count): \PDOStatement
+    {
+        return $this->location_batch_stmts[$row_count]
+            ??= $this->db->prepare(
+                'INSERT INTO context_node_locations'
+                . ' (node_id, address, size, location_type, class_name, string_value, refcount, type_info, region)'
+                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?,?,?,?,?,?)'))
+            );
+    }
+
+    private function getAttrBatchStmt(int $row_count): \PDOStatement
+    {
+        return $this->attr_batch_stmts[$row_count]
+            ??= $this->db->prepare(
+                'INSERT INTO context_node_attributes (node_id, key, value)'
+                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?)'))
+            );
     }
 }
