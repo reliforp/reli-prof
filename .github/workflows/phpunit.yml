@@ -63,14 +63,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "PHP 7.0-7.2"
-            targets: "v70,v71,v72"
-          - name: "PHP 7.3-7.4"
-            targets: "v73,v74"
-          - name: "PHP 8.0-8.2"
-            targets: "v80,v81,v82"
-          - name: "PHP 8.3-8.4"
-            targets: "v83,v84"
+          - name: "PHP 7.0"
+            targets: "v70"
+          - name: "PHP 7.1"
+            targets: "v71"
+          - name: "PHP 7.2"
+            targets: "v72"
+          - name: "PHP 7.3"
+            targets: "v73"
+          - name: "PHP 7.4"
+            targets: "v74"
+          - name: "PHP 8.0"
+            targets: "v80"
+          - name: "PHP 8.1"
+            targets: "v81"
+          - name: "PHP 8.2"
+            targets: "v82"
+          - name: "PHP 8.3"
+            targets: "v83"
+          - name: "PHP 8.4"
+            targets: "v84"
     steps:
       - uses: actions/checkout@v6
 
