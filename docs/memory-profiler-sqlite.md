@@ -254,9 +254,12 @@ ORDER BY va.total_size DESC
 LIMIT 20;
 ```
 
-### Circular references (potential GC targets)
+### Back-references (shared or circular references)
+
+Nodes with `reference_node_id` are back-references to already-visited nodes in the DFS traversal. This includes both truly circular references (A -> B -> A) and shared references (A -> C, B -> C). To distinguish between them, check whether `reference_node_id` points to an ancestor of the current node.
 
 ```sql
+-- All back-references (shared + circular)
 SELECT cn.node_id, cn.parent_node_id, cn.link_name,
        cn.reference_node_id
 FROM context_nodes cn
