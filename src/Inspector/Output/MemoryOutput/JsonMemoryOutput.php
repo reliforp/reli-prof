@@ -37,8 +37,8 @@ final class JsonMemoryOutput implements MemoryOutputInterface
         $json = json_encode(
             [
                 'summary' => $result->summary,
-                'location_types_summary' => $result->location_types_summary,
-                'class_objects_summary' => $result->class_objects_summary,
+                'location_types_summary' => $result->location_types_summary ?? [],
+                'class_objects_summary' => $result->class_objects_summary ?? [],
                 'context' => $sink->getResult(),
             ],
             $flags,

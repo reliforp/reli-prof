@@ -15,11 +15,13 @@ namespace Reli\Inspector\Output\MemoryOutput;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
 final class SqliteMemoryOutput implements MemoryOutputInterface
 {
     public function __construct(
         private string $output_path,
+        private ?RegionBoundaries $region_boundaries = null,
     ) {
     }
 
@@ -35,12 +37,16 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         $db->beginTransaction();
         try {
             $this->insertSummary($db, $result->summary);
-            $this->insertLocationTypesSummary($db, $result->location_types_summary);
-            $this->insertClassObjectsSummary($db, $result->class_objects_summary);
 
-            $sink = new PdoContextTreeSink($db);
+            // Emit context tree first — this writes all locations to DB
+            // and allows the ReferenceContext tree to be GC'd incrementally
+            $sink = new PdoContextTreeSink($db, $this->region_boundaries);
             $analyzer = new ContextAnalyzer();
             $analyzer->analyze($result->context, $sink);
+
+            // Compute type/class summaries from DB via GROUP BY
+            $this->insertLocationTypesSummaryFromDb($db);
+            $this->insertClassObjectsSummaryFromDb($db);
 
             $db->commit();
         } catch (\Throwable $e) {
@@ -99,6 +105,7 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                 string_value TEXT,
                 refcount INTEGER,
                 type_info INTEGER,
+                region TEXT,
                 FOREIGN KEY (node_id) REFERENCES context_nodes(node_id)
             )
         ');
@@ -119,6 +126,7 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_class ON context_node_locations(class_name)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_type ON context_node_locations(location_type)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_size ON context_node_locations(size DESC)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_region ON context_node_locations(region)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_attributes_node ON context_node_attributes(node_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_location_types_memory ON location_types_summary(memory_usage DESC)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_class_objects_memory ON class_objects_summary(memory_usage DESC)');
@@ -184,37 +192,30 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         }
     }
 
-    /**
-     * @param array<string, array{count: int, memory_usage: int}> $location_types_summary
-     */
-    private function insertLocationTypesSummary(\PDO $db, array $location_types_summary): void
+    private function insertLocationTypesSummaryFromDb(\PDO $db): void
     {
-        $stmt = $db->prepare(
-            'INSERT INTO location_types_summary (type, count, memory_usage) VALUES (:type, :count, :memory_usage)'
-        );
-        foreach ($location_types_summary as $type => $usage) {
-            $stmt->execute([
-                ':type' => $type,
-                ':count' => $usage['count'],
-                ':memory_usage' => $usage['memory_usage'],
-            ]);
-        }
+        $db->exec("
+            INSERT INTO location_types_summary (type, count, memory_usage)
+            SELECT location_type, COUNT(*), SUM(size)
+            FROM context_node_locations
+            WHERE region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')
+               OR region IS NULL
+            GROUP BY location_type
+            ORDER BY SUM(size) DESC
+        ");
     }
 
-    /**
-     * @param array<string, array{count: int, memory_usage: int}> $class_objects_summary
-     */
-    private function insertClassObjectsSummary(\PDO $db, array $class_objects_summary): void
+    private function insertClassObjectsSummaryFromDb(\PDO $db): void
     {
-        $stmt = $db->prepare(
-            'INSERT INTO class_objects_summary (class_name, count, memory_usage) VALUES (:class_name, :count, :memory_usage)'
-        );
-        foreach ($class_objects_summary as $class_name => $usage) {
-            $stmt->execute([
-                ':class_name' => $class_name,
-                ':count' => $usage['count'],
-                ':memory_usage' => $usage['memory_usage'],
-            ]);
-        }
+        $db->exec("
+            INSERT INTO class_objects_summary (class_name, count, memory_usage)
+            SELECT class_name, COUNT(*), SUM(size)
+            FROM context_node_locations
+            WHERE class_name IS NOT NULL
+              AND (region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')
+                   OR region IS NULL)
+            GROUP BY class_name
+            ORDER BY SUM(size) DESC
+        ");
     }
 }

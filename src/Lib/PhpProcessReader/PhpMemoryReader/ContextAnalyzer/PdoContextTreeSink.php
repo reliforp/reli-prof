@@ -16,6 +16,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\Process\MemoryLocation;
 
 final class PdoContextTreeSink implements ContextTreeSink
@@ -24,16 +25,18 @@ final class PdoContextTreeSink implements ContextTreeSink
     private \PDOStatement $location_stmt;
     private \PDOStatement $attr_stmt;
 
-    public function __construct(\PDO $db)
-    {
+    public function __construct(
+        \PDO $db,
+        private ?RegionBoundaries $region_boundaries = null,
+    ) {
         $this->node_stmt = $db->prepare(
             'INSERT OR IGNORE INTO context_nodes (node_id, parent_node_id, link_name, type, reference_node_id)'
             . ' VALUES (:node_id, :parent_node_id, :link_name, :type, :reference_node_id)'
         );
         $this->location_stmt = $db->prepare(
             'INSERT INTO context_node_locations'
-            . ' (node_id, address, size, location_type, class_name, string_value, refcount, type_info)'
-            . ' VALUES (:node_id, :address, :size, :location_type, :class_name, :string_value, :refcount, :type_info)'
+            . ' (node_id, address, size, location_type, class_name, string_value, refcount, type_info, region)'
+            . ' VALUES (:node_id, :address, :size, :location_type, :class_name, :string_value, :refcount, :type_info, :region)'
         );
         $this->attr_stmt = $db->prepare(
             'INSERT INTO context_node_attributes (node_id, key, value)'
@@ -78,6 +81,7 @@ final class PdoContextTreeSink implements ContextTreeSink
                         ? $location->refcount : null,
                     ':type_info' => $location instanceof RefcountedMemoryLocation
                         ? $location->type_info : null,
+                    ':region' => $this->region_boundaries?->classifyRegion($location),
                 ]);
             }
         }

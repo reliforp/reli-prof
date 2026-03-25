@@ -21,11 +21,11 @@ use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConso
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
-
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Reli\ReliProfiler;
@@ -108,15 +108,6 @@ final class MemoryCommand extends Command
         $analyzed_regions = $region_analyzer->analyze(
             $collected_memories->memory_locations,
         );
-        $location_type_analyzer = new LocationTypeAnalyzer();
-        $heap_location_type_summary = $location_type_analyzer->analyze(
-            $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
-        );
-
-        $object_class_analyzer = new ObjectClassAnalyzer();
-        $object_class_summary = $object_class_analyzer->analyze(
-            $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
-        );
 
         $summary = [
             $analyzed_regions->summary->toArray()
@@ -138,11 +129,42 @@ final class MemoryCommand extends Command
             ]
         ];
 
+        $is_sqlite = $memory_profiler_settings->output_format === 'sqlite3';
+
+        // For SQLite: type/class summaries are computed from DB via GROUP BY.
+        // For JSON: compute them in-memory as before.
+        $location_types_summary = null;
+        $class_objects_summary = null;
+        if (!$is_sqlite) {
+            $location_type_analyzer = new LocationTypeAnalyzer();
+            $location_types_summary = $location_type_analyzer->analyze(
+                $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
+            )->per_type_usage;
+
+            $object_class_analyzer = new ObjectClassAnalyzer();
+            $class_objects_summary = $object_class_analyzer->analyze(
+                $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
+            )->per_class_usage;
+        }
+
+        // Region boundaries are small (a few entries each) — keep for PdoContextTreeSink.
+        // Everything else can be released before the tree walk.
+        $region_boundaries = new RegionBoundaries(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations,
+        );
+        $top_reference_context = $collected_memories->top_reference_context;
+
+        // Release the large flat location lists before the tree walk
+        unset($collected_memories, $analyzed_regions, $region_analyzer);
+
         $result = new MemoryAnalysisResult(
             $summary,
-            $heap_location_type_summary->per_type_usage,
-            $object_class_summary->per_class_usage,
-            $collected_memories->top_reference_context,
+            $top_reference_context,
+            $location_types_summary,
+            $class_objects_summary,
         );
 
         $output_factory = new MemoryOutputFactory();
@@ -150,6 +172,7 @@ final class MemoryCommand extends Command
             $memory_profiler_settings->output_format,
             $memory_profiler_settings->pretty_print,
             $memory_profiler_settings->output_path,
+            $region_boundaries,
         );
         $memory_output->output($result);
 

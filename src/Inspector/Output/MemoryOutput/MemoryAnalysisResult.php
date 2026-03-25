@@ -19,14 +19,14 @@ final class MemoryAnalysisResult
 {
     /**
      * @param array<int, array<string, mixed>> $summary
-     * @param array<string, array{count: int, memory_usage: int}> $location_types_summary
-     * @param array<string, array{count: int, memory_usage: int}> $class_objects_summary
+     * @param array<string, array{count: int, memory_usage: int}>|null $location_types_summary
+     * @param array<string, array{count: int, memory_usage: int}>|null $class_objects_summary
      */
     public function __construct(
         public readonly array $summary,
-        public readonly array $location_types_summary,
-        public readonly array $class_objects_summary,
         public readonly ReferenceContext $context,
+        public readonly ?array $location_types_summary = null,
+        public readonly ?array $class_objects_summary = null,
     ) {
     }
 }
