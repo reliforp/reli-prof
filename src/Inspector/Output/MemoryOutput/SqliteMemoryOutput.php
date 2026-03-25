@@ -29,10 +29,11 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
     {
         $db = new \PDO('sqlite:' . $this->output_path);
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-        $db->exec('PRAGMA journal_mode=WAL');
+        $db->exec('PRAGMA journal_mode=OFF');
         $db->exec('PRAGMA synchronous=OFF');
         $db->exec('PRAGMA cache_size=-65536'); // 64MB cache
         $db->exec('PRAGMA temp_store=MEMORY');
+        $db->exec('PRAGMA locking_mode=EXCLUSIVE');
         $db->exec('PRAGMA mmap_size=268435456'); // 256MB mmap
 
         $this->createTables($db);
@@ -131,16 +132,13 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
 
     private function createIndexes(\PDO $db): void
     {
+        // Essential for v_node_paths recursive CTE and v_arrays join
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_nodes_parent ON context_nodes(parent_node_id)');
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_nodes_type ON context_nodes(type)');
+        // Essential for JOIN context_node_locations ON node_id
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_node ON context_node_locations(node_id)');
+        // Frequently used in user queries
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_class ON context_node_locations(class_name)');
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_type ON context_node_locations(location_type)');
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_size ON context_node_locations(size DESC)');
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_region ON context_node_locations(region)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_attributes_node ON context_node_attributes(node_id)');
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_location_types_memory ON location_types_summary(memory_usage DESC)');
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_class_objects_memory ON class_objects_summary(memory_usage DESC)');
     }
 
     private function createViews(\PDO $db): void
