@@ -14,11 +14,11 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-class Bucket implements Dereferencable
+class Bucket implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $val;

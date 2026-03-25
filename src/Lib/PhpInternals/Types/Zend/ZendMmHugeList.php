@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendMmHugeList implements Dereferencable
+final class ZendMmHugeList implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $ptr;

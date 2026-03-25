@@ -14,14 +14,15 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-final class ZendMmHeap implements LazyDereferencable
+final class ZendMmHeap implements LazyDereferencable, CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $use_custom_heap;
@@ -87,8 +88,11 @@ final class ZendMmHeap implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
-    {
+    public static function fromLazy(
+        FieldReader $field_reader,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static {
         $self = new static(null, $pointer);
         $self->field_reader = $field_reader;
         return $self;

@@ -13,14 +13,18 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\Pointer;
 
-interface LazyDereferencable extends Dereferencable
+use Reli\Lib\PhpInternals\CastedCData;
+
+interface PointedTypeResolverAware extends Dereferencable
 {
     /**
-     * @param Pointer<static> $pointer
+     * @template T of \FFI\CData
+     * @param CastedCData<T> $casted_cdata
+     * @param Pointer<self> $pointer
      */
-    public static function fromLazy(
-        FieldReader $field_reader,
+    public static function fromCastedCDataWithResolver(
+        CastedCData $casted_cdata,
         Pointer $pointer,
-        ?PointedTypeResolver $pointed_type_resolver = null,
+        PointedTypeResolver $pointed_type_resolver,
     ): static;
 }

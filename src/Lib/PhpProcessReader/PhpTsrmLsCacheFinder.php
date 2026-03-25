@@ -22,6 +22,7 @@ use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
+use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
@@ -145,6 +146,7 @@ final class PhpTsrmLsCacheFinder
                 $this->memory_reader,
                 $process_specifier,
                 new ZendCastedTypeProvider($zend_type_reader),
+                new VersionedPointedTypeResolver($target_php_settings->php_version),
             );
             $eg = $dereferencer->deref($eg_pointer);
             if (!$eg->uninitialized_zval->isNull()) {

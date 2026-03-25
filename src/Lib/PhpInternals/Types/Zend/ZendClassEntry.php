@@ -22,9 +22,13 @@ use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-final class ZendClassEntry implements LazyDereferencable
+final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $type;
 
@@ -86,6 +90,7 @@ final class ZendClassEntry implements LazyDereferencable
     public ?Pointer $doc_comment;
 
     private ?ZvalArray $static_properties_table_cache = null;
+
     private ?FieldReader $field_reader = null;
 
     /**
@@ -117,10 +122,15 @@ final class ZendClassEntry implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
-    {
+    public static function fromLazy(
+        FieldReader $field_reader,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static {
         $self = new self(null, $pointer);
         $self->field_reader = $field_reader;
+        assert($pointed_type_resolver !== null);
+        $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
 
@@ -168,45 +178,18 @@ final class ZendClassEntry implements LazyDereferencable
                 )
                 : null
             ,
-            'function_table' => $this->function_table = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->function_table,
-                    $this->casted_cdata->casted->function_table,
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('function_table'),
-                    \FFI::sizeof($this->casted_cdata->casted->function_table),
-                ),
+            'function_table' => $this->function_table = $this->createInlineDereferencable(
+                'function_table',
+                ZendArray::class,
             ),
-            'constants_table' => $this->constants_table = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->constants_table,
-                    $this->casted_cdata->casted->constants_table,
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('constants_table'),
-                    \FFI::sizeof($this->casted_cdata->casted->constants_table),
-                ),
+            'constants_table' => $this->constants_table = $this->createInlineDereferencable(
+                'constants_table',
+                ZendArray::class,
             ),
             'ce_flags' => $this->ce_flags = $this->casted_cdata->casted->ce_flags,
-            'properties_info' => $this->properties_info = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->properties_info,
-                    $this->casted_cdata->casted->properties_info,
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('properties_info'),
-                    \FFI::sizeof($this->casted_cdata->casted->properties_info),
-                ),
+            'properties_info' => $this->properties_info = $this->createInlineDereferencable(
+                'properties_info',
+                ZendArray::class,
             ),
             'info' => $this->info = new ZendClassEntryInfo($this->casted_cdata->casted->info),
             'default_properties_count' => $this->default_properties_count =
@@ -315,15 +298,18 @@ final class ZendClassEntry implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromCastedCData(
+    public static function fromCastedCDataWithResolver(
         CastedCData $casted_cdata,
-        Pointer $pointer
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<zend_class_entry> $casted_cdata
          * @var Pointer<ZendClassEntry> $pointer
          */
-        return new self($casted_cdata, $pointer);
+        $self = new self($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     #[\Override]

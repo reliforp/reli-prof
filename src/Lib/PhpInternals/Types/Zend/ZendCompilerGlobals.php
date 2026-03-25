@@ -19,10 +19,17 @@ use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-/** @psalm-consistent-constructor */
-final class ZendCompilerGlobals implements LazyDereferencable
+/**
+ * @psalm-consistent-constructor
+ * @psalm-suppress ClassMustBeFinal
+ */
+class ZendCompilerGlobals implements LazyDereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /**
      * @psalm-suppress PropertyNotSetInConstructor
      * @var Pointer<ZendArena>|null
@@ -58,10 +65,15 @@ final class ZendCompilerGlobals implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
-    {
+    public static function fromLazy(
+        FieldReader $field_reader,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static {
         $self = new static(null, $pointer);
         $self->field_reader = $field_reader;
+        assert($pointed_type_resolver !== null);
+        $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
 
@@ -116,19 +128,9 @@ final class ZendCompilerGlobals implements LazyDereferencable
                 : null
             ,
             'map_ptr_base' => $this->getMapPtrBase(),
-            'interned_strings' => $this->interned_strings = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->interned_strings,
-                    $this->casted_cdata->casted->interned_strings,
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)
-                        ->getStructFieldOffset('interned_strings'),
-                    \FFI::sizeof($this->casted_cdata->casted->interned_strings),
-                ),
+            'interned_strings' => $this->interned_strings = $this->createInlineDereferencable(
+                'interned_strings',
+                ZendArray::class,
             ),
         };
     }
@@ -155,13 +157,18 @@ final class ZendCompilerGlobals implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
-    {
+    public static function fromCastedCDataWithResolver(
+        CastedCData $casted_cdata,
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
+    ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zend_compiler_globals>|null $casted_cdata
          * @var Pointer<ZendCompilerGlobals> $pointer
          */
-        return new static($casted_cdata, $pointer);
+        $self = new static($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /** @return Pointer<ZendCompilerGlobals> */

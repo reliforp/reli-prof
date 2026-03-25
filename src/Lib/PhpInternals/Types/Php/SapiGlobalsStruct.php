@@ -15,10 +15,10 @@ namespace Reli\Lib\PhpInternals\Types\Php;
 
 use FFI\PhpInternals\sapi_globals_struct;
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class SapiGlobalsStruct implements Dereferencable
+final class SapiGlobalsStruct implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public float $global_request_time;

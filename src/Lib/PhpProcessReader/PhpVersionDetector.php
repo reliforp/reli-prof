@@ -17,6 +17,7 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendModuleEntry;
+use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
@@ -59,7 +60,8 @@ class PhpVersionDetector
             new ProcessSpecifier($pid),
             new ZendCastedTypeProvider(
                 $this->getTypeReader($php_version),
-            )
+            ),
+            new VersionedPointedTypeResolver($php_version),
         );
     }
 

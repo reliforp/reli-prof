@@ -23,6 +23,7 @@ use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\File\CatFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
+use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
@@ -142,6 +143,7 @@ class ZendArrayTest extends BaseTestCase
             $memory_reader,
             new ProcessSpecifier($child_status['pid']),
             new ZendCastedTypeProvider($zend_type_reader),
+            new VersionedPointedTypeResolver(ZendTypeReader::V81),
         );
         $eg = $dereferencer->deref($eg_pointer);
         $server_array_bucket = $eg->symbol_table->findByKey($dereferencer, '_SERVER');

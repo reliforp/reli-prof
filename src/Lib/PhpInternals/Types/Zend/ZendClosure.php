@@ -16,12 +16,18 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-/** @psalm-consistent-constructor */
-final class ZendClosure implements Dereferencable
+/**
+ * @psalm-consistent-constructor
+ * @psalm-suppress ClassMustBeFinal
+ */
+class ZendClosure implements PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObject $std;
 
@@ -33,7 +39,6 @@ final class ZendClosure implements Dereferencable
 
     /** @var Pointer<ZendClassEntry>|null */
     public ?Pointer $called_scope;
-
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_closure> $casted_cdata
@@ -76,19 +81,7 @@ final class ZendClosure implements Dereferencable
                     FFI::typeof($this->casted_cdata->casted->func)->getSize(),
                 ),
             ),
-            'this_ptr' => $this->this_ptr = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->this_ptr,
-                    $this->casted_cdata->casted->this_ptr,
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('this_ptr'),
-                    FFI::typeof($this->casted_cdata->casted->this_ptr)->getSize(),
-                ),
-            ),
+            'this_ptr' => $this->this_ptr = $this->createInlineDereferencable('this_ptr', Zval::class),
             'called_scope' => $this->called_scope = $this->casted_cdata->casted->called_scope !== null
                 ? Pointer::fromCData(
                     ZendClassEntry::class,
@@ -106,13 +99,18 @@ final class ZendClosure implements Dereferencable
     }
 
     #[\Override]
-    public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
-    {
+    public static function fromCastedCDataWithResolver(
+        CastedCData $casted_cdata,
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
+    ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zend_closure> $casted_cdata
          * @var Pointer<ZendClosure> $pointer
          */
-        return new static($casted_cdata, $pointer);
+        $self = new static($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /** @return Pointer<ZendClosure> */

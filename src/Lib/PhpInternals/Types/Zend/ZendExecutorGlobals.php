@@ -19,9 +19,13 @@ use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-final class ZendExecutorGlobals implements LazyDereferencable
+final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $uninitialized_zval;
 
@@ -85,10 +89,15 @@ final class ZendExecutorGlobals implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
-    {
+    public static function fromLazy(
+        FieldReader $field_reader,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static {
         $self = new self(null, $pointer);
         $self->field_reader = $field_reader;
+        assert($pointed_type_resolver !== null);
+        $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
 
@@ -154,31 +163,13 @@ final class ZendExecutorGlobals implements LazyDereferencable
     {
         assert($this->casted_cdata !== null);
         return match ($field_name) {
-            'uninitialized_zval' => $this->uninitialized_zval = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->uninitialized_zval,
-                    $this->casted_cdata->casted->uninitialized_zval
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('uninitialized_zval'),
-                    \FFI::sizeof($this->casted_cdata->casted->uninitialized_zval),
-                ),
+            'uninitialized_zval' => $this->uninitialized_zval = $this->createInlineDereferencable(
+                'uninitialized_zval',
+                Zval::class,
             ),
-            'error_zval' => $this->error_zval = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->error_zval,
-                    $this->casted_cdata->casted->error_zval
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('error_zval'),
-                    \FFI::sizeof($this->casted_cdata->casted->error_zval),
-                ),
+            'error_zval' => $this->error_zval = $this->createInlineDereferencable(
+                'error_zval',
+                Zval::class,
             ),
             'current_execute_data' => $this->casted_cdata->casted->current_execute_data !== null
                 ? Pointer::fromCData(
@@ -208,18 +199,9 @@ final class ZendExecutorGlobals implements LazyDereferencable
                 )
                 : null
             ,
-            'symbol_table' => $this->symbol_table = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->symbol_table,
-                    $this->casted_cdata->casted->symbol_table
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('symbol_table'),
-                    \FFI::sizeof($this->casted_cdata->casted->symbol_table),
-                ),
+            'symbol_table' => $this->symbol_table = $this->createInlineDereferencable(
+                'symbol_table',
+                ZendArray::class,
             ),
             'vm_stack' => $this->vm_stack = $this->casted_cdata->casted->vm_stack !== null
                 ? Pointer::fromCData(
@@ -238,18 +220,9 @@ final class ZendExecutorGlobals implements LazyDereferencable
             'objects_store' => $this->objects_store = new ZendObjectsStore(
                 $this->casted_cdata->casted->objects_store,
             ),
-            'included_files' => $this->included_files = new ZendArray(
-                new CastedCData(
-                    $this->casted_cdata->casted->included_files,
-                    $this->casted_cdata->casted->included_files
-                ),
-                new Pointer(
-                    ZendArray::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('included_files'),
-                    \FFI::sizeof($this->casted_cdata->casted->included_files),
-                ),
+            'included_files' => $this->included_files = $this->createInlineDereferencable(
+                'included_files',
+                ZendArray::class,
             ),
         };
     }
@@ -261,15 +234,18 @@ final class ZendExecutorGlobals implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromCastedCData(
+    public static function fromCastedCDataWithResolver(
         CastedCData $casted_cdata,
-        Pointer $pointer
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<zend_executor_globals>|null $casted_cdata
          * @var Pointer<ZendExecutorGlobals> $pointer
          */
-        return new self($casted_cdata, $pointer);
+        $self = new self($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /** @return Pointer<ZendExecutorGlobals> */

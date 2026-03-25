@@ -14,20 +14,23 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
  * @psalm-consistent-constructor
+ * @psalm-suppress ClassMustBeFinal
  */
-final class ZendReference implements Dereferencable
+class ZendReference implements PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendRefcountedH $gc;
 
     /** @psalm-suppress PropertyNotSetInConstructor */
     public Zval $val;
-
 
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_reference> $casted_cdata
@@ -45,19 +48,7 @@ final class ZendReference implements Dereferencable
     {
         return match ($field_name) {
             'gc' => $this->gc = new ZendRefcountedH($this->casted_cdata->casted->gc),
-            'val' => $this->val = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->val,
-                    $this->casted_cdata->casted->val,
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('val'),
-                    \FFI::sizeof($this->casted_cdata->casted->val),
-                ),
-            ),
+            'val' => $this->val = $this->createInlineDereferencable('val', Zval::class),
         };
     }
 
@@ -68,13 +59,18 @@ final class ZendReference implements Dereferencable
     }
 
     #[\Override]
-    public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
-    {
+    public static function fromCastedCDataWithResolver(
+        CastedCData $casted_cdata,
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
+    ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zend_reference> $casted_cdata
          * @var Pointer<self> $pointer
          */
-        return new static($casted_cdata, $pointer);
+        $self = new static($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     #[\Override]

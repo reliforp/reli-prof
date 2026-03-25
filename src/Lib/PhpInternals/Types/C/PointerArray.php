@@ -6,11 +6,12 @@ use FFI\CArray;
 use PhpCast\Cast;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 use Traversable;
 
-final class PointerArray implements Dereferencable
+final class PointerArray implements CDataDereferencable
 {
     /** @var array<int, Pointer> */
     private array $pointers_cache = [];

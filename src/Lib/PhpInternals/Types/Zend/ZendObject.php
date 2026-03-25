@@ -17,14 +17,14 @@ use FFI\CInteger;
 use Reli\Lib\FFI\Cast;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
  * @psalm-consistent-constructor
  */
-final class ZendObject implements Dereferencable
+final class ZendObject implements CDataDereferencable
 {
     public ZendRefcountedH $zend_refcounted_h;
 

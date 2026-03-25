@@ -13,22 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\Pointer;
 
-use FFI\CData;
-use Reli\Lib\PhpInternals\CastedCData;
-
 interface Dereferencable
 {
     public static function getCTypeName(): string;
-
-    /**
-     * @template T of CData
-     * @param CastedCData<T> $casted_cdata
-     * @param Pointer<self> $pointer
-     */
-    public static function fromCastedCData(
-        CastedCData $casted_cdata,
-        Pointer $pointer
-    ): static;
 
     public function getPointer(): Pointer;
 }

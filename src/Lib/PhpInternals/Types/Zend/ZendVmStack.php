@@ -15,14 +15,14 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\PointerArray;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
  * @psalm-consistent-constructor
  */
-final class ZendVmStack implements Dereferencable
+final class ZendVmStack implements CDataDereferencable
 {
     /**
      * @psalm-suppress PropertyNotSetInConstructor

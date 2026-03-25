@@ -14,11 +14,11 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor  */
-final class ZendArgInfo implements Dereferencable
+final class ZendArgInfo implements CDataDereferencable
 {
     /** @var Pointer<ZendString>|null */
     public ?Pointer $name;

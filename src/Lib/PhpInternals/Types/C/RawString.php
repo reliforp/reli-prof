@@ -15,10 +15,10 @@ namespace Reli\Lib\PhpInternals\Types\C;
 
 use FFI\CData;
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class RawString implements Dereferencable
+final class RawString implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public string $value;

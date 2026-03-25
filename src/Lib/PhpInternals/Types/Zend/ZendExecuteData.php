@@ -21,9 +21,13 @@ use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\PointedTypeResolver;
+use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-final class ZendExecuteData implements LazyDereferencable
+final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAware
 {
+    use InlineCDataCreatorTrait;
+
     /** @var Pointer<ZendFunction>|null */
     public ?Pointer $func;
 
@@ -61,10 +65,15 @@ final class ZendExecuteData implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromLazy(FieldReader $field_reader, Pointer $pointer): static
-    {
+    public static function fromLazy(
+        FieldReader $field_reader,
+        Pointer $pointer,
+        ?PointedTypeResolver $pointed_type_resolver = null,
+    ): static {
         $self = new self(null, $pointer);
         $self->field_reader = $field_reader;
+        assert($pointed_type_resolver !== null);
+        $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
 
@@ -142,19 +151,7 @@ final class ZendExecuteData implements LazyDereferencable
                 )
                 : null
             ,
-            'This' => $this->This = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->This,
-                    $this->casted_cdata->casted->This,
-                ),
-                new Pointer(
-                    Zval::class,
-                    $this->pointer->address
-                    +
-                    \FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('This'),
-                    \FFI::sizeof($this->casted_cdata->casted->This),
-                ),
-            ),
+            'This' => $this->This = $this->createInlineDereferencable('This', Zval::class),
             'symbol_table' => $this->symbol_table =
                 $this->casted_cdata->casted->symbol_table !== null
                 ? Pointer::fromCData(
@@ -181,15 +178,18 @@ final class ZendExecuteData implements LazyDereferencable
     }
 
     #[\Override]
-    public static function fromCastedCData(
+    public static function fromCastedCDataWithResolver(
         CastedCData $casted_cdata,
-        Pointer $pointer
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<zend_execute_data> $casted_cdata
          * @var Pointer<ZendExecuteData> $pointer
          */
-        return new self($casted_cdata, $pointer);
+        $self = new self($casted_cdata, $pointer);
+        $self->pointed_type_resolver = $pointed_type_resolver;
+        return $self;
     }
 
     /** @return Pointer<ZendExecuteData> */
