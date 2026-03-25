@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TraceOutput;
 
-use Reli\Inspector\Output\OutputChannel\ConsoleOutputChannel;
 use Reli\Inspector\Output\OutputChannel\StreamOutputChannel;
 use Reli\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
@@ -21,8 +20,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class TraceOutputFactory
 {
+    /** @param resource|null $default_stream stream to use when no output_path (default: STDOUT) */
     public function __construct(
         private TraceFormatterFactory $trace_formatter_factory,
+        private $default_stream = null,
     ) {
     }
 
@@ -35,14 +36,13 @@ final class TraceOutputFactory
             if ($stream === false) {
                 throw new \RuntimeException("Failed to open output file: {$output_settings->output_path}");
             }
-            // Direct stream I/O bypasses Symfony Console's Unicode
-            // normalization overhead (normalizer_is_normalized, grapheme_strlen)
-            $output_channel = new StreamOutputChannel($stream);
         } else {
-            $output_channel = new ConsoleOutputChannel($output);
+            $stream = $this->default_stream ?? \STDOUT;
         }
+        // Direct stream I/O bypasses Symfony Console's Unicode
+        // normalization overhead (normalizer_is_normalized, grapheme_strlen)
         return new FormattedTraceOutput(
-            $output_channel,
+            new StreamOutputChannel($stream),
             $this->trace_formatter_factory->createFromSettings(
                 $output_settings
             )
