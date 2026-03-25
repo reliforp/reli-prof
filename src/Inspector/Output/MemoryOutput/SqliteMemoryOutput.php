@@ -17,7 +17,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLoc
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\Process\MemoryLocation;
-use SQLite3;
 
 final class SqliteMemoryOutput implements MemoryOutputInterface
 {
@@ -28,29 +27,27 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
 
     public function output(MemoryAnalysisResult $result): void
     {
-        $db = new SQLite3($this->output_path);
-        $db->enableExceptions(true);
+        $db = new \PDO('sqlite:' . $this->output_path);
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $db->exec('PRAGMA journal_mode=WAL');
         $db->exec('PRAGMA synchronous=NORMAL');
 
         $this->createTables($db);
 
-        $db->exec('BEGIN TRANSACTION');
+        $db->beginTransaction();
         try {
             $this->insertSummary($db, $result->summary);
             $this->insertLocationTypesSummary($db, $result->location_types_summary);
             $this->insertClassObjectsSummary($db, $result->class_objects_summary);
             $this->insertContext($db, $result->context);
-            $db->exec('COMMIT');
+            $db->commit();
         } catch (\Throwable $e) {
-            $db->exec('ROLLBACK');
+            $db->rollBack();
             throw $e;
-        } finally {
-            $db->close();
         }
     }
 
-    private function createTables(SQLite3 $db): void
+    private function createTables(\PDO $db): void
     {
         $db->exec('
             CREATE TABLE IF NOT EXISTS summary (
@@ -127,7 +124,7 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         $this->createViews($db);
     }
 
-    private function createViews(SQLite3 $db): void
+    private function createViews(\PDO $db): void
     {
         $db->exec("
             CREATE VIEW IF NOT EXISTS v_node_paths AS
@@ -172,15 +169,15 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
     /**
      * @param array<int, array<string, mixed>> $summary
      */
-    private function insertSummary(SQLite3 $db, array $summary): void
+    private function insertSummary(\PDO $db, array $summary): void
     {
         $stmt = $db->prepare('INSERT INTO summary (key, value) VALUES (:key, :value)');
         foreach ($summary as $entry) {
             foreach ($entry as $key => $value) {
-                $stmt->bindValue(':key', $key, SQLITE3_TEXT);
-                $stmt->bindValue(':value', is_scalar($value) ? (string)$value : json_encode($value), SQLITE3_TEXT);
-                $stmt->execute();
-                $stmt->reset();
+                $stmt->execute([
+                    ':key' => $key,
+                    ':value' => is_scalar($value) ? (string)$value : json_encode($value),
+                ]);
             }
         }
     }
@@ -188,41 +185,41 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
     /**
      * @param array<string, array{count: int, memory_usage: int}> $location_types_summary
      */
-    private function insertLocationTypesSummary(SQLite3 $db, array $location_types_summary): void
+    private function insertLocationTypesSummary(\PDO $db, array $location_types_summary): void
     {
         $stmt = $db->prepare(
             'INSERT INTO location_types_summary (type, count, memory_usage) VALUES (:type, :count, :memory_usage)'
         );
         foreach ($location_types_summary as $type => $usage) {
-            $stmt->bindValue(':type', $type, SQLITE3_TEXT);
-            $stmt->bindValue(':count', $usage['count'], SQLITE3_INTEGER);
-            $stmt->bindValue(':memory_usage', $usage['memory_usage'], SQLITE3_INTEGER);
-            $stmt->execute();
-            $stmt->reset();
+            $stmt->execute([
+                ':type' => $type,
+                ':count' => $usage['count'],
+                ':memory_usage' => $usage['memory_usage'],
+            ]);
         }
     }
 
     /**
      * @param array<string, array{count: int, memory_usage: int}> $class_objects_summary
      */
-    private function insertClassObjectsSummary(SQLite3 $db, array $class_objects_summary): void
+    private function insertClassObjectsSummary(\PDO $db, array $class_objects_summary): void
     {
         $stmt = $db->prepare(
             'INSERT INTO class_objects_summary (class_name, count, memory_usage) VALUES (:class_name, :count, :memory_usage)'
         );
         foreach ($class_objects_summary as $class_name => $usage) {
-            $stmt->bindValue(':class_name', $class_name, SQLITE3_TEXT);
-            $stmt->bindValue(':count', $usage['count'], SQLITE3_INTEGER);
-            $stmt->bindValue(':memory_usage', $usage['memory_usage'], SQLITE3_INTEGER);
-            $stmt->execute();
-            $stmt->reset();
+            $stmt->execute([
+                ':class_name' => $class_name,
+                ':count' => $usage['count'],
+                ':memory_usage' => $usage['memory_usage'],
+            ]);
         }
     }
 
     /**
      * @param array<string, mixed> $context
      */
-    private function insertContext(SQLite3 $db, array $context): void
+    private function insertContext(\PDO $db, array $context): void
     {
         $node_stmt = $db->prepare(
             'INSERT OR IGNORE INTO context_nodes (node_id, parent_node_id, link_name, type, reference_node_id)'
@@ -242,9 +239,9 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
     }
 
     private function insertContextNodes(
-        \SQLite3Stmt $node_stmt,
-        \SQLite3Stmt $location_stmt,
-        \SQLite3Stmt $attr_stmt,
+        \PDOStatement $node_stmt,
+        \PDOStatement $location_stmt,
+        \PDOStatement $attr_stmt,
         array $data,
         ?int $parent_node_id,
     ): void {
@@ -256,17 +253,13 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             if (isset($node['#reference_node_id'])) {
                 // This is a reference to another node
                 $ref_node_id = $node['#reference_node_id'];
-                $node_stmt->bindValue(':node_id', $ref_node_id, SQLITE3_INTEGER);
-                $node_stmt->bindValue(
-                    ':parent_node_id',
-                    $parent_node_id,
-                    $parent_node_id !== null ? SQLITE3_INTEGER : SQLITE3_NULL
-                );
-                $node_stmt->bindValue(':link_name', (string)$link_name, SQLITE3_TEXT);
-                $node_stmt->bindValue(':type', null, SQLITE3_NULL);
-                $node_stmt->bindValue(':reference_node_id', $ref_node_id, SQLITE3_INTEGER);
-                $node_stmt->execute();
-                $node_stmt->reset();
+                $node_stmt->execute([
+                    ':node_id' => $ref_node_id,
+                    ':parent_node_id' => $parent_node_id,
+                    ':link_name' => (string)$link_name,
+                    ':type' => null,
+                    ':reference_node_id' => $ref_node_id,
+                ]);
                 continue;
             }
 
@@ -276,51 +269,34 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
 
             $node_id = $node['#node_id'];
 
-            $node_stmt->bindValue(':node_id', $node_id, SQLITE3_INTEGER);
-            $node_stmt->bindValue(
-                ':parent_node_id',
-                $parent_node_id,
-                $parent_node_id !== null ? SQLITE3_INTEGER : SQLITE3_NULL
-            );
-            $node_stmt->bindValue(':link_name', (string)$link_name, SQLITE3_TEXT);
-            $node_stmt->bindValue(':type', $node['#type'] ?? null, SQLITE3_TEXT);
-            $node_stmt->bindValue(':reference_node_id', null, SQLITE3_NULL);
-            $node_stmt->execute();
-            $node_stmt->reset();
+            $node_stmt->execute([
+                ':node_id' => $node_id,
+                ':parent_node_id' => $parent_node_id,
+                ':link_name' => (string)$link_name,
+                ':type' => $node['#type'] ?? null,
+                ':reference_node_id' => null,
+            ]);
 
             // Insert locations
             if (isset($node['#locations']) && is_iterable($node['#locations'])) {
                 foreach ($node['#locations'] as $location) {
                     if ($location instanceof MemoryLocation) {
-                        $location_stmt->bindValue(':node_id', $node_id, SQLITE3_INTEGER);
-                        $location_stmt->bindValue(':address', $location->address, SQLITE3_INTEGER);
-                        $location_stmt->bindValue(':size', $location->size, SQLITE3_INTEGER);
-
                         $short_class = (new \ReflectionClass($location))->getShortName();
-                        $location_stmt->bindValue(':location_type', $short_class, SQLITE3_TEXT);
 
-                        if ($location instanceof ZendObjectMemoryLocation) {
-                            $location_stmt->bindValue(':class_name', $location->class_name, SQLITE3_TEXT);
-                        } else {
-                            $location_stmt->bindValue(':class_name', null, SQLITE3_NULL);
-                        }
-
-                        if ($location instanceof ZendStringMemoryLocation) {
-                            $location_stmt->bindValue(':string_value', $location->value, SQLITE3_TEXT);
-                        } else {
-                            $location_stmt->bindValue(':string_value', null, SQLITE3_NULL);
-                        }
-
-                        if ($location instanceof RefcountedMemoryLocation) {
-                            $location_stmt->bindValue(':refcount', $location->refcount, SQLITE3_INTEGER);
-                            $location_stmt->bindValue(':type_info', $location->type_info, SQLITE3_INTEGER);
-                        } else {
-                            $location_stmt->bindValue(':refcount', null, SQLITE3_NULL);
-                            $location_stmt->bindValue(':type_info', null, SQLITE3_NULL);
-                        }
-
-                        $location_stmt->execute();
-                        $location_stmt->reset();
+                        $location_stmt->execute([
+                            ':node_id' => $node_id,
+                            ':address' => $location->address,
+                            ':size' => $location->size,
+                            ':location_type' => $short_class,
+                            ':class_name' => $location instanceof ZendObjectMemoryLocation
+                                ? $location->class_name : null,
+                            ':string_value' => $location instanceof ZendStringMemoryLocation
+                                ? $location->value : null,
+                            ':refcount' => $location instanceof RefcountedMemoryLocation
+                                ? $location->refcount : null,
+                            ':type_info' => $location instanceof RefcountedMemoryLocation
+                                ? $location->type_info : null,
+                        ]);
                     }
                 }
             }
@@ -332,15 +308,11 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                 if (is_string($key) && str_starts_with($key, '#')) {
                     // Store non-standard #-prefixed scalar values as attributes (e.g. #count)
                     if (!in_array($key, $standard_keys, true) && !is_array($value) && !($value instanceof MemoryLocation)) {
-                        $attr_stmt->bindValue(':node_id', $node_id, SQLITE3_INTEGER);
-                        $attr_stmt->bindValue(':key', $key, SQLITE3_TEXT);
-                        $attr_stmt->bindValue(
-                            ':value',
-                            is_scalar($value) ? (string)$value : json_encode($value),
-                            SQLITE3_TEXT
-                        );
-                        $attr_stmt->execute();
-                        $attr_stmt->reset();
+                        $attr_stmt->execute([
+                            ':node_id' => $node_id,
+                            ':key' => $key,
+                            ':value' => is_scalar($value) ? (string)$value : json_encode($value),
+                        ]);
                     }
                     continue;
                 }
@@ -360,11 +332,11 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                         if ($has_node_children) {
                             $children[$key] = $value;
                         } else {
-                            $attr_stmt->bindValue(':node_id', $node_id, SQLITE3_INTEGER);
-                            $attr_stmt->bindValue(':key', (string)$key, SQLITE3_TEXT);
-                            $attr_stmt->bindValue(':value', json_encode($value), SQLITE3_TEXT);
-                            $attr_stmt->execute();
-                            $attr_stmt->reset();
+                            $attr_stmt->execute([
+                                ':node_id' => $node_id,
+                                ':key' => (string)$key,
+                                ':value' => json_encode($value),
+                            ]);
                         }
                     }
                 }
