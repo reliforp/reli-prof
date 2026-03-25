@@ -181,6 +181,7 @@ jobs:
           file: build/logs/clover.xml
           flag-name: ${{ matrix.targets }}
           parallel: true
+          base-path: /app
 
       - name: Save target Docker image for cache
         if: steps.target-cache.outputs.cache-hit != 'true'
