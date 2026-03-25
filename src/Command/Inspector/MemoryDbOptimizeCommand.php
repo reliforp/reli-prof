@@ -72,13 +72,14 @@ final class MemoryDbOptimizeCommand extends Command
         $db->exec("
             INSERT INTO node_paths (node_id, path, depth)
             WITH RECURSIVE cte(node_id, path, depth) AS (
-                SELECT node_id, link_name, 0
-                FROM context_nodes
-                WHERE parent_node_id IS NULL
+                SELECT child_node_id, link_name, 0
+                FROM context_edges
+                WHERE parent_node_id IS NULL AND is_tree = 1
               UNION ALL
-                SELECT cn.node_id, cte.path || ' -> ' || cn.link_name, cte.depth + 1
-                FROM context_nodes cn
-                JOIN cte ON cn.parent_node_id = cte.node_id
+                SELECT e.child_node_id, cte.path || ' -> ' || e.link_name, cte.depth + 1
+                FROM context_edges e
+                JOIN cte ON e.parent_node_id = cte.node_id
+                WHERE e.is_tree = 1
             )
             SELECT node_id, path, depth FROM cte
         ");

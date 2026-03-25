@@ -65,20 +65,38 @@ Aggregated memory usage by class, computed via `GROUP BY` from `context_node_loc
 SELECT * FROM class_objects_summary ORDER BY memory_usage DESC;
 ```
 
-### Context Tree Tables
+### Context Graph Tables
 
-The context tree (reference graph) is stored in a normalized relational schema across three tables. This is equivalent to the `"context"` field in the JSON output.
+The context graph (reference graph) is stored as separate nodes and edges, enabling natural representation of shared references. This is equivalent to the `"context"` field in the JSON output.
 
 #### `context_nodes`
-The tree structure representing the memory reference hierarchy. Each node corresponds to a context in the JSON output's `"context"` field.
+Each node represents a unique context (object, array, string, etc.) in the memory graph.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `node_id` | INTEGER (PK) | Unique node identifier (same as `#node_id` in JSON) |
-| `parent_node_id` | INTEGER | Parent node (NULL for root nodes) |
-| `link_name` | TEXT | Name of the link from parent (e.g. property name, variable name, array key) |
 | `type` | TEXT | Context type (e.g. `ObjectContext`, `ArrayHeaderContext`) |
-| `reference_node_id` | INTEGER | If set, this node is a back-reference to another node (same as `#reference_node_id` in JSON) |
+
+#### `context_edges`
+Edges represent parent-child relationships in the reference graph. A node may have multiple incoming edges (shared references).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `parent_node_id` | INTEGER | Parent node (NULL for root nodes) |
+| `child_node_id` | INTEGER | Child node (references `context_nodes.node_id`) |
+| `link_name` | TEXT | Name of the link (e.g. property name, variable name, array key) |
+| `is_tree` | INTEGER | `1` = DFS first-visit (spanning tree edge), `0` = back-reference (shared/circular) |
+
+The `is_tree` flag distinguishes the DFS spanning tree from back-references:
+- `is_tree = 1` edges form a tree where each node has exactly one parent — use these for canonical path queries
+- `is_tree = 0` edges represent additional references to already-visited nodes — these capture shared and circular references
+
+```sql
+-- Find all places that reference node 42
+SELECT parent_node_id, link_name, is_tree
+FROM context_edges
+WHERE child_node_id = 42;
+```
 
 #### `context_node_locations`
 Physical memory locations associated with nodes. A node may have multiple locations (e.g. an array has both a header and a table location).
@@ -110,7 +128,8 @@ Key-value metadata attached to nodes (e.g. `#count` for array element counts).
 
 The following indexes are created after bulk insertion for query performance:
 
-- `idx_context_nodes_parent` on `context_nodes(parent_node_id)` -- essential for recursive CTE path queries and joins
+- `idx_context_edges_parent_tree` on `context_edges(parent_node_id, is_tree)` -- essential for recursive CTE path queries
+- `idx_context_edges_child` on `context_edges(child_node_id)` -- essential for "find all references to node X"
 - `idx_context_node_locations_node` on `context_node_locations(node_id)` -- essential for joining locations to nodes
 - `idx_context_node_locations_class` on `context_node_locations(class_name)` -- speeds up class-based queries
 - `idx_context_node_attributes_node` on `context_node_attributes(node_id)` -- for attribute lookups
@@ -118,7 +137,7 @@ The following indexes are created after bulk insertion for query performance:
 ### Views
 
 #### `v_node_paths`
-Computes the full reference path from root to each node using a recursive CTE. This view is convenient but can be slow on large databases.
+Computes the canonical path from root to each node using a recursive CTE that follows only `is_tree = 1` edges. Each node has exactly one path. This view is convenient but can be slow on large databases.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -224,12 +243,13 @@ LIMIT 20;
 
 ```sql
 WITH RECURSIVE node_depth(node_id, depth) AS (
-    SELECT node_id, 0
-    FROM context_nodes WHERE parent_node_id IS NULL
+    SELECT child_node_id, 0
+    FROM context_edges WHERE parent_node_id IS NULL AND is_tree = 1
     UNION ALL
-    SELECT cn.node_id, nd.depth + 1
-    FROM context_nodes cn
-    JOIN node_depth nd ON cn.parent_node_id = nd.node_id
+    SELECT e.child_node_id, nd.depth + 1
+    FROM context_edges e
+    JOIN node_depth nd ON e.parent_node_id = nd.node_id
+    WHERE e.is_tree = 1
 )
 SELECT depth,
        COUNT(DISTINCT nd.node_id) AS nodes,
@@ -256,14 +276,13 @@ LIMIT 20;
 
 ### Back-references (shared or circular references)
 
-Nodes with `reference_node_id` are back-references to already-visited nodes in the DFS traversal. This includes both truly circular references (A -> B -> A) and shared references (A -> C, B -> C). To distinguish between them, check whether `reference_node_id` points to an ancestor of the current node.
+Edges with `is_tree = 0` are back-references to already-visited nodes in the DFS traversal. This includes both truly circular references (A -> B -> A) and shared references (A -> C, B -> C).
 
 ```sql
 -- All back-references (shared + circular)
-SELECT cn.node_id, cn.parent_node_id, cn.link_name,
-       cn.reference_node_id
-FROM context_nodes cn
-WHERE cn.reference_node_id IS NOT NULL
+SELECT parent_node_id, child_node_id, link_name
+FROM context_edges
+WHERE is_tree = 0
 LIMIT 20;
 ```
 
@@ -271,14 +290,15 @@ LIMIT 20;
 
 ```sql
 WITH RECURSIVE subtree(node_id, root_path) AS (
-    SELECT cn.node_id, cn.link_name
-    FROM context_nodes cn WHERE parent_node_id IS NULL
+    SELECT e.child_node_id, e.link_name
+    FROM context_edges e WHERE e.parent_node_id IS NULL AND e.is_tree = 1
     UNION ALL
-    SELECT cn.node_id,
-           CASE WHEN st.root_path = '' THEN cn.link_name
-                ELSE st.root_path || ' -> ' || cn.link_name END
-    FROM context_nodes cn
-    JOIN subtree st ON cn.parent_node_id = st.node_id
+    SELECT e.child_node_id,
+           CASE WHEN st.root_path = '' THEN e.link_name
+                ELSE st.root_path || ' -> ' || e.link_name END
+    FROM context_edges e
+    JOIN subtree st ON e.parent_node_id = st.node_id
+    WHERE e.is_tree = 1
 ),
 root_two AS (
     SELECT node_id,
@@ -342,10 +362,31 @@ LIMIT 20;
 ### Find all references to a specific node (equivalent to JSON `#reference_node_id` lookup)
 
 ```sql
--- Find all references to node 42
-SELECT cn.node_id, cn.parent_node_id, cn.link_name, cn.type
-FROM context_nodes cn
-WHERE cn.reference_node_id = 42 OR cn.node_id = 42;
+-- Find all edges pointing to node 42 (both tree and back-references)
+SELECT e.parent_node_id, e.link_name, e.is_tree
+FROM context_edges e
+WHERE e.child_node_id = 42;
+```
+
+### All non-circular paths to a specific node
+
+```sql
+-- All paths from root to node 42, avoiding cycles
+WITH RECURSIVE cte(node_id, path, depth, visited) AS (
+    SELECT child_node_id, link_name, 0, ',' || child_node_id || ','
+    FROM context_edges WHERE parent_node_id IS NULL
+  UNION ALL
+    SELECT e.child_node_id,
+           cte.path || ' -> ' || e.link_name,
+           cte.depth + 1,
+           cte.visited || e.child_node_id || ','
+    FROM context_edges e
+    JOIN cte ON e.parent_node_id = cte.node_id
+    WHERE cte.visited NOT LIKE '%,' || e.child_node_id || ',%'
+)
+SELECT path, depth FROM cte
+WHERE node_id = 42
+LIMIT 100;
 ```
 
 ## JSON vs SQLite: When to Use Which
@@ -358,7 +399,8 @@ WHERE cn.reference_node_id = 42 OR cn.node_id = 42;
 | Tooling | `jq`, `gojq`, `jj` | `sqlite3` CLI, any SQLite client |
 | Streaming | Pipe to stdout | Requires `-o` file path |
 | Path queries | `jq path(...)` | `v_node_paths` view or `node_paths` table |
-| Reference lookup | `jq` with `#reference_node_id` | `WHERE reference_node_id = ?` |
+| Reference lookup | `jq` with `#reference_node_id` | `context_edges WHERE child_node_id = ?` |
+| All paths to a node | Manual | Recursive CTE with cycle avoidance |
 | Large snapshots | May exceed `jq` depth limit | Handles well with proper indexes |
 
 For snapshots with more than ~100K nodes, the SQLite format is strongly recommended.

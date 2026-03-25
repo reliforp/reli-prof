@@ -23,8 +23,10 @@ final class PdoContextTreeSink implements ContextTreeSink
 {
     private const LOCATION_BATCH_SIZE = 200;
     private const ATTR_BATCH_SIZE = 200;
+    private const EDGE_BATCH_SIZE = 200;
     private const LOCATION_COLUMNS = 9;
     private const ATTR_COLUMNS = 3;
+    private const EDGE_COLUMNS = 4;
 
     private \PDOStatement $node_stmt;
 
@@ -39,18 +41,23 @@ final class PdoContextTreeSink implements ContextTreeSink
     private array $attr_buffer = [];
     private int $attr_row_count = 0;
 
+    /** @var list<mixed> */
+    private array $edge_buffer = [];
+    private int $edge_row_count = 0;
+
     /** @var array<int, \PDOStatement> */
     private array $location_batch_stmts = [];
     /** @var array<int, \PDOStatement> */
     private array $attr_batch_stmts = [];
+    /** @var array<int, \PDOStatement> */
+    private array $edge_batch_stmts = [];
 
     public function __construct(
         private \PDO $db,
         private ?RegionBoundaries $region_boundaries = null,
     ) {
         $this->node_stmt = $db->prepare(
-            'INSERT OR IGNORE INTO context_nodes (node_id, parent_node_id, link_name, type, reference_node_id)'
-            . ' VALUES (?, ?, ?, ?, ?)'
+            'INSERT OR IGNORE INTO context_nodes (node_id, type) VALUES (?, ?)'
         );
     }
 
@@ -67,7 +74,8 @@ final class PdoContextTreeSink implements ContextTreeSink
         iterable $locations,
         array $attributes,
     ): void {
-        $this->node_stmt->execute([$node_id, $parent_node_id, $link_name, $type, null]);
+        $this->node_stmt->execute([$node_id, $type]);
+        $this->bufferEdge($parent_node_id, $node_id, $link_name, 1);
 
         foreach ($locations as $location) {
             if ($location instanceof MemoryLocation) {
@@ -119,7 +127,7 @@ final class PdoContextTreeSink implements ContextTreeSink
         ?int $parent_node_id,
         string $link_name,
     ): void {
-        $this->node_stmt->execute([$reference_node_id, $parent_node_id, $link_name, null, $reference_node_id]);
+        $this->bufferEdge($parent_node_id, $reference_node_id, $link_name, 0);
     }
 
     public function flush(): void
@@ -129,6 +137,9 @@ final class PdoContextTreeSink implements ContextTreeSink
         }
         if ($this->attr_row_count > 0) {
             $this->flushAttributes();
+        }
+        if ($this->edge_row_count > 0) {
+            $this->flushEdges();
         }
     }
 
@@ -166,6 +177,37 @@ final class PdoContextTreeSink implements ContextTreeSink
             ??= $this->db->prepare(
                 'INSERT INTO context_node_attributes (node_id, key, value)'
                 . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?)'))
+            );
+    }
+
+    private function bufferEdge(?int $parent_node_id, int $child_node_id, string $link_name, int $is_tree): void
+    {
+        $this->edge_buffer[] = $parent_node_id;
+        $this->edge_buffer[] = $child_node_id;
+        $this->edge_buffer[] = $link_name;
+        $this->edge_buffer[] = $is_tree;
+        $this->edge_row_count++;
+
+        if ($this->edge_row_count >= self::EDGE_BATCH_SIZE) {
+            $this->flushEdges();
+        }
+    }
+
+    private function flushEdges(): void
+    {
+        $count = $this->edge_row_count;
+        $stmt = $this->getEdgeBatchStmt($count);
+        $stmt->execute($this->edge_buffer);
+        $this->edge_buffer = [];
+        $this->edge_row_count = 0;
+    }
+
+    private function getEdgeBatchStmt(int $row_count): \PDOStatement
+    {
+        return $this->edge_batch_stmts[$row_count]
+            ??= $this->db->prepare(
+                'INSERT INTO context_edges (parent_node_id, child_node_id, link_name, is_tree)'
+                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?)'))
             );
     }
 }

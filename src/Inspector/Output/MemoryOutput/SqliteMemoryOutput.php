@@ -95,11 +95,17 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         $db->exec('
             CREATE TABLE IF NOT EXISTS context_nodes (
                 node_id INTEGER NOT NULL,
-                parent_node_id INTEGER,
-                link_name TEXT NOT NULL,
-                type TEXT,
-                reference_node_id INTEGER,
+                type TEXT NOT NULL,
                 PRIMARY KEY (node_id)
+            )
+        ');
+
+        $db->exec('
+            CREATE TABLE IF NOT EXISTS context_edges (
+                parent_node_id INTEGER,
+                child_node_id INTEGER NOT NULL,
+                link_name TEXT NOT NULL,
+                is_tree INTEGER NOT NULL
             )
         ');
 
@@ -132,8 +138,10 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
 
     private function createIndexes(\PDO $db): void
     {
-        // Essential for v_node_paths recursive CTE and v_arrays join
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_nodes_parent ON context_nodes(parent_node_id)');
+        // Essential for v_node_paths recursive CTE (follow tree edges from parent)
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_edges_parent_tree ON context_edges(parent_node_id, is_tree)');
+        // Essential for "find all references to node X"
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_context_edges_child ON context_edges(child_node_id)');
         // Essential for JOIN context_node_locations ON node_id
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_node ON context_node_locations(node_id)');
         // Frequently used in user queries
@@ -143,18 +151,20 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
 
     private function createViews(\PDO $db): void
     {
-        // Full-depth path view via recursive CTE (slower but complete).
-        // For depth <= 4, prefer the materialized node_paths table.
+        // Canonical path view via recursive CTE following tree edges only.
+        // Each node has exactly one path. For materialized version, use
+        // inspector:memory:optimize-db.
         $db->exec("
             CREATE VIEW IF NOT EXISTS v_node_paths AS
             WITH RECURSIVE node_paths(node_id, path, depth) AS (
-                SELECT node_id, link_name, 0
-                FROM context_nodes
-                WHERE parent_node_id IS NULL
+                SELECT child_node_id, link_name, 0
+                FROM context_edges
+                WHERE parent_node_id IS NULL AND is_tree = 1
               UNION ALL
-                SELECT cn.node_id, np.path || ' -> ' || cn.link_name, np.depth + 1
-                FROM context_nodes cn
-                JOIN node_paths np ON cn.parent_node_id = np.node_id
+                SELECT e.child_node_id, np.path || ' -> ' || e.link_name, np.depth + 1
+                FROM context_edges e
+                JOIN node_paths np ON e.parent_node_id = np.node_id
+                WHERE e.is_tree = 1
             )
             SELECT node_id, path, depth FROM node_paths
         ");
@@ -173,14 +183,15 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             JOIN context_node_locations header_loc
                 ON header_loc.node_id = header_cn.node_id
                 AND header_loc.location_type = 'ZendArrayMemoryLocation'
-            LEFT JOIN context_nodes elements_cn
-                ON elements_cn.parent_node_id = header_cn.node_id
-                AND elements_cn.link_name = 'array_elements'
+            LEFT JOIN context_edges elements_edge
+                ON elements_edge.parent_node_id = header_cn.node_id
+                AND elements_edge.link_name = 'array_elements'
+                AND elements_edge.is_tree = 1
             LEFT JOIN context_node_locations table_loc
-                ON table_loc.node_id = elements_cn.node_id
+                ON table_loc.node_id = elements_edge.child_node_id
                 AND table_loc.location_type = 'ZendArrayTableMemoryLocation'
             LEFT JOIN context_node_attributes cnt
-                ON cnt.node_id = elements_cn.node_id
+                ON cnt.node_id = elements_edge.child_node_id
                 AND cnt.key = '#count'
         ");
     }
