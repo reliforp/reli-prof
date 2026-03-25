@@ -52,9 +52,12 @@ jobs:
           vendor/bin/phpunit --exclude-group target-version --coverage-clover build/logs/clover.xml
 
       - name: Send to coveralls
-        env:
-          COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./vendor/bin/php-coveralls -v
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/logs/clover.xml
+          flag-name: unit
+          parallel: true
 
   build-dev-image:
     name: Build dev image
@@ -168,7 +171,16 @@ jobs:
         env:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
         run: |
-          docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version
+          mkdir -p build/logs
+          docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version --coverage-clover build/logs/clover.xml
+
+      - name: Send to coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/logs/clover.xml
+          flag-name: ${{ matrix.targets }}
+          parallel: true
 
       - name: Save target Docker image for cache
         if: steps.target-cache.outputs.cache-hit != 'true'
@@ -177,3 +189,15 @@ jobs:
           if [ -n "$TARGET_IMAGE" ]; then
             docker save "$TARGET_IMAGE" | gzip > /tmp/target-image.tar.gz
           fi
+
+  coveralls-finish:
+    name: Coveralls finish
+    needs: [phpunit-unit, phpunit-target-version]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Finish parallel build
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true
