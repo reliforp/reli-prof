@@ -123,12 +123,6 @@ jobs:
       - name: Install dependencies
         run: docker run --rm -v ${{ github.workspace }}:/app -w /app reli-dev composer install --prefer-dist --no-progress --no-suggest
 
-      - name: Setup problem matchers for PHP
-        run: echo "::add-matcher::${{ runner.tool_cache }}/php.json"
-
-      - name: Setup Problem Matchers for PHPUnit
-        run: echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
-
       - name: Run target version tests
         env:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
