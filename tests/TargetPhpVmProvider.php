@@ -44,10 +44,15 @@ class TargetPhpVmProvider
             ZendTypeReader::V83,
             ZendTypeReader::V84,
         ]);
+        $hasResults = false;
         foreach ($versions as $v) {
             if ($php_version <= $v) {
+                $hasResults = true;
                 yield $v => [$v, self::dockerImageNameFromPhpVersion($v)];
             }
+        }
+        if (!$hasResults) {
+            yield 'skip' => ['skip', 'skip'];
         }
     }
 

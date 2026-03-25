@@ -79,6 +79,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     #[DataProvider('provideFromV80')]
     public function testCollectAllFromV80(string $php_version, string $docker_image_name): void
     {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
@@ -693,6 +696,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     #[DataProvider('provideFromV71')]
     public function testMemoryLimitViolationOnClosure(string $php_version, string $docker_image_name)
     {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
         if ($php_version === ZendTypeReader::V70) {
             $this->markTestSkipped('V70 does not support closure frame');
         }
