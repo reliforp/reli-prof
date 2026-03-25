@@ -1,25 +1,59 @@
-# SQLite Output for Memory Profiler
+# Database Output for Memory Profiler
 
-The memory profiler supports outputting analysis results to a SQLite database instead of JSON. This is useful for analyzing large memory snapshots where the JSON output would be too large to handle with tools like `jq`, and enables powerful ad-hoc querying with SQL.
+The memory profiler supports outputting analysis results to a relational database instead of JSON. This is useful for analyzing large memory snapshots where the JSON output would be too large to handle with tools like `jq`, and enables powerful ad-hoc querying with SQL.
+
+Supported databases:
+- **SQLite** (`-f sqlite3`) — local file, no server needed
+- **MySQL** (`-f mysql`) — connect to an existing MySQL/MariaDB server
+- **PostgreSQL** (`-f postgresql`) — connect to an existing PostgreSQL server
 
 ## Quick Start
 
-```bash
-# Capture memory snapshot to SQLite
-sudo ./reli inspector:memory -p <pid> -f sqlite3 -o memory.db
+### SQLite (local file)
 
-# Query the results
+```bash
+sudo ./reli inspector:memory -p <pid> -f sqlite3 -o memory.db
 sqlite3 memory.db "SELECT * FROM location_types_summary ORDER BY memory_usage DESC"
+```
+
+### MySQL
+
+```bash
+# Create the database first
+mysql -u root -e "CREATE DATABASE reli_memory"
+
+sudo ./reli inspector:memory -p <pid> -f mysql --db-name reli_memory --db-user root
+mysql -u root reli_memory -e "SELECT * FROM location_types_summary ORDER BY memory_usage DESC"
+```
+
+### PostgreSQL
+
+```bash
+# Create the database first
+createdb reli_memory
+
+sudo ./reli inspector:memory -p <pid> -f postgresql --db-name reli_memory --db-user postgres
+psql reli_memory -c "SELECT * FROM location_types_summary ORDER BY memory_usage DESC"
 ```
 
 ## Command Options
 
-The following options control SQLite output:
+### Output format
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--output-format` | `-f` | Set to `sqlite3` to enable SQLite output (default: `json`) |
-| `--output` | `-o` | Output file path (required when using `sqlite3` format) |
+| `--output-format` | `-f` | Output format: `json` (default), `sqlite3`, `mysql`, `postgresql` |
+| `--output` | `-o` | Output file path (required for `sqlite3`) |
+
+### Database connection (for `mysql` / `postgresql`)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--db-host` | `127.0.0.1` | Database server host |
+| `--db-port` | `3306` / `5432` | Database server port (auto-detected from format) |
+| `--db-name` | (required) | Database name |
+| `--db-user` | (required) | Database user |
+| `--db-password` | (empty) | Database password |
 
 All other options of `inspector:memory` work the same regardless of output format.
 
@@ -179,7 +213,9 @@ For large databases, the `v_node_paths` view (recursive CTE) can be slow. The `i
 
 This creates a `node_paths` table with the same schema as the `v_node_paths` view, plus an index on `depth`. After materialization, you can query `node_paths` directly instead of `v_node_paths`.
 
-> **Note**: Materialization can significantly increase the database file size. For databases with deep reference trees, path strings can average several KB each, so the `node_paths` table may be much larger than the rest of the database combined.
+> **Note**: This command currently supports SQLite databases only. For MySQL/PostgreSQL, you can run the equivalent `INSERT INTO ... WITH RECURSIVE` SQL manually.
+
+> **Note**: Materialization can significantly increase the database size. For databases with deep reference trees, path strings can average several KB each, so the `node_paths` table may be much larger than the rest of the data combined.
 
 ### The `node_paths` table (after optimization)
 
@@ -389,18 +425,39 @@ WHERE node_id = 42
 LIMIT 100;
 ```
 
-## JSON vs SQLite: When to Use Which
+## Choosing an Output Format
 
-| Aspect | JSON (`-f json`) | SQLite (`-f sqlite3`) |
-|--------|------|---------|
-| Output speed | Baseline | Faster (deferred summary computation) |
-| File size | Can be very large for deep trees | More compact (normalized schema) |
-| Queryability | `jq` (limited by depth, memory) | Full SQL with indexes |
-| Tooling | `jq`, `gojq`, `jj` | `sqlite3` CLI, any SQLite client |
-| Streaming | Pipe to stdout | Requires `-o` file path |
-| Path queries | `jq path(...)` | `v_node_paths` view or `node_paths` table |
-| Reference lookup | `jq` with `#reference_node_id` | `context_edges WHERE child_node_id = ?` |
-| All paths to a node | Manual | Recursive CTE with cycle avoidance |
-| Large snapshots | May exceed `jq` depth limit | Handles well with proper indexes |
+| Aspect | JSON | SQLite | MySQL / PostgreSQL |
+|--------|------|--------|-------------------|
+| Setup | None | None | Requires a running server |
+| Output speed | Baseline | Faster (deferred summaries) | Faster (deferred summaries) |
+| File size | Large for deep trees | Compact (normalized) | N/A (server-side) |
+| Queryability | `jq` (limited by depth) | Full SQL | Full SQL |
+| Tooling | `jq`, `gojq`, `jj` | `sqlite3` CLI | `mysql` / `psql` CLI, any SQL client |
+| Streaming | Pipe to stdout | Requires `-o` file path | Writes to remote server |
+| Remote use | Must copy file | Must copy file | Direct write, no file transfer |
+| Team sharing | Share file | Share file | Connect to shared server |
+| Path queries | `jq path(...)` | `v_node_paths` / `node_paths` | `v_node_paths` / manual CTE |
+| Reference lookup | `jq` + `#reference_node_id` | `context_edges WHERE child_node_id = ?` | Same |
+| Large snapshots | May exceed `jq` depth limit | Handles well | Handles well |
 
-For snapshots with more than ~100K nodes, the SQLite format is strongly recommended.
+**Recommendations**:
+- **Local analysis**: SQLite is the simplest — no setup, single file, portable
+- **Remote servers**: MySQL/PostgreSQL avoids copying large files off the server
+- **Team collaboration**: MySQL/PostgreSQL lets multiple people query the same results
+- **Small snapshots**: JSON + `jq` is fine for quick one-off checks
+
+For snapshots with more than ~100K nodes, any database format is recommended over JSON.
+
+## Database Compatibility Notes
+
+The schema and views are designed to work across all three databases. Key dialect differences are handled automatically:
+
+| Feature | SQLite | MySQL | PostgreSQL |
+|---------|--------|-------|------------|
+| Duplicate-safe insert | `INSERT OR IGNORE` | `INSERT IGNORE` | `INSERT ... ON CONFLICT DO NOTHING` |
+| String concatenation | `\|\|` | `CONCAT()` | `\|\|` |
+| Auto-increment PK | `INTEGER PRIMARY KEY` | `INTEGER PRIMARY KEY AUTO_INCREMENT` | `SERIAL PRIMARY KEY` |
+| Bulk insert tuning | `PRAGMA journal_mode=OFF`, etc. | `SET unique_checks=0`, etc. | `SET synchronous_commit=off` |
+
+> **Note**: The example queries in this document use SQLite syntax (`printf()`, `||`). When using MySQL, replace `||` with `CONCAT()` and `printf()` with `FORMAT()` or `CONCAT()` as appropriate. PostgreSQL uses `||` like SQLite but uses `format()` or `to_char()` instead of `printf()`.
