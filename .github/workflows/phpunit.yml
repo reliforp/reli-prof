@@ -93,7 +93,7 @@ jobs:
       - name: Cache Docker images
         uses: ScribeMD/docker-cache@0.5.0
         with:
-          key: docker-${{ runner.os }}-${{ matrix.targets }}-${{ hashFiles('Dockerfile-dev','tests/TargetPhpVmProvider.php') }}
+          key: docker-${{ runner.os }}-${{ hashFiles('Dockerfile-dev','tests/TargetPhpVmProvider.php') }}
 
       - name: Validate composer.json and composer.lock
         run: composer validate
