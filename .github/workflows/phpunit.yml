@@ -137,4 +137,4 @@ jobs:
         env:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
         run: |
-          docker compose run --no-build reli-test-for-ci vendor/bin/phpunit --group target-version
+          docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version
