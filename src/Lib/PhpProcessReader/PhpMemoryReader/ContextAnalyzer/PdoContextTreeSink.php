@@ -25,6 +25,9 @@ final class PdoContextTreeSink implements ContextTreeSink
     private \PDOStatement $location_stmt;
     private \PDOStatement $attr_stmt;
 
+    /** @var array<class-string, string> */
+    private array $short_name_cache = [];
+
     public function __construct(
         \PDO $db,
         private ?RegionBoundaries $region_boundaries = null,
@@ -67,7 +70,9 @@ final class PdoContextTreeSink implements ContextTreeSink
 
         foreach ($locations as $location) {
             if ($location instanceof MemoryLocation) {
-                $short_class = (new \ReflectionClass($location))->getShortName();
+                $class = $location::class;
+                $short_class = $this->short_name_cache[$class]
+                    ??= (new \ReflectionClass($class))->getShortName();
                 $this->location_stmt->execute([
                     ':node_id' => $node_id,
                     ':address' => $location->address,

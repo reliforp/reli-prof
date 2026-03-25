@@ -30,7 +30,10 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         $db = new \PDO('sqlite:' . $this->output_path);
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $db->exec('PRAGMA journal_mode=WAL');
-        $db->exec('PRAGMA synchronous=NORMAL');
+        $db->exec('PRAGMA synchronous=OFF');
+        $db->exec('PRAGMA cache_size=-65536'); // 64MB cache
+        $db->exec('PRAGMA temp_store=MEMORY');
+        $db->exec('PRAGMA mmap_size=268435456'); // 256MB mmap
 
         $this->createTables($db);
 
@@ -53,6 +56,10 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             $db->rollBack();
             throw $e;
         }
+
+        // Create indexes after bulk insert for much better performance
+        $this->createIndexes($db);
+        $this->createViews($db);
     }
 
     private function createTables(\PDO $db): void
@@ -96,7 +103,7 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
 
         $db->exec('
             CREATE TABLE IF NOT EXISTS context_node_locations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY,
                 node_id INTEGER NOT NULL,
                 address INTEGER,
                 size INTEGER,
@@ -112,14 +119,17 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
 
         $db->exec('
             CREATE TABLE IF NOT EXISTS context_node_attributes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY,
                 node_id INTEGER NOT NULL,
                 key TEXT NOT NULL,
                 value TEXT,
                 FOREIGN KEY (node_id) REFERENCES context_nodes(node_id)
             )
         ');
+    }
 
+    private function createIndexes(\PDO $db): void
+    {
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_nodes_parent ON context_nodes(parent_node_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_nodes_type ON context_nodes(type)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_node ON context_node_locations(node_id)');
@@ -130,8 +140,6 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_attributes_node ON context_node_attributes(node_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_location_types_memory ON location_types_summary(memory_usage DESC)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_class_objects_memory ON class_objects_summary(memory_usage DESC)');
-
-        $this->createViews($db);
     }
 
     private function createViews(\PDO $db): void
