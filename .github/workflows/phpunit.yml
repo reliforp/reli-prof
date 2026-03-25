@@ -63,8 +63,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "PHP 7.x"
-            targets: "v70,v71,v72,v73,v74"
+          - name: "PHP 7.0-7.2"
+            targets: "v70,v71,v72"
+          - name: "PHP 7.3-7.4"
+            targets: "v73,v74"
           - name: "PHP 8.0-8.2"
             targets: "v80,v81,v82"
           - name: "PHP 8.3-8.4"
