@@ -11,8 +11,21 @@ on:
 jobs:
 
   phpunit-test:
-    name: phpunit test
+    name: phpunit (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "PHP 7.x"
+            targets: "v70,v71,v72,v73,v74"
+            coverage: false
+          - name: "PHP 8.0-8.2"
+            targets: "v80,v81,v82"
+            coverage: false
+          - name: "PHP 8.3-8.4"
+            targets: "v83,v84"
+            coverage: true
     steps:
       - uses: actions/checkout@v6
 
@@ -37,7 +50,7 @@ jobs:
       - name: Cache Docker images
         uses: ScribeMD/docker-cache@0.5.0
         with:
-          key: docker-${{ runner.os }}-${{ hashFiles('Dockerfile-dev','tests/TargetPhpVmProvider.php') }}
+          key: docker-${{ runner.os }}-${{ matrix.targets }}-${{ hashFiles('Dockerfile-dev','tests/TargetPhpVmProvider.php') }}
 
       - name: Validate composer.json and composer.lock
         run: composer validate
@@ -52,14 +65,18 @@ jobs:
         run: echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
 
       - name: Run test suite
+        env:
+          RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
         run: |
           mkdir -p build/logs
           composer test-for-ci
 
       - name: Fix absolute paths in the coverage report
+        if: matrix.coverage
         run: sed -i "s|<file name=\"/app/|<file name=\"`pwd`/|g" build/logs/clover.xml
 
       - name: Send to coveralls
+        if: matrix.coverage
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./vendor/bin/php-coveralls -v

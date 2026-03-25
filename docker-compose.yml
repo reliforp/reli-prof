@@ -40,6 +40,8 @@ services:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
+    environment:
+      - RELI_TEST_PHP_TARGETS=${RELI_TEST_PHP_TARGETS:-}
     volumes:
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
