@@ -32,6 +32,7 @@ use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
 use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ArrayContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
@@ -228,9 +229,12 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $this->assertSame(1, $object_class_analyzer_result->per_class_usage['A']['count']);
         $context_analyzer = new ContextAnalyzer();
-        $contexts_analyzed = $context_analyzer->analyze(
-            $collected_memories->top_reference_context
+        $sink = new ArrayContextTreeSink();
+        $context_analyzer->analyze(
+            $collected_memories->top_reference_context,
+            $sink,
         );
+        $contexts_analyzed = $sink->getResult();
         $this->assertSame(
             'fgets',
             $contexts_analyzed['call_frames']['0']['function_name']

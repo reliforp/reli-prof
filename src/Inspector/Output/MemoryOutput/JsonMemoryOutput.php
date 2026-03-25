@@ -13,6 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ArrayContextTreeSink;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
+
 final class JsonMemoryOutput implements MemoryOutputInterface
 {
     public function __construct(
@@ -23,6 +26,10 @@ final class JsonMemoryOutput implements MemoryOutputInterface
 
     public function output(MemoryAnalysisResult $result): void
     {
+        $sink = new ArrayContextTreeSink();
+        $analyzer = new ContextAnalyzer();
+        $analyzer->analyze($result->context, $sink);
+
         $flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
         if ($this->pretty_print) {
             $flags |= JSON_PRETTY_PRINT;
@@ -32,7 +39,7 @@ final class JsonMemoryOutput implements MemoryOutputInterface
                 'summary' => $result->summary,
                 'location_types_summary' => $result->location_types_summary,
                 'class_objects_summary' => $result->class_objects_summary,
-                'context' => $result->context,
+                'context' => $sink->getResult(),
             ],
             $flags,
             2147483647

@@ -18,7 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
+
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
@@ -105,16 +105,11 @@ final class CoreDumpReader
             ]
         ];
 
-        $context_analyzer = new ContextAnalyzer();
-        $analyzed_context = $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
-        );
-
         $result = new MemoryAnalysisResult(
             $summary,
             $heap_location_type_summary->per_type_usage,
             $object_class_summary->per_class_usage,
-            $analyzed_context,
+            $collected_memories->top_reference_context,
         );
 
         $output_factory = new MemoryOutputFactory();

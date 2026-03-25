@@ -13,10 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLocation;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
-use Reli\Lib\Process\MemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 
 final class SqliteMemoryOutput implements MemoryOutputInterface
 {
@@ -39,7 +37,11 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             $this->insertSummary($db, $result->summary);
             $this->insertLocationTypesSummary($db, $result->location_types_summary);
             $this->insertClassObjectsSummary($db, $result->class_objects_summary);
-            $this->insertContext($db, $result->context);
+
+            $sink = new PdoContextTreeSink($db);
+            $analyzer = new ContextAnalyzer();
+            $analyzer->analyze($result->context, $sink);
+
             $db->commit();
         } catch (\Throwable $e) {
             $db->rollBack();
@@ -213,138 +215,6 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                 ':count' => $usage['count'],
                 ':memory_usage' => $usage['memory_usage'],
             ]);
-        }
-    }
-
-    /**
-     * @param array<string, mixed> $context
-     */
-    private function insertContext(\PDO $db, array $context): void
-    {
-        $node_stmt = $db->prepare(
-            'INSERT OR IGNORE INTO context_nodes (node_id, parent_node_id, link_name, type, reference_node_id)'
-            . ' VALUES (:node_id, :parent_node_id, :link_name, :type, :reference_node_id)'
-        );
-        $location_stmt = $db->prepare(
-            'INSERT INTO context_node_locations'
-            . ' (node_id, address, size, location_type, class_name, string_value, refcount, type_info)'
-            . ' VALUES (:node_id, :address, :size, :location_type, :class_name, :string_value, :refcount, :type_info)'
-        );
-        $attr_stmt = $db->prepare(
-            'INSERT INTO context_node_attributes (node_id, key, value)'
-            . ' VALUES (:node_id, :key, :value)'
-        );
-
-        $this->insertContextNodes($node_stmt, $location_stmt, $attr_stmt, $context, null);
-    }
-
-    private function insertContextNodes(
-        \PDOStatement $node_stmt,
-        \PDOStatement $location_stmt,
-        \PDOStatement $attr_stmt,
-        array $data,
-        ?int $parent_node_id,
-    ): void {
-        foreach ($data as $link_name => $node) {
-            if (!is_array($node)) {
-                continue;
-            }
-
-            if (isset($node['#reference_node_id'])) {
-                // This is a reference to another node
-                $ref_node_id = $node['#reference_node_id'];
-                $node_stmt->execute([
-                    ':node_id' => $ref_node_id,
-                    ':parent_node_id' => $parent_node_id,
-                    ':link_name' => (string)$link_name,
-                    ':type' => null,
-                    ':reference_node_id' => $ref_node_id,
-                ]);
-                continue;
-            }
-
-            if (!isset($node['#node_id'])) {
-                continue;
-            }
-
-            $node_id = $node['#node_id'];
-
-            $node_stmt->execute([
-                ':node_id' => $node_id,
-                ':parent_node_id' => $parent_node_id,
-                ':link_name' => (string)$link_name,
-                ':type' => $node['#type'] ?? null,
-                ':reference_node_id' => null,
-            ]);
-
-            // Insert locations
-            if (isset($node['#locations']) && is_iterable($node['#locations'])) {
-                foreach ($node['#locations'] as $location) {
-                    if ($location instanceof MemoryLocation) {
-                        $short_class = (new \ReflectionClass($location))->getShortName();
-
-                        $location_stmt->execute([
-                            ':node_id' => $node_id,
-                            ':address' => $location->address,
-                            ':size' => $location->size,
-                            ':location_type' => $short_class,
-                            ':class_name' => $location instanceof ZendObjectMemoryLocation
-                                ? $location->class_name : null,
-                            ':string_value' => $location instanceof ZendStringMemoryLocation
-                                ? $location->value : null,
-                            ':refcount' => $location instanceof RefcountedMemoryLocation
-                                ? $location->refcount : null,
-                            ':type_info' => $location instanceof RefcountedMemoryLocation
-                                ? $location->type_info : null,
-                        ]);
-                    }
-                }
-            }
-
-            // Insert child contexts and attributes
-            $standard_keys = ['#node_id', '#type', '#locations', '#reference_node_id'];
-            $children = [];
-            foreach ($node as $key => $value) {
-                if (is_string($key) && str_starts_with($key, '#')) {
-                    // Store non-standard #-prefixed scalar values as attributes (e.g. #count)
-                    if (!in_array($key, $standard_keys, true) && !is_array($value) && !($value instanceof MemoryLocation)) {
-                        $attr_stmt->execute([
-                            ':node_id' => $node_id,
-                            ':key' => $key,
-                            ':value' => is_scalar($value) ? (string)$value : json_encode($value),
-                        ]);
-                    }
-                    continue;
-                }
-
-                if (is_array($value)) {
-                    if (isset($value['#node_id']) || isset($value['#reference_node_id'])) {
-                        $children[$key] = $value;
-                    } else {
-                        // Could be nested children or a non-node attribute
-                        $has_node_children = false;
-                        foreach ($value as $sub_value) {
-                            if (is_array($sub_value) && (isset($sub_value['#node_id']) || isset($sub_value['#reference_node_id']))) {
-                                $has_node_children = true;
-                                break;
-                            }
-                        }
-                        if ($has_node_children) {
-                            $children[$key] = $value;
-                        } else {
-                            $attr_stmt->execute([
-                                ':node_id' => $node_id,
-                                ':key' => (string)$key,
-                                ':value' => json_encode($value),
-                            ]);
-                        }
-                    }
-                }
-            }
-
-            if ($children !== []) {
-                $this->insertContextNodes($node_stmt, $location_stmt, $attr_stmt, $children, $node_id);
-            }
         }
     }
 }
