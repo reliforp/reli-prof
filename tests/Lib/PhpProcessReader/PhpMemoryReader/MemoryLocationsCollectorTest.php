@@ -15,6 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
+use PHPUnit\Framework\Attributes\Group;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
@@ -42,6 +43,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\TargetPhpVmProvider;
 
+#[Group('target-version')]
 class MemoryLocationsCollectorTest extends BaseTestCase
 {
     /** @var resource|null */
