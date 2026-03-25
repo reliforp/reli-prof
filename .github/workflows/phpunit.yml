@@ -59,36 +59,58 @@ jobs:
   build-dev-image:
     name: Build dev image
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/dev
     steps:
       - uses: actions/checkout@v6
 
+      - name: Compute Dockerfile hash
+        id: hash
+        run: echo "tag=sha-$(sha256sum Dockerfile-dev | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if image already exists
+        id: check
+        run: |
+          if docker manifest inspect "${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Docker Buildx
+        if: steps.check.outputs.exists == 'false'
         uses: docker/setup-buildx-action@v3
 
-      - name: Build dev image
+      - name: Build and push dev image
+        if: steps.check.outputs.exists == 'false'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile-dev
-          load: true
-          tags: reli-dev
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
+            ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Save dev image
-        run: docker save reli-dev | gzip > /tmp/reli-dev-image.tar.gz
-
-      - name: Upload dev image
-        uses: actions/upload-artifact@v4
-        with:
-          name: dev-image
-          path: /tmp/reli-dev-image.tar.gz
-          retention-days: 1
+    outputs:
+      image: ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
 
   phpunit-target-version:
     name: phpunit (${{ matrix.name }})
     needs: build-dev-image
     runs-on: ubuntu-latest
+    permissions:
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -116,14 +138,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Download dev image
-        uses: actions/download-artifact@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          name: dev-image
-          path: /tmp
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Load dev image
-        run: docker load < /tmp/reli-dev-image.tar.gz
+      - name: Pull dev image
+        run: |
+          docker pull ${{ needs.build-dev-image.outputs.image }}
+          docker tag ${{ needs.build-dev-image.outputs.image }} reli-dev
 
       - name: Cache target Docker image
         uses: ScribeMD/docker-cache@0.5.0
