@@ -23,9 +23,8 @@ use Symfony\Component\Console\Output\StreamOutput;
 
 class TraceOutputFactoryTest extends BaseTestCase
 {
-    public function testFromSettingsAndConsoleOutput()
+    public function testFromSettingsWritesToFile()
     {
-        $buffer1 = fopen('php://memory', 'w');
         $tmp_path = tempnam(sys_get_temp_dir(), 'tmp_test_php_profiler');
 
         $test_trace = new CallTrace(
@@ -40,7 +39,46 @@ class TraceOutputFactoryTest extends BaseTestCase
         $trace_formatter_factory = \Mockery::mock(TraceFormatterFactory::class);
         $trace_formatter_factory->expects()
             ->createFromSettings(
-                $output_settings1 = new OutputSettings(
+                $output_settings = new OutputSettings(
+                    'phpspy',
+                    $tmp_path,
+                )
+            )
+            ->andReturns(
+                $call_trace_formatter = \Mockery::mock(CallTraceFormatter::class)
+            )
+        ;
+        $call_trace_formatter->expects()
+            ->format($test_trace)
+            ->andReturns('formatted')
+        ;
+        $trace_output_factory = new TraceOutputFactory($trace_formatter_factory);
+        $trace_output = $trace_output_factory->fromSettingsAndConsoleOutput(
+            new StreamOutput(fopen('php://memory', 'w')),
+            $output_settings,
+        );
+        $trace_output->output($test_trace);
+
+        $this->assertSame('formatted', file_get_contents($tmp_path));
+    }
+
+    public function testFromSettingsWritesToDefaultStreamWhenNoOutputPath()
+    {
+        $buffer = fopen('php://memory', 'r+');
+
+        $test_trace = new CallTrace(
+            new CallFrame(
+                'test_class',
+                'test_func',
+                'test_file',
+                null
+            )
+        );
+
+        $trace_formatter_factory = \Mockery::mock(TraceFormatterFactory::class);
+        $trace_formatter_factory->expects()
+            ->createFromSettings(
+                $output_settings = new OutputSettings(
                     'phpspy',
                     null,
                 )
@@ -49,39 +87,19 @@ class TraceOutputFactoryTest extends BaseTestCase
                 $call_trace_formatter = \Mockery::mock(CallTraceFormatter::class)
             )
         ;
-        $trace_formatter_factory->expects()
-            ->createFromSettings(
-                $output_settings2 = new OutputSettings(
-                    'phpspy',
-                    $tmp_path,
-                )
-            )
-            ->andReturns($call_trace_formatter)
-        ;
         $call_trace_formatter->expects()
             ->format($test_trace)
             ->andReturns('formatted')
-            ->twice()
         ;
-        $trace_output_factory = new TraceOutputFactory($trace_formatter_factory);
-        $trace_output1 = $trace_output_factory->fromSettingsAndConsoleOutput(
-            new StreamOutput($buffer1),
-            $output_settings1,
+
+        $trace_output_factory = new TraceOutputFactory($trace_formatter_factory, $buffer);
+        $trace_output = $trace_output_factory->fromSettingsAndConsoleOutput(
+            new StreamOutput(fopen('php://memory', 'w')),
+            $output_settings,
         );
-        $trace_output1->output($test_trace);
+        $trace_output->output($test_trace);
 
-        fseek($buffer1, 0);
-        $this->assertSame('formatted', fread($buffer1, 4096));
-        ftruncate($buffer1, 0);
-
-        $trace_output2 = $trace_output_factory->fromSettingsAndConsoleOutput(
-            new StreamOutput($buffer1),
-            $output_settings2,
-        );
-        $trace_output2->output($test_trace);
-
-        fseek($buffer1, 0);
-        $this->assertSame('', fread($buffer1, 4096));
-        $this->assertSame('formatted', file_get_contents($tmp_path));
+        fseek($buffer, 0);
+        $this->assertSame('formatted', fread($buffer, 4096));
     }
 }
