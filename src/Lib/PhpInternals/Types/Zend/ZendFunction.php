@@ -29,23 +29,35 @@ final class ZendFunction implements LazyDereferencable, CDataDereferencable
     public const ZEND_INTERNAL_FUNCTION = 1;
     public const ZEND_USER_FUNCTION = 2;
 
-    private const F_TYPE = 1;
-    private const F_FUNC_NAME = 2;
-    private const F_SCOPE = 4;
-    private const F_NUM_ARGS = 8;
-    private const F_FN_FLAGS = 16;
-    private const F_FILENAME = 32;
-    private const F_OP_ARRAY = 64;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $type;
 
-    private int $resolved = 0;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public ZendOpArray $op_array;
 
-    private int $_type = 0;
-    private ?Pointer $_function_name = null;
-    private ?Pointer $_scope = null;
-    private int $_num_args = 0;
-    private int $_fn_flags = 0;
-    private ?Pointer $_op_array_filename = null;
-    private ?ZendOpArray $_op_array = null;
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendString>|null
+     */
+    public ?Pointer $function_name;
+
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendClassEntry>|null
+     */
+    public ?Pointer $scope;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $num_args;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $fn_flags;
+
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendString>|null
+     */
+    public ?Pointer $op_array_filename;
 
     private ?FieldReader $field_reader = null;
 
@@ -57,6 +69,13 @@ final class ZendFunction implements LazyDereferencable, CDataDereferencable
         private ?CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
+        unset($this->type);
+        unset($this->function_name);
+        unset($this->scope);
+        unset($this->num_args);
+        unset($this->op_array);
+        unset($this->fn_flags);
+        unset($this->op_array_filename);
     }
 
     #[\Override]
@@ -70,108 +89,94 @@ final class ZendFunction implements LazyDereferencable, CDataDereferencable
         return $self;
     }
 
-    public int $type {
-        get {
-            if (!($this->resolved & self::F_TYPE)) {
-                $this->_type = $this->field_reader !== null
-                    ? $this->field_reader->readIntField($this->pointer, 'type')
-                    : $this->casted_cdata->casted->type;
-                $this->resolved |= self::F_TYPE;
-            }
-            return $this->_type;
+    public function __get(string $field_name): mixed
+    {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
         }
+        return $this->getFieldEager($field_name);
     }
 
-    /** @var Pointer<ZendString>|null */
-    public ?Pointer $function_name {
-        get {
-            if (!($this->resolved & self::F_FUNC_NAME)) {
-                $this->_function_name = $this->field_reader !== null
-                    ? $this->field_reader->readPointerField(
-                        $this->pointer, 'function_name', ZendString::class, 'zend_op_array',
+    /** @psalm-suppress ArgumentTypeCoercion */
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'type' => $this->type = $this->field_reader->readIntField(
+                $this->pointer,
+                'type',
+            ),
+            'function_name' => $this->function_name = $this->field_reader->readPointerField(
+                $this->pointer,
+                'function_name',
+                ZendString::class,
+                'zend_op_array',
+            ),
+            'scope' => $this->scope = $this->field_reader->readPointerField(
+                $this->pointer,
+                'scope',
+                ZendClassEntry::class,
+                'zend_op_array',
+            ),
+            'num_args' => $this->num_args = $this->field_reader->readIntField(
+                $this->pointer,
+                'num_args',
+                'zend_op_array',
+            ),
+            'fn_flags' => $this->fn_flags = $this->field_reader->readIntField(
+                $this->pointer,
+                'fn_flags',
+                'zend_op_array',
+            ),
+            'op_array_filename' => $this->op_array_filename = $this->field_reader->readPointerField(
+                $this->pointer,
+                'filename',
+                ZendString::class,
+                'zend_op_array',
+            ),
+            'op_array' => $this->op_array = new ZendOpArray(
+                $this->field_reader->readEmbeddedStructCData(
+                    $this->pointer,
+                    'op_array',
+                    'zend_op_array',
+                )->casted,
+            ),
+        };
+    }
+
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
+        return match ($field_name) {
+            'type' => $this->type = $this->casted_cdata->casted->type,
+            'function_name' => $this->function_name
+                = $this->casted_cdata->casted->common->function_name !== null
+                    ? Pointer::fromCData(
+                        ZendString::class,
+                        $this->casted_cdata->casted->common->function_name,
                     )
-                    : ($this->casted_cdata->casted->common->function_name !== null
-                        ? Pointer::fromCData(ZendString::class, $this->casted_cdata->casted->common->function_name)
-                        : null);
-                $this->resolved |= self::F_FUNC_NAME;
-            }
-            return $this->_function_name;
-        }
-    }
-
-    /** @var Pointer<ZendClassEntry>|null */
-    public ?Pointer $scope {
-        get {
-            if (!($this->resolved & self::F_SCOPE)) {
-                $this->_scope = $this->field_reader !== null
-                    ? $this->field_reader->readPointerField(
-                        $this->pointer, 'scope', ZendClassEntry::class, 'zend_op_array',
+                    : null
+            ,
+            'scope' => $this->scope
+                = $this->casted_cdata->casted->common->scope !== null
+                    ? Pointer::fromCData(
+                        ZendClassEntry::class,
+                        $this->casted_cdata->casted->common->scope,
                     )
-                    : ($this->casted_cdata->casted->common->scope !== null
-                        ? Pointer::fromCData(ZendClassEntry::class, $this->casted_cdata->casted->common->scope)
-                        : null);
-                $this->resolved |= self::F_SCOPE;
-            }
-            return $this->_scope;
-        }
-    }
-
-    public int $num_args {
-        get {
-            if (!($this->resolved & self::F_NUM_ARGS)) {
-                $this->_num_args = $this->field_reader !== null
-                    ? $this->field_reader->readIntField($this->pointer, 'num_args', 'zend_op_array')
-                    : $this->casted_cdata->casted->common->num_args;
-                $this->resolved |= self::F_NUM_ARGS;
-            }
-            return $this->_num_args;
-        }
-    }
-
-    public int $fn_flags {
-        get {
-            if (!($this->resolved & self::F_FN_FLAGS)) {
-                $this->_fn_flags = $this->field_reader !== null
-                    ? $this->field_reader->readIntField($this->pointer, 'fn_flags', 'zend_op_array')
-                    : $this->casted_cdata->casted->op_array->fn_flags;
-                $this->resolved |= self::F_FN_FLAGS;
-            }
-            return $this->_fn_flags;
-        }
-    }
-
-    /** @var Pointer<ZendString>|null */
-    public ?Pointer $op_array_filename {
-        get {
-            if (!($this->resolved & self::F_FILENAME)) {
-                $this->_op_array_filename = $this->field_reader !== null
-                    ? $this->field_reader->readPointerField(
-                        $this->pointer, 'filename', ZendString::class, 'zend_op_array',
+                    : null
+            ,
+            'num_args' => $this->num_args = $this->casted_cdata->casted->common->num_args,
+            'fn_flags' => $this->fn_flags = $this->casted_cdata->casted->op_array->fn_flags,
+            'op_array_filename' => $this->op_array_filename
+                = $this->casted_cdata->casted->op_array->filename !== null
+                    ? Pointer::fromCData(
+                        ZendString::class,
+                        $this->casted_cdata->casted->op_array->filename,
                     )
-                    : ($this->casted_cdata->casted->op_array->filename !== null
-                        ? Pointer::fromCData(ZendString::class, $this->casted_cdata->casted->op_array->filename)
-                        : null);
-                $this->resolved |= self::F_FILENAME;
-            }
-            return $this->_op_array_filename;
-        }
-    }
-
-    public ZendOpArray $op_array {
-        get {
-            if (!($this->resolved & self::F_OP_ARRAY)) {
-                $this->_op_array = $this->field_reader !== null
-                    ? new ZendOpArray(
-                        $this->field_reader->readEmbeddedStructCData(
-                            $this->pointer, 'op_array', 'zend_op_array',
-                        )->casted,
-                    )
-                    : new ZendOpArray($this->casted_cdata->casted->op_array);
-                $this->resolved |= self::F_OP_ARRAY;
-            }
-            /** @var ZendOpArray */
-            return $this->_op_array;
-        }
+                    : null
+            ,
+            'op_array' => $this->op_array = new ZendOpArray($this->casted_cdata->casted->op_array),
+        };
     }
 
     #[\Override]

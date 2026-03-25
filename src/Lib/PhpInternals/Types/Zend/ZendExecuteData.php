@@ -28,31 +28,23 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
 {
     use InlineCDataCreatorTrait;
 
-    private const F_FUNC = 1;
-    private const F_PREV = 2;
-    private const F_OPLINE = 4;
-    private const F_THIS = 8;
-    private const F_SYMTAB = 16;
-    private const F_EXTRA = 32;
-
-    private int $resolved = 0;
-
     /** @var Pointer<ZendFunction>|null */
-    private ?Pointer $_func = null;
+    public ?Pointer $func;
 
     /** @var Pointer<ZendExecuteData>|null */
-    private ?Pointer $_prev_execute_data = null;
+    public ?Pointer $prev_execute_data;
 
     /** @var Pointer<ZendOp>|null */
-    private ?Pointer $_opline = null;
+    public ?Pointer $opline;
 
-    private ?Zval $_This = null;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public Zval $This;
 
-    /** @var Pointer<ZendArray>|null */
-    private ?Pointer $_symbol_table = null;
+    /** @var Pointer<ZendArray>|null  */
+    public ?Pointer $symbol_table;
 
-    /** @var Pointer<ZendArray>|null */
-    private ?Pointer $_extra_named_params = null;
+    /** @var Pointer<ZendArray>|null  */
+    public ?Pointer $extra_named_params;
 
     private ?FieldReader $field_reader = null;
 
@@ -64,6 +56,12 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         private ?CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
+        unset($this->func);
+        unset($this->prev_execute_data);
+        unset($this->opline);
+        unset($this->This);
+        unset($this->symbol_table);
+        unset($this->extra_named_params);
     }
 
     #[\Override]
@@ -79,93 +77,98 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         return $self;
     }
 
-    /** @var Pointer<ZendFunction>|null */
-    public ?Pointer $func {
-        get {
-            if (!($this->resolved & self::F_FUNC)) {
-                $this->_func = $this->field_reader !== null
-                    ? $this->field_reader->readPointerField($this->pointer, 'func', ZendFunction::class)
-                    : ($this->casted_cdata->casted->func !== null
-                        ? Pointer::fromCData(ZendFunction::class, $this->casted_cdata->casted->func)
-                        : null);
-                $this->resolved |= self::F_FUNC;
-            }
-            return $this->_func;
+    public function __get(string $field_name): mixed
+    {
+        if ($this->field_reader !== null) {
+            return $this->getFieldLazy($field_name);
         }
+        return $this->getFieldEager($field_name);
     }
 
-    /** @var Pointer<ZendExecuteData>|null */
-    public ?Pointer $prev_execute_data {
-        get {
-            if (!($this->resolved & self::F_PREV)) {
-                $this->_prev_execute_data = $this->field_reader !== null
-                    ? $this->field_reader->readPointerField($this->pointer, 'prev_execute_data', ZendExecuteData::class)
-                    : ($this->casted_cdata->casted->prev_execute_data !== null
-                        ? Pointer::fromCData(ZendExecuteData::class, $this->casted_cdata->casted->prev_execute_data)
-                        : null);
-                $this->resolved |= self::F_PREV;
-            }
-            return $this->_prev_execute_data;
-        }
+    private function getFieldLazy(string $field_name): mixed
+    {
+        assert($this->field_reader !== null);
+        return match ($field_name) {
+            'func' => $this->func = $this->field_reader->readPointerField(
+                $this->pointer,
+                'func',
+                ZendFunction::class,
+            ),
+            'prev_execute_data' => $this->prev_execute_data = $this->field_reader->readPointerField(
+                $this->pointer,
+                'prev_execute_data',
+                ZendExecuteData::class,
+            ),
+            'opline' => $this->opline = $this->field_reader->readPointerField(
+                $this->pointer,
+                'opline',
+                ZendOp::class,
+            ),
+            'This' => $this->This = $this->field_reader->readEmbeddedDereferencable(
+                $this->pointer,
+                'This',
+                'zval',
+                Zval::class,
+            ),
+            'symbol_table' => $this->symbol_table = $this->field_reader->readPointerField(
+                $this->pointer,
+                'symbol_table',
+                ZendArray::class,
+            ),
+            'extra_named_params' => $this->extra_named_params = $this->field_reader->readPointerField(
+                $this->pointer,
+                'extra_named_params',
+                ZendArray::class,
+            ),
+        };
     }
 
-    /** @var Pointer<ZendOp>|null */
-    public ?Pointer $opline {
-        get {
-            if (!($this->resolved & self::F_OPLINE)) {
-                $this->_opline = $this->field_reader !== null
-                    ? $this->field_reader->readPointerField($this->pointer, 'opline', ZendOp::class)
-                    : ($this->casted_cdata->casted->opline !== null
-                        ? Pointer::fromCData(ZendOp::class, $this->casted_cdata->casted->opline)
-                        : null);
-                $this->resolved |= self::F_OPLINE;
-            }
-            return $this->_opline;
-        }
-    }
-
-    public Zval $This {
-        get {
-            if (!($this->resolved & self::F_THIS)) {
-                /** @var Zval */
-                $this->_This = $this->field_reader !== null
-                    ? $this->field_reader->readEmbeddedDereferencable($this->pointer, 'This', 'zval', Zval::class)
-                    : $this->createInlineDereferencable('This', Zval::class);
-                $this->resolved |= self::F_THIS;
-            }
-            /** @var Zval */
-            return $this->_This;
-        }
-    }
-
-    /** @var Pointer<ZendArray>|null */
-    public ?Pointer $symbol_table {
-        get {
-            if (!($this->resolved & self::F_SYMTAB)) {
-                $this->_symbol_table = $this->field_reader !== null
-                    ? $this->field_reader->readPointerField($this->pointer, 'symbol_table', ZendArray::class)
-                    : ($this->casted_cdata->casted->symbol_table !== null
-                        ? Pointer::fromCData(ZendArray::class, $this->casted_cdata->casted->symbol_table)
-                        : null);
-                $this->resolved |= self::F_SYMTAB;
-            }
-            return $this->_symbol_table;
-        }
-    }
-
-    /** @var Pointer<ZendArray>|null */
-    public ?Pointer $extra_named_params {
-        get {
-            if (!($this->resolved & self::F_EXTRA)) {
-                $this->_extra_named_params = $this->field_reader !== null
-                    ? $this->field_reader->readPointerField($this->pointer, 'extra_named_params', ZendArray::class)
-                    : ($this->casted_cdata->casted->extra_named_params !== null
-                        ? Pointer::fromCData(ZendArray::class, $this->casted_cdata->casted->extra_named_params)
-                        : null);
-                $this->resolved |= self::F_EXTRA;
-            }
-            return $this->_extra_named_params;
-        }
+    private function getFieldEager(string $field_name): mixed
+    {
+        assert($this->casted_cdata !== null);
+        return match ($field_name) {
+            'func' => $this->func =
+                $this->casted_cdata->casted->func !== null
+                ? Pointer::fromCData(
+                    ZendFunction::class,
+                    $this->casted_cdata->casted->func,
+                )
+                : null
+            ,
+            'prev_execute_data' => $this->prev_execute_data =
+                $this->casted_cdata->casted->prev_execute_data !== null
+                ? Pointer::fromCData(
+                    ZendExecuteData::class,
+                    $this->casted_cdata->casted->prev_execute_data,
+                )
+                : null
+            ,
+            'opline' => $this->opline =
+                $this->casted_cdata->casted->opline !== null
+                ? Pointer::fromCData(
+                    ZendOp::class,
+                    $this->casted_cdata->casted->opline
+                )
+                : null
+            ,
+            'This' => $this->This = $this->createInlineDereferencable('This', Zval::class),
+            'symbol_table' => $this->symbol_table =
+                $this->casted_cdata->casted->symbol_table !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->symbol_table,
+                )
+                : null
+            ,
+            'extra_named_params' => $this->extra_named_params =
+                $this->casted_cdata->casted->extra_named_params !== null
+                ? Pointer::fromCData(
+                    ZendArray::class,
+                    $this->casted_cdata->casted->extra_named_params,
+                )
+                : null
+            ,
+        };
     }
 
     #[\Override]
