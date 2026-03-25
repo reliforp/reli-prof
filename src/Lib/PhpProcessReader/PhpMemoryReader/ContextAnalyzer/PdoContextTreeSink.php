@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
+use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
@@ -54,10 +55,11 @@ final class PdoContextTreeSink implements ContextTreeSink
 
     public function __construct(
         private \PDO $db,
+        private PdoDriverInterface $driver,
         private ?RegionBoundaries $region_boundaries = null,
     ) {
         $this->node_stmt = $db->prepare(
-            'INSERT OR IGNORE INTO context_nodes (node_id, type) VALUES (?, ?)'
+            $driver->insertIgnoreSql('context_nodes', 'node_id, type', '?, ?')
         );
     }
 

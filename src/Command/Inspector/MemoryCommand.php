@@ -169,9 +169,7 @@ final class MemoryCommand extends Command
 
         $output_factory = new MemoryOutputFactory();
         $memory_output = $output_factory->create(
-            $memory_profiler_settings->output_format,
-            $memory_profiler_settings->pretty_print,
-            $memory_profiler_settings->output_path,
+            $memory_profiler_settings,
             $region_boundaries,
         );
         $memory_output->output($result);

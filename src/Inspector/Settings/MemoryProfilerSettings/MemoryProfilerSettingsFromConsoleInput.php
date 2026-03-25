@@ -42,7 +42,7 @@ final class MemoryProfilerSettingsFromConsoleInput
             'output-format',
             'f',
             InputOption::VALUE_REQUIRED,
-            'output format (json, sqlite3)',
+            'output format (json, sqlite3, mysql, postgresql)',
             'json',
         );
         $command->addOption(
@@ -50,6 +50,37 @@ final class MemoryProfilerSettingsFromConsoleInput
             'o',
             InputOption::VALUE_REQUIRED,
             'output file path (required for sqlite3 format)',
+        );
+        $command->addOption(
+            'db-host',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'database host (for mysql/postgresql)',
+            '127.0.0.1',
+        );
+        $command->addOption(
+            'db-port',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'database port (for mysql/postgresql)',
+        );
+        $command->addOption(
+            'db-name',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'database name (for mysql/postgresql)',
+        );
+        $command->addOption(
+            'db-user',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'database user (for mysql/postgresql)',
+        );
+        $command->addOption(
+            'db-password',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'database password (for mysql/postgresql)',
         );
         $command->addOption(
             'memory-limit-error-file',
@@ -107,6 +138,12 @@ final class MemoryProfilerSettingsFromConsoleInput
         }
         $output_format = Cast::toString($input->getOption('output-format'));
         $output_path = NullableCast::toString($input->getOption('output'));
+        $db_host = Cast::toString($input->getOption('db-host'));
+        $db_port_raw = $input->getOption('db-port');
+        $db_port = $db_port_raw !== null ? (int)$db_port_raw : null;
+        $db_name = NullableCast::toString($input->getOption('db-name'));
+        $db_user = NullableCast::toString($input->getOption('db-user'));
+        $db_password = NullableCast::toString($input->getOption('db-password'));
 
         return new MemoryProfilerSettings(
             $stop_process,
@@ -114,6 +151,11 @@ final class MemoryProfilerSettingsFromConsoleInput
             $memory_exhaustion_error_details,
             $output_format,
             $output_path,
+            $db_host,
+            $db_port,
+            $db_name,
+            $db_user,
+            $db_password,
         );
     }
 }

@@ -13,28 +13,23 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
+use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
-final class SqliteMemoryOutput implements MemoryOutputInterface
+final class PdoMemoryOutput implements MemoryOutputInterface
 {
     public function __construct(
-        private string $output_path,
+        private PdoDriverInterface $driver,
         private ?RegionBoundaries $region_boundaries = null,
     ) {
     }
 
     public function output(MemoryAnalysisResult $result): void
     {
-        $db = new \PDO('sqlite:' . $this->output_path);
-        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-        $db->exec('PRAGMA journal_mode=OFF');
-        $db->exec('PRAGMA synchronous=OFF');
-        $db->exec('PRAGMA cache_size=-65536'); // 64MB cache
-        $db->exec('PRAGMA temp_store=MEMORY');
-        $db->exec('PRAGMA locking_mode=EXCLUSIVE');
-        $db->exec('PRAGMA mmap_size=268435456'); // 256MB mmap
+        $db = $this->driver->createConnection();
+        $this->driver->tuneForBulkInsert($db);
 
         $this->createTables($db);
 
@@ -42,14 +37,11 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         try {
             $this->insertSummary($db, $result->summary);
 
-            // Emit context tree first — this writes all locations to DB
-            // and allows the ReferenceContext tree to be GC'd incrementally
-            $sink = new PdoContextTreeSink($db, $this->region_boundaries);
+            $sink = new PdoContextTreeSink($db, $this->driver, $this->region_boundaries);
             $analyzer = new ContextAnalyzer();
             $analyzer->analyze($result->context, $sink);
             $sink->flush();
 
-            // Compute type/class summaries from DB via GROUP BY
             $this->insertLocationTypesSummaryFromDb($db);
             $this->insertClassObjectsSummaryFromDb($db);
 
@@ -59,13 +51,15 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             throw $e;
         }
 
-        // Create indexes and views after bulk insert
+        $this->driver->afterBulkInsert($db);
         $this->createIndexes($db);
         $this->createViews($db);
     }
 
     private function createTables(\PDO $db): void
     {
+        $autoId = $this->driver->autoIncrementPrimaryKey();
+
         $db->exec('
             CREATE TABLE IF NOT EXISTS summary (
                 key TEXT NOT NULL,
@@ -109,51 +103,46 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             )
         ');
 
-        $db->exec('
+        $db->exec("
             CREATE TABLE IF NOT EXISTS context_node_locations (
-                id INTEGER PRIMARY KEY,
+                id {$autoId},
                 node_id INTEGER NOT NULL,
-                address INTEGER,
+                address BIGINT,
                 size INTEGER,
                 location_type TEXT NOT NULL,
                 class_name TEXT,
                 string_value TEXT,
                 refcount INTEGER,
                 type_info INTEGER,
-                region TEXT,
-                FOREIGN KEY (node_id) REFERENCES context_nodes(node_id)
+                region TEXT
             )
-        ');
+        ");
 
-        $db->exec('
+        $db->exec("
             CREATE TABLE IF NOT EXISTS context_node_attributes (
-                id INTEGER PRIMARY KEY,
+                id {$autoId},
                 node_id INTEGER NOT NULL,
                 key TEXT NOT NULL,
-                value TEXT,
-                FOREIGN KEY (node_id) REFERENCES context_nodes(node_id)
+                value TEXT
             )
-        ');
+        ");
     }
 
     private function createIndexes(\PDO $db): void
     {
-        // Essential for v_node_paths recursive CTE (follow tree edges from parent)
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_edges_parent_tree ON context_edges(parent_node_id, is_tree)');
-        // Essential for "find all references to node X"
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_edges_child ON context_edges(child_node_id)');
-        // Essential for JOIN context_node_locations ON node_id
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_node ON context_node_locations(node_id)');
-        // Frequently used in user queries
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_class ON context_node_locations(class_name)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_attributes_node ON context_node_attributes(node_id)');
     }
 
     private function createViews(\PDO $db): void
     {
-        // Canonical path view via recursive CTE following tree edges only.
-        // Each node has exactly one path. For materialized version, use
-        // inspector:memory:optimize-db.
+        $concat = fn (string $a, string $b) => $this->driver->concatExpr($a, $b);
+
+        $pathExpr = $concat('np.path', $concat("' -> '", 'e.link_name'));
+
         $db->exec("
             CREATE VIEW IF NOT EXISTS v_node_paths AS
             WITH RECURSIVE node_paths(node_id, path, depth) AS (
@@ -161,7 +150,7 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
                 FROM context_edges
                 WHERE parent_node_id IS NULL AND is_tree = 1
               UNION ALL
-                SELECT e.child_node_id, np.path || ' -> ' || e.link_name, np.depth + 1
+                SELECT e.child_node_id, {$pathExpr}, np.depth + 1
                 FROM context_edges e
                 JOIN node_paths np ON e.parent_node_id = np.node_id
                 WHERE e.is_tree = 1
