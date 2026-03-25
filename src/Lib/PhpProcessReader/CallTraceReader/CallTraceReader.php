@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
+use FFI;
 use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use Reli\Lib\PhpInternals\Types\C\RawDouble;
 use Reli\Lib\PhpInternals\Types\C\RawInt64;
@@ -23,6 +24,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendOp;
 use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -142,6 +144,10 @@ final class CallTraceReader
         int $depth,
         TraceCache $trace_cache,
     ): ?CallTrace {
+        if ($this->memory_reader instanceof MemoryReader) {
+            $this->memory_reader->clearBatchCache();
+        }
+
         $dereferencer = $this->getDereferencer($pid, $php_version);
         $current_execute_data_pointer = $this->getCurrentExecuteDataPointer(
             $executor_globals_address,
@@ -165,6 +171,14 @@ final class CallTraceReader
             }
             $current_execute_data = $dereferencer->deref($current_execute_data->prev_execute_data);
             $stack[] = $current_execute_data;
+        }
+
+        try {
+            $this->prefetchFrameData($pid, $php_version, $stack);
+        } catch (\Throwable) {
+            if ($this->memory_reader instanceof MemoryReader) {
+                $this->memory_reader->clearBatchCache();
+            }
         }
 
         $result = [];
@@ -209,6 +223,77 @@ final class CallTraceReader
         }
 
         return new CallTrace(...$result);
+    }
+
+    /**
+     * Batch-prefetch pointer fields from all execute_data frames.
+     * Uses C helper for iov setup — PHP side does zero FFI::cast in readMultiPointers,
+     * and only defers a single cast per cache hit in read().
+     *
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @param ZendExecuteData[] $stack
+     */
+    private function prefetchFrameData(int $pid, string $php_version, array $stack): void
+    {
+        if (!($this->memory_reader instanceof MemoryReader)) {
+            return;
+        }
+        $mr = $this->memory_reader;
+        $tr = $this->getTypeReader($php_version);
+
+        [$func_off,] = $tr->getOffsetAndSizeOfMember('zend_execute_data', 'func');
+        [$opline_off,] = $tr->getOffsetAndSizeOfMember('zend_execute_data', 'opline');
+        [$fn_name_off,] = $tr->getOffsetAndSizeOfMember('zend_op_array', 'function_name');
+        [$fn_scope_off,] = $tr->getOffsetAndSizeOfMember('zend_op_array', 'scope');
+        [$fn_file_off,] = $tr->getOffsetAndSizeOfMember('zend_op_array', 'filename');
+        [$ce_name_off,] = $tr->getOffsetAndSizeOfMember('zend_class_entry', 'name');
+
+        // Round 1: func + opline pointers from all frames
+        $addrs = [];
+        foreach ($stack as $ed) {
+            $base = $ed->getPointer()->address;
+            $addrs[] = $base + $func_off;
+            $addrs[] = $base + $opline_off;
+        }
+        $mr->readMultiPointers($pid, $addrs);
+
+        // Round 2: parse func addrs (now cached, cast deferred to read()),
+        // then batch-read function metadata
+        $func_addrs = [];
+        $addrs2 = [];
+        foreach ($stack as $i => $ed) {
+            $buf = $mr->read($pid, $ed->getPointer()->address + $func_off, 8);
+            /** @var \FFI\CInteger $ptr */
+            $ptr = FFI::cast('long', $buf);
+            $fa = $ptr->cdata;
+            $func_addrs[$i] = $fa;
+            if ($fa !== 0) {
+                $addrs2[] = $fa + $fn_name_off;
+                $addrs2[] = $fa + $fn_scope_off;
+                $addrs2[] = $fa + $fn_file_off;
+            }
+        }
+        if ($addrs2 !== []) {
+            $mr->readMultiPointers($pid, $addrs2);
+        }
+
+        // Round 3: parse string/class pointers, prefetch class entry name pointers
+        $addrs3 = [];
+        foreach ($func_addrs as $fa) {
+            if ($fa === 0) {
+                continue;
+            }
+            $buf = $mr->read($pid, $fa + $fn_scope_off, 8);
+            /** @var \FFI\CInteger $ptr */
+            $ptr = FFI::cast('long', $buf);
+            $scope_addr = $ptr->cdata;
+            if ($scope_addr !== 0) {
+                $addrs3[] = $scope_addr + $ce_name_off;
+            }
+        }
+        if ($addrs3 !== []) {
+            $mr->readMultiPointers($pid, $addrs3);
+        }
     }
 
     /**
