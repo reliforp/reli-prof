@@ -59,9 +59,8 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
             throw $e;
         }
 
-        // Create indexes and materialized tables after bulk insert
+        // Create indexes and views after bulk insert
         $this->createIndexes($db);
-        $this->materializeNodePaths($db);
         $this->createViews($db);
     }
 
@@ -140,36 +139,6 @@ final class SqliteMemoryOutput implements MemoryOutputInterface
         // Frequently used in user queries
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_locations_class ON context_node_locations(class_name)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_context_node_attributes_node ON context_node_attributes(node_id)');
-    }
-
-    private function materializeNodePaths(\PDO $db): void
-    {
-        // Materialize shallow paths (depth <= 4) as a table.
-        // Deeper paths can still be computed via recursive CTE when needed,
-        // but most useful queries (root-level memory breakdown, top-level
-        // structure analysis) only need shallow paths.
-        $db->exec('
-            CREATE TABLE IF NOT EXISTS node_paths (
-                node_id INTEGER NOT NULL PRIMARY KEY,
-                path TEXT NOT NULL,
-                depth INTEGER NOT NULL
-            )
-        ');
-        $db->exec("
-            INSERT INTO node_paths (node_id, path, depth)
-            WITH RECURSIVE cte(node_id, path, depth) AS (
-                SELECT node_id, link_name, 0
-                FROM context_nodes
-                WHERE parent_node_id IS NULL
-              UNION ALL
-                SELECT cn.node_id, cte.path || ' -> ' || cn.link_name, cte.depth + 1
-                FROM context_nodes cn
-                JOIN cte ON cn.parent_node_id = cte.node_id
-                WHERE cte.depth < 4
-            )
-            SELECT node_id, path, depth FROM cte
-        ");
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_node_paths_depth ON node_paths(depth)');
     }
 
     private function createViews(\PDO $db): void
