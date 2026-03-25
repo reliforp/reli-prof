@@ -15,6 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
+use PHPUnit\Framework\Attributes\Group;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
@@ -42,6 +43,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\TargetPhpVmProvider;
 
+#[Group('target-version')]
 class MemoryLocationsCollectorTest extends BaseTestCase
 {
     /** @var resource|null */
@@ -77,6 +79,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     #[DataProvider('provideFromV80')]
     public function testCollectAllFromV80(string $php_version, string $docker_image_name): void
     {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
@@ -691,6 +696,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     #[DataProvider('provideFromV71')]
     public function testMemoryLimitViolationOnClosure(string $php_version, string $docker_image_name)
     {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
         if ($php_version === ZendTypeReader::V70) {
             $this->markTestSkipped('V70 does not support closure frame');
         }

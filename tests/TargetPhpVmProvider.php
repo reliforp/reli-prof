@@ -17,9 +17,22 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 
 class TargetPhpVmProvider
 {
+    private static function getFilteredVersions(array $versions): array
+    {
+        $targets = getenv('RELI_TEST_PHP_TARGETS');
+        if ($targets === false || $targets === '') {
+            return $versions;
+        }
+        $allowed = array_map('trim', explode(',', $targets));
+        return array_values(array_filter(
+            $versions,
+            fn (string $v) => in_array($v, $allowed, true),
+        ));
+    }
+
     public static function from(string $php_version)
     {
-        $versions = [
+        $versions = self::getFilteredVersions([
             ZendTypeReader::V70,
             ZendTypeReader::V71,
             ZendTypeReader::V72,
@@ -30,17 +43,22 @@ class TargetPhpVmProvider
             ZendTypeReader::V82,
             ZendTypeReader::V83,
             ZendTypeReader::V84,
-        ];
+        ]);
+        $hasResults = false;
         foreach ($versions as $v) {
             if ($php_version <= $v) {
+                $hasResults = true;
                 yield $v => [$v, self::dockerImageNameFromPhpVersion($v)];
             }
+        }
+        if (!$hasResults) {
+            yield 'skip' => ['skip', 'skip'];
         }
     }
 
     public static function allSupported()
     {
-        $versions = [
+        $versions = self::getFilteredVersions([
             ZendTypeReader::V70,
             ZendTypeReader::V71,
             ZendTypeReader::V72,
@@ -51,7 +69,7 @@ class TargetPhpVmProvider
             ZendTypeReader::V82,
             ZendTypeReader::V83,
             ZendTypeReader::V84,
-        ];
+        ]);
         foreach ($versions as $version) {
             yield $version => [$version, self::dockerImageNameFromPhpVersion($version)];
         }

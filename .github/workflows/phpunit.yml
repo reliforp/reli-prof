@@ -10,8 +10,8 @@ on:
 
 jobs:
 
-  phpunit-test:
-    name: phpunit test
+  phpunit-unit:
+    name: phpunit (unit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -34,11 +34,6 @@ jobs:
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
           restore-keys: ${{ runner.os }}-composer-
 
-      - name: Cache Docker images
-        uses: ScribeMD/docker-cache@0.5.0
-        with:
-          key: docker-${{ runner.os }}-${{ hashFiles('Dockerfile-dev','tests/TargetPhpVmProvider.php') }}
-
       - name: Validate composer.json and composer.lock
         run: composer validate
 
@@ -51,15 +46,161 @@ jobs:
       - name: Setup Problem Matchers for PHPUnit
         run: echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
 
-      - name: Run test suite
+      - name: Run unit tests
         run: |
           mkdir -p build/logs
-          composer test-for-ci
-
-      - name: Fix absolute paths in the coverage report
-        run: sed -i "s|<file name=\"/app/|<file name=\"`pwd`/|g" build/logs/clover.xml
+          vendor/bin/phpunit --exclude-group target-version --coverage-clover build/logs/clover.xml
 
       - name: Send to coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/logs/clover.xml
+          flag-name: unit
+          parallel: true
+
+  build-dev-image:
+    name: Build dev image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/dev
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute Dockerfile hash
+        id: hash
+        run: echo "tag=sha-$(sha256sum Dockerfile-dev | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if image already exists
+        id: check
+        run: |
+          if docker manifest inspect "${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push dev image
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile-dev
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+    outputs:
+      image: ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
+
+  phpunit-target-version:
+    name: phpunit (${{ matrix.name }})
+    needs: build-dev-image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "PHP 7.0"
+            targets: "v70"
+          - name: "PHP 7.1"
+            targets: "v71"
+          - name: "PHP 7.2"
+            targets: "v72"
+          - name: "PHP 7.3"
+            targets: "v73"
+          - name: "PHP 7.4"
+            targets: "v74"
+          - name: "PHP 8.0"
+            targets: "v80"
+          - name: "PHP 8.1"
+            targets: "v81"
+          - name: "PHP 8.2"
+            targets: "v82"
+          - name: "PHP 8.3"
+            targets: "v83"
+          - name: "PHP 8.4"
+            targets: "v84"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull dev image
+        run: |
+          docker pull ${{ needs.build-dev-image.outputs.image }}
+          docker tag ${{ needs.build-dev-image.outputs.image }} reli-dev
+
+      - name: Restore target Docker image cache
+        id: target-cache
+        uses: actions/cache@v5
+        with:
+          path: /tmp/target-image.tar.gz
+          key: docker-target-${{ matrix.targets }}
+
+      - name: Load cached target Docker image
+        if: steps.target-cache.outputs.cache-hit == 'true'
+        run: docker load < /tmp/target-image.tar.gz
+
+      - name: Install dependencies
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app reli-dev composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Run target version tests
         env:
-          COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./vendor/bin/php-coveralls -v
+          RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
+        run: |
+          mkdir -p build/logs
+          docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version --coverage-clover build/logs/clover.xml
+
+      - name: Fix coverage paths from Docker container
+        run: sed -i 's|/app/|${{ github.workspace }}/|g' build/logs/clover.xml
+
+      - name: Send to coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/logs/clover.xml
+          flag-name: ${{ matrix.targets }}
+          parallel: true
+
+      - name: Save target Docker image for cache
+        if: steps.target-cache.outputs.cache-hit != 'true'
+        run: |
+          TARGET_IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^php:' | head -1)
+          if [ -n "$TARGET_IMAGE" ]; then
+            docker save "$TARGET_IMAGE" | gzip > /tmp/target-image.tar.gz
+          fi
+
+  coveralls-finish:
+    name: Coveralls finish
+    needs: [phpunit-unit, phpunit-target-version]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Finish parallel build
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true

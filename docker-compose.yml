@@ -1,6 +1,7 @@
 version: '3.9'
 services:
   reli-test:
+    image: reli-dev
     build:
       context: .
       dockerfile: Dockerfile-dev
@@ -16,6 +17,7 @@ services:
     container_name: reli-test
     command: ["vendor/bin/phpunit" , "--colors=always", "--testdox"]
   reli-test-with-coverage:
+    image: reli-dev
     build:
       context: .
       dockerfile: Dockerfile-dev
@@ -32,6 +34,7 @@ services:
     container_name: reli-test
     command: ["vendor/bin/phpunit" , "--colors=always", "--testdox", "--coverage-clover", "build/logs/clover.xml"]
   reli-test-for-ci:
+    image: reli-dev
     build:
       context: .
       dockerfile: Dockerfile-dev
@@ -40,6 +43,8 @@ services:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
+    environment:
+      - RELI_TEST_PHP_TARGETS=${RELI_TEST_PHP_TARGETS:-}
     volumes:
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
