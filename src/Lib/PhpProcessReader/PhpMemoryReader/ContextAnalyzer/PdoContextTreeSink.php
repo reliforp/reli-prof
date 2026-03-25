@@ -92,6 +92,12 @@ final class PdoContextTreeSink implements ContextTreeSink
     }
 
     #[\Override]
+    public function allowsRelease(): bool
+    {
+        return true;
+    }
+
+    #[\Override]
     public function emitReference(
         int $reference_node_id,
         ?int $parent_node_id,

@@ -28,4 +28,7 @@ interface ReferenceContext
     public function getLocations(): iterable;
 
     public function getContexts(): iterable;
+
+    /** Release child references to allow GC of traversed subtrees */
+    public function releaseLinks(): void;
 }

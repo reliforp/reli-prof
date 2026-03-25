@@ -35,4 +35,7 @@ interface ContextTreeSink
         ?int $parent_node_id,
         string $link_name,
     ): void;
+
+    /** Whether traversed context nodes can release their child references for GC */
+    public function allowsRelease(): bool;
 }

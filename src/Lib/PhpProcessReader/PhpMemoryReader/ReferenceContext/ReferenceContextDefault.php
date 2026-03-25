@@ -47,4 +47,9 @@ trait ReferenceContextDefault
     {
         return [];
     }
+
+    public function releaseLinks(): void
+    {
+        $this->referencing_contexts = [];
+    }
 }

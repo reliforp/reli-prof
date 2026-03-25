@@ -76,6 +76,12 @@ final class ArrayContextTreeSink implements ContextTreeSink
         }
     }
 
+    #[\Override]
+    public function allowsRelease(): bool
+    {
+        return false;
+    }
+
     /** @return array<string, mixed> */
     public function getResult(): array
     {

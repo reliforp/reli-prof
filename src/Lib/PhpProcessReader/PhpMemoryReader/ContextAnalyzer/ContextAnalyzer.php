@@ -55,5 +55,9 @@ final class ContextAnalyzer
 
             $this->analyze($linked_context, $sink, $current_node_id, $memo);
         }
+
+        if ($sink->allowsRelease()) {
+            $reference_context->releaseLinks();
+        }
     }
 }
