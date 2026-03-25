@@ -16,7 +16,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI\PhpInternals\zend_function;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
@@ -24,7 +24,7 @@ use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-final class ZendFunction implements LazyDereferencable
+final class ZendFunction implements LazyDereferencable, CDataDereferencable
 {
     public const ZEND_INTERNAL_FUNCTION = 1;
     public const ZEND_USER_FUNCTION = 2;

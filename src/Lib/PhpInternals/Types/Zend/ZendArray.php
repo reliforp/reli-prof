@@ -17,7 +17,7 @@ use FFI\PhpInternals\zend_array;
 use FFI\PhpInternals\zend_hash_func_ffi;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawInt32;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
@@ -43,7 +43,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 * dtor_func_t       pDestructor;
 * }; */
 /** @psalm-consistent-constructor */
-class ZendArray implements Dereferencable
+class ZendArray implements CDataDereferencable
 {
     public const BUCKET_SIZE_IN_BYTES = 32;
 

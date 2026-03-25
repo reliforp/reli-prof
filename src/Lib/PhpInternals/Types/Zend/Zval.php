@@ -15,13 +15,13 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
  * @psalm-consistent-constructor
  */
-class Zval implements Dereferencable
+class Zval implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendValue $value;

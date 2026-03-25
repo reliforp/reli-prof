@@ -15,10 +15,10 @@ namespace Reli\Lib\PhpInternals\Types\Zend\V74;
 
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\Zend\Bucket as BaseBucket;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class Bucket extends BaseBucket implements Dereferencable
+final class Bucket extends BaseBucket implements CDataDereferencable
 {
     #[\Override]
     public function __get(string $field_name): mixed

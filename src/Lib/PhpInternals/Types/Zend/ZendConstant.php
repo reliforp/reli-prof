@@ -14,12 +14,11 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-final class ZendConstant implements Dereferencable, PointedTypeResolverAware
+final class ZendConstant implements PointedTypeResolverAware
 {
     use InlineCDataCreatorTrait;
 
@@ -62,24 +61,16 @@ final class ZendConstant implements Dereferencable, PointedTypeResolverAware
     }
 
     #[\Override]
-    public static function fromCastedCData(
-        CastedCData $casted_cdata,
-        Pointer $pointer,
-    ): static {
-        /**
-         * @var CastedCData<\FFI\PhpInternals\zend_constants> $casted_cdata
-         * @var Pointer<ZendConstant> $pointer
-         */
-        return new static($casted_cdata, $pointer);
-    }
-
-    #[\Override]
     public static function fromCastedCDataWithResolver(
         CastedCData $casted_cdata,
         Pointer $pointer,
         PointedTypeResolver $pointed_type_resolver,
     ): static {
-        $self = static::fromCastedCData($casted_cdata, $pointer);
+        /**
+         * @var CastedCData<\FFI\PhpInternals\zend_constants> $casted_cdata
+         * @var Pointer<ZendConstant> $pointer
+         */
+        $self = new static($casted_cdata, $pointer);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

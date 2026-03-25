@@ -73,6 +73,12 @@ final class RemoteProcessDereferencer implements Dereferencer
              */
             return $type::fromCastedCDataWithResolver($casted_cdata, $pointer, $this->pointed_type_resolver);
         }
+        assert(is_a($type, CDataDereferencable::class, true));
+        /**
+         * @var class-string<CDataDereferencable&T> $type
+         * @psalm-suppress ArgumentTypeCoercion
+         * @psalm-suppress InvalidReturnStatement
+         */
         return $type::fromCastedCData($casted_cdata, $pointer);
     }
 }

@@ -153,7 +153,12 @@ final class FieldReader
              */
             return $resolved_type::fromCastedCDataWithResolver($casted_cdata, $pointer, $this->pointed_type_resolver);
         }
-        /** @psalm-suppress InvalidReturnStatement */
+        assert(is_a($resolved_type, CDataDereferencable::class, true));
+        /**
+         * @var class-string<CDataDereferencable&T> $resolved_type
+         * @psalm-suppress ArgumentTypeCoercion
+         * @psalm-suppress InvalidReturnStatement
+         */
         return $resolved_type::fromCastedCData($casted_cdata, $pointer);
     }
 }

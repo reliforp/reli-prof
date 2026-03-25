@@ -15,12 +15,12 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\FFI\Cast;
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-final class ZendArena implements Dereferencable
+final class ZendArena implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $ptr;

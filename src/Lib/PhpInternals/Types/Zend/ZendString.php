@@ -16,14 +16,14 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI\PhpInternals\zend_string;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawString;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendString implements LazyDereferencable
+final class ZendString implements LazyDereferencable, CDataDereferencable
 {
     public const ZEND_STRING_HEADER_SIZE = 24;
 

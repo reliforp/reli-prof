@@ -15,7 +15,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -23,7 +23,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 /**
  * @implements \ArrayAccess<int, Zval>
  */
-final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolverAware
+final class ZvalArray implements \ArrayAccess, PointedTypeResolverAware
 {
     use InlineCDataCreatorTrait;
 
@@ -47,33 +47,21 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
         return 'zval[0]';
     }
 
-    /**
-     * @param CastedCData<CData> $casted_cdata
-     * @param Pointer<Dereferencable> $pointer
-     */
-    #[\Override]
-    public static function fromCastedCData(
-        CastedCData $casted_cdata,
-        Pointer $pointer,
-    ): static {
-        /**
-         * @var CastedCData<\FFI\PhpInternals\zval_array> $casted_cdata
-         * @var Pointer<self> $pointer
-         */
-        return new static(
-            $casted_cdata,
-            (int)($pointer->size / 16),
-            $pointer
-        );
-    }
-
     #[\Override]
     public static function fromCastedCDataWithResolver(
         CastedCData $casted_cdata,
         Pointer $pointer,
         PointedTypeResolver $pointed_type_resolver,
     ): static {
-        $self = static::fromCastedCData($casted_cdata, $pointer);
+        /**
+         * @var CastedCData<\FFI\PhpInternals\zval_array> $casted_cdata
+         * @var Pointer<self> $pointer
+         */
+        $self = new static(
+            $casted_cdata,
+            (int)($pointer->size / 16),
+            $pointer
+        );
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
@@ -117,6 +105,7 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
     private function getZval(int $offset): Zval
     {
         $zval_class = $this->pointed_type_resolver->resolve(Zval::class);
+        assert(is_a($zval_class, CDataDereferencable::class, true));
         return $zval_class::fromCastedCData(
             new CastedCData(
                 $this->casted_cdata->casted[$offset],

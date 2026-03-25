@@ -17,11 +17,11 @@ use FFI\PhpInternals\zend_module_entry;
 use Reli\Lib\FFI\Cast;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawString;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendModuleEntry implements Dereferencable
+final class ZendModuleEntry implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public bool $zts;

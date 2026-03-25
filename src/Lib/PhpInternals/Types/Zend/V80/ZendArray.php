@@ -17,11 +17,11 @@ use Reli\Lib\PhpInternals\Types\Zend\Bucket;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray as BaseZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendString;
 use Reli\Lib\PhpInternals\Types\Zend\Zval;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendArray extends BaseZendArray implements Dereferencable
+final class ZendArray extends BaseZendArray implements CDataDereferencable
 {
     #[\Override]
     public function __get(string $field_name): mixed

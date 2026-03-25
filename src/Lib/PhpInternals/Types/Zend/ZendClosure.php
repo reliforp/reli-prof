@@ -16,7 +16,6 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
-use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
@@ -25,7 +24,7 @@ use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
  * @psalm-consistent-constructor
  * @psalm-suppress ClassMustBeFinal
  */
-class ZendClosure implements Dereferencable, PointedTypeResolverAware
+class ZendClosure implements PointedTypeResolverAware
 {
     use InlineCDataCreatorTrait;
 
@@ -100,24 +99,16 @@ class ZendClosure implements Dereferencable, PointedTypeResolverAware
     }
 
     #[\Override]
-    public static function fromCastedCData(
-        CastedCData $casted_cdata,
-        Pointer $pointer,
-    ): static {
-        /**
-         * @var CastedCData<\FFI\PhpInternals\zend_closure> $casted_cdata
-         * @var Pointer<ZendClosure> $pointer
-         */
-        return new static($casted_cdata, $pointer);
-    }
-
-    #[\Override]
     public static function fromCastedCDataWithResolver(
         CastedCData $casted_cdata,
         Pointer $pointer,
         PointedTypeResolver $pointed_type_resolver,
     ): static {
-        $self = static::fromCastedCData($casted_cdata, $pointer);
+        /**
+         * @var CastedCData<\FFI\PhpInternals\zend_closure> $casted_cdata
+         * @var Pointer<ZendClosure> $pointer
+         */
+        $self = new static($casted_cdata, $pointer);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

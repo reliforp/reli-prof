@@ -14,11 +14,11 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /** @psalm-consistent-constructor */
-final class ZendLiveRange implements Dereferencable
+final class ZendLiveRange implements CDataDereferencable
 {
     public const ZEND_LIVE_TMPVAR = 0;
     public const ZEND_LIVE_LOOP = 1;

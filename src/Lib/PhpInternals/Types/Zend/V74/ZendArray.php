@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend\V74;
 
 use Reli\Lib\PhpInternals\Types\Zend\V73\ZendArray as BaseZendArray;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendArray extends BaseZendArray implements Dereferencable
+final class ZendArray extends BaseZendArray implements CDataDereferencable
 {
     #[\Override]
     public function __get(string $field_name): mixed

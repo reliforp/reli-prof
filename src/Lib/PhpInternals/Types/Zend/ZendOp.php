@@ -15,13 +15,13 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_op;
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\FieldReader;
 use Reli\Lib\Process\Pointer\LazyDereferencable;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class ZendOp implements LazyDereferencable
+final class ZendOp implements LazyDereferencable, CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $op1;

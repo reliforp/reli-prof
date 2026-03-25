@@ -14,9 +14,9 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend\V74;
 
 use Reli\Lib\PhpInternals\Types\Zend\Zval as BaseZval;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 
-final class Zval extends BaseZval implements Dereferencable
+final class Zval extends BaseZval implements CDataDereferencable
 {
     #[\Override]
     public function __get(string $field_name): mixed

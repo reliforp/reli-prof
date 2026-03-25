@@ -15,10 +15,10 @@ namespace Reli\Lib\PhpInternals\Types\C;
 
 use FFI\CInteger;
 use Reli\Lib\PhpInternals\CastedCData;
-use Reli\Lib\Process\Pointer\Dereferencable;
+use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class Char implements Dereferencable
+final class Char implements CDataDereferencable
 {
     public int $value;
 
