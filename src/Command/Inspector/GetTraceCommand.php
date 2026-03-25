@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
-use Reli\Inspector\FlatTraceLoop;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
 use Reli\Inspector\RetryingLoopProvider;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
@@ -117,7 +116,7 @@ final class GetTraceCommand extends Command
         );
 
         $trace_cache = new TraceCache();
-        $flat_loop = new FlatTraceLoop(
+        $this->loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
                 $process_specifier,
@@ -139,14 +138,13 @@ final class GetTraceCommand extends Command
                     $get_trace_settings->depth,
                     $trace_cache
                 );
-                if ($call_trace !== null) {
+                if (!is_null($call_trace)) {
                     $trace_output->output($call_trace);
                 }
                 return true;
             },
-            $loop_settings,
-        );
-        $flat_loop->invoke();
+            $loop_settings
+        )->invoke();
 
         return 0;
     }
