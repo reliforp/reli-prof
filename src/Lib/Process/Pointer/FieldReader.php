@@ -148,10 +148,10 @@ final class FieldReader
         $resolved_type = $this->pointed_type_resolver->resolve($php_type);
         if (is_a($resolved_type, PointedTypeResolverAware::class, true)) {
             /**
-             * @psalm-suppress TooManyArguments
+             * @psalm-suppress ArgumentTypeCoercion
              * @psalm-suppress InvalidReturnStatement
              */
-            return $resolved_type::fromCastedCData($casted_cdata, $pointer, $this->pointed_type_resolver);
+            return $resolved_type::fromCastedCDataWithResolver($casted_cdata, $pointer, $this->pointed_type_resolver);
         }
         /** @psalm-suppress InvalidReturnStatement */
         return $resolved_type::fromCastedCData($casted_cdata, $pointer);

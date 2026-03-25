@@ -22,7 +22,6 @@ use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 /**
  * @psalm-consistent-constructor
  * @psalm-suppress ClassMustBeFinal
- * @psalm-suppress MethodSignatureMismatch
  */
 class ZendClassConstant implements Dereferencable, PointedTypeResolverAware
 {
@@ -100,13 +99,21 @@ class ZendClassConstant implements Dereferencable, PointedTypeResolverAware
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer,
-        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zend_class_constant> $casted_cdata
          * @var Pointer<self> $pointer
          */
-        $self = new static($casted_cdata, $pointer);
+        return new static($casted_cdata, $pointer);
+    }
+
+    #[\Override]
+    public static function fromCastedCDataWithResolver(
+        CastedCData $casted_cdata,
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
+    ): static {
+        $self = static::fromCastedCData($casted_cdata, $pointer);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

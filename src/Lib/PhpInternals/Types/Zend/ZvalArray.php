@@ -22,7 +22,6 @@ use Reli\Lib\Process\Pointer\Pointer;
 
 /**
  * @implements \ArrayAccess<int, Zval>
- * @psalm-suppress MethodSignatureMismatch
  */
 final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolverAware
 {
@@ -56,17 +55,25 @@ final class ZvalArray implements \ArrayAccess, Dereferencable, PointedTypeResolv
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer,
-        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<\FFI\PhpInternals\zval_array> $casted_cdata
          * @var Pointer<self> $pointer
          */
-        $self = new static(
+        return new static(
             $casted_cdata,
             (int)($pointer->size / 16),
             $pointer
         );
+    }
+
+    #[\Override]
+    public static function fromCastedCDataWithResolver(
+        CastedCData $casted_cdata,
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
+    ): static {
+        $self = static::fromCastedCData($casted_cdata, $pointer);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }

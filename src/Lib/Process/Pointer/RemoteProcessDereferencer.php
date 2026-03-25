@@ -68,10 +68,10 @@ final class RemoteProcessDereferencer implements Dereferencer
         if (is_a($type, PointedTypeResolverAware::class, true)) {
             /**
              * @var class-string<PointedTypeResolverAware&T> $type
-             * @psalm-suppress TooManyArguments psalm sees Dereferencable::fromCastedCData(2 args)
+             * @psalm-suppress ArgumentTypeCoercion
              * @psalm-suppress InvalidReturnStatement
              */
-            return $type::fromCastedCData($casted_cdata, $pointer, $this->pointed_type_resolver);
+            return $type::fromCastedCDataWithResolver($casted_cdata, $pointer, $this->pointed_type_resolver);
         }
         return $type::fromCastedCData($casted_cdata, $pointer);
     }

@@ -24,7 +24,6 @@ use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
-/** @psalm-suppress MethodSignatureMismatch */
 final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAware
 {
     use InlineCDataCreatorTrait;
@@ -182,13 +181,21 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
     public static function fromCastedCData(
         CastedCData $casted_cdata,
         Pointer $pointer,
-        PointedTypeResolver $pointed_type_resolver,
     ): static {
         /**
          * @var CastedCData<zend_execute_data> $casted_cdata
          * @var Pointer<ZendExecuteData> $pointer
          */
-        $self = new self($casted_cdata, $pointer);
+        return new self($casted_cdata, $pointer);
+    }
+
+    #[\Override]
+    public static function fromCastedCDataWithResolver(
+        CastedCData $casted_cdata,
+        Pointer $pointer,
+        PointedTypeResolver $pointed_type_resolver,
+    ): static {
+        $self = static::fromCastedCData($casted_cdata, $pointer);
         $self->pointed_type_resolver = $pointed_type_resolver;
         return $self;
     }
