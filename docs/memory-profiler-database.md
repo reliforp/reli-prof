@@ -188,7 +188,7 @@ WHERE loc.class_name = 'App\\MyClass'
 ORDER BY loc.size DESC;
 ```
 
-> **Performance note**: For large databases (100K+ nodes), queries against `v_node_paths` can be slow because the recursive CTE is recomputed on every query. Use `inspector:memory:optimize-db` to materialize paths into a real table for faster queries.
+> **Performance note**: For large databases (100K+ nodes), queries against `v_node_paths` can be slow because the recursive CTE is recomputed on every query. Use `inspector:optimize-memory-db` to materialize paths into a real table for faster queries.
 
 #### `v_arrays`
 Provides a convenient view of PHP array memory usage by joining array headers with their table allocations.
@@ -203,12 +203,12 @@ Provides a convenient view of PHP array memory usage by joining array headers wi
 | `element_count` | INTEGER | Number of elements in the array |
 | `refcount` | INTEGER | Reference count |
 
-## Optimizing the Database: `inspector:memory:optimize-db`
+## Optimizing the Database: `inspector:optimize-memory-db`
 
-For large databases, the `v_node_paths` view (recursive CTE) can be slow. The `inspector:memory:optimize-db` command materializes all node paths into a physical `node_paths` table for much faster queries.
+For large databases, the `v_node_paths` view (recursive CTE) can be slow. The `inspector:optimize-memory-db` command materializes all node paths into a physical `node_paths` table for much faster queries.
 
 ```bash
-./reli inspector:memory:optimize-db memory.db
+./reli inspector:optimize-memory-db memory.db
 ```
 
 This creates a `node_paths` table with the same schema as the `v_node_paths` view, plus an index on `depth`. After materialization, you can query `node_paths` directly instead of `v_node_paths`.

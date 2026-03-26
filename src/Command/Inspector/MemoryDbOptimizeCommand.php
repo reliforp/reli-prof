@@ -23,7 +23,7 @@ final class MemoryDbOptimizeCommand extends Command
     #[\Override]
     public function configure(): void
     {
-        $this->setName('inspector:memory:optimize-db')
+        $this->setName('inspector:optimize-memory-db')
             ->setDescription('[experimental] materialize node_paths in a memory analysis SQLite database')
             ->addArgument(
                 'db-path',
