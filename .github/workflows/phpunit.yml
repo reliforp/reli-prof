@@ -49,7 +49,7 @@ jobs:
       - name: Run unit tests
         run: |
           mkdir -p build/logs
-          vendor/bin/phpunit --exclude-group target-version --coverage-clover build/logs/clover.xml
+          vendor/bin/phpunit --exclude-group target-version,frankenphp --coverage-clover build/logs/clover.xml
 
       - name: Send to coveralls
         uses: coverallsapp/github-action@v2
@@ -192,6 +192,38 @@ jobs:
           if [ -n "$TARGET_IMAGE" ]; then
             docker save "$TARGET_IMAGE" | gzip > /tmp/target-image.tar.gz
           fi
+
+  phpunit-frankenphp:
+    name: phpunit (FrankenPHP)
+    needs: build-dev-image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull dev image
+        run: |
+          docker pull ${{ needs.build-dev-image.outputs.image }}
+          docker tag ${{ needs.build-dev-image.outputs.image }} reli-dev
+
+      - name: Pull FrankenPHP image
+        run: docker pull dunglas/frankenphp:php8.4
+
+      - name: Install dependencies
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app reli-dev composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Run FrankenPHP tests
+        run: |
+          mkdir -p /tmp/reli-test
+          docker compose run reli-test-for-ci vendor/bin/phpunit --group frankenphp --no-coverage
 
   coveralls-finish:
     name: Coveralls finish
