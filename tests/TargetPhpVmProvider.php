@@ -17,6 +17,37 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 
 class TargetPhpVmProvider
 {
+    private const ALL_TARGETS = [
+        ZendTypeReader::V70,
+        ZendTypeReader::V71,
+        ZendTypeReader::V72,
+        ZendTypeReader::V73,
+        ZendTypeReader::V74,
+        ZendTypeReader::V80,
+        ZendTypeReader::V81,
+        ZendTypeReader::V82,
+        ZendTypeReader::V83,
+        ZendTypeReader::V84,
+        // ZTS variants (PHP 7.3+)
+        'v73_zts',
+        'v74_zts',
+        'v80_zts',
+        'v81_zts',
+        'v82_zts',
+        'v83_zts',
+        'v84_zts',
+    ];
+
+    private static function isZts(string $target): bool
+    {
+        return str_ends_with($target, '_zts');
+    }
+
+    private static function phpVersionFromTarget(string $target): string
+    {
+        return self::isZts($target) ? substr($target, 0, -4) : $target;
+    }
+
     private static function getFilteredVersions(array $versions): array
     {
         $targets = getenv('RELI_TEST_PHP_TARGETS');
@@ -32,23 +63,13 @@ class TargetPhpVmProvider
 
     public static function from(string $php_version)
     {
-        $versions = self::getFilteredVersions([
-            ZendTypeReader::V70,
-            ZendTypeReader::V71,
-            ZendTypeReader::V72,
-            ZendTypeReader::V73,
-            ZendTypeReader::V74,
-            ZendTypeReader::V80,
-            ZendTypeReader::V81,
-            ZendTypeReader::V82,
-            ZendTypeReader::V83,
-            ZendTypeReader::V84,
-        ]);
+        $targets = self::getFilteredVersions(self::ALL_TARGETS);
         $hasResults = false;
-        foreach ($versions as $v) {
-            if ($php_version <= $v) {
+        foreach ($targets as $target) {
+            $targetPhpVersion = self::phpVersionFromTarget($target);
+            if ($php_version <= $targetPhpVersion) {
                 $hasResults = true;
-                yield $v => [$v, self::dockerImageNameFromPhpVersion($v)];
+                yield $target => [$targetPhpVersion, self::dockerImageNameFromTarget($target)];
             }
         }
         if (!$hasResults) {
@@ -58,37 +79,29 @@ class TargetPhpVmProvider
 
     public static function allSupported()
     {
-        $versions = self::getFilteredVersions([
-            ZendTypeReader::V70,
-            ZendTypeReader::V71,
-            ZendTypeReader::V72,
-            ZendTypeReader::V73,
-            ZendTypeReader::V74,
-            ZendTypeReader::V80,
-            ZendTypeReader::V81,
-            ZendTypeReader::V82,
-            ZendTypeReader::V83,
-            ZendTypeReader::V84,
-        ]);
-        foreach ($versions as $version) {
-            yield $version => [$version, self::dockerImageNameFromPhpVersion($version)];
+        $targets = self::getFilteredVersions(self::ALL_TARGETS);
+        foreach ($targets as $target) {
+            $phpVersion = self::phpVersionFromTarget($target);
+            yield $target => [$phpVersion, self::dockerImageNameFromTarget($target)];
         }
     }
 
-    public static function dockerImageNameFromPhpVersion(string $php_version): string
+    public static function dockerImageNameFromTarget(string $target): string
     {
-        return match ($php_version) {
-            ZendTypeReader::V70 => 'php:7.0-cli',
-            ZendTypeReader::V71 => 'php:7.1-cli',
-            ZendTypeReader::V72 => 'php:7.2-cli',
-            ZendTypeReader::V73 => 'php:7.3-cli',
-            ZendTypeReader::V74 => 'php:7.4-cli',
-            ZendTypeReader::V80 => 'php:8.0-cli',
-            ZendTypeReader::V81 => 'php:8.1-cli',
-            ZendTypeReader::V82 => 'php:8.2-cli',
-            ZendTypeReader::V83 => 'php:8.3-cli',
-            ZendTypeReader::V84 => 'php:8.4-cli',
-            default => throw new \InvalidArgumentException("unsupported php version: $php_version"),
+        $phpVersion = self::phpVersionFromTarget($target);
+        $suffix = self::isZts($target) ? '-zts' : '-cli';
+        return match ($phpVersion) {
+            ZendTypeReader::V70 => 'php:7.0' . $suffix,
+            ZendTypeReader::V71 => 'php:7.1' . $suffix,
+            ZendTypeReader::V72 => 'php:7.2' . $suffix,
+            ZendTypeReader::V73 => 'php:7.3' . $suffix,
+            ZendTypeReader::V74 => 'php:7.4' . $suffix,
+            ZendTypeReader::V80 => 'php:8.0' . $suffix,
+            ZendTypeReader::V81 => 'php:8.1' . $suffix,
+            ZendTypeReader::V82 => 'php:8.2' . $suffix,
+            ZendTypeReader::V83 => 'php:8.3' . $suffix,
+            ZendTypeReader::V84 => 'php:8.4' . $suffix,
+            default => throw new \InvalidArgumentException("unsupported php version: $phpVersion"),
         };
     }
 
