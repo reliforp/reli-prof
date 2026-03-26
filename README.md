@@ -29,21 +29,12 @@ It's implemented by using following techniques:
 If you have a bit of extra CPU resource, the overhead of this software would be negligible.
 
 ## Native (C-level) stack trace support
-Reli can also collect native C-level stack traces from the PHP interpreter alongside PHP traces. This is done by:
+Reli can collect native C-level stack traces from the PHP interpreter alongside PHP traces. This lets you see what C functions the interpreter is executing inside each PHP function call, which is useful for diagnosing performance issues in PHP internals, extensions, or the interpreter itself.
 
-- Reading CPU registers via ptrace(2) GETREGS
-- Parsing DWARF `.eh_frame` sections for Call Frame Information (CFI)
-- Unwinding the native stack using DWARF CFI rules with frame pointer fallback
-- Resolving native addresses to symbol names using ELF symbol tables (`.dynsym` / `.symtab`)
-- Merging native C frames with PHP VM frames at execution boundaries (e.g. `execute_ex`)
-
-This allows you to see what C functions the PHP interpreter is executing when a PHP function is called, which is useful for diagnosing performance issues in PHP internals, extensions, or the interpreter itself.
-
-### Additional features
-- **Separate debug symbol files**: Automatically resolves debug symbols from distro packages (`-dbgsym` / `-debuginfo`) via `.note.gnu.build-id` and `.gnu_debuglink`
-- **JIT support**: Resolves JIT-compiled function names via `/tmp/perf-<pid>.map` (`opcache.jit_debug=0x10`) and reads in-memory `.eh_frame` from the GDB JIT interface (`opcache.jit_debug=0x100`)
-- **Container support**: Traces processes inside Docker containers by accessing binaries via `/proc/<pid>/root/`
-- **phpspy-compatible output**: Native trace output uses the phpspy format for compatibility with flamegraph.pl and speedscope
+- Works with stripped binaries and separate debug symbol packages (`-dbgsym` / `-debuginfo`)
+- Resolves JIT-compiled function names when `opcache.jit_debug` is configured
+- Traces processes inside Docker containers
+- Output is phpspy-compatible for flamegraph and speedscope conversion
 
 ## Differences to phpspy, when to use reli
 Reli is heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy).
