@@ -30,6 +30,8 @@ final class NativeTraceCollector
     private ?JitCodeReader $jitCodeReader = null;
     private ?PerfMapSymbolResolver $perfMapResolver = null;
     private ?int $cachedPid = null;
+    private ?\FFI $regsFfi = null;
+    private ?\FFI\CData $regsBuffer = null;
 
     public function __construct(
         private Ptrace $ptrace,
@@ -124,11 +126,10 @@ final class NativeTraceCollector
         }
     }
 
-    private function readRegisters(int $pid): ?RegisterState
+    private function ensureRegsFfi(): void
     {
-        try {
-            // Allocate user_regs_struct via FFI
-            $ffi = \FFI::cdef('
+        if ($this->regsFfi === null) {
+            $this->regsFfi = \FFI::cdef('
                 struct user_regs_struct {
                     unsigned long r15;
                     unsigned long r14;
@@ -159,8 +160,15 @@ final class NativeTraceCollector
                     unsigned long gs;
                 };
             ');
+            $this->regsBuffer = $this->regsFfi->new('struct user_regs_struct');
+        }
+    }
 
-            $regs = $ffi->new('struct user_regs_struct');
+    private function readRegisters(int $pid): ?RegisterState
+    {
+        try {
+            $this->ensureRegsFfi();
+            $regs = $this->regsBuffer;
             if ($regs === null) {
                 return null;
             }

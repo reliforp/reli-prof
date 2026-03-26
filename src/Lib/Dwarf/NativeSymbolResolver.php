@@ -28,6 +28,9 @@ final class NativeSymbolResolver
     /** @var array<string, int> module path => base address */
     private array $moduleBaseAddresses = [];
 
+    /** @var array<string, bool> module path => is_file result */
+    private array $isFileCache = [];
+
     private Elf64Parser $elfParser;
     private DebugFileLocator $debugFileLocator;
     private ?PerfMapSymbolResolver $perfMapResolver = null;
@@ -54,7 +57,7 @@ final class NativeSymbolResolver
 
         $area = $areas[0];
         $module_path = $area->name;
-        if ($module_path === '' || $module_path[0] === '[' || !is_file($module_path)) {
+        if ($module_path === '' || $module_path[0] === '[' || !$this->isFile($module_path)) {
             // Anonymous/special/non-file mapping (JIT buffer, /dev/zero, etc.) - try perf map
             return $this->perfMapResolver?->resolve($absoluteAddress);
         }
@@ -98,9 +101,17 @@ final class NativeSymbolResolver
         return null;
     }
 
+    private function isFile(string $path): bool
+    {
+        if (!isset($this->isFileCache[$path])) {
+            $this->isFileCache[$path] = is_file($path);
+        }
+        return $this->isFileCache[$path];
+    }
+
     private function tryLoadFromFile(string $filePath): ?Elf64ReverseSymbolResolver
     {
-        if (!is_file($filePath)) {
+        if (!$this->isFile($filePath)) {
             return null;
         }
 
