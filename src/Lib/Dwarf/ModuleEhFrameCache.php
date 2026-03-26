@@ -17,6 +17,8 @@ use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\DebugFileLocator;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\File\FileReaderInterface;
+use Reli\Lib\File\NativeFileReader;
 
 final class ModuleEhFrameCache
 {
@@ -29,13 +31,18 @@ final class ModuleEhFrameCache
     private EhFrameParser $ehFrameParser;
     private Elf64Parser $elfParser;
     private DebugFileLocator $debugFileLocator;
+    private FileReaderInterface $fileReader;
 
-    public function __construct(?DebugFileLocator $debugFileLocator = null)
-    {
+    public function __construct(
+        ?DebugFileLocator $debugFileLocator = null,
+        private string $processRoot = '',
+        ?FileReaderInterface $fileReader = null,
+    ) {
         $integer_reader = new LittleEndianReader();
         $this->ehFrameParser = new EhFrameParser($integer_reader);
         $this->elfParser = new Elf64Parser($integer_reader);
         $this->debugFileLocator = $debugFileLocator ?? new DebugFileLocator();
+        $this->fileReader = $fileReader ?? new NativeFileReader();
     }
 
     /**
@@ -110,12 +117,17 @@ final class ModuleEhFrameCache
      */
     private function tryLoadEhFrame(string $filePath): ?array
     {
-        if (!is_file($filePath)) {
-            return null;
+        $resolved = $filePath;
+        if ($this->processRoot !== '' && str_starts_with($filePath, '/')) {
+            $resolved = $this->processRoot . $filePath;
         }
 
-        $binary_data = file_get_contents($filePath);
-        if ($binary_data === false || strlen($binary_data) < 4) {
+        try {
+            $binary_data = $this->fileReader->readAll($resolved);
+        } catch (\Throwable) {
+            return null;
+        }
+        if (strlen($binary_data) < 4) {
             return null;
         }
 

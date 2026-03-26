@@ -18,6 +18,8 @@ use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\DebugFileLocator;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\SymbolResolver\Elf64ReverseSymbolResolver;
+use Reli\Lib\File\FileReaderInterface;
+use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 
 final class NativeSymbolResolver
@@ -34,15 +36,19 @@ final class NativeSymbolResolver
     private Elf64Parser $elfParser;
     private DebugFileLocator $debugFileLocator;
     private ?PerfMapSymbolResolver $perfMapResolver = null;
+    private FileReaderInterface $fileReader;
 
     public function __construct(
         private ProcessMemoryMap $memoryMap,
         ?DebugFileLocator $debugFileLocator = null,
         ?PerfMapSymbolResolver $perfMapResolver = null,
+        private string $processRoot = '',
+        ?FileReaderInterface $fileReader = null,
     ) {
         $this->elfParser = new Elf64Parser(new LittleEndianReader());
         $this->debugFileLocator = $debugFileLocator ?? new DebugFileLocator();
         $this->perfMapResolver = $perfMapResolver;
+        $this->fileReader = $fileReader ?? new NativeFileReader();
     }
 
     /**
@@ -101,22 +107,30 @@ final class NativeSymbolResolver
         return null;
     }
 
+    private function resolvePath(string $path): string
+    {
+        if ($this->processRoot !== '' && str_starts_with($path, '/')) {
+            return $this->processRoot . $path;
+        }
+        return $path;
+    }
+
     private function isFile(string $path): bool
     {
+        $resolved = $this->resolvePath($path);
         if (!isset($this->isFileCache[$path])) {
-            $this->isFileCache[$path] = is_file($path);
+            $this->isFileCache[$path] = is_file($resolved);
         }
         return $this->isFileCache[$path];
     }
 
     private function tryLoadFromFile(string $filePath): ?Elf64ReverseSymbolResolver
     {
-        if (!$this->isFile($filePath)) {
-            return null;
-        }
+        $resolved = $this->resolvePath($filePath);
 
-        $binary = file_get_contents($filePath);
-        if ($binary === false) {
+        try {
+            $binary = $this->fileReader->readAll($resolved);
+        } catch (\Throwable) {
             return null;
         }
 

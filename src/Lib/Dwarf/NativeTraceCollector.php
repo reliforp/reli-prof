@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
+use Reli\Lib\File\CatFileReader;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -82,7 +83,12 @@ final class NativeTraceCollector
     {
         $maps_string = $this->memoryMapReader->read($pid);
         $this->memoryMap = $this->memoryMapParser->parse($maps_string);
-        $this->ehFrameCache = new ModuleEhFrameCache();
+        $process_root = "/proc/{$pid}/root";
+        $file_reader = new CatFileReader();
+        $this->ehFrameCache = new ModuleEhFrameCache(
+            processRoot: $process_root,
+            fileReader: $file_reader,
+        );
         $this->perfMapResolver = new PerfMapSymbolResolver($pid);
 
         // Try to load JIT debug info via __jit_debug_descriptor
@@ -92,10 +98,13 @@ final class NativeTraceCollector
             $this->ehFrameCache,
             $this->memoryReader,
             $this->jitCodeReader,
+            $process_root,
         );
         $this->symbolResolver = new NativeSymbolResolver(
             $this->memoryMap,
             perfMapResolver: $this->perfMapResolver,
+            processRoot: $process_root,
+            fileReader: $file_reader,
         );
         $this->cachedPid = $pid;
     }

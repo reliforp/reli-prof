@@ -41,6 +41,7 @@ final class NativeStackUnwinder
         private ModuleEhFrameCache $ehFrameCache,
         private MemoryReaderInterface $memoryReader,
         private ?JitCodeReader $jitCodeReader = null,
+        private string $processRoot = '',
     ) {
         $this->cfiDecoder = new CfiInstructionDecoder();
         $this->dwarfExpression = new DwarfExpression();
@@ -372,7 +373,11 @@ final class NativeStackUnwinder
     private function isFile(string $path): bool
     {
         if (!isset($this->isFileCache[$path])) {
-            $this->isFileCache[$path] = is_file($path);
+            $resolved = $path;
+            if ($this->processRoot !== '' && str_starts_with($path, '/')) {
+                $resolved = $this->processRoot . $path;
+            }
+            $this->isFileCache[$path] = is_file($resolved);
         }
         return $this->isFileCache[$path];
     }
