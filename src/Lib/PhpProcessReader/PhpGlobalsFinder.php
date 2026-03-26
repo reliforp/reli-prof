@@ -54,11 +54,20 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
-        $tsrm_ls_cache_cdata = $this->getSymbolReader(
-            $process_specifier,
-            $target_php_settings
-        )->read('_tsrm_ls_cache');
+        $fingerprint = $this->getPhpFingerprint($process_specifier, $target_php_settings->php_regex);
+        $cached = $this->binary_analysis_cache->get($fingerprint, 'tsrm_ls_cache');
+        if ($cached !== null && isset($cached['has_tsrm_ls_cache'])) {
+            if ($cached['has_tsrm_ls_cache'] === false) {
+                return null;
+            }
+        }
+
+        $symbol_reader = $this->getSymbolReader($process_specifier, $target_php_settings);
+        $tsrm_ls_cache_cdata = $symbol_reader->read('_tsrm_ls_cache');
         if (isset($tsrm_ls_cache_cdata)) {
+            $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', [
+                'has_tsrm_ls_cache' => true,
+            ]);
             $tsrm_ls_cache_address = $this->integer_reader->read64(
                 new CDataByteReader($tsrm_ls_cache_cdata),
                 0
@@ -69,7 +78,17 @@ class PhpGlobalsFinder
             return $tsrm_ls_cache_address;
         }
         assert($target_php_settings->isDecided());
-        return $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
+        $result = $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
+        if ($result === null) {
+            $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', [
+                'has_tsrm_ls_cache' => false,
+            ]);
+        } else {
+            $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', [
+                'has_tsrm_ls_cache' => true,
+            ]);
+        }
+        return $result;
     }
 
     /**
@@ -162,6 +181,14 @@ class PhpGlobalsFinder
         TargetPhpSettings $target_php_settings,
         string $symbol_name,
     ): int {
+        $module_map = $this->getPhpModuleMemoryMap($process_specifier, $target_php_settings->php_regex);
+        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+
+        $cached_nts = $this->binary_analysis_cache->get($fingerprint, 'nts_globals');
+        if ($cached_nts !== null && isset($cached_nts[$symbol_name]) && is_int($cached_nts[$symbol_name])) {
+            return $module_map->getBaseAddress() + $cached_nts[$symbol_name];
+        }
+
         $tsrm_ls_cache = $this->findTsrmLsCache($process_specifier, $target_php_settings);
         if (isset($tsrm_ls_cache)) {
             return $this->tsrm_globals_resolver->resolveGlobalsAddress(
@@ -172,24 +199,25 @@ class PhpGlobalsFinder
             );
         }
 
-        $module_map = $this->getPhpModuleMemoryMap($process_specifier, $target_php_settings->php_regex);
-        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
-        $cached = $this->binary_analysis_cache->get($fingerprint, 'nts_globals');
-        if ($cached !== null && isset($cached[$symbol_name]) && is_int($cached[$symbol_name])) {
-            return $module_map->getBaseAddress() + $cached[$symbol_name];
-        }
-
         $globals_address = $this->getSymbolReader($process_specifier, $target_php_settings)
             ->resolveAddress($symbol_name);
         if (is_null($globals_address)) {
             throw new RuntimeException('global symbol not found ' . $symbol_name);
         }
 
-        $cache_data = $cached ?? [];
+        $cache_data = $cached_nts ?? [];
         $cache_data[$symbol_name] = $globals_address - $module_map->getBaseAddress();
         $this->binary_analysis_cache->set($fingerprint, 'nts_globals', $cache_data);
 
         return $globals_address;
+    }
+
+    private function getPhpFingerprint(
+        ProcessSpecifier $process_specifier,
+        string $regex,
+    ): BinaryFingerprint {
+        $module_map = $this->getPhpModuleMemoryMap($process_specifier, $regex);
+        return BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
     }
 
     private function getPhpModuleMemoryMap(
