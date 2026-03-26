@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
-use Reli\Lib\File\CatFileReader;
+use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -84,7 +84,7 @@ final class NativeTraceCollector
         $maps_string = $this->memoryMapReader->read($pid);
         $this->memoryMap = $this->memoryMapParser->parse($maps_string);
         $process_root = "/proc/{$pid}/root";
-        $file_reader = new CatFileReader();
+        $file_reader = new NativeFileReader();
         $this->ehFrameCache = new ModuleEhFrameCache(
             processRoot: $process_root,
             fileReader: $file_reader,
