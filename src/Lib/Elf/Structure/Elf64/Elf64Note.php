@@ -18,6 +18,7 @@ final class Elf64Note
     public const NT_PRSTATUS = 1;
     public const NT_FPREGSET = 2;
     public const NT_PRPSINFO = 3;
+    public const NT_GNU_BUILD_ID = 3; // when name is "GNU\0"
     public const NT_TASKSTRUCT = 4;
     public const NT_AUXV = 6;
     public const NT_SIGINFO = 0x53494749;

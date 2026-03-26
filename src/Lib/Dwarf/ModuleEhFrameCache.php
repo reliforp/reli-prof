@@ -15,6 +15,7 @@ namespace Reli\Lib\Dwarf;
 
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\ByteStream\StringByteReader;
+use Reli\Lib\Elf\DebugFileLocator;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 
 final class ModuleEhFrameCache
@@ -27,12 +28,14 @@ final class ModuleEhFrameCache
 
     private EhFrameParser $ehFrameParser;
     private Elf64Parser $elfParser;
+    private DebugFileLocator $debugFileLocator;
 
-    public function __construct()
+    public function __construct(?DebugFileLocator $debugFileLocator = null)
     {
         $integer_reader = new LittleEndianReader();
         $this->ehFrameParser = new EhFrameParser($integer_reader);
         $this->elfParser = new Elf64Parser($integer_reader);
+        $this->debugFileLocator = $debugFileLocator ?? new DebugFileLocator();
     }
 
     /**
@@ -81,27 +84,49 @@ final class ModuleEhFrameCache
      */
     private function loadModule(string $modulePath): ?array
     {
-        if (!is_file($modulePath)) {
-            $this->noEhFrame[$modulePath] = true;
+        // Try loading .eh_frame from the binary itself
+        $fdes = $this->tryLoadEhFrame($modulePath);
+        if ($fdes !== null) {
+            $this->cache[$modulePath] = $fdes;
+            return $fdes;
+        }
+
+        // Fallback: try separate debug file
+        $debugFile = $this->debugFileLocator->locate($modulePath);
+        if ($debugFile !== null) {
+            $fdes = $this->tryLoadEhFrame($debugFile);
+            if ($fdes !== null) {
+                $this->cache[$modulePath] = $fdes;
+                return $fdes;
+            }
+        }
+
+        $this->noEhFrame[$modulePath] = true;
+        return null;
+    }
+
+    /**
+     * @return array<Fde>|null
+     */
+    private function tryLoadEhFrame(string $filePath): ?array
+    {
+        if (!is_file($filePath)) {
             return null;
         }
 
-        $binary_data = file_get_contents($modulePath);
-        if ($binary_data === false) {
-            $this->noEhFrame[$modulePath] = true;
+        $binary_data = file_get_contents($filePath);
+        if ($binary_data === false || strlen($binary_data) < 4) {
             return null;
         }
 
         $byte_reader = new StringByteReader($binary_data);
 
         // Check ELF magic
-        if (strlen($binary_data) < 4
-            || $byte_reader[0] !== 0x7f
+        if ($byte_reader[0] !== 0x7f
             || $byte_reader[1] !== 0x45 // 'E'
             || $byte_reader[2] !== 0x4c // 'L'
             || $byte_reader[3] !== 0x46 // 'F'
         ) {
-            $this->noEhFrame[$modulePath] = true;
             return null;
         }
 
@@ -109,7 +134,6 @@ final class ModuleEhFrameCache
             $elf_header = $this->elfParser->parseElfHeader($byte_reader);
 
             if ($elf_header->e_shnum === 0 || $elf_header->e_shoff->toInt() === 0) {
-                $this->noEhFrame[$modulePath] = true;
                 return null;
             }
 
@@ -117,7 +141,6 @@ final class ModuleEhFrameCache
             $eh_frame_section = $section_headers->findSectionByName('.eh_frame');
 
             if ($eh_frame_section === null) {
-                $this->noEhFrame[$modulePath] = true;
                 return null;
             }
 
@@ -131,10 +154,8 @@ final class ModuleEhFrameCache
             // Sort by initial location for binary search
             usort($fdes, fn(Fde $a, Fde $b) => $a->initialLocation <=> $b->initialLocation);
 
-            $this->cache[$modulePath] = $fdes;
             return $fdes;
         } catch (\Throwable) {
-            $this->noEhFrame[$modulePath] = true;
             return null;
         }
     }

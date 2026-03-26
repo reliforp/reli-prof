@@ -327,10 +327,28 @@ final class Elf64Parser
     }
 
     /** @return array<Elf64Note> */
+    public function parseNoteSection(ByteReaderInterface $data, Elf64SectionHeaderEntry $sectionHeader): array
+    {
+        return $this->parseNoteData(
+            $data,
+            $sectionHeader->sh_offset->toInt(),
+            $sectionHeader->sh_size->toInt(),
+        );
+    }
+
+    /** @return array<Elf64Note> */
     public function parseNote(ByteReaderInterface $data, Elf64ProgramHeaderEntry $elf64ProgramHeaderEntry): array
     {
-        $offset = $elf64ProgramHeaderEntry->p_offset->toInt();
-        $size = $elf64ProgramHeaderEntry->p_filesz->toInt();
+        return $this->parseNoteData(
+            $data,
+            $elf64ProgramHeaderEntry->p_offset->toInt(),
+            $elf64ProgramHeaderEntry->p_filesz->toInt(),
+        );
+    }
+
+    /** @return array<Elf64Note> */
+    private function parseNoteData(ByteReaderInterface $data, int $offset, int $size): array
+    {
         $end = $offset + $size;
         $notes = [];
         while ($offset < $end) {

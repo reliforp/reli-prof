@@ -15,6 +15,7 @@ namespace Reli\Lib\Dwarf;
 
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\ByteStream\StringByteReader;
+use Reli\Lib\Elf\DebugFileLocator;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\SymbolResolver\Elf64ReverseSymbolResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -28,11 +29,14 @@ final class NativeSymbolResolver
     private array $moduleBaseAddresses = [];
 
     private Elf64Parser $elfParser;
+    private DebugFileLocator $debugFileLocator;
 
     public function __construct(
         private ProcessMemoryMap $memoryMap,
+        ?DebugFileLocator $debugFileLocator = null,
     ) {
         $this->elfParser = new Elf64Parser(new LittleEndianReader());
+        $this->debugFileLocator = $debugFileLocator ?? new DebugFileLocator();
     }
 
     /**
@@ -75,11 +79,28 @@ final class NativeSymbolResolver
 
     private function loadResolver(string $modulePath): ?Elf64ReverseSymbolResolver
     {
-        if (!is_file($modulePath)) {
+        // Try loading from the binary itself
+        $resolver = $this->tryLoadFromFile($modulePath);
+        if ($resolver !== null) {
+            return $resolver;
+        }
+
+        // Fallback: try separate debug file for .symtab
+        $debugFile = $this->debugFileLocator->locate($modulePath);
+        if ($debugFile !== null) {
+            return $this->tryLoadFromFile($debugFile);
+        }
+
+        return null;
+    }
+
+    private function tryLoadFromFile(string $filePath): ?Elf64ReverseSymbolResolver
+    {
+        if (!is_file($filePath)) {
             return null;
         }
 
-        $binary = file_get_contents($modulePath);
+        $binary = file_get_contents($filePath);
         if ($binary === false) {
             return null;
         }
