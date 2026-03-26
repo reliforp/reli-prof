@@ -108,14 +108,32 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
 
         // Collect diagnostic info
         $tgid = self::findTgidFromTid($pid);
-        $maps_excerpt = '';
+        $diag = "exe=" . (@readlink("/proc/{$tgid}/exe") ?: 'unreadable') . "\n";
         $maps_content = @file_get_contents("/proc/{$tgid}/maps");
+        if ($maps_content === false) {
+            $diag .= "maps: unreadable for tgid={$tgid}\n";
+            // Try reading via pid directly
+            $maps_content = @file_get_contents("/proc/{$pid}/maps");
+            if ($maps_content === false) {
+                $diag .= "maps: also unreadable for pid={$pid}\n";
+            }
+        }
+        $maps_excerpt = '';
         if ($maps_content !== false) {
+            $all_names = [];
             foreach (explode("\n", $maps_content) as $line) {
-                if (preg_match('/libphp|libc\.so|frankenphp/', $line)) {
+                if (preg_match('/\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\S+)/', $line, $m)) {
+                    $name = $m[1];
+                    if (!isset($all_names[$name])) {
+                        $all_names[$name] = true;
+                    }
+                }
+                if (preg_match('/libphp|libc|frankenphp|php/', $line)) {
                     $maps_excerpt .= $line . "\n";
                 }
             }
+            $diag .= "unique_mapped_files(" . count($all_names) . "): "
+                . implode(', ', array_slice(array_keys($all_names), 0, 20)) . "\n";
         }
 
         foreach ($tids as $tid) {
@@ -189,7 +207,8 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
             "Could not find a thread with valid PHP executor globals.\n"
             . "pid={$pid}, tgid={$tgid}, tids=[" . implode(',', $tids) . "]\n"
             . "last_error: {$last_error}\n"
-            . "maps:\n{$maps_excerpt}"
+            . $diag
+            . "maps_excerpt:\n{$maps_excerpt}"
         );
 
         $call_trace = $executor_globals_reader->readCallTrace(
