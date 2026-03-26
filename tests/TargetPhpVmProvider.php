@@ -140,6 +140,51 @@ class TargetPhpVmProvider
         return [$proc_handle, $pid];
     }
 
+    public static function runScriptViaFrankenPhpContainer(
+        string $docker_image_name,
+        string $script,
+        array &$pipes,
+    ) {
+        $tmp_file = tempnam('/tmp/reli-test', 'reli-prof-test');
+        $pid_file = tempnam('/tmp/reli-test', 'reli-prof-test-pid');
+
+        chmod($tmp_file, 0777);
+        chmod($pid_file, 0777);
+
+        // Prepend PID writing logic directly into the script
+        $pid_writer_code = <<<'CODE'
+        file_put_contents('/target-pid', getmypid());
+        fputs(STDOUT, "pid written\n");
+        CODE;
+        // Insert after <?php opening tag
+        $modified_script = preg_replace(
+            '/^<\?php\s*/s',
+            "<?php\n" . $pid_writer_code . "\n",
+            $script
+        );
+        file_put_contents($tmp_file, $modified_script);
+
+        $proc_handle = self::procOpenViaDocker(
+            $docker_image_name,
+            'frankenphp php-cli /source',
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w']
+            ],
+            $pipes,
+            [
+                $tmp_file => '/source',
+                $pid_file => '/target-pid',
+                '/tmp/reli-test' => '/tmp/reli-test',
+            ],
+        );
+        $pid_written_message = fgets($pipes[1]);
+        assert($pid_written_message === "pid written\n");
+        $pid = (int)file_get_contents($pid_file);
+        return [$proc_handle, $pid];
+    }
+
     public static function procOpenViaDocker(
         string $docker_image_name,
         string $command,
