@@ -18,6 +18,8 @@ use Reli\Lib\ByteStream\CDataByteReader;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
@@ -44,10 +46,11 @@ final class PhpTsrmLsCacheFinder
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
         private ContainerAwarePathResolver $process_path_resolver,
         private ZendTypeReaderCreator $zend_type_reader_creator,
+        private BinaryAnalysisCache $binary_analysis_cache,
     ) {
     }
 
-    /** @return array{int, int}|null */
+    /** @return array{int, int, ProcessModuleMemoryMap}|null */
     public function resolveTlsBlock(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
@@ -83,7 +86,7 @@ final class PhpTsrmLsCacheFinder
             return null;
         }
 
-        return [$tls_block_address, $tls_entries[0]->p_memsz->toInt()];
+        return [$tls_block_address, $tls_entries[0]->p_memsz->toInt(), $php_module_memory_map];
     }
 
     /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
@@ -98,7 +101,18 @@ final class PhpTsrmLsCacheFinder
         if (is_null($tls_block)) {
             return null;
         }
-        [$tls_block_address, $tls_block_size] = $tls_block;
+        [$tls_block_address, $tls_block_size, $php_module_memory_map] = $tls_block;
+        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($php_module_memory_map);
+
+        $cached = $this->binary_analysis_cache->get($fingerprint, 'tls_offset');
+        if ($cached !== null && isset($cached['offset']) && is_int($cached['offset'])) {
+            $candidate_address = $tls_block_address + $cached['offset'];
+            assert($target_php_settings->isDecided());
+            if ($this->validateCandidate($process_specifier, $target_php_settings, $candidate_address)) {
+                return $candidate_address;
+            }
+        }
+
         for ($current = $tls_block_address; $current < $tls_block_address + $tls_block_size; $current += 8) {
             $tsrm_ls_cache_candidate = $this->memory_reader->read(
                 $process_specifier->pid,
@@ -111,6 +125,11 @@ final class PhpTsrmLsCacheFinder
             )->toInt();
             assert($target_php_settings->isDecided());
             if ($this->validateCandidate($process_specifier, $target_php_settings, $tsrm_ls_cache_address_candidate)) {
+                $this->binary_analysis_cache->set(
+                    $fingerprint,
+                    'tls_offset',
+                    ['offset' => $tsrm_ls_cache_address_candidate - $tls_block_address],
+                );
                 return $tsrm_ls_cache_address_candidate;
             }
         }

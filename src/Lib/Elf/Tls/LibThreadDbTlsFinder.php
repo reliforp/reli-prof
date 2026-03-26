@@ -15,6 +15,8 @@ namespace Reli\Lib\Elf\Tls;
 
 use Reli\Lib\ByteStream\CDataByteReader;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
@@ -31,6 +33,8 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
         private ThreadPointerRetrieverInterface $thread_pointer_retriever,
         private MemoryReaderInterface $memory_reader,
         private IntegerByteSequenceReader $integer_reader,
+        private ?BinaryAnalysisCache $binary_analysis_cache = null,
+        private ?BinaryFingerprint $libpthread_fingerprint = null,
     ) {
     }
 
@@ -44,18 +48,15 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
     {
         $thread_pointer = $this->thread_pointer_retriever->getThreadPointer($pid);
 
-        [,,$thread_db_pthread_dtvp_offset] = $this->getLibThreadDbDescriptor('_thread_db_pthread_dtvp');
-        [$thread_db_dtv_dtv_size,,] = $this->getLibThreadDbDescriptor('_thread_db_dtv_dtv');
-        [,,$thread_db_dtv_t_pointer_val_offset] = $this->getLibThreadDbDescriptor('_thread_db_dtv_t_pointer_val');
-        [,,$thread_db_link_map_l_tls_modid_offset] = $this->getLibThreadDbDescriptor('_thread_db_link_map_l_tls_modid');
+        $descriptors = $this->resolveDescriptors();
 
-        $dtv_pointer_address = $thread_pointer + $thread_db_pthread_dtvp_offset;
+        $dtv_pointer_address = $thread_pointer + $descriptors['pthread_dtvp_offset'];
         $dtv_pointer_cdata = $this->memory_reader->read($pid, $dtv_pointer_address, 8);
         $dtv_pointer = $this->integer_reader->read64(new CDataByteReader($dtv_pointer_cdata), 0)->toInt();
 
         $module_id = 1;
         if (!is_null($link_map_address)) {
-            $module_id_address = $thread_db_link_map_l_tls_modid_offset + $link_map_address;
+            $module_id_address = $descriptors['link_map_l_tls_modid_offset'] + $link_map_address;
             $module_id = $this->integer_reader->read32(
                 new CDataByteReader(
                     $this->memory_reader->read(
@@ -68,11 +69,63 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
             );
         }
 
-        $dtv_slot = $thread_db_dtv_dtv_size * $module_id;
-        $tls_address_pointer = $dtv_pointer + $dtv_slot + $thread_db_dtv_t_pointer_val_offset;
+        $dtv_slot = $descriptors['dtv_dtv_size'] * $module_id;
+        $tls_address_pointer = $dtv_pointer + $dtv_slot + $descriptors['dtv_t_pointer_val_offset'];
 
         $tls_address_cdata = $this->memory_reader->read($pid, $tls_address_pointer, 8);
         return $this->integer_reader->read64(new CDataByteReader($tls_address_cdata), 0)->toInt();
+    }
+
+    /**
+     * @return array{
+     *     pthread_dtvp_offset: int,
+     *     dtv_dtv_size: int,
+     *     dtv_t_pointer_val_offset: int,
+     *     link_map_l_tls_modid_offset: int,
+     * }
+     * @throws MemoryReaderException
+     * @throws ProcessSymbolReaderException
+     * @throws TlsFinderException
+     */
+    private function resolveDescriptors(): array
+    {
+        if ($this->binary_analysis_cache !== null && $this->libpthread_fingerprint !== null) {
+            $cached = $this->binary_analysis_cache->get($this->libpthread_fingerprint, 'libpthread_descriptors');
+            if (
+                $cached !== null
+                && isset(
+                    $cached['pthread_dtvp_offset'],
+                    $cached['dtv_dtv_size'],
+                    $cached['dtv_t_pointer_val_offset'],
+                    $cached['link_map_l_tls_modid_offset'],
+                )
+                && is_int($cached['pthread_dtvp_offset'])
+                && is_int($cached['dtv_dtv_size'])
+                && is_int($cached['dtv_t_pointer_val_offset'])
+                && is_int($cached['link_map_l_tls_modid_offset'])
+            ) {
+                /** @var array{pthread_dtvp_offset: int, dtv_dtv_size: int, dtv_t_pointer_val_offset: int, link_map_l_tls_modid_offset: int} */
+                return $cached;
+            }
+        }
+
+        [,,$pthread_dtvp_offset] = $this->getLibThreadDbDescriptor('_thread_db_pthread_dtvp');
+        [$dtv_dtv_size,,] = $this->getLibThreadDbDescriptor('_thread_db_dtv_dtv');
+        [,,$dtv_t_pointer_val_offset] = $this->getLibThreadDbDescriptor('_thread_db_dtv_t_pointer_val');
+        [,,$link_map_l_tls_modid_offset] = $this->getLibThreadDbDescriptor('_thread_db_link_map_l_tls_modid');
+
+        $result = [
+            'pthread_dtvp_offset' => $pthread_dtvp_offset,
+            'dtv_dtv_size' => $dtv_dtv_size,
+            'dtv_t_pointer_val_offset' => $dtv_t_pointer_val_offset,
+            'link_map_l_tls_modid_offset' => $link_map_l_tls_modid_offset,
+        ];
+
+        if ($this->binary_analysis_cache !== null && $this->libpthread_fingerprint !== null) {
+            $this->binary_analysis_cache->set($this->libpthread_fingerprint, 'libpthread_descriptors', $result);
+        }
+
+        return $result;
     }
 
     /**

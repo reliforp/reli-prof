@@ -17,10 +17,14 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\ByteStream\CDataByteReader;
 use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\Elf\Tls\TlsFinderException;
 use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -35,6 +39,8 @@ class PhpGlobalsFinder
         private MemoryReaderInterface $memory_reader,
         private PhpTsrmLsCacheFinder $tsrm_ls_cache_finder,
         private TsrmGlobalsResolver $tsrm_globals_resolver,
+        private BinaryAnalysisCache $binary_analysis_cache,
+        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
     ) {
     }
 
@@ -124,11 +130,30 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
+        $module_map = $this->getPhpModuleMemoryMap(
+            $process_specifier,
+            $target_php_settings->zts_globals_regex,
+        );
+        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+        $cached = $this->binary_analysis_cache->get($fingerprint, 'nts_globals');
+        if ($cached !== null && isset($cached['module_registry']) && is_int($cached['module_registry'])) {
+            return $module_map->getBaseAddress() + $cached['module_registry'];
+        }
+
         $symbol_reader = $this->tsrm_globals_resolver->getZtsGlobalsSymbolReader(
             $process_specifier,
             $target_php_settings
         );
-        return $symbol_reader->resolveAddress('module_registry');
+        $address = $symbol_reader->resolveAddress('module_registry');
+        if ($address === null) {
+            return null;
+        }
+
+        $cache_data = $cached ?? [];
+        $cache_data['module_registry'] = $address - $module_map->getBaseAddress();
+        $this->binary_analysis_cache->set($fingerprint, 'nts_globals', $cache_data);
+
+        return $address;
     }
 
     /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
@@ -146,12 +171,36 @@ class PhpGlobalsFinder
                 $tsrm_ls_cache,
             );
         }
+
+        $module_map = $this->getPhpModuleMemoryMap($process_specifier, $target_php_settings->php_regex);
+        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+        $cached = $this->binary_analysis_cache->get($fingerprint, 'nts_globals');
+        if ($cached !== null && isset($cached[$symbol_name]) && is_int($cached[$symbol_name])) {
+            return $module_map->getBaseAddress() + $cached[$symbol_name];
+        }
+
         $globals_address = $this->getSymbolReader($process_specifier, $target_php_settings)
             ->resolveAddress($symbol_name);
         if (is_null($globals_address)) {
             throw new RuntimeException('global symbol not found ' . $symbol_name);
         }
+
+        $cache_data = $cached ?? [];
+        $cache_data[$symbol_name] = $globals_address - $module_map->getBaseAddress();
+        $this->binary_analysis_cache->set($fingerprint, 'nts_globals', $cache_data);
+
         return $globals_address;
+    }
+
+    private function getPhpModuleMemoryMap(
+        ProcessSpecifier $process_specifier,
+        string $regex,
+    ): ProcessModuleMemoryMap {
+        $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap(
+            $process_specifier->pid,
+        );
+        $php_areas = $process_memory_map->findByNameRegex($regex);
+        return new ProcessModuleMemoryMap($php_areas);
     }
 
     /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */

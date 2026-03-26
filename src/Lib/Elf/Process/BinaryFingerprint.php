@@ -37,6 +37,11 @@ final class BinaryFingerprint
         );
     }
 
+    public function getCacheKey(): string
+    {
+        return hash('sha256', $this->fingerprint);
+    }
+
     public function __toString(): string
     {
         return $this->fingerprint;
