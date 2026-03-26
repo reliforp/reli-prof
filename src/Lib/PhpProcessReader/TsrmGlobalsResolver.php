@@ -97,14 +97,47 @@ final class TsrmGlobalsResolver
                     $process_specifier,
                     $target_php_settings
                 )->read($offset);
-                if (is_null($globals_offset_cdata)) {
-                    throw new RuntimeException('globals offset not found');
+                if (!is_null($globals_offset_cdata)) {
+                    $globals_offset = $this->integer_reader->read64(
+                        new CDataByteReader($globals_offset_cdata),
+                        0
+                    )->toInt();
+                    if ($globals_offset !== 0) {
+                        return $tsrm_ls_cache + $globals_offset;
+                    }
                 }
-                $globals_offset = $this->integer_reader->read64(
-                    new CDataByteReader($globals_offset_cdata),
+                // Fallback to _id approach when _offset is 0 or not found
+                // (e.g. libphp.so built as PIC where ZEND_ENABLE_STATIC_TSRMLS_CACHE is not defined)
+                $id_symbol = $symbol_name . '_id';
+                $globals_id_cdata = $this->getZtsGlobalsSymbolReader($process_specifier, $target_php_settings)
+                    ->read($id_symbol);
+                if (is_null($globals_id_cdata)) {
+                    throw new RuntimeException('globals offset and id not found for ' . $symbol_name);
+                }
+                $tsrm_ls_cache_dereferenced = $this->integer_reader->read64(
+                    new CDataByteReader(
+                        $this->memory_reader->read(
+                            $process_specifier->pid,
+                            $tsrm_ls_cache,
+                            8
+                        )
+                    ),
                     0
                 )->toInt();
-                return $tsrm_ls_cache + $globals_offset;
+                $globals_id = $this->integer_reader->read32(
+                    new CDataByteReader($globals_id_cdata),
+                    0
+                );
+                return $this->integer_reader->read64(
+                    new CDataByteReader(
+                        $this->memory_reader->read(
+                            $process_specifier->pid,
+                            $tsrm_ls_cache_dereferenced + ($globals_id - 1) * 8,
+                            8
+                        )
+                    ),
+                    0
+                )->toInt();
             default:
                 throw new \LogicException('this should never happen');
         }
