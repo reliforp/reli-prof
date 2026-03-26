@@ -32,6 +32,7 @@ final class ProcessMemoryMap
         foreach ($memory_areas as $i => $area) {
             $index[] = [hexdec($area->begin), hexdec($area->end), $i];
         }
+        /** @var array{int, int, int}[] $index */
         usort($index, fn(array $a, array $b) => $a[0] <=> $b[0]);
         $this->sortedIndex = $index;
     }

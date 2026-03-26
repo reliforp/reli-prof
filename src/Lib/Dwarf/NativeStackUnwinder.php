@@ -92,6 +92,7 @@ final class NativeStackUnwinder
 
             // Try DWARF-based unwinding
             $fde = null;
+            $module_base = 0;
             if ($is_anonymous) {
                 // Anonymous mapping — try JIT .eh_frame (from __jit_debug_descriptor)
                 $fde = $this->jitCodeReader?->findFdeForAddress($rip);
@@ -355,6 +356,7 @@ final class NativeStackUnwinder
         }
     }
 
+    /** @param ProcessMemoryArea[] $areas */
     private function findExecutableArea(array $areas): ?ProcessMemoryArea
     {
         foreach ($areas as $area) {

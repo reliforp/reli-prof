@@ -306,6 +306,7 @@ final class CfiInstructionDecoder
     public function buildInitialRow(Cie $cie): UnwindTableRow
     {
         $rows = $this->execute($cie->initialInstructions, $cie, 0);
-        return $rows[array_key_last($rows)] ?? new UnwindTableRow(0, CfaRule::registerOffset(0, 0), []);
+        $lastKey = array_key_last($rows);
+        return $lastKey !== null ? $rows[$lastKey] : new UnwindTableRow(0, CfaRule::registerOffset(0, 0), []);
     }
 }

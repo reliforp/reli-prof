@@ -80,6 +80,8 @@ final class RegisterState
     /**
      * Create from ptrace user_regs_struct FFI data.
      * The struct layout matches PtraceX64.php's definition.
+     *
+     * @psalm-suppress UndefinedPropertyFetch
      */
     public static function fromPtraceRegs(\FFI\CData $regs): self
     {

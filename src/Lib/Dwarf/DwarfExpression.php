@@ -119,6 +119,7 @@ final class DwarfExpression
                 continue;
             }
 
+            /** @psalm-suppress PossiblyNullOperand,PossiblyNullArgument,PossiblyNullArrayOffset */
             match ($op) {
                 self::DW_OP_addr => (function () use ($data, &$offset, &$stack, $integer_reader) {
                     $stack[] = $integer_reader->read64($data, $offset)->toInt();
