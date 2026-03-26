@@ -103,4 +103,132 @@ class EhFrameParserTest extends BaseTestCase
             $this->assertSame(16, $fde->cie->returnAddressRegister);
         }
     }
+
+    public function testCieAugmentationParsed(): void
+    {
+        $php_path = PHP_BINARY;
+        $binary = file_get_contents($php_path);
+        if ($binary === false) {
+            $this->markTestSkipped('Cannot read PHP binary');
+        }
+
+        $integer_reader = new LittleEndianReader();
+        $elf_parser = new Elf64Parser($integer_reader);
+        $byte_reader = new StringByteReader($binary);
+        $elf_header = $elf_parser->parseElfHeader($byte_reader);
+        $section_headers = $elf_parser->parseSectionHeader(
+            $byte_reader,
+            $elf_header,
+        );
+        $eh_frame = $section_headers->findSectionByName('.eh_frame');
+        if ($eh_frame === null) {
+            $this->markTestSkipped('No .eh_frame');
+        }
+
+        $eh_frame_parser = new EhFrameParser($integer_reader);
+        $fdes = $eh_frame_parser->parse(
+            $byte_reader,
+            $eh_frame->sh_offset->toInt(),
+            $eh_frame->sh_size->toInt(),
+            $eh_frame->sh_addr->toInt(),
+        );
+
+        // Check CIE augmentation strings
+        $augmentations = [];
+        foreach ($fdes as $fde) {
+            $augmentations[$fde->cie->augmentation] = true;
+        }
+
+        // Most x86_64 binaries use 'zR' augmentation
+        $this->assertArrayHasKey('zR', $augmentations);
+    }
+
+    public function testFdeAddressRangesAreValid(): void
+    {
+        $php_path = PHP_BINARY;
+        $binary = file_get_contents($php_path);
+        if ($binary === false) {
+            $this->markTestSkipped('Cannot read PHP binary');
+        }
+
+        $integer_reader = new LittleEndianReader();
+        $elf_parser = new Elf64Parser($integer_reader);
+        $byte_reader = new StringByteReader($binary);
+        $elf_header = $elf_parser->parseElfHeader($byte_reader);
+        $section_headers = $elf_parser->parseSectionHeader(
+            $byte_reader,
+            $elf_header,
+        );
+        $eh_frame = $section_headers->findSectionByName('.eh_frame');
+        if ($eh_frame === null) {
+            $this->markTestSkipped('No .eh_frame');
+        }
+
+        $eh_frame_parser = new EhFrameParser($integer_reader);
+        $fdes = $eh_frame_parser->parse(
+            $byte_reader,
+            $eh_frame->sh_offset->toInt(),
+            $eh_frame->sh_size->toInt(),
+            $eh_frame->sh_addr->toInt(),
+        );
+
+        // FDEs should not overlap and should have reasonable ranges
+        foreach ($fdes as $fde) {
+            $this->assertGreaterThan(0, $fde->addressRange);
+            // Reasonable range: < 10MB per function
+            $this->assertLessThan(
+                10 * 1024 * 1024,
+                $fde->addressRange,
+            );
+            $this->assertNotEmpty($fde->cie->augmentation);
+        }
+    }
+
+    public function testFdeContainsAddress(): void
+    {
+        $php_path = PHP_BINARY;
+        $binary = file_get_contents($php_path);
+        if ($binary === false) {
+            $this->markTestSkipped('Cannot read PHP binary');
+        }
+
+        $integer_reader = new LittleEndianReader();
+        $elf_parser = new Elf64Parser($integer_reader);
+        $byte_reader = new StringByteReader($binary);
+        $elf_header = $elf_parser->parseElfHeader($byte_reader);
+        $section_headers = $elf_parser->parseSectionHeader(
+            $byte_reader,
+            $elf_header,
+        );
+        $eh_frame = $section_headers->findSectionByName('.eh_frame');
+        if ($eh_frame === null) {
+            $this->markTestSkipped('No .eh_frame');
+        }
+
+        $eh_frame_parser = new EhFrameParser($integer_reader);
+        $fdes = $eh_frame_parser->parse(
+            $byte_reader,
+            $eh_frame->sh_offset->toInt(),
+            $eh_frame->sh_size->toInt(),
+            $eh_frame->sh_addr->toInt(),
+        );
+
+        $fde = $fdes[0];
+        $this->assertTrue(
+            $fde->containsAddress($fde->initialLocation),
+        );
+        $this->assertTrue(
+            $fde->containsAddress(
+                $fde->initialLocation + $fde->addressRange - 1
+            ),
+        );
+        $this->assertFalse(
+            $fde->containsAddress($fde->initialLocation - 1),
+        );
+        $this->assertFalse(
+            $fde->containsAddress(
+                $fde->initialLocation + $fde->addressRange
+            ),
+        );
+    }
 }
