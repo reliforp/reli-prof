@@ -100,12 +100,16 @@ final class GetTraceCommand extends Command
 
         // Native trace requires process stopping (for ptrace GETREGS)
         $with_native = $get_trace_settings->with_native_trace;
-        if ($with_native) {
+        if ($with_native && !$loop_settings->stop_process) {
+            $output->writeln(
+                '<comment>--with-native-trace requires stopping the target process (ptrace GETREGS).'
+                . ' Implicitly enabling --stop-process (-S).</comment>'
+            );
             $loop_settings = new \Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings(
                 $loop_settings->sleep_nano_seconds,
                 $loop_settings->cancel_key,
                 $loop_settings->max_retries,
-                true, // force stop_process
+                true,
             );
         }
 
