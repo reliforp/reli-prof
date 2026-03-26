@@ -54,8 +54,8 @@ final class NativeSymbolResolver
 
         $area = $areas[0];
         $module_path = $area->name;
-        if ($module_path === '' || $module_path[0] === '[') {
-            // Anonymous mapping or special region - try perf map (JIT code)
+        if ($module_path === '' || $module_path[0] === '[' || !is_file($module_path)) {
+            // Anonymous/special/non-file mapping (JIT buffer, /dev/zero, etc.) - try perf map
             return $this->perfMapResolver?->resolve($absoluteAddress);
         }
 

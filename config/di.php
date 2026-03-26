@@ -91,4 +91,10 @@ return [
         return $logger;
     },
     Ptrace::class => autowire(PtraceX64::class),
+    Reli\Lib\Dwarf\NativeTraceCollector::class => autowire(),
+    Reli\Command\Inspector\GetTraceCommand::class => autowire()
+        ->constructorParameter(
+            'native_trace_collector',
+            DI\get(Reli\Lib\Dwarf\NativeTraceCollector::class),
+        ),
 ];

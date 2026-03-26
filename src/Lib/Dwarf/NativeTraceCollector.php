@@ -169,7 +169,7 @@ final class NativeTraceCollector
                 PtraceRequest::PTRACE_GETREGS,
                 $pid,
                 null,
-                $regs,
+                \FFI::addr($regs),
             );
 
             if ($result === -1) {

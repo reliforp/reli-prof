@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 use Reli\Lib\ByteStream\CDataByteReader;
+use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -76,7 +77,7 @@ final class NativeStackUnwinder
 
             $area = $this->findExecutableArea($areas) ?? $areas[0];
             $module_path = $area->name;
-            $is_anonymous = ($module_path === '' || $module_path[0] === '[');
+            $is_anonymous = ($module_path === '' || $module_path[0] === '[' || !is_file($module_path));
 
             // Create frame for this IP
             $display_module = $is_anonymous ? '[jit]' : $module_path;
