@@ -46,7 +46,6 @@ use Reli\Lib\String\LineFetcher;
 use Reli\TargetPhpVmProvider;
 
 #[Group('target-version')]
-#[\PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses]
 class NativeTraceCollectorTest extends BaseTestCase
 {
     /** @var resource|null */
