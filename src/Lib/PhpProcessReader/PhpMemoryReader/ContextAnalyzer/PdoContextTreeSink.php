@@ -80,34 +80,33 @@ final class PdoContextTreeSink implements ContextTreeSink
         $this->bufferEdge($parent_node_id, $node_id, $link_name, 1);
 
         foreach ($locations as $location) {
-            if ($location instanceof MemoryLocation) {
-                $class = $location::class;
-                $short_class = $this->short_name_cache[$class]
-                    ??= (new \ReflectionClass($class))->getShortName();
-                $this->location_buffer[] = $node_id;
-                $this->location_buffer[] = $location->address;
-                $this->location_buffer[] = $location->size;
-                $this->location_buffer[] = $short_class;
-                $this->location_buffer[] = $location instanceof ZendObjectMemoryLocation
-                    ? $location->class_name : null;
-                $this->location_buffer[] = $location instanceof ZendStringMemoryLocation
-                    ? $location->value : null;
-                $this->location_buffer[] = $location instanceof RefcountedMemoryLocation
-                    ? $location->refcount : null;
-                $this->location_buffer[] = $location instanceof RefcountedMemoryLocation
-                    ? $location->type_info : null;
-                $this->location_buffer[] = $this->region_boundaries?->classifyRegion($location);
-                $this->location_row_count++;
+            $class = $location::class;
+            $short_class = $this->short_name_cache[$class]
+                ??= (new \ReflectionClass($class))->getShortName();
+            $this->location_buffer[] = $node_id;
+            $this->location_buffer[] = $location->address;
+            $this->location_buffer[] = $location->size;
+            $this->location_buffer[] = $short_class;
+            $this->location_buffer[] = $location instanceof ZendObjectMemoryLocation
+                ? $location->class_name : null;
+            $this->location_buffer[] = $location instanceof ZendStringMemoryLocation
+                ? $location->value : null;
+            $this->location_buffer[] = $location instanceof RefcountedMemoryLocation
+                ? $location->refcount : null;
+            $this->location_buffer[] = $location instanceof RefcountedMemoryLocation
+                ? $location->type_info : null;
+            $this->location_buffer[] = $this->region_boundaries?->classifyRegion($location);
+            $this->location_row_count++;
 
-                if ($this->location_row_count >= self::LOCATION_BATCH_SIZE) {
-                    $this->flushLocations();
-                }
+            if ($this->location_row_count >= self::LOCATION_BATCH_SIZE) {
+                $this->flushLocations();
             }
         }
 
+        /** @var mixed $value */
         foreach ($attributes as $key => $value) {
             $this->attr_buffer[] = $node_id;
-            $this->attr_buffer[] = (string)$key;
+            $this->attr_buffer[] = $key;
             $this->attr_buffer[] = is_scalar($value) ? (string)$value : json_encode($value);
             $this->attr_row_count++;
 
@@ -175,7 +174,7 @@ final class PdoContextTreeSink implements ContextTreeSink
 
     private function getAttrBatchStmt(int $row_count): \PDOStatement
     {
-        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
+        $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
         return $this->attr_batch_stmts[$row_count]
             ??= $this->db->prepare(
                 "INSERT INTO context_node_attributes (node_id, {$qi('key')}, {$qi('value')})"

@@ -24,6 +24,7 @@ final class JsonMemoryOutput implements MemoryOutputInterface
     ) {
     }
 
+    #[\Override]
     public function output(MemoryAnalysisResult $result): void
     {
         $sink = new ArrayContextTreeSink();
@@ -48,9 +49,9 @@ final class JsonMemoryOutput implements MemoryOutputInterface
             throw new \RuntimeException(json_last_error_msg());
         }
 
-        if ($this->output_path !== null) {
+        if ($this->output_path !== null && $json !== false) {
             file_put_contents($this->output_path, $json);
-        } else {
+        } elseif ($json !== false) {
             echo $json;
         }
     }

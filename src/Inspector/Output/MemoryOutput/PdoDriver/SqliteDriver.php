@@ -20,6 +20,7 @@ final class SqliteDriver implements PdoDriverInterface
     ) {
     }
 
+    #[\Override]
     public function createConnection(): \PDO
     {
         $db = new \PDO('sqlite:' . $this->path);
@@ -27,21 +28,25 @@ final class SqliteDriver implements PdoDriverInterface
         return $db;
     }
 
+    #[\Override]
     public function insertIgnoreSql(string $table, string $columns, string $placeholders): string
     {
         return "INSERT OR IGNORE INTO {$table} ({$columns}) VALUES ({$placeholders})";
     }
 
+    #[\Override]
     public function concatExpr(string $a, string $b): string
     {
         return "{$a} || {$b}";
     }
 
+    #[\Override]
     public function autoIncrementPrimaryKey(): string
     {
         return 'INTEGER PRIMARY KEY';
     }
 
+    #[\Override]
     public function tuneForBulkInsert(\PDO $db): void
     {
         $db->exec('PRAGMA journal_mode=OFF');
@@ -52,25 +57,30 @@ final class SqliteDriver implements PdoDriverInterface
         $db->exec('PRAGMA mmap_size=268435456');
     }
 
+    #[\Override]
     public function afterBulkInsert(\PDO $db): void
     {
     }
 
+    #[\Override]
     public function createViewSql(string $view_name): string
     {
         return "CREATE VIEW IF NOT EXISTS {$view_name} AS";
     }
 
+    #[\Override]
     public function quoteIdentifier(string $identifier): string
     {
         return '"' . $identifier . '"';
     }
 
+    #[\Override]
     public function primaryKeyTextType(): string
     {
         return 'TEXT';
     }
 
+    #[\Override]
     public function castAsInteger(string $expr): string
     {
         return "CAST({$expr} AS INTEGER)";

@@ -26,6 +26,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     ) {
     }
 
+    #[\Override]
     public function output(MemoryAnalysisResult $result): void
     {
         $db = $this->driver->createConnection();
@@ -59,7 +60,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     private function createTables(\PDO $db): void
     {
         $autoId = $this->driver->autoIncrementPrimaryKey();
-        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
+        $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
         $pkText = $this->driver->primaryKeyTextType();
 
         $db->exec("
@@ -141,9 +142,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
     private function createViews(\PDO $db): void
     {
-        $concat = fn (string $a, string $b) => $this->driver->concatExpr($a, $b);
-        $createView = fn (string $name) => $this->driver->createViewSql($name);
-        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
+        $concat = fn (string $a, string $b): string => $this->driver->concatExpr($a, $b);
+        $createView = fn (string $name): string => $this->driver->createViewSql($name);
+        $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
 
         $pathExpr = $concat('np.path', $concat("' -> '", 'e.link_name'));
 
@@ -194,9 +195,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      */
     private function insertSummary(\PDO $db, array $summary): void
     {
-        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
+        $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
         $stmt = $db->prepare("INSERT INTO summary ({$qi('key')}, {$qi('value')}) VALUES (:key, :value)");
         foreach ($summary as $entry) {
+            /** @var mixed $value */
             foreach ($entry as $key => $value) {
                 $stmt->execute([
                     ':key' => $key,
@@ -208,7 +210,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
     private function insertLocationTypesSummaryFromDb(\PDO $db): void
     {
-        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
+        $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
         $db->exec("
             INSERT INTO location_types_summary ({$qi('type')}, {$qi('count')}, memory_usage)
             SELECT location_type, COUNT(*), SUM(size)
@@ -222,7 +224,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
     private function insertClassObjectsSummaryFromDb(\PDO $db): void
     {
-        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
+        $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
         $db->exec("
             INSERT INTO class_objects_summary (class_name, {$qi('count')}, memory_usage)
             SELECT class_name, COUNT(*), SUM(size)

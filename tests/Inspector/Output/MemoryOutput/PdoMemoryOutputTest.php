@@ -115,7 +115,10 @@ class PdoMemoryOutputTest extends BaseTestCase
         $this->assertSame('root_type', $nodes[0]['type']);
         $this->assertSame('child_type', $nodes[1]['type']);
 
-        $edges = $db->query('SELECT parent_node_id, child_node_id, link_name, is_tree FROM context_edges ORDER BY child_node_id')->fetchAll(\PDO::FETCH_ASSOC);
+        $edges = $db->query(
+            'SELECT parent_node_id, child_node_id, link_name, is_tree'
+            . ' FROM context_edges ORDER BY child_node_id'
+        )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(2, $edges);
 
         // Root node edge (parent=null)
@@ -200,7 +203,9 @@ class PdoMemoryOutputTest extends BaseTestCase
         $output->output($result);
 
         $db = new \PDO('sqlite:' . $this->db_path);
-        $attrs = $db->query('SELECT "key", "value" FROM context_node_attributes ORDER BY "key"')->fetchAll(\PDO::FETCH_KEY_PAIR);
+        $attrs = $db->query(
+            'SELECT "key", "value" FROM context_node_attributes ORDER BY "key"'
+        )->fetchAll(\PDO::FETCH_KEY_PAIR);
         $this->assertSame('5', $attrs['#count']);
         $this->assertSame('array', $attrs['#type']);
     }
@@ -236,7 +241,9 @@ class PdoMemoryOutputTest extends BaseTestCase
         $output->output($result);
 
         $db = new \PDO('sqlite:' . $this->db_path);
-        $paths = $db->query('SELECT node_id, path, depth FROM v_node_paths ORDER BY depth, node_id')->fetchAll(\PDO::FETCH_ASSOC);
+        $paths = $db->query(
+            'SELECT node_id, path, depth FROM v_node_paths ORDER BY depth, node_id'
+        )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(2, $paths);
         // depth 0: to_middle
         $this->assertEquals(0, $paths[0]['depth']);
@@ -263,7 +270,9 @@ class PdoMemoryOutputTest extends BaseTestCase
         $output->output($result);
 
         $db = new \PDO('sqlite:' . $this->db_path);
-        $rows = $db->query('SELECT "type", "count", memory_usage FROM location_types_summary')->fetchAll(\PDO::FETCH_ASSOC);
+        $rows = $db->query(
+            'SELECT "type", "count", memory_usage FROM location_types_summary'
+        )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(1, $rows);
         $this->assertSame('ZendObjectMemoryLocation', $rows[0]['type']);
         $this->assertEquals(1, $rows[0]['count']);
@@ -282,7 +291,9 @@ class PdoMemoryOutputTest extends BaseTestCase
         $output->output($result);
 
         $db = new \PDO('sqlite:' . $this->db_path);
-        $rows = $db->query('SELECT class_name, "count", memory_usage FROM class_objects_summary')->fetchAll(\PDO::FETCH_ASSOC);
+        $rows = $db->query(
+            'SELECT class_name, "count", memory_usage FROM class_objects_summary'
+        )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(1, $rows);
         $this->assertSame('App\\Foo', $rows[0]['class_name']);
         $this->assertEquals(2, $rows[0]['count']);

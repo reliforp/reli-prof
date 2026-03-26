@@ -48,6 +48,7 @@ final class MemoryDbOptimizeCommand extends Command
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 
         // Check if already materialized
+        /** @var int $exists */
         $exists = $db->query(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='node_paths'"
         )->fetchColumn();
@@ -56,6 +57,7 @@ final class MemoryDbOptimizeCommand extends Command
             $db->exec('DROP TABLE node_paths');
         }
 
+        /** @var int $node_count */
         $node_count = $db->query('SELECT COUNT(*) FROM context_nodes')->fetchColumn();
         $output->writeln("Materializing node_paths for {$node_count} nodes...");
         $output->writeln('<comment>Note: this may significantly increase the database file size</comment>');
@@ -88,12 +90,13 @@ final class MemoryDbOptimizeCommand extends Command
         $output->writeln('Compacting database...');
         $db->exec('VACUUM');
 
-        $elapsed = (hrtime(true) - $start) / 1e9;
+        $elapsed = (float)(hrtime(true) - $start) / 1e9;
+        /** @var int $row_count */
         $row_count = $db->query('SELECT COUNT(*) FROM node_paths')->fetchColumn();
 
         $output->writeln(sprintf(
             'Done: %s rows materialized in %.1fs',
-            number_format((int)$row_count),
+            number_format($row_count),
             $elapsed,
         ));
 

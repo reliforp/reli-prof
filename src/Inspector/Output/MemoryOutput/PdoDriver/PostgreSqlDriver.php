@@ -24,6 +24,7 @@ final class PostgreSqlDriver implements PdoDriverInterface
     ) {
     }
 
+    #[\Override]
     public function createConnection(): \PDO
     {
         $dsn = "pgsql:host={$this->host};port={$this->port};dbname={$this->database}";
@@ -32,46 +33,55 @@ final class PostgreSqlDriver implements PdoDriverInterface
         return $db;
     }
 
+    #[\Override]
     public function insertIgnoreSql(string $table, string $columns, string $placeholders): string
     {
         return "INSERT INTO {$table} ({$columns}) VALUES ({$placeholders}) ON CONFLICT DO NOTHING";
     }
 
+    #[\Override]
     public function concatExpr(string $a, string $b): string
     {
         return "{$a} || {$b}";
     }
 
+    #[\Override]
     public function autoIncrementPrimaryKey(): string
     {
         return 'SERIAL PRIMARY KEY';
     }
 
+    #[\Override]
     public function tuneForBulkInsert(\PDO $db): void
     {
         $db->exec('SET synchronous_commit=off');
     }
 
+    #[\Override]
     public function afterBulkInsert(\PDO $db): void
     {
         $db->exec('SET synchronous_commit=on');
     }
 
+    #[\Override]
     public function createViewSql(string $view_name): string
     {
         return "CREATE OR REPLACE VIEW {$view_name} AS";
     }
 
+    #[\Override]
     public function quoteIdentifier(string $identifier): string
     {
         return '"' . $identifier . '"';
     }
 
+    #[\Override]
     public function primaryKeyTextType(): string
     {
         return 'TEXT';
     }
 
+    #[\Override]
     public function castAsInteger(string $expr): string
     {
         return "CAST({$expr} AS INTEGER)";
