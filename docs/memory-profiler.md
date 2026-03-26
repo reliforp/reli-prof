@@ -737,6 +737,9 @@ If you hit the memory_limit during the analysis, then you can increase the memor
 $ docker run --entrypoint=php -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof -dmemory_limit=2G reli i:m -p <pid_of_target_process> >memory_analyzed.json
 ```
 
+# Database output
+The memory profiler can also output analysis results to a relational database (SQLite, MySQL, PostgreSQL) for interactive querying with SQL. See [Database Output](./memory-profiler-database.md) for details.
+
 # See also
 - [PHP Internals Book](https://www.phpinternalsbook.com/)
 - [PHP's new hashtable implementation ](https://www.npopov.com/2014/12/22/PHPs-new-hashtable-implementation.html)
