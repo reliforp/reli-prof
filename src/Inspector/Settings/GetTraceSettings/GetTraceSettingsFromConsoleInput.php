@@ -46,7 +46,7 @@ final class GetTraceSettingsFromConsoleInput
                 'native-trace-anytime',
                 null,
                 InputOption::VALUE_NONE,
-                'collect native traces even when PHP trace is unavailable (e.g. during GC, init, shutdown)'
+                'collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)'
             )
         ;
     }

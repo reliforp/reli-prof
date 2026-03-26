@@ -139,7 +139,7 @@ Options:
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
       --with-native-trace                    collect native (C-level) stack traces alongside PHP traces
-      --native-trace-anytime                 collect native traces even when PHP trace is unavailable (e.g. during GC, init, shutdown)
+      --native-trace-anytime                 collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
   -o, --output=OUTPUT                        path to write output from this tool (default: stdout)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
@@ -408,7 +408,7 @@ $ ./reli c:flamegraph <traces >flame_native.svg
 ```bash
 $ sudo php ./reli i:trace --native-trace-anytime -p <pid>
 ```
-When `--native-trace-anytime` is used, native C-level traces are collected even when no PHP code is executing (e.g. during GC, module initialization, or shutdown). This is useful for investigating interpreter startup performance or extension loading behavior.
+When `--native-trace-anytime` is used, native C-level traces are collected even when no PHP code is executing (e.g. during module initialization or shutdown). This is useful for investigating interpreter startup performance or extension loading behavior.
 
 ### JIT-compiled code in native traces
 When the target PHP process has JIT enabled with `opcache.jit_debug=0x10`, JIT-compiled function names are resolved via `/tmp/perf-<pid>.map`:
