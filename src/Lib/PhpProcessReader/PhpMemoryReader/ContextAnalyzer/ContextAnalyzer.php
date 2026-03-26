@@ -35,6 +35,8 @@ final class ContextAnalyzer
         }
 
         foreach ($reference_context->getLinks() as $link_name => $linked_context) {
+            /** @psalm-suppress RedundantCastGivenDocblockType -- int keys occur at runtime */
+            $link_name = (string)$link_name;
             $existing_node_id = $memo[$linked_context] ?? null;
             if ($existing_node_id !== null) {
                 $sink->emitReference($existing_node_id, $parent_node_id, $link_name);
