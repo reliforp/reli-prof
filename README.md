@@ -10,7 +10,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 
 ## What can I use this for?
 - Detecting and visualizing bottlenecks in PHP scripts
-  - It provides not only at the function level of profiling but also at line level or opcode level resolution
+  - It provides not only at the function level of profiling but also at line level or opcode level resolution, and even native C-level stack traces from the interpreter itself
 - Profiling without accumulated overhead even when a lot of fast functions called as this is a sampling profiler (see the links below, tideways, xhprof, and the profiler of xdebug, many profilers have this overhead)
   - [Profiling Overhead and PHP 7](https://tideways.com/profiler/blog/profiling-overhead-and-php-7)
   - [nikic/sample_prof](https://github.com/nikic/sample_prof)
