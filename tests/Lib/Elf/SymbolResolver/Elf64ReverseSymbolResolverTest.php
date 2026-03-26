@@ -24,8 +24,12 @@ use Reli\Lib\Integer\UInt64;
 
 class Elf64ReverseSymbolResolverTest extends BaseTestCase
 {
-    private function makeEntry(int $name_offset, int $addr, int $size, int $type = Elf64SymbolTableEntry::STT_FUNC): Elf64SymbolTableEntry
-    {
+    private function makeEntry(
+        int $name_offset,
+        int $addr,
+        int $size,
+        int $type = Elf64SymbolTableEntry::STT_FUNC,
+    ): Elf64SymbolTableEntry {
         return new Elf64SymbolTableEntry(
             $name_offset, // st_name
             Elf64SymbolTableEntry::createInfo(Elf64SymbolTableEntry::STB_GLOBAL, $type),
