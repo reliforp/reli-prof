@@ -11,14 +11,16 @@
 
 declare(strict_types=1);
 
-namespace Reli\Inspector\Settings\GetTraceSettings;
+namespace Reli\Lib\Dwarf;
 
-final class GetTraceSettings
+/** @psalm-immutable */
+final class NativeTrace
 {
-    public function __construct(
-        public int $depth,
-        public bool $with_native_trace = false,
-        public bool $native_trace_anytime = false,
-    ) {
+    /** @var NativeFrame[] */
+    public readonly array $frames;
+
+    public function __construct(NativeFrame ...$frames)
+    {
+        $this->frames = $frames;
     }
 }

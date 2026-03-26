@@ -10,7 +10,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 
 ## What can I use this for?
 - Detecting and visualizing bottlenecks in PHP scripts
-  - It provides not only at the function level of profiling but also at line level or opcode level resolution
+  - It provides not only at the function level of profiling but also at line level or opcode level resolution, and even native C-level stack traces from the interpreter itself
 - Profiling without accumulated overhead even when a lot of fast functions called as this is a sampling profiler (see the links below, tideways, xhprof, and the profiler of xdebug, many profilers have this overhead)
   - [Profiling Overhead and PHP 7](https://tideways.com/profiler/blog/profiling-overhead-and-php-7)
   - [nikic/sample_prof](https://github.com/nikic/sample_prof)
@@ -27,6 +27,13 @@ It's implemented by using following techniques:
 - Analyzing internal data structure in the PHP VM (aka Zend Engine)
 
 If you have a bit of extra CPU resource, the overhead of this software would be negligible.
+
+## Native (C-level) stack trace support
+Reli can collect native C-level stack traces from the PHP interpreter alongside PHP traces. This lets you see what C functions the interpreter is executing inside each PHP function call, which is useful for diagnosing performance issues in PHP internals, extensions, or the interpreter itself.
+
+- Works with stripped binaries (uses exported symbols from `.dynsym`)
+- Loads separate debug symbol packages (`-dbgsym` / `-debuginfo`) for full symbol coverage
+- Resolves JIT-compiled function names when the target process has `opcache.jit_debug` enabled
 
 ## Differences to phpspy, when to use reli
 Reli is heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy).
@@ -46,6 +53,8 @@ Other features of reli that phpspy does not currently have include:
 - Automatic retrieval of the target PHP version from stripped PHP binaries
 - Output traces in speedscope format
 - Deeply analyzing memory usage of the target process
+- Collecting native (C-level) stack traces alongside PHP traces via DWARF `.eh_frame` unwinding
+- Resolving JIT-compiled function names via perf map and GDB JIT interface
 
 There is no particular reason why these features cannot be implemented on the phpspy side, so it may be possible to do them on phpspy in the future.
 
@@ -119,6 +128,8 @@ Options:
       --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --with-native-trace                    collect native (C-level) stack traces alongside PHP traces
+      --native-trace-anytime                 collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
   -o, --output=OUTPUT                        path to write output from this tool (default: stdout)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
@@ -339,7 +350,7 @@ So visualizations of the trace like flamegraph can show the usage of opcodes.
 
 For informational purposes, executing opcodes are also added to each end of the call frames. Except for the first frame, opcodes for function calls such as ZEND_DO_FCALL should appear there.
 
-If JIT is enabled at the target process, this information may be slightly inaccurate.
+If JIT is enabled at the target process, this information may be slightly inaccurate. To see JIT-compiled function names in traces, use `--with-native-trace` and set `opcache.jit_debug=0x10` on the target process.
 
 ### Use in a docker container and target a process on host
 ```bash
@@ -357,6 +368,49 @@ $ google-chrome flame.svg
 The generated flamegraph below visualizes traces from the execution of the psalm command.
 
 ![flame](https://user-images.githubusercontent.com/6488121/153741551-3f0fc730-c748-4908-b8ac-7c3f46a5bdbc.svg)
+
+### Collect native (C-level) stack traces
+```bash
+$ sudo php ./reli i:trace --with-native-trace -p <pid>
+0 libc.so.6::clock_nanosleep+0x5a [native]:0
+1 libc.so.6::__nanosleep+0x17 [native]:0
+2 libc.so.6::usleep+0x4c [native]:0
+3 php8.4::zif_usleep+0x42 [native]:0
+4 php8.4::execute_ex+0x4dfa [native]:0
+5 <main> /app/test.php:15
+6 php8.4::zend_execute+0x141 [native]:0
+7 usleep <internal>:-1
+8 php8.4::zend_execute_script+0x56 [native]:0
+9 php8.4::php_execute_script_ex+0x278 [native]:0
+10 libc.so.6::__libc_start_main+0x8b [native]:0
+11 php8.4::_start+0x25 [native]:0
+```
+
+Native frames are labeled with `[native]:0` and show `module::symbol+offset`. PHP frames are interleaved at the VM execution boundaries (`execute_ex`, `zend_execute`).
+
+The output is phpspy-compatible, so it can be directly converted to flamegraphs or speedscope profiles:
+```bash
+$ ./reli i:trace --with-native-trace -o traces -p <pid>
+$ ./reli c:flamegraph <traces >flame_native.svg
+```
+
+### Collect native traces during interpreter initialization / shutdown
+```bash
+$ sudo php ./reli i:trace --native-trace-anytime -p <pid>
+```
+When `--native-trace-anytime` is used, native C-level traces are collected even when no PHP code is executing (e.g. during module initialization or shutdown). This is useful for investigating interpreter startup performance or extension loading behavior.
+
+### JIT-compiled code in native traces
+When the target PHP process has JIT enabled with `opcache.jit_debug=0x10`, JIT-compiled function names are resolved via `/tmp/perf-<pid>.map`:
+```bash
+$ php -d opcache.jit_debug=0x10 script.php &
+$ sudo php ./reli i:trace --with-native-trace -p $!
+0 [jit]::TRACE-2$fibonacci$4+0x141 [native]:0
+1 php8.4::zend_execute+0x141 [native]:0
+2 <main> /app/test.php:14
+```
+
+For DWARF-based unwinding through JIT frames, use `opcache.jit_debug=0x100` (GDB JIT interface).
 
 ### Generate the [speedscope](https://github.com/jlfwong/speedscope) format from phpspy compatible traces
 ```bash

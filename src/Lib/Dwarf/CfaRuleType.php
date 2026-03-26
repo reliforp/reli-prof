@@ -11,14 +11,10 @@
 
 declare(strict_types=1);
 
-namespace Reli\Inspector\Settings\GetTraceSettings;
+namespace Reli\Lib\Dwarf;
 
-final class GetTraceSettings
+enum CfaRuleType
 {
-    public function __construct(
-        public int $depth,
-        public bool $with_native_trace = false,
-        public bool $native_trace_anytime = false,
-    ) {
-    }
+    case RegisterOffset;
+    case Expression;
 }

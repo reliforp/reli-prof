@@ -48,6 +48,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Search\ProcessSearcher;
 use Reli\Lib\Process\Search\ProcessSearcherInterface;
 use Psr\Log\LoggerInterface;
+
 use function DI\autowire;
 
 return [
@@ -91,4 +92,10 @@ return [
         return $logger;
     },
     Ptrace::class => autowire(PtraceX64::class),
+    Reli\Lib\Dwarf\NativeTraceCollector::class => autowire(),
+    Reli\Command\Inspector\GetTraceCommand::class => autowire()
+        ->constructorParameter(
+            'native_trace_collector',
+            DI\get(Reli\Lib\Dwarf\NativeTraceCollector::class),
+        ),
 ];

@@ -11,14 +11,11 @@
 
 declare(strict_types=1);
 
-namespace Reli\Inspector\Settings\GetTraceSettings;
+namespace Reli\Inspector\Output\TraceOutput;
 
-final class GetTraceSettings
+use Reli\Lib\PhpProcessReader\CallTraceReader\MergedCallTrace;
+
+interface MergedTraceOutput
 {
-    public function __construct(
-        public int $depth,
-        public bool $with_native_trace = false,
-        public bool $native_trace_anytime = false,
-    ) {
-    }
+    public function outputMerged(MergedCallTrace $merged_trace): void;
 }
