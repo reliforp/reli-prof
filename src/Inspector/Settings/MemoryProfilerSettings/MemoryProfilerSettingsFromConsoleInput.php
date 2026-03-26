@@ -139,8 +139,7 @@ final class MemoryProfilerSettingsFromConsoleInput
         $output_format = Cast::toString($input->getOption('output-format'));
         $output_path = NullableCast::toString($input->getOption('output'));
         $db_host = Cast::toString($input->getOption('db-host'));
-        $db_port_raw = $input->getOption('db-port');
-        $db_port = $db_port_raw !== null ? (int)$db_port_raw : null;
+        $db_port = NullableCast::toInt($input->getOption('db-port'));
         $db_name = NullableCast::toString($input->getOption('db-name'));
         $db_user = NullableCast::toString($input->getOption('db-user'));
         $db_password = NullableCast::toString($input->getOption('db-password'));

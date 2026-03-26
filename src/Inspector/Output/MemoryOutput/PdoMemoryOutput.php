@@ -198,11 +198,12 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
         $stmt = $db->prepare("INSERT INTO summary ({$qi('key')}, {$qi('value')}) VALUES (:key, :value)");
         foreach ($summary as $entry) {
-            /** @var mixed $value */
             foreach ($entry as $key => $value) {
+                $string_value = is_scalar($value) ? (string)$value : json_encode($value);
+                assert(is_string($string_value));
                 $stmt->execute([
                     ':key' => $key,
-                    ':value' => is_scalar($value) ? (string)$value : json_encode($value),
+                    ':value' => $string_value,
                 ]);
             }
         }

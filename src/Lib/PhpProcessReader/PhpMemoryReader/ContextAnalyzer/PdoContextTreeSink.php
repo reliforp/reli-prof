@@ -103,11 +103,12 @@ final class PdoContextTreeSink implements ContextTreeSink
             }
         }
 
-        /** @var mixed $value */
         foreach ($attributes as $key => $value) {
             $this->attr_buffer[] = $node_id;
             $this->attr_buffer[] = $key;
-            $this->attr_buffer[] = is_scalar($value) ? (string)$value : json_encode($value);
+            $string_value = is_scalar($value) ? (string)$value : json_encode($value);
+            assert(is_string($string_value));
+            $this->attr_buffer[] = $string_value;
             $this->attr_row_count++;
 
             if ($this->attr_row_count >= self::ATTR_BATCH_SIZE) {
