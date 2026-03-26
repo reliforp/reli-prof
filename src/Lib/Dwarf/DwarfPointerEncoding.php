@@ -18,24 +18,24 @@ use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 
 final class DwarfPointerEncoding
 {
-    public const DW_EH_PE_absptr = 0x00;
-    public const DW_EH_PE_uleb128 = 0x01;
-    public const DW_EH_PE_udata2 = 0x02;
-    public const DW_EH_PE_udata4 = 0x03;
-    public const DW_EH_PE_udata8 = 0x04;
-    public const DW_EH_PE_sleb128 = 0x09;
-    public const DW_EH_PE_sdata2 = 0x0a;
-    public const DW_EH_PE_sdata4 = 0x0b;
-    public const DW_EH_PE_sdata8 = 0x0c;
+    public const DW_EH_PE_ABSPTR = 0x00;
+    public const DW_EH_PE_ULEB128 = 0x01;
+    public const DW_EH_PE_UDATA2 = 0x02;
+    public const DW_EH_PE_UDATA4 = 0x03;
+    public const DW_EH_PE_UDATA8 = 0x04;
+    public const DW_EH_PE_SLEB128 = 0x09;
+    public const DW_EH_PE_SDATA2 = 0x0a;
+    public const DW_EH_PE_SDATA4 = 0x0b;
+    public const DW_EH_PE_SDATA8 = 0x0c;
 
-    public const DW_EH_PE_pcrel = 0x10;
-    public const DW_EH_PE_textrel = 0x20;
-    public const DW_EH_PE_datarel = 0x30;
-    public const DW_EH_PE_funcrel = 0x40;
-    public const DW_EH_PE_aligned = 0x50;
+    public const DW_EH_PE_PCREL = 0x10;
+    public const DW_EH_PE_TEXTREL = 0x20;
+    public const DW_EH_PE_DATAREL = 0x30;
+    public const DW_EH_PE_FUNCREL = 0x40;
+    public const DW_EH_PE_ALIGNED = 0x50;
 
-    public const DW_EH_PE_indirect = 0x80;
-    public const DW_EH_PE_omit = 0xff;
+    public const DW_EH_PE_INDIRECT = 0x80;
+    public const DW_EH_PE_OMIT = 0xff;
 
     /**
      * @return array{int, int} [value, bytesConsumed]
@@ -47,7 +47,7 @@ final class DwarfPointerEncoding
         int $pcRelBase,
         IntegerByteSequenceReader $integer_reader,
     ): array {
-        if ($encoding === self::DW_EH_PE_omit) {
+        if ($encoding === self::DW_EH_PE_OMIT) {
             return [0, 0];
         }
 
@@ -57,8 +57,8 @@ final class DwarfPointerEncoding
         [$raw_value, $bytes_consumed] = self::decodeValue($data, $offset, $format, $integer_reader);
 
         $value = match ($application) {
-            self::DW_EH_PE_pcrel => $raw_value + $pcRelBase,
-            0x00 => $raw_value, // DW_EH_PE_absptr application
+            self::DW_EH_PE_PCREL => $raw_value + $pcRelBase,
+            0x00 => $raw_value, // DW_EH_PE_ABSPTR application
             default => $raw_value, // textrel, datarel, funcrel - need additional base
         };
 
@@ -75,33 +75,33 @@ final class DwarfPointerEncoding
         IntegerByteSequenceReader $integer_reader,
     ): array {
         return match ($format) {
-            self::DW_EH_PE_absptr => [
+            self::DW_EH_PE_ABSPTR => [
                 $integer_reader->read64($data, $offset)->toInt(),
                 8,
             ],
-            self::DW_EH_PE_uleb128 => Leb128::decodeUnsigned($data, $offset),
-            self::DW_EH_PE_udata2 => [
+            self::DW_EH_PE_ULEB128 => Leb128::decodeUnsigned($data, $offset),
+            self::DW_EH_PE_UDATA2 => [
                 $integer_reader->read16($data, $offset),
                 2,
             ],
-            self::DW_EH_PE_udata4 => [
+            self::DW_EH_PE_UDATA4 => [
                 $integer_reader->read32($data, $offset),
                 4,
             ],
-            self::DW_EH_PE_udata8 => [
+            self::DW_EH_PE_UDATA8 => [
                 $integer_reader->read64($data, $offset)->toInt(),
                 8,
             ],
-            self::DW_EH_PE_sleb128 => Leb128::decodeSigned($data, $offset),
-            self::DW_EH_PE_sdata2 => [
+            self::DW_EH_PE_SLEB128 => Leb128::decodeSigned($data, $offset),
+            self::DW_EH_PE_SDATA2 => [
                 self::signExtend16($integer_reader->read16($data, $offset)),
                 2,
             ],
-            self::DW_EH_PE_sdata4 => [
+            self::DW_EH_PE_SDATA4 => [
                 self::signExtend32($integer_reader->read32($data, $offset)),
                 4,
             ],
-            self::DW_EH_PE_sdata8 => [
+            self::DW_EH_PE_SDATA8 => [
                 $integer_reader->read64($data, $offset)->toInt(),
                 8,
             ],

@@ -19,36 +19,36 @@ use Reli\Lib\ByteStream\StringByteReader;
 final class CfiInstructionDecoder
 {
     // High 2 bits opcodes
-    private const DW_CFA_advance_loc = 0x40;
-    private const DW_CFA_offset = 0x80;
-    private const DW_CFA_restore = 0xc0;
+    private const DW_CFA_ADVANCE_LOC = 0x40;
+    private const DW_CFA_OFFSET = 0x80;
+    private const DW_CFA_RESTORE = 0xc0;
 
     // Low 6 bits opcodes
-    private const DW_CFA_nop = 0x00;
-    private const DW_CFA_set_loc = 0x01;
-    private const DW_CFA_advance_loc1 = 0x02;
-    private const DW_CFA_advance_loc2 = 0x03;
-    private const DW_CFA_advance_loc4 = 0x04;
-    private const DW_CFA_offset_extended = 0x05;
-    private const DW_CFA_restore_extended = 0x06;
-    private const DW_CFA_undefined = 0x07;
-    private const DW_CFA_same_value = 0x08;
-    private const DW_CFA_register = 0x09;
-    private const DW_CFA_remember_state = 0x0a;
-    private const DW_CFA_restore_state = 0x0b;
-    private const DW_CFA_def_cfa = 0x0c;
-    private const DW_CFA_def_cfa_register = 0x0d;
-    private const DW_CFA_def_cfa_offset = 0x0e;
-    private const DW_CFA_def_cfa_expression = 0x0f;
-    private const DW_CFA_expression = 0x10;
-    private const DW_CFA_offset_extended_sf = 0x11;
-    private const DW_CFA_def_cfa_sf = 0x12;
-    private const DW_CFA_def_cfa_offset_sf = 0x13;
-    private const DW_CFA_val_offset = 0x14;
-    private const DW_CFA_val_offset_sf = 0x15;
-    private const DW_CFA_val_expression = 0x16;
-    private const DW_CFA_GNU_args_size = 0x2e;
-    private const DW_CFA_GNU_negative_offset_extended = 0x2f;
+    private const DW_CFA_NOP = 0x00;
+    private const DW_CFA_SET_LOC = 0x01;
+    private const DW_CFA_ADVANCE_LOC1 = 0x02;
+    private const DW_CFA_ADVANCE_LOC2 = 0x03;
+    private const DW_CFA_ADVANCE_LOC4 = 0x04;
+    private const DW_CFA_OFFSET_EXTENDED = 0x05;
+    private const DW_CFA_RESTORE_EXTENDED = 0x06;
+    private const DW_CFA_UNDEFINED = 0x07;
+    private const DW_CFA_SAME_VALUE = 0x08;
+    private const DW_CFA_REGISTER = 0x09;
+    private const DW_CFA_REMEMBER_STATE = 0x0a;
+    private const DW_CFA_RESTORE_STATE = 0x0b;
+    private const DW_CFA_DEF_CFA = 0x0c;
+    private const DW_CFA_DEF_CFA_REGISTER = 0x0d;
+    private const DW_CFA_DEF_CFA_OFFSET = 0x0e;
+    private const DW_CFA_DEF_CFA_EXPRESSION = 0x0f;
+    private const DW_CFA_EXPRESSION = 0x10;
+    private const DW_CFA_OFFSET_EXTENDED_SF = 0x11;
+    private const DW_CFA_DEF_CFA_SF = 0x12;
+    private const DW_CFA_DEF_CFA_OFFSET_SF = 0x13;
+    private const DW_CFA_VAL_OFFSET = 0x14;
+    private const DW_CFA_VAL_OFFSET_SF = 0x15;
+    private const DW_CFA_VAL_EXPRESSION = 0x16;
+    private const DW_CFA_GNU_ARGS_SIZE = 0x2e;
+    private const DW_CFA_GNU_NEGATIVE_OFFSET_EXTENDED = 0x2f;
 
     /**
      * @return array<UnwindTableRow>
@@ -83,13 +83,13 @@ final class CfiInstructionDecoder
             $high2 = $byte & 0xc0;
             $low6 = $byte & 0x3f;
 
-            if ($high2 === self::DW_CFA_advance_loc) {
+            if ($high2 === self::DW_CFA_ADVANCE_LOC) {
                 $rows[] = new UnwindTableRow($location, $cfa_rule, $register_rules);
                 $location += $low6 * $code_align;
                 continue;
             }
 
-            if ($high2 === self::DW_CFA_offset) {
+            if ($high2 === self::DW_CFA_OFFSET) {
                 $register = $low6;
                 [$uleb_value, $consumed] = Leb128::decodeUnsigned($data, $offset);
                 $offset += $consumed;
@@ -97,7 +97,7 @@ final class CfiInstructionDecoder
                 continue;
             }
 
-            if ($high2 === self::DW_CFA_restore) {
+            if ($high2 === self::DW_CFA_RESTORE) {
                 $register = $low6;
                 if ($initial_register_rules !== null && isset($initial_register_rules[$register])) {
                     $register_rules[$register] = $initial_register_rules[$register];
@@ -109,33 +109,38 @@ final class CfiInstructionDecoder
 
             // Extended opcodes
             match ($low6) {
-                self::DW_CFA_nop => null,
+                self::DW_CFA_NOP => null,
 
-                self::DW_CFA_set_loc => (function () use ($data, &$offset, &$rows, &$location, $cfa_rule, $register_rules) {
+                self::DW_CFA_SET_LOC =>
+                (function () use ($data, &$offset, &$rows, &$location, $cfa_rule, $register_rules) {
                     $rows[] = new UnwindTableRow($location, $cfa_rule, $register_rules);
                     [$location, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                 })(),
 
-                self::DW_CFA_advance_loc1 => (function () use ($data, &$offset, &$rows, &$location, $cfa_rule, $register_rules, $code_align) {
+                self::DW_CFA_ADVANCE_LOC1 =>
+                (function () use ($data, &$offset, &$rows, &$location, $cfa_rule, $register_rules, $code_align) {
                     $rows[] = new UnwindTableRow($location, $cfa_rule, $register_rules);
                     $location += $data[$offset] * $code_align;
                     $offset++;
                 })(),
 
-                self::DW_CFA_advance_loc2 => (function () use ($data, &$offset, &$rows, &$location, $cfa_rule, $register_rules, $code_align) {
+                self::DW_CFA_ADVANCE_LOC2 =>
+                (function () use ($data, &$offset, &$rows, &$location, $cfa_rule, $register_rules, $code_align) {
                     $rows[] = new UnwindTableRow($location, $cfa_rule, $register_rules);
                     $location += ($data[$offset] | ($data[$offset + 1] << 8)) * $code_align;
                     $offset += 2;
                 })(),
 
-                self::DW_CFA_advance_loc4 => (function () use ($data, &$offset, &$rows, &$location, $cfa_rule, $register_rules, $code_align) {
+                self::DW_CFA_ADVANCE_LOC4 =>
+                (function () use ($data, &$offset, &$rows, &$location, $cfa_rule, $register_rules, $code_align) {
                     $rows[] = new UnwindTableRow($location, $cfa_rule, $register_rules);
-                    $location += ($data[$offset] | ($data[$offset + 1] << 8) | ($data[$offset + 2] << 16) | ($data[$offset + 3] << 24)) * $code_align;
+                    $location += ($data[$offset] | ($data[$offset + 1] << 8)
+                        | ($data[$offset + 2] << 16) | ($data[$offset + 3] << 24)) * $code_align;
                     $offset += 4;
                 })(),
 
-                self::DW_CFA_offset_extended => (function () use ($data, &$offset, &$register_rules, $data_align) {
+                self::DW_CFA_OFFSET_EXTENDED => (function () use ($data, &$offset, &$register_rules, $data_align) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$uleb_value, $consumed] = Leb128::decodeUnsigned($data, $offset);
@@ -143,7 +148,8 @@ final class CfiInstructionDecoder
                     $register_rules[$register] = RegisterRule::offset($uleb_value * $data_align);
                 })(),
 
-                self::DW_CFA_restore_extended => (function () use ($data, &$offset, &$register_rules, $initial_register_rules) {
+                self::DW_CFA_RESTORE_EXTENDED =>
+                (function () use ($data, &$offset, &$register_rules, $initial_register_rules) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     if ($initial_register_rules !== null && isset($initial_register_rules[$register])) {
@@ -153,19 +159,19 @@ final class CfiInstructionDecoder
                     }
                 })(),
 
-                self::DW_CFA_undefined => (function () use ($data, &$offset, &$register_rules) {
+                self::DW_CFA_UNDEFINED => (function () use ($data, &$offset, &$register_rules) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     $register_rules[$register] = RegisterRule::undefined();
                 })(),
 
-                self::DW_CFA_same_value => (function () use ($data, &$offset, &$register_rules) {
+                self::DW_CFA_SAME_VALUE => (function () use ($data, &$offset, &$register_rules) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     $register_rules[$register] = RegisterRule::sameValue();
                 })(),
 
-                self::DW_CFA_register => (function () use ($data, &$offset, &$register_rules) {
+                self::DW_CFA_REGISTER => (function () use ($data, &$offset, &$register_rules) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$target_register, $consumed] = Leb128::decodeUnsigned($data, $offset);
@@ -173,17 +179,17 @@ final class CfiInstructionDecoder
                     $register_rules[$register] = RegisterRule::register($target_register);
                 })(),
 
-                self::DW_CFA_remember_state => (function () use (&$state_stack, $cfa_rule, $register_rules) {
+                self::DW_CFA_REMEMBER_STATE => (function () use (&$state_stack, $cfa_rule, $register_rules) {
                     $state_stack[] = [$cfa_rule, $register_rules];
                 })(),
 
-                self::DW_CFA_restore_state => (function () use (&$state_stack, &$cfa_rule, &$register_rules) {
+                self::DW_CFA_RESTORE_STATE => (function () use (&$state_stack, &$cfa_rule, &$register_rules) {
                     if ($state_stack !== []) {
                         [$cfa_rule, $register_rules] = array_pop($state_stack);
                     }
                 })(),
 
-                self::DW_CFA_def_cfa => (function () use ($data, &$offset, &$cfa_rule) {
+                self::DW_CFA_DEF_CFA => (function () use ($data, &$offset, &$cfa_rule) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$cfa_offset, $consumed] = Leb128::decodeUnsigned($data, $offset);
@@ -191,19 +197,19 @@ final class CfiInstructionDecoder
                     $cfa_rule = CfaRule::registerOffset($register, $cfa_offset);
                 })(),
 
-                self::DW_CFA_def_cfa_register => (function () use ($data, &$offset, &$cfa_rule) {
+                self::DW_CFA_DEF_CFA_REGISTER => (function () use ($data, &$offset, &$cfa_rule) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     $cfa_rule = CfaRule::registerOffset($register, $cfa_rule->offset);
                 })(),
 
-                self::DW_CFA_def_cfa_offset => (function () use ($data, &$offset, &$cfa_rule) {
+                self::DW_CFA_DEF_CFA_OFFSET => (function () use ($data, &$offset, &$cfa_rule) {
                     [$cfa_offset, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     $cfa_rule = CfaRule::registerOffset($cfa_rule->register, $cfa_offset);
                 })(),
 
-                self::DW_CFA_def_cfa_expression => (function () use ($data, &$offset, &$cfa_rule) {
+                self::DW_CFA_DEF_CFA_EXPRESSION => (function () use ($data, &$offset, &$cfa_rule) {
                     [$expr_length, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     $expr_bytes = '';
@@ -214,7 +220,7 @@ final class CfiInstructionDecoder
                     $cfa_rule = CfaRule::expression($expr_bytes);
                 })(),
 
-                self::DW_CFA_expression => (function () use ($data, &$offset, &$register_rules) {
+                self::DW_CFA_EXPRESSION => (function () use ($data, &$offset, &$register_rules) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$expr_length, $consumed] = Leb128::decodeUnsigned($data, $offset);
@@ -227,7 +233,7 @@ final class CfiInstructionDecoder
                     $register_rules[$register] = RegisterRule::expression($expr_bytes);
                 })(),
 
-                self::DW_CFA_offset_extended_sf => (function () use ($data, &$offset, &$register_rules, $data_align) {
+                self::DW_CFA_OFFSET_EXTENDED_SF => (function () use ($data, &$offset, &$register_rules, $data_align) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$sleb_value, $consumed] = Leb128::decodeSigned($data, $offset);
@@ -235,7 +241,7 @@ final class CfiInstructionDecoder
                     $register_rules[$register] = RegisterRule::offset($sleb_value * $data_align);
                 })(),
 
-                self::DW_CFA_def_cfa_sf => (function () use ($data, &$offset, &$cfa_rule, $data_align) {
+                self::DW_CFA_DEF_CFA_SF => (function () use ($data, &$offset, &$cfa_rule, $data_align) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$sleb_value, $consumed] = Leb128::decodeSigned($data, $offset);
@@ -243,13 +249,13 @@ final class CfiInstructionDecoder
                     $cfa_rule = CfaRule::registerOffset($register, $sleb_value * $data_align);
                 })(),
 
-                self::DW_CFA_def_cfa_offset_sf => (function () use ($data, &$offset, &$cfa_rule, $data_align) {
+                self::DW_CFA_DEF_CFA_OFFSET_SF => (function () use ($data, &$offset, &$cfa_rule, $data_align) {
                     [$sleb_value, $consumed] = Leb128::decodeSigned($data, $offset);
                     $offset += $consumed;
                     $cfa_rule = CfaRule::registerOffset($cfa_rule->register, $sleb_value * $data_align);
                 })(),
 
-                self::DW_CFA_val_offset => (function () use ($data, &$offset, &$register_rules, $data_align) {
+                self::DW_CFA_VAL_OFFSET => (function () use ($data, &$offset, &$register_rules, $data_align) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$uleb_value, $consumed] = Leb128::decodeUnsigned($data, $offset);
@@ -257,7 +263,7 @@ final class CfiInstructionDecoder
                     $register_rules[$register] = RegisterRule::valOffset($uleb_value * $data_align);
                 })(),
 
-                self::DW_CFA_val_offset_sf => (function () use ($data, &$offset, &$register_rules, $data_align) {
+                self::DW_CFA_VAL_OFFSET_SF => (function () use ($data, &$offset, &$register_rules, $data_align) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$sleb_value, $consumed] = Leb128::decodeSigned($data, $offset);
@@ -265,7 +271,7 @@ final class CfiInstructionDecoder
                     $register_rules[$register] = RegisterRule::valOffset($sleb_value * $data_align);
                 })(),
 
-                self::DW_CFA_val_expression => (function () use ($data, &$offset, &$register_rules) {
+                self::DW_CFA_VAL_EXPRESSION => (function () use ($data, &$offset, &$register_rules) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$expr_length, $consumed] = Leb128::decodeUnsigned($data, $offset);
@@ -278,12 +284,13 @@ final class CfiInstructionDecoder
                     $register_rules[$register] = RegisterRule::valExpression($expr_bytes);
                 })(),
 
-                self::DW_CFA_GNU_args_size => (function () use ($data, &$offset) {
+                self::DW_CFA_GNU_ARGS_SIZE => (function () use ($data, &$offset) {
                     [, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                 })(),
 
-                self::DW_CFA_GNU_negative_offset_extended => (function () use ($data, &$offset, &$register_rules, $data_align) {
+                self::DW_CFA_GNU_NEGATIVE_OFFSET_EXTENDED =>
+                (function () use ($data, &$offset, &$register_rules, $data_align) {
                     [$register, $consumed] = Leb128::decodeUnsigned($data, $offset);
                     $offset += $consumed;
                     [$uleb_value, $consumed] = Leb128::decodeUnsigned($data, $offset);

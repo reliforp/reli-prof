@@ -54,7 +54,11 @@ final class Elf64ReverseSymbolResolver
         }
 
         // Sort by address
-        usort($symbols, /** @param array{int, int, string} $a @param array{int, int, string} $b */ fn(array $a, array $b) => $a[0] <=> $b[0]);
+        usort(
+            $symbols,
+            /** @param array{int, int, string} $a @param array{int, int, string} $b */
+            fn(array $a, array $b) => $a[0] <=> $b[0]
+        );
         $resolver->sortedSymbols = $symbols;
         return $resolver;
     }

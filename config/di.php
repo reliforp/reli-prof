@@ -48,6 +48,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Search\ProcessSearcher;
 use Reli\Lib\Process\Search\ProcessSearcherInterface;
 use Psr\Log\LoggerInterface;
+
 use function DI\autowire;
 
 return [

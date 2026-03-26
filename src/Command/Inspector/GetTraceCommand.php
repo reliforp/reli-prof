@@ -184,7 +184,10 @@ final class GetTraceCommand extends Command
                     $get_trace_settings->depth,
                     $trace_cache
                 );
-                if ($with_native && $native_collector !== null && $merged_trace_output !== null && $trace_merger !== null) {
+                if (
+                    $with_native && $native_collector !== null
+                    && $merged_trace_output !== null && $trace_merger !== null
+                ) {
                     if ($call_trace !== null || $native_trace_anytime) {
                         $native_trace = $native_collector->collect($process_specifier->pid);
                         if ($native_trace !== null) {

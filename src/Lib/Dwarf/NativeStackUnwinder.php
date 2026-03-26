@@ -198,8 +198,10 @@ final class NativeStackUnwinder
             $new_registers->set(RegisterState::RIP, $ra);
 
             // Restore callee-saved registers
-            foreach ([RegisterState::RBP, RegisterState::RBX, RegisterState::R12,
-                       RegisterState::R13, RegisterState::R14, RegisterState::R15] as $reg) {
+            foreach (
+                [RegisterState::RBP, RegisterState::RBX, RegisterState::R12,
+                       RegisterState::R13, RegisterState::R14, RegisterState::R15] as $reg
+            ) {
                 $rule = $row->getRegisterRule($reg);
                 $value = $this->applyRegisterRule($rule, $cfa, $registers, $pid);
                 if ($value !== null) {

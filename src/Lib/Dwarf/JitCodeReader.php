@@ -190,8 +190,10 @@ final class JitCodeReader
             $byte_reader = new CDataByteReader($elf_data);
 
             // Verify ELF magic
-            if ($byte_reader[0] !== 0x7f || $byte_reader[1] !== 0x45
-                || $byte_reader[2] !== 0x4c || $byte_reader[3] !== 0x46) {
+            if (
+                $byte_reader[0] !== 0x7f || $byte_reader[1] !== 0x45
+                || $byte_reader[2] !== 0x4c || $byte_reader[3] !== 0x46
+            ) {
                 return;
             }
 

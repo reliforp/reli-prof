@@ -122,7 +122,8 @@ final class ModuleEhFrameCache
         $byte_reader = new StringByteReader($binary_data);
 
         // Check ELF magic
-        if ($byte_reader[0] !== 0x7f
+        if (
+            $byte_reader[0] !== 0x7f
             || $byte_reader[1] !== 0x45 // 'E'
             || $byte_reader[2] !== 0x4c // 'L'
             || $byte_reader[3] !== 0x46 // 'F'

@@ -133,7 +133,7 @@ final class EhFrameParser
         }
 
         // Augmentation data (if augmentation string starts with 'z')
-        $fde_encoding = DwarfPointerEncoding::DW_EH_PE_absptr;
+        $fde_encoding = DwarfPointerEncoding::DW_EH_PE_ABSPTR;
         $lsda_encoding = null;
         $personality_encoding = null;
         $personality_address = null;

@@ -121,7 +121,11 @@ final class PerfMapSymbolResolver
             $entries[] = [$address, $size, $name];
         }
 
-        usort($entries, /** @param array{int, int, string} $a @param array{int, int, string} $b */ fn(array $a, array $b) => $a[0] <=> $b[0]);
+        usort(
+            $entries,
+            /** @param array{int, int, string} $a @param array{int, int, string} $b */
+            fn(array $a, array $b) => $a[0] <=> $b[0]
+        );
         $this->entries = $entries;
     }
 }
