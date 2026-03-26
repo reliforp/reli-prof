@@ -31,9 +31,9 @@ If you have a bit of extra CPU resource, the overhead of this software would be 
 ## Native (C-level) stack trace support
 Reli can collect native C-level stack traces from the PHP interpreter alongside PHP traces. This lets you see what C functions the interpreter is executing inside each PHP function call, which is useful for diagnosing performance issues in PHP internals, extensions, or the interpreter itself.
 
-- Works with stripped binaries and separate debug symbol packages (`-dbgsym` / `-debuginfo`)
+- Works with stripped binaries (uses exported symbols from `.dynsym`)
+- Loads separate debug symbol packages (`-dbgsym` / `-debuginfo`) for full symbol coverage
 - Resolves JIT-compiled function names when `opcache.jit_debug` is configured
-- Traces processes inside Docker containers
 - Output is phpspy-compatible for flamegraph and speedscope conversion
 
 ## Differences to phpspy, when to use reli
