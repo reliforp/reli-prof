@@ -36,6 +36,12 @@ final class GetTraceSettingsFromConsoleInput
                 InputOption::VALUE_OPTIONAL,
                 'max depth'
             )
+            ->addOption(
+                'with-native-trace',
+                null,
+                InputOption::VALUE_NONE,
+                'collect native (C-level) stack traces alongside PHP traces'
+            )
         ;
     }
 
@@ -52,6 +58,7 @@ final class GetTraceSettingsFromConsoleInput
         if ($depth === false) {
             throw GetTraceSettingsException::create(GetTraceSettingsException::DEPTH_IS_NOT_INTEGER);
         }
-        return new GetTraceSettings($depth);
+        $with_native_trace = (bool)$input->getOption('with-native-trace');
+        return new GetTraceSettings($depth, $with_native_trace);
     }
 }

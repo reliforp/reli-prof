@@ -13,7 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
+use Reli\Inspector\Output\TraceFormatter\MergedCallTraceFormatter;
+use Reli\Inspector\Output\TraceOutput\FormattedMergedTraceOutput;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
+use Reli\Inspector\Output\OutputChannel\StreamOutputChannel;
 use Reli\Inspector\RetryingLoopProvider;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use Reli\Inspector\Settings\InspectorSettingsException;
@@ -23,14 +26,16 @@ use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConso
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Inspector\TraceLoopProvider;
+use Reli\Lib\Dwarf\NativeTraceCollector;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Elf\Tls\TlsFinderException;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
+use Reli\Lib\PhpProcessReader\CallTraceReader\TraceCache;
+use Reli\Lib\PhpProcessReader\CallTraceReader\TraceMerger;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
-use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
-use Reli\Lib\PhpProcessReader\CallTraceReader\TraceCache;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -54,6 +59,7 @@ final class GetTraceCommand extends Command
         private ProcessStopper $process_stopper,
         private TargetProcessResolver $target_process_resolver,
         private RetryingLoopProvider $retrying_loop_provider,
+        private ?NativeTraceCollector $native_trace_collector = null,
     ) {
         parent::__construct();
     }
@@ -85,10 +91,22 @@ final class GetTraceCommand extends Command
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
+        $output_settings = $this->output_settings_from_console_input->createSettings($input);
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
             $output,
-            $this->output_settings_from_console_input->createSettings($input),
+            $output_settings,
         );
+
+        // Native trace requires process stopping (for ptrace GETREGS)
+        $with_native = $get_trace_settings->with_native_trace;
+        if ($with_native) {
+            $loop_settings = new \Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings(
+                $loop_settings->sleep_nano_seconds,
+                $loop_settings->cancel_key,
+                $loop_settings->max_retries,
+                true, // force stop_process
+            );
+        }
 
         $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
 
@@ -115,7 +133,24 @@ final class GetTraceCommand extends Command
             $target_php_settings
         );
 
+        // Set up merged trace output if native tracing is enabled
+        $merged_trace_output = null;
+        $trace_merger = null;
+        if ($with_native && $this->native_trace_collector !== null) {
+            $this->native_trace_collector->refreshMemoryMap($process_specifier->pid);
+            $trace_merger = new TraceMerger();
+            $stream = ($output_settings->output_path !== null)
+                ? (fopen($output_settings->output_path, 'w') ?: \STDOUT)
+                : \STDOUT;
+            $merged_trace_output = new FormattedMergedTraceOutput(
+                new StreamOutputChannel($stream),
+                new MergedCallTraceFormatter(),
+            );
+        }
+
         $trace_cache = new TraceCache();
+        $native_collector = $this->native_trace_collector;
+
         $this->loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
@@ -126,6 +161,10 @@ final class GetTraceCommand extends Command
                 $sg_address,
                 $trace_output,
                 $trace_cache,
+                $with_native,
+                $native_collector,
+                $merged_trace_output,
+                $trace_merger,
             ): bool {
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
@@ -139,7 +178,17 @@ final class GetTraceCommand extends Command
                     $trace_cache
                 );
                 if (!is_null($call_trace)) {
-                    $trace_output->output($call_trace);
+                    if ($with_native && $native_collector !== null && $merged_trace_output !== null && $trace_merger !== null) {
+                        $native_trace = $native_collector->collect($process_specifier->pid);
+                        if ($native_trace !== null) {
+                            $merged = $trace_merger->merge($native_trace, $call_trace);
+                            $merged_trace_output->outputMerged($merged);
+                        } else {
+                            $trace_output->output($call_trace);
+                        }
+                    } else {
+                        $trace_output->output($call_trace);
+                    }
                 }
                 return true;
             },

@@ -54,4 +54,14 @@ final class Elf64SectionHeaderTable
         }
         return null;
     }
+
+    public function findSectionByName(string $name): ?Elf64SectionHeaderEntry
+    {
+        foreach ($this->entries as $entry) {
+            if ($this->section_name_table->lookup($entry->sh_name) === $name) {
+                return $entry;
+            }
+        }
+        return null;
+    }
 }

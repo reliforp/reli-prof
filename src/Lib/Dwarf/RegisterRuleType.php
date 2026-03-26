@@ -11,13 +11,15 @@
 
 declare(strict_types=1);
 
-namespace Reli\Inspector\Settings\GetTraceSettings;
+namespace Reli\Lib\Dwarf;
 
-final class GetTraceSettings
+enum RegisterRuleType
 {
-    public function __construct(
-        public int $depth,
-        public bool $with_native_trace = false,
-    ) {
-    }
+    case Undefined;
+    case SameValue;
+    case Offset;
+    case ValOffset;
+    case Register;
+    case Expression;
+    case ValExpression;
 }
