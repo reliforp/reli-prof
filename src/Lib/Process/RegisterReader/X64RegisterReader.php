@@ -148,6 +148,7 @@ final class X64RegisterReader
         /** @var \FFI\CInteger $target_offset */
         $target_offset->cdata = $register;
 
+        $already_attached = false;
         $attach = $this->ptrace->ptrace(
             PtraceRequest::PTRACE_ATTACH,
             $pid,
@@ -157,10 +158,18 @@ final class X64RegisterReader
         if ($attach === -1) {
             $errno = $this->errno->get();
             if ($errno) {
-                throw new RegisterReaderException("failed to attach process errno={$errno}", $errno);
+                // EPERM may indicate the process is already traced by us;
+                // try PEEKUSER directly in that case
+                if ($errno === 1) {
+                    $already_attached = true;
+                } else {
+                    throw new RegisterReaderException("failed to attach process errno={$errno}", $errno);
+                }
             }
         }
-        pcntl_waitpid($pid, $status, \WUNTRACED);
+        if (!$already_attached) {
+            pcntl_waitpid($pid, $status, \WUNTRACED);
+        }
 
         $fs = $this->ptrace->ptrace(
             PtraceRequest::PTRACE_PEEKUSER,
@@ -175,16 +184,18 @@ final class X64RegisterReader
             }
         }
 
-        $detach = $this->ptrace->ptrace(
-            PtraceRequest::PTRACE_DETACH,
-            $pid,
-            null,
-            null
-        );
-        if ($detach === -1) {
-            $errno = $this->errno->get();
-            if ($errno) {
-                throw new RegisterReaderException("failed to detach process errno={$errno}", $errno);
+        if (!$already_attached) {
+            $detach = $this->ptrace->ptrace(
+                PtraceRequest::PTRACE_DETACH,
+                $pid,
+                null,
+                null
+            );
+            if ($detach === -1) {
+                $errno = $this->errno->get();
+                if ($errno) {
+                    throw new RegisterReaderException("failed to detach process errno={$errno}", $errno);
+                }
             }
         }
 
