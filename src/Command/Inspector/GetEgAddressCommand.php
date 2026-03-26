@@ -19,6 +19,7 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Lib\Elf\Parser\ElfParserException;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Tls\TlsFinderException;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
@@ -26,6 +27,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function dechex;
@@ -40,6 +42,7 @@ final class GetEgAddressCommand extends Command
         private TargetProcessResolver $target_process_resolver,
         private PhpVersionDetector $php_version_detector,
         private RetryingLoopProvider $retrying_loop_provider,
+        private BinaryAnalysisCache $binary_analysis_cache,
     ) {
         parent::__construct();
     }
@@ -52,6 +55,7 @@ final class GetEgAddressCommand extends Command
         ;
         $this->target_process_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
+        $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
     }
 
     /**
@@ -64,6 +68,9 @@ final class GetEgAddressCommand extends Command
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        if ($input->getOption('no-cache')) {
+            $this->binary_analysis_cache->disable();
+        }
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
 

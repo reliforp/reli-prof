@@ -17,14 +17,32 @@ use Reli\Lib\Directory\AppDirectory;
 
 final class BinaryAnalysisCache
 {
+    private bool $enabled = true;
+
     public function __construct(
         private string $baseDirectory,
     ) {
     }
 
+    public function disable(): void
+    {
+        $this->enabled = false;
+    }
+
+    public function clear(): int
+    {
+        if (!is_dir($this->baseDirectory)) {
+            return 0;
+        }
+        return $this->removeDirectoryContents($this->baseDirectory);
+    }
+
     /** @return array<array-key, mixed>|null */
     public function get(BinaryFingerprint $fingerprint, string $namespace): ?array
     {
+        if (!$this->enabled) {
+            return null;
+        }
         $path = $this->getPath($fingerprint, $namespace);
         if (!is_file($path)) {
             return null;
@@ -47,6 +65,9 @@ final class BinaryAnalysisCache
     /** @param array<array-key, mixed> $data */
     public function set(BinaryFingerprint $fingerprint, string $namespace, array $data): void
     {
+        if (!$this->enabled) {
+            return;
+        }
         $path = $this->getPath($fingerprint, $namespace);
         $dir = dirname($path);
         AppDirectory::ensureDirectoryExists($dir);
@@ -69,5 +90,29 @@ final class BinaryAnalysisCache
         return $this->baseDirectory
             . '/' . $fingerprint->getCacheKey()
             . '/' . $namespace . '.json';
+    }
+
+    private function removeDirectoryContents(string $dir): int
+    {
+        $count = 0;
+        $items = @scandir($dir);
+        if ($items === false) {
+            return 0;
+        }
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $path = $dir . '/' . $item;
+            if (is_dir($path)) {
+                $count += $this->removeDirectoryContents($path);
+                @rmdir($path);
+            } else {
+                if (@unlink($path)) {
+                    $count++;
+                }
+            }
+        }
+        return $count;
     }
 }

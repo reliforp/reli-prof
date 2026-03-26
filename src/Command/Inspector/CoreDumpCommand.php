@@ -19,6 +19,7 @@ use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettingsFromCon
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
 use Reli\Lib\Log\Log;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
@@ -39,6 +40,7 @@ final class CoreDumpCommand extends Command
         private MemoryProfilerSettingsFromConsoleInput $memory_profiler_settings_from_console_input,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         private CoreDumpReaderFactory $core_dump_reader_factory,
+        private BinaryAnalysisCache $binary_analysis_cache,
     ) {
         parent::__construct();
     }
@@ -68,11 +70,15 @@ final class CoreDumpCommand extends Command
             InputOption::VALUE_REQUIRED,
             'dependency root directory'
         );
+        $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        if ($input->getOption('no-cache')) {
+            $this->binary_analysis_cache->disable();
+        }
         Log::info('start core-dump command');
         $memory_profiler_settings = $this->memory_profiler_settings_from_console_input->createSettings($input);
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
