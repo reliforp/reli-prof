@@ -28,6 +28,15 @@ final class NativeStackUnwinder
     private DwarfExpression $dwarfExpression;
     private IntegerByteSequenceReader $integerReader;
 
+    /** @var array<string, bool> module path => is_file result */
+    private array $isFileCache = [];
+
+    /** @var array<int, UnwindTableRow> CIE object id => initial row */
+    private array $cieInitialRowCache = [];
+
+    /** @var array<int, array<UnwindTableRow>> FDE object id => unwind table rows */
+    private array $fdeRowsCache = [];
+
     public function __construct(
         private ModuleEhFrameCache $ehFrameCache,
         private MemoryReaderInterface $memoryReader,
@@ -48,7 +57,8 @@ final class NativeStackUnwinder
         callable $symbolResolver,
         int $maxFrames = self::MAX_FRAMES,
     ): NativeTrace {
-        $frames = [];
+        /** @var array{int, string}[] collected [ip, module] pairs — resolved to frames after unwinding */
+        $frame_addrs = [];
         $rip = $registers->getRip();
         $rsp = $registers->getRsp();
 
@@ -62,9 +72,7 @@ final class NativeStackUnwinder
             // Find module for this address
             $areas = $memoryMap->findByAddress($rip);
             if ($areas === []) {
-                $frame = $this->createFrameForAddress($rip, '??', $symbolResolver);
-                $frames[] = $frame;
-                // Try frame pointer unwinding even for unmapped addresses
+                $frame_addrs[] = [$rip, '??'];
                 $new_registers = $this->framePointerUnwind($pid, $current_registers);
                 if ($new_registers !== null) {
                     $rip = $new_registers->getRip();
@@ -77,11 +85,10 @@ final class NativeStackUnwinder
 
             $area = $this->findExecutableArea($areas) ?? $areas[0];
             $module_path = $area->name;
-            $is_anonymous = ($module_path === '' || $module_path[0] === '[' || !is_file($module_path));
+            $is_anonymous = ($module_path === '' || $module_path[0] === '[' || !$this->isFile($module_path));
 
-            // Create frame for this IP
             $display_module = $is_anonymous ? '[jit]' : $module_path;
-            $frames[] = $this->createFrameForAddress($rip, $display_module, $symbolResolver);
+            $frame_addrs[] = [$rip, $display_module];
 
             // Try DWARF-based unwinding
             $fde = null;
@@ -125,25 +132,17 @@ final class NativeStackUnwinder
             break;
         }
 
+        // Resolve symbols after unwinding (deferred for performance)
+        $frames = [];
+        foreach ($frame_addrs as [$ip, $modulePath]) {
+            $resolved = $symbolResolver($ip);
+            $symbol_name = $resolved !== null ? $resolved[0] : null;
+            $offset = $resolved !== null ? $resolved[1] : 0;
+            $module_name = $modulePath !== '' ? basename($modulePath) : '??';
+            $frames[] = new NativeFrame($ip, $symbol_name, $module_name, $offset);
+        }
+
         return new NativeTrace(...$frames);
-    }
-
-    /**
-     * @param callable(int): ?array{string, int} $symbolResolver
-     */
-    private function createFrameForAddress(
-        int $ip,
-        string $modulePath,
-        callable $symbolResolver,
-    ): NativeFrame {
-        $resolved = $symbolResolver($ip);
-        $symbol_name = $resolved !== null ? $resolved[0] : null;
-        $offset = $resolved !== null ? $resolved[1] : 0;
-
-        // Use basename for display
-        $module_name = $modulePath !== '' ? basename($modulePath) : '??';
-
-        return new NativeFrame($ip, $symbol_name, $module_name, $offset);
     }
 
     private function unwindWithFde(
@@ -153,16 +152,24 @@ final class NativeStackUnwinder
         RegisterState $registers,
     ): ?RegisterState {
         try {
-            // Build initial row from CIE
-            $initial_row = $this->cfiDecoder->buildInitialRow($fde->cie);
+            // Build initial row from CIE (cached)
+            $cie_id = spl_object_id($fde->cie);
+            if (!isset($this->cieInitialRowCache[$cie_id])) {
+                $this->cieInitialRowCache[$cie_id] = $this->cfiDecoder->buildInitialRow($fde->cie);
+            }
+            $initial_row = $this->cieInitialRowCache[$cie_id];
 
-            // Execute FDE instructions to build unwind table
-            $rows = $this->cfiDecoder->execute(
-                $fde->instructions,
-                $fde->cie,
-                $fde->initialLocation,
-                $initial_row,
-            );
+            // Execute FDE instructions to build unwind table (cached)
+            $fde_id = spl_object_id($fde);
+            if (!isset($this->fdeRowsCache[$fde_id])) {
+                $this->fdeRowsCache[$fde_id] = $this->cfiDecoder->execute(
+                    $fde->instructions,
+                    $fde->cie,
+                    $fde->initialLocation,
+                    $initial_row,
+                );
+            }
+            $rows = $this->fdeRowsCache[$fde_id];
 
             // Find the row for our address
             $row = $this->findRowForAddress($rows, $relativeAddress);
@@ -356,5 +363,13 @@ final class NativeStackUnwinder
             }
         }
         return null;
+    }
+
+    private function isFile(string $path): bool
+    {
+        if (!isset($this->isFileCache[$path])) {
+            $this->isFileCache[$path] = is_file($path);
+        }
+        return $this->isFileCache[$path];
     }
 }
