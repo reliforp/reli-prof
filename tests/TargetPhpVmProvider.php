@@ -28,8 +28,7 @@ class TargetPhpVmProvider
         ZendTypeReader::V82,
         ZendTypeReader::V83,
         ZendTypeReader::V84,
-        // ZTS variants (PHP 7.2+)
-        'v72_zts',
+        // ZTS variants (PHP 7.3+)
         'v73_zts',
         'v74_zts',
         'v80_zts',
