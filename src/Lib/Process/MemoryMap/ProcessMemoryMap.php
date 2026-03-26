@@ -28,9 +28,11 @@ final class ProcessMemoryMap
         $this->memory_areas = $memory_areas;
 
         // Build sorted index for binary search
+        // Use intval with base 16 to avoid hexdec returning float for
+        // addresses with the high bit set (e.g. vsyscall 0xffffffffff600000)
         $index = [];
         foreach ($memory_areas as $i => $area) {
-            $index[] = [hexdec($area->begin), hexdec($area->end), $i];
+            $index[] = [self::hexToSignedInt($area->begin), self::hexToSignedInt($area->end), $i];
         }
         /** @var array{int, int, int}[] $index */
         usort($index, fn(array $a, array $b) => $a[0] <=> $b[0]);
@@ -93,5 +95,26 @@ final class ProcessMemoryMap
         }
 
         return $result;
+    }
+
+    /**
+     * Convert hex string to signed int without hexdec() float overflow.
+     * Addresses above 0x7fffffffffffffff (e.g. vsyscall at 0xffffffffff600000)
+     * become negative ints in two's complement. This is fine for comparison
+     * with <=> as long as both sides use the same encoding.
+     */
+    private static function hexToSignedInt(string $hex): int
+    {
+        if (str_starts_with($hex, '0x') || str_starts_with($hex, '0X')) {
+            $hex = substr($hex, 2);
+        }
+        $hex = str_pad($hex, 16, '0', STR_PAD_LEFT);
+        $bin = hex2bin($hex);
+        if ($bin === false) {
+            return 0;
+        }
+        /** @var array{val: int} */
+        $result = unpack('Jval', $bin);
+        return $result['val'];
     }
 }
