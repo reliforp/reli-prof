@@ -27,7 +27,9 @@ final class MergedCallTraceFormatter
                 $native = $frame->nativeFrame;
                 assert($native !== null);
                 $display = $native->getDisplayName();
-                $output .= "{$depth} {$native->module_name}::{$display} [native]\n";
+                // phpspy-compatible: "<depth> <name> <file>:<line>"
+                // Use [native] as pseudo-filename with line 0 for tool compatibility
+                $output .= "{$depth} {$native->module_name}::{$display} [native]:0\n";
             } else {
                 $php = $frame->phpFrame;
                 assert($php !== null);
