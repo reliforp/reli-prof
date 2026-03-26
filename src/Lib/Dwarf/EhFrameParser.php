@@ -209,7 +209,7 @@ final class EhFrameParser
             $data,
             $base + $offset,
             $cie->fdeEncoding,
-            $pcRelBase + $sectionOffset,
+            $pcRelBase,
             $this->integerReader,
         );
         $offset += $consumed;

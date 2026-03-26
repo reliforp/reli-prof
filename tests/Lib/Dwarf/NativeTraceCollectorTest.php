@@ -128,17 +128,17 @@ class NativeTraceCollectorTest extends BaseTestCase
                 'Should have at least one native frame'
             );
 
-            // Check if any frame has a resolved symbol (best effort - depends
-            // on whether .eh_frame unwind succeeds for the container's libc)
+            // Should contain at least one frame with a resolved symbol name
             $symbol_names = array_filter(
                 array_map(
                     fn(NativeFrame $f) => $f->symbolName,
                     $native_trace->frames,
                 )
             );
-            // Note: symbol resolution may fail for some container environments
-            // where ELF vaddr calculation differs. This is tracked as a known
-            // limitation. We still verify the basic trace collection works.
+            $this->assertNotEmpty(
+                $symbol_names,
+                'At least one frame should have a symbol name'
+            );
 
             // Also get PHP trace for merge test
             $integer_reader = new LittleEndianReader();
