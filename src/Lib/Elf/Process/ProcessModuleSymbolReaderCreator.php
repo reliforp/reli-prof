@@ -56,6 +56,7 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
         $module_name = $module_memory_map->getModuleName();
         $path = $binary_path ?? $this->process_path_resolver->resolve($pid, $module_name);
 
+        $binary_fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_memory_map);
         $symbol_resolver = new Elf64CachedSymbolResolver(
             new Elf64LazyParseSymbolResolver(
                 $path,
@@ -64,9 +65,9 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                 $module_memory_map,
                 $this->symbol_resolver_creator,
             ),
-            $this->per_binary_symbol_cache_retriever->get(
-                BinaryFingerprint::fromProcessModuleMemoryMap($module_memory_map)
-            ),
+            $this->per_binary_symbol_cache_retriever->get($binary_fingerprint),
+            $this->binary_analysis_cache,
+            $binary_fingerprint,
         );
 
         $tls_block_address = null;
