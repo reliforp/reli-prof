@@ -34,7 +34,6 @@ Reli can collect native C-level stack traces from the PHP interpreter alongside 
 - Works with stripped binaries (uses exported symbols from `.dynsym`)
 - Loads separate debug symbol packages (`-dbgsym` / `-debuginfo`) for full symbol coverage
 - Resolves JIT-compiled function names when the target process has `opcache.jit_debug` enabled
-- Output is phpspy-compatible for flamegraph and speedscope conversion
 
 ## Differences to phpspy, when to use reli
 Reli is heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy).
