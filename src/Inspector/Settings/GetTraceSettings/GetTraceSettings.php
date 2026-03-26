@@ -18,6 +18,7 @@ final class GetTraceSettings
     public function __construct(
         public int $depth,
         public bool $with_native_trace = false,
+        public bool $native_trace_anytime = false,
     ) {
     }
 }

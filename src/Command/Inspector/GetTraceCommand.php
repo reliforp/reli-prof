@@ -30,6 +30,7 @@ use Reli\Lib\Dwarf\NativeTraceCollector;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Elf\Tls\TlsFinderException;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
 use Reli\Lib\PhpProcessReader\CallTraceReader\TraceCache;
 use Reli\Lib\PhpProcessReader\CallTraceReader\TraceMerger;
@@ -150,6 +151,7 @@ final class GetTraceCommand extends Command
 
         $trace_cache = new TraceCache();
         $native_collector = $this->native_trace_collector;
+        $native_trace_anytime = $get_trace_settings->native_trace_anytime;
 
         $this->loop_provider->getMainLoop(
             function () use (
@@ -165,6 +167,7 @@ final class GetTraceCommand extends Command
                 $native_collector,
                 $merged_trace_output,
                 $trace_merger,
+                $native_trace_anytime,
             ): bool {
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
@@ -177,18 +180,19 @@ final class GetTraceCommand extends Command
                     $get_trace_settings->depth,
                     $trace_cache
                 );
-                if (!is_null($call_trace)) {
-                    if ($with_native && $native_collector !== null && $merged_trace_output !== null && $trace_merger !== null) {
+                if ($with_native && $native_collector !== null && $merged_trace_output !== null && $trace_merger !== null) {
+                    if ($call_trace !== null || $native_trace_anytime) {
                         $native_trace = $native_collector->collect($process_specifier->pid);
                         if ($native_trace !== null) {
-                            $merged = $trace_merger->merge($native_trace, $call_trace);
+                            $php_trace = $call_trace ?? new CallTrace();
+                            $merged = $trace_merger->merge($native_trace, $php_trace);
                             $merged_trace_output->outputMerged($merged);
-                        } else {
+                        } elseif ($call_trace !== null) {
                             $trace_output->output($call_trace);
                         }
-                    } else {
-                        $trace_output->output($call_trace);
                     }
+                } elseif ($call_trace !== null) {
+                    $trace_output->output($call_trace);
                 }
                 return true;
             },

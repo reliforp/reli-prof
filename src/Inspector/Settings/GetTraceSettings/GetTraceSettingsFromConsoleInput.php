@@ -42,6 +42,12 @@ final class GetTraceSettingsFromConsoleInput
                 InputOption::VALUE_NONE,
                 'collect native (C-level) stack traces alongside PHP traces'
             )
+            ->addOption(
+                'native-trace-anytime',
+                null,
+                InputOption::VALUE_NONE,
+                'collect native traces even when PHP trace is unavailable (e.g. during GC, init, shutdown)'
+            )
         ;
     }
 
@@ -59,6 +65,10 @@ final class GetTraceSettingsFromConsoleInput
             throw GetTraceSettingsException::create(GetTraceSettingsException::DEPTH_IS_NOT_INTEGER);
         }
         $with_native_trace = (bool)$input->getOption('with-native-trace');
-        return new GetTraceSettings($depth, $with_native_trace);
+        $native_trace_anytime = (bool)$input->getOption('native-trace-anytime');
+        if ($native_trace_anytime) {
+            $with_native_trace = true;
+        }
+        return new GetTraceSettings($depth, $with_native_trace, $native_trace_anytime);
     }
 }

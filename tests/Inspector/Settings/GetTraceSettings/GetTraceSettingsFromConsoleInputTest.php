@@ -24,6 +24,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns(10);
         $input->expects()->getOption('with-native-trace')->andReturns(false);
+        $input->expects()->getOption('native-trace-anytime')->andReturns(false);
 
         $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
 
@@ -36,6 +37,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns(null);
         $input->expects()->getOption('with-native-trace')->andReturns(false);
+        $input->expects()->getOption('native-trace-anytime')->andReturns(false);
         $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
         $this->assertSame(PHP_INT_MAX, $settings->depth);
         $this->assertFalse($settings->with_native_trace);
@@ -46,6 +48,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns('abc');
         $input->allows()->getOption('with-native-trace')->andReturns(false);
+        $input->allows()->getOption('native-trace-anytime')->andReturns(false);
         $this->expectException(GetTraceSettingsException::class);
         (new GetTraceSettingsFromConsoleInput())->createSettings($input);
     }
@@ -55,7 +58,20 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('depth')->andReturns(null);
         $input->expects()->getOption('with-native-trace')->andReturns(true);
+        $input->expects()->getOption('native-trace-anytime')->andReturns(false);
         $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
         $this->assertTrue($settings->with_native_trace);
+        $this->assertFalse($settings->native_trace_anytime);
+    }
+
+    public function testFromConsoleInputNativeTraceAnytime(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('depth')->andReturns(null);
+        $input->expects()->getOption('with-native-trace')->andReturns(false);
+        $input->expects()->getOption('native-trace-anytime')->andReturns(true);
+        $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
+        $this->assertTrue($settings->with_native_trace); // implied by anytime
+        $this->assertTrue($settings->native_trace_anytime);
     }
 }
