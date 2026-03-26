@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Dwarf;
 
+use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -26,6 +27,8 @@ final class NativeTraceCollector
     private ?NativeStackUnwinder $unwinder = null;
     private ?NativeSymbolResolver $symbolResolver = null;
     private ?ProcessMemoryMap $memoryMap = null;
+    private ?JitCodeReader $jitCodeReader = null;
+    private ?PerfMapSymbolResolver $perfMapResolver = null;
     private ?int $cachedPid = null;
 
     public function __construct(
@@ -33,6 +36,7 @@ final class NativeTraceCollector
         private MemoryReaderInterface $memoryReader,
         private ProcessMemoryMapReader $memoryMapReader,
         private ProcessMemoryMapParser $memoryMapParser,
+        private ?ProcessSymbolReaderInterface $phpSymbolReader = null,
     ) {
     }
 
@@ -77,9 +81,47 @@ final class NativeTraceCollector
         $maps_string = $this->memoryMapReader->read($pid);
         $this->memoryMap = $this->memoryMapParser->parse($maps_string);
         $this->ehFrameCache = new ModuleEhFrameCache();
-        $this->unwinder = new NativeStackUnwinder($this->ehFrameCache, $this->memoryReader);
-        $this->symbolResolver = new NativeSymbolResolver($this->memoryMap);
+        $this->perfMapResolver = new PerfMapSymbolResolver($pid);
+
+        // Try to load JIT debug info via __jit_debug_descriptor
+        $this->jitCodeReader = $this->tryLoadJitDebugInfo($pid);
+
+        $this->unwinder = new NativeStackUnwinder(
+            $this->ehFrameCache,
+            $this->memoryReader,
+            $this->jitCodeReader,
+        );
+        $this->symbolResolver = new NativeSymbolResolver(
+            $this->memoryMap,
+            perfMapResolver: $this->perfMapResolver,
+        );
         $this->cachedPid = $pid;
+    }
+
+    private function tryLoadJitDebugInfo(int $pid): ?JitCodeReader
+    {
+        if ($this->phpSymbolReader === null) {
+            return null;
+        }
+
+        try {
+            // __jit_debug_descriptor is defined in ir_gdb.c (PHP JIT)
+            $descriptor_address = $this->phpSymbolReader->resolveAddress('__jit_debug_descriptor');
+            if ($descriptor_address === null) {
+                return null;
+            }
+
+            $reader = new JitCodeReader($this->memoryReader);
+            $reader->load($pid, $descriptor_address);
+
+            if ($reader->hasFdes()) {
+                return $reader;
+            }
+
+            return null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function readRegisters(int $pid): ?RegisterState

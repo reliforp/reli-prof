@@ -30,13 +30,16 @@ final class NativeSymbolResolver
 
     private Elf64Parser $elfParser;
     private DebugFileLocator $debugFileLocator;
+    private ?PerfMapSymbolResolver $perfMapResolver = null;
 
     public function __construct(
         private ProcessMemoryMap $memoryMap,
         ?DebugFileLocator $debugFileLocator = null,
+        ?PerfMapSymbolResolver $perfMapResolver = null,
     ) {
         $this->elfParser = new Elf64Parser(new LittleEndianReader());
         $this->debugFileLocator = $debugFileLocator ?? new DebugFileLocator();
+        $this->perfMapResolver = $perfMapResolver;
     }
 
     /**
@@ -52,7 +55,8 @@ final class NativeSymbolResolver
         $area = $areas[0];
         $module_path = $area->name;
         if ($module_path === '' || $module_path[0] === '[') {
-            return null; // skip [vdso], [stack], [heap] etc.
+            // Anonymous mapping or special region - try perf map (JIT code)
+            return $this->perfMapResolver?->resolve($absoluteAddress);
         }
 
         $base_address = $this->getModuleBaseAddress($module_path, $area);

@@ -30,6 +30,7 @@ final class NativeStackUnwinder
     public function __construct(
         private ModuleEhFrameCache $ehFrameCache,
         private MemoryReaderInterface $memoryReader,
+        private ?JitCodeReader $jitCodeReader = null,
     ) {
         $this->cfiDecoder = new CfiInstructionDecoder();
         $this->dwarfExpression = new DwarfExpression();
@@ -60,25 +61,41 @@ final class NativeStackUnwinder
             // Find module for this address
             $areas = $memoryMap->findByAddress($rip);
             if ($areas === []) {
-                // Unknown address - try frame pointer unwinding as last resort
                 $frame = $this->createFrameForAddress($rip, '??', $symbolResolver);
                 $frames[] = $frame;
+                // Try frame pointer unwinding even for unmapped addresses
+                $new_registers = $this->framePointerUnwind($pid, $current_registers);
+                if ($new_registers !== null) {
+                    $rip = $new_registers->getRip();
+                    $rsp = $new_registers->getRsp();
+                    $current_registers = $new_registers;
+                    continue;
+                }
                 break;
             }
 
             $area = $this->findExecutableArea($areas) ?? $areas[0];
             $module_path = $area->name;
-            $module_base = hexdec($area->begin) - hexdec($area->file_offset);
+            $is_anonymous = ($module_path === '' || $module_path[0] === '[');
 
             // Create frame for this IP
-            $frames[] = $this->createFrameForAddress($rip, $module_path, $symbolResolver);
+            $display_module = $is_anonymous ? '[jit]' : $module_path;
+            $frames[] = $this->createFrameForAddress($rip, $display_module, $symbolResolver);
 
             // Try DWARF-based unwinding
-            $relative_address = $rip - $module_base;
-            $fde = $this->ehFrameCache->findFdeForAddress($module_path, $relative_address);
+            $fde = null;
+            if ($is_anonymous) {
+                // Anonymous mapping — try JIT .eh_frame (from __jit_debug_descriptor)
+                $fde = $this->jitCodeReader?->findFdeForAddress($rip);
+            } else {
+                $module_base = hexdec($area->begin) - hexdec($area->file_offset);
+                $relative_address = $rip - $module_base;
+                $fde = $this->ehFrameCache->findFdeForAddress($module_path, $relative_address);
+            }
 
             if ($fde !== null) {
-                $new_registers = $this->unwindWithFde($pid, $fde, $relative_address, $current_registers);
+                $unwind_address = $is_anonymous ? $rip : ($rip - $module_base);
+                $new_registers = $this->unwindWithFde($pid, $fde, $unwind_address, $current_registers);
                 if ($new_registers !== null) {
                     $new_rip = $new_registers->getRip();
                     $new_rsp = $new_registers->getRsp();
