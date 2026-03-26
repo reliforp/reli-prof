@@ -104,6 +104,19 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
         $php_tid = null;
         $executor_globals_address = null;
         $sapi_globals_address = null;
+        $last_error = '';
+
+        // Collect diagnostic info
+        $tgid = self::findTgidFromTid($pid);
+        $maps_excerpt = '';
+        $maps_content = @file_get_contents("/proc/{$tgid}/maps");
+        if ($maps_content !== false) {
+            foreach (explode("\n", $maps_content) as $line) {
+                if (preg_match('/libphp|libc\.so|frankenphp/', $line)) {
+                    $maps_excerpt .= $line . "\n";
+                }
+            }
+        }
 
         foreach ($tids as $tid) {
             try {
@@ -165,14 +178,18 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
                 $executor_globals_address = $eg_addr;
                 $sapi_globals_address = $sg_addr;
                 break;
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                $last_error = "TID {$tid}: " . get_class($e) . ': ' . $e->getMessage();
                 continue;
             }
         }
 
         $this->assertNotNull(
             $php_tid,
-            'Could not find a thread with valid PHP executor globals in the FrankenPHP process'
+            "Could not find a thread with valid PHP executor globals.\n"
+            . "pid={$pid}, tgid={$tgid}, tids=[" . implode(',', $tids) . "]\n"
+            . "last_error: {$last_error}\n"
+            . "maps:\n{$maps_excerpt}"
         );
 
         $call_trace = $executor_globals_reader->readCallTrace(
