@@ -20,38 +20,52 @@ final class ContextAnalyzer
 {
     private int $node_id = 0;
 
-    public function analyze(ReferenceContext $reference_context, WeakMap $memo = null): array
-    {
+    /**
+     * @param WeakMap<ReferenceContext, int>|null $memo
+     */
+    public function analyze(
+        ReferenceContext $reference_context,
+        ContextTreeSink $sink,
+        ?int $parent_node_id = null,
+        ?WeakMap $memo = null,
+    ): void {
         if ($memo === null) {
+            /** @var WeakMap<ReferenceContext, int> $memo */
             $memo = new WeakMap();
         }
 
-        $result = [];
         foreach ($reference_context->getLinks() as $link_name => $linked_context) {
-            if (isset($memo[$linked_context])) {
-                $result[$link_name] = [
-                    '#reference_node_id' => $memo[$linked_context],
-                ];
+            /** @psalm-suppress RedundantCastGivenDocblockType -- int keys occur at runtime */
+            $link_name = (string)$link_name;
+            $existing_node_id = $memo[$linked_context] ?? null;
+            if ($existing_node_id !== null) {
+                $sink->emitReference($existing_node_id, $parent_node_id, $link_name);
                 continue;
             }
-            $memo[$linked_context] = $this->node_id;
-            $node = [
-                '#node_id' => $this->node_id,
-                '#type' => $linked_context->getName(),
-            ];
-            if ($linked_context->getLocations() !== []) {
-                $node['#locations'] = $linked_context->getLocations();
-            }
+
+            $current_node_id = $this->node_id++;
+            $memo[$linked_context] = $current_node_id;
+
             $contexts = $linked_context->getContexts();
             if (!is_array($contexts)) {
                 $contexts = iterator_to_array($contexts);
             }
-            if ($contexts !== []) {
-                $node += $contexts;
-            }
-            $this->node_id++;
-            $result[$link_name] = $node + $this->analyze($linked_context, $memo);
+            /** @var array<string, mixed> $contexts */
+
+            $sink->emitNode(
+                $current_node_id,
+                $parent_node_id,
+                $link_name,
+                $linked_context->getName(),
+                $linked_context->getLocations(),
+                $contexts,
+            );
+
+            $this->analyze($linked_context, $sink, $current_node_id, $memo);
         }
-        return $result;
+
+        if ($sink->allowsRelease()) {
+            $reference_context->releaseLinks();
+        }
     }
 }

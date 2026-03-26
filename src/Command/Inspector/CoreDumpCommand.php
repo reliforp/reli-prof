@@ -20,7 +20,6 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;

@@ -159,9 +159,8 @@ final class RegionAnalyzer
     {
         $locations = $memory_locations->memory_locations;
 
-        usort($locations, function (MemoryLocation $a, MemoryLocation $b) {
-            return $a->address <=> $b->address;
-        });
+        $addresses = array_map(fn (MemoryLocation $l) => $l->address, $locations);
+        array_multisort($addresses, SORT_ASC, SORT_NUMERIC, $locations);
 
         $filtered_locations = [];
         foreach ($locations as $location) {

@@ -13,14 +13,16 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\CoreDumpReader;
 
+use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
+use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\ReliProfiler;
@@ -73,15 +75,6 @@ final class CoreDumpReader
         $analyzed_regions = $region_analyzer->analyze(
             $collected_memories->memory_locations,
         );
-        $location_type_analyzer = new LocationTypeAnalyzer();
-        $heap_location_type_summary = $location_type_analyzer->analyze(
-            $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
-        );
-
-        $object_class_analyzer = new ObjectClassAnalyzer();
-        $object_class_summary = $object_class_analyzer->analyze(
-            $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
-        );
 
         $summary = [
             $analyzed_regions->summary->toArray()
@@ -103,27 +96,44 @@ final class CoreDumpReader
             ]
         ];
 
-        $context_analyzer = new ContextAnalyzer();
-        $analyzed_context = $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
+        $is_db = in_array($memory_profiler_settings->output_format, ['sqlite3', 'mysql', 'postgresql'], true);
+
+        $location_types_summary = null;
+        $class_objects_summary = null;
+        if (!$is_db) {
+            $location_type_analyzer = new LocationTypeAnalyzer();
+            $location_types_summary = $location_type_analyzer->analyze(
+                $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
+            )->per_type_usage;
+
+            $object_class_analyzer = new ObjectClassAnalyzer();
+            $class_objects_summary = $object_class_analyzer->analyze(
+                $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
+            )->per_class_usage;
+        }
+
+        $region_boundaries = new RegionBoundaries(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations,
+        );
+        $top_reference_context = $collected_memories->top_reference_context;
+
+        unset($collected_memories, $analyzed_regions, $region_analyzer);
+
+        $result = new MemoryAnalysisResult(
+            $summary,
+            $top_reference_context,
+            $location_types_summary,
+            $class_objects_summary,
         );
 
-        $flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
-        if ($memory_profiler_settings->pretty_print) {
-            $flags |= JSON_PRETTY_PRINT;
-        }
-        echo json_encode(
-            [
-                'summary' => $summary,
-                "location_types_summary" => $heap_location_type_summary->per_type_usage,
-                'class_objects_summary' => $object_class_summary->per_class_usage,
-                'context' => $analyzed_context,
-            ],
-            $flags,
-            2147483647
+        $output_factory = new MemoryOutputFactory();
+        $memory_output = $output_factory->create(
+            $memory_profiler_settings,
+            $region_boundaries,
         );
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \RuntimeException(json_last_error_msg());
-        }
+        $memory_output->output($result);
     }
 }

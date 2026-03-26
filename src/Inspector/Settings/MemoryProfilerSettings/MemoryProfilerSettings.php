@@ -19,6 +19,13 @@ final class MemoryProfilerSettings
         public bool $stop_process,
         public bool $pretty_print,
         public ?MemoryLimitErrorDetails $memory_exhaustion_error_details = null,
+        public string $output_format = 'json',
+        public ?string $output_path = null,
+        public string $db_host = '127.0.0.1',
+        public ?int $db_port = null,
+        public ?string $db_name = null,
+        public ?string $db_user = null,
+        public ?string $db_password = null,
     ) {
     }
 }
