@@ -18,6 +18,7 @@ use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
 use Reli\Lib\Amphp\WorkerEntryPointInterface;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Loop\LoopCondition\InfiniteLoopCondition;
 use Reli\Lib\Loop\LoopCondition\LoopConditionInterface;
 use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
@@ -32,6 +33,7 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
         private ProcessSearcherInterface $process_searcher,
         private ProcessDescriptorRetriever $process_descriptor_retriever,
         private ThreadEnumerator $thread_enumerator,
+        private BinaryAnalysisCache $binary_analysis_cache,
         private LoopConditionInterface $loop_condition = new InfiniteLoopCondition(),
     ) {
     }
@@ -40,6 +42,9 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
     public function run(): void
     {
         $target_php_settings_message = $this->protocol->receiveTargetPhpSettings();
+        if ($target_php_settings_message->no_cache) {
+            $this->binary_analysis_cache->disable();
+        }
         $cache = new ProcessDescriptorCache();
 
         while ($this->loop_condition->shouldContinue()) {

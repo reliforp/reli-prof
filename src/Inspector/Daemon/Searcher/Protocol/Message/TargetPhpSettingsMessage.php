@@ -26,6 +26,7 @@ final class TargetPhpSettingsMessage
         public string $regex,
         public TargetPhpSettings $target_php_settings,
         public int $parent_pid,
+        public bool $no_cache = false,
     ) {
     }
 }
