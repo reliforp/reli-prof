@@ -92,7 +92,9 @@ class PdoMemoryOutputTest extends BaseTestCase
         $output->output($this->createMinimalResult($summary));
 
         $db = new \PDO('sqlite:' . $this->db_path);
-        $rows = $db->query('SELECT "key", "value" FROM summary WHERE run_id = 1 ORDER BY "key"')->fetchAll(\PDO::FETCH_KEY_PAIR);
+        $rows = $db->query(
+            'SELECT "key", "value" FROM summary WHERE run_id = 1 ORDER BY "key"'
+        )->fetchAll(\PDO::FETCH_KEY_PAIR);
 
         $this->assertSame('1024', $rows['memory_usage']);
         $this->assertSame('2048', $rows['peak_memory_usage']);
@@ -134,7 +136,9 @@ class PdoMemoryOutputTest extends BaseTestCase
         $output->output($result);
 
         $db = new \PDO('sqlite:' . $this->db_path);
-        $nodes = $db->query('SELECT run_id, node_id, type FROM context_nodes ORDER BY node_id')->fetchAll(\PDO::FETCH_ASSOC);
+        $nodes = $db->query(
+            'SELECT run_id, node_id, type FROM context_nodes ORDER BY node_id'
+        )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(2, $nodes);
         $this->assertEquals(1, $nodes[0]['run_id']);
         $this->assertSame('root_type', $nodes[0]['type']);

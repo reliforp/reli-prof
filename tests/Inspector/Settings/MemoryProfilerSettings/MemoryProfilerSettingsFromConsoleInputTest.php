@@ -20,9 +20,23 @@ use Symfony\Component\Console\Input\InputInterface;
 
 class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
 {
-    public function testFromConsoleInput()
+    /**
+     * @return \Mockery\MockInterface&InputInterface
+     */
+    private function createBaseMock(): \Mockery\MockInterface
     {
         $input = Mockery::mock(InputInterface::class);
+        $input->allows()->getOption('db-host')->andReturns('127.0.0.1');
+        $input->allows()->getOption('db-port')->andReturns(null);
+        $input->allows()->getOption('db-name')->andReturns(null);
+        $input->allows()->getOption('db-user')->andReturns(null);
+        $input->allows()->getOption('db-password')->andReturns(null);
+        return $input;
+    }
+
+    public function testFromConsoleInput(): void
+    {
+        $input = $this->createBaseMock();
         $input->expects()->getOption('stop-process')->andReturns(true)->atLeast()->once();
         $input->expects()->getOption('pretty-print')->andReturns(false)->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
@@ -42,9 +56,9 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
         $this->assertNull($settings->output_path);
     }
 
-    public function testFromConsoleInputDepthNotInteger()
+    public function testFromConsoleInputDepthNotInteger(): void
     {
-        $input = Mockery::mock(InputInterface::class);
+        $input = $this->createBaseMock();
         $input->expects()->getOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
         $input->expects()->getOption('pretty-print')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
@@ -59,9 +73,9 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
         (new MemoryProfilerSettingsFromConsoleInput())->createSettings($input);
     }
 
-    public function testFromConsoleInputDepthNotPositive()
+    public function testFromConsoleInputDepthNotPositive(): void
     {
-        $input = Mockery::mock(InputInterface::class);
+        $input = $this->createBaseMock();
         $input->expects()->getOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
         $input->expects()->getOption('pretty-print')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
@@ -76,9 +90,9 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
         (new MemoryProfilerSettingsFromConsoleInput())->createSettings($input);
     }
 
-    public function testFromConsoleInputLineNotInteger()
+    public function testFromConsoleInputLineNotInteger(): void
     {
-        $input = Mockery::mock(InputInterface::class);
+        $input = $this->createBaseMock();
         $input->expects()->getOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
         $input->expects()->getOption('pretty-print')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
