@@ -20,6 +20,9 @@ final class ContextAnalyzer
 {
     private int $node_id = 0;
 
+    /**
+     * @param WeakMap<ReferenceContext, int>|null $memo
+     */
     public function analyze(
         ReferenceContext $reference_context,
         ContextTreeSink $sink,
@@ -27,12 +30,14 @@ final class ContextAnalyzer
         ?WeakMap $memo = null,
     ): void {
         if ($memo === null) {
+            /** @var WeakMap<ReferenceContext, int> $memo */
             $memo = new WeakMap();
         }
 
         foreach ($reference_context->getLinks() as $link_name => $linked_context) {
-            if (isset($memo[$linked_context])) {
-                $sink->emitReference($memo[$linked_context], $parent_node_id, (string)$link_name);
+            $existing_node_id = $memo[$linked_context] ?? null;
+            if ($existing_node_id !== null) {
+                $sink->emitReference($existing_node_id, $parent_node_id, $link_name);
                 continue;
             }
 
@@ -43,11 +48,12 @@ final class ContextAnalyzer
             if (!is_array($contexts)) {
                 $contexts = iterator_to_array($contexts);
             }
+            /** @var array<string, mixed> $contexts */
 
             $sink->emitNode(
                 $current_node_id,
                 $parent_node_id,
-                (string)$link_name,
+                $link_name,
                 $linked_context->getName(),
                 $linked_context->getLocations(),
                 $contexts,

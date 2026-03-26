@@ -41,22 +41,25 @@ final class ArrayContextTreeSink implements ContextTreeSink
             '#type' => $type,
         ];
 
-        $locations_array = $locations instanceof \Traversable
-            ? iterator_to_array($locations)
-            : (array)$locations;
+        if ($locations instanceof \Traversable) {
+            $locations_array = iterator_to_array($locations);
+        } else {
+            $locations_array = $locations;
+        }
         if ($locations_array !== []) {
             $node['#locations'] = $locations_array;
         }
 
-        foreach ($attributes as $key => $value) {
-            $node[$key] = $value;
-        }
+        $node += $attributes;
 
         if ($parent_node_id === null) {
             $this->root[$link_name] = $node;
+            /** @psalm-suppress UnsupportedPropertyReferenceUsage */
             $this->node_refs[$node_id] = &$this->root[$link_name];
         } else {
+            /** @psalm-suppress MixedArrayAssignment */
             $this->node_refs[$parent_node_id][$link_name] = $node;
+            /** @psalm-suppress UnsupportedPropertyReferenceUsage, MixedArrayAssignment */
             $this->node_refs[$node_id] = &$this->node_refs[$parent_node_id][$link_name];
         }
     }
@@ -72,6 +75,7 @@ final class ArrayContextTreeSink implements ContextTreeSink
         if ($parent_node_id === null) {
             $this->root[$link_name] = $ref;
         } else {
+            /** @psalm-suppress MixedArrayAssignment */
             $this->node_refs[$parent_node_id][$link_name] = $ref;
         }
     }

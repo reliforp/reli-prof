@@ -103,6 +103,7 @@ final class PdoContextTreeSink implements ContextTreeSink
             }
         }
 
+        /** @psalm-suppress MixedAssignment -- $attributes is array<string, mixed> */
         foreach ($attributes as $key => $value) {
             $this->attr_buffer[] = $node_id;
             $this->attr_buffer[] = $key;
