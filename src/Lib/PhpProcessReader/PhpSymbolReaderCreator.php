@@ -51,6 +51,15 @@ final class PhpSymbolReaderCreator
             $libpthread_finder_regex,
             $libpthread_binary_path
         );
+        // On glibc 2.34+, libpthread is merged into libc
+        if (is_null($libpthread_symbol_reader)) {
+            $libpthread_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
+                $pid,
+                $process_memory_map,
+                '.*/libc\.so.*',
+                null
+            );
+        }
         $root_link_map_address = null;
         if (!is_null($libpthread_symbol_reader)) {
             $executable_path = readlink("/proc/{$pid}/exe");
