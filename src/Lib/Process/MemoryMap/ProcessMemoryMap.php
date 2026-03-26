@@ -71,20 +71,18 @@ final class ProcessMemoryMap
             return [];
         }
 
-        // Check candidate and nearby entries (regions can overlap)
-        $result = [];
-        for ($i = $candidate; $i >= 0; $i--) {
-            [$begin, $end, $idx] = $this->sortedIndex[$i];
-            if ($begin > $address) {
-                continue;
-            }
-            if ($address > $end) {
+        // Scan backward from candidate to find all matching regions
+        $start = $candidate;
+        for ($i = $candidate - 1; $i >= 0; $i--) {
+            if ($this->sortedIndex[$i][1] < $address) { // end < address
                 break;
             }
-            $result[] = $this->memory_areas[$idx];
+            $start = $i;
         }
-        // Also check entries after candidate (overlapping regions)
-        for ($i = $candidate + 1; $i < count($this->sortedIndex); $i++) {
+
+        // Collect matching regions in address order
+        $result = [];
+        for ($i = $start; $i < count($this->sortedIndex); $i++) {
             [$begin, $end, $idx] = $this->sortedIndex[$i];
             if ($begin > $address) {
                 break;
