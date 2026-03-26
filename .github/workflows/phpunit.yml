@@ -138,6 +138,22 @@ jobs:
             targets: "v83"
           - name: "PHP 8.4"
             targets: "v84"
+          - name: "PHP 7.2 ZTS"
+            targets: "v72_zts"
+          - name: "PHP 7.3 ZTS"
+            targets: "v73_zts"
+          - name: "PHP 7.4 ZTS"
+            targets: "v74_zts"
+          - name: "PHP 8.0 ZTS"
+            targets: "v80_zts"
+          - name: "PHP 8.1 ZTS"
+            targets: "v81_zts"
+          - name: "PHP 8.2 ZTS"
+            targets: "v82_zts"
+          - name: "PHP 8.3 ZTS"
+            targets: "v83_zts"
+          - name: "PHP 8.4 ZTS"
+            targets: "v84_zts"
     steps:
       - uses: actions/checkout@v6
 
