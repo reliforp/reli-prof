@@ -59,6 +59,20 @@ All other options of `inspector:memory` work the same regardless of output forma
 
 ## Database Schema
 
+### Runs Table
+
+#### `runs`
+Each invocation of `inspector:memory` with a database output format creates a new run. This allows multiple snapshots to coexist in the same database for comparison.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `run_id` | INTEGER (PK) | Auto-incremented run identifier |
+| `created_at` | TEXT | ISO 8601 timestamp (UTC) of when the run was created |
+
+```sql
+SELECT * FROM runs;
+```
+
 ### Summary Tables
 
 #### `summary`
@@ -66,11 +80,12 @@ Key-value pairs containing metadata about the analysis snapshot.
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `run_id` | INTEGER (PK) | References `runs.run_id` |
 | `key` | TEXT (PK) | Metric name (e.g. `zend_mm_heap_total`, `php_version`) |
 | `value` | TEXT | Metric value |
 
 ```sql
-SELECT * FROM summary;
+SELECT * FROM summary WHERE run_id = 1;
 ```
 
 #### `location_types_summary`
@@ -78,12 +93,13 @@ Aggregated memory usage by location type, computed via `GROUP BY` from `context_
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `run_id` | INTEGER (PK) | References `runs.run_id` |
 | `type` | TEXT (PK) | Location type (e.g. `ZendStringMemoryLocation`, `ZendObjectMemoryLocation`) |
 | `count` | INTEGER | Number of locations of this type |
 | `memory_usage` | INTEGER | Total bytes consumed |
 
 ```sql
-SELECT * FROM location_types_summary ORDER BY memory_usage DESC;
+SELECT * FROM location_types_summary WHERE run_id = 1 ORDER BY memory_usage DESC;
 ```
 
 #### `class_objects_summary`
@@ -91,12 +107,13 @@ Aggregated memory usage by class, computed via `GROUP BY` from `context_node_loc
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `run_id` | INTEGER (PK) | References `runs.run_id` |
 | `class_name` | TEXT (PK) | Fully qualified class name |
 | `count` | INTEGER | Number of instances |
 | `memory_usage` | INTEGER | Total bytes consumed |
 
 ```sql
-SELECT * FROM class_objects_summary ORDER BY memory_usage DESC;
+SELECT * FROM class_objects_summary WHERE run_id = 1 ORDER BY memory_usage DESC;
 ```
 
 ### Context Graph Tables
@@ -108,7 +125,8 @@ Each node represents a unique context (object, array, string, etc.) in the memor
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `node_id` | INTEGER (PK) | Unique node identifier (same as `#node_id` in JSON) |
+| `run_id` | INTEGER (PK) | References `runs.run_id` |
+| `node_id` | INTEGER (PK) | Unique node identifier within this run (same as `#node_id` in JSON) |
 | `type` | TEXT | Context type (e.g. `ObjectContext`, `ArrayHeaderContext`) |
 
 #### `context_edges`
@@ -116,6 +134,7 @@ Edges represent parent-child relationships in the reference graph. A node may ha
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `run_id` | INTEGER | References `runs.run_id` |
 | `parent_node_id` | INTEGER | Parent node (NULL for root nodes) |
 | `child_node_id` | INTEGER | Child node (references `context_nodes.node_id`) |
 | `link_name` | TEXT | Name of the link (e.g. property name, variable name, array key) |
@@ -126,10 +145,10 @@ The `is_tree` flag distinguishes the DFS spanning tree from back-references:
 - `is_tree = 0` edges represent additional references to already-visited nodes — these capture shared and circular references
 
 ```sql
--- Find all places that reference node 42
+-- Find all places that reference node 42 in run 1
 SELECT parent_node_id, link_name, is_tree
 FROM context_edges
-WHERE child_node_id = 42;
+WHERE run_id = 1 AND child_node_id = 42;
 ```
 
 #### `context_node_locations`
@@ -138,6 +157,7 @@ Physical memory locations associated with nodes. A node may have multiple locati
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | INTEGER (PK) | Auto-incremented row ID |
+| `run_id` | INTEGER | References `runs.run_id` |
 | `node_id` | INTEGER (FK) | References `context_nodes.node_id` |
 | `address` | INTEGER | Memory address in the target process |
 | `size` | INTEGER | Size in bytes |
@@ -154,6 +174,7 @@ Key-value metadata attached to nodes (e.g. `#count` for array element counts).
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | INTEGER (PK) | Auto-incremented row ID |
+| `run_id` | INTEGER | References `runs.run_id` |
 | `node_id` | INTEGER (FK) | References `context_nodes.node_id` |
 | `key` | TEXT | Attribute name |
 | `value` | TEXT | Attribute value |
@@ -162,29 +183,30 @@ Key-value metadata attached to nodes (e.g. `#count` for array element counts).
 
 The following indexes are created after bulk insertion for query performance:
 
-- `idx_context_edges_parent_tree` on `context_edges(parent_node_id, is_tree)` -- essential for recursive CTE path queries
-- `idx_context_edges_child` on `context_edges(child_node_id)` -- essential for "find all references to node X"
-- `idx_context_node_locations_node` on `context_node_locations(node_id)` -- essential for joining locations to nodes
-- `idx_context_node_locations_class` on `context_node_locations(class_name)` -- speeds up class-based queries
-- `idx_context_node_attributes_node` on `context_node_attributes(node_id)` -- for attribute lookups
+- `idx_context_edges_run_parent_tree` on `context_edges(run_id, parent_node_id, is_tree)` -- essential for recursive CTE path queries
+- `idx_context_edges_run_child` on `context_edges(run_id, child_node_id)` -- essential for "find all references to node X"
+- `idx_context_node_locations_run_node` on `context_node_locations(run_id, node_id)` -- essential for joining locations to nodes
+- `idx_context_node_locations_run_class` on `context_node_locations(run_id, class_name)` -- speeds up class-based queries
+- `idx_context_node_attributes_run_node` on `context_node_attributes(run_id, node_id)` -- for attribute lookups
 
 ### Views
 
 #### `v_node_paths`
-Computes the canonical path from root to each node using a recursive CTE that follows only `is_tree = 1` edges. Each node has exactly one path. This view is convenient but can be slow on large databases.
+Computes the canonical path from root to each node using a recursive CTE that follows only `is_tree = 1` edges. Each node has exactly one path per run. This view is convenient but can be slow on large databases.
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `run_id` | INTEGER | Run identifier |
 | `node_id` | INTEGER | Node identifier |
 | `path` | TEXT | Full path (e.g. `call_frames -> 0 -> local_variables -> myVar -> object_properties -> items`) |
 | `depth` | INTEGER | Depth in the tree (0 = root) |
 
 ```sql
--- Find where a specific class is referenced
+-- Find where a specific class is referenced in run 1
 SELECT np.path, loc.size, loc.refcount
 FROM v_node_paths np
-JOIN context_node_locations loc ON loc.node_id = np.node_id
-WHERE loc.class_name = 'App\\MyClass'
+JOIN context_node_locations loc ON loc.run_id = np.run_id AND loc.node_id = np.node_id
+WHERE np.run_id = 1 AND loc.class_name = 'App\\MyClass'
 ORDER BY loc.size DESC;
 ```
 
@@ -195,6 +217,7 @@ Provides a convenient view of PHP array memory usage by joining array headers wi
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `run_id` | INTEGER | Run identifier |
 | `node_id` | INTEGER | Node identifier of the array header |
 | `address` | INTEGER | Memory address |
 | `header_size` | INTEGER | Size of the `zend_array` header |
@@ -208,10 +231,14 @@ Provides a convenient view of PHP array memory usage by joining array headers wi
 For large databases, the `v_node_paths` view (recursive CTE) can be slow. The `inspector:optimize-memory-db` command materializes all node paths into a physical `node_paths` table for much faster queries.
 
 ```bash
+# Materialize all runs
 ./reli inspector:optimize-memory-db memory.db
+
+# Materialize a specific run only
+./reli inspector:optimize-memory-db memory.db --run-id=1
 ```
 
-This creates a `node_paths` table with the same schema as the `v_node_paths` view, plus an index on `depth`. After materialization, you can query `node_paths` directly instead of `v_node_paths`.
+This creates a `node_paths` table with the same schema as the `v_node_paths` view, plus an index on `(run_id, depth)`. After materialization, you can query `node_paths` directly instead of `v_node_paths`.
 
 > **Note**: This command currently supports SQLite databases only. For MySQL/PostgreSQL, you can run the equivalent `INSERT INTO ... WITH RECURSIVE` SQL manually.
 
@@ -221,20 +248,24 @@ This creates a `node_paths` table with the same schema as the `v_node_paths` vie
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `run_id` | INTEGER (PK) | Run identifier |
 | `node_id` | INTEGER (PK) | Node identifier |
 | `path` | TEXT | Full path from root |
 | `depth` | INTEGER | Depth in the tree |
 
-Index: `idx_node_paths_depth` on `node_paths(depth)`
+Index: `idx_node_paths_run_depth` on `node_paths(run_id, depth)`
 
 ## Example Queries
+
+All example queries below use `WHERE run_id = 1` to target a specific run. Replace `1` with the desired run ID, or omit the condition to query across all runs.
 
 ### Top memory consumers by location type
 
 ```sql
 SELECT type, count, memory_usage,
-       printf('%.1f%%', memory_usage * 100.0 / (SELECT SUM(memory_usage) FROM location_types_summary)) AS pct
+       printf('%.1f%%', memory_usage * 100.0 / (SELECT SUM(memory_usage) FROM location_types_summary WHERE run_id = 1)) AS pct
 FROM location_types_summary
+WHERE run_id = 1
 ORDER BY memory_usage DESC;
 ```
 
@@ -244,6 +275,7 @@ ORDER BY memory_usage DESC;
 SELECT class_name, count, memory_usage,
        CAST(memory_usage / count AS INTEGER) AS avg_size
 FROM class_objects_summary
+WHERE run_id = 1
 ORDER BY memory_usage DESC
 LIMIT 20;
 ```
@@ -256,7 +288,8 @@ SELECT string_value,
        SUM(size) AS total_bytes,
        size AS per_copy_bytes
 FROM context_node_locations
-WHERE location_type = 'ZendStringMemoryLocation'
+WHERE run_id = 1
+  AND location_type = 'ZendStringMemoryLocation'
   AND string_value IS NOT NULL
 GROUP BY string_value, size
 HAVING COUNT(*) > 1
@@ -270,7 +303,7 @@ LIMIT 20;
 SELECT location_type, class_name, printf('0x%x', address) AS hex_addr,
        size, refcount
 FROM context_node_locations
-WHERE refcount IS NOT NULL
+WHERE run_id = 1 AND refcount IS NOT NULL
 ORDER BY refcount DESC
 LIMIT 20;
 ```
@@ -280,19 +313,19 @@ LIMIT 20;
 ```sql
 WITH RECURSIVE node_depth(node_id, depth) AS (
     SELECT child_node_id, 0
-    FROM context_edges WHERE parent_node_id IS NULL AND is_tree = 1
+    FROM context_edges WHERE run_id = 1 AND parent_node_id IS NULL AND is_tree = 1
     UNION ALL
     SELECT e.child_node_id, nd.depth + 1
     FROM context_edges e
     JOIN node_depth nd ON e.parent_node_id = nd.node_id
-    WHERE e.is_tree = 1
+    WHERE e.run_id = 1 AND e.is_tree = 1
 )
 SELECT depth,
        COUNT(DISTINCT nd.node_id) AS nodes,
        SUM(loc.size) AS total_bytes,
-       printf('%.1f%%', SUM(loc.size) * 100.0 / (SELECT SUM(size) FROM context_node_locations)) AS pct
+       printf('%.1f%%', SUM(loc.size) * 100.0 / (SELECT SUM(size) FROM context_node_locations WHERE run_id = 1)) AS pct
 FROM node_depth nd
-JOIN context_node_locations loc ON loc.node_id = nd.node_id
+JOIN context_node_locations loc ON loc.run_id = 1 AND loc.node_id = nd.node_id
 GROUP BY depth
 ORDER BY depth
 LIMIT 30;
@@ -304,8 +337,8 @@ LIMIT 30;
 SELECT va.node_id, va.total_size, va.element_count, va.refcount,
        np.path
 FROM v_arrays va
-JOIN v_node_paths np ON np.node_id = va.node_id
-WHERE va.element_count = 0
+JOIN v_node_paths np ON np.run_id = va.run_id AND np.node_id = va.node_id
+WHERE va.run_id = 1 AND va.element_count = 0
 ORDER BY va.total_size DESC
 LIMIT 20;
 ```
@@ -315,10 +348,10 @@ LIMIT 20;
 Edges with `is_tree = 0` are back-references to already-visited nodes in the DFS traversal. This includes both truly circular references (A -> B -> A) and shared references (A -> C, B -> C).
 
 ```sql
--- All back-references (shared + circular)
+-- All back-references (shared + circular) in run 1
 SELECT parent_node_id, child_node_id, link_name
 FROM context_edges
-WHERE is_tree = 0
+WHERE run_id = 1 AND is_tree = 0
 LIMIT 20;
 ```
 
@@ -327,14 +360,14 @@ LIMIT 20;
 ```sql
 WITH RECURSIVE subtree(node_id, root_path) AS (
     SELECT e.child_node_id, e.link_name
-    FROM context_edges e WHERE e.parent_node_id IS NULL AND e.is_tree = 1
+    FROM context_edges e WHERE e.run_id = 1 AND e.parent_node_id IS NULL AND e.is_tree = 1
     UNION ALL
     SELECT e.child_node_id,
            CASE WHEN st.root_path = '' THEN e.link_name
                 ELSE st.root_path || ' -> ' || e.link_name END
     FROM context_edges e
     JOIN subtree st ON e.parent_node_id = st.node_id
-    WHERE e.is_tree = 1
+    WHERE e.run_id = 1 AND e.is_tree = 1
 ),
 root_two AS (
     SELECT node_id,
@@ -351,9 +384,9 @@ root_two AS (
 SELECT root_prefix,
        COUNT(DISTINCT rt.node_id) AS nodes,
        SUM(loc.size) AS total_bytes,
-       printf('%.1f%%', SUM(loc.size) * 100.0 / (SELECT SUM(size) FROM context_node_locations)) AS pct
+       printf('%.1f%%', SUM(loc.size) * 100.0 / (SELECT SUM(size) FROM context_node_locations WHERE run_id = 1)) AS pct
 FROM root_two rt
-JOIN context_node_locations loc ON loc.node_id = rt.node_id
+JOIN context_node_locations loc ON loc.run_id = 1 AND loc.node_id = rt.node_id
 GROUP BY root_prefix
 ORDER BY total_bytes DESC
 LIMIT 15;
@@ -366,7 +399,7 @@ SELECT size, refcount,
        printf('0x%x', address) AS hex_addr,
        substr(string_value, 1, 80) AS preview
 FROM context_node_locations
-WHERE location_type = 'ZendStringMemoryLocation'
+WHERE run_id = 1 AND location_type = 'ZendStringMemoryLocation'
 ORDER BY size DESC
 LIMIT 10;
 ```
@@ -377,7 +410,7 @@ LIMIT 10;
 SELECT va.node_id, va.element_count, va.header_size, va.table_size, va.total_size,
        CASE WHEN va.element_count > 0 THEN va.table_size / va.element_count ELSE NULL END AS bytes_per_elem
 FROM v_arrays va
-WHERE va.element_count > 0 AND va.table_size > 0
+WHERE va.run_id = 1 AND va.element_count > 0 AND va.table_size > 0
 ORDER BY (CAST(va.table_size AS REAL) / va.element_count) DESC
 LIMIT 15;
 ```
@@ -389,7 +422,7 @@ SELECT region, location_type,
        COUNT(*) AS count,
        SUM(size) AS total_bytes
 FROM context_node_locations
-WHERE region IS NOT NULL
+WHERE run_id = 1 AND region IS NOT NULL
 GROUP BY region, location_type
 ORDER BY total_bytes DESC
 LIMIT 20;
@@ -398,19 +431,19 @@ LIMIT 20;
 ### Find all references to a specific node (equivalent to JSON `#reference_node_id` lookup)
 
 ```sql
--- Find all edges pointing to node 42 (both tree and back-references)
+-- Find all edges pointing to node 42 in run 1 (both tree and back-references)
 SELECT e.parent_node_id, e.link_name, e.is_tree
 FROM context_edges e
-WHERE e.child_node_id = 42;
+WHERE e.run_id = 1 AND e.child_node_id = 42;
 ```
 
 ### All non-circular paths to a specific node
 
 ```sql
--- All paths from root to node 42, avoiding cycles
+-- All paths from root to node 42 in run 1, avoiding cycles
 WITH RECURSIVE cte(node_id, path, depth, visited) AS (
     SELECT child_node_id, link_name, 0, ',' || child_node_id || ','
-    FROM context_edges WHERE parent_node_id IS NULL
+    FROM context_edges WHERE run_id = 1 AND parent_node_id IS NULL
   UNION ALL
     SELECT e.child_node_id,
            cte.path || ' -> ' || e.link_name,
@@ -418,11 +451,39 @@ WITH RECURSIVE cte(node_id, path, depth, visited) AS (
            cte.visited || e.child_node_id || ','
     FROM context_edges e
     JOIN cte ON e.parent_node_id = cte.node_id
-    WHERE cte.visited NOT LIKE '%,' || e.child_node_id || ',%'
+    WHERE e.run_id = 1 AND cte.visited NOT LIKE '%,' || e.child_node_id || ',%'
 )
 SELECT path, depth FROM cte
 WHERE node_id = 42
 LIMIT 100;
+```
+
+### Comparing runs: memory growth by class
+
+```sql
+SELECT
+    r1.class_name,
+    r1.count AS count_run1,
+    r2.count AS count_run2,
+    r2.count - r1.count AS count_diff,
+    r1.memory_usage AS mem_run1,
+    r2.memory_usage AS mem_run2,
+    r2.memory_usage - r1.memory_usage AS mem_diff
+FROM class_objects_summary r1
+JOIN class_objects_summary r2 ON r1.class_name = r2.class_name
+WHERE r1.run_id = 1 AND r2.run_id = 2
+ORDER BY mem_diff DESC
+LIMIT 20;
+```
+
+### Comparing runs: new classes in later run
+
+```sql
+SELECT r2.class_name, r2.count, r2.memory_usage
+FROM class_objects_summary r2
+LEFT JOIN class_objects_summary r1 ON r1.class_name = r2.class_name AND r1.run_id = 1
+WHERE r2.run_id = 2 AND r1.class_name IS NULL
+ORDER BY r2.memory_usage DESC;
 ```
 
 ## Choosing an Output Format
@@ -437,6 +498,7 @@ LIMIT 100;
 | Streaming | Pipe to stdout | Requires `-o` file path | Writes to remote server |
 | Remote use | Must copy file | Must copy file | Direct write, no file transfer |
 | Team sharing | Share file | Share file | Connect to shared server |
+| Multi-run comparison | Separate files | Same DB, compare via `run_id` | Same DB, compare via `run_id` |
 | Path queries | `jq path(...)` | `v_node_paths` / `node_paths` | `v_node_paths` / manual CTE |
 | Reference lookup | `jq` + `#reference_node_id` | `context_edges WHERE child_node_id = ?` | Same |
 | Large snapshots | May exceed `jq` depth limit | Handles well | Handles well |

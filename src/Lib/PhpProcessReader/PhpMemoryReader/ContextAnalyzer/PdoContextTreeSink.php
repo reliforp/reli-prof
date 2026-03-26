@@ -25,9 +25,9 @@ final class PdoContextTreeSink implements ContextTreeSink
     private const LOCATION_BATCH_SIZE = 200;
     private const ATTR_BATCH_SIZE = 200;
     private const EDGE_BATCH_SIZE = 200;
-    private const LOCATION_COLUMNS = 9;
-    private const ATTR_COLUMNS = 3;
-    private const EDGE_COLUMNS = 4;
+    private const LOCATION_COLUMNS = 10;
+    private const ATTR_COLUMNS = 4;
+    private const EDGE_COLUMNS = 5;
 
     private \PDOStatement $node_stmt;
 
@@ -56,10 +56,11 @@ final class PdoContextTreeSink implements ContextTreeSink
     public function __construct(
         private \PDO $db,
         private PdoDriverInterface $driver,
+        private int $run_id,
         private ?RegionBoundaries $region_boundaries = null,
     ) {
         $this->node_stmt = $db->prepare(
-            $driver->insertIgnoreSql('context_nodes', 'node_id, type', '?, ?')
+            $driver->insertIgnoreSql('context_nodes', 'run_id, node_id, type', '?, ?, ?')
         );
     }
 
@@ -76,13 +77,14 @@ final class PdoContextTreeSink implements ContextTreeSink
         iterable $locations,
         array $attributes,
     ): void {
-        $this->node_stmt->execute([$node_id, $type]);
+        $this->node_stmt->execute([$this->run_id, $node_id, $type]);
         $this->bufferEdge($parent_node_id, $node_id, $link_name, 1);
 
         foreach ($locations as $location) {
             $class = $location::class;
             $short_class = $this->short_name_cache[$class]
                 ??= (new \ReflectionClass($class))->getShortName();
+            $this->location_buffer[] = $this->run_id;
             $this->location_buffer[] = $node_id;
             $this->location_buffer[] = $location->address;
             $this->location_buffer[] = $location->size;
@@ -105,6 +107,7 @@ final class PdoContextTreeSink implements ContextTreeSink
 
         /** @psalm-suppress MixedAssignment -- $attributes is array<string, mixed> */
         foreach ($attributes as $key => $value) {
+            $this->attr_buffer[] = $this->run_id;
             $this->attr_buffer[] = $node_id;
             $this->attr_buffer[] = $key;
             $string_value = is_scalar($value) ? (string)$value : json_encode($value);
@@ -169,8 +172,9 @@ final class PdoContextTreeSink implements ContextTreeSink
         return $this->location_batch_stmts[$row_count]
             ??= $this->db->prepare(
                 'INSERT INTO context_node_locations'
-                . ' (node_id, address, size, location_type, class_name, string_value, refcount, type_info, region)'
-                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?,?,?,?,?,?)'))
+                . ' (run_id, node_id, address, size, location_type,'
+                . ' class_name, string_value, refcount, type_info, region)'
+                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?,?,?,?,?,?,?)'))
             );
     }
 
@@ -179,13 +183,14 @@ final class PdoContextTreeSink implements ContextTreeSink
         $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
         return $this->attr_batch_stmts[$row_count]
             ??= $this->db->prepare(
-                "INSERT INTO context_node_attributes (node_id, {$qi('key')}, {$qi('value')})"
-                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?)'))
+                "INSERT INTO context_node_attributes (run_id, node_id, {$qi('key')}, {$qi('value')})"
+                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?)'))
             );
     }
 
     private function bufferEdge(?int $parent_node_id, int $child_node_id, string $link_name, int $is_tree): void
     {
+        $this->edge_buffer[] = $this->run_id;
         $this->edge_buffer[] = $parent_node_id;
         $this->edge_buffer[] = $child_node_id;
         $this->edge_buffer[] = $link_name;
@@ -210,8 +215,8 @@ final class PdoContextTreeSink implements ContextTreeSink
     {
         return $this->edge_batch_stmts[$row_count]
             ??= $this->db->prepare(
-                'INSERT INTO context_edges (parent_node_id, child_node_id, link_name, is_tree)'
-                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?)'))
+                'INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree)'
+                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?,?)'))
             );
     }
 }

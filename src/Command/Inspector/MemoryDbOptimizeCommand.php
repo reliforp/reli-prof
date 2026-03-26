@@ -13,9 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
+use PhpCast\NullableCast;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class MemoryDbOptimizeCommand extends Command
@@ -29,6 +31,12 @@ final class MemoryDbOptimizeCommand extends Command
                 'db-path',
                 InputArgument::REQUIRED,
                 'path to the SQLite database file',
+            )
+            ->addOption(
+                'run-id',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'run ID to materialize (default: all runs)',
             )
         ;
     }
@@ -44,6 +52,8 @@ final class MemoryDbOptimizeCommand extends Command
             return 1;
         }
 
+        $run_id = NullableCast::toInt($input->getOption('run-id'));
+
         $db = new \PDO('sqlite:' . $db_path);
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 
@@ -56,34 +66,42 @@ final class MemoryDbOptimizeCommand extends Command
             $db->exec('DROP TABLE node_paths');
         }
 
-        $node_count = (int)$db->query('SELECT COUNT(*) FROM context_nodes')->fetchColumn();
-        $output->writeln("Materializing node_paths for {$node_count} nodes...");
+        $where = $run_id !== null ? ' AND run_id = ' . $run_id : '';
+        $node_count = (int)$db->query(
+            'SELECT COUNT(*) FROM context_nodes WHERE 1=1' . $where
+        )->fetchColumn();
+        $label = $run_id !== null ? " (run_id={$run_id})" : ' (all runs)';
+        $output->writeln("Materializing node_paths for {$node_count} nodes{$label}...");
         $output->writeln('<comment>Note: this may significantly increase the database file size</comment>');
 
         $start = hrtime(true);
 
         $db->exec('
             CREATE TABLE node_paths (
-                node_id INTEGER NOT NULL PRIMARY KEY,
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
                 path TEXT NOT NULL,
-                depth INTEGER NOT NULL
+                depth INTEGER NOT NULL,
+                PRIMARY KEY (run_id, node_id)
             )
         ');
+
+        $run_filter = $run_id !== null ? ' AND run_id = ' . $run_id : '';
         $db->exec("
-            INSERT INTO node_paths (node_id, path, depth)
-            WITH RECURSIVE cte(node_id, path, depth) AS (
-                SELECT child_node_id, link_name, 0
+            INSERT INTO node_paths (run_id, node_id, path, depth)
+            WITH RECURSIVE cte(run_id, node_id, path, depth) AS (
+                SELECT run_id, child_node_id, link_name, 0
                 FROM context_edges
-                WHERE parent_node_id IS NULL AND is_tree = 1
+                WHERE parent_node_id IS NULL AND is_tree = 1{$run_filter}
               UNION ALL
-                SELECT e.child_node_id, cte.path || ' -> ' || e.link_name, cte.depth + 1
+                SELECT cte.run_id, e.child_node_id, cte.path || ' -> ' || e.link_name, cte.depth + 1
                 FROM context_edges e
-                JOIN cte ON e.parent_node_id = cte.node_id
+                JOIN cte ON e.parent_node_id = cte.node_id AND e.run_id = cte.run_id
                 WHERE e.is_tree = 1
             )
-            SELECT node_id, path, depth FROM cte
+            SELECT run_id, node_id, path, depth FROM cte
         ");
-        $db->exec('CREATE INDEX idx_node_paths_depth ON node_paths(depth)');
+        $db->exec('CREATE INDEX idx_node_paths_run_depth ON node_paths(run_id, depth)');
 
         $output->writeln('Compacting database...');
         $db->exec('VACUUM');

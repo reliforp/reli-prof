@@ -45,6 +45,7 @@ class PdoMemoryOutputTest extends BaseTestCase
         $db = new \PDO('sqlite:' . $this->db_path);
         $tables = $this->getTableNames($db);
 
+        $this->assertContains('runs', $tables);
         $this->assertContains('summary', $tables);
         $this->assertContains('context_nodes', $tables);
         $this->assertContains('context_edges', $tables);
@@ -74,11 +75,11 @@ class PdoMemoryOutputTest extends BaseTestCase
         $db = new \PDO('sqlite:' . $this->db_path);
         $indexes = $this->getIndexNames($db);
 
-        $this->assertContains('idx_context_edges_parent_tree', $indexes);
-        $this->assertContains('idx_context_edges_child', $indexes);
-        $this->assertContains('idx_context_node_locations_node', $indexes);
-        $this->assertContains('idx_context_node_locations_class', $indexes);
-        $this->assertContains('idx_context_node_attributes_node', $indexes);
+        $this->assertContains('idx_context_edges_run_parent_tree', $indexes);
+        $this->assertContains('idx_context_edges_run_child', $indexes);
+        $this->assertContains('idx_context_node_locations_run_node', $indexes);
+        $this->assertContains('idx_context_node_locations_run_class', $indexes);
+        $this->assertContains('idx_context_node_attributes_run_node', $indexes);
     }
 
     public function testOutputInsertsSummaryData(): void
@@ -91,10 +92,33 @@ class PdoMemoryOutputTest extends BaseTestCase
         $output->output($this->createMinimalResult($summary));
 
         $db = new \PDO('sqlite:' . $this->db_path);
-        $rows = $db->query('SELECT "key", "value" FROM summary ORDER BY "key"')->fetchAll(\PDO::FETCH_KEY_PAIR);
+        $rows = $db->query('SELECT "key", "value" FROM summary WHERE run_id = 1 ORDER BY "key"')->fetchAll(\PDO::FETCH_KEY_PAIR);
 
         $this->assertSame('1024', $rows['memory_usage']);
         $this->assertSame('2048', $rows['peak_memory_usage']);
+    }
+
+    public function testOutputInsertsRunRecord(): void
+    {
+        $output = new PdoMemoryOutput(new SqliteDriver($this->db_path));
+        $output->output($this->createMinimalResult());
+
+        $db = new \PDO('sqlite:' . $this->db_path);
+        $runs = $db->query('SELECT run_id, created_at FROM runs')->fetchAll(\PDO::FETCH_ASSOC);
+        $this->assertCount(1, $runs);
+        $this->assertEquals(1, $runs[0]['run_id']);
+        $this->assertNotEmpty($runs[0]['created_at']);
+    }
+
+    public function testMultipleRunsGetDistinctIds(): void
+    {
+        $output = new PdoMemoryOutput(new SqliteDriver($this->db_path));
+        $output->output($this->createMinimalResult());
+        $output->output($this->createMinimalResult());
+
+        $db = new \PDO('sqlite:' . $this->db_path);
+        $runs = $db->query('SELECT run_id FROM runs ORDER BY run_id')->fetchAll(\PDO::FETCH_COLUMN);
+        $this->assertSame([1, 2], $runs);
     }
 
     public function testOutputInsertsNodesAndEdges(): void
@@ -110,19 +134,21 @@ class PdoMemoryOutputTest extends BaseTestCase
         $output->output($result);
 
         $db = new \PDO('sqlite:' . $this->db_path);
-        $nodes = $db->query('SELECT node_id, type FROM context_nodes ORDER BY node_id')->fetchAll(\PDO::FETCH_ASSOC);
+        $nodes = $db->query('SELECT run_id, node_id, type FROM context_nodes ORDER BY node_id')->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(2, $nodes);
+        $this->assertEquals(1, $nodes[0]['run_id']);
         $this->assertSame('root_type', $nodes[0]['type']);
         $this->assertSame('child_type', $nodes[1]['type']);
 
         $edges = $db->query(
-            'SELECT parent_node_id, child_node_id, link_name, is_tree'
+            'SELECT run_id, parent_node_id, child_node_id, link_name, is_tree'
             . ' FROM context_edges ORDER BY child_node_id'
         )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(2, $edges);
 
         // Root node edge (parent=null)
         $root_edge = $edges[0];
+        $this->assertEquals(1, $root_edge['run_id']);
         $this->assertNull($root_edge['parent_node_id']);
         $this->assertEquals(0, $root_edge['child_node_id']);
         $this->assertSame('root_link', $root_edge['link_name']);
@@ -156,6 +182,7 @@ class PdoMemoryOutputTest extends BaseTestCase
         $db = new \PDO('sqlite:' . $this->db_path);
         $locs = $db->query('SELECT * FROM context_node_locations')->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(1, $locs);
+        $this->assertEquals(1, $locs[0]['run_id']);
         $this->assertEquals(0, $locs[0]['node_id']);
         $this->assertEquals(4096, $locs[0]['address']); // 0x1000
         $this->assertEquals(64, $locs[0]['size']);
@@ -204,7 +231,7 @@ class PdoMemoryOutputTest extends BaseTestCase
 
         $db = new \PDO('sqlite:' . $this->db_path);
         $attrs = $db->query(
-            'SELECT "key", "value" FROM context_node_attributes ORDER BY "key"'
+            'SELECT "key", "value" FROM context_node_attributes WHERE run_id = 1 ORDER BY "key"'
         )->fetchAll(\PDO::FETCH_KEY_PAIR);
         $this->assertSame('5', $attrs['#count']);
         $this->assertSame('array', $attrs['#type']);
@@ -242,10 +269,11 @@ class PdoMemoryOutputTest extends BaseTestCase
 
         $db = new \PDO('sqlite:' . $this->db_path);
         $paths = $db->query(
-            'SELECT node_id, path, depth FROM v_node_paths ORDER BY depth, node_id'
+            'SELECT run_id, node_id, path, depth FROM v_node_paths ORDER BY depth, node_id'
         )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(2, $paths);
         // depth 0: to_middle
+        $this->assertEquals(1, $paths[0]['run_id']);
         $this->assertEquals(0, $paths[0]['depth']);
         $this->assertSame('to_middle', $paths[0]['path']);
         // depth 1: to_middle -> to_leaf
@@ -271,9 +299,10 @@ class PdoMemoryOutputTest extends BaseTestCase
 
         $db = new \PDO('sqlite:' . $this->db_path);
         $rows = $db->query(
-            'SELECT "type", "count", memory_usage FROM location_types_summary'
+            'SELECT run_id, "type", "count", memory_usage FROM location_types_summary'
         )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(1, $rows);
+        $this->assertEquals(1, $rows[0]['run_id']);
         $this->assertSame('ZendObjectMemoryLocation', $rows[0]['type']);
         $this->assertEquals(1, $rows[0]['count']);
         $this->assertEquals(128, $rows[0]['memory_usage']);
@@ -292,9 +321,10 @@ class PdoMemoryOutputTest extends BaseTestCase
 
         $db = new \PDO('sqlite:' . $this->db_path);
         $rows = $db->query(
-            'SELECT class_name, "count", memory_usage FROM class_objects_summary'
+            'SELECT run_id, class_name, "count", memory_usage FROM class_objects_summary'
         )->fetchAll(\PDO::FETCH_ASSOC);
         $this->assertCount(1, $rows);
+        $this->assertEquals(1, $rows[0]['run_id']);
         $this->assertSame('App\\Foo', $rows[0]['class_name']);
         $this->assertEquals(2, $rows[0]['count']);
         $this->assertEquals(192, $rows[0]['memory_usage']); // 64 + 128
