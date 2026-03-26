@@ -61,4 +61,19 @@ final class PostgreSqlDriver implements PdoDriverInterface
     {
         return "CREATE OR REPLACE VIEW {$view_name} AS";
     }
+
+    public function quoteIdentifier(string $identifier): string
+    {
+        return '"' . $identifier . '"';
+    }
+
+    public function primaryKeyTextType(): string
+    {
+        return 'TEXT';
+    }
+
+    public function castAsInteger(string $expr): string
+    {
+        return "CAST({$expr} AS INTEGER)";
+    }
 }

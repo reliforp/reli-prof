@@ -175,9 +175,10 @@ final class PdoContextTreeSink implements ContextTreeSink
 
     private function getAttrBatchStmt(int $row_count): \PDOStatement
     {
+        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
         return $this->attr_batch_stmts[$row_count]
             ??= $this->db->prepare(
-                'INSERT INTO context_node_attributes (node_id, key, value)'
+                "INSERT INTO context_node_attributes (node_id, {$qi('key')}, {$qi('value')})"
                 . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?)'))
             );
     }

@@ -34,4 +34,13 @@ interface PdoDriverInterface
 
     /** SQL prefix for creating a view (handles dialect differences) */
     public function createViewSql(string $view_name): string;
+
+    /** Quote an identifier (table/column name) for this database */
+    public function quoteIdentifier(string $identifier): string;
+
+    /** Text column type suitable for use as a PRIMARY KEY */
+    public function primaryKeyTextType(): string;
+
+    /** SQL expression to cast a value to integer */
+    public function castAsInteger(string $expr): string;
 }

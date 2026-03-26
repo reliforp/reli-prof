@@ -59,32 +59,34 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     private function createTables(\PDO $db): void
     {
         $autoId = $this->driver->autoIncrementPrimaryKey();
+        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
+        $pkText = $this->driver->primaryKeyTextType();
 
-        $db->exec('
+        $db->exec("
             CREATE TABLE IF NOT EXISTS summary (
-                key TEXT NOT NULL,
-                value TEXT,
-                PRIMARY KEY (key)
+                {$qi('key')} {$pkText} NOT NULL,
+                {$qi('value')} TEXT,
+                PRIMARY KEY ({$qi('key')})
             )
-        ');
+        ");
 
-        $db->exec('
+        $db->exec("
             CREATE TABLE IF NOT EXISTS location_types_summary (
-                type TEXT NOT NULL,
-                count INTEGER NOT NULL,
+                {$qi('type')} {$pkText} NOT NULL,
+                {$qi('count')} INTEGER NOT NULL,
                 memory_usage INTEGER NOT NULL,
-                PRIMARY KEY (type)
+                PRIMARY KEY ({$qi('type')})
             )
-        ');
+        ");
 
-        $db->exec('
+        $db->exec("
             CREATE TABLE IF NOT EXISTS class_objects_summary (
-                class_name TEXT NOT NULL,
-                count INTEGER NOT NULL,
+                class_name {$pkText} NOT NULL,
+                {$qi('count')} INTEGER NOT NULL,
                 memory_usage INTEGER NOT NULL,
                 PRIMARY KEY (class_name)
             )
-        ');
+        ");
 
         $db->exec('
             CREATE TABLE IF NOT EXISTS context_nodes (
@@ -122,8 +124,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             CREATE TABLE IF NOT EXISTS context_node_attributes (
                 id {$autoId},
                 node_id INTEGER NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT
+                {$qi('key')} TEXT NOT NULL,
+                {$qi('value')} TEXT
             )
         ");
     }
@@ -141,6 +143,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     {
         $concat = fn (string $a, string $b) => $this->driver->concatExpr($a, $b);
         $createView = fn (string $name) => $this->driver->createViewSql($name);
+        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
 
         $pathExpr = $concat('np.path', $concat("' -> '", 'e.link_name'));
 
@@ -167,7 +170,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 header_loc.size AS header_size,
                 COALESCE(table_loc.size, 0) AS table_size,
                 header_loc.size + COALESCE(table_loc.size, 0) AS total_size,
-                CAST(cnt.value AS INTEGER) AS element_count,
+                {$this->driver->castAsInteger("cnt.{$qi('value')}")} AS element_count,
                 header_loc.refcount
             FROM context_nodes header_cn
             JOIN context_node_locations header_loc
@@ -182,7 +185,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 AND table_loc.location_type = 'ZendArrayTableMemoryLocation'
             LEFT JOIN context_node_attributes cnt
                 ON cnt.node_id = elements_edge.child_node_id
-                AND cnt.key = '#count'
+                AND cnt.{$qi('key')} = '#count'
         ");
     }
 
@@ -191,7 +194,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      */
     private function insertSummary(\PDO $db, array $summary): void
     {
-        $stmt = $db->prepare('INSERT INTO summary (key, value) VALUES (:key, :value)');
+        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
+        $stmt = $db->prepare("INSERT INTO summary ({$qi('key')}, {$qi('value')}) VALUES (:key, :value)");
         foreach ($summary as $entry) {
             foreach ($entry as $key => $value) {
                 $stmt->execute([
@@ -204,8 +208,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
     private function insertLocationTypesSummaryFromDb(\PDO $db): void
     {
+        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
         $db->exec("
-            INSERT INTO location_types_summary (type, count, memory_usage)
+            INSERT INTO location_types_summary ({$qi('type')}, {$qi('count')}, memory_usage)
             SELECT location_type, COUNT(*), SUM(size)
             FROM context_node_locations
             WHERE region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')
@@ -217,8 +222,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
     private function insertClassObjectsSummaryFromDb(\PDO $db): void
     {
+        $qi = fn (string $id) => $this->driver->quoteIdentifier($id);
         $db->exec("
-            INSERT INTO class_objects_summary (class_name, count, memory_usage)
+            INSERT INTO class_objects_summary (class_name, {$qi('count')}, memory_usage)
             SELECT class_name, COUNT(*), SUM(size)
             FROM context_node_locations
             WHERE class_name IS NOT NULL

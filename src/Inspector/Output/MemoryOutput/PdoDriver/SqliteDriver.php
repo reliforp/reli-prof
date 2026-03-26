@@ -60,4 +60,19 @@ final class SqliteDriver implements PdoDriverInterface
     {
         return "CREATE VIEW IF NOT EXISTS {$view_name} AS";
     }
+
+    public function quoteIdentifier(string $identifier): string
+    {
+        return '"' . $identifier . '"';
+    }
+
+    public function primaryKeyTextType(): string
+    {
+        return 'TEXT';
+    }
+
+    public function castAsInteger(string $expr): string
+    {
+        return "CAST({$expr} AS INTEGER)";
+    }
 }
