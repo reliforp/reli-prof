@@ -23,6 +23,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendOp;
 use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\Process\MemoryReader\BufferedMemoryReader;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -35,12 +36,21 @@ use Reli\Lib\Process\ProcessSpecifier;
 final class CallTraceReader
 {
     private ?ZendTypeReader $zend_type_reader = null;
+    private bool $bulk_stack_copy_enabled = false;
 
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private OpcodeFactory $opcode_factory,
     ) {
+    }
+
+    public function enableBulkStackCopy(?int $max_prefetch_size = null): void
+    {
+        $this->bulk_stack_copy_enabled = true;
+        if ($max_prefetch_size !== null && $this->memory_reader instanceof BufferedMemoryReader) {
+            $this->memory_reader->setMaxPrefetchSize($max_prefetch_size);
+        }
     }
 
     /**
@@ -131,6 +141,61 @@ final class CallTraceReader
     }
 
     /**
+     * Prefetch the used portion of the VM stack into the BufferedMemoryReader's
+     * local buffer. This reads EG(vm_stack) and EG(vm_stack_top) to determine
+     * the range, then issues a single bulk process_vm_readv.
+     *
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     */
+    private function prefetchVmStack(
+        int $pid,
+        string $php_version,
+        int $eg_address,
+        Dereferencer $dereferencer,
+    ): void {
+        assert($this->memory_reader instanceof BufferedMemoryReader);
+
+        $this->memory_reader->clearBuffer();
+
+        $zend_type_reader = $this->getTypeReader($php_version);
+
+        // Read EG(vm_stack) pointer to get the current stack segment address
+        [$offset, $size] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_executor_globals',
+            'vm_stack'
+        );
+        $vm_stack_raw = $dereferencer->deref(new Pointer(
+            RawInt64::class,
+            $eg_address + $offset,
+            $size,
+        ));
+        if ($vm_stack_raw->value === 0) {
+            return;
+        }
+        $vm_stack_address = $vm_stack_raw->value;
+
+        // Read EG(vm_stack_top) pointer to know the end of the used area
+        [$offset, $size] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_executor_globals',
+            'vm_stack_top'
+        );
+        $vm_stack_top_raw = $dereferencer->deref(new Pointer(
+            RawInt64::class,
+            $eg_address + $offset,
+            $size,
+        ));
+        if ($vm_stack_top_raw->value === 0) {
+            return;
+        }
+
+        // Prefetch from the stack segment header to the current top (used area)
+        $prefetch_size = $vm_stack_top_raw->value - $vm_stack_address;
+        if ($prefetch_size > 0 && $prefetch_size <= $this->memory_reader->getMaxPrefetchSize()) {
+            $this->memory_reader->prefetch($pid, $vm_stack_address, $prefetch_size);
+        }
+    }
+
+    /**
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @throws MemoryReaderException
      */
@@ -143,6 +208,11 @@ final class CallTraceReader
         TraceCache $trace_cache,
     ): ?CallTrace {
         $dereferencer = $this->getDereferencer($pid, $php_version);
+
+        if ($this->bulk_stack_copy_enabled && $this->memory_reader instanceof BufferedMemoryReader) {
+            $this->prefetchVmStack($pid, $php_version, $executor_globals_address, $dereferencer);
+        }
+
         $current_execute_data_pointer = $this->getCurrentExecuteDataPointer(
             $executor_globals_address,
             $php_version,

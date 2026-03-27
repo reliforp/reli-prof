@@ -15,10 +15,16 @@ namespace Reli\Inspector\Settings\GetTraceSettings;
 
 final class GetTraceSettings
 {
+    public const BULK_STACK_COPY_DEFAULT_MAX_SIZE = 65536;
+
+    /**
+     * @param int|null $bulk_stack_copy_max_size null = disabled, int = max bytes to prefetch
+     */
     public function __construct(
         public int $depth,
         public bool $with_native_trace = false,
         public bool $native_trace_anytime = false,
+        public ?int $bulk_stack_copy_max_size = null,
     ) {
     }
 }
