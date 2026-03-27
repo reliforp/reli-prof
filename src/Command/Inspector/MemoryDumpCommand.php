@@ -185,7 +185,52 @@ final class MemoryDumpCommand extends Command
             $huge_count++;
         }
 
-        // 5. Read VM stacks and compiler arenas (default scope only)
+        // 5. Read process heap and PHP binary writable segments
+        //    EG/CG reference structures (function_table, class_table, interned_strings, etc.)
+        //    that live in the glibc heap or PHP binary's BSS/data segment, outside ZendMM chunks.
+        $heap_count = 0;
+        $memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
+        $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
+        foreach ($heap_areas as $area) {
+            $addr = (int)hexdec($area->begin);
+            $size = (int)hexdec($area->end) - $addr;
+            if ($size > 0) {
+                $data = $this->memory_reader->read($pid, $addr, $size);
+                $regions[] = [
+                    'address' => $addr,
+                    'size' => $size,
+                    'data' => \FFI::string($data, $size),
+                ];
+                $heap_count++;
+            }
+        }
+        // Also capture PHP binary's writable data/BSS segments
+        $php_regex = $target_php_settings_version_decided->php_regex;
+        $php_rw_areas = $memory_map->findByNameRegex($php_regex);
+        foreach ($php_rw_areas as $area) {
+            if ($area->attribute->write && $area->attribute->read) {
+                $addr = (int)hexdec($area->begin);
+                $size = (int)hexdec($area->end) - $addr;
+                if ($size > 0) {
+                    try {
+                        $data = $this->memory_reader->read($pid, $addr, $size);
+                        $regions[] = [
+                            'address' => $addr,
+                            'size' => $size,
+                            'data' => \FFI::string($data, $size),
+                        ];
+                        $heap_count++;
+                    } catch (\Throwable $e) {
+                        Log::info(
+                            "skipping rw region at 0x" . dechex($addr)
+                            . ": " . $e->getMessage()
+                        );
+                    }
+                }
+            }
+        }
+
+        // 6. Read VM stacks and compiler arenas (default scope only)
         $vm_stack_count = 0;
         $arena_count = 0;
         if ($dump_settings->scope === MemoryDumpScope::Default_) {
@@ -260,11 +305,10 @@ final class MemoryDumpCommand extends Command
             }
         }
 
-        // 6. Include binary segments if requested
+        // 7. Include binary segments if requested
         if ($dump_settings->include_binary) {
-            $memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
-            $php_areas = $memory_map->findByNameRegex($target_php_settings_version_decided->php_regex);
-            foreach ($php_areas as $area) {
+            $php_ro_areas = $memory_map->findByNameRegex($php_regex);
+            foreach ($php_ro_areas as $area) {
                 if (!$area->attribute->write && $area->attribute->read && $area->name !== '') {
                     $addr = (int)hexdec($area->begin);
                     $size = (int)hexdec($area->end) - $addr;
@@ -284,9 +328,7 @@ final class MemoryDumpCommand extends Command
             }
         }
 
-        // Get memory map for the dump file
-        $memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
-        // Extract areas from ProcessMemoryMap (we need to use findByNameRegex with a match-all pattern)
+        // Extract all areas from ProcessMemoryMap for the dump file
         $all_areas = $memory_map->findByNameRegex('.*');
 
         $writer = new MemoryDumpWriter();
@@ -306,12 +348,14 @@ final class MemoryDumpCommand extends Command
         }
 
         $output->writeln(sprintf(
-            'Memory dump written to %s (%s, %d regions: %d chunks, %d huge, %d vm_stacks, %d arenas, %.1f MB)',
+            'Memory dump written to %s (%s, %d regions: %d chunks, %d huge,'
+            . ' %d heap/data, %d vm_stacks, %d arenas, %.1f MB)',
             $dump_settings->output_path,
             $dump_settings->scope->value,
             count($regions),
             $chunk_count,
             $huge_count,
+            $heap_count,
             $vm_stack_count,
             $arena_count,
             (float)$total_size / 1024.0 / 1024.0,
