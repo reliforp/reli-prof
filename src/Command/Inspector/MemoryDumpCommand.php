@@ -342,9 +342,25 @@ final class MemoryDumpCommand extends Command
         return 0;
     }
 
+    private static ?\FFI $libc = null;
+
+    private static function libc(): \FFI
+    {
+        if (self::$libc === null) {
+            self::$libc = \FFI::cdef(
+                'int open(const char *pathname, int flags);'
+                . 'int close(int fd);'
+                . 'long pread(int fd, void *buf, long count, long offset);',
+                'libc.so.6',
+            );
+        }
+        return self::$libc;
+    }
+
     /**
      * Find contiguous runs of resident pages in a memory region
-     * using /proc/pid/pagemap. Returns null if pagemap is inaccessible.
+     * using /proc/pid/pagemap via direct syscalls.
+     * Returns null if pagemap is inaccessible.
      * @return list<array{address: int, size: int}>|null
      */
     private function findResidentRuns(
@@ -352,33 +368,45 @@ final class MemoryDumpCommand extends Command
         int $region_addr,
         int $region_size,
     ): ?array {
-        $pagemap_path = "/proc/{$pid}/pagemap";
-        $fp = @fopen($pagemap_path, 'rb');
-        if ($fp === false) {
-            return null;
-        }
-
+        $libc = self::libc();
         $page_size = 4096;
         $num_pages = (int)($region_size / $page_size);
+        if ($num_pages === 0) {
+            return [];
+        }
         $start_vpn = (int)($region_addr / $page_size);
 
-        if (fseek($fp, $start_vpn * 8) !== 0) {
-            fclose($fp);
+        $pagemap_path = "/proc/{$pid}/pagemap";
+        $fd = $libc->open($pagemap_path, 0); // O_RDONLY = 0
+        if ($fd < 0) {
             return null;
         }
+
+        $bytes_needed = $num_pages * 8;
+        $buf = \FFI::new("char[{$bytes_needed}]");
+        if ($buf === null) {
+            $libc->close($fd);
+            return null;
+        }
+
+        $offset = $start_vpn * 8;
+        $read = $libc->pread($fd, $buf, $bytes_needed, $offset);
+        $libc->close($fd);
+
+        if ($read < 8) {
+            return null;
+        }
+        $pages_read = (int)($read / 8);
+        $data = \FFI::string($buf, $pages_read * 8);
 
         /** @var list<array{address: int, size: int}> $runs */
         $runs = [];
         $run_start_page = -1;
         $run_count = 0;
 
-        for ($i = 0; $i < $num_pages; $i++) {
-            $raw = fread($fp, 8);
-            if ($raw === false || strlen($raw) !== 8) {
-                break;
-            }
+        for ($i = 0; $i < $pages_read; $i++) {
             /** @var array{val: int} $entry */
-            $entry = unpack('Pval', $raw);
+            $entry = unpack('Pval', $data, $i * 8);
             $present = ($entry['val'] >> 63) & 1;
 
             if ($present) {
@@ -405,7 +433,6 @@ final class MemoryDumpCommand extends Command
             ];
         }
 
-        fclose($fp);
         return $runs;
     }
 }
