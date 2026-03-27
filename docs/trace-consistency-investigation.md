@@ -133,17 +133,22 @@ reli           0.81ms        0.15ms        0.96ms       5.3:1  (user-dominated)
 
 CPU per trace differs by ~2x. Much smaller than the throughput gap (36x).
 
-### readv Cost by Transfer Size
+### readv Cost by Transfer Size (C benchmark, 100K iterations)
 
 ```
-      8 bytes: 0.7 us/call
-     64 bytes: 0.7 us/call
-   4096 bytes: 0.8 us/call
-  65536 bytes: 0.7 us/call
- 262144 bytes: 0.8 us/call
+      8 bytes:     423 ns
+     64 bytes:     424 ns
+    256 bytes:     425 ns
+   1024 bytes:     445 ns
+   4096 bytes:     460 ns  (1 page)
+  16384 bytes:   1,000 ns  (4 pages)
+  65536 bytes:   3,721 ns  (16 pages)
+ 262144 bytes:  14,044 ns  (64 pages)
+1048576 bytes:  94,695 ns  (256 pages)
 ```
 
-`process_vm_readv` cost is nearly independent of transfer size.
+`process_vm_readv` cost is nearly constant below one page (~430ns), then
+scales roughly linearly with the number of pages crossed (page table walk cost).
 
 ## Proposed Improvement: Bulk VM Stack Copy
 
@@ -152,18 +157,23 @@ CPU per trace differs by ~2x. Much smaller than the throughput gap (36x).
 ```
 reli (current):   first readv to last readv = ~3,480 us
 phpspy:           first readv to last readv = ~500 us
-single bulk readv: ~0.7 us
+single bulk readv (64KB): ~3.7 us
+single bulk readv (16KB): ~1.0 us
 ```
 
 ### 2-Pass Scatter-Gather Approach
 
-1. **Pass 1**: bulk-copy the VM stack in a single `process_vm_readv` (~64KB, ~0.7us)
+1. **Pass 1**: bulk-copy the VM stack in a single `process_vm_readv`
+   - Actual stack usage is typically a few KB to tens of KB
+   - ~1-4us depending on size (16KB = ~1us, 64KB = ~3.7us)
    - Parse `execute_data` chain locally
    - Collect all heap pointers (`func`, `opline`, string addresses)
-2. **Pass 2**: scatter-gather read all heap data in a single `process_vm_readv` (~0.7us)
+2. **Pass 2**: scatter-gather read all heap data in a single `process_vm_readv`
    - `IOV_MAX` = 1024; 75 frames need ~300-450 iovecs, well within the limit
+   - Scattered across many pages, so cost depends on the number of distinct pages touched
 
-Total: 2 syscalls, ~1.4us consistency window + local processing time.
+Total: 2 syscalls, consistency window = ~1-4us for stack snapshot + local processing
+before Pass 2. Much smaller than the current ~3,480us window.
 
 ### Implementation Outlook
 
@@ -202,7 +212,7 @@ or a remote process.
 
 ### Expected Impact
 
-- **Consistency**: window shrinks from ~3,480us to ~1.4us, potentially making
+- **Consistency**: window shrinks from ~3,480us to ~1-4us, potentially making
   `-S` unnecessary and eliminating broken samples without stopping the target
 - **Throughput**: syscall count drops from ~174 to 2 per trace. However, the
   bottleneck is PHP-side processing, so the improvement may be modest unless
