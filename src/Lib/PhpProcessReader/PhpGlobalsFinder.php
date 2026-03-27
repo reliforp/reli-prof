@@ -19,6 +19,7 @@ use Reli\Lib\ByteStream\CDataByteReader;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\BinaryFingerprint;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReader;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\Elf\Tls\TlsFinderException;
@@ -71,6 +72,15 @@ class PhpGlobalsFinder
                 $this->tsrm_ls_cache_cache[$process_specifier->pid] = null;
                 return null;
             }
+            $result = $this->tryResolveTsrmLsCacheFromCachedOffset(
+                $process_specifier,
+                $target_php_settings,
+                $fingerprint,
+            );
+            if ($result !== null) {
+                $this->tsrm_ls_cache_cache[$process_specifier->pid] = $result;
+                return $result;
+            }
         }
 
         $symbol_reader = $this->getSymbolReader($process_specifier, $target_php_settings);
@@ -103,6 +113,45 @@ class PhpGlobalsFinder
         }
         $this->tsrm_ls_cache_cache[$process_specifier->pid] = $result;
         return $result;
+    }
+
+    private function tryResolveTsrmLsCacheFromCachedOffset(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        BinaryFingerprint $fingerprint,
+    ): ?int {
+        $tls_cached = $this->binary_analysis_cache->get($fingerprint, 'tls_offset');
+        if ($tls_cached === null || !isset($tls_cached['offset']) || !is_int($tls_cached['offset'])) {
+            return null;
+        }
+
+        $symbol_reader = $this->getSymbolReader($process_specifier, $target_php_settings);
+        if (!($symbol_reader instanceof ProcessModuleSymbolReader)) {
+            return null;
+        }
+        $tls_block_address = $symbol_reader->getTlsBlockAddress();
+        if ($tls_block_address === null) {
+            return null;
+        }
+
+        try {
+            $candidate_address = $tls_block_address + $tls_cached['offset'];
+            $candidate_cdata = $this->memory_reader->read(
+                $process_specifier->pid,
+                $candidate_address,
+                8
+            );
+            $tsrm_ls_cache_address = $this->integer_reader->read64(
+                new CDataByteReader($candidate_cdata),
+                0
+            )->toInt();
+            if ($tsrm_ls_cache_address === 0) {
+                return null;
+            }
+            return $tsrm_ls_cache_address;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
