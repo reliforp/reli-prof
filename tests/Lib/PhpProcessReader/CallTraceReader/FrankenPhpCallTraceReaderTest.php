@@ -18,6 +18,7 @@ use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\LinkMapLoader;
 use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
@@ -108,6 +109,10 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
 
         foreach ($tids as $tid) {
             try {
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                );
+                $process_memory_map_creator = ProcessMemoryMapCreator::create();
                 $php_symbol_reader_creator = new PhpSymbolReaderCreator(
                     new ProcessModuleSymbolReaderCreator(
                         new Elf64SymbolResolverCreator(
@@ -124,8 +129,10 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
                             new LittleEndianReader()
                         ),
                         new ContainerAwarePathResolver(),
+                        $binary_analysis_cache,
                     ),
-                    ProcessMemoryMapCreator::create(),
+                    $process_memory_map_creator,
+                    $binary_analysis_cache,
                 );
                 $integer_reader = new LittleEndianReader();
                 $memory_reader_for_finder = new MemoryReader();
@@ -133,6 +140,8 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
                     $php_symbol_reader_creator,
                     $integer_reader,
                     $memory_reader_for_finder,
+                    $binary_analysis_cache,
+                    $process_memory_map_creator,
                 );
                 $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
                     $php_symbol_reader_creator,
@@ -144,6 +153,7 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
                     ProcessMemoryMapCreator::create(),
                     new ContainerAwarePathResolver(),
                     new ZendTypeReaderCreator(),
+                    $binary_analysis_cache,
                 );
                 $php_globals_finder = new PhpGlobalsFinder(
                     $php_symbol_reader_creator,
@@ -151,6 +161,8 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
                     $memory_reader_for_finder,
                     $tsrm_ls_cache_finder,
                     $tsrm_globals_resolver,
+                    $binary_analysis_cache,
+                    $process_memory_map_creator,
                 );
 
                 $eg_addr = $php_globals_finder->findExecutorGlobals(

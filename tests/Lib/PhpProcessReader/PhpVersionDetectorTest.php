@@ -66,12 +66,12 @@ class PhpVersionDetectorTest extends BaseTestCase
                     new LittleEndianReader()
                 ),
                 new ContainerAwarePathResolver(),
-                new BinaryAnalysisCache(sys_get_temp_dir() . '/reli-test-' . uniqid()),
+                $binary_analysis_cache = new BinaryAnalysisCache(sys_get_temp_dir() . '/reli-test-' . uniqid()),
             ),
             ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
         );
         $memory_reader = new MemoryReader();
-        $binary_analysis_cache = new BinaryAnalysisCache(sys_get_temp_dir() . '/reli-test-' . uniqid());
         $process_memory_map_creator = ProcessMemoryMapCreator::create();
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,

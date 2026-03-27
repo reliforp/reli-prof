@@ -13,12 +13,15 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader;
 
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReader;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Elf\Tls\TlsFinderException;
-use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 
 use function readlink;
@@ -28,6 +31,7 @@ final class PhpSymbolReaderCreator
     public function __construct(
         private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
+        private BinaryAnalysisCache $binary_analysis_cache,
     ) {
     }
 
@@ -45,28 +49,13 @@ final class PhpSymbolReaderCreator
     ): ProcessModuleSymbolReader {
         $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
 
-        $libpthread_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
+        $libpthread_symbol_reader = $this->resolveThreadDbReader(
             $pid,
             $process_memory_map,
             $libpthread_finder_regex,
-            $libpthread_binary_path
+            $libpthread_binary_path,
         );
-        // On glibc 2.34+, libpthread.so is a stub that lacks _thread_db_*
-        // symbols needed for TLS resolution; fall back to libc.so
-        if (
-            is_null($libpthread_symbol_reader)
-            || is_null($libpthread_symbol_reader->resolveAddress('_thread_db_pthread_dtvp'))
-        ) {
-            $libc_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
-                $pid,
-                $process_memory_map,
-                '.*/libc\.so.*',
-                null
-            );
-            if (!is_null($libc_reader)) {
-                $libpthread_symbol_reader = $libc_reader;
-            }
-        }
+
         $root_link_map_address = null;
         if (!is_null($libpthread_symbol_reader)) {
             $executable_path = readlink("/proc/{$pid}/exe");
@@ -99,5 +88,87 @@ final class PhpSymbolReaderCreator
             throw new \RuntimeException('php module not found');
         }
         return $php_symbol_reader;
+    }
+
+    private function resolveThreadDbReader(
+        int $pid,
+        ProcessMemoryMap $process_memory_map,
+        string $libpthread_finder_regex,
+        ?string $libpthread_binary_path,
+    ): ?ProcessModuleSymbolReader {
+        $libpthread_fingerprint = $this->getModuleFingerprint(
+            $process_memory_map,
+            $libpthread_finder_regex,
+        );
+
+        if ($libpthread_fingerprint !== null) {
+            $cached = $this->binary_analysis_cache->get($libpthread_fingerprint, 'thread_db_source');
+            if ($cached !== null && isset($cached['source']) && is_string($cached['source'])) {
+                if ($cached['source'] === 'libc') {
+                    return $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
+                        $pid,
+                        $process_memory_map,
+                        '.*/libc\.so.*',
+                        null,
+                    );
+                }
+                // source === 'libpthread': use libpthread directly (below)
+            }
+        }
+
+        $libpthread_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
+            $pid,
+            $process_memory_map,
+            $libpthread_finder_regex,
+            $libpthread_binary_path,
+        );
+
+        if (
+            !is_null($libpthread_symbol_reader)
+            && !is_null($libpthread_symbol_reader->resolveAddress('_thread_db_pthread_dtvp'))
+        ) {
+            if ($libpthread_fingerprint !== null) {
+                $this->binary_analysis_cache->set(
+                    $libpthread_fingerprint,
+                    'thread_db_source',
+                    ['source' => 'libpthread'],
+                );
+            }
+            return $libpthread_symbol_reader;
+        }
+
+        // On glibc 2.34+, libpthread.so is a stub that lacks _thread_db_*
+        // symbols needed for TLS resolution; fall back to libc.so
+        $libc_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
+            $pid,
+            $process_memory_map,
+            '.*/libc\.so.*',
+            null,
+        );
+
+        if (!is_null($libc_reader)) {
+            if ($libpthread_fingerprint !== null) {
+                $this->binary_analysis_cache->set(
+                    $libpthread_fingerprint,
+                    'thread_db_source',
+                    ['source' => 'libc'],
+                );
+            }
+            return $libc_reader;
+        }
+
+        return $libpthread_symbol_reader;
+    }
+
+    private function getModuleFingerprint(
+        ProcessMemoryMap $process_memory_map,
+        string $regex,
+    ): ?BinaryFingerprint {
+        $areas = $process_memory_map->findByNameRegex($regex);
+        if ($areas === []) {
+            return null;
+        }
+        $module_map = new ProcessModuleMemoryMap($areas);
+        return BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
     }
 }
