@@ -123,6 +123,20 @@ final class Elf64ReverseSymbolResolver
         }
     }
 
+    /** @return array<array{int, int, string}> */
+    public function toArray(): array
+    {
+        return $this->sortedSymbols;
+    }
+
+    /** @param array<array{int, int, string}> $symbols */
+    public static function fromArray(array $symbols): self
+    {
+        $resolver = new self();
+        $resolver->sortedSymbols = $symbols;
+        return $resolver;
+    }
+
     /**
      * @return array{string, int}|null [symbolName, offsetFromSymbolStart] or null
      */

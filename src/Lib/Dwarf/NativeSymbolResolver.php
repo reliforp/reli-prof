@@ -17,6 +17,8 @@ use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\DebugFileLocator;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\Elf\SymbolResolver\Elf64ReverseSymbolResolver;
 use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\NativeFileReader;
@@ -44,6 +46,7 @@ final class NativeSymbolResolver
         ?PerfMapSymbolResolver $perfMapResolver = null,
         private string $processRoot = '',
         ?FileReaderInterface $fileReader = null,
+        private ?BinaryAnalysisCache $binaryAnalysisCache = null,
     ) {
         $this->elfParser = new Elf64Parser(new LittleEndianReader());
         $this->debugFileLocator = $debugFileLocator ?? new DebugFileLocator();
@@ -92,19 +95,64 @@ final class NativeSymbolResolver
 
     private function loadResolver(string $modulePath): ?Elf64ReverseSymbolResolver
     {
+        // Try loading from disk cache
+        $fingerprint = $this->getFingerprint($modulePath);
+        if ($fingerprint !== null) {
+            $resolver = $this->loadFromCache($fingerprint);
+            if ($resolver !== null) {
+                return $resolver;
+            }
+        }
+
         // Try loading from the binary itself
         $resolver = $this->tryLoadFromFile($modulePath);
-        if ($resolver !== null) {
-            return $resolver;
+        if ($resolver === null) {
+            // Fallback: try separate debug file for .symtab
+            $debugFile = $this->debugFileLocator->locate($modulePath);
+            if ($debugFile !== null) {
+                $resolver = $this->tryLoadFromFile($debugFile);
+            }
         }
 
-        // Fallback: try separate debug file for .symtab
-        $debugFile = $this->debugFileLocator->locate($modulePath);
-        if ($debugFile !== null) {
-            return $this->tryLoadFromFile($debugFile);
+        if ($resolver !== null && $fingerprint !== null) {
+            $this->saveToCache($fingerprint, $resolver);
         }
 
-        return null;
+        return $resolver;
+    }
+
+    private function getFingerprint(string $modulePath): ?BinaryFingerprint
+    {
+        $areas = $this->memoryMap->findByNameRegex(preg_quote($modulePath, '/'));
+        if ($areas === []) {
+            return null;
+        }
+        $area = $areas[0];
+        return new BinaryFingerprint(
+            join('_', [$area->device_id, $area->inode_num, $area->name])
+        );
+    }
+
+    private function loadFromCache(BinaryFingerprint $fingerprint): ?Elf64ReverseSymbolResolver
+    {
+        if ($this->binaryAnalysisCache === null) {
+            return null;
+        }
+        $cached = $this->binaryAnalysisCache->get($fingerprint, 'native_symbols');
+        if ($cached === null || !isset($cached['symbols']) || !is_array($cached['symbols'])) {
+            return null;
+        }
+        return Elf64ReverseSymbolResolver::fromArray($cached['symbols']);
+    }
+
+    private function saveToCache(BinaryFingerprint $fingerprint, Elf64ReverseSymbolResolver $resolver): void
+    {
+        if ($this->binaryAnalysisCache === null) {
+            return;
+        }
+        $this->binaryAnalysisCache->set($fingerprint, 'native_symbols', [
+            'symbols' => $resolver->toArray(),
+        ]);
     }
 
     private function resolvePath(string $path): string

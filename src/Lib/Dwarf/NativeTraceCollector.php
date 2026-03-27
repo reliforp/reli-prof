@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Dwarf;
 
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
@@ -40,6 +41,7 @@ final class NativeTraceCollector
         private ProcessMemoryMapReader $memoryMapReader,
         private ProcessMemoryMapParser $memoryMapParser,
         private ?ProcessSymbolReaderInterface $phpSymbolReader = null,
+        private ?BinaryAnalysisCache $binaryAnalysisCache = null,
     ) {
     }
 
@@ -88,6 +90,8 @@ final class NativeTraceCollector
         $this->ehFrameCache = new ModuleEhFrameCache(
             processRoot: $process_root,
             fileReader: $file_reader,
+            binaryAnalysisCache: $this->binaryAnalysisCache,
+            memoryMap: $this->memoryMap,
         );
         $this->perfMapResolver = new PerfMapSymbolResolver($pid);
 
@@ -105,6 +109,7 @@ final class NativeTraceCollector
             perfMapResolver: $this->perfMapResolver,
             processRoot: $process_root,
             fileReader: $file_reader,
+            binaryAnalysisCache: $this->binaryAnalysisCache,
         );
         $this->cachedPid = $pid;
     }

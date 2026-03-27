@@ -17,8 +17,11 @@ use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\DebugFileLocator;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\NativeFileReader;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 
 final class ModuleEhFrameCache
 {
@@ -37,6 +40,8 @@ final class ModuleEhFrameCache
         ?DebugFileLocator $debugFileLocator = null,
         private string $processRoot = '',
         ?FileReaderInterface $fileReader = null,
+        private ?BinaryAnalysisCache $binaryAnalysisCache = null,
+        private ?ProcessMemoryMap $memoryMap = null,
     ) {
         $integer_reader = new LittleEndianReader();
         $this->ehFrameParser = new EhFrameParser($integer_reader);
@@ -91,21 +96,32 @@ final class ModuleEhFrameCache
      */
     private function loadModule(string $modulePath): ?array
     {
-        // Try loading .eh_frame from the binary itself
-        $fdes = $this->tryLoadEhFrame($modulePath);
-        if ($fdes !== null) {
-            $this->cache[$modulePath] = $fdes;
-            return $fdes;
-        }
-
-        // Fallback: try separate debug file
-        $debugFile = $this->debugFileLocator->locate($modulePath);
-        if ($debugFile !== null) {
-            $fdes = $this->tryLoadEhFrame($debugFile);
+        // Try loading from disk cache
+        $fingerprint = $this->getFingerprint($modulePath);
+        if ($fingerprint !== null) {
+            $fdes = $this->loadFromCache($fingerprint);
             if ($fdes !== null) {
                 $this->cache[$modulePath] = $fdes;
                 return $fdes;
             }
+        }
+
+        // Try loading .eh_frame from the binary itself
+        $fdes = $this->tryLoadEhFrame($modulePath);
+        if ($fdes === null) {
+            // Fallback: try separate debug file
+            $debugFile = $this->debugFileLocator->locate($modulePath);
+            if ($debugFile !== null) {
+                $fdes = $this->tryLoadEhFrame($debugFile);
+            }
+        }
+
+        if ($fdes !== null) {
+            $this->cache[$modulePath] = $fdes;
+            if ($fingerprint !== null) {
+                $this->saveToCache($fingerprint, $fdes);
+            }
+            return $fdes;
         }
 
         $this->noEhFrame[$modulePath] = true;
@@ -171,5 +187,134 @@ final class ModuleEhFrameCache
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function getFingerprint(string $modulePath): ?BinaryFingerprint
+    {
+        if ($this->memoryMap === null) {
+            return null;
+        }
+        $areas = $this->memoryMap->findByNameRegex(preg_quote($modulePath, '/'));
+        if ($areas === []) {
+            return null;
+        }
+        $area = $areas[0];
+        return new BinaryFingerprint(
+            join('_', [$area->device_id, $area->inode_num, $area->name])
+        );
+    }
+
+    /** @return array<Fde>|null */
+    private function loadFromCache(BinaryFingerprint $fingerprint): ?array
+    {
+        if ($this->binaryAnalysisCache === null) {
+            return null;
+        }
+        $cached = $this->binaryAnalysisCache->get($fingerprint, 'eh_frame_fdes');
+        if ($cached === null || !isset($cached['fdes']) || !is_array($cached['fdes'])) {
+            return null;
+        }
+        return $this->deserializeFdes($cached['fdes']);
+    }
+
+    /** @param array<Fde> $fdes */
+    private function saveToCache(BinaryFingerprint $fingerprint, array $fdes): void
+    {
+        if ($this->binaryAnalysisCache === null) {
+            return;
+        }
+        $this->binaryAnalysisCache->set($fingerprint, 'eh_frame_fdes', [
+            'fdes' => $this->serializeFdes($fdes),
+        ]);
+    }
+
+    /**
+     * @param array<Fde> $fdes
+     * @return array<array<string, mixed>>
+     */
+    private function serializeFdes(array $fdes): array
+    {
+        $cie_map = [];
+        $result = [];
+        foreach ($fdes as $fde) {
+            $cie_id = spl_object_id($fde->cie);
+            if (!isset($cie_map[$cie_id])) {
+                $cie_map[$cie_id] = count($cie_map);
+            }
+            $result[] = [
+                'il' => $fde->initialLocation,
+                'ar' => $fde->addressRange,
+                'ins' => base64_encode($fde->instructions),
+                'ci' => $cie_map[$cie_id],
+            ];
+        }
+
+        $cies = [];
+        foreach ($cie_map as $obj_id => $index) {
+            // Find any FDE referencing this CIE to get the actual object
+            foreach ($fdes as $fde) {
+                if (spl_object_id($fde->cie) === $obj_id) {
+                    $cie = $fde->cie;
+                    $cies[$index] = [
+                        'caf' => $cie->codeAlignmentFactor,
+                        'daf' => $cie->dataAlignmentFactor,
+                        'rar' => $cie->returnAddressRegister,
+                        'ii' => base64_encode($cie->initialInstructions),
+                        'aug' => $cie->augmentation,
+                        'fe' => $cie->fdeEncoding,
+                        'le' => $cie->lsdaEncoding,
+                        'pe' => $cie->personalityEncoding,
+                        'pa' => $cie->personalityAddress,
+                    ];
+                    break;
+                }
+            }
+        }
+
+        return ['cies' => $cies, 'fdes' => $result];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<Fde>|null
+     */
+    private function deserializeFdes(array $data): ?array
+    {
+        if (!isset($data['cies'], $data['fdes']) || !is_array($data['cies']) || !is_array($data['fdes'])) {
+            return null;
+        }
+
+        $cies = [];
+        foreach ($data['cies'] as $index => $cie_data) {
+            if (!is_array($cie_data)) {
+                return null;
+            }
+            $cies[$index] = new Cie(
+                codeAlignmentFactor: $cie_data['caf'],
+                dataAlignmentFactor: $cie_data['daf'],
+                returnAddressRegister: $cie_data['rar'],
+                initialInstructions: base64_decode($cie_data['ii']),
+                augmentation: $cie_data['aug'],
+                fdeEncoding: $cie_data['fe'],
+                lsdaEncoding: $cie_data['le'] ?? null,
+                personalityEncoding: $cie_data['pe'] ?? null,
+                personalityAddress: $cie_data['pa'] ?? null,
+            );
+        }
+
+        $fdes = [];
+        foreach ($data['fdes'] as $fde_data) {
+            if (!is_array($fde_data) || !isset($cies[$fde_data['ci']])) {
+                return null;
+            }
+            $fdes[] = new Fde(
+                initialLocation: $fde_data['il'],
+                addressRange: $fde_data['ar'],
+                instructions: base64_decode($fde_data['ins']),
+                cie: $cies[$fde_data['ci']],
+            );
+        }
+
+        return $fdes;
     }
 }
