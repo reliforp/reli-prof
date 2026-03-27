@@ -64,27 +64,25 @@ final class RecordingMemoryReader implements MemoryReaderInterface
         // Merge overlapping/adjacent/nearby regions
         $merged = [$regions[0]];
         for ($i = 1; $i < count($regions); $i++) {
-            $last = &$merged[count($merged) - 1];
+            $last_idx = count($merged) - 1;
             $cur = $regions[$i];
-            $last_end = $last['address'] + $last['size'];
+            $last_end = $merged[$last_idx]['address'] + $merged[$last_idx]['size'];
 
             if ($cur['address'] <= $last_end + $merge_gap) {
                 // Overlapping, adjacent, or within gap: extend
                 $cur_end = $cur['address'] + $cur['size'];
                 if ($cur_end > $last_end) {
-                    // Fill any gap with zeros, then append the new data
                     $gap = $cur['address'] - $last_end;
                     if ($gap > 0) {
-                        $last['data'] .= str_repeat("\0", $gap);
+                        $merged[$last_idx]['data'] .= str_repeat("\0", $gap);
                     }
                     $overlap = max(0, $last_end - $cur['address']);
-                    $last['data'] .= substr($cur['data'], $overlap);
-                    $last['size'] = $cur_end - $last['address'];
+                    $merged[$last_idx]['data'] .= substr($cur['data'], $overlap);
+                    $merged[$last_idx]['size'] = $cur_end - $merged[$last_idx]['address'];
                 }
             } else {
                 $merged[] = $cur;
             }
-            unset($last);
         }
 
         return $merged;

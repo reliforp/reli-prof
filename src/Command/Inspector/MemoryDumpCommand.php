@@ -377,6 +377,7 @@ final class MemoryDumpCommand extends Command
         $start_vpn = (int)($region_addr / $page_size);
 
         $pagemap_path = "/proc/{$pid}/pagemap";
+        /** @var int $fd */
         $fd = $libc->open($pagemap_path, 0); // O_RDONLY = 0
         if ($fd < 0) {
             return null;
@@ -390,6 +391,7 @@ final class MemoryDumpCommand extends Command
         }
 
         $offset = $start_vpn * 8;
+        /** @var int $read */
         $read = $libc->pread($fd, $buf, $bytes_needed, $offset);
         $libc->close($fd);
 
