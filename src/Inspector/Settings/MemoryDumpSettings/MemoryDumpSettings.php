@@ -17,7 +17,6 @@ final class MemoryDumpSettings
 {
     public function __construct(
         public string $output_path,
-        public MemoryDumpScope $scope = MemoryDumpScope::Default_,
         public bool $stop_process = true,
         public bool $include_binary = false,
     ) {

@@ -30,13 +30,6 @@ final class MemoryDumpSettingsFromConsoleInput
             'output file path for the memory dump',
         );
         $command->addOption(
-            'memory-dump-scope',
-            null,
-            InputOption::VALUE_REQUIRED,
-            'capture scope: minimal (ZendMM + EG/CG) or default (+ VM stacks + arenas)',
-            'default',
-        );
-        $command->addOption(
             'stop-process',
             null,
             InputOption::VALUE_NEGATABLE,
@@ -57,19 +50,11 @@ final class MemoryDumpSettingsFromConsoleInput
         if ($output_path === '') {
             throw new \RuntimeException('--output (-o) is required');
         }
-        $scope_string = Cast::toString($input->getOption('memory-dump-scope'));
-        $scope = MemoryDumpScope::tryFrom($scope_string);
-        if ($scope === null) {
-            throw new \RuntimeException(
-                "invalid --memory-dump-scope: {$scope_string} (expected: minimal, default)"
-            );
-        }
         $stop_process = Cast::toBool($input->getOption('stop-process'));
         $include_binary = Cast::toBool($input->getOption('include-binary'));
 
         return new MemoryDumpSettings(
             $output_path,
-            $scope,
             $stop_process,
             $include_binary,
         );
