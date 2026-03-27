@@ -58,7 +58,10 @@ class Elf64CachedSymbolResolverTest extends BaseTestCase
     private function makeEntry(int $value = 100, int $size = 8, int $info = 1): Elf64SymbolTableEntry
     {
         return new Elf64SymbolTableEntry(
-            1, $info, 0, 1,
+            1,
+            $info,
+            0,
+            1,
             UInt64::fromInt($value),
             UInt64::fromInt($size),
         );
@@ -151,7 +154,8 @@ class Elf64CachedSymbolResolverTest extends BaseTestCase
         $tls_entry = new Elf64SymbolTableEntry(
             1,
             Elf64SymbolTableEntry::createInfo(Elf64SymbolTableEntry::STB_GLOBAL, Elf64SymbolTableEntry::STT_TLS),
-            0, 1,
+            0,
+            1,
             UInt64::fromInt(64),
             UInt64::fromInt(8),
         );
