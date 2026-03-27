@@ -20,7 +20,6 @@ use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConso
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Log\Log;
-use Reli\Lib\PhpInternals\Types\Zend\ZendArena;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
@@ -184,15 +183,15 @@ final class MemoryDumpCommand extends Command
             $huge_count++;
         }
 
-        // 5. Capture all writable memory regions needed by the analysis pipeline.
-        //    EG/CG reference structures (function_table, class_table, etc.) that live
-        //    in the glibc [heap] or PHP binary's BSS/data segment. The analysis pipeline
-        //    traverses these deeply, so we capture the full regions rather than individual
-        //    pages to avoid missing arData, bucket arrays, and other indirect references.
+        // 5. Capture [heap] and PHP binary's writable segments.
+        //    EG/CG reference many structures in [heap] (function_table, class_table,
+        //    zend_constants headers, plus the ZendFunction/ZendClassEntry structs they
+        //    point to via hash table entries). Selectively copying individual structures
+        //    is impractical as it requires replicating the full analysis traversal.
+        //    For typical PHP processes [heap] is a few MB; warn if it's very large.
         $extra_count = 0;
         $memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
 
-        // [heap] region: contains global hash table headers and their arData
         $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
         foreach ($heap_areas as $area) {
             $addr = (int)hexdec($area->begin);
@@ -202,8 +201,8 @@ final class MemoryDumpCommand extends Command
                 if ($size_mb > 100.0) {
                     $output->writeln(sprintf(
                         '<comment>Warning: [heap] is large (%.0f MB);'
-                        . ' dump file will be correspondingly'
-                        . ' large</comment>',
+                        . ' consider using gcore for very large'
+                        . ' processes</comment>',
                         $size_mb,
                     ));
                 }
@@ -217,7 +216,7 @@ final class MemoryDumpCommand extends Command
             }
         }
 
-        // PHP binary's writable data/BSS segments
+        // PHP binary's writable data/BSS segments (typically ~1-2MB)
         $php_regex = $target_php_settings_version_decided->php_regex;
         $php_rw_areas = $memory_map->findByNameRegex($php_regex);
         foreach ($php_rw_areas as $area) {
@@ -252,7 +251,12 @@ final class MemoryDumpCommand extends Command
             $eg_size,
         );
         $eg = $dereferencer->deref($eg_pointer);
-
+        $cg_pointer = new Pointer(
+            ZendCompilerGlobals::class,
+            $cg_address,
+            $cg_size,
+        );
+        $cg = $dereferencer->deref($cg_pointer);
         if ($eg->vm_stack !== null) {
             $vm_stack = $dereferencer->deref($eg->vm_stack);
             foreach ($vm_stack->iterateStackChain($dereferencer) as $stack) {
@@ -272,13 +276,6 @@ final class MemoryDumpCommand extends Command
                 }
             }
         }
-
-        $cg_pointer = new Pointer(
-            ZendCompilerGlobals::class,
-            $cg_address,
-            $cg_size,
-        );
-        $cg = $dereferencer->deref($cg_pointer);
 
         if ($cg->arena !== null) {
             $arena_root = $dereferencer->deref($cg->arena);
