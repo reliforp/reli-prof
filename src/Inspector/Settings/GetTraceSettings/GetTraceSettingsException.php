@@ -22,6 +22,7 @@ final class GetTraceSettingsException extends InspectorSettingsException
 
     protected const ERRORS = [
         self::DEPTH_IS_NOT_INTEGER => 'depth is not integer',
-        self::BULK_STACK_COPY_IS_NOT_VALID_SIZE => 'bulk-stack-copy value must be an integer with optional K/M suffix (e.g. 65536, 64K, 1M)',
+        self::BULK_STACK_COPY_IS_NOT_VALID_SIZE =>
+            'bulk-stack-copy value must be an integer with optional K/M suffix (e.g. 65536, 64K, 1M)',
     ];
 }

@@ -268,7 +268,10 @@ final class CallTraceReader
         $current_execute_data_pointer = null;
         if ($this->bulk_stack_copy_enabled && $this->memory_reader instanceof BufferedMemoryReader) {
             $current_execute_data_pointer = $this->prefetchVmStackScatterGather(
-                $pid, $php_version, $executor_globals_address, $dereferencer,
+                $pid,
+                $php_version,
+                $executor_globals_address,
+                $dereferencer,
             );
         }
 

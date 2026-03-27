@@ -124,7 +124,7 @@ final class BufferedMemoryReader implements MemoryReaderInterface
      */
     public function prefetchScatterGather(int $pid, array $regions): void
     {
-        $this->buffers = [];
+        $this->clearBuffer();
 
         $count = count($regions);
         if ($count === 0 || $count > self::MAX_SCATTER_GATHER_REGIONS) {
@@ -164,15 +164,34 @@ final class BufferedMemoryReader implements MemoryReaderInterface
             /** @var \FFI\CInteger $this->sg_remote_bases[$i] */
             $this->sg_remote_bases[$i]->cdata = $address;
 
+            /**
+             * @var FFI\Libc\iovec $local_iov
+             * @psalm-suppress InaccessibleMethod
+             * @psalm-suppress PossiblyInvalidPropertyAssignment
+             * @psalm-suppress PropertyTypeCoercion
+             */
+            $local_iov = $this->sg_local_iovs[$i];
             /** @psalm-suppress PropertyTypeCoercion */
-            $this->sg_local_iovs[$i]->iov_base = FFI::addr($buf);
-            $this->sg_local_iovs[$i]->iov_len = $size;
+            $local_iov->iov_base = FFI::addr($buf);
+            $local_iov->iov_len = $size;
 
-            $this->sg_remote_iovs[$i]->iov_len = $size;
+            /**
+             * @var FFI\Libc\iovec $remote_iov
+             * @psalm-suppress InaccessibleMethod
+             * @psalm-suppress PossiblyInvalidPropertyAssignment
+             */
+            $remote_iov = $this->sg_remote_iovs[$i];
+            $remote_iov->iov_len = $size;
             /** @psalm-suppress PropertyTypeCoercion */
-            $this->sg_remote_iovs[$i]->iov_base = FFI::cast('void *', $this->sg_remote_bases[$i]);
+            $remote_iov->iov_base = FFI::cast('void *', $this->sg_remote_bases[$i]);
         }
 
+        /**
+         * @var FFI\Libc\process_vm_readv_ffi $this->ffi
+         * @psalm-suppress InaccessibleMethod
+         * @psalm-suppress PossiblyInvalidArgument
+         * @psalm-suppress MixedAssignment
+         */
         $read = $this->ffi->process_vm_readv(
             $pid,
             FFI::addr($this->sg_local_iovs[0]),
