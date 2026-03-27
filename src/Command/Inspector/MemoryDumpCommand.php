@@ -164,35 +164,27 @@ final class MemoryDumpCommand extends Command
             }
         }
 
-        // Interned strings (may reside in opcache SHM, e.g. /dev/zero mmap).
-        // When opcache is enabled, interned strings and their hash table live in
-        // shared memory rather than [heap]. We capture the memory map region that
-        // contains the arData pointer.
-        $cg = $dereferencer->deref(new Pointer(
-            ZendCompilerGlobals::class,
-            $cg_address,
-            $cg_size,
-        ));
-        $interned = $cg->interned_strings;
-        if ($interned->arData !== null) {
-            $interned_addr = $interned->arData->address;
-            $interned_areas = $memory_map->findByAddress($interned_addr);
-            foreach ($interned_areas as $area) {
-                // Only capture if it's NOT already covered ([heap] or PHP binary rw)
-                if (
-                    str_contains($area->name, '[heap]')
-                    || preg_match(
-                        '{' . $target_php_settings_version_decided->php_regex . '}',
-                        $area->name,
-                    )
-                ) {
-                    continue;
+        // Opcache SHM regions (e.g. /dev/zero mmap).
+        // When opcache is enabled, interned strings and cached scripts live in
+        // shared memory that can be very large (128-320MB+) but mostly empty.
+        // We use /proc/pid/pagemap to identify resident pages and copy only those.
+        $shm_areas = $memory_map->findByNameRegex('/dev/zero');
+        foreach ($shm_areas as $area) {
+            if (!$area->attribute->read) {
+                continue;
+            }
+            $addr = (int)hexdec($area->begin);
+            $size = (int)hexdec($area->end) - $addr;
+            if ($size <= 0) {
+                continue;
+            }
+            $resident_runs = $this->findResidentRuns($pid, $addr, $size);
+            if ($resident_runs !== null) {
+                foreach ($resident_runs as $run) {
+                    $read_list[] = $run;
                 }
-                $addr = (int)hexdec($area->begin);
-                $size = (int)hexdec($area->end) - $addr;
-                if ($size > 0) {
-                    $read_list[] = ['address' => $addr, 'size' => $size];
-                }
+            } else {
+                $read_list[] = ['address' => $addr, 'size' => $size];
             }
         }
 
@@ -337,5 +329,72 @@ final class MemoryDumpCommand extends Command
 
         Log::info('end memory:dump command');
         return 0;
+    }
+
+    /**
+     * Find contiguous runs of resident pages in a memory region
+     * using /proc/pid/pagemap. Returns null if pagemap is inaccessible.
+     * @return list<array{address: int, size: int}>|null
+     */
+    private function findResidentRuns(
+        int $pid,
+        int $region_addr,
+        int $region_size,
+    ): ?array {
+        $pagemap_path = "/proc/{$pid}/pagemap";
+        $fp = @fopen($pagemap_path, 'rb');
+        if ($fp === false) {
+            return null;
+        }
+
+        $page_size = 4096;
+        $num_pages = (int)($region_size / $page_size);
+        $start_vpn = (int)($region_addr / $page_size);
+
+        if (fseek($fp, $start_vpn * 8) !== 0) {
+            fclose($fp);
+            return null;
+        }
+
+        /** @var list<array{address: int, size: int}> $runs */
+        $runs = [];
+        $run_start_page = -1;
+        $run_count = 0;
+
+        for ($i = 0; $i < $num_pages; $i++) {
+            $raw = fread($fp, 8);
+            if ($raw === false || strlen($raw) !== 8) {
+                break;
+            }
+            /** @var array{val: int} $entry */
+            $entry = unpack('Pval', $raw);
+            $present = ($entry['val'] >> 63) & 1;
+
+            if ($present) {
+                if ($run_start_page < 0) {
+                    $run_start_page = $i;
+                    $run_count = 1;
+                } else {
+                    $run_count++;
+                }
+            } else {
+                if ($run_start_page >= 0) {
+                    $runs[] = [
+                        'address' => $region_addr + $run_start_page * $page_size,
+                        'size' => $run_count * $page_size,
+                    ];
+                    $run_start_page = -1;
+                }
+            }
+        }
+        if ($run_start_page >= 0) {
+            $runs[] = [
+                'address' => $region_addr + $run_start_page * $page_size,
+                'size' => $run_count * $page_size,
+            ];
+        }
+
+        fclose($fp);
+        return $runs;
     }
 }
