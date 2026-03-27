@@ -214,7 +214,9 @@ final class ModuleEhFrameCache
         if ($cached === null || !isset($cached['fdes']) || !is_array($cached['fdes'])) {
             return null;
         }
-        return $this->deserializeFdes($cached['fdes']);
+        /** @var array<string, mixed> $fdes_data */
+        $fdes_data = $cached['fdes'];
+        return $this->deserializeFdes($fdes_data);
     }
 
     /** @param array<Fde> $fdes */
@@ -230,7 +232,7 @@ final class ModuleEhFrameCache
 
     /**
      * @param array<Fde> $fdes
-     * @return array<array<string, mixed>>
+     * @return array{cies: array<int, array<string, mixed>>, fdes: list<array{il: int, ar: int, ins: string, ci: int}>}
      */
     private function serializeFdes(array $fdes): array
     {
@@ -284,34 +286,64 @@ final class ModuleEhFrameCache
             return null;
         }
 
+        /** @var array<int, Cie> $cies */
         $cies = [];
         foreach ($data['cies'] as $index => $cie_data) {
             if (!is_array($cie_data)) {
                 return null;
             }
+            /** @var int $caf */
+            $caf = $cie_data['caf'];
+            /** @var int $daf */
+            $daf = $cie_data['daf'];
+            /** @var int $rar */
+            $rar = $cie_data['rar'];
+            /** @var string $ii */
+            $ii = $cie_data['ii'];
+            /** @var string $aug */
+            $aug = $cie_data['aug'];
+            /** @var int $fe */
+            $fe = $cie_data['fe'];
+            /** @var int|null $le */
+            $le = $cie_data['le'] ?? null;
+            /** @var int|null $pe */
+            $pe = $cie_data['pe'] ?? null;
+            /** @var int|null $pa */
+            $pa = $cie_data['pa'] ?? null;
             $cies[$index] = new Cie(
-                codeAlignmentFactor: $cie_data['caf'],
-                dataAlignmentFactor: $cie_data['daf'],
-                returnAddressRegister: $cie_data['rar'],
-                initialInstructions: base64_decode($cie_data['ii']),
-                augmentation: $cie_data['aug'],
-                fdeEncoding: $cie_data['fe'],
-                lsdaEncoding: $cie_data['le'] ?? null,
-                personalityEncoding: $cie_data['pe'] ?? null,
-                personalityAddress: $cie_data['pa'] ?? null,
+                codeAlignmentFactor: $caf,
+                dataAlignmentFactor: $daf,
+                returnAddressRegister: $rar,
+                initialInstructions: base64_decode($ii),
+                augmentation: $aug,
+                fdeEncoding: $fe,
+                lsdaEncoding: $le,
+                personalityEncoding: $pe,
+                personalityAddress: $pa,
             );
         }
 
         $fdes = [];
         foreach ($data['fdes'] as $fde_data) {
-            if (!is_array($fde_data) || !isset($cies[$fde_data['ci']])) {
+            if (!is_array($fde_data)) {
+                return null;
+            }
+            /** @var int $il */
+            $il = $fde_data['il'];
+            /** @var int $ar */
+            $ar = $fde_data['ar'];
+            /** @var string $ins */
+            $ins = $fde_data['ins'];
+            /** @var int $ci */
+            $ci = $fde_data['ci'];
+            if (!isset($cies[$ci])) {
                 return null;
             }
             $fdes[] = new Fde(
-                initialLocation: $fde_data['il'],
-                addressRange: $fde_data['ar'],
-                instructions: base64_decode($fde_data['ins']),
-                cie: $cies[$fde_data['ci']],
+                initialLocation: $il,
+                addressRange: $ar,
+                instructions: base64_decode($ins),
+                cie: $cies[$ci],
             );
         }
 

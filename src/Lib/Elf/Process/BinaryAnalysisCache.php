@@ -117,7 +117,11 @@ final class BinaryAnalysisCache
     private function saveIgbinary(BinaryFingerprint $fingerprint, string $namespace, array $data): void
     {
         $path = $this->getBasePath($fingerprint, $namespace) . '.igbinary';
-        $this->writeFile($path, igbinary_serialize($data));
+        $serialized = igbinary_serialize($data);
+        if ($serialized === false) {
+            return;
+        }
+        $this->writeFile($path, $serialized);
     }
 
     /** @param array<array-key, mixed> $data */

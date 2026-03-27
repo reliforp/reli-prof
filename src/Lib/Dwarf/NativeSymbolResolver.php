@@ -142,7 +142,9 @@ final class NativeSymbolResolver
         if ($cached === null || !isset($cached['symbols']) || !is_array($cached['symbols'])) {
             return null;
         }
-        return Elf64ReverseSymbolResolver::fromArray($cached['symbols']);
+        /** @var array<array{int, int, string}> $symbols */
+        $symbols = $cached['symbols'];
+        return Elf64ReverseSymbolResolver::fromArray($symbols);
     }
 
     private function saveToCache(BinaryFingerprint $fingerprint, Elf64ReverseSymbolResolver $resolver): void
