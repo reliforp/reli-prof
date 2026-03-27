@@ -238,6 +238,36 @@ Key observations:
 - `zend_function` and `zend_string` are stable during a request (not GC'd),
   so the inconsistency risk between Pass 1 and Pass 2 is negligible
 
+### Configuration Considerations
+
+The bulk copy approach should be opt-in or configurable, because:
+
+- **Large VM stacks**: deeply recursive code, heavily nested generators, or
+  frameworks with very deep call chains can push `vm_stack_usage` well beyond
+  the typical ~9KB. If the used portion spans many pages, the bulk copy cost
+  grows linearly (~430ns per page) and could exceed the benefit
+- **Multiple stack segments**: `ZendVmStack` segments are linked via `prev`.
+  Usually only the current segment matters, but edge cases may span multiple
+  segments
+- **Trade-off awareness**: the benefit (consistency without `-S`) vs cost
+  (extra memory copy per sample) is only meaningful at high sampling rates.
+  At the default 100Hz, even 174 individual readv calls fit within the 10ms
+  budget with room to spare
+
+Possible option design:
+
+```
+--bulk-stack-copy[=<max-size>]
+```
+
+- Not specified: current per-field behavior (safe default)
+- `--bulk-stack-copy`: enable with a sensible default max (e.g., 64KB)
+- `--bulk-stack-copy=256K`: enable with explicit max size; if actual usage
+  exceeds this, fall back to per-field reads
+
+This way advanced users who understand the consistency trade-offs can enable
+it, while the default behavior remains unchanged.
+
 ### Expected Impact
 
 - **Consistency**: window shrinks from ~3,480us to ~1-4us, potentially making
