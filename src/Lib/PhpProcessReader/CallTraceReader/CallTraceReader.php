@@ -420,8 +420,10 @@ final class CallTraceReader
                     $file_name,
                     $opline
                 );
-            } catch (MemoryReaderException) {
-                // Frame resolution failed — stop here, return what we have
+            } catch (MemoryReaderException | \TypeError) {
+                // Frame resolution failed — stop here, return what we have.
+                // TypeError can occur when FFI CData contains unexpected types
+                // (e.g. corrupt frame data from a running target).
                 break;
             }
         }
