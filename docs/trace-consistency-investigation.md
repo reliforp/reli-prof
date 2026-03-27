@@ -204,6 +204,14 @@ or a remote process.
 
 - Need to locate the VM stack: read `EG(vm_stack)` to get the current stack
   segment's base address and size
+  - reli already has this infrastructure: `ZendExecutorGlobals::$vm_stack`
+    → `ZendVmStack` with `$top`, `$end`, `$prev`, and `getSize()`
+  - The memory profiler (`inspector:memory`) already reads and analyzes
+    VM stack segments via `VmStackMemoryLocation`
+  - Prefetch range: from `ZendVmStack` header address to `$end` covers
+    all `execute_data` frames in the current segment
+  - Multiple segments (linked via `$prev`) may exist but the current
+    segment typically contains all active frames
 - VM stack covers `execute_data` frames; heap-resident data (`zend_function`,
   `zend_string` for function/file/class names) still requires remote reads
   - Pass 2 scatter-gather can batch these into a single syscall
