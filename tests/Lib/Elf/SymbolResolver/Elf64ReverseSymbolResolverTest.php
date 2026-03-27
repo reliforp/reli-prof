@@ -191,4 +191,35 @@ class Elf64ReverseSymbolResolverTest extends BaseTestCase
         $this->assertNotNull($result);
         $this->assertSame('my_func', $result[0]);
     }
+
+    public function testToArrayFromArrayRoundtrip(): void
+    {
+        $string_data = "\0alpha\0beta\0gamma\0";
+        $string_table = new Elf64StringTable($string_data);
+        $symbol_table = new Elf64SymbolTable(
+            $this->makeEntry(1, 0x3000, 0x50),     // alpha
+            $this->makeEntry(7, 0x1000, 0x200),     // beta
+            $this->makeEntry(12, 0x2000, 0x100),    // gamma
+        );
+
+        $original = Elf64ReverseSymbolResolver::fromSymbolTableAndStringTable($symbol_table, $string_table);
+
+        // Roundtrip
+        $array = $original->toArray();
+        $restored = Elf64ReverseSymbolResolver::fromArray($array);
+
+        // Same resolve results
+        $this->assertSame($original->resolve(0x1000), $restored->resolve(0x1000)); // beta exact
+        $this->assertSame($original->resolve(0x1100), $restored->resolve(0x1100)); // beta +0x100
+        $this->assertSame($original->resolve(0x2050), $restored->resolve(0x2050)); // gamma +0x50
+        $this->assertSame($original->resolve(0x3000), $restored->resolve(0x3000)); // alpha exact
+        $this->assertSame($original->resolve(0x500),  $restored->resolve(0x500));  // before all → null
+        $this->assertSame($original->resolve(0x1200), $restored->resolve(0x1200)); // past beta → null
+    }
+
+    public function testFromArrayEmpty(): void
+    {
+        $resolver = Elf64ReverseSymbolResolver::fromArray([]);
+        $this->assertNull($resolver->resolve(0x1000));
+    }
 }
