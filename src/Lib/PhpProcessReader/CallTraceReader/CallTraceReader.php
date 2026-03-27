@@ -294,58 +294,70 @@ final class CallTraceReader
             $current_execute_data = $dereferencer->deref($current_execute_data->prev_execute_data);
         }
 
+        // Walk the execute_data chain. If a read fails mid-chain (e.g. stale
+        // pointer from a running target), keep the frames collected so far
+        // rather than discarding the entire trace and retrying.
         $stack = [];
         $stack[] = $current_execute_data;
-        for ($i = 0; $i < $depth; $i++) {
-            if (is_null($current_execute_data->prev_execute_data)) {
-                break;
+        try {
+            for ($i = 0; $i < $depth; $i++) {
+                if (is_null($current_execute_data->prev_execute_data)) {
+                    break;
+                }
+                $current_execute_data = $dereferencer->deref($current_execute_data->prev_execute_data);
+                $stack[] = $current_execute_data;
             }
-            $current_execute_data = $dereferencer->deref($current_execute_data->prev_execute_data);
-            $stack[] = $current_execute_data;
+        } catch (MemoryReaderException) {
+            // Chain walk hit a bad address — use frames collected so far
         }
 
         $result = [];
         foreach ($stack as $current_execute_data) {
-            $function_name = $current_execute_data->getFunctionName(
-                $cached_dereferencer,
-                $this->getTypeReader($php_version),
-            );
+            try {
+                $function_name = $current_execute_data->getFunctionName(
+                    $cached_dereferencer,
+                    $this->getTypeReader($php_version),
+                );
 
-            if (is_null($current_execute_data->func)) {
+                if (is_null($current_execute_data->func)) {
+                    $result[] = new CallFrame(
+                        '',
+                        $function_name,
+                        '<unknown>',
+                        null
+                    );
+                    continue;
+                }
+                $current_function = $cached_dereferencer->deref($current_execute_data->func);
+
+                $class_name = $current_function->getClassName($cached_dereferencer) ?? '';
+                $file_name = $current_function->getFileName($cached_dereferencer) ?? '<unknown>';
+
+                $opline = null;
+                if (
+                    $file_name !== '<internal>'
+                    and $file_name !== '<unknown>'
+                    and !is_null($current_execute_data->opline)
+                ) {
+                    $opline = $this->readOpline(
+                        $php_version,
+                        $cached_dereferencer->deref($current_execute_data->opline)
+                    );
+                }
+
                 $result[] = new CallFrame(
-                    '',
+                    $class_name,
                     $function_name,
-                    '<unknown>',
-                    null
+                    $file_name,
+                    $opline
                 );
-                continue;
+            } catch (MemoryReaderException) {
+                // Frame resolution failed — stop here, return what we have
+                break;
             }
-            $current_function = $cached_dereferencer->deref($current_execute_data->func);
-
-            $class_name = $current_function->getClassName($cached_dereferencer) ?? '';
-            $file_name = $current_function->getFileName($cached_dereferencer) ?? '<unknown>';
-
-            $opline = null;
-            if (
-                $file_name !== '<internal>'
-                and $file_name !== '<unknown>'
-                and !is_null($current_execute_data->opline)
-            ) {
-                $opline = $this->readOpline(
-                    $php_version,
-                    $cached_dereferencer->deref($current_execute_data->opline)
-                );
-            }
-
-            $result[] = new CallFrame(
-                $class_name,
-                $function_name,
-                $file_name,
-                $opline
-            );
         }
 
-        return new CallTrace(...$result);
+        return $result !== [] ? new CallTrace(...$result) : null;
     }
 
     /**
