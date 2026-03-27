@@ -137,6 +137,7 @@ final class PhpSpyDaemonCommand extends Command
                         $process_pool->attach(
                             $descriptor->pid,
                             $descriptor->eg_address,
+                            $descriptor->sg_address,
                             $get_trace_settings->depth,
                             $phpspy_settings,
                         );

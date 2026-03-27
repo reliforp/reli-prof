@@ -110,8 +110,16 @@ final class PhpSpyTraceCommand extends Command
             interval_on_retry_ns: 1000 * 1000 * 10,
         );
 
+        $sg_address = $this->php_globals_finder->findSAPIGlobals(
+            $process_specifier,
+            $target_php_settings
+        );
+
         $output->writeln(
             '<info>EG address resolved: 0x' . dechex($eg_address) . '</info>'
+        );
+        $output->writeln(
+            '<info>SG address resolved: 0x' . dechex($sg_address) . '</info>'
         );
         $output->writeln(
             '<info>starting phpspy for pid ' . $process_specifier->pid . '...</info>'
@@ -131,6 +139,7 @@ final class PhpSpyTraceCommand extends Command
         $this->phpspy_process->start(
             $process_specifier->pid,
             $eg_address,
+            $sg_address,
             $get_trace_settings->depth,
             $phpspy_settings,
             $output_stream,
@@ -150,6 +159,7 @@ final class PhpSpyTraceCommand extends Command
             pcntl_signal_dispatch();
             usleep(1000); // 1ms poll interval
         }
+
         // Drain remaining output
         $this->phpspy_process->passthrough($output_stream);
         $this->phpspy_process->stop();

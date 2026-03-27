@@ -15,13 +15,13 @@ namespace Reli\Inspector\Settings\PhpSpySettings;
 
 final class PhpSpySettings
 {
-    public const DEFAULT_SLEEP_US = 10000;
+    public const DEFAULT_SLEEP_NS = 10101010;
     public const DEFAULT_BUFFER_SIZE = 4096;
     public const DEFAULT_RATE_HZ = 99;
 
     public function __construct(
         public ?string $phpspy_path = null,
-        public int $sleep_us = self::DEFAULT_SLEEP_US,
+        public int $sleep_ns = self::DEFAULT_SLEEP_NS,
         public int $buffer_size = self::DEFAULT_BUFFER_SIZE,
         public int $rate_hz = self::DEFAULT_RATE_HZ,
         public ?string $extra_args = null,

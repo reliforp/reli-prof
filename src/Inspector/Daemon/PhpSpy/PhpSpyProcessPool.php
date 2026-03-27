@@ -30,6 +30,7 @@ final class PhpSpyProcessPool
     public function attach(
         int $pid,
         int $eg_address,
+        int $sg_address,
         int $depth,
         PhpSpySettings $settings,
     ): void {
@@ -37,7 +38,7 @@ final class PhpSpyProcessPool
             return;
         }
         $process = new PhpSpyProcess($this->phpspy_finder);
-        $process->start($pid, $eg_address, $depth, $settings);
+        $process->start($pid, $eg_address, $sg_address, $depth, $settings);
         $this->processes[$pid] = $process;
     }
 

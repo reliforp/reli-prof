@@ -37,10 +37,10 @@ final class PhpSpySettingsFromConsoleInput
                 'path to the phpspy binary'
             )
             ->addOption(
-                'sleep-us',
+                'sleep-ns',
                 's',
                 InputOption::VALUE_OPTIONAL,
-                'phpspy sleep between samples in microseconds (default: 10000)'
+                'phpspy sleep between samples in nanoseconds (default: 10101010)'
             )
             ->addOption(
                 'buffer-size',
@@ -70,13 +70,13 @@ final class PhpSpySettingsFromConsoleInput
     {
         $phpspy_path = NullableCast::toString($input->getOption('phpspy-path'));
 
-        $sleep_us = NullableCast::toString($input->getOption('sleep-us'));
-        if (is_null($sleep_us)) {
-            $sleep_us = PhpSpySettings::DEFAULT_SLEEP_US;
+        $sleep_ns = NullableCast::toString($input->getOption('sleep-ns'));
+        if (is_null($sleep_ns)) {
+            $sleep_ns = PhpSpySettings::DEFAULT_SLEEP_NS;
         } else {
-            $sleep_us = filter_var($sleep_us, FILTER_VALIDATE_INT);
-            if ($sleep_us === false) {
-                throw PhpSpySettingsException::create(PhpSpySettingsException::SLEEP_US_IS_NOT_INTEGER);
+            $sleep_ns = filter_var($sleep_ns, FILTER_VALIDATE_INT);
+            if ($sleep_ns === false) {
+                throw PhpSpySettingsException::create(PhpSpySettingsException::SLEEP_NS_IS_NOT_INTEGER);
             }
         }
 
@@ -104,7 +104,7 @@ final class PhpSpySettingsFromConsoleInput
 
         return new PhpSpySettings(
             $phpspy_path,
-            $sleep_us,
+            $sleep_ns,
             $buffer_size,
             $rate_hz,
             $extra_args,

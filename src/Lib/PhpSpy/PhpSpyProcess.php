@@ -23,6 +23,9 @@ final class PhpSpyProcess
     /** @var resource|null */
     private $stdout_pipe = null;
 
+    /** @var resource|null */
+    private $stderr_pipe = null;
+
     private string $phpspy_path = '';
 
     public function __construct(
@@ -36,18 +39,22 @@ final class PhpSpyProcess
     public function buildArgs(
         int $pid,
         int $eg_address,
+        int $sg_address,
         int $depth,
         PhpSpySettings $settings,
     ): array {
+        // phpspy uses -1 for unlimited depth; reli uses PHP_INT_MAX
+        $phpspy_depth = ($depth >= PHP_INT_MAX) ? -1 : $depth;
         $args = [
             '-p', (string)$pid,
-            '-e', '0x' . dechex($eg_address),
-            '-n', (string)$depth,
+            '-x', dechex($eg_address),
+            '-a', dechex($sg_address),
+            '-n', (string)$phpspy_depth,
         ];
 
-        if ($settings->sleep_us !== PhpSpySettings::DEFAULT_SLEEP_US) {
+        if ($settings->sleep_ns !== PhpSpySettings::DEFAULT_SLEEP_NS) {
             $args[] = '-s';
-            $args[] = (string)$settings->sleep_us;
+            $args[] = (string)$settings->sleep_ns;
         }
 
         if ($settings->buffer_size !== PhpSpySettings::DEFAULT_BUFFER_SIZE) {
@@ -69,12 +76,13 @@ final class PhpSpyProcess
     public function start(
         int $pid,
         int $eg_address,
+        int $sg_address,
         int $depth,
         PhpSpySettings $settings,
         $output_stream = \STDOUT,
     ): void {
         $this->phpspy_path = $this->phpspy_finder->find($settings->phpspy_path);
-        $args = $this->buildArgs($pid, $eg_address, $depth, $settings);
+        $args = $this->buildArgs($pid, $eg_address, $sg_address, $depth, $settings);
 
         $command = escapeshellarg($this->phpspy_path);
         foreach ($args as $arg) {
@@ -103,8 +111,9 @@ final class PhpSpyProcess
         // Set stdout to non-blocking for polling
         stream_set_blocking($this->stdout_pipe, false);
 
-        // Close stderr (or we could log it)
-        fclose($pipes[2]);
+        // Keep stderr for diagnostics
+        $this->stderr_pipe = $pipes[2];
+        stream_set_blocking($this->stderr_pipe, false);
     }
 
     /**
@@ -143,12 +152,26 @@ final class PhpSpyProcess
         return false;
     }
 
+    public function getStderrContents(): string
+    {
+        if ($this->stderr_pipe === null) {
+            return '';
+        }
+        $data = stream_get_contents($this->stderr_pipe);
+        return $data !== false ? $data : '';
+    }
+
     public function stop(): void
     {
         $pipe = $this->stdout_pipe;
         $this->stdout_pipe = null;
         if (is_resource($pipe)) {
             fclose($pipe);
+        }
+        $err_pipe = $this->stderr_pipe;
+        $this->stderr_pipe = null;
+        if (is_resource($err_pipe)) {
+            fclose($err_pipe);
         }
         if (is_resource($this->process)) {
             // Send SIGTERM first
