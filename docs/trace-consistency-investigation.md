@@ -200,6 +200,26 @@ require no changes. The buffer is transparent — callers see the same
 `MemoryReaderInterface` regardless of whether data comes from local memory
 or a remote process.
 
+### VM Stack Size Measurements
+
+Measured via `inspector:memory --pretty-print` on PHP 7.4 mod_php workers:
+
+```
+                    vm_stack_usage    vm_stack_total    readv cost (bulk)
+Shallow (3 frames):      448 bytes      262,144 bytes     ~430 ns (< 1 page)
+Deep (22 frames):      1,912 bytes      262,144 bytes     ~430 ns (< 1 page)
+Laravel (75 frames):   9,232 bytes      262,144 bytes     ~460 ns (~2 pages)
+Inner reli itself:    12,128 bytes      262,144 bytes     ~460 ns (~3 pages)
+```
+
+Key observations:
+- `vm_stack_total` is always 256KB (pre-allocated), but `vm_stack_usage` is tiny
+- 75 frames = ~9KB. Per frame ~120 bytes (9232 / 76 call frame headers)
+- **Only the used portion needs to be copied** (`top` to current stack position),
+  not the entire 256KB allocation
+- At ~9KB, the bulk copy fits in 2-3 pages → ~460ns, versus the current
+  174 individual readv calls via FFI
+
 ### Prerequisites
 
 - Need to locate the VM stack: read `EG(vm_stack)` to get the current stack
