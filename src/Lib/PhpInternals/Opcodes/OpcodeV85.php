@@ -94,7 +94,6 @@ final class OpcodeV85 implements Opcode
     public const ZEND_UNSET_OBJ = 76;
     public const ZEND_FE_RESET_R = 77;
     public const ZEND_FE_FETCH_R = 78;
-    public const ZEND_EXIT = 79;
     public const ZEND_FETCH_R = 80;
     public const ZEND_FETCH_DIM_R = 81;
     public const ZEND_FETCH_OBJ_R = 82;
@@ -307,7 +306,6 @@ final class OpcodeV85 implements Opcode
         self::ZEND_UNSET_OBJ,
         self::ZEND_FE_RESET_R,
         self::ZEND_FE_FETCH_R,
-        self::ZEND_EXIT,
         self::ZEND_FETCH_R,
         self::ZEND_FETCH_DIM_R,
         self::ZEND_FETCH_OBJ_R,
@@ -521,7 +519,6 @@ final class OpcodeV85 implements Opcode
         'ZEND_UNSET_OBJ',
         'ZEND_FE_RESET_R',
         'ZEND_FE_FETCH_R',
-        'ZEND_EXIT',
         'ZEND_FETCH_R',
         'ZEND_FETCH_DIM_R',
         'ZEND_FETCH_OBJ_R',
