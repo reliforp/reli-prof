@@ -285,30 +285,66 @@ final class CallTraceReader
         $trace_cache->updateCacheKey($this->getGlobalRequestTime($sapi_globals_address, $php_version, $dereferencer));
         $cached_dereferencer = $trace_cache->getDereferencer($dereferencer);
 
-        $current_execute_data = $dereferencer->deref($current_execute_data_pointer);
+        $zend_type_reader = $this->getTypeReader($php_version);
+        $ed_size = $zend_type_reader->sizeOf('zend_execute_data');
 
-        // If the top frame has func=NULL, it is being initialized (the call
-        // hasn't started executing yet). Skip it and use prev_execute_data
-        // as the effective top — that is the frame that was actually running.
-        if (is_null($current_execute_data->func) && !is_null($current_execute_data->prev_execute_data)) {
-            $current_execute_data = $dereferencer->deref($current_execute_data->prev_execute_data);
+        // Pre-compute offsets for the hot chain walk (avoids repeated getOffsetAndSizeOfMember)
+        [$func_offset,] = $zend_type_reader->getOffsetAndSizeOfMember('zend_execute_data', 'func');
+        [$prev_offset,] = $zend_type_reader->getOffsetAndSizeOfMember('zend_execute_data', 'prev_execute_data');
+
+        // Fast chain walk: collect frame addresses using raw int64 reads,
+        // bypassing LazyDereferencer/FieldReader/Pointer per-frame overhead.
+        $buffered = ($this->bulk_stack_copy_enabled && $this->memory_reader instanceof BufferedMemoryReader)
+            ? $this->memory_reader
+            : null;
+
+        $frame_addresses = [];
+        $addr = $current_execute_data_pointer->address;
+
+        // If the top frame has func=NULL, it is being initialized.
+        // Skip it and use prev_execute_data as the effective top.
+        if ($buffered !== null) {
+            $func_val = $buffered->readRawInt64($pid, $addr + $func_offset);
+            if ($func_val === 0) {
+                $prev_val = $buffered->readRawInt64($pid, $addr + $prev_offset);
+                if ($prev_val !== null && $prev_val !== 0) {
+                    $addr = $prev_val;
+                }
+            }
         }
 
-        // Walk the execute_data chain. If a read fails mid-chain (e.g. stale
-        // pointer from a running target), keep the frames collected so far
-        // rather than discarding the entire trace and retrying.
-        $stack = [];
-        $stack[] = $current_execute_data;
-        try {
-            for ($i = 0; $i < $depth; $i++) {
-                if (is_null($current_execute_data->prev_execute_data)) {
+        $frame_addresses[] = $addr;
+
+        for ($i = 0; $i < $depth; $i++) {
+            $prev_addr = $buffered?->readRawInt64($pid, $addr + $prev_offset);
+            if ($prev_addr === null) {
+                // Buffer miss — fall back to FieldReader for remaining frames
+                try {
+                    $pointer = new Pointer(ZendExecuteData::class, $addr, $ed_size);
+                    $ed = $dereferencer->deref($pointer);
+                    if (is_null($ed->prev_execute_data)) {
+                        break;
+                    }
+                    $addr = $ed->prev_execute_data->address;
+                    $frame_addresses[] = $addr;
+                    // Continue with buffer reads from new address
+                    continue;
+                } catch (MemoryReaderException) {
                     break;
                 }
-                $current_execute_data = $dereferencer->deref($current_execute_data->prev_execute_data);
-                $stack[] = $current_execute_data;
             }
-        } catch (MemoryReaderException) {
-            // Chain walk hit a bad address — use frames collected so far
+            if ($prev_addr === 0) {
+                break;
+            }
+            $addr = $prev_addr;
+            $frame_addresses[] = $addr;
+        }
+
+        // Build lazy ZendExecuteData objects from collected addresses
+        $stack = [];
+        foreach ($frame_addresses as $frame_addr) {
+            $pointer = new Pointer(ZendExecuteData::class, $frame_addr, $ed_size);
+            $stack[] = $dereferencer->deref($pointer);
         }
 
         $result = [];
