@@ -118,27 +118,28 @@ Arguments:
   args                                       command line arguments for cmd
 
 Options:
-  -p, --pid=PID                              process id
-  -d, --depth[=DEPTH]                        max depth
-  -s, --sleep-ns[=SLEEP-NS]                  nanoseconds between traces (default: 1000 * 1000 * 10)
-  -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
-  -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-      --no-cache                             disable the binary analysis cache
-      --with-native-trace                    collect native (C-level) stack traces alongside PHP traces
-      --native-trace-anytime                 collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
-  -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
-  -o, --output=OUTPUT                        path to write output from this tool (default: stdout)
-  -h, --help                                 Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+  -p, --pid=PID                                process id
+  -d, --depth[=DEPTH]                          max depth
+      --with-native-trace                      collect native (C-level) stack traces alongside PHP traces
+      --native-trace-anytime                   collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
+  -s, --sleep-ns[=SLEEP-NS]                    nanoseconds between traces (default: 1000 * 1000 * 10)
+  -r, --max-retries[=MAX-RETRIES]              max retries on contiguous errors of read (default: 10)
+  -S, --stop-process[=STOP-PROCESS]            stop the target process while reading its trace (default: off)
+      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
+      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
+  -t, --template[=TEMPLATE]                    template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
+  -o, --output=OUTPUT                          path to write output from this tool (default: stdout)
+      --no-cache                               disable the binary analysis cache
+  -h, --help                                   Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                  Do not output any message
+  -V, --version                                Display this application version
+      --ansi|--no-ansi                         Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                         Do not ask any interactive question
+  -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
 ### Daemon mode
@@ -151,26 +152,29 @@ Usage:
   inspector:daemon [options]
 
 Options:
-  -P, --target-regex=TARGET-REGEX            regex to find target processes which have matching command-line (required)
-  -T, --threads[=THREADS]                    number of workers (default: 8)
-  -d, --depth[=DEPTH]                        max depth
-  -s, --sleep-ns[=SLEEP-NS]                  nanoseconds between traces (default: 1000 * 1000 * 10)
-  -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
-  -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-      --no-cache                             disable the binary analysis cache
-  -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
-  -o, --output=OUTPUT                        path to write output from this tool (default: stdout)
-  -h, --help                                 Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+  -P, --target-regex=TARGET-REGEX              regex to find target processes which have matching command-line (required)
+  -T, --threads[=THREADS]                      number of workers (default: 8)
+  -d, --depth[=DEPTH]                          max depth
+      --with-native-trace                      collect native (C-level) stack traces alongside PHP traces
+      --native-trace-anytime                   collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
+  -s, --sleep-ns[=SLEEP-NS]                    nanoseconds between traces (default: 1000 * 1000 * 10)
+  -r, --max-retries[=MAX-RETRIES]              max retries on contiguous errors of read (default: 10)
+  -S, --stop-process[=STOP-PROCESS]            stop the target process while reading its trace (default: off)
+      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
+      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
+  -t, --template[=TEMPLATE]                    template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
+  -o, --output=OUTPUT                          path to write output from this tool (default: stdout)
+      --no-cache                               disable the binary analysis cache
+  -h, --help                                   Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                  Do not output any message
+  -V, --version                                Display this application version
+      --ansi|--no-ansi                         Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                         Do not ask any interactive question
+  -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
 ### top-like mode
@@ -183,24 +187,27 @@ Usage:
   inspector:top [options]
 
 Options:
-  -P, --target-regex=TARGET-REGEX            regex to find target processes which have matching command-line (required)
-  -T, --threads[=THREADS]                    number of workers (default: 8)
-  -d, --depth[=DEPTH]                        max depth
-  -s, --sleep-ns[=SLEEP-NS]                  nanoseconds between traces (default: 1000 * 1000 * 10)
-  -r, --max-retries[=MAX-RETRIES]            max retries on contiguous errors of read (default: 10)
-  -S, --stop-process[=STOP-PROCESS]          stop the target process while reading its trace (default: off)
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-      --no-cache                             disable the binary analysis cache
-  -h, --help                                 Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+  -P, --target-regex=TARGET-REGEX              regex to find target processes which have matching command-line (required)
+  -T, --threads[=THREADS]                      number of workers (default: 8)
+  -d, --depth[=DEPTH]                          max depth
+      --with-native-trace                      collect native (C-level) stack traces alongside PHP traces
+      --native-trace-anytime                   collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
+  -s, --sleep-ns[=SLEEP-NS]                    nanoseconds between traces (default: 1000 * 1000 * 10)
+  -r, --max-retries[=MAX-RETRIES]              max retries on contiguous errors of read (default: 10)
+  -S, --stop-process[=STOP-PROCESS]            stop the target process while reading its trace (default: off)
+      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
+      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --no-cache                               disable the binary analysis cache
+  -h, --help                                   Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                  Do not output any message
+  -V, --version                                Display this application version
+      --ansi|--no-ansi                         Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                         Do not ask any interactive question
+  -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
 ### Get the address of EG
@@ -217,19 +224,20 @@ Arguments:
   args                                       command line arguments for cmd
 
 Options:
-  -p, --pid=PID                              process id
-      --php-regex[=PHP-REGEX]                regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]  regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
-      --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
-      --no-cache                             disable the binary analysis cache
-  -h, --help                                 Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                Do not output any message
-  -V, --version                              Display this application version
-      --ansi|--no-ansi                       Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                       Do not ask any interactive question
-  -v|vv|vvv, --verbose                       Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+  -p, --pid=PID                                process id
+      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
+      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --no-cache                               disable the binary analysis cache
+  -h, --help                                   Display help for the given command. When no command is given display help for the list command
+  -q, --quiet                                  Do not output any message
+  -V, --version                                Display this application version
+      --ansi|--no-ansi                         Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction                         Do not ask any interactive question
+  -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
 ## [Experimental] Dump the memory usage of the target process
@@ -248,12 +256,20 @@ Arguments:
 Options:
       --stop-process|--no-stop-process                               stop the process while inspecting (default: on)
       --pretty-print|--no-pretty-print                               pretty print the result (default: off)
+  -f, --output-format=OUTPUT-FORMAT                                  output format (json, sqlite3, mysql, postgresql) [default: "json"]
+  -o, --output=OUTPUT                                                output file path (required for sqlite3 format)
+      --db-host=DB-HOST                                              database host (for mysql/postgresql) [default: "127.0.0.1"]
+      --db-port=DB-PORT                                              database port (for mysql/postgresql)
+      --db-name=DB-NAME                                              database name (for mysql/postgresql)
+      --db-user=DB-USER                                              database user (for mysql/postgresql)
+      --db-password=DB-PASSWORD                                      database password (for mysql/postgresql)
       --memory-limit-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
       --memory-limit-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
       --memory-limit-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
   -p, --pid=PID                                                      process id
       --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
+      --zts-globals-regex[=ZTS-GLOBALS-REGEX]                        regex to find the binary containing globals symbols for ZTS loaded in the target process
       --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
       --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
