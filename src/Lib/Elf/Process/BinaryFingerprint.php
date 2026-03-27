@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Process;
 
-use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 
 final class BinaryFingerprint
 {
@@ -23,7 +23,7 @@ final class BinaryFingerprint
     }
 
     public static function fromProcessModuleMemoryMap(
-        ProcessModuleMemoryMap $process_module_memory_map
+        ProcessModuleMemoryMapInterface $process_module_memory_map
     ): self {
         return new self(
             join(
@@ -47,7 +47,7 @@ final class BinaryFingerprint
      * @param string $elf_header_bytes Raw bytes from the ELF header (typically first 64 bytes)
      */
     public static function fromProcessModuleMemoryMapAndElfHeader(
-        ProcessModuleMemoryMap $process_module_memory_map,
+        ProcessModuleMemoryMapInterface $process_module_memory_map,
         string $elf_header_bytes,
     ): self {
         return new self(

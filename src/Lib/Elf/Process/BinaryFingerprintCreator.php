@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Process;
 
-use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 final class BinaryFingerprintCreator
@@ -27,7 +27,7 @@ final class BinaryFingerprintCreator
 
     public function createFromProcessModuleMemoryMap(
         int $pid,
-        ProcessModuleMemoryMap $process_module_memory_map,
+        ProcessModuleMemoryMapInterface $process_module_memory_map,
     ): BinaryFingerprint {
         $base_address = $process_module_memory_map->getBaseAddress();
         try {
