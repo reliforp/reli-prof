@@ -201,6 +201,97 @@ class TargetPhpVmProvider
         return [$proc_handle, $pid];
     }
 
+    /**
+     * Run a PHP script via Apache mod_php in a Docker container.
+     *
+     * The script is placed as /var/www/html/index.php inside a php:*-apache container.
+     * Apache is started in foreground, then a request is made to trigger the script.
+     * The script writes its PID via a shared file so the profiler can attach.
+     *
+     * @return array{0: resource, 1: int} [proc_handle, pid]
+     */
+    public static function runScriptViaModPhpContainer(
+        string $docker_image_name,
+        string $script,
+        array &$pipes,
+    ) {
+        $tmp_dir = '/tmp/reli-test/modphp-' . uniqid();
+        mkdir($tmp_dir, 0777, true);
+
+        $script_file = $tmp_dir . '/index.php';
+        $pid_file = $tmp_dir . '/target-pid';
+
+        touch($pid_file);
+        chmod($pid_file, 0666);
+
+        // Prepend PID writing logic to the script
+        $pid_writer_code = <<<'PIDCODE'
+        file_put_contents('/tmp/modphp-workdir/target-pid', (string)getmypid());
+        PIDCODE;
+
+        $modified_script = preg_replace(
+            '/^<\?php\s*/s',
+            "<?php\n" . $pid_writer_code . "\n",
+            $script
+        );
+        file_put_contents($script_file, $modified_script);
+        chmod($script_file, 0666);
+
+        // Start Apache in foreground, then trigger the PHP script.
+        // The php:*-apache images have Apache pre-configured with mod_php.
+        // The target script blocks (sleep), so wget must run in background.
+        // We poll the PID file to know when the PHP worker has started.
+        $shell_script = 'apache2-foreground &'
+            . ' sleep 2'
+            . ' && (wget -q -T 300 -O /dev/null http://127.0.0.1:80/index.php &) 2>/dev/null'
+            . ' ; wait_count=0'
+            . ' ; while [ ! -s /tmp/modphp-workdir/target-pid ] && [ $wait_count -lt 30 ]; do'
+            . '   sleep 1; wait_count=$((wait_count+1))'
+            . ' ; done'
+            . ' && echo "pid_ready"'
+            . ' && sleep infinity';
+
+        $docker_command = [
+            'docker',
+            'run',
+            '--rm',
+            '--pid', 'host',
+            '-i',
+            '-v', "$script_file:/var/www/html/index.php:ro",
+            '-v', "$tmp_dir:/tmp/modphp-workdir:rw",
+            '-v', '/tmp/reli-test:/tmp/reli-test:rw',
+            '--entrypoint', 'sh',
+            $docker_image_name,
+            '-c',
+            $shell_script,
+        ];
+
+        $proc_handle = proc_open(
+            $docker_command,
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w']
+            ],
+            $pipes
+        );
+
+        // Wait for the request to complete and PID to be written
+        $timeout = 60;
+        $start = time();
+        while (time() - $start < $timeout) {
+            $content = @file_get_contents($pid_file);
+            if ($content !== false && $content !== '' && (int)$content > 0) {
+                break;
+            }
+            usleep(500000); // 500ms
+        }
+
+        $pid = (int)file_get_contents($pid_file);
+
+        return [$proc_handle, $pid];
+    }
+
     public static function procOpenViaDocker(
         string $docker_image_name,
         string $command,

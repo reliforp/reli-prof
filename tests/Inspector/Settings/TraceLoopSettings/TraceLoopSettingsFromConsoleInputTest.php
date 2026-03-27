@@ -40,7 +40,20 @@ class TraceLoopSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('sleep-ns')->andReturns(null);
         $input->expects()->getOption('max-retries')->andReturns(null);
         $input->expects()->getOption('stop-process')->andReturns(null);
-        (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
+        $input->expects()->hasParameterOption(['-S', '--stop-process'])->andReturns(false);
+        $settings = (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
+        $this->assertSame(false, $settings->stop_process);
+    }
+
+    public function testFromConsoleInputStopProcessFlagWithoutValue(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('sleep-ns')->andReturns(null);
+        $input->expects()->getOption('max-retries')->andReturns(null);
+        $input->expects()->getOption('stop-process')->andReturns(null);
+        $input->expects()->hasParameterOption(['-S', '--stop-process'])->andReturns(true);
+        $settings = (new TraceLoopSettingsFromConsoleInput())->createSettings($input);
+        $this->assertSame(true, $settings->stop_process);
     }
 
     public function testFromConsoleInputSleepNsNotInteger(): void
