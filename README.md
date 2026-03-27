@@ -79,7 +79,7 @@ Much of what can be done with phpspy will be done with reli in the future.
 - PHP 7.0+ (NTS / ZTS)
 - 64bit Linux x86_64
 
-On targeting ZTS, the target process must load libpthread.so, and also you must have unstripped binary of the interpreter and the libpthread.so, to find EG from the TLS.
+On targeting ZTS, reli finds EG from the TLS. Stripped binaries are supported (TLS segments are scanned via brute force). On glibc 2.34+, where libpthread is merged into libc, reli automatically falls back to libc.so, so no extra options are needed in most cases.
 
 ## Installation
 ### From Composer
@@ -608,9 +608,6 @@ If your PHP binary uses a non-standard binary name that does not end with `/php`
 
 ### I don't think the trace is accurate.
 The `-S` option will give you better results. Using this option stops the execution of the target process for a moment at every sampling, but the trace obtained will be more accurate. If you don't stop the VMs from running when profiling CPU-heavy programs such as benchmarking programs, you may misjudge the bottleneck, because you will miss more VM states that transition very quickly and are not detected well.
-
-### Trace retrieval from ZTS target does not work on Ubuntu 21.10 or later.
-Try to specify `--libpthread-regex="libc.so"` as an option.
 
 ### I can't get traces on Amazon Linux 2.
 First, try `cat /proc/<pid>/maps` to check the memory map of the target PHP process. If the first module does not indicate the location of the PHP binary and looks like an anonymous region, try to specify `--php-regex="^$"` as an option.
