@@ -227,6 +227,37 @@ final class BufferedMemoryReader implements MemoryReaderInterface
     }
 
     /**
+     * Fast path: read a 64-bit integer directly from the buffer without
+     * any FFI allocation or casting. Returns null on buffer miss.
+     */
+    public function readRawInt64(int $pid, int $remote_address): ?int
+    {
+        // Check slot 1 first (VM stack)
+        if (
+            $this->buf1_pid === $pid
+            && $remote_address >= $this->buf1_address
+            && ($remote_address + 8) <= ($this->buf1_address + $this->buf1_size)
+        ) {
+            $offset = $remote_address - $this->buf1_address;
+            /** @var array{1: int} $v */
+            $v = unpack('P', $this->buf1_data, $offset);
+            return $v[1];
+        }
+        // Check slot 0
+        if (
+            $this->buf0_pid === $pid
+            && $remote_address >= $this->buf0_address
+            && ($remote_address + 8) <= ($this->buf0_address + $this->buf0_size)
+        ) {
+            $offset = $remote_address - $this->buf0_address;
+            /** @var array{1: int} $v */
+            $v = unpack('P', $this->buf0_data, $offset);
+            return $v[1];
+        }
+        return null;
+    }
+
+    /**
      * @return \FFI\CArray<int>
      * @throws MemoryReaderException
      */

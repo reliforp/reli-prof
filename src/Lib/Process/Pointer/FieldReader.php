@@ -17,6 +17,7 @@ use FFI;
 use FFI\CData;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\Process\MemoryReader\BufferedMemoryReader;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\ProcessSpecifier;
 
@@ -47,9 +48,26 @@ final class FieldReader
             $struct_type,
             $field_name,
         );
+        $address = $struct_pointer->address + $offset;
+
+        // Fast path: read pointer value directly from buffer via unpack, no FFI
+        if ($size === 8 && $this->memory_reader instanceof BufferedMemoryReader) {
+            $addr = $this->memory_reader->readRawInt64($this->process_specifier->pid, $address);
+            if ($addr !== null) {
+                if ($addr === 0) {
+                    return null;
+                }
+                return new Pointer(
+                    $pointed_type,
+                    $addr,
+                    $this->type_reader->sizeOf($pointed_type::getCTypeName()),
+                );
+            }
+        }
+
         $buffer = $this->memory_reader->read(
             $this->process_specifier->pid,
-            $struct_pointer->address + $offset,
+            $address,
             $size,
         );
         /** @var \FFI\CInteger $addr_cdata */
@@ -78,9 +96,23 @@ final class FieldReader
             $struct_type,
             $field_name,
         );
+        $address = $struct_pointer->address + $offset;
+
+        // Fast path: read directly from buffer via unpack, no FFI
+        if ($this->memory_reader instanceof BufferedMemoryReader) {
+            $val = $this->memory_reader->readRawInt64($this->process_specifier->pid, $address);
+            if ($val !== null) {
+                return match ($size) {
+                    1 => $val & 0xFF,
+                    4 => $val & 0xFFFFFFFF,
+                    default => $val,
+                };
+            }
+        }
+
         $buffer = $this->memory_reader->read(
             $this->process_specifier->pid,
-            $struct_pointer->address + $offset,
+            $address,
             $size,
         );
         /** @var \FFI\CInteger $casted */
