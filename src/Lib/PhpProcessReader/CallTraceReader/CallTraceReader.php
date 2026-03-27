@@ -19,6 +19,7 @@ use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\PhpInternals\Types\Zend\Opline;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
+use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
 use Reli\Lib\PhpInternals\Types\Zend\ZendOp;
 use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -288,9 +289,12 @@ final class CallTraceReader
         $zend_type_reader = $this->getTypeReader($php_version);
         $ed_size = $zend_type_reader->sizeOf('zend_execute_data');
 
-        // Pre-compute offsets for the hot chain walk (avoids repeated getOffsetAndSizeOfMember)
+        // Pre-compute offsets for hot paths (avoids repeated getOffsetAndSizeOfMember)
         [$func_offset,] = $zend_type_reader->getOffsetAndSizeOfMember('zend_execute_data', 'func');
         [$prev_offset,] = $zend_type_reader->getOffsetAndSizeOfMember('zend_execute_data', 'prev_execute_data');
+        [$opline_offset,] = $zend_type_reader->getOffsetAndSizeOfMember('zend_execute_data', 'opline');
+        $func_size = $zend_type_reader->sizeOf('zend_function');
+        $opline_size = $zend_type_reader->sizeOf('zend_op');
 
         // Fast chain walk: collect frame addresses using raw int64 reads,
         // bypassing LazyDereferencer/FieldReader/Pointer per-frame overhead.
@@ -348,14 +352,31 @@ final class CallTraceReader
         }
 
         $result = [];
-        foreach ($stack as $current_execute_data) {
+        foreach ($frame_addresses as $idx => $frame_addr) {
             try {
+                $current_execute_data = $stack[$idx];
+
+                // Read func and opline pointers directly from buffer,
+                // bypassing __get → getFieldLazy → FieldReader → getOffsetAndSizeOfMember
+                $func_ptr = null;
+                $opline_ptr = null;
+                $func_addr_raw = $buffered?->readRawInt64($pid, $frame_addr + $func_offset);
+                if ($func_addr_raw !== null) {
+                    $func_ptr = $func_addr_raw !== 0
+                        ? new Pointer(ZendFunction::class, $func_addr_raw, $func_size)
+                        : null;
+                    // Pre-populate the lazy property to avoid __get on subsequent access
+                    $current_execute_data->func = $func_ptr;
+                } else {
+                    $func_ptr = $current_execute_data->func;
+                }
+
                 $function_name = $current_execute_data->getFunctionName(
                     $cached_dereferencer,
-                    $this->getTypeReader($php_version),
+                    $zend_type_reader,
                 );
 
-                if (is_null($current_execute_data->func)) {
+                if ($func_ptr === null) {
                     $result[] = new CallFrame(
                         '',
                         $function_name,
@@ -364,7 +385,7 @@ final class CallTraceReader
                     );
                     continue;
                 }
-                $current_function = $cached_dereferencer->deref($current_execute_data->func);
+                $current_function = $cached_dereferencer->deref($func_ptr);
 
                 $class_name = $current_function->getClassName($cached_dereferencer) ?? '';
                 $file_name = $current_function->getFileName($cached_dereferencer) ?? '<unknown>';
@@ -373,12 +394,21 @@ final class CallTraceReader
                 if (
                     $file_name !== '<internal>'
                     and $file_name !== '<unknown>'
-                    and !is_null($current_execute_data->opline)
                 ) {
-                    $opline = $this->readOpline(
-                        $php_version,
-                        $cached_dereferencer->deref($current_execute_data->opline)
-                    );
+                    $opline_addr_raw = $buffered?->readRawInt64($pid, $frame_addr + $opline_offset);
+                    if ($opline_addr_raw !== null) {
+                        $opline_ptr = $opline_addr_raw !== 0
+                            ? new Pointer(ZendOp::class, $opline_addr_raw, $opline_size)
+                            : null;
+                    } else {
+                        $opline_ptr = $current_execute_data->opline;
+                    }
+                    if ($opline_ptr !== null) {
+                        $opline = $this->readOpline(
+                            $php_version,
+                            $cached_dereferencer->deref($opline_ptr)
+                        );
+                    }
                 }
 
                 $result[] = new CallFrame(
