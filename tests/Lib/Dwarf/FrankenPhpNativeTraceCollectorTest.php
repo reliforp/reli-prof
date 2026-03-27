@@ -37,6 +37,7 @@ use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
 use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapParser;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapReader;
@@ -139,12 +140,14 @@ class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
                 );
                 $integer_reader = new LittleEndianReader();
                 $memory_reader_for_finder = new MemoryReader();
+                $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
                 $tsrm_globals_resolver = new TsrmGlobalsResolver(
                     $php_symbol_reader_creator,
                     $integer_reader,
                     $memory_reader_for_finder,
                     $binary_analysis_cache,
                     $process_memory_map_creator,
+                    $binary_fingerprint_creator,
                 );
                 $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
                     $php_symbol_reader_creator,
@@ -157,6 +160,7 @@ class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
                     new ContainerAwarePathResolver(),
                     new ZendTypeReaderCreator(),
                     $binary_analysis_cache,
+                    $binary_fingerprint_creator,
                 );
                 $php_globals_finder = new PhpGlobalsFinder(
                     $php_symbol_reader_creator,
@@ -166,6 +170,7 @@ class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
                     $tsrm_globals_resolver,
                     $binary_analysis_cache,
                     $process_memory_map_creator,
+                    $binary_fingerprint_creator,
                 );
 
                 $eg_addr = $php_globals_finder->findExecutorGlobals(
