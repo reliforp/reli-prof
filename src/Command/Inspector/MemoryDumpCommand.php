@@ -154,13 +154,45 @@ final class MemoryDumpCommand extends Command
             $read_list[] = ['address' => $huge->ptr, 'size' => $huge->size];
         }
 
-        // [heap] region
+        // [heap] region (internal function/class definitions)
         $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
         foreach ($heap_areas as $area) {
             $addr = (int)hexdec($area->begin);
             $size = (int)hexdec($area->end) - $addr;
             if ($size > 0) {
                 $read_list[] = ['address' => $addr, 'size' => $size];
+            }
+        }
+
+        // Interned strings (may reside in opcache SHM, e.g. /dev/zero mmap).
+        // When opcache is enabled, interned strings and their hash table live in
+        // shared memory rather than [heap]. We capture the memory map region that
+        // contains the arData pointer.
+        $cg = $dereferencer->deref(new Pointer(
+            ZendCompilerGlobals::class,
+            $cg_address,
+            $cg_size,
+        ));
+        $interned = $cg->interned_strings;
+        if ($interned->arData !== null) {
+            $interned_addr = $interned->arData->address;
+            $interned_areas = $memory_map->findByAddress($interned_addr);
+            foreach ($interned_areas as $area) {
+                // Only capture if it's NOT already covered ([heap] or PHP binary rw)
+                if (
+                    str_contains($area->name, '[heap]')
+                    || preg_match(
+                        '{' . $target_php_settings_version_decided->php_regex . '}',
+                        $area->name,
+                    )
+                ) {
+                    continue;
+                }
+                $addr = (int)hexdec($area->begin);
+                $size = (int)hexdec($area->end) - $addr;
+                if ($size > 0) {
+                    $read_list[] = ['address' => $addr, 'size' => $size];
+                }
             }
         }
 
