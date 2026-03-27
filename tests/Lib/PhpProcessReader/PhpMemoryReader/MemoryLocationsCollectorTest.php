@@ -393,13 +393,23 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        fgets($pipes[1]);
-        $error_message = fgets($pipes[1]);
+        // Read lines until we find the fatal error message and JSON.
+        // PHP 8.5+ outputs a stack trace after the fatal error on stdout,
+        // so we need to skip past it to find the JSON from the shutdown function.
+        $error_message = '';
+        $error_json = '';
+        while (($line = fgets($pipes[1])) !== false) {
+            if ($error_message === '' && str_starts_with($line, 'Fatal error: Allowed memory size of')) {
+                $error_message = $line;
+            } elseif ($error_message !== '' && str_starts_with($line, '{')) {
+                $error_json = $line;
+                break;
+            }
+        }
         $this->assertStringStartsWith(
             'Fatal error: Allowed memory size of',
             $error_message
         );
-        $error_json = fgets($pipes[1]);
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -574,13 +584,23 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        fgets($pipes[1]);
-        $error_message = fgets($pipes[1]);
+        // Read lines until we find the fatal error message and JSON.
+        // PHP 8.5+ outputs a stack trace after the fatal error on stdout,
+        // so we need to skip past it to find the JSON from the shutdown function.
+        $error_message = '';
+        $error_json = '';
+        while (($line = fgets($pipes[1])) !== false) {
+            if ($error_message === '' && str_starts_with($line, 'Fatal error: Allowed memory size of')) {
+                $error_message = $line;
+            } elseif ($error_message !== '' && str_starts_with($line, '{')) {
+                $error_json = $line;
+                break;
+            }
+        }
         $this->assertStringStartsWith(
             'Fatal error: Allowed memory size of',
             $error_message
         );
-        $error_json = fgets($pipes[1]);
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -772,13 +792,23 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        fgets($pipes[1]);
-        $error_message = fgets($pipes[1]);
+        // Read lines until we find the fatal error message and JSON.
+        // PHP 8.5+ outputs a stack trace after the fatal error on stdout,
+        // so we need to skip past it to find the JSON from the shutdown function.
+        $error_message = '';
+        $error_json = '';
+        while (($line = fgets($pipes[1])) !== false) {
+            if ($error_message === '' && str_starts_with($line, 'Fatal error: Allowed memory size of')) {
+                $error_message = $line;
+            } elseif ($error_message !== '' && str_starts_with($line, '{')) {
+                $error_json = $line;
+                break;
+            }
+        }
         $this->assertStringStartsWith(
             'Fatal error: Allowed memory size of',
             $error_message
         );
-        $error_json = fgets($pipes[1]);
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(

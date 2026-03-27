@@ -22,7 +22,7 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
  */
 final class TargetPhpSettings
 {
-    public const PHP_REGEX_DEFAULT = '.*/((php|php-fpm)(7\.?[01234]|8\.?[01234])?|libphp[78]?.*\.so)$';
+    public const PHP_REGEX_DEFAULT = '.*/((php|php-fpm)(7\.?[01234]|8\.?[012345])?|libphp[78]?.*\.so)$';
     public const LIBPTHREAD_REGEX_DEFAULT = '.*/libpthread.*\.so';
     public const ZTS_GLOBALS_REGEX_DEFAULT = self::PHP_REGEX_DEFAULT;
     public const TARGET_PHP_VERSION_DEFAULT = 'auto';
@@ -38,7 +38,7 @@ final class TargetPhpSettings
     ) {
     }
 
-    /** @psalm-assert-if-true self<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'> $this */
+    /** @psalm-assert-if-true self<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $this */
     public function isDecided(): bool
     {
         return $this->php_version !== 'auto';

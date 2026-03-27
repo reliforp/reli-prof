@@ -28,6 +28,7 @@ class TargetPhpVmProvider
         ZendTypeReader::V82,
         ZendTypeReader::V83,
         ZendTypeReader::V84,
+        ZendTypeReader::V85,
         // ZTS variants (PHP 7.3+)
         'v73_zts',
         'v74_zts',
@@ -36,6 +37,7 @@ class TargetPhpVmProvider
         'v82_zts',
         'v83_zts',
         'v84_zts',
+        'v85_zts',
     ];
 
     private static function isZts(string $target): bool
@@ -101,6 +103,7 @@ class TargetPhpVmProvider
             ZendTypeReader::V82 => 'php:8.2' . $suffix,
             ZendTypeReader::V83 => 'php:8.3' . $suffix,
             ZendTypeReader::V84 => 'php:8.4' . $suffix,
+            ZendTypeReader::V85 => 'php:8.5' . $suffix,
             default => throw new \InvalidArgumentException("unsupported php version: $phpVersion"),
         };
     }
