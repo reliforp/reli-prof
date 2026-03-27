@@ -213,7 +213,7 @@ class Elf64ReverseSymbolResolverTest extends BaseTestCase
         $this->assertSame($original->resolve(0x1100), $restored->resolve(0x1100)); // beta +0x100
         $this->assertSame($original->resolve(0x2050), $restored->resolve(0x2050)); // gamma +0x50
         $this->assertSame($original->resolve(0x3000), $restored->resolve(0x3000)); // alpha exact
-        $this->assertSame($original->resolve(0x500),  $restored->resolve(0x500));  // before all → null
+        $this->assertSame($original->resolve(0x500), $restored->resolve(0x500));  // before all → null
         $this->assertSame($original->resolve(0x1200), $restored->resolve(0x1200)); // past beta → null
     }
 
