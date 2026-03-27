@@ -20,14 +20,19 @@ use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConso
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Log\Log;
+use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
+use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
+use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
-use Reli\Lib\Process\MemoryReader\RecordingMemoryReader;
+use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -95,48 +100,161 @@ final class MemoryDumpCommand extends Command
             $target_php_settings_version_decided
         );
 
-        if ($dump_settings->stop_process) {
-            $this->process_stopper->stop($process_specifier->pid);
-            defer($scope_guard, fn () => $this->process_stopper->resume($process_specifier->pid));
-        }
-
-        // Run the analysis pipeline with a recording memory reader.
-        // This captures exactly the memory regions the analysis actually reads,
-        // without needing to predict which addresses are needed.
-        $recording_reader = new RecordingMemoryReader($this->memory_reader);
-        $collector = new MemoryLocationsCollector(
-            $recording_reader,
-            $this->zend_type_reader_creator,
-            $this->chunk_finder,
+        $php_version = $target_php_settings_version_decided->php_version;
+        $zend_type_reader = $this->zend_type_reader_creator->create($php_version);
+        $dereferencer = new RemoteProcessDereferencer(
+            $this->memory_reader,
+            $process_specifier,
+            new ZendCastedTypeProvider($zend_type_reader),
+            new VersionedPointedTypeResolver($php_version),
         );
 
-        $collector->collectAll(
+        $pid = $process_specifier->pid;
+        $memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
+
+        // Locate ZendMM chunks (needs dereferencer, done before stopping)
+        $chunk_address = $this->chunk_finder->findAddress(
             $process_specifier,
             $target_php_settings_version_decided,
             $eg_address,
-            $cg_address,
+            $dereferencer,
         );
+        if ($chunk_address === null) {
+            throw new \RuntimeException('failed to find ZendMM main chunk');
+        }
+        $main_chunk_pointer = new Pointer(
+            ZendMmChunk::class,
+            $chunk_address,
+            $zend_type_reader->sizeOf('zend_mm_chunk'),
+        );
+        $main_chunk = $dereferencer->deref($main_chunk_pointer);
 
-        $regions = $recording_reader->getRecordedRegions();
+        // Enumerate all regions to read (addresses + sizes)
+        /** @var array<array{address: int, size: int}> $read_list */
+        $read_list = [];
+
+        // EG struct
+        $eg_size = $zend_type_reader->sizeOf('zend_executor_globals');
+        $read_list[] = ['address' => $eg_address, 'size' => $eg_size];
+
+        // CG struct
+        $cg_size = $zend_type_reader->sizeOf('zend_compiler_globals');
+        $read_list[] = ['address' => $cg_address, 'size' => $cg_size];
+
+        // ZendMM chunks
+        foreach ($main_chunk->iterateChunks($dereferencer) as $chunk) {
+            $read_list[] = [
+                'address' => $chunk->getPointer()->address,
+                'size' => ZendMmChunk::SIZE,
+            ];
+        }
+
+        // Huge allocations
+        foreach ($main_chunk->heap_slot->iterateHugeList($dereferencer) as $huge) {
+            $read_list[] = ['address' => $huge->ptr, 'size' => $huge->size];
+        }
+
+        // [heap] region
+        $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
+        foreach ($heap_areas as $area) {
+            $addr = (int)hexdec($area->begin);
+            $size = (int)hexdec($area->end) - $addr;
+            if ($size > 0) {
+                $read_list[] = ['address' => $addr, 'size' => $size];
+            }
+        }
+
+        // PHP binary's writable data/BSS segments
+        $php_rw_areas = $memory_map->findByNameRegex(
+            $target_php_settings_version_decided->php_regex,
+        );
+        foreach ($php_rw_areas as $area) {
+            if ($area->attribute->write && $area->attribute->read) {
+                $addr = (int)hexdec($area->begin);
+                $size = (int)hexdec($area->end) - $addr;
+                if ($size > 0) {
+                    $read_list[] = ['address' => $addr, 'size' => $size];
+                }
+            }
+        }
+
+        // VM stacks
+        $eg = $dereferencer->deref(new Pointer(
+            ZendExecutorGlobals::class,
+            $eg_address,
+            $eg_size,
+        ));
+        if ($eg->vm_stack !== null) {
+            $vm_stack = $dereferencer->deref($eg->vm_stack);
+            foreach ($vm_stack->iterateStackChain($dereferencer) as $stack) {
+                if ($stack->end !== null) {
+                    $addr = $stack->getPointer()->address;
+                    $size = $stack->end->address - $addr;
+                    if ($size > 0) {
+                        $read_list[] = ['address' => $addr, 'size' => $size];
+                    }
+                }
+            }
+        }
+
+        // Compiler arenas
+        $cg = $dereferencer->deref(new Pointer(
+            ZendCompilerGlobals::class,
+            $cg_address,
+            $cg_size,
+        ));
+        foreach (['arena', 'ast_arena'] as $arena_field) {
+            if ($cg->$arena_field !== null) {
+                $arena_root = $dereferencer->deref($cg->$arena_field);
+                foreach ($arena_root->iterateChain($dereferencer) as $arena) {
+                    $addr = $arena->getPointer()->address;
+                    $size = $arena->end - $addr;
+                    if ($size > 0) {
+                        $read_list[] = ['address' => $addr, 'size' => $size];
+                    }
+                }
+            }
+        }
+
+        // ---- Stop the process and bulk-read all regions ----
+        if ($dump_settings->stop_process) {
+            $this->process_stopper->stop($pid);
+            defer($scope_guard, fn () => $this->process_stopper->resume($pid));
+        }
+
+        /** @var array<array{address: int, size: int, data: string}> $regions */
+        $regions = [];
+        foreach ($read_list as $entry) {
+            try {
+                $data = $this->memory_reader->read($pid, $entry['address'], $entry['size']);
+                $regions[] = [
+                    'address' => $entry['address'],
+                    'size' => $entry['size'],
+                    'data' => \FFI::string($data, $entry['size']),
+                ];
+            } catch (\Throwable $e) {
+                Log::info(
+                    "skipping region at 0x" . dechex($entry['address'])
+                    . ": " . $e->getMessage()
+                );
+            }
+        }
+
+        // Process is resumed here (defer scope guard)
+        // ---- File writing happens after resume ----
 
         // Optionally include read-only binary segments
         if ($dump_settings->include_binary) {
-            $php_regex = $target_php_settings_version_decided->php_regex;
-            $memory_map = $this->process_memory_map_creator->getProcessMemoryMap(
-                $process_specifier->pid,
+            $php_ro_areas = $memory_map->findByNameRegex(
+                $target_php_settings_version_decided->php_regex,
             );
-            $php_ro_areas = $memory_map->findByNameRegex($php_regex);
             foreach ($php_ro_areas as $area) {
                 if (!$area->attribute->write && $area->attribute->read && $area->name !== '') {
                     $addr = (int)hexdec($area->begin);
                     $size = (int)hexdec($area->end) - $addr;
                     if ($size > 0) {
                         try {
-                            $data = $this->memory_reader->read(
-                                $process_specifier->pid,
-                                $addr,
-                                $size,
-                            );
+                            $data = $this->memory_reader->read($pid, $addr, $size);
                             $regions[] = [
                                 'address' => $addr,
                                 'size' => $size,
@@ -153,16 +271,12 @@ final class MemoryDumpCommand extends Command
             }
         }
 
-        $memory_map = $this->process_memory_map_creator->getProcessMemoryMap(
-            $process_specifier->pid,
-        );
         $all_areas = $memory_map->findByNameRegex('.*');
-
         $writer = new MemoryDumpWriter();
         $writer->write(
             $dump_settings->output_path,
-            $process_specifier->pid,
-            $target_php_settings_version_decided->php_version,
+            $pid,
+            $php_version,
             $eg_address,
             $cg_address,
             $all_areas,
