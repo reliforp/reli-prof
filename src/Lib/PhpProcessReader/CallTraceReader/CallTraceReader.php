@@ -144,12 +144,13 @@ final class CallTraceReader
      * Prefetch EG(current_execute_data) and the VM stack in a single
      * process_vm_readv scatter-gather call.
      *
-     * Step 1: Read EG(vm_stack) and EG(vm_stack_top) individually to
-     *         determine the VM stack range. These change infrequently
-     *         relative to the stack contents, so slight staleness is OK.
+     * Step 1: Read EG(vm_stack), EG(vm_stack_top), and EG(vm_stack_end)
+     *         to determine the VM stack range. We prefetch from vm_stack
+     *         to min(vm_stack_top + margin, vm_stack_end). The margin
+     *         covers frames that may be pushed between Step 1 and Step 2.
      * Step 2: Scatter-gather read in ONE syscall:
      *           iov[0] = EG(current_execute_data) — 8 bytes
-     *           iov[1] = VM stack used portion      — ~1-10 KB
+     *           iov[1] = VM stack with margin      — typically ~10-25 KB
      *         This ensures current_execute_data and the VM stack snapshot
      *         are from the same kernel entry, minimizing the consistency
      *         window to sub-microsecond kernel page-walk time.
@@ -169,7 +170,7 @@ final class CallTraceReader
 
         $zend_type_reader = $this->getTypeReader($php_version);
 
-        // Step 1: Read EG(vm_stack) and EG(vm_stack_top) to determine range
+        // Step 1: Read EG(vm_stack), EG(vm_stack_top), and EG(vm_stack_end)
         [$vm_stack_offset, $ptr_size] = $zend_type_reader->getOffsetAndSizeOfMember(
             'zend_executor_globals',
             'vm_stack'
@@ -197,7 +198,27 @@ final class CallTraceReader
             return null;
         }
 
-        $stack_size = $vm_stack_top_raw->value - $vm_stack_address;
+        [$vm_stack_end_offset,] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_executor_globals',
+            'vm_stack_end'
+        );
+        $vm_stack_end_raw = $dereferencer->deref(new Pointer(
+            RawInt64::class,
+            $eg_address + $vm_stack_end_offset,
+            $ptr_size,
+        ));
+        if ($vm_stack_end_raw->value === 0) {
+            return null;
+        }
+
+        // Prefetch up to vm_stack_top + 16KB margin, capped at vm_stack_end.
+        // The margin covers frames that may be pushed between Step 1 and Step 2.
+        $margin = 16384; // 16KB ≈ ~130 extra frames of headroom
+        $prefetch_end = min(
+            $vm_stack_top_raw->value + $margin,
+            $vm_stack_end_raw->value,
+        );
+        $stack_size = $prefetch_end - $vm_stack_address;
         if ($stack_size <= 0 || $stack_size > $this->memory_reader->getMaxPrefetchSize()) {
             return null;
         }

@@ -57,7 +57,7 @@ final class BufferedMemoryReader implements MemoryReaderInterface
 
     public function __construct(
         private MemoryReaderInterface $inner,
-        private int $max_prefetch_size = 65536,
+        private int $max_prefetch_size = 65536, // 64KB: typical VM stack usage + margin
     ) {
         $n = self::MAX_SCATTER_GATHER_REGIONS;
         $this->ffi = FFI::cdef('
