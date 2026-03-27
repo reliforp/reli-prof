@@ -709,7 +709,7 @@ See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.11.
 ## Binary analysis cache
 Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.
 
-Cache files are stored under `~/.cache/reli/binary-analysis/` (following the XDG Base Directory specification), keyed by binary fingerprint (device ID + inode + ELF header content). The cache is automatically invalidated when the target binary is updated (inode changes) or replaced in-place (ELF header differs). NTS and ZTS builds of the same PHP version are cached independently because their ELF headers differ.
+Cache files are stored under `~/.cache/reli/binary-analysis/` (following the XDG Base Directory specification), keyed by binary fingerprint (device ID + inode + ELF header content). In container environments, Docker's overlayfs can assign the same device ID and inode to different binaries across different images (e.g. `php:8.3` and `php:8.3-zts`), so the ELF header content is included to ensure different binaries always produce different cache keys.
 
 ### Clear the cache
 ```bash

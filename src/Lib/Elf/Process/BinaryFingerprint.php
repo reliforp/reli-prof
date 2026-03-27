@@ -40,9 +40,12 @@ final class BinaryFingerprint
     /**
      * Create a fingerprint that includes actual ELF header content from the binary.
      *
-     * This is more reliable than filesystem metadata alone because it detects
-     * differences between NTS/ZTS builds, in-place binary replacements, and
-     * overlayfs inode reuse across container restarts.
+     * Filesystem metadata (device_id + inode) alone is not sufficient for reliable
+     * cache keying in container environments: Docker's overlayfs can assign the same
+     * device_id and inode to different binaries across different images (e.g. php:8.3
+     * and php:8.3-zts). Including the ELF header content ensures that different
+     * binaries always produce different fingerprints, even when their filesystem
+     * metadata happens to collide.
      *
      * @param string $elf_header_bytes Raw bytes from the ELF header (typically first 64 bytes)
      */
