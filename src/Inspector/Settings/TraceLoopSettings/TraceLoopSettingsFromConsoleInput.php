@@ -80,6 +80,7 @@ final class TraceLoopSettingsFromConsoleInput
             );
         }
 
+        /** @var string|bool|int|float|list<string>|null $stop_process_raw */
         $stop_process_raw = $input->getOption('stop-process');
         if ($stop_process_raw === null) {
             // -S was not passed at all, or passed without a value (VALUE_OPTIONAL).
