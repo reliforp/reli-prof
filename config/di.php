@@ -25,6 +25,7 @@ use Reli\Lib\Amphp\ContextCreator;
 use Reli\Lib\Amphp\ContextCreatorInterface;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreatorInterface;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
@@ -92,6 +93,7 @@ return [
         $logger->pushHandler($handler);
         return $logger;
     },
+    BinaryFingerprintCreator::class => autowire(),
     BinaryAnalysisCache::class => fn () => new BinaryAnalysisCache(
         AppDirectory::getCacheDir() . '/binary-analysis'
     ),

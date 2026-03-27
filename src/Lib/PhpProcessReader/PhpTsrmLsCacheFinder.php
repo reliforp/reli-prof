@@ -20,6 +20,7 @@ use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\BinaryFingerprint;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
@@ -47,6 +48,7 @@ final class PhpTsrmLsCacheFinder
         private ContainerAwarePathResolver $process_path_resolver,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private BinaryAnalysisCache $binary_analysis_cache,
+        private BinaryFingerprintCreator $binary_fingerprint_creator,
     ) {
     }
 
@@ -102,7 +104,10 @@ final class PhpTsrmLsCacheFinder
             return null;
         }
         [$tls_block_address, $tls_block_size, $php_module_memory_map] = $tls_block;
-        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($php_module_memory_map);
+        $fingerprint = $this->binary_fingerprint_creator->createFromProcessModuleMemoryMap(
+            $process_specifier->pid,
+            $php_module_memory_map,
+        );
 
         $cached = $this->binary_analysis_cache->get($fingerprint, 'tls_offset');
         if ($cached !== null && isset($cached['offset']) && is_int($cached['offset'])) {

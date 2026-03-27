@@ -37,6 +37,32 @@ final class BinaryFingerprint
         );
     }
 
+    /**
+     * Create a fingerprint that includes actual ELF header content from the binary.
+     *
+     * This is more reliable than filesystem metadata alone because it detects
+     * differences between NTS/ZTS builds, in-place binary replacements, and
+     * overlayfs inode reuse across container restarts.
+     *
+     * @param string $elf_header_bytes Raw bytes from the ELF header (typically first 64 bytes)
+     */
+    public static function fromProcessModuleMemoryMapAndElfHeader(
+        ProcessModuleMemoryMap $process_module_memory_map,
+        string $elf_header_bytes,
+    ): self {
+        return new self(
+            join(
+                '_',
+                [
+                    $process_module_memory_map->getDeviceId(),
+                    $process_module_memory_map->getInodeNumber(),
+                    $process_module_memory_map->getModuleName(),
+                    bin2hex($elf_header_bytes),
+                ]
+            )
+        );
+    }
+
     public function getCacheKey(): string
     {
         return hash('sha256', $this->fingerprint);

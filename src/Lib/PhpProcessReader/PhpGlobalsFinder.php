@@ -19,6 +19,7 @@ use Reli\Lib\ByteStream\CDataByteReader;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\BinaryFingerprint;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReader;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
@@ -48,6 +49,7 @@ class PhpGlobalsFinder
         private TsrmGlobalsResolver $tsrm_globals_resolver,
         private BinaryAnalysisCache $binary_analysis_cache,
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
+        private BinaryFingerprintCreator $binary_fingerprint_creator,
     ) {
     }
 
@@ -219,7 +221,7 @@ class PhpGlobalsFinder
             $process_specifier,
             $target_php_settings->zts_globals_regex,
         );
-        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+        $fingerprint = $this->createFingerprint($process_specifier, $module_map);
         $cached = $this->binary_analysis_cache->get($fingerprint, 'nts_globals');
         if ($cached !== null && isset($cached['module_registry']) && is_int($cached['module_registry'])) {
             return $module_map->getBaseAddress() + $cached['module_registry'];
@@ -248,7 +250,7 @@ class PhpGlobalsFinder
         string $symbol_name,
     ): int {
         $module_map = $this->getPhpModuleMemoryMap($process_specifier, $target_php_settings->php_regex);
-        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+        $fingerprint = $this->createFingerprint($process_specifier, $module_map);
 
         // Check ZTS (TSRM) path first: if the binary is known to have TSRM LS cache,
         // or if we can detect it now, use the ZTS resolution path.
@@ -287,7 +289,17 @@ class PhpGlobalsFinder
         string $regex,
     ): BinaryFingerprint {
         $module_map = $this->getPhpModuleMemoryMap($process_specifier, $regex);
-        return BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+        return $this->createFingerprint($process_specifier, $module_map);
+    }
+
+    private function createFingerprint(
+        ProcessSpecifier $process_specifier,
+        ProcessModuleMemoryMap $module_map,
+    ): BinaryFingerprint {
+        return $this->binary_fingerprint_creator->createFromProcessModuleMemoryMap(
+            $process_specifier->pid,
+            $module_map,
+        );
     }
 
     private function getPhpModuleMemoryMap(

@@ -18,6 +18,7 @@ use Reli\Lib\ByteStream\CDataByteReader;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\BinaryFingerprint;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
@@ -34,6 +35,7 @@ final class TsrmGlobalsResolver
         private MemoryReaderInterface $memory_reader,
         private BinaryAnalysisCache $binary_analysis_cache,
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
+        private BinaryFingerprintCreator $binary_fingerprint_creator,
     ) {
     }
 
@@ -198,6 +200,9 @@ final class TsrmGlobalsResolver
         );
         $php_areas = $process_memory_map->findByNameRegex($target_php_settings->zts_globals_regex);
         $module_map = new ProcessModuleMemoryMap($php_areas);
-        return BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+        return $this->binary_fingerprint_creator->createFromProcessModuleMemoryMap(
+            $process_specifier->pid,
+            $module_map,
+        );
     }
 }
