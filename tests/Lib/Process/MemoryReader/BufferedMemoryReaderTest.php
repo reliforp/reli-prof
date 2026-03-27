@@ -172,6 +172,78 @@ class BufferedMemoryReaderTest extends TestCase
         $buffered->setMaxPrefetchSize(200);
         $this->assertSame(200, $buffered->getMaxPrefetchSize());
     }
+
+    #[Test]
+    public function testScatterGatherReadsOwnProcessMemory(): void
+    {
+        $mock = $this->createMockReader();
+        $buffered = new BufferedMemoryReader($mock);
+
+        $pid = getmypid();
+
+        // Allocate two separate C buffers to scatter-gather read
+        $ffi = FFI::cdef('');
+        $region1 = $ffi->new('unsigned char[8]');
+        $region2 = $ffi->new('unsigned char[8]');
+        assert($region1 !== null && $region2 !== null);
+        FFI::memcpy($region1, 'AAAABBBB', 8);
+        FFI::memcpy($region2, 'CCCCDDDD', 8);
+
+        $addr1 = FFI::cast('long', FFI::addr($region1))->cdata;
+        $addr2 = FFI::cast('long', FFI::addr($region2))->cdata;
+
+        // Scatter-gather: read both regions in one syscall
+        $buffered->prefetchScatterGather($pid, [
+            ['address' => $addr1, 'size' => 8],
+            ['address' => $addr2, 'size' => 8],
+        ]);
+
+        // Read from region 1 buffer
+        $result = $buffered->read($pid, $addr1, 4);
+        $this->assertSame('AAAA', FFI::string($result, 4));
+
+        // Read from region 1 buffer (offset)
+        $result = $buffered->read($pid, $addr1 + 4, 4);
+        $this->assertSame('BBBB', FFI::string($result, 4));
+
+        // Read from region 2 buffer
+        $result = $buffered->read($pid, $addr2, 8);
+        $this->assertSame('CCCCDDDD', FFI::string($result, 8));
+
+        // Inner reader should not have been called
+        $this->assertSame(0, $mock->readCount);
+    }
+
+    #[Test]
+    public function testScatterGatherClearsOldBuffers(): void
+    {
+        $mock = $this->createMockReader();
+        $mock->preload(0x9000, 'OLD_DATA');
+
+        $buffered = new BufferedMemoryReader($mock);
+        $buffered->prefetch(1, 0x9000, 8);
+        $mock->readCount = 0;
+
+        // Scatter-gather should clear old buffers
+        $pid = getmypid();
+        $ffi = FFI::cdef('');
+        $region = $ffi->new('unsigned char[4]');
+        assert($region !== null);
+        FFI::memcpy($region, 'NEW!', 4);
+        $addr = FFI::cast('long', FFI::addr($region))->cdata;
+
+        $buffered->prefetchScatterGather($pid, [
+            ['address' => $addr, 'size' => 4],
+        ]);
+
+        // Old buffer should be gone - falls through to inner
+        $result = $buffered->read(1, 0x9000, 8);
+        $this->assertSame(1, $mock->readCount);
+
+        // New scatter-gather buffer should work
+        $result = $buffered->read($pid, $addr, 4);
+        $this->assertSame('NEW!', FFI::string($result, 4));
+    }
 }
 
 /**

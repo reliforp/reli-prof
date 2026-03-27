@@ -141,62 +141,92 @@ final class CallTraceReader
     }
 
     /**
-     * Prefetch the used portion of the VM stack into the BufferedMemoryReader's
-     * local buffer. Reads EG(vm_stack) and EG(vm_stack_top) individually to
-     * determine the range, then issues a single bulk process_vm_readv.
+     * Prefetch EG(current_execute_data) and the VM stack in a single
+     * process_vm_readv scatter-gather call.
      *
-     * current_execute_data is intentionally read AFTER the prefetch (in
-     * getCurrentExecuteDataPointer) so that it is as close in time as possible
-     * to the VM stack snapshot contents.
+     * Step 1: Read EG(vm_stack) and EG(vm_stack_top) individually to
+     *         determine the VM stack range. These change infrequently
+     *         relative to the stack contents, so slight staleness is OK.
+     * Step 2: Scatter-gather read in ONE syscall:
+     *           iov[0] = EG(current_execute_data) — 8 bytes
+     *           iov[1] = VM stack used portion      — ~1-10 KB
+     *         This ensures current_execute_data and the VM stack snapshot
+     *         are from the same kernel entry, minimizing the consistency
+     *         window to sub-microsecond kernel page-walk time.
      *
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @return Pointer<ZendExecuteData>|null current_execute_data from the scatter-gather snapshot
      */
-    private function prefetchVmStack(
+    private function prefetchVmStackScatterGather(
         int $pid,
         string $php_version,
         int $eg_address,
         Dereferencer $dereferencer,
-    ): void {
+    ): ?Pointer {
         assert($this->memory_reader instanceof BufferedMemoryReader);
 
         $this->memory_reader->clearBuffer();
 
         $zend_type_reader = $this->getTypeReader($php_version);
 
-        // Read EG(vm_stack) pointer to get the current stack segment address
-        [$offset, $size] = $zend_type_reader->getOffsetAndSizeOfMember(
+        // Step 1: Read EG(vm_stack) and EG(vm_stack_top) to determine range
+        [$vm_stack_offset, $ptr_size] = $zend_type_reader->getOffsetAndSizeOfMember(
             'zend_executor_globals',
             'vm_stack'
         );
         $vm_stack_raw = $dereferencer->deref(new Pointer(
             RawInt64::class,
-            $eg_address + $offset,
-            $size,
+            $eg_address + $vm_stack_offset,
+            $ptr_size,
         ));
         if ($vm_stack_raw->value === 0) {
-            return;
+            return null;
         }
         $vm_stack_address = $vm_stack_raw->value;
 
-        // Read EG(vm_stack_top) pointer to know the end of the used area
-        [$offset, $size] = $zend_type_reader->getOffsetAndSizeOfMember(
+        [$vm_stack_top_offset,] = $zend_type_reader->getOffsetAndSizeOfMember(
             'zend_executor_globals',
             'vm_stack_top'
         );
         $vm_stack_top_raw = $dereferencer->deref(new Pointer(
             RawInt64::class,
-            $eg_address + $offset,
-            $size,
+            $eg_address + $vm_stack_top_offset,
+            $ptr_size,
         ));
         if ($vm_stack_top_raw->value === 0) {
-            return;
+            return null;
         }
 
-        // Prefetch from the stack segment header to the current top (used area)
-        $prefetch_size = $vm_stack_top_raw->value - $vm_stack_address;
-        if ($prefetch_size > 0 && $prefetch_size <= $this->memory_reader->getMaxPrefetchSize()) {
-            $this->memory_reader->prefetch($pid, $vm_stack_address, $prefetch_size);
+        $stack_size = $vm_stack_top_raw->value - $vm_stack_address;
+        if ($stack_size <= 0 || $stack_size > $this->memory_reader->getMaxPrefetchSize()) {
+            return null;
         }
+
+        // Step 2: Scatter-gather read current_execute_data + VM stack in one syscall
+        [$ced_offset,] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_executor_globals',
+            'current_execute_data'
+        );
+
+        $this->memory_reader->prefetchScatterGather($pid, [
+            ['address' => $eg_address + $ced_offset, 'size' => $ptr_size],
+            ['address' => $vm_stack_address, 'size' => $stack_size],
+        ]);
+
+        // Read current_execute_data from the scatter-gather buffer
+        $ced_cdata = $this->memory_reader->read($pid, $eg_address + $ced_offset, $ptr_size);
+        /** @var \FFI\CInteger $cast */
+        $cast = \FFI::cast('long', $ced_cdata);
+        $ced_address = $cast->cdata;
+        if ($ced_address === 0) {
+            return null;
+        }
+
+        return new Pointer(
+            ZendExecuteData::class,
+            $ced_address,
+            $zend_type_reader->sizeOf('zend_execute_data'),
+        );
     }
 
     /**
@@ -213,15 +243,20 @@ final class CallTraceReader
     ): ?CallTrace {
         $dereferencer = $this->getDereferencer($pid, $php_version);
 
+        $current_execute_data_pointer = null;
         if ($this->bulk_stack_copy_enabled && $this->memory_reader instanceof BufferedMemoryReader) {
-            $this->prefetchVmStack($pid, $php_version, $executor_globals_address, $dereferencer);
+            $current_execute_data_pointer = $this->prefetchVmStackScatterGather(
+                $pid, $php_version, $executor_globals_address, $dereferencer,
+            );
         }
 
-        $current_execute_data_pointer = $this->getCurrentExecuteDataPointer(
-            $executor_globals_address,
-            $php_version,
-            $dereferencer,
-        );
+        if ($current_execute_data_pointer === null) {
+            $current_execute_data_pointer = $this->getCurrentExecuteDataPointer(
+                $executor_globals_address,
+                $php_version,
+                $dereferencer,
+            );
+        }
         if (is_null($current_execute_data_pointer)) {
             return null;
         }
