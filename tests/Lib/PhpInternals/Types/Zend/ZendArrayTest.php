@@ -22,6 +22,7 @@ use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\File\CatFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
@@ -107,12 +108,14 @@ class ZendArrayTest extends BaseTestCase
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
         $process_memory_map_creator = ProcessMemoryMapCreator::create();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -125,6 +128,7 @@ class ZendArrayTest extends BaseTestCase
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
             $binary_analysis_cache,
+            $binary_fingerprint_creator,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -134,6 +138,7 @@ class ZendArrayTest extends BaseTestCase
             $tsrm_globals_resolver,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
 
         /** @var int $child_status['pid'] */
