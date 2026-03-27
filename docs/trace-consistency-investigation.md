@@ -277,3 +277,107 @@ it, while the default behavior remains unchanged.
   the Pointer/FieldReader layer is also optimized
 - **Sampling bias**: if `-S` becomes unnecessary, the SIGSTOP delivery bias
   is avoided entirely, producing accurate native trace distributions
+
+## Implementation Results
+
+The `--bulk-stack-copy` option has been implemented with scatter-gather readv,
+along with several hot-path optimizations. Below are the measured results.
+
+### Architecture
+
+```
+Step 1: Read EG(vm_stack), EG(vm_stack_top), EG(vm_stack_end) individually
+        → determine prefetch range (vm_stack to vm_stack_top + 16KB margin)
+Step 2: Scatter-gather process_vm_readv in ONE syscall:
+          iov[0] = EG(current_execute_data)   — 8 bytes
+          iov[1] = VM stack with margin        — ~10-25 KB
+Step 3: Walk execute_data chain from local buffer (readRawInt64 + unpack)
+Step 4: Resolve function names from TraceCache (heap reads cached across traces)
+```
+
+Key components:
+- `BufferedMemoryReader`: decorator with scatter-gather readv and two fixed
+  buffer slots. `readRawInt64()` bypasses FFI entirely using `unpack('P', ...)`
+- `CallTraceReader`: pre-computed field offsets, direct buffer reads for chain
+  walk and frame field access (func, opline), func=NULL frame skip, partial
+  trace on read failure instead of full retry
+
+### Finding 5: func=NULL Frames at Stack Top
+
+Debug analysis revealed that the `<unknown>` frames (previously ~30% in
+reli-on-reli without `-S`) are caused by **partially-initialized execute_data
+frames** on the VM stack, not by heap read failures.
+
+```
+func=NULL: ced=0x7f2a686188c0 in_buf=Y func=0x0 prev=0x7f2a64201690
+```
+
+The VM stack snapshot captures a frame mid-push where `func` has not yet been
+written. The `prev_execute_data` pointer is always valid. Skipping the
+func=NULL frame and using `prev_execute_data` as the effective stack top
+eliminates `<unknown>` entirely — the prev frame is the function that was
+actually executing when the call was initiated.
+
+### Reli-on-Reli Benchmark (inner reli profiling FFI target)
+
+```
+Actual CPU ratio: user=81%, sys=18%
+
+                       user/tr  sys/tr  total/tr  traces/s
+reli normal (before)    0.83ms   5.92ms   6.75ms       147
+reli --bulk-stack-copy  0.12ms   0.23ms   0.35ms     2,841
+reli -S                 0.22ms   0.04ms   0.26ms     3,415
+reli --bulk + -S        0.09ms   0.02ms   0.12ms     7,946
+phpspy (no -S)          0.01ms   0.08ms   0.09ms     6,053
+phpspy -S               0.01ms   0.09ms   0.12ms     5,258
+```
+
+### Optimization Progression (reli --bulk + -S, reli-on-reli)
+
+```
+                            user/tr  total/tr  traces/s  vs phpspy-S
+bulk-stack-copy only         0.15ms    0.18ms    4,960      -6%
++ unpack fast path           0.12ms    0.14ms    5,940     +12%
++ fast chain walk            0.11ms    0.13ms    6,367     +21%
++ inline field reads         0.09ms    0.12ms    7,013     +33%
+```
+
+### Per-Trace CPU Comparison
+
+```
+              user     sys      total    traces/s   strategy
+reli bulk+-S   0.09    0.02     0.12      7,946     scatter-gather + TraceCache
+phpspy -S      0.01    0.10     0.12      5,258     per-field readv (C native)
+```
+
+reli and phpspy arrive at the same total cost (0.12ms/trace) via opposite
+strategies: reli's user cost is higher (PHP overhead) but sys cost is 5x
+lower (one scatter-gather readv + TraceCache eliminates most syscalls).
+phpspy's C-native user cost is negligible but it issues more readv calls
+per trace.
+
+### Why `-S` + bulk Outperforms phpspy
+
+1. **Scatter-gather readv**: one syscall reads `current_execute_data` + the
+   entire VM stack, vs phpspy's ~5 individual readv calls per trace
+2. **TraceCache**: `zend_function` / `zend_string` are immutable during a
+   request. After the first trace, heap reads drop to near zero. phpspy
+   re-reads function names every trace
+3. **Fewer kernel entries**: ~5,000 syscalls/s for reli vs ~20,000 for phpspy,
+   reducing kernel-side overhead (page table walks, context switches)
+
+### Remaining Limitations
+
+- **Without `-S`**: reli 2,841/s vs phpspy 6,053/s. PHP-side processing
+  takes long enough that the target's state changes between reads, causing
+  partial traces and wasted work. C-native phpspy completes reads before
+  the target moves
+- **CPU saturation**: without `-S`, three processes (target + inner reli +
+  outer reli) compete for CPU. With `-S`, the target is paused, leaving
+  more CPU for the profiler
+- **JIT**: PHP 8.4 tracing JIT provides only ~6% improvement. The remaining
+  PHP overhead (method dispatch, object creation, array operations) is not
+  amenable to JIT optimization
+- **Further optimization**: would require either a C extension for the core
+  readCallTrace loop, or a C extension wrapping the FFI syscall layer
+  (process_vm_readv, ptrace) to eliminate per-call FFI overhead
