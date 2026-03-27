@@ -80,15 +80,22 @@ final class TraceLoopSettingsFromConsoleInput
             );
         }
 
-        $stop_process = NullableCast::toString($input->getOption('stop-process'));
-        if (is_null($stop_process)) {
-            $stop_process = false;
-        }
-        $stop_process = filter_var($stop_process, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-        if ($stop_process === null) {
-            throw TraceLoopSettingsException::create(
-                TraceLoopSettingsException::STOP_PROCESS_IS_NOT_BOOLEAN
+        $stop_process_raw = $input->getOption('stop-process');
+        if ($stop_process_raw === null) {
+            // -S was not passed at all, or passed without a value (VALUE_OPTIONAL).
+            // Distinguish via hasParameterOption: if the flag is present, treat as true.
+            $stop_process = $input->hasParameterOption(['-S', '--stop-process']);
+        } else {
+            $stop_process = filter_var(
+                NullableCast::toString($stop_process_raw),
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
             );
+            if ($stop_process === null) {
+                throw TraceLoopSettingsException::create(
+                    TraceLoopSettingsException::STOP_PROCESS_IS_NOT_BOOLEAN
+                );
+            }
         }
 
         return new TraceLoopSettings(
