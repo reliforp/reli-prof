@@ -287,6 +287,13 @@ final class CallTraceReader
 
         $current_execute_data = $dereferencer->deref($current_execute_data_pointer);
 
+        // If the top frame has func=NULL, it is being initialized (the call
+        // hasn't started executing yet). Skip it and use prev_execute_data
+        // as the effective top — that is the frame that was actually running.
+        if (is_null($current_execute_data->func) && !is_null($current_execute_data->prev_execute_data)) {
+            $current_execute_data = $dereferencer->deref($current_execute_data->prev_execute_data);
+        }
+
         $stack = [];
         $stack[] = $current_execute_data;
         for ($i = 0; $i < $depth; $i++) {
