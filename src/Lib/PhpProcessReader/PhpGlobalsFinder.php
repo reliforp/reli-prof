@@ -33,6 +33,12 @@ use RuntimeException;
 /** @psalm-suppress ClassMustBeFinal */
 class PhpGlobalsFinder
 {
+    /** @var array<int, ProcessSymbolReaderInterface> */
+    private array $symbol_reader_cache = [];
+
+    /** @var array<int, int|null> */
+    private array $tsrm_ls_cache_cache = [];
+
     public function __construct(
         private PhpSymbolReaderCreator $php_symbol_reader_creator,
         private IntegerByteSequenceReader $integer_reader,
@@ -54,10 +60,15 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ?int {
+        if (array_key_exists($process_specifier->pid, $this->tsrm_ls_cache_cache)) {
+            return $this->tsrm_ls_cache_cache[$process_specifier->pid];
+        }
+
         $fingerprint = $this->getPhpFingerprint($process_specifier, $target_php_settings->php_regex);
         $cached = $this->binary_analysis_cache->get($fingerprint, 'tsrm_ls_cache');
         if ($cached !== null && isset($cached['has_tsrm_ls_cache'])) {
             if ($cached['has_tsrm_ls_cache'] === false) {
+                $this->tsrm_ls_cache_cache[$process_specifier->pid] = null;
                 return null;
             }
         }
@@ -73,8 +84,10 @@ class PhpGlobalsFinder
                 0
             )->toInt();
             if ($tsrm_ls_cache_address === 0) {
+                $this->tsrm_ls_cache_cache[$process_specifier->pid] = null;
                 return null;
             }
+            $this->tsrm_ls_cache_cache[$process_specifier->pid] = $tsrm_ls_cache_address;
             return $tsrm_ls_cache_address;
         }
         assert($target_php_settings->isDecided());
@@ -88,6 +101,7 @@ class PhpGlobalsFinder
                 'has_tsrm_ls_cache' => true,
             ]);
         }
+        $this->tsrm_ls_cache_cache[$process_specifier->pid] = $result;
         return $result;
     }
 
@@ -100,13 +114,16 @@ class PhpGlobalsFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): ProcessSymbolReaderInterface {
-        return $this->php_symbol_reader_creator->create(
-            $process_specifier->pid,
-            $target_php_settings->php_regex,
-            $target_php_settings->libpthread_regex,
-            $target_php_settings->php_path,
-            $target_php_settings->libpthread_path
-        );
+        if (!isset($this->symbol_reader_cache[$process_specifier->pid])) {
+            $this->symbol_reader_cache[$process_specifier->pid] = $this->php_symbol_reader_creator->create(
+                $process_specifier->pid,
+                $target_php_settings->php_regex,
+                $target_php_settings->libpthread_regex,
+                $target_php_settings->php_path,
+                $target_php_settings->libpthread_path
+            );
+        }
+        return $this->symbol_reader_cache[$process_specifier->pid];
     }
 
     /**
