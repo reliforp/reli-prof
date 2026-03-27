@@ -107,11 +107,12 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
         $sapi_globals_address = null;
         $last_error = '';
 
+        $binary_analysis_cache = new BinaryAnalysisCache(
+            sys_get_temp_dir() . '/reli-test-' . uniqid()
+        );
+
         foreach ($tids as $tid) {
             try {
-                $binary_analysis_cache = new BinaryAnalysisCache(
-                    sys_get_temp_dir() . '/reli-test-' . uniqid()
-                );
                 $process_memory_map_creator = ProcessMemoryMapCreator::create();
                 $php_symbol_reader_creator = new PhpSymbolReaderCreator(
                     new ProcessModuleSymbolReaderCreator(
