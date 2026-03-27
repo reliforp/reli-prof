@@ -18,10 +18,12 @@ use Reli\Lib\Directory\AppDirectory;
 final class BinaryAnalysisCache
 {
     private bool $enabled = true;
+    private bool $useIgbinary;
 
     public function __construct(
         private string $baseDirectory,
     ) {
+        $this->useIgbinary = extension_loaded('igbinary');
     }
 
     public function disable(): void
@@ -43,7 +45,56 @@ final class BinaryAnalysisCache
         if (!$this->enabled) {
             return null;
         }
-        $path = $this->getPath($fingerprint, $namespace);
+
+        // Try igbinary first, then JSON fallback
+        if ($this->useIgbinary) {
+            $data = $this->loadIgbinary($fingerprint, $namespace);
+            if ($data !== null) {
+                return $data;
+            }
+        }
+        return $this->loadJson($fingerprint, $namespace);
+    }
+
+    /** @param array<array-key, mixed> $data */
+    public function set(BinaryFingerprint $fingerprint, string $namespace, array $data): void
+    {
+        if (!$this->enabled) {
+            return;
+        }
+        if ($this->useIgbinary) {
+            $this->saveIgbinary($fingerprint, $namespace, $data);
+        } else {
+            $this->saveJson($fingerprint, $namespace, $data);
+        }
+    }
+
+    /** @return array<array-key, mixed>|null */
+    private function loadIgbinary(BinaryFingerprint $fingerprint, string $namespace): ?array
+    {
+        $path = $this->getBasePath($fingerprint, $namespace) . '.igbinary';
+        if (!is_file($path)) {
+            return null;
+        }
+        $content = @file_get_contents($path);
+        if ($content === false) {
+            return null;
+        }
+        try {
+            $data = igbinary_unserialize($content);
+        } catch (\Throwable) {
+            return null;
+        }
+        if (!is_array($data)) {
+            return null;
+        }
+        return $data;
+    }
+
+    /** @return array<array-key, mixed>|null */
+    private function loadJson(BinaryFingerprint $fingerprint, string $namespace): ?array
+    {
+        $path = $this->getBasePath($fingerprint, $namespace) . '.json';
         if (!is_file($path)) {
             return null;
         }
@@ -63,33 +114,45 @@ final class BinaryAnalysisCache
     }
 
     /** @param array<array-key, mixed> $data */
-    public function set(BinaryFingerprint $fingerprint, string $namespace, array $data): void
+    private function saveIgbinary(BinaryFingerprint $fingerprint, string $namespace, array $data): void
     {
-        if (!$this->enabled) {
+        $path = $this->getBasePath($fingerprint, $namespace) . '.igbinary';
+        $serialized = igbinary_serialize($data);
+        if ($serialized === false) {
             return;
         }
-        $path = $this->getPath($fingerprint, $namespace);
-        $dir = dirname($path);
-        AppDirectory::ensureDirectoryExists($dir);
+        $this->writeFile($path, $serialized);
+    }
 
-        $pid = getmypid();
-        $tmpPath = $path . '.tmp.' . ($pid !== false ? $pid : mt_rand());
+    /** @param array<array-key, mixed> $data */
+    private function saveJson(BinaryFingerprint $fingerprint, string $namespace, array $data): void
+    {
+        $path = $this->getBasePath($fingerprint, $namespace) . '.json';
         try {
-            $json = json_encode($data, JSON_THROW_ON_ERROR);
+            $encoded = json_encode($data, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
             return;
         }
-        if (@file_put_contents($tmpPath, $json) === false) {
+        $this->writeFile($path, $encoded);
+    }
+
+    private function writeFile(string $path, string $content): void
+    {
+        $dir = dirname($path);
+        AppDirectory::ensureDirectoryExists($dir);
+        $pid = getmypid();
+        $tmpPath = $path . '.tmp.' . ($pid !== false ? $pid : mt_rand());
+        if (@file_put_contents($tmpPath, $content) === false) {
             return;
         }
         @rename($tmpPath, $path);
     }
 
-    private function getPath(BinaryFingerprint $fingerprint, string $namespace): string
+    private function getBasePath(BinaryFingerprint $fingerprint, string $namespace): string
     {
         return $this->baseDirectory
             . '/' . $fingerprint->getCacheKey()
-            . '/' . $namespace . '.json';
+            . '/' . $namespace;
     }
 
     private function removeDirectoryContents(string $dir): int

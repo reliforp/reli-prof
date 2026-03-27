@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 use Reli\BaseTestCase;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -115,5 +116,39 @@ class NativeSymbolResolverTest extends BaseTestCase
             $resolver->resolve($addr);
         }
         $this->assertTrue(true); // no crash
+    }
+
+    public function testDiskCacheRoundtrip(): void
+    {
+        $maps_raw = file_get_contents('/proc/self/maps');
+        $parser = new \Reli\Lib\Process\MemoryMap\ProcessMemoryMapParser(
+            new \Reli\Lib\String\LineFetcher()
+        );
+        $map = $parser->parse($maps_raw);
+
+        $cache_dir = sys_get_temp_dir() . '/reli-test-natsym-' . uniqid();
+
+        try {
+            // Cold: resolve from binary, write to cache
+            $cache1 = new BinaryAnalysisCache($cache_dir);
+            $resolver1 = new NativeSymbolResolver($map, binaryAnalysisCache: $cache1);
+
+            $areas = $map->findByNameRegex('php');
+            if ($areas === []) {
+                $this->markTestSkipped('No php binary in memory map');
+            }
+            $addr = hexdec($areas[0]->begin) + 0x100;
+            $result1 = $resolver1->resolve($addr);
+
+            // Warm: new resolver, should load from disk cache
+            $cache2 = new BinaryAnalysisCache($cache_dir);
+            $resolver2 = new NativeSymbolResolver($map, binaryAnalysisCache: $cache2);
+            $result2 = $resolver2->resolve($addr);
+
+            // Same result
+            $this->assertSame($result1, $result2);
+        } finally {
+            exec('rm -rf ' . escapeshellarg($cache_dir));
+        }
     }
 }
