@@ -142,8 +142,12 @@ final class CallTraceReader
 
     /**
      * Prefetch the used portion of the VM stack into the BufferedMemoryReader's
-     * local buffer. This reads EG(vm_stack) and EG(vm_stack_top) to determine
-     * the range, then issues a single bulk process_vm_readv.
+     * local buffer. Reads EG(vm_stack) and EG(vm_stack_top) individually to
+     * determine the range, then issues a single bulk process_vm_readv.
+     *
+     * current_execute_data is intentionally read AFTER the prefetch (in
+     * getCurrentExecuteDataPointer) so that it is as close in time as possible
+     * to the VM stack snapshot contents.
      *
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      */

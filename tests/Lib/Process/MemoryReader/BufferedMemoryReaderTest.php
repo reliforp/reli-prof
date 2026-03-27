@@ -146,6 +146,7 @@ class BufferedMemoryReaderTest extends TestCase
         $this->assertSame(1, $mock->readCount);
     }
 
+
     #[Test]
     public function testPrefetchRejectsOversizedRegion(): void
     {
