@@ -34,6 +34,7 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
         private IntegerByteSequenceReader $integer_reader,
         private LinkMapLoader $link_map_loader,
         private ProcessPathResolver $process_path_resolver,
+        private BinaryAnalysisCache $binary_analysis_cache,
     ) {
     }
 
@@ -55,6 +56,7 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
         $module_name = $module_memory_map->getModuleName();
         $path = $binary_path ?? $this->process_path_resolver->resolve($pid, $module_name);
 
+        $binary_fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_memory_map);
         $symbol_resolver = new Elf64CachedSymbolResolver(
             new Elf64LazyParseSymbolResolver(
                 $path,
@@ -63,19 +65,29 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                 $module_memory_map,
                 $this->symbol_resolver_creator,
             ),
-            $this->per_binary_symbol_cache_retriever->get(
-                BinaryFingerprint::fromProcessModuleMemoryMap($module_memory_map)
-            ),
+            $this->per_binary_symbol_cache_retriever->get($binary_fingerprint),
+            $this->binary_analysis_cache,
+            $binary_fingerprint,
         );
 
         $tls_block_address = null;
         if (!is_null($libpthread_symbol_reader) and !is_null($root_link_map_address)) {
             try {
+                $libpthread_memory_areas = $process_memory_map->findByNameRegex('/libpthread/');
+                $libpthread_fingerprint = null;
+                if ($libpthread_memory_areas !== []) {
+                    $libpthread_module_map = new ProcessModuleMemoryMap($libpthread_memory_areas);
+                    $libpthread_fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap(
+                        $libpthread_module_map
+                    );
+                }
                 $tls_finder = new LibThreadDbTlsFinder(
                     $libpthread_symbol_reader,
                     X64LinuxThreadPointerRetriever::createDefault(),
                     $this->memory_reader,
-                    $this->integer_reader
+                    $this->integer_reader,
+                    $this->binary_analysis_cache,
+                    $libpthread_fingerprint,
                 );
                 $link_map = $this->link_map_loader->searchByName(
                     $module_name,

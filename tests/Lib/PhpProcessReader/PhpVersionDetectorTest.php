@@ -21,6 +21,7 @@ use Reli\Lib\Elf\Process\LinkMapLoader;
 use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\File\CatFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
@@ -65,14 +66,19 @@ class PhpVersionDetectorTest extends BaseTestCase
                     new LittleEndianReader()
                 ),
                 new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(sys_get_temp_dir() . '/reli-test-' . uniqid()),
             ),
             ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
         );
         $memory_reader = new MemoryReader();
+        $process_memory_map_creator = ProcessMemoryMapCreator::create();
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
             $memory_reader,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
         $integer_reader = new LittleEndianReader();
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
@@ -85,6 +91,7 @@ class PhpVersionDetectorTest extends BaseTestCase
             ProcessMemoryMapCreator::create(),
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -92,6 +99,8 @@ class PhpVersionDetectorTest extends BaseTestCase
             $memory_reader,
             $tsrm_ls_cache_finder,
             $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
         $module_registry_address = $php_globals_finder->findModuleRegistry(
             new ProcessSpecifier($child_status['pid']),
@@ -100,7 +109,9 @@ class PhpVersionDetectorTest extends BaseTestCase
         $php_version_detector = new PhpVersionDetector(
             $php_globals_finder,
             $memory_reader,
-            new ZendTypeReaderCreator()
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
         $version = $php_version_detector->detectPhpVersion(
             $child_status['pid'],

@@ -29,8 +29,10 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Reli\ReliProfiler;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function Reli\Lib\Defer\defer;
@@ -46,6 +48,7 @@ final class MemoryCommand extends Command
         private PhpVersionDetector $php_version_detector,
         private MemoryLocationsCollector $memory_locations_collector,
         private ProcessStopper $process_stopper,
+        private BinaryAnalysisCache $binary_analysis_cache,
     ) {
         parent::__construct();
     }
@@ -59,11 +62,15 @@ final class MemoryCommand extends Command
         $this->memory_profiler_settings_from_console_input->setOptions($this);
         $this->target_process_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
+        $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        if ($input->getOption('no-cache')) {
+            $this->binary_analysis_cache->disable();
+        }
         Log::info('start memory command');
         $memory_profiler_settings = $this->memory_profiler_settings_from_console_input->createSettings($input);
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);

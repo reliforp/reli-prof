@@ -14,12 +14,16 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader;
 
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendModuleEntry;
 use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
+use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -36,6 +40,8 @@ class PhpVersionDetector
         private PhpGlobalsFinder $php_globals_finder,
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
+        private BinaryAnalysisCache $binary_analysis_cache,
+        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
     ) {
     }
 
@@ -74,6 +80,29 @@ class PhpVersionDetector
             /** @var TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> */
             return $target_php_settings;
         }
+
+        $fingerprint = $this->getFingerprint($process_specifier, $target_php_settings);
+        if ($fingerprint !== null) {
+            $cached = $this->binary_analysis_cache->get($fingerprint, 'php_version');
+            if (
+                $cached !== null
+                && isset($cached['version'])
+                && is_string($cached['version'])
+                && ZendTypeReader::isSupported($cached['version'])
+            ) {
+                /** @var value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $cached_version */
+                $cached_version = $cached['version'];
+                return new TargetPhpSettings(
+                    php_regex: $target_php_settings->php_regex,
+                    libpthread_regex: $target_php_settings->libpthread_regex,
+                    zts_globals_regex: $target_php_settings->zts_globals_regex,
+                    php_version: $cached_version,
+                    php_path: $target_php_settings->php_path,
+                    libpthread_path: $target_php_settings->libpthread_path,
+                );
+            }
+        }
+
         $module_registry_address = $this->php_globals_finder->findModuleRegistry(
             $process_specifier,
             $target_php_settings,
@@ -89,6 +118,10 @@ class PhpVersionDetector
             Assert::true(ZendTypeReader::isSupported($version));
         }
 
+        if ($fingerprint !== null) {
+            $this->binary_analysis_cache->set($fingerprint, 'php_version', ['version' => $version]);
+        }
+
         return new TargetPhpSettings(
             php_regex: $target_php_settings->php_regex,
             libpthread_regex: $target_php_settings->libpthread_regex,
@@ -97,6 +130,25 @@ class PhpVersionDetector
             php_path: $target_php_settings->php_path,
             libpthread_path: $target_php_settings->libpthread_path,
         );
+    }
+
+    private function getFingerprint(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+    ): ?BinaryFingerprint {
+        try {
+            $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap(
+                $process_specifier->pid,
+            );
+            $php_areas = $process_memory_map->findByNameRegex($target_php_settings->php_regex);
+            if ($php_areas === []) {
+                return null;
+            }
+            $module_map = new ProcessModuleMemoryMap($php_areas);
+            return BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /** @return value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|null */

@@ -31,6 +31,7 @@ use Reli\Lib\Log\Log;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function Amp\async;
@@ -65,11 +66,13 @@ final class DaemonCommand extends Command
         $this->trace_loop_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
         $this->output_settings_from_console_input->setOptions($this);
+        $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $no_cache = (bool)$input->getOption('no-cache');
         $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);
         $daemon_settings = $this->daemon_settings_from_console_input->createSettings($input);
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
@@ -89,6 +92,7 @@ final class DaemonCommand extends Command
             $daemon_settings->target_regex,
             $target_php_settings,
             $my_pid,
+            $no_cache,
         );
 
         $worker_pool = WorkerPool::create(

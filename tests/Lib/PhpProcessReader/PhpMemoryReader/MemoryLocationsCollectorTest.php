@@ -24,6 +24,7 @@ use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Process\LinkMapLoader;
 use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\File\CatFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
@@ -139,8 +140,12 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     new LittleEndianReader()
                 ),
                 new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
             ),
-            ProcessMemoryMapCreator::create(),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -148,6 +153,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -159,6 +166,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ProcessMemoryMapCreator::create(),
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -166,6 +174,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $memory_reader_for_finder,
             $tsrm_ls_cache_finder,
             $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -407,8 +417,12 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     new LittleEndianReader()
                 ),
                 new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
             ),
-            ProcessMemoryMapCreator::create(),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -416,6 +430,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -427,6 +443,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ProcessMemoryMapCreator::create(),
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -434,6 +451,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $memory_reader_for_finder,
             $tsrm_ls_cache_finder,
             $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -579,8 +598,12 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     new LittleEndianReader()
                 ),
                 new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
             ),
-            ProcessMemoryMapCreator::create(),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -588,6 +611,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -599,6 +624,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ProcessMemoryMapCreator::create(),
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -606,6 +632,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $memory_reader_for_finder,
             $tsrm_ls_cache_finder,
             $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -768,8 +796,12 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     new LittleEndianReader()
                 ),
                 new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
             ),
-            ProcessMemoryMapCreator::create(),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -777,6 +809,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -788,6 +822,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ProcessMemoryMapCreator::create(),
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -795,6 +830,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $memory_reader_for_finder,
             $tsrm_ls_cache_finder,
             $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(

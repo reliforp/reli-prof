@@ -34,6 +34,7 @@ use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Directory\AppDirectory;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
 use Reli\Lib\Log\StateCollector\CallerStateCollector;
@@ -91,6 +92,9 @@ return [
         $logger->pushHandler($handler);
         return $logger;
     },
+    BinaryAnalysisCache::class => fn () => new BinaryAnalysisCache(
+        AppDirectory::getCacheDir() . '/binary-analysis'
+    ),
     Ptrace::class => autowire(PtraceX64::class),
     Reli\Lib\Dwarf\NativeTraceCollector::class => autowire(),
     Reli\Command\Inspector\GetTraceCommand::class => autowire()

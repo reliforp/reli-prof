@@ -18,6 +18,7 @@ use PHPUnit\Framework\Attributes\Group;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Process\LinkMapLoader;
 use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
@@ -142,6 +143,10 @@ class NativeTraceCollectorTest extends BaseTestCase
 
             // Also get PHP trace for merge test
             $integer_reader = new LittleEndianReader();
+            $binary_analysis_cache = new BinaryAnalysisCache(
+                sys_get_temp_dir() . '/reli-test-' . uniqid()
+            );
+            $process_memory_map_creator = ProcessMemoryMapCreator::create();
             $php_symbol_reader_creator = new PhpSymbolReaderCreator(
                 new ProcessModuleSymbolReaderCreator(
                     new Elf64SymbolResolverCreator(
@@ -156,13 +161,17 @@ class NativeTraceCollectorTest extends BaseTestCase
                         $integer_reader
                     ),
                     new ContainerAwarePathResolver(),
+                    $binary_analysis_cache,
                 ),
-                ProcessMemoryMapCreator::create(),
+                $process_memory_map_creator,
+                $binary_analysis_cache,
             );
             $tsrm_globals_resolver = new TsrmGlobalsResolver(
                 $php_symbol_reader_creator,
                 $integer_reader,
                 $memory_reader,
+                $binary_analysis_cache,
+                $process_memory_map_creator,
             );
             $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
                 $php_symbol_reader_creator,
@@ -174,6 +183,7 @@ class NativeTraceCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 new ContainerAwarePathResolver(),
                 new ZendTypeReaderCreator(),
+                $binary_analysis_cache,
             );
             $php_globals_finder = new PhpGlobalsFinder(
                 $php_symbol_reader_creator,
@@ -181,6 +191,8 @@ class NativeTraceCollectorTest extends BaseTestCase
                 $memory_reader,
                 $tsrm_ls_cache_finder,
                 $tsrm_globals_resolver,
+                $binary_analysis_cache,
+                $process_memory_map_creator,
             );
             $eg_address = $php_globals_finder->findExecutorGlobals(
                 new ProcessSpecifier($pid),

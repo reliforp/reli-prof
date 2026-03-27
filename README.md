@@ -128,6 +128,7 @@ Options:
       --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --no-cache                             disable the binary analysis cache
       --with-native-trace                    collect native (C-level) stack traces alongside PHP traces
       --native-trace-anytime                 collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
@@ -161,6 +162,7 @@ Options:
       --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --no-cache                             disable the binary analysis cache
   -t, --template[=TEMPLATE]                  template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
   -o, --output=OUTPUT                        path to write output from this tool (default: stdout)
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
@@ -192,6 +194,7 @@ Options:
       --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --no-cache                             disable the binary analysis cache
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
   -q, --quiet                                Do not output any message
   -V, --version                              Display this application version
@@ -220,6 +223,7 @@ Options:
       --php-version[=PHP-VERSION]            php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
       --php-path[=PHP-PATH]                  path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]    path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --no-cache                             disable the binary analysis cache
   -h, --help                                 Display help for the given command. When no command is given display help for the list command
   -q, --quiet                                Do not output any message
   -V, --version                              Display this application version
@@ -253,6 +257,7 @@ Options:
       --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
       --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --no-cache                                                     disable the binary analysis cache
   -h, --help                                                         Display help for the given command. When no command is given display help for the list command
   -q, --quiet                                                        Do not output any message
   -V, --version                                                      Display this application version
@@ -579,6 +584,23 @@ $ cat 2183131.memory_dump.json | jq 'path(..|objects|select(."#reference_node_id
 The refcount of the object recorded in the memory location is 6 in this example. Calling methods via `$obj->call()` adds refcount by 1, but `$this->call()` doesn't add refcount. References from objects_store don't add refcount too. So all 6 references are analyzed here.
 
 See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md) for more info.
+
+## Binary analysis cache
+Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.
+
+Cache files are stored under `~/.cache/reli/binary-analysis/` (following the XDG Base Directory specification), keyed by binary fingerprint (device ID + inode). The cache is automatically invalidated when the target binary is updated (inode changes).
+
+### Clear the cache
+```bash
+./reli cache:clear
+```
+
+### Disable the cache
+All inspector commands accept `--no-cache` to bypass the cache for a single run:
+```bash
+./reli inspector:trace --no-cache -p <pid>
+./reli inspector:daemon --no-cache -P "^php-fpm"
+```
 
 ## Troubleshooting
 ### I get an error message "php module not found" and can't get a trace!

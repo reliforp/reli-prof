@@ -21,6 +21,7 @@ use Reli\Inspector\Daemon\Searcher\Protocol\Message\UpdateTargetProcessMessage;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessList;
 use Reli\Inspector\Daemon\Searcher\Protocol\PhpSearcherWorkerProtocolInterface;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Loop\LoopCondition\OnlyOnceCondition;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\ProcFileSystem\ThreadEnumerator;
@@ -61,6 +62,7 @@ class PhpSearcherEntryPointTest extends BaseTestCase
             $process_searcher,
             $process_descriptor_retriever,
             new ThreadEnumerator(),
+            new BinaryAnalysisCache(sys_get_temp_dir() . '/reli-test-' . uniqid()),
             new OnlyOnceCondition(),
         );
 
