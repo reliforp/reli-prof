@@ -250,11 +250,10 @@ class PhpGlobalsFinder
         $module_map = $this->getPhpModuleMemoryMap($process_specifier, $target_php_settings->php_regex);
         $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
 
-        $cached_nts = $this->binary_analysis_cache->get($fingerprint, 'nts_globals');
-        if ($cached_nts !== null && isset($cached_nts[$symbol_name]) && is_int($cached_nts[$symbol_name])) {
-            return $module_map->getBaseAddress() + $cached_nts[$symbol_name];
-        }
-
+        // Check ZTS (TSRM) path first: if the binary is known to have TSRM LS cache,
+        // or if we can detect it now, use the ZTS resolution path.
+        // This must be checked BEFORE the NTS globals cache to avoid using a cached NTS
+        // offset for a ZTS binary (where globals are in TLS, not at a static offset).
         $tsrm_ls_cache = $this->findTsrmLsCache($process_specifier, $target_php_settings);
         if (isset($tsrm_ls_cache)) {
             return $this->tsrm_globals_resolver->resolveGlobalsAddress(
@@ -263,6 +262,11 @@ class PhpGlobalsFinder
                 $symbol_name,
                 $tsrm_ls_cache,
             );
+        }
+
+        $cached_nts = $this->binary_analysis_cache->get($fingerprint, 'nts_globals');
+        if ($cached_nts !== null && isset($cached_nts[$symbol_name]) && is_int($cached_nts[$symbol_name])) {
+            return $module_map->getBaseAddress() + $cached_nts[$symbol_name];
         }
 
         $globals_address = $this->getSymbolReader($process_specifier, $target_php_settings)

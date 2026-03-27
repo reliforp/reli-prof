@@ -106,10 +106,16 @@ final class PhpTsrmLsCacheFinder
 
         $cached = $this->binary_analysis_cache->get($fingerprint, 'tls_offset');
         if ($cached !== null && isset($cached['offset']) && is_int($cached['offset'])) {
-            $candidate_address = $tls_block_address + $cached['offset'];
+            $tls_variable_address = $tls_block_address + $cached['offset'];
+            $tsrm_ls_cache_value = $this->integer_reader->read64(
+                new CDataByteReader(
+                    $this->memory_reader->read($process_specifier->pid, $tls_variable_address, 8)
+                ),
+                0
+            )->toInt();
             assert($target_php_settings->isDecided());
-            if ($this->validateCandidate($process_specifier, $target_php_settings, $candidate_address)) {
-                return $candidate_address;
+            if ($this->validateCandidate($process_specifier, $target_php_settings, $tsrm_ls_cache_value)) {
+                return $tsrm_ls_cache_value;
             }
         }
 
@@ -128,7 +134,7 @@ final class PhpTsrmLsCacheFinder
                 $this->binary_analysis_cache->set(
                     $fingerprint,
                     'tls_offset',
-                    ['offset' => $tsrm_ls_cache_address_candidate - $tls_block_address],
+                    ['offset' => $current - $tls_block_address],
                 );
                 return $tsrm_ls_cache_address_candidate;
             }
