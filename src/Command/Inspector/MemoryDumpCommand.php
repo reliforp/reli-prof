@@ -185,33 +185,103 @@ final class MemoryDumpCommand extends Command
             $huge_count++;
         }
 
-        // 5. Read process heap and PHP binary writable segments
-        //    EG/CG reference structures (function_table, class_table, interned_strings, etc.)
-        //    that live in the glibc heap or PHP binary's BSS/data segment, outside ZendMM chunks.
-        $heap_count = 0;
+        // 5. Capture writable memory regions that EG/CG pointers reference
+        //    (function_table, class_table, interned_strings, objects_store, etc.)
+        //    Instead of dumping the entire [heap], we find which memory map regions
+        //    contain addresses referenced by EG/CG pointer fields, and capture only those.
+        $extra_count = 0;
         $memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
-        $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
-        foreach ($heap_areas as $area) {
-            $addr = (int)hexdec($area->begin);
-            $size = (int)hexdec($area->end) - $addr;
-            if ($size > 0) {
-                $data = $this->memory_reader->read($pid, $addr, $size);
-                $regions[] = [
-                    'address' => $addr,
-                    'size' => $size,
-                    'data' => \FFI::string($data, $size),
-                ];
-                $heap_count++;
+        $eg_pointer = new Pointer(
+            ZendExecutorGlobals::class,
+            $eg_address,
+            $eg_size,
+        );
+        $eg = $dereferencer->deref($eg_pointer);
+        $cg_pointer = new Pointer(
+            ZendCompilerGlobals::class,
+            $cg_address,
+            $cg_size,
+        );
+        $cg = $dereferencer->deref($cg_pointer);
+
+        // Collect addresses that EG/CG reference outside ZendMM chunks
+        $referenced_addresses = [];
+        $eg_cg_pointers = [
+            $eg->function_table,
+            $eg->class_table,
+            $eg->zend_constants,
+            $eg->vm_stack,
+            $eg->vm_stack_top,
+            $eg->current_execute_data,
+            $cg->arena,
+            $cg->ast_arena,
+        ];
+        foreach ($eg_cg_pointers as $ptr) {
+            if ($ptr !== null) {
+                $referenced_addresses[] = $ptr->address;
             }
         }
-        // Also capture PHP binary's writable data/BSS segments
-        $php_regex = $target_php_settings_version_decided->php_regex;
-        $php_rw_areas = $memory_map->findByNameRegex($php_regex);
-        foreach ($php_rw_areas as $area) {
-            if ($area->attribute->write && $area->attribute->read) {
+        // Also add embedded struct field addresses (symbol_table, included_files, objects_store)
+        // These are inline in EG so their arData pointers may reference external memory
+        $inline_arrays = [
+            $eg->symbol_table,
+            $eg->included_files,
+        ];
+        foreach ($inline_arrays as $arr) {
+            if ($arr->arData !== null) {
+                $referenced_addresses[] = $arr->arData->address;
+            }
+        }
+        if ($eg->objects_store->object_buckets !== null) {
+            $referenced_addresses[] = $eg->objects_store->object_buckets->address;
+        }
+        if ($cg->interned_strings->arData !== null) {
+            $referenced_addresses[] = $cg->interned_strings->arData->address;
+        }
+
+        // Find memory map regions that contain referenced addresses
+        // but are NOT already covered by ZendMM chunks
+        /** @var array<string, true> $captured_regions */
+        $captured_regions = [];
+        foreach ($referenced_addresses as $ref_addr) {
+            // Check if already in a ZendMM chunk
+            $in_chunk = false;
+            foreach ($regions as $region) {
+                if (
+                    $ref_addr >= $region['address']
+                    && $ref_addr < $region['address'] + $region['size']
+                ) {
+                    $in_chunk = true;
+                    break;
+                }
+            }
+            if ($in_chunk) {
+                continue;
+            }
+
+            $areas = $memory_map->findByAddress($ref_addr);
+            foreach ($areas as $area) {
+                if (!$area->attribute->write || !$area->attribute->read) {
+                    continue;
+                }
+                $region_key = $area->begin . '-' . $area->end;
+                if (isset($captured_regions[$region_key])) {
+                    continue;
+                }
+                $captured_regions[$region_key] = true;
                 $addr = (int)hexdec($area->begin);
                 $size = (int)hexdec($area->end) - $addr;
                 if ($size > 0) {
+                    $size_mb = (float)$size / 1024.0 / 1024.0;
+                    if ($size_mb > 50.0) {
+                        $output->writeln(sprintf(
+                            '<comment>Warning: capturing large region'
+                            . ' %s (%.1f MB) referenced by EG/CG'
+                            . ' pointer</comment>',
+                            $area->name !== '' ? $area->name : 'anon',
+                            $size_mb,
+                        ));
+                    }
                     try {
                         $data = $this->memory_reader->read($pid, $addr, $size);
                         $regions[] = [
@@ -219,10 +289,10 @@ final class MemoryDumpCommand extends Command
                             'size' => $size,
                             'data' => \FFI::string($data, $size),
                         ];
-                        $heap_count++;
+                        $extra_count++;
                     } catch (\Throwable $e) {
                         Log::info(
-                            "skipping rw region at 0x" . dechex($addr)
+                            "skipping region at 0x" . dechex($addr)
                             . ": " . $e->getMessage()
                         );
                     }
@@ -234,14 +304,7 @@ final class MemoryDumpCommand extends Command
         $vm_stack_count = 0;
         $arena_count = 0;
         if ($dump_settings->scope === MemoryDumpScope::Default_) {
-            // VM stacks
-            $eg_pointer = new Pointer(
-                ZendExecutorGlobals::class,
-                $eg_address,
-                $eg_size,
-            );
-            $eg = $dereferencer->deref($eg_pointer);
-
+            // VM stacks (reuse $eg from above)
             if ($eg->vm_stack !== null) {
                 $vm_stack = $dereferencer->deref($eg->vm_stack);
                 foreach ($vm_stack->iterateStackChain($dereferencer) as $stack) {
@@ -262,14 +325,7 @@ final class MemoryDumpCommand extends Command
                 }
             }
 
-            // Compiler arenas
-            $cg_pointer = new Pointer(
-                ZendCompilerGlobals::class,
-                $cg_address,
-                $cg_size,
-            );
-            $cg = $dereferencer->deref($cg_pointer);
-
+            // Compiler arenas (reuse $cg from above)
             if ($cg->arena !== null) {
                 $arena_root = $dereferencer->deref($cg->arena);
                 foreach ($arena_root->iterateChain($dereferencer) as $arena) {
@@ -349,13 +405,13 @@ final class MemoryDumpCommand extends Command
 
         $output->writeln(sprintf(
             'Memory dump written to %s (%s, %d regions: %d chunks, %d huge,'
-            . ' %d heap/data, %d vm_stacks, %d arenas, %.1f MB)',
+            . ' %d extra, %d vm_stacks, %d arenas, %.1f MB)',
             $dump_settings->output_path,
             $dump_settings->scope->value,
             count($regions),
             $chunk_count,
             $huge_count,
-            $heap_count,
+            $extra_count,
             $vm_stack_count,
             $arena_count,
             (float)$total_size / 1024.0 / 1024.0,
