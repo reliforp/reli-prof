@@ -154,12 +154,23 @@ final class MemoryDumpCommand extends Command
             $read_list[] = ['address' => $huge->ptr, 'size' => $huge->size];
         }
 
-        // [heap] region (internal function/class definitions)
+        // [heap] region (internal function/class definitions).
+        // After heavy extension usage + free, glibc returns pages via
+        // MADV_DONTNEED but brk doesn't shrink, leaving non-resident
+        // gaps. Use pagemap to skip them when [heap] is large.
         $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
         foreach ($heap_areas as $area) {
             $addr = (int)hexdec($area->begin);
             $size = (int)hexdec($area->end) - $addr;
-            if ($size > 0) {
+            if ($size <= 0) {
+                continue;
+            }
+            $resident_runs = $this->findResidentRuns($pid, $addr, $size);
+            if ($resident_runs !== null && $resident_runs !== []) {
+                foreach ($resident_runs as $run) {
+                    $read_list[] = $run;
+                }
+            } else {
                 $read_list[] = ['address' => $addr, 'size' => $size];
             }
         }
