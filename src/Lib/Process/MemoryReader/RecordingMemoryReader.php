@@ -54,7 +54,12 @@ final class RecordingMemoryReader implements MemoryReaderInterface
 
         // Sort by address
         $regions = $this->recorded_regions;
-        usort($regions, fn($a, $b) => $a['address'] <=> $b['address']);
+        usort(
+            $regions,
+            /** @param array{address: int, size: int, data: string} $a */
+            /** @param array{address: int, size: int, data: string} $b */
+            fn(array $a, array $b) => $a['address'] <=> $b['address'],
+        );
 
         // Merge overlapping/adjacent/nearby regions
         $merged = [$regions[0]];

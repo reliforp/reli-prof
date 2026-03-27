@@ -130,7 +130,7 @@ final class MemoryDumpCommand extends Command
         $main_chunk = $dereferencer->deref($main_chunk_pointer);
 
         // Enumerate all regions to read (addresses + sizes)
-        /** @var array<array{address: int, size: int}> $read_list */
+        /** @var list<array{address: int, size: int}> $read_list */
         $read_list = [];
 
         // EG struct
@@ -203,15 +203,23 @@ final class MemoryDumpCommand extends Command
             $cg_address,
             $cg_size,
         ));
-        foreach (['arena', 'ast_arena'] as $arena_field) {
-            if ($cg->$arena_field !== null) {
-                $arena_root = $dereferencer->deref($cg->$arena_field);
-                foreach ($arena_root->iterateChain($dereferencer) as $arena) {
-                    $addr = $arena->getPointer()->address;
-                    $size = $arena->end - $addr;
-                    if ($size > 0) {
-                        $read_list[] = ['address' => $addr, 'size' => $size];
-                    }
+        if ($cg->arena !== null) {
+            $arena_root = $dereferencer->deref($cg->arena);
+            foreach ($arena_root->iterateChain($dereferencer) as $arena) {
+                $addr = $arena->getPointer()->address;
+                $size = $arena->end - $addr;
+                if ($size > 0) {
+                    $read_list[] = ['address' => $addr, 'size' => $size];
+                }
+            }
+        }
+        if ($cg->ast_arena !== null) {
+            $arena_root = $dereferencer->deref($cg->ast_arena);
+            foreach ($arena_root->iterateChain($dereferencer) as $arena) {
+                $addr = $arena->getPointer()->address;
+                $size = $arena->end - $addr;
+                if ($size > 0) {
+                    $read_list[] = ['address' => $addr, 'size' => $size];
                 }
             }
         }
