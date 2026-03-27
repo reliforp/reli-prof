@@ -1,200 +1,211 @@
 # Trace Consistency and Sampling Bias Investigation
 
-`--stop-process` (`-S`) オプションの有無がトレースの整合性とサンプリング分布に与える影響の調査。
-reli on reli (自己プロファイリング) および phpspy との比較で得られた知見をまとめる。
+Investigation of how the `--stop-process` (`-S`) option affects trace consistency and
+sampling distribution. Findings obtained through reli-on-reli self-profiling and
+comparison with phpspy.
 
-## 背景
+## Background
 
-reli のサンプリングプロファイラには 2 つのモードがある:
+reli's sampling profiler has two modes:
 
-- **`-S` なし**: `process_vm_readv` でターゲットのメモリを直接読む (ターゲットは動き続ける)
-- **`-S` あり**: `PTRACE_ATTACH` (`SIGSTOP`) でターゲットを一時停止してからメモリを読む
+- **Without `-S`**: reads target memory via `process_vm_readv` while the target keeps running
+- **With `-S`**: pauses the target via `PTRACE_ATTACH` (`SIGSTOP`) before reading memory
 
-## 発見 1: `-S` フラグの VALUE_OPTIONAL バグ (修正済み)
+## Finding 1: `-S` Flag VALUE_OPTIONAL Bug (Fixed)
 
-`-S` を値なしで渡すと Symfony Console の `VALUE_OPTIONAL` が `null` を返し、
-コード上 `null` → `false` に変換されて **`-S` が無視されていた**。
+When `-S` was passed without an explicit value, Symfony Console's `VALUE_OPTIONAL`
+returned `null`, which the code converted to `false` — **silently ignoring the flag**.
 
 ```
--S       → false (バグ: 効かない)
--S=1     → true
+-S               → false (bug: no effect)
+-S=1             → true
 --stop-process=1 → true
-未指定    → false
+not specified    → false
 ```
 
-`hasParameterOption()` でフラグの存在を検出する形に修正。
-修正後、`-S` で truncated フレーム (internal 関数が 1 フレームだけ出る現象) が 0 になることを確認。
+Fixed by using `hasParameterOption()` to detect the flag's presence without a value.
+After the fix, `-S` eliminates truncated frames (internal functions appearing as
+single-frame samples) as expected.
 
-## 発見 2: PTRACE_ATTACH の SIGSTOP サンプリングバイアス
+## Finding 2: PTRACE_ATTACH SIGSTOP Sampling Bias
 
-### 現象
+### Observation
 
-reli on reli で inner reli を `-S` ありでプロファイルすると、
-`/proc/pid/stat` から計測した実際の user:sys 比率とサンプル分布が大きく乖離する。
+When profiling inner reli with `-S` enabled, the measured user:sys ratio from
+`/proc/pid/stat` and the sample distribution diverge significantly.
 
 ```
-実測 (bash time / /proc/pid/stat):
+Actual (bash time / /proc/pid/stat):
   user: 81%,  sys: 19%
 
-サンプル分布 (-S あり, PHP フレーム):
+Sample distribution (-S on, PHP frames):
   process_vm_readv (FFI/syscall): 68%
   PHP userland:                   30%
 
-サンプル分布 (-S あり, ネイティブフレーム):
+Sample distribution (-S on, native frames):
   libc::process_vm_readv:          92%
   PHP userland:                     6%
 ```
 
-### 原因
+### Cause
 
-`PTRACE_ATTACH` は `SIGSTOP` をターゲットに送るが、カーネルは `SIGSTOP` を
-**syscall 境界またはスケジューラの切り替え点** で配送する。
-ターゲットが user mode で PHP バイトコードを実行中は `SIGSTOP` の配送が遅延し、
-次の syscall (FFI 経由の `process_vm_readv` 等) に入った時点で停止する。
+`PTRACE_ATTACH` sends `SIGSTOP` to the target, but the kernel delivers `SIGSTOP`
+at **syscall boundaries or scheduler preemption points**. While the target is in
+user mode executing PHP bytecode, `SIGSTOP` delivery is deferred until the next
+syscall entry (e.g., FFI-based `process_vm_readv`).
 
-結果として **syscall 内で停止するサンプルが系統的に過大に出る**。
+This causes **systematic oversampling of syscall-internal states**.
 
-### phpspy での検証
+### Verification with phpspy
 
-phpspy の `-S` (pause-process) オプションでも同じ傾向を確認:
-
-```
-phpspy -S なし:  process_vm_readv = 12%,  PHP userland = 88%
-phpspy -S あり:  process_vm_readv = 92%,  PHP userland =  8%
-```
-
-`-S` を入れた瞬間に reli on reli と同じ傾向になる。
-`PTRACE_ATTACH` + `SIGSTOP` というメカニズム自体の制約。
-
-## 発見 3: `-S` なしの reli on reli では逆方向のバイアス
-
-### 現象
-
-reli on reli で `-S` なしにすると、`process_vm_readv` が frame 0 に **一切出ない**。
+phpspy's `-S` (pause-process) option exhibits the same bias:
 
 ```
-reli -S なし:
+phpspy without -S:  process_vm_readv = 12%,  PHP userland = 88%
+phpspy with -S:     process_vm_readv = 92%,  PHP userland =  8%
+```
+
+Enabling `-S` immediately shifts the distribution to match reli-on-reli results.
+This confirms the bias is inherent to the `PTRACE_ATTACH` + `SIGSTOP` mechanism,
+not specific to reli.
+
+## Finding 3: Without `-S`, reli-on-reli Shows Reverse Bias
+
+### Observation
+
+Profiling inner reli without `-S` causes `process_vm_readv` to **completely
+disappear** from frame 0.
+
+```
+reli without -S:
   process_vm_readv:   0%
   PHP userland:      61%
-  壊れ (<unknown>/<internal>/truncated): 23%
+  broken (<unknown>/<internal>/truncated): 23%
 ```
 
-### 原因
+### Cause
 
-inner reli が FFI 内 (C コード実行中) にいるとき、`current_execute_data` は
-FFI フレームを指している。しかし outer reli が PHP で遅い読み取りをしている間に
-inner は FFI から戻って `current_execute_data` が変わってしまう。
-結果として FFI フレームを整合的に読めず `<internal>` や `<unknown>` として壊れるか、
-FFI から戻った後の PHP フレームを読む。
+When inner reli is inside an FFI call (C code), `current_execute_data` points to
+the FFI call frame. However, outer reli's PHP-based memory reading is too slow —
+by the time it finishes reading, inner has already returned from FFI and
+`current_execute_data` has changed. The FFI frame is either read inconsistently
+(appearing as `<internal>` or `<unknown>`) or missed entirely.
 
-**読み取り速度が遅いと、速い処理 (syscall) のサンプルが系統的に欠落する。**
+**Slow reads cause fast operations (syscalls) to be systematically dropped.**
 
-## 発見 4: phpspy -S なしだけが両立
+## Finding 4: Only phpspy Without `-S` Achieves Both Accuracy and Consistency
 
 ```
-                    サンプル分布の正確さ    スタック整合性    壊れ率
-phpspy -S なし              正確               高           ~0%
-phpspy -S あり          syscall に偏る          高           ~0%
-reli -S あり            syscall に偏る          高           ~2%
-reli -S なし           userland に偏る          低          ~23%
+                    Distribution accuracy    Stack consistency    Broken rate
+phpspy without -S        Accurate                High               ~0%
+phpspy with -S        Biased to syscalls          High               ~0%
+reli with -S          Biased to syscalls          High               ~2%
+reli without -S       Biased to userland          Low               ~23%
 ```
 
-phpspy -S なしが唯一「分布が正確 + 整合性も OK」を両立できている理由は、
-C で高速にスタックを読み切れるため、ターゲットのスタックが変わる前にスナップショットが取れるから。
+phpspy without `-S` is the only configuration that achieves both accurate
+distribution and high consistency. This is because C-native reads complete fast
+enough to snapshot the stack before the target's state changes.
 
-## スループットとコスト比較
+## Throughput and Cost Comparison
 
-### スタック深さとスループット (sleep=0, -S なし)
+### Throughput by Stack Depth (sleep=0, no -S)
 
 ```
                     reli                    phpspy
-              readv/loop  loops/s     readv/loop  loops/s     倍率
+              readv/loop  loops/s     readv/loop  loops/s     ratio
 Shallow(3)          9       735            ~3    10,240       x14
 Deep(22)           37       225            ~4     6,947       x31
 Laravel(75)       174        53            ~5     1,892       x36
 ```
 
-readv の総呼び出し回数はほぼ同じ (~27,000-29,000/3s)。
-スループット差の本質は readv 間の PHP オーバーヘッド (FFI 呼び出し、Pointer 生成、型解決等)。
+Total readv call counts are similar (~27,000-29,000/3s).
+The throughput gap is dominated by PHP overhead between readv calls
+(FFI invocation, Pointer construction, type resolution, etc.).
 
-### 1 トレースあたりの CPU 時間 (Laravel 75 frames)
+### CPU Time per Trace (Laravel 75 frames)
 
 ```
               user/trace    sys/trace    total/trace    user:sys
-phpspy         0.19ms        0.30ms        0.50ms       0.65:1 (sys 支配)
-reli           0.81ms        0.15ms        0.96ms       5.3:1  (user 支配)
+phpspy         0.19ms        0.30ms        0.50ms       0.65:1 (sys-dominated)
+reli           0.81ms        0.15ms        0.96ms       5.3:1  (user-dominated)
 ```
 
-CPU/trace の差は約 2 倍。スループット差 (36x) に比べて小さい。
+CPU per trace differs by ~2x. Much smaller than the throughput gap (36x).
 
-### readv のサイズ別コスト
-
-```
-      8 bytes: 0.7 μs/call
-     64 bytes: 0.7 μs/call
-   4096 bytes: 0.8 μs/call
-  65536 bytes: 0.7 μs/call
- 262144 bytes: 0.8 μs/call
-```
-
-`process_vm_readv` はサイズにほぼ依存しない。
-
-## 改善案: VM スタック一括コピー
-
-### 現状の整合性ウィンドウ
+### readv Cost by Transfer Size
 
 ```
-reli (current):  最初の readv → 最後の readv = ~3,480 μs
-phpspy:          最初の readv → 最後の readv = ~500 μs
-1回の bulk readv: ~0.7 μs
+      8 bytes: 0.7 us/call
+     64 bytes: 0.7 us/call
+   4096 bytes: 0.8 us/call
+  65536 bytes: 0.7 us/call
+ 262144 bytes: 0.8 us/call
 ```
 
-### 2-pass scatter-gather 方式
+`process_vm_readv` cost is nearly independent of transfer size.
 
-1. **Pass 1**: VM スタックを 1 回の `process_vm_readv` で一括コピー (~64KB, ~0.7μs)
-   - ローカルで `execute_data` チェーンをパース
-   - `func`, `opline` 等のヒープ上ポインタを収集
-2. **Pass 2**: 収集したポインタを scatter-gather iovec で一括読み取り (~0.7μs)
-   - `IOV_MAX` = 1024、75 フレームで ~300-450 iovec なので収まる
+## Proposed Improvement: Bulk VM Stack Copy
 
-合計 2 syscall, 整合性ウィンドウ ~1.4μs + ローカル処理時間。
+### Current Consistency Windows
 
-### 実装の見通し
+```
+reli (current):   first readv to last readv = ~3,480 us
+phpspy:           first readv to last readv = ~500 us
+single bulk readv: ~0.7 us
+```
 
-`MemoryReaderInterface` がきれいに抽象化されているため、
-**バッファ付きデコレータを 1 クラス追加** するだけで実現可能な可能性がある。
+### 2-Pass Scatter-Gather Approach
+
+1. **Pass 1**: bulk-copy the VM stack in a single `process_vm_readv` (~64KB, ~0.7us)
+   - Parse `execute_data` chain locally
+   - Collect all heap pointers (`func`, `opline`, string addresses)
+2. **Pass 2**: scatter-gather read all heap data in a single `process_vm_readv` (~0.7us)
+   - `IOV_MAX` = 1024; 75 frames need ~300-450 iovecs, well within the limit
+
+Total: 2 syscalls, ~1.4us consistency window + local processing time.
+
+### Implementation Outlook
+
+`MemoryReaderInterface` is cleanly abstracted, so a **buffered decorator** may
+be sufficient with no changes to existing types:
 
 ```php
 class BufferedMemoryReader implements MemoryReaderInterface {
     public function prefetch(int $pid, int $address, int $size): void {
-        // VM スタックを一括コピー
+        // Bulk-copy VM stack in one process_vm_readv call
     }
 
     public function read(int $pid, int $address, int $size): CData {
-        if (/* address がバッファ範囲内 */) {
-            return /* ローカルバッファから返す */;
+        if (/* address falls within prefetched buffer */) {
+            return /* slice from local buffer */;
         }
         return $this->inner->read($pid, $address, $size);
     }
 }
 ```
 
-既存の `ZendExecuteData`, `FieldReader`, `Pointer`, `LazyDereferencer` 等は変更不要。
-アドレスベースで透過的にバッファから返すため、上位コードはリモートメモリかローカルバッファかを意識しない。
+Existing `ZendExecuteData`, `FieldReader`, `Pointer`, `LazyDereferencer`, etc.
+require no changes. The buffer is transparent — callers see the same
+`MemoryReaderInterface` regardless of whether data comes from local memory
+or a remote process.
 
-### 課題
+### Prerequisites
 
-- VM スタックの位置 (`EG(vm_stack)`) とサイズの取得が必要
-- VM スタック上の `execute_data` はカバーできるが、ヒープ上の `zend_function`,
-  `zend_string` (関数名/ファイル名/クラス名) は個別読み取りが残る
-  - ただし Pass 2 の scatter-gather でこれらも一括化できる見込み
-- `zend_function`, `zend_string` はリクエスト中に GC されないため、
-  Pass 1 → Pass 2 間 (~μs + ローカル処理) の不整合リスクは実質的に無視可能
+- Need to locate the VM stack: read `EG(vm_stack)` to get the current stack
+  segment's base address and size
+- VM stack covers `execute_data` frames; heap-resident data (`zend_function`,
+  `zend_string` for function/file/class names) still requires remote reads
+  - Pass 2 scatter-gather can batch these into a single syscall
+- `zend_function` and `zend_string` are stable during a request (not GC'd),
+  so the inconsistency risk between Pass 1 and Pass 2 is negligible
 
-### 期待される効果
+### Expected Impact
 
-- **整合性**: 3,480μs → ~1.4μs のウィンドウ縮小で `-S` なしでも壊れサンプルが激減する見込み
-- **スループット**: syscall 回数が 174 → 2 に減少。ただしボトルネックは PHP 側の処理なので
-  劇的な改善にはならない可能性。PHP 側の Pointer/FieldReader 処理の軽量化が別途必要
-- **サンプリングバイアス**: `-S` 不要になれば SIGSTOP バイアスを回避でき、
-  ネイティブトレースの分布も正確になる
+- **Consistency**: window shrinks from ~3,480us to ~1.4us, potentially making
+  `-S` unnecessary and eliminating broken samples without stopping the target
+- **Throughput**: syscall count drops from ~174 to 2 per trace. However, the
+  bottleneck is PHP-side processing, so the improvement may be modest unless
+  the Pointer/FieldReader layer is also optimized
+- **Sampling bias**: if `-S` becomes unnecessary, the SIGSTOP delivery bias
+  is avoided entirely, producing accurate native trace distributions
