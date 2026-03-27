@@ -22,6 +22,7 @@ use Reli\Lib\Elf\Process\PerBinarySymbolCacheRetriever;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\File\CatFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
@@ -73,12 +74,14 @@ class PhpVersionDetectorTest extends BaseTestCase
         );
         $memory_reader = new MemoryReader();
         $process_memory_map_creator = ProcessMemoryMapCreator::create();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader);
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,
             new LittleEndianReader(),
             $memory_reader,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $integer_reader = new LittleEndianReader();
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
@@ -92,6 +95,7 @@ class PhpVersionDetectorTest extends BaseTestCase
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
             $binary_analysis_cache,
+            $binary_fingerprint_creator,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -101,6 +105,7 @@ class PhpVersionDetectorTest extends BaseTestCase
             $tsrm_globals_resolver,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $module_registry_address = $php_globals_finder->findModuleRegistry(
             new ProcessSpecifier($child_status['pid']),
@@ -112,6 +117,7 @@ class PhpVersionDetectorTest extends BaseTestCase
             new ZendTypeReaderCreator(),
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $version = $php_version_detector->detectPhpVersion(
             $child_status['pid'],

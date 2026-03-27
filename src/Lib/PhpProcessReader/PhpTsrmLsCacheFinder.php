@@ -20,6 +20,7 @@ use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\BinaryFingerprint;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
@@ -47,6 +48,7 @@ final class PhpTsrmLsCacheFinder
         private ContainerAwarePathResolver $process_path_resolver,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private BinaryAnalysisCache $binary_analysis_cache,
+        private BinaryFingerprintCreator $binary_fingerprint_creator,
     ) {
     }
 
@@ -102,14 +104,23 @@ final class PhpTsrmLsCacheFinder
             return null;
         }
         [$tls_block_address, $tls_block_size, $php_module_memory_map] = $tls_block;
-        $fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($php_module_memory_map);
+        $fingerprint = $this->binary_fingerprint_creator->createFromProcessModuleMemoryMap(
+            $process_specifier->pid,
+            $php_module_memory_map,
+        );
 
         $cached = $this->binary_analysis_cache->get($fingerprint, 'tls_offset');
         if ($cached !== null && isset($cached['offset']) && is_int($cached['offset'])) {
-            $candidate_address = $tls_block_address + $cached['offset'];
+            $tls_variable_address = $tls_block_address + $cached['offset'];
+            $tsrm_ls_cache_value = $this->integer_reader->read64(
+                new CDataByteReader(
+                    $this->memory_reader->read($process_specifier->pid, $tls_variable_address, 8)
+                ),
+                0
+            )->toInt();
             assert($target_php_settings->isDecided());
-            if ($this->validateCandidate($process_specifier, $target_php_settings, $candidate_address)) {
-                return $candidate_address;
+            if ($this->validateCandidate($process_specifier, $target_php_settings, $tsrm_ls_cache_value)) {
+                return $tsrm_ls_cache_value;
             }
         }
 
@@ -128,7 +139,7 @@ final class PhpTsrmLsCacheFinder
                 $this->binary_analysis_cache->set(
                     $fingerprint,
                     'tls_offset',
-                    ['offset' => $tsrm_ls_cache_address_candidate - $tls_block_address],
+                    ['offset' => $current - $tls_block_address],
                 );
                 return $tsrm_ls_cache_address_candidate;
             }

@@ -16,6 +16,7 @@ namespace Reli\Lib\PhpProcessReader;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\BinaryFingerprint;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendModuleEntry;
@@ -42,6 +43,7 @@ class PhpVersionDetector
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private BinaryAnalysisCache $binary_analysis_cache,
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
+        private BinaryFingerprintCreator $binary_fingerprint_creator,
     ) {
     }
 
@@ -145,7 +147,10 @@ class PhpVersionDetector
                 return null;
             }
             $module_map = new ProcessModuleMemoryMap($php_areas);
-            return BinaryFingerprint::fromProcessModuleMemoryMap($module_map);
+            return $this->binary_fingerprint_creator->createFromProcessModuleMemoryMap(
+                $process_specifier->pid,
+                $module_map,
+            );
         } catch (\Throwable) {
             return null;
         }

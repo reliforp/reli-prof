@@ -33,6 +33,7 @@ use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
 use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
+use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ArrayContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
@@ -149,12 +150,14 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -167,6 +170,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
             $binary_analysis_cache,
+            $binary_fingerprint_creator,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -176,6 +180,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $tsrm_globals_resolver,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -436,12 +441,14 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -454,6 +461,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
             $binary_analysis_cache,
+            $binary_fingerprint_creator,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -463,6 +471,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $tsrm_globals_resolver,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -627,12 +636,14 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -645,6 +656,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
             $binary_analysis_cache,
+            $binary_fingerprint_creator,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -654,6 +666,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $tsrm_globals_resolver,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
@@ -835,12 +848,14 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,
             $integer_reader,
             $memory_reader_for_finder,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
             $php_symbol_reader_creator,
@@ -853,6 +868,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new ContainerAwarePathResolver(),
             new ZendTypeReaderCreator(),
             $binary_analysis_cache,
+            $binary_fingerprint_creator,
         );
         $php_globals_finder = new PhpGlobalsFinder(
             $php_symbol_reader_creator,
@@ -862,6 +878,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $tsrm_globals_resolver,
             $binary_analysis_cache,
             $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(

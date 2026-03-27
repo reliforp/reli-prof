@@ -45,6 +45,8 @@ If customizability for PHP developers matters, you can use this software at the 
 Additionally, reli can find VM state from ZTS interpreters. For example, in the daemon mode, traces of threads started via [ext-parallel](https://github.com/krakjoe/parallel) are automatically retrieved. Currently this cannot be done with phpspy only.
 Reli also provides functionality to only get the address of EG from targets, so you can use actual profiling with phpspy if you want, even when the target is ZTS.
 
+Furthermore, reli provides a **hybrid phpspy mode** (`phpspy:trace`, `phpspy:daemon`) that combines reli's ZTS-aware EG resolution with phpspy's fast C-based tracing. Reli resolves the EG address (including for ZTS targets where phpspy alone cannot), then launches phpspy as the actual tracer with the resolved address. This gives you phpspy's speed with reli's ZTS support. See [Hybrid phpspy mode](#hybrid-phpspy-mode) for details.
+
 Other features of reli that phpspy does not currently have include:
 
 - Output more accurate line numbers
@@ -61,7 +63,6 @@ There is no particular reason why these features cannot be implemented on the ph
 On the other hand, there are a few things that phpspy can do but reli cannot yet.
 
 - Redirecting output of child processes
-- Forcing the address of EG
 - Run more faster with lower overhead.
 - etc.
 
@@ -240,6 +241,78 @@ Options:
   -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 ```
 
+### Hybrid phpspy mode
+Reli can use [phpspy](https://github.com/adsr/phpspy) as the tracing backend while handling EG address resolution (including ZTS). This combines phpspy's fast C-based tracing with reli's ZTS support.
+
+#### Install phpspy
+```bash
+./reli phpspy:install --help
+Description:
+  install or check phpspy binary
+
+Usage:
+  phpspy:install [options]
+
+Options:
+      --check                      only check if phpspy is installed, do not install
+      --install-path=INSTALL-PATH  install location (default: ~/.reli/bin/phpspy)
+      --phpspy-path=PHPSPY-PATH    path to an existing phpspy binary to check
+  -h, --help                       Display help for the given command. When no command is given display help for the list command
+```
+
+#### Single process tracing with phpspy
+```bash
+./reli phpspy:trace --help
+Description:
+  get call traces using phpspy as the tracer backend (reli resolves EG address for ZTS support, then delegates tracing to phpspy)
+
+Usage:
+  phpspy:trace [options] [--] [<cmd> [<args>...]]
+
+Arguments:
+  cmd                                          command to execute as a target: either pid (via -p/--pid) or cmd must be specified
+  args                                         command line arguments for cmd
+
+Options:
+  -p, --pid=PID                                process id
+  -d, --depth[=DEPTH]                          max depth
+      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
+      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
+      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
+      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
+      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
+      --phpspy-path=PHPSPY-PATH                path to the phpspy binary
+  -s, --sleep-ns[=SLEEP-NS]                    phpspy sleep between samples in nanoseconds (default: 10101010)
+  -b, --buffer-size[=BUFFER-SIZE]              phpspy buffer size (default: 4096)
+  -H, --rate-hz[=RATE-HZ]                      phpspy sampling rate in Hz (default: 99)
+      --phpspy-args=PHPSPY-ARGS                extra arguments to pass to phpspy
+      --no-cache                               disable the binary analysis cache
+  -o, --output=OUTPUT                          output file path (default: stdout)
+```
+
+#### Multi-process daemon mode with phpspy
+```bash
+./reli phpspy:daemon --help
+Description:
+  concurrently get call traces from multiple processes using phpspy as the tracer backend (reli resolves EG addresses for ZTS support, then delegates tracing to phpspy)
+
+Usage:
+  phpspy:daemon [options]
+
+Options:
+  -P, --target-regex=TARGET-REGEX              regex to find target processes which have matching command-line (required)
+  -T, --threads[=THREADS]                      number of workers (default: 8)
+  -d, --depth[=DEPTH]                          max depth
+      --phpspy-path=PHPSPY-PATH                path to the phpspy binary
+  -s, --sleep-ns[=SLEEP-NS]                    phpspy sleep between samples in nanoseconds (default: 10101010)
+  -b, --buffer-size[=BUFFER-SIZE]              phpspy buffer size (default: 4096)
+  -H, --rate-hz[=RATE-HZ]                      phpspy sampling rate in Hz (default: 99)
+      --phpspy-args=PHPSPY-ARGS                extra arguments to pass to phpspy
+      --no-cache                               disable the binary analysis cache
+  -o, --output=OUTPUT                          output file path (default: stdout)
+```
+
 ## [Experimental] Dump the memory usage of the target process
 ```bash
 ./reli inspector:memory --help
@@ -342,8 +415,40 @@ The executing process must have the CAP_SYS_PTRACE capability. (Usually run as r
 ```bash
 $ sudo php ./reli i:eg -p 2183131
 0x555ae7825d80
-``` 
+```
 The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
+
+### Hybrid phpspy mode
+Install phpspy via reli and use it as the tracing backend:
+```bash
+# Install phpspy (builds from source, installs to ~/.reli/bin/phpspy)
+$ ./reli phpspy:install
+
+# Trace a single process (reli resolves EG, phpspy does the fast tracing)
+$ sudo php ./reli phpspy:trace -p <pid>
+resolving EG address...
+EG address resolved: 0x564102620bc0
+SG address resolved: 0x564102620600
+starting phpspy for pid 12345...
+0 usleep <internal>:-1
+1 <main> Command line code:1
+```
+
+This is especially useful for ZTS PHP where phpspy alone cannot resolve the EG address:
+```bash
+# Trace a ZTS PHP process — reli handles ZTS EG resolution, phpspy traces
+$ sudo php ./reli phpspy:trace -p <zts-pid>
+```
+
+Daemon mode discovers processes automatically and launches phpspy per process:
+```bash
+$ sudo php ./reli phpspy:daemon -P "^php-fpm"
+```
+
+You can pass extra phpspy flags via `--phpspy-args`:
+```bash
+$ sudo php ./reli phpspy:trace -p <pid> --phpspy-args="-c -1"
+```
 
 ### Show currently executing opcodes at traces
 If a user wants to profile a really CPU-bound application, then he or she wouldn't only want to know what line is slow, but what opcode is. In such cases, use `--template=phpspy_with_opcode` with `inspector:trace` or `inspector:daemon`.
@@ -604,7 +709,7 @@ See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.11.
 ## Binary analysis cache
 Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.
 
-Cache files are stored under `~/.cache/reli/binary-analysis/` (following the XDG Base Directory specification), keyed by binary fingerprint (device ID + inode). The cache is automatically invalidated when the target binary is updated (inode changes).
+Cache files are stored under `~/.cache/reli/binary-analysis/` (following the XDG Base Directory specification), keyed by binary fingerprint (device ID + inode + ELF header content). In container environments, Docker's overlayfs can assign the same device ID and inode to different binaries across different images (e.g. `php:8.3` and `php:8.3-zts`), so the ELF header content is included to ensure different binaries always produce different cache keys.
 
 ### Clear the cache
 ```bash
