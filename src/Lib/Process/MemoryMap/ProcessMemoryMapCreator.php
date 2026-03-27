@@ -18,9 +18,7 @@ use Reli\Lib\String\LineFetcher;
 
 final class ProcessMemoryMapCreator implements ProcessMemoryMapCreatorInterface
 {
-    private const CACHE_TTL_NS = 100_000_000; // 100ms
-
-    /** @var array<int, array{map: ProcessMemoryMap, time: int}> */
+    /** @var array<int, ProcessMemoryMap> */
     private array $cache = [];
 
     public static function create(): self
@@ -40,17 +38,22 @@ final class ProcessMemoryMapCreator implements ProcessMemoryMapCreatorInterface
     #[\Override]
     public function getProcessMemoryMap(int $pid): ProcessMemoryMap
     {
-        $now = hrtime(true);
-        if (
-            isset($this->cache[$pid])
-            && ($now - $this->cache[$pid]['time']) < self::CACHE_TTL_NS
-        ) {
-            return $this->cache[$pid]['map'];
+        if (isset($this->cache[$pid])) {
+            return $this->cache[$pid];
         }
 
         $memory_map_raw = $this->memory_map_reader->read($pid);
         $map = $this->memory_map_parser->parse($memory_map_raw);
-        $this->cache[$pid] = ['map' => $map, 'time' => $now];
+        $this->cache[$pid] = $map;
         return $map;
+    }
+
+    public function flushCache(?int $pid = null): void
+    {
+        if ($pid !== null) {
+            unset($this->cache[$pid]);
+        } else {
+            $this->cache = [];
+        }
     }
 }
