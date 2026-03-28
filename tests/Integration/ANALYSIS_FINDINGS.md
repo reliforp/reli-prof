@@ -607,6 +607,22 @@ Laravel's memory cost is dominated by framework code loading, not object overhea
 
 ---
 
+### 33. Eloquent ORM — 1,678 bytes per Model (array overhead)
+
+10K User::all() → +16MB (model あたり 1,678 bytes).
+Object: 586B. Arrays (~700B for $attributes/$original/$casts/etc).
+Strings: ~390B (column values).
+
+Each Model holds 6-7 internal arrays, most empty. Empty PHP arrays cost
+56 bytes each → ~400B of array header overhead per model. For 100K models
+this becomes 4MB of pure empty-array overhead.
+
+No companion pattern, but the array overhead echoes the Symfony Forms
+OptionsResolver issue — many internal arrays per instance that could be
+lazily initialized or shared.
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
