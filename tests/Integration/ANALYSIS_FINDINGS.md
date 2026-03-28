@@ -595,6 +595,18 @@ tags, meta}`, the overhead ratio is high.
 
 ---
 
+### 32. Laravel — Bytecode-Dominated Boot, Efficient DI
+
+Empty Laravel app (fresh install, 20 requests):
+- opcache off: 22 MB (52% bytecode = 11.13 MB, 11,098 op_arrays)
+- opcache on: 10 MB (bytecode moves to SHM)
+- No leak after 20 requests
+
+Only 150 Closures + ~50 singleton service objects. DI container is efficient.
+Laravel's memory cost is dominated by framework code loading, not object overhead.
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
