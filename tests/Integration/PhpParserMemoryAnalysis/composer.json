@@ -1,0 +1,6 @@
+{
+    "name": "test/php-parser-memory",
+    "require": {
+        "nikic/php-parser": "^5.0"
+    }
+}

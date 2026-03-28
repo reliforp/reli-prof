@@ -311,7 +311,28 @@ to build the context tree. SQLite output worked fine (streams to disk).
 
 ---
 
-### 14. Twig — Compiled Bytecode Dominates (op_array pattern)
+### 14. nikic/PHP-Parser — Token Objects Outnumber AST Nodes 2:1
+
+**Scenario**: Parse 95KB PHP code (30 classes × 10 methods) → 16MB (14K AST nodes).
+
+**reli-prof Result** (99.2% of 14.3MB analyzed):
+
+| Class | Count | Memory |
+|---|---|---|
+| `PhpParser\Token` | **32,493** | 3,300 KB |
+| `PhpParser\Node\Expr\Variable` | 3,600 | 253 KB |
+| `PhpParser\Node\Identifier` | 1,380 | 97 KB |
+
+**Key Finding**: Token objects (32K) outnumber AST nodes (14K) by 2.3×. PHP-Parser v5
+keeps tokens attached to nodes for position/comment information. Objects (4.54 MB)
+and arrays (4.51 MB) are roughly equal — each Node has an `attributes` array.
+
+**Scalability note**: At 200 classes × 20 methods (185K AST nodes, 162MB), reli-prof's
+context tree builder OOMs even at 4GB. Another strong motivator for P6 (summary-only).
+
+---
+
+### 15. Twig — Compiled Bytecode Dominates (op_array pattern)
 
 **Scenario**: Compile and render 5,000 unique Twig templates → 108.5MB (22KB/template).
 
