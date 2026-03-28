@@ -109,7 +109,7 @@ class TraceMergerTest extends BaseTestCase
 
         $merged = $this->merger->merge($native, $php);
 
-        // zif_sleep [native], sleep_wrapper [php], ICALL [native], main [php], execute_ex [native], zend_execute [native]
+        // zif_sleep, sleep_wrapper [php], ICALL, main [php], execute_ex, zend_execute
         $this->assertCount(6, $merged->frames);
         $this->assertSame('zif_sleep', $merged->frames[0]->nativeFrame->symbol_name);
         $this->assertSame('sleep_wrapper', $merged->frames[1]->phpFrame->function_name);
