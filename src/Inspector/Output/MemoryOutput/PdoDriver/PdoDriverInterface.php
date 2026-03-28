@@ -43,4 +43,7 @@ interface PdoDriverInterface
 
     /** SQL expression to cast a value to integer */
     public function castAsInteger(string $expr): string;
+
+    /** Statements to execute for child processes doing parallel bulk insert */
+    public function tuneForParallelInsert(\PDO $db): void;
 }

@@ -15,6 +15,7 @@ namespace Reli\Inspector\Output\MemoryOutput;
 
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ParallelContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
@@ -23,6 +24,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     public function __construct(
         private PdoDriverInterface $driver,
         private ?RegionBoundaries $region_boundaries = null,
+        private bool $parallel = false,
     ) {
     }
 
@@ -39,17 +41,39 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $run_id = $this->insertRun($db);
             $this->insertSummary($db, $run_id, $result->summary);
 
-            $sink = new PdoContextTreeSink($db, $this->driver, $run_id, $this->region_boundaries);
-            $analyzer = new ContextAnalyzer();
-            $analyzer->analyze($result->context, $sink);
-            $sink->flush();
+            if ($this->parallel && ParallelContextAnalyzer::isAvailable()) {
+                // Commit run + summary so child processes can see them,
+                // then run the tree walk in parallel child processes.
+                $db->commit();
 
-            $this->insertLocationTypesSummaryFromDb($db, $run_id);
-            $this->insertClassObjectsSummaryFromDb($db, $run_id);
+                $parallel = new ParallelContextAnalyzer();
+                $parallel->analyze(
+                    $result->context,
+                    $this->driver,
+                    $run_id,
+                    $this->region_boundaries,
+                );
 
-            $db->commit();
+                // Aggregate queries run in the parent after children finish.
+                $db->beginTransaction();
+                $this->insertLocationTypesSummaryFromDb($db, $run_id);
+                $this->insertClassObjectsSummaryFromDb($db, $run_id);
+                $db->commit();
+            } else {
+                $sink = new PdoContextTreeSink($db, $this->driver, $run_id, $this->region_boundaries);
+                $analyzer = new ContextAnalyzer();
+                $analyzer->analyze($result->context, $sink);
+                $sink->flush();
+
+                $this->insertLocationTypesSummaryFromDb($db, $run_id);
+                $this->insertClassObjectsSummaryFromDb($db, $run_id);
+
+                $db->commit();
+            }
         } catch (\Throwable $e) {
-            $db->rollBack();
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
             throw $e;
         }
 

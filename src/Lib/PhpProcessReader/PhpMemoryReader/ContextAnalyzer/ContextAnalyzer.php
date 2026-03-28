@@ -18,7 +18,13 @@ use WeakMap;
 
 final class ContextAnalyzer
 {
-    private int $node_id = 0;
+    private int $node_id;
+
+    public function __construct(
+        int $start_node_id = 0,
+    ) {
+        $this->node_id = $start_node_id;
+    }
 
     /**
      * @param WeakMap<ReferenceContext, int>|null $memo

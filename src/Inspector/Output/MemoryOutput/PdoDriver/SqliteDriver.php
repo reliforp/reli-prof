@@ -85,4 +85,14 @@ final class SqliteDriver implements PdoDriverInterface
     {
         return "CAST({$expr} AS INTEGER)";
     }
+
+    #[\Override]
+    public function tuneForParallelInsert(\PDO $db): void
+    {
+        $db->exec('PRAGMA journal_mode=WAL');
+        $db->exec('PRAGMA synchronous=NORMAL');
+        $db->exec('PRAGMA cache_size=-65536');
+        $db->exec('PRAGMA temp_store=MEMORY');
+        $db->exec('PRAGMA mmap_size=268435456');
+    }
 }

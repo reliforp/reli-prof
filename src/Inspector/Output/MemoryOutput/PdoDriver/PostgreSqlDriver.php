@@ -86,4 +86,10 @@ final class PostgreSqlDriver implements PdoDriverInterface
     {
         return "CAST({$expr} AS INTEGER)";
     }
+
+    #[\Override]
+    public function tuneForParallelInsert(\PDO $db): void
+    {
+        $this->tuneForBulkInsert($db);
+    }
 }

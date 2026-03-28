@@ -88,4 +88,10 @@ final class MySqlDriver implements PdoDriverInterface
     {
         return "CAST({$expr} AS SIGNED)";
     }
+
+    #[\Override]
+    public function tuneForParallelInsert(\PDO $db): void
+    {
+        $this->tuneForBulkInsert($db);
+    }
 }
