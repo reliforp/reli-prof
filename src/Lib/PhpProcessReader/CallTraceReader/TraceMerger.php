@@ -53,6 +53,15 @@ final class TraceMerger
             $native_frame = $native_frames[$i];
             $symbol_name = $native_frame->symbolName ?? '';
 
+            // If this is a PHP VM execution function, insert the PHP frame BEFORE it.
+            // The VM boundary (execute_ex, zend_execute, etc.) is the caller that
+            // dispatches/runs the PHP function, so the PHP frame belongs on the
+            // inner (callee) side of the boundary.
+            if ($this->isPhpVmFunction($symbol_name) && $php_frame_index < $php_frame_count) {
+                $merged[] = MergedCallFrame::fromPhp($phpTrace->call_frames[$php_frame_index]);
+                $php_frame_index++;
+            }
+
             // Add native frame
             $merged[] = MergedCallFrame::fromNative(
                 new NativeCallFrame(
@@ -62,12 +71,6 @@ final class TraceMerger
                     $native_frame->ip,
                 )
             );
-
-            // If this is a PHP VM execution function, insert the corresponding PHP frame
-            if ($this->isPhpVmFunction($symbol_name) && $php_frame_index < $php_frame_count) {
-                $merged[] = MergedCallFrame::fromPhp($phpTrace->call_frames[$php_frame_index]);
-                $php_frame_index++;
-            }
         }
 
         // Add remaining PHP frames that weren't matched

@@ -507,17 +507,17 @@ $ sudo php ./reli i:trace --with-native-trace -p <pid>
 1 libc.so.6::__nanosleep+0x17 [native]:0
 2 libc.so.6::usleep+0x4c [native]:0
 3 php8.4::zif_usleep+0x42 [native]:0
-4 php8.4::execute_ex+0x4dfa [native]:0
-5 usleep <internal>:-1
-6 php8.4::zend_execute+0x141 [native]:0
-7 <main> /app/test.php:15
+4 usleep <internal>:-1
+5 php8.4::execute_ex+0x4dfa [native]:0
+6 <main> /app/test.php:15
+7 php8.4::zend_execute+0x141 [native]:0
 8 php8.4::zend_execute_script+0x56 [native]:0
 9 php8.4::php_execute_script_ex+0x278 [native]:0
 10 libc.so.6::__libc_start_main+0x8b [native]:0
 11 php8.4::_start+0x25 [native]:0
 ```
 
-Native frames are labeled with `[native]:0` and show `module::symbol+offset`. PHP frames are interleaved at the VM execution boundaries (`execute_ex`, `zend_execute`).
+Native frames are labeled with `[native]:0` and show `module::symbol+offset`. PHP frames are interleaved just before their VM execution boundaries (`execute_ex`, `zend_execute`), reflecting the correct caller-callee relationship: the VM boundary dispatches/runs the PHP function.
 
 The output is phpspy-compatible, so it can be directly converted to flamegraphs or speedscope profiles:
 ```bash

@@ -54,14 +54,15 @@ class TraceMergerTest extends BaseTestCase
 
         $merged = $this->merger->merge($native, $php);
 
-        // Should have: some_internal [native], execute_ex [native], myFunction [php], zend_execute_script [native]
+        // Should have: some_internal [native], myFunction [php], execute_ex [native], zend_execute_script [native]
+        // PHP frame is placed BEFORE its VM boundary (execute_ex dispatches/runs myFunction)
         $this->assertCount(4, $merged->frames);
         $this->assertTrue($merged->frames[0]->isNative());
         $this->assertSame('some_internal', $merged->frames[0]->nativeFrame->symbol_name);
-        $this->assertTrue($merged->frames[1]->isNative());
-        $this->assertSame('execute_ex', $merged->frames[1]->nativeFrame->symbol_name);
-        $this->assertTrue($merged->frames[2]->isPhp());
-        $this->assertSame('myFunction', $merged->frames[2]->phpFrame->function_name);
+        $this->assertTrue($merged->frames[1]->isPhp());
+        $this->assertSame('myFunction', $merged->frames[1]->phpFrame->function_name);
+        $this->assertTrue($merged->frames[2]->isNative());
+        $this->assertSame('execute_ex', $merged->frames[2]->nativeFrame->symbol_name);
         $this->assertTrue($merged->frames[3]->isNative());
     }
 
@@ -80,14 +81,14 @@ class TraceMergerTest extends BaseTestCase
 
         $merged = $this->merger->merge($native, $php);
 
-        // execute_ex (inner VM boundary) should get sleep_wrapper (innermost PHP frame)
-        // zend_execute (outer VM boundary) should get main (outermost PHP frame)
+        // PHP frames are placed BEFORE their VM boundaries (inner side):
+        // zif_sleep [native], sleep_wrapper [php], execute_ex [native], main [php], zend_execute [native]
         $this->assertCount(5, $merged->frames);
         $this->assertSame('zif_sleep', $merged->frames[0]->nativeFrame->symbol_name);
-        $this->assertSame('execute_ex', $merged->frames[1]->nativeFrame->symbol_name);
-        $this->assertSame('sleep_wrapper', $merged->frames[2]->phpFrame->function_name);
-        $this->assertSame('zend_execute', $merged->frames[3]->nativeFrame->symbol_name);
-        $this->assertSame('main', $merged->frames[4]->phpFrame->function_name);
+        $this->assertSame('sleep_wrapper', $merged->frames[1]->phpFrame->function_name);
+        $this->assertSame('execute_ex', $merged->frames[2]->nativeFrame->symbol_name);
+        $this->assertSame('main', $merged->frames[3]->phpFrame->function_name);
+        $this->assertSame('zend_execute', $merged->frames[4]->nativeFrame->symbol_name);
     }
 
     public function testMergeEmptyNative(): void
