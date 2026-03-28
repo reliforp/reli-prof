@@ -18,7 +18,8 @@ use Reli\Lib\System\Architecture;
 
 class DwarfArchitectureTest extends BaseTestCase
 {
-    public function testX86RegisterNumbers(): void
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps
+    public function testX86_64RegisterNumbers(): void
     {
         $arch = DwarfArchitecture::X86_64;
         $this->assertSame(16, $arch->ipRegister());
