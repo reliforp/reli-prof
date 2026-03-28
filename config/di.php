@@ -45,6 +45,7 @@ use Reli\Lib\Log\StateCollector\StateCollector;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
+use Reli\Lib\Process\MemoryReader\BufferedMemoryReader;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Search\ProcessSearcher;
@@ -54,7 +55,9 @@ use Psr\Log\LoggerInterface;
 use function DI\autowire;
 
 return [
-    MemoryReaderInterface::class => autowire(MemoryReader::class),
+    MemoryReaderInterface::class => function () {
+        return new BufferedMemoryReader(new MemoryReader());
+    },
     ProcessMemoryMapCreatorInterface::class => autowire(ProcessMemoryMapCreator::class),
     ProcessModuleSymbolReaderCreatorInterface::class => autowire(ProcessModuleSymbolReaderCreator::class),
     ProcessPathResolver::class => autowire(ContainerAwarePathResolver::class),

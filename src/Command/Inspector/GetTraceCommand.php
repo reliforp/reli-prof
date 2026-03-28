@@ -120,6 +120,10 @@ final class GetTraceCommand extends Command
             );
         }
 
+        if ($get_trace_settings->bulk_stack_copy_max_size !== null) {
+            $this->executor_globals_reader->enableBulkStackCopy($get_trace_settings->bulk_stack_copy_max_size);
+        }
+
         $process_specifier = $this->target_process_resolver->resolve($target_process_settings);
 
         $target_php_settings = $this->php_version_detector->decidePhpVersion(
