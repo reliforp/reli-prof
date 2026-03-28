@@ -86,9 +86,14 @@ emit a warning with the gap quantified.
   Remaining unexplained: ~18.5 MB
 
   This typically indicates:
-    - Memory allocated by PHP extensions via emalloc()
-    - Internal engine caches or buffers
-    - Extension-specific data structures
+    - Extension-internal non-object allocations not yet covered by reli-prof
+    - Extension-specific emalloc() buffers, caches, or data structures
+
+  Note: reli-prof tracks ALL objects (including extension-defined ones)
+  via the object store. The unaccounted portion is non-object allocations
+  from extensions that reli does not yet parse — not a fundamental
+  limitation, just not yet implemented for the specific extension(s)
+  involved.
 
   To investigate further:
     - Check which extensions are loaded (php -m)
@@ -97,13 +102,12 @@ emit a warning with the gap quantified.
 ```
 
 This is informed by the Psalm analysis (psalm#10522) where 25% of heap was
-unaccounted — suspected to be extension-level emalloc() allocations that
-reli-prof's VM-structure-based tracking does not recognize.
+unaccounted — likely extension-level non-object emalloc() allocations.
 
-Note: reli-prof DOES track dynamic property tables, object properties,
-and all standard PHP VM structures. The unaccounted portion represents
-allocations that go through ZendMM (emalloc) but are not part of any
-known zval/zend_string/zend_array/zend_object/op_array structure.
+reli-prof tracks all standard PHP VM structures AND all objects regardless
+of origin (via object_store). Extension-internal non-object allocations
+are a coverage gap that can be closed by adding extension-specific parsers,
+not a fundamental architectural limitation.
 
 Implementation:
 ```php
