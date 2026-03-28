@@ -476,6 +476,22 @@ would show growth patterns.
 
 ---
 
+### 21. PHPUnit 10 — Clean (no accumulation)
+
+3,000 tests: 20MB, mostly bytecode (6MB for 8,190 op_arrays).
+Only ~50 objects after test run. PHPUnit 10's Event System doesn't
+accumulate test results in memory. Good design.
+
+---
+
+### 22. webonyx/graphql-php — Closure-Heavy but Compact
+
+200 types × 20 fields = 4,000 fields: only 10MB.
+4,217 Closures (resolvers) dominate objects at 1,417 KB.
+GraphQL-PHP is memory-efficient.
+
+---
+
 ### 18. Symfony Serializer — Transient Normalization Arrays
 
 **Scenario**: 10K Orders (50K items, 10K addresses) → serialize to JSON.

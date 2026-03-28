@@ -1,0 +1,6 @@
+{
+    "name": "test/graphql-memory",
+    "require": {
+        "webonyx/graphql-php": "^15.0"
+    }
+}
