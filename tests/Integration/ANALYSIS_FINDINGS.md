@@ -229,6 +229,44 @@ For the full tree, consider:
 
 ---
 
+---
+
+## Self-Diagnosing OOM via register_shutdown_function
+
+As documented in `docs/memory-profiler.md`, reli-prof can analyze the crashing
+process FROM WITHIN a shutdown function. We verified this works:
+
+```php
+register_shutdown_function(function () {
+    $error = error_get_last();
+    if (strpos($error['message'], 'Allowed memory size of') !== 0) return;
+    ini_set('memory_limit', '-1'); // raise OUR limit for JSON parsing
+    $pid = getmypid();
+    system("php -d memory_limit=2G reli inspector:memory -p {$pid} "
+        . "--no-stop-process --memory-limit-error-file='{$error['file']}' "
+        . "--memory-limit-error-line='{$error['line']}' > oom_analysis.json");
+});
+```
+
+**Result** (8MB limit, 9,991 Record objects):
+```
+=== OOM DETECTED ===
+  Heap usage: 7.71 MB
+  9,991 × Record                1014.7 KB
+  30,208 × ZendStringMemory     3.35 MB
+```
+
+**Caveat**: For large targets (dompdf with 179K objects), the reli-prof
+context tree builder itself OOMs even at 2GB. The `--memory-limit-error-file`
+option helps focus the analysis, but the core issue is that reference tree
+expansion scales with the number of objects in the target.
+
+**Improvement idea (P6)**: A lightweight "summary-only" analysis mode that
+skips the full context tree and only computes type/class summaries. This would
+make self-diagnosis viable even for large processes.
+
+---
+
 ### P1: CLI Summary with Top Allocations (High Impact, Low Effort)
 
 **Problem**: JSON output is 70-140MB, SQLite requires manual SQL queries.
@@ -308,3 +346,4 @@ reachable node. For dompdf (179K objects, 447K arrays), the SQLite file reached
 | P3: JSON compact mode | Medium | Low | **3rd** |
 | P5: Scalable path queries for large processes | Medium | Medium | **4th** |
 | P4: Diff/snapshot comparison | Medium | Medium | **5th** |
+| P6: Lightweight summary-only mode (no context tree) | Medium | Medium | **6th** |

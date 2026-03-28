@@ -1,0 +1,4 @@
+vendor/
+composer.lock
+oom_analysis_*.json
+oom_reli_stderr_*.txt
