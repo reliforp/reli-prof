@@ -261,6 +261,33 @@ with peak 8MB. The stream-based fix appears to have resolved the original issue.
 
 ---
 
+### 11. phpstan/phpstan#8082 — Trait Self-Reference Infinite Recursion
+
+**Issue**: `trait TraitUsesSelf { use TraitUsesSelf; }` causes PHPStan to loop forever.
+Still reproducible on PHPStan 2.1.44.
+
+**reli-prof Result** (93.84% of 84MB analyzed, captured mid-recursion):
+
+| Class | Count | Memory |
+|---|---|---|
+| `BetterReflection\Reflection\Adapter\ReflectionClass` | **213,009** | 14,977 KB |
+
+PHPStan generates **213K ReflectionClass adapter objects** trying to resolve the circular
+trait reference. The next biggest class (`Closure`) has only 972 instances.
+
+This is the quintessential reli-prof use case: a live process spinning at 100% CPU,
+and reli-prof attaches from outside to instantly show what's accumulating.
+
+**Also tested**: PHPStan#8835 (`self::X` in `@implements`) — fixed in v2.1, no longer OOMs.
+
+---
+
+### 12. phpstan/phpstan#8835 — self:: in @implements (FIXED in v2.1)
+
+No longer reproduces. PHPStan 2.1.44 handles `@implements I<self::X>` correctly.
+
+---
+
 ## Self-Diagnosing OOM via register_shutdown_function
 
 As documented in `docs/memory-profiler.md`, reli-prof can analyze the crashing

@@ -1,0 +1,6 @@
+{
+    "name": "test/phpstan-memory",
+    "require": {
+        "phpstan/phpstan": "^2.0"
+    }
+}
