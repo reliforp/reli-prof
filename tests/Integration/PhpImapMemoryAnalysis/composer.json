@@ -1,0 +1,6 @@
+{
+    "name": "test/php-imap-memory",
+    "require": {
+        "webklex/php-imap": "^5.5"
+    }
+}

@@ -1,0 +1,6 @@
+{
+    "name": "test/smalot-pdfparser-memory",
+    "require": {
+        "smalot/pdfparser": "^2.11"
+    }
+}
