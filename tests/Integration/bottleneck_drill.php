@@ -20,16 +20,17 @@ echo "  " . count($node_sizes) . " nodes with locations, " . round(microtime(tru
 // Step 2: Load tree edges into adjacency list
 echo "Loading tree edges...\n";
 $t = microtime(true);
-$stmt = $db->query("SELECT parent_node_id, child_node_id, link_name FROM context_edges WHERE run_id = $run_id AND is_tree = 1");
+$rows = $db->query("SELECT parent_node_id, child_node_id, link_name FROM context_edges WHERE run_id = $run_id AND is_tree = 1")->fetchAll(PDO::FETCH_NUM);
 $children = []; // parent_id => [[child_id, link_name], ...]
 $roots = [];
-while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-    $parent = $row['parent_node_id'] === null ? -1 : (int)$row['parent_node_id'];
-    $child = (int)$row['child_node_id'];
-    $link = $row['link_name'];
+foreach ($rows as $row) {
+    $parent = $row[0] === null ? -1 : (int)$row[0];
+    $child = (int)$row[1];
+    $link = $row[2];
     $children[$parent][] = [$child, $link];
     if ($parent === -1) $roots[] = [$child, $link];
 }
+unset($rows);
 echo "  " . array_sum(array_map('count', $children)) . " edges, " . round(microtime(true) - $t, 2) . "s\n";
 echo "  Memory: " . round(memory_get_usage(true) / 1024 / 1024, 2) . " MB\n";
 
