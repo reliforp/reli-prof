@@ -688,6 +688,96 @@ inspector:memory:query --db=out.sqlite3 --query=all  # full report
 Implementation: Opens existing SQLite, runs the same Pass queries.
 Much simpler than the full report — just SQL + formatting.
 
+## Automatic Bottleneck Drill-Down (Tree-Based)
+
+### Concept
+
+Instead of listing "what's big" and letting humans interpret, automatically
+follow the heaviest branch from root to leaf, showing the dominator path:
+
+```
+→ call_frames                                141.23 MB
+  → frame 1                                  141.23 MB
+    → local_variables                         141.20 MB
+      → $ast                                   89.24 MB   ← 63% of heap
+        → parser                               50.76 MB
+```
+
+This replaces the manual process of: "class ranking → which class is big →
+where is it held → trace from root → find the dominator path."
+
+### Implementation: PHP Post-Order DFS (not SQL)
+
+Recursive SQL CTEs are too slow for large graphs (200K+ edges). Instead,
+load the graph into PHP and run iterative post-order DFS.
+
+**Algorithm:**
+1. Load `context_node_locations` grouped by node_id → `$node_sizes[]`
+2. Load `context_edges WHERE is_tree=1` → `$children[]` adjacency list
+3. Iterative post-order DFS to compute `$subtree_sizes[]`
+4. Greedy drill-down: at each level, pick the heaviest child, show top 3
+
+**Measured Performance:**
+
+| Dataset | Edges | Load edges | DFS compute | Total | PHP Memory |
+|---|---|---|---|---|---|
+| Eloquent | 1.0M | 3.9s | 0.6s | **5s** | 288 MB |
+| CommonMark | 2.5M | 7.0s | 1.6s | **10s** | 1.2 GB |
+| PHP-Parser | 6.1M | 48.7s | 8.3s | **60s** | 3.0 GB |
+| Monolog | 4.5M | ~30s (est) | ~5s (est) | **~35s** | ~2 GB (est) |
+
+DFS itself is fast (O(edges)). The bottleneck is edge loading from SQLite.
+For very large datasets (10M+ edges), edge loading could be optimized by:
+- Binary dump format instead of SQLite row iteration
+- Memory-mapped file
+- Streaming edge reader with fixed-size records
+
+**For typical targets (< 2M edges): under 10 seconds.**
+**For large targets (2-10M edges): 10-60 seconds.**
+**For very large targets (10M+): minutes, but still feasible offline.**
+
+### Example Output (Eloquent, automatic)
+
+```
+=== Bottleneck Drill-Down ===
+→ class_table                                 18.86 MB (44%)
+  call_frames                                 16.59 MB (39%)
+  interned_strings                             2.09 MB ( 5%)
+  ... +5 more branches
+    → ComposerAutoloader → static_properties → loader
+      → classMap → array_elements (1.46 MB, 6547 entries)
+```
+
+```
+=== Bottleneck Drill-Down (from call_frames) ===
+→ call_frames → frame 1 → local_variables    16.56 MB
+  → $users (Collection)                       16.50 MB
+    → items[] (10,000 User objects)           16.45 MB
+      → User[0] → $attributes (array, 7 keys)
+      → User[0] → $original (array, 7 keys)
+      → User[0] → $casts (empty array, 56B overhead)
+```
+
+### Integration with Report Feature
+
+This becomes **Pass 11: Automatic Bottleneck Drill-Down**.
+
+- For `--output-format=report`: runs the PHP DFS and prints the tree
+- For `inspector:memory:query --db=foo.sqlite3 --query=drill-down`: same logic
+- Adaptive: if edges > 5M, warn about memory/time and offer `--max-depth`
+
+### Phase 2: Multi-Root Drill-Down
+
+Instead of always starting from the single heaviest root branch, start from
+multiple entry points:
+
+1. **Heaviest root branch** (call_frames vs class_table vs objects_store)
+2. **Heaviest class** (drill from objects_store → class → instances)
+3. **Heaviest array** (drill from the largest v_arrays entry upward)
+
+This gives 3 perspectives on the same data, catching cases where the heaviest
+*path* doesn't align with the heaviest *class*.
+
 ## Memory Watch with Threshold-Triggered Dump
 
 ### Concept
