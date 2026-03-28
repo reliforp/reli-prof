@@ -18,7 +18,7 @@ use Reli\Lib\System\Architecture;
 
 class DwarfArchitectureTest extends BaseTestCase
 {
-    public function testX86_64RegisterNumbers(): void
+    public function testX8664RegisterNumbers(): void
     {
         $arch = DwarfArchitecture::X86_64;
         $this->assertSame(16, $arch->ipRegister());
