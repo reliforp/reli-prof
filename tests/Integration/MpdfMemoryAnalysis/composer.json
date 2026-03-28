@@ -1,0 +1,6 @@
+{
+    "name": "test/mpdf-memory",
+    "require": {
+        "mpdf/mpdf": "^8.2"
+    }
+}

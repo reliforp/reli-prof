@@ -311,6 +311,33 @@ to build the context tree. SQLite output worked fine (streams to disk).
 
 ---
 
+### 16. mpdf/mpdf#1046 — Font Cache Leak (GC resolves on PHP 8.4)
+
+**Issue**: Each Mpdf instance duplicates font cache; memory grows ~1.6MB per PDF.
+
+**Result**: After 20 PDFs: `memory_get_usage(true)` = 34MB but
+`memory_get_usage(false)` = **10.97 MB**. GC collected 27,400 cycles.
+The leak is resolved by GC, but ZendMM doesn't return chunks to OS.
+
+reli-prof confirmed: only 11MB heap usage (96% analyzed), dominated by
+`ZendOpArrayBody` (6.72 MB — mpdf's own compiled code).
+
+**Lesson**: `memory_get_usage(true)` can be misleading. reli-prof's heap analysis
+shows the actual usage, not the OS-level allocation.
+
+---
+
+### 17. serialize/unserialize Memory Amplification
+
+**Scenario**: 87K stdClass tree, serialized = 16.65MB. Unserialize adds only ~10MB.
+
+reli-prof found two separate stdClass populations (87K + 5K) — the original and
+unserialized copies. The "4x amplification" from wikimedia/less.php#104 may be
+specific to deeply nested objects with many internal references, or was a PHP <8.4
+behavior.
+
+---
+
 ### 14. nikic/PHP-Parser — Token Objects Outnumber AST Nodes 2:1
 
 **Scenario**: Parse 95KB PHP code (30 classes × 10 methods) → 16MB (14K AST nodes).
