@@ -476,6 +476,22 @@ would show growth patterns.
 
 ---
 
+### 18. Symfony Serializer — Transient Normalization Arrays
+
+**Scenario**: 10K Orders (50K items, 10K addresses) → serialize to JSON.
+Objects: 22MB. After serialize: 55MB. JSON: 5.28MB.
+
+**reli-prof** found 70K objects (7.87MB) + 143K strings (9.96MB) = ~22MB.
+The extra 33MB (normalization intermediate arrays) was already freed before
+reli-prof attached. Peak 58MB → final 55MB.
+
+**Limitation**: reli-prof captures a snapshot, not a timeline. Transient
+allocations during `serialize()` → `normalize()` → `json_encode()` aren't
+visible post-call. Would need `inspector:memory` triggered at peak, or
+repeated sampling via `inspector:trace` style.
+
+---
+
 ### P5: Scalable Path Queries (Medium Impact, discovered via dompdf)
 
 **Problem**: `v_node_paths` uses a recursive CTE that generates a row for every

@@ -1,0 +1,7 @@
+{
+    "name": "test/serializer-memory",
+    "require": {
+        "symfony/serializer": "^7.0",
+        "symfony/property-access": "^7.0"
+    }
+}
