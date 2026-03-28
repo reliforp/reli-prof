@@ -41,8 +41,8 @@ function generateLargePhpCode(int $numClasses, int $methodsPerClass): string {
 
 $memBaseline = memory_get_usage(true);
 
-$numClasses = 30;
-$methodsPerClass = 10;
+$numClasses = 200;
+$methodsPerClass = 20;
 $code = generateLargePhpCode($numClasses, $methodsPerClass);
 echo "PHP code size: " . round(strlen($code) / 1024) . " KB ({$numClasses} classes × {$methodsPerClass} methods)\n";
 echo "Memory for code string: " . round((memory_get_usage(true) - $memBaseline) / 1024 / 1024, 2) . " MB\n\n";

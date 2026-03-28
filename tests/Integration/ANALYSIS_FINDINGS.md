@@ -455,11 +455,47 @@ would show growth patterns.
 reachable node. For dompdf (179K objects, 447K arrays), the SQLite file reached
 1GB and the CTE failed with "database or disk is full".
 
-**Proposal**: Either:
-- Add a `v_top_arrays_with_paths` materialized view that only computes paths for
-  the top N arrays/strings by size (much smaller working set)
-- Or provide a non-recursive path function that walks UP from a specific node_id
-  (on-demand rather than pre-computed for all nodes)
+**Proposal**: Provide a non-recursive "walk N levels up" query instead of
+pre-computing all paths. Example from PHP-Parser analysis:
+
+```sql
+-- Walk up 3 levels from the biggest array — no recursion needed
+SELECT e1.link_name, e2.link_name, e3.link_name, e4.link_name
+FROM target_node t
+JOIN context_edges e1 ON e1.child_node_id = t.node_id
+LEFT JOIN context_edges e2 ON e2.child_node_id = e1.parent_node_id
+...
+-- Result: "parser → object_properties → tokens → array_elements"
+```
+
+This correctly identified the 6.5MB token array in PHP-Parser without any recursion.
+
+---
+
+### P6: Reduce Collection-Phase Memory (High Impact, discovered via PHP-Parser)
+
+**Problem**: reli-prof's `MemoryLocationsCollector` creates `ReferenceContext` +
+`MemoryLocation` objects for every zval in the target. For PHP-Parser (185K AST
+nodes), this requires **6GB** for reli-prof itself (37× the target's 162MB).
+
+**Root causes**:
+1. `ArrayElementContext` is created per array element (420K tokens → 420K contexts)
+2. `ZendStringMemoryLocation::$value` stores the full string content
+3. Each `ReferenceContext` holds a `$referencing_contexts` PHP array (~120-150 bytes)
+
+**Proposals (information-preserving)**:
+
+| Idea | Savings | Difficulty |
+|---|---|---|
+| **Lazy string value**: only store strings >N bytes on demand | ~30-50% for string-heavy targets | Low |
+| **Streaming context tree to SQLite during collection**: instead of building the full tree in memory, emit edges/nodes to SQLite as they're discovered | ~60-80% | Medium-High |
+| **Flat array instead of objects for ArrayElementContext**: replace 1 object + array per element with a single flat array `[address => [key, value_type, value_address]]` | ~40% for array-heavy targets | Medium |
+| **Interned context reuse**: for repeated patterns (e.g., 200K `IgnoredErrors` objects with identical structure), share the context template | Varies | High |
+
+The streaming approach is the most impactful: instead of accumulating the entire
+context tree in reli's PHP heap and then writing it out, write `context_edges` and
+`context_node_locations` rows to SQLite as the collector walks the target's memory.
+This would make reli's memory usage O(stack depth) instead of O(target size).
 
 ---
 
