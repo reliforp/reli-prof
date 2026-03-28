@@ -311,6 +311,31 @@ to build the context tree. SQLite output worked fine (streams to disk).
 
 ---
 
+### 14. Twig — Compiled Bytecode Dominates (op_array pattern)
+
+**Scenario**: Compile and render 5,000 unique Twig templates → 108.5MB (22KB/template).
+
+**reli-prof Result** (SQLite):
+
+| Type | Count | Memory |
+|---|---|---|
+| `ZendOpArrayBodyMemoryLocation` | **30,860** | **45.42 MB** |
+| `ZendArrayTableMemoryLocation` | 45,431 | 13.73 MB |
+| `ZendStringMemoryLocation` | 144,788 | 9.02 MB |
+| `ZendOpArrayHeaderMemoryLocation` | 30,860 | 7.53 MB |
+
+**New pattern**: The dominant memory consumer isn't objects, arrays, or strings —
+it's **compiled PHP bytecode** (op_array body + header = 53MB, 50% of total).
+Each template compiles to a PHP class with ~6 methods, creating 30K op_arrays.
+
+Only 25K objects total (ConstantExpression 10K + Source 10K). The rest is code.
+
+**Insight for reli-prof**: The `location_types_summary` correctly identifies this,
+but the `class_objects_summary` only shows live objects. A "compiled classes summary"
+(grouping op_arrays by their owning class) would make this pattern more visible.
+
+---
+
 ## Self-Diagnosing OOM via register_shutdown_function
 
 As documented in `docs/memory-profiler.md`, reli-prof can analyze the crashing

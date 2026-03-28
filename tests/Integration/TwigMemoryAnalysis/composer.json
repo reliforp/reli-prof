@@ -1,0 +1,6 @@
+{
+    "name": "test/twig-memory",
+    "require": {
+        "twig/twig": "^3.0"
+    }
+}
