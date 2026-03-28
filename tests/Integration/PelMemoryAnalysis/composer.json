@@ -1,0 +1,6 @@
+{
+    "name": "test/pel-memory",
+    "require": {
+        "fileeye/pel": "^0.10"
+    }
+}

@@ -1,0 +1,6 @@
+{
+    "name": "test/phpspreadsheet-memory",
+    "require": {
+        "phpoffice/phpspreadsheet": "^4.0"
+    }
+}

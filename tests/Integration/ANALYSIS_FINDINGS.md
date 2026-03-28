@@ -231,6 +231,36 @@ For the full tree, consider:
 
 ---
 
+### 9. PHPOffice/PhpSpreadsheet — Cell Object Overhead (514 bytes/cell)
+
+**Scenario**: Create a 10,000×20 spreadsheet (200,000 cells).
+Result: 100MB for a 1.88MB XLSX file (53x amplification).
+
+**reli-prof Result** (99.87% of 101MB analyzed):
+
+| Class | Count | Memory |
+|---|---|---|
+| `Cell\Cell` | **200,020** | 29,690 KB |
+| `Cell\IgnoredErrors` | **200,020** | 23,440 KB |
+
+**Key Finding**: Every Cell automatically creates an `IgnoredErrors` companion object
+(120 bytes each), adding 23MB of overhead that's almost never used. The Cell itself
+is 152 bytes. Together: 272 bytes/cell in object overhead alone.
+
+**Type breakdown**: Objects 51.9MB + Arrays 17.4MB + Strings 15.4MB = 84.7MB out of 101MB.
+
+**Recommendation**: `IgnoredErrors` should be lazy-initialized (null until first use).
+This alone would save 23% of total memory (23MB out of 100MB).
+
+---
+
+### 10. FileEye/pel#29 — EXIF Memory Leak (NOT REPRODUCED)
+
+On pel v0.10, processing 30 JPEG files (6.4MB each) shows stable 2MB memory
+with peak 8MB. The stream-based fix appears to have resolved the original issue.
+
+---
+
 ## Self-Diagnosing OOM via register_shutdown_function
 
 As documented in `docs/memory-profiler.md`, reli-prof can analyze the crashing
