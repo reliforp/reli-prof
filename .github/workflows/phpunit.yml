@@ -273,7 +273,7 @@ jobs:
       - name: Run unit tests
         run: |
           mkdir -p build/logs
-          vendor/bin/phpunit --exclude-group target-version,frankenphp --coverage-clover build/logs/clover.xml
+          vendor/bin/phpunit --exclude-group target-version,frankenphp,mod_php --coverage-clover build/logs/clover.xml
 
       - name: Send to coveralls
         uses: coverallsapp/github-action@v2
