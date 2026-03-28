@@ -48,7 +48,23 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
     {
         $thread_pointer = $this->thread_pointer_retriever->getThreadPointer($pid);
 
+        // TODO: remove diagnostic after ARM64 TLS investigation
+        fwrite(STDERR, sprintf(
+            "[TLS diag] thread_pointer=0x%x for pid=%d\n",
+            $thread_pointer,
+            $pid,
+        ));
+
         $descriptors = $this->resolveDescriptors();
+
+        // TODO: remove diagnostic after ARM64 TLS investigation
+        fwrite(STDERR, sprintf(
+            "[TLS diag] descriptors: dtvp_offset=%d, dtv_size=%d, pointer_val_offset=%d, modid_offset=%d\n",
+            $descriptors['pthread_dtvp_offset'],
+            $descriptors['dtv_dtv_size'],
+            $descriptors['dtv_t_pointer_val_offset'],
+            $descriptors['link_map_l_tls_modid_offset'],
+        ));
 
         $dtv_pointer_address = $thread_pointer + $descriptors['pthread_dtvp_offset'];
         $dtv_pointer_cdata = $this->memory_reader->read($pid, $dtv_pointer_address, 8);
