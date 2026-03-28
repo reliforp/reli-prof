@@ -74,23 +74,36 @@ Data source: `MemoryAnalysisResult::$summary` — no DB needed.
 ### Pass 1b: Unaccounted Memory Warning (always runs)
 
 When `heap_memory_analyzed_percentage` is below a threshold (e.g., 95%),
-emit a warning with possible causes.
+emit a warning with the gap quantified.
 
 ```
 === ⚠ Unaccounted Memory: 23.3 MB (14.3%) ===
-  Possible causes:
-    - ZendMM allocation overhead: 4.8 MB (reported in summary)
-    - Dynamic property tables from unserialize()
-    - Internal engine structures not tracked by reli-prof
+  reli-prof tracked 85.7% of ZendMM heap allocations.
+  The remaining 14.3% is allocated via ZendMM but does not match
+  any known PHP VM structure (zval, string, array, object, op_array, etc.).
 
-  Heuristic: if object_count > 50K and unaccounted > 10%,
-  suggest checking __unserialize() definitions on hot classes.
+  ZendMM allocation overhead (bucket alignment): 4.8 MB
+  Remaining unexplained: ~18.5 MB
+
+  This typically indicates:
+    - Memory allocated by PHP extensions via emalloc()
+    - Internal engine caches or buffers
+    - Extension-specific data structures
+
+  To investigate further:
+    - Check which extensions are loaded (php -m)
+    - Try disabling extensions one by one to isolate the source
+    - Use php-memprof for C-level allocation tracking
 ```
 
 This is informed by the Psalm analysis (psalm#10522) where 25% of heap was
-unaccounted due to dynamic property table overhead from unserialize().
-The report cannot determine the exact cause, but can flag the anomaly and
-suggest likely explanations based on the object count and overhead ratio.
+unaccounted — suspected to be extension-level emalloc() allocations that
+reli-prof's VM-structure-based tracking does not recognize.
+
+Note: reli-prof DOES track dynamic property tables, object properties,
+and all standard PHP VM structures. The unaccounted portion represents
+allocations that go through ZendMM (emalloc) but are not part of any
+known zval/zend_string/zend_array/zend_object/op_array structure.
 
 Implementation:
 ```php
@@ -100,15 +113,16 @@ $alloc_overhead = $summary['possible_allocation_overhead_total'];
 $unaccounted = $heap_usage * (1 - $analyzed_pct / 100);
 
 if ($analyzed_pct < 95.0) {
-    $object_count = array_sum(array_column($class_objects_summary, 'count'));
+    $unexplained = $unaccounted - $alloc_overhead;
     $section->addWarning(sprintf(
-        'Unaccounted memory: %.1f MB (%.1f%%). '
-        . '%d objects exist — if many were created via unserialize(), '
-        . 'dynamic property tables may be the cause. '
-        . 'Consider defining __unserialize() on frequently-instantiated classes.',
+        'Unaccounted memory: %.1f MB (%.1f%% of heap). '
+        . 'ZendMM alignment overhead explains %.1f MB. '
+        . 'Remaining %.1f MB may be from extension-level emalloc() '
+        . 'allocations not tracked by reli-prof.',
         $unaccounted / 1024 / 1024,
         100 - $analyzed_pct,
-        $object_count,
+        $alloc_overhead / 1024 / 1024,
+        max(0, $unexplained) / 1024 / 1024,
     ));
 }
 ```
