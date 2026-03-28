@@ -540,6 +540,40 @@ Users encountering this pattern should look for:
 
 ---
 
+### 27. PHPOffice/PhpWord — Style Companion Pattern (52% overhead)
+
+50 sections × 100 paragraphs → 44MB.
+
+| Class | Count | Memory | Ratio |
+|---|---|---|---|
+| `Style\Paragraph` | **21,750** | 14,104 KB | **1:1 with every text element** |
+| `Style\Font` | **16,750** | 9,029 KB | **1:1 with every Text** |
+| `Element\Text` | 16,750 | 5,365 KB | The actual content |
+
+Same companion pattern as PhpSpreadsheet IgnoredErrors: every Text creates
+a dedicated Style\Paragraph (664B) + Style\Font (552B) = 1,216 bytes of style
+overhead per text element. Style accounts for 52% of total memory.
+
+Lazy init or shared default styles would cut 23.1 MB.
+
+---
+
+### 28. league/csv — Clean (user-side accumulation)
+
+50K rows × 20 cols → 116MB. Library has ~0 objects (Reader 1 + Writer 1).
+Memory is 100% user data: 1M strings (45MB) + 50K arrays (62MB).
+The per-row cost (2,391B) is inherent to holding all data in PHP arrays.
+
+---
+
+### 29. Composer — Bytecode-Dominated (phar overhead)
+
+93-package `update --dry-run`: 42MB. Bytecode (5MB) is largest type.
+639 CompletePackage (504KB), 2,906 Link (341KB), 2,663 Constraint (312KB).
+Efficient design — object overhead is only 1.39MB.
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing

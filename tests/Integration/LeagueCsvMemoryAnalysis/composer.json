@@ -1,0 +1,6 @@
+{
+    "name": "test/league-csv-memory",
+    "require": {
+        "league/csv": "^9.0"
+    }
+}

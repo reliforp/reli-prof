@@ -1,0 +1,6 @@
+{
+    "name": "test/phpword-memory",
+    "require": {
+        "phpoffice/phpword": "^1.3"
+    }
+}
