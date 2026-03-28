@@ -506,6 +506,40 @@ GraphQL-PHP is memory-efficient.
 
 ---
 
+### 25. PHP_CodeSniffer — Clean (streaming design)
+
+phpcs on reli-prof's own src/: 26MB, mostly bytecode (2.44MB) + strings (2.19MB).
+Each Sniff class has exactly 1 instance. Files are tokenized and processed
+individually then released. Good streaming design.
+
+---
+
+### 26. Guzzle PSR-7 — Stream Buffers Outside reli Tracking
+
+**Scenario**: 100 PSR-7 Response objects with 500KB bodies each → 58MB.
+
+**reli-prof Result**:
+- `memory_get_usage`: 52.8 MB
+- `zend_mm_heap_usage`: **4.5 MB** (reli reads this from ZendMM)
+- `analyzed`: **8.6%** (of 4.5MB only)
+- 100 `Stream` objects (14.8 KB) + 100 `Response` objects (13.3 KB)
+
+The ~48MB gap between `memory_get_usage` and `zend_mm_heap_usage` is
+`php://temp` stream buffers. These go through ZendMM's emalloc but
+are accounted differently from the tracked heap structures.
+
+**Important for reli-prof**: This is a case where `memory_get_usage`
+reports high memory but reli sees almost nothing. The unaccounted
+memory pass (Pass 1b) would flag this: "52.8 MB used but only 4.5 MB
+in tracked heap — 91% of memory is in non-tracked allocations."
+
+Users encountering this pattern should look for:
+- PSR-7 stream bodies held in memory (use `php://temp/maxmemory:0` or streaming)
+- file_get_contents() results held in variables
+- Extension-level buffers (curl multi handles, etc.)
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
