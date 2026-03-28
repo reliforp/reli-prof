@@ -316,6 +316,50 @@ Cause determination is harder — possible reasons include:
 
 The report flags the anomaly; the user investigates the specific cause.
 
+### Pass 7c: Per-Property Memory Contribution (needs context tree)
+
+link_name frequency × child node size = per-property memory cost across all instances.
+Filters out structural noise (value/key/name/array_elements/object_properties/etc.)
+to surface domain-specific properties that dominate memory.
+
+```
+=== Per-Property Memory Contribution ===
+  message           100,206 × 121 B =  11.53 MB  (LogRecord::$message strings)
+  datetime          100,004 ×  56 B =   5.34 MB  (DateTimeImmutable objects)
+  context           100,024 ×  56 B =   5.34 MB  (context array headers)
+  dynamic_properties 93,316 × 56 B =   4.98 MB  ⚠ (unnecessary HashTables)
+```
+
+Query:
+```sql
+SELECT
+    e.link_name,
+    count(*) as occurrences,
+    round(sum(coalesce(cnl.size, 0)) / 1024.0 / 1024.0, 2) as total_mb,
+    round(avg(coalesce(cnl.size, 0)), 0) as avg_bytes
+FROM context_edges e
+LEFT JOIN context_node_locations cnl ON cnl.node_id = e.child_node_id
+WHERE e.is_tree = 1
+    AND e.link_name NOT IN (
+        'value', 'key', 'name', 'array_elements', 'object_properties',
+        'possible_unused_area', 'object_handlers', 'referenced', 'closure'
+    )
+    AND e.link_name NOT GLOB '[0-9]*'
+GROUP BY e.link_name
+HAVING count(*) > (SELECT max(count) / 2 FROM class_objects_summary)
+ORDER BY sum(coalesce(cnl.size, 0)) DESC
+LIMIT 15;
+```
+
+The `HAVING count(*) > max_class_count / 2` heuristic ensures we only show
+properties that exist on most instances of the dominant class, filtering out
+rare/structural names without a hardcoded exclusion list.
+
+This pass surfaces:
+- Which properties cost the most memory in aggregate
+- `dynamic_properties` overhead (ties into Pass 7b)
+- Scalar vs object vs array properties (avg_bytes = 0 means inline zval)
+
 ### Pass 8: Retained Size Estimate (needs context tree, optional)
 
 ```
