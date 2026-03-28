@@ -15,12 +15,17 @@ namespace Reli\Inspector\MemoryDump;
 
 use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
 use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
+use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
+use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\CollectedMemories;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ParallelCollectAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -46,6 +51,24 @@ final class MemoryDumpReader
         /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
         $target_php_settings = new TargetPhpSettings(php_version: $this->php_version);
 
+        $is_db = in_array($memory_profiler_settings->output_format, ['sqlite3', 'mysql', 'postgresql'], true);
+        $use_parallel = $is_db && ParallelCollectAnalyzer::isAvailable();
+
+        if ($use_parallel) {
+            $this->readParallel($process_specifier, $target_php_settings, $memory_profiler_settings);
+        } else {
+            $this->readSequential($process_specifier, $target_php_settings, $memory_profiler_settings);
+        }
+    }
+
+    /**
+     * @param TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     */
+    private function readSequential(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        MemoryProfilerSettings $memory_profiler_settings,
+    ): void {
         $collected_memories = $this->memory_locations_collector->collectAll(
             $process_specifier,
             $target_php_settings,
@@ -54,6 +77,73 @@ final class MemoryDumpReader
             $memory_profiler_settings->memory_exhaustion_error_details,
         );
 
+        $this->outputCollectedMemories($collected_memories, $target_php_settings, $memory_profiler_settings);
+    }
+
+    /**
+     * Parallel path: prepare → fork workers (collect + analyze) → main reads pipes → DB.
+     *
+     * @param TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     */
+    private function readParallel(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        MemoryProfilerSettings $memory_profiler_settings,
+    ): void {
+        // Phase 1: sequential pre-processing (small heap).
+        $prep = $this->memory_locations_collector->prepare(
+            $process_specifier,
+            $target_php_settings,
+            $this->eg_address,
+            $this->cg_address,
+        );
+
+        $region_boundaries = new RegionBoundaries(
+            $prep->chunk_memory_locations,
+            $prep->huge_memory_locations,
+            $prep->vm_stack_memory_locations,
+            $prep->compiler_arena_memory_locations,
+        );
+
+        // Build summary from prep metadata (region analysis is skipped in
+        // parallel mode — the DB computes summaries via GROUP BY).
+        $summary = [
+            [
+                'memory_get_usage' => $prep->memory_get_usage_size,
+                'memory_get_real_usage' => $prep->memory_get_usage_real_size,
+                'cached_chunks_size' => $prep->cached_chunks_size,
+            ]
+            + [
+                'php_version' => $target_php_settings->php_version,
+                'analyzer' => ReliProfiler::toolSignature(),
+            ]
+        ];
+
+        // Phase 2: set up DB and fork workers.
+        $output_factory = new MemoryOutputFactory();
+        /** @var PdoMemoryOutput $memory_output */
+        $memory_output = $output_factory->create(
+            $memory_profiler_settings,
+            $region_boundaries,
+        );
+
+        $memory_output->outputParallelCollect(
+            $summary,
+            $this->memory_locations_collector,
+            $prep,
+            $region_boundaries,
+            $memory_profiler_settings->memory_exhaustion_error_details,
+        );
+    }
+
+    /**
+     * @param TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     */
+    private function outputCollectedMemories(
+        CollectedMemories $collected_memories,
+        TargetPhpSettings $target_php_settings,
+        MemoryProfilerSettings $memory_profiler_settings,
+    ): void {
         $region_analyzer = new RegionAnalyzer(
             $collected_memories->chunk_memory_locations,
             $collected_memories->huge_memory_locations,
