@@ -728,11 +728,11 @@ Phase 2: Poll loop (cheap, ~1μs per iteration)
   - If below: sleep(interval), continue
   - If above: proceed to Phase 3
 
-Phase 3: Triggered analysis (expensive, once)
-  - Stop the process (optional)
-  - Run full MemoryLocationsCollector::collectAll()
-  - Output via selected format (report/json/sqlite3)
-  - Optionally resume process and continue watching
+Phase 3: Triggered capture (fast)
+  - Option A: Run inspector:memory:dump → fast raw memory dump to file
+    (only reads memory regions, file write after resume — minimal stop time)
+  - Option B: Run full inspector:memory analysis → slower but immediate report
+  - Default: dump (fast), then user runs memory:analyze offline
 
 Phase 4: Optional continuous monitoring
   - --max-dumps=N to limit total dumps
@@ -778,6 +778,7 @@ Watching PID 12345 (PHP 8.4, limit: 128M, threshold: 102.4M)
 | Polling overhead | Zero until OOM | ~1μs per interval |
 | Large targets | reli may OOM in shutdown | Separate process, full control |
 | Process state | Dying, partial state | Alive, stoppable |
+| Analysis | Immediate (in dying process) | Dump fast, analyze later (memory:analyze) |
 
 ### Implementation Effort
 
@@ -787,13 +788,30 @@ Continuous (Phase 4): **1 day** — cooldown/max-dumps.
 
 Core loop is ~10 lines:
 ```php
-$heap_address = $chunk_finder->findHeapAddress($process, $php_settings, $eg_address);
 while (true) {
     $size = $field_reader->readIntField($heap_pointer, 'size');
     if ($size > $threshold) {
-        // trigger full analysis
+        // trigger dump (fast) — reuse MemoryDumpCommand logic
+        // process stop time = just the raw memory reads
+        // file write + analysis happens after resume
         break;
     }
     usleep($interval_us);
 }
 ```
+
+### Integration with Existing Commands
+
+```
+watch triggers → memory:dump (fast capture, minimal stop time)
+                 → memory:analyze (offline, no target needed)
+                   → output-format=report (auto-analysis)
+```
+
+The existing `inspector:memory:dump` already:
+- Reads ZendMM chunks, huge allocs, heap, opcache SHM, BSS, VM stacks, arenas
+- Uses pagemap to skip non-resident pages (opcache SHM optimization)
+- Stops process only during reads, writes file after resume
+- Output is a self-contained dump file for `memory:analyze`
+
+So the watch command just needs to: poll → detect threshold → call dump logic.
