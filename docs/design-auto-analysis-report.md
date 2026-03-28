@@ -71,6 +71,48 @@ PHP version:    v84
 
 Data source: `MemoryAnalysisResult::$summary` — no DB needed.
 
+### Pass 1b: Unaccounted Memory Warning (always runs)
+
+When `heap_memory_analyzed_percentage` is below a threshold (e.g., 95%),
+emit a warning with possible causes.
+
+```
+=== ⚠ Unaccounted Memory: 23.3 MB (14.3%) ===
+  Possible causes:
+    - ZendMM allocation overhead: 4.8 MB (reported in summary)
+    - Dynamic property tables from unserialize()
+    - Internal engine structures not tracked by reli-prof
+
+  Heuristic: if object_count > 50K and unaccounted > 10%,
+  suggest checking __unserialize() definitions on hot classes.
+```
+
+This is informed by the Psalm analysis (psalm#10522) where 25% of heap was
+unaccounted due to dynamic property table overhead from unserialize().
+The report cannot determine the exact cause, but can flag the anomaly and
+suggest likely explanations based on the object count and overhead ratio.
+
+Implementation:
+```php
+$analyzed_pct = $summary['heap_memory_analyzed_percentage'];
+$heap_usage = $summary['zend_mm_heap_usage'];
+$alloc_overhead = $summary['possible_allocation_overhead_total'];
+$unaccounted = $heap_usage * (1 - $analyzed_pct / 100);
+
+if ($analyzed_pct < 95.0) {
+    $object_count = array_sum(array_column($class_objects_summary, 'count'));
+    $section->addWarning(sprintf(
+        'Unaccounted memory: %.1f MB (%.1f%%). '
+        . '%d objects exist — if many were created via unserialize(), '
+        . 'dynamic property tables may be the cause. '
+        . 'Consider defining __unserialize() on frequently-instantiated classes.',
+        $unaccounted / 1024 / 1024,
+        100 - $analyzed_pct,
+        $object_count,
+    ));
+}
+```
+
 ### Pass 2: Top Consumers by Type (always runs)
 
 ```
