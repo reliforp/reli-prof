@@ -1,0 +1,6 @@
+{
+    "name": "test/commonmark-memory",
+    "require": {
+        "league/commonmark": "^2.5"
+    }
+}

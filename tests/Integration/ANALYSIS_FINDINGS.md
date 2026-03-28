@@ -288,6 +288,29 @@ No longer reproduces. PHPStan 2.1.44 handles `@implements I<self::X>` correctly.
 
 ---
 
+### 13. league/commonmark — AST Node Overhead (544K objects for 2.4MB Markdown)
+
+**Scenario**: Parse 2,440KB Markdown (2,000 sections with GFM) → 93MB memory (38x).
+
+**reli-prof Result** (99.89% of 98MB analyzed):
+
+| Class | Count | Memory |
+|---|---|---|
+| `Dflydev\DotAccessData\Data` | **246,007** | 13,454 KB |
+| `League\CommonMark\Node\Inline\Text` | 116,002 | 19,032 KB |
+| `League\CommonMark\Extension\Table\TableCell` | 36,000 | 7,594 KB |
+| `League\CommonMark\Node\Block\Paragraph` | 18,001 | 3,516 KB |
+
+**Key Finding**: `Dflydev\DotAccessData\Data` — a configuration/metadata accessor —
+has 246K instances (most in the entire process). Each AST node appears to create one.
+This is similar to PhpSpreadsheet's IgnoredErrors: a companion object that's always
+created but rarely needed. Lazy initialization would save ~13MB (14% of total).
+
+**Also notable**: 544,187 total objects. The reli-prof JSON output OOMed at 2GB trying
+to build the context tree. SQLite output worked fine (streams to disk).
+
+---
+
 ## Self-Diagnosing OOM via register_shutdown_function
 
 As documented in `docs/memory-profiler.md`, reli-prof can analyze the crashing

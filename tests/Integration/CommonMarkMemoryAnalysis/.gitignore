@@ -1,0 +1,4 @@
+vendor/
+composer.lock
+commonmark_analysis.json
+reli_stderr.txt
