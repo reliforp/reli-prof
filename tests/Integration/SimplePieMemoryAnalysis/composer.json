@@ -1,0 +1,6 @@
+{
+    "name": "test/simplepie-memory",
+    "require": {
+        "simplepie/simplepie": "^1.8"
+    }
+}

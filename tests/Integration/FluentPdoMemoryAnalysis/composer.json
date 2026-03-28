@@ -1,0 +1,6 @@
+{
+    "name": "test/fluentpdo-memory",
+    "require": {
+        "envms/fluentpdo": "^2.2"
+    }
+}
