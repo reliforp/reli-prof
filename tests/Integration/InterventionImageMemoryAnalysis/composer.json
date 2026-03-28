@@ -1,0 +1,6 @@
+{
+    "name": "test/intervention-memory",
+    "require": {
+        "intervention/image": "^3.0"
+    }
+}

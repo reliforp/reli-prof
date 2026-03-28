@@ -492,6 +492,39 @@ repeated sampling via `inspector:trace` style.
 
 ---
 
+### 19. Intervention/image v3 — Clean (no leak)
+
+50 images processed (create → resize → encode): stable at 2MB.
+Only 5 objects alive. Intervention v3 properly releases GD resources.
+
+---
+
+### 20. Monolog BufferHandler — 1.87 KB per Log Entry
+
+**Scenario**: 100K log entries with context data via BufferHandler → 184MB.
+
+**reli-prof Result**:
+
+| Type | Count | Memory |
+|---|---|---|
+| ZendArrayTableOverhead | 293,429 | 51.09 MB |
+| ZendArrayTable | 293,466 | 41.34 MB |
+| ZendString | 334,975 | 20.22 MB |
+| ZendObject | 200,015 | 19.84 MB |
+
+| Class | Count | Memory |
+|---|---|---|
+| `Monolog\LogRecord` | 100,000 | 14,844 KB |
+| `Monolog\JsonSerializableDateTimeImmutable` | 100,000 | 5,469 KB |
+
+Each log entry creates: 1 LogRecord + 1 DateTimeImmutable + ~3 arrays
+(`$context`, `$extra`, internal). **Arrays dominate (92MB of 184MB = 50%)**.
+
+This is a design pattern issue, not a bug: BufferHandler intentionally accumulates.
+But reli-prof quantifies the cost precisely — 1,867 bytes per entry.
+
+---
+
 ### P5: Scalable Path Queries (Medium Impact, discovered via dompdf)
 
 **Problem**: `v_node_paths` uses a recursive CTE that generates a row for every
