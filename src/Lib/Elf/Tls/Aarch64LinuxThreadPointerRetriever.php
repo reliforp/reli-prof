@@ -13,12 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Tls;
 
-use FFI\CData;
-use Reli\Lib\FFI\CannotAllocateBufferException;
 use Reli\Lib\Libc\Errno\Errno;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceAarch64;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
-use Reli\Lib\Process\RegisterReader\RegisterReaderException;
 
 /**
  * Retrieves the thread pointer (TPIDR_EL0) on AArch64 Linux
@@ -26,8 +23,6 @@ use Reli\Lib\Process\RegisterReader\RegisterReaderException;
  */
 final class Aarch64LinuxThreadPointerRetriever implements ThreadPointerRetrieverInterface
 {
-    private const NT_ARM_TLS = 0x401;
-
     public static function createDefault(): self
     {
         return new self(
@@ -69,7 +64,7 @@ final class Aarch64LinuxThreadPointerRetriever implements ThreadPointerRetriever
         }
 
         try {
-            $value = $this->readTpidrEl0($pid);
+            $value = $this->ptrace->readTlsRegister($pid);
         } catch (\Throwable $e) {
             if (!$already_attached) {
                 $this->ptrace->ptrace(PtraceRequest::PTRACE_DETACH, $pid, null, null);
@@ -82,42 +77,5 @@ final class Aarch64LinuxThreadPointerRetriever implements ThreadPointerRetriever
         }
 
         return $value;
-    }
-
-    /**
-     * Read TPIDR_EL0 via PTRACE_GETREGSET with NT_ARM_TLS (0x401).
-     * The kernel returns a single 64-bit value.
-     */
-    /** @psalm-suppress UndefinedPropertyAssignment */
-    private function readTpidrEl0(int $pid): int
-    {
-        /** @var \FFI $ffi */
-        $ffi = \FFI::cdef('
-            struct iovec {
-                void  *iov_base;
-                unsigned long iov_len;
-            };
-        ');
-
-        $buf = \FFI::new('unsigned long long')
-            ?? throw new CannotAllocateBufferException('cannot allocate tls buffer');
-        $iov = $ffi->new('struct iovec')
-            ?? throw new CannotAllocateBufferException('cannot allocate iovec');
-
-        $iov->iov_base = \FFI::addr($buf);
-        $iov->iov_len = \FFI::sizeof($buf);
-
-        $result = $this->ptrace->ptrace(
-            PtraceRequest::PTRACE_GETREGSET,
-            $pid,
-            self::NT_ARM_TLS,
-            \FFI::addr($iov),
-        );
-
-        if ($result === -1) {
-            throw new TlsFinderException('PTRACE_GETREGSET NT_ARM_TLS failed');
-        }
-
-        return (int)$buf->cdata;
     }
 }

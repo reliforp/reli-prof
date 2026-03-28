@@ -101,8 +101,16 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                     $root_link_map_address,
                 );
                 $tls_block_address = $tls_finder->findTlsBlock($pid, $link_map?->this_address);
-            } catch (TlsFinderException) {
-            } catch (\Reli\Lib\Process\MemoryReader\MemoryReaderException) {
+            } catch (TlsFinderException $e) {
+                // TODO: remove diagnostic after ARM64 TLS investigation
+                fwrite(STDERR, "[TLS diag] TlsFinderException: {$e->getMessage()}\n");
+                $prev = $e->getPrevious();
+                if ($prev !== null) {
+                    fwrite(STDERR, "[TLS diag]   caused by: {$prev->getMessage()}\n");
+                }
+            } catch (\Reli\Lib\Process\MemoryReader\MemoryReaderException $e) {
+                // TODO: remove diagnostic after ARM64 TLS investigation
+                fwrite(STDERR, "[TLS diag] MemoryReaderException: {$e->getMessage()}\n");
             }
         }
 

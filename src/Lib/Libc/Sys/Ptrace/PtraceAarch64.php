@@ -129,4 +129,39 @@ final class PtraceAarch64 implements Ptrace
 
         return $regs;
     }
+
+    /**
+     * Read TPIDR_EL0 (thread pointer) via PTRACE_GETREGSET + NT_ARM_TLS.
+     * All buffers are allocated from the same FFI context to avoid cross-context issues.
+     *
+     * @psalm-suppress UndefinedPropertyAssignment
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidCast
+     */
+    public function readTlsRegister(int $pid): int
+    {
+        $buf = $this->ffi->new('unsigned long long')
+            ?? throw new CannotAllocateBufferException('cannot allocate tls buffer');
+        $iov = $this->ffi->new('struct iovec')
+            ?? throw new CannotAllocateBufferException('cannot allocate iovec');
+
+        $iov->iov_base = \FFI::addr($buf);
+        $iov->iov_len = \FFI::sizeof($buf);
+
+        // NT_ARM_TLS = 0x401
+        $result = $this->ptrace(
+            PtraceRequest::PTRACE_GETREGSET,
+            $pid,
+            0x401,
+            \FFI::addr($iov),
+        );
+
+        if ($result === -1) {
+            throw new \RuntimeException(
+                'PTRACE_GETREGSET NT_ARM_TLS failed, errno=' . ((int)$this->ffi->errno)
+            );
+        }
+
+        return (int)$buf->cdata;
+    }
 }
