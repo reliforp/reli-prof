@@ -574,6 +574,27 @@ Efficient design — object overhead is only 1.39MB.
 
 ---
 
+### 30. DOMDocument / SimpleXML — C Extension Memory (invisible to reli)
+
+50K XML elements (8.5MB): DOMDocument and SimpleXML store data in C extension
+memory, not PHP heap. reli sees almost nothing (Delta -8.5MB because XML string
+was freed). Same pattern as Guzzle's php://temp streams.
+
+---
+
+### 31. json_decode — Array Overhead Amplification (4.4x)
+
+100K items (12MB JSON) → json_decode produces 54MB of PHP arrays.
+1.2M strings (45.8MB) + 300K arrays (92MB) = 138MB total.
+Per-item: 566 bytes. Arrays dominate at 67%.
+
+This is not a bug — it's the inherent cost of PHP's array representation.
+Each associative array has: ZendArray header (56B) + HashTable bucket array
+(variable) + overhead (alignment). For small arrays like `{id, name, email,
+tags, meta}`, the overhead ratio is high.
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
