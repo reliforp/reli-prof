@@ -1,0 +1,6 @@
+{
+    "name": "test/dompdf-memory",
+    "require": {
+        "dompdf/dompdf": "^3.0"
+    }
+}

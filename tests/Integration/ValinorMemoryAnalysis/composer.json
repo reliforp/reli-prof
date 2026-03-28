@@ -1,0 +1,6 @@
+{
+    "name": "test/valinor-memory",
+    "require": {
+        "cuyz/valinor": "^1.15"
+    }
+}

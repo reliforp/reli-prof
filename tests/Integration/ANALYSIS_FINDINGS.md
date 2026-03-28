@@ -152,6 +152,64 @@ no observable leak. The issue may be fixed in current versions or MySQL-specific
 
 ---
 
+---
+
+### 6. dompdf — HTML-to-PDF Memory Amplification (610x)
+
+**Issue**: dompdf uses ~610x more memory than input HTML size.
+631KB HTML → 384.5MB memory. Even after `unset()` + `gc_collect_cycles()`, 382MB remains.
+
+**reli-prof Result** (99.19% of 240MB heap analyzed):
+
+| Type | Count | Memory |
+|---|---|---|
+| ZendArrayTableMemoryLocation | 447,262 | 66.93 MB |
+| ZendArrayTableOverheadMemoryLocation | 447,105 | 55.51 MB |
+| ZendObjectMemoryLocation | **179,071** | 48.64 MB |
+| ZendArrayMemoryLocation | 447,182 | 23.88 MB |
+| ZendReferenceMemoryLocation | 337,406 | 10.30 MB |
+
+**Top classes by memory:**
+
+| Class | Count | Memory |
+|---|---|---|
+| `Dompdf\Frame` | 50,721 | 14,661 KB |
+| `Dompdf\FrameDecorator\Text` | 23,501 | 12,301 KB |
+| `Dompdf\FrameDecorator\TableCell` | 20,400 | 10,996 KB |
+| `Dompdf\LineBox` | 26,530 | 6,425 KB |
+| `Dompdf\FrameDecorator\TableRow` | 5,100 | 2,430 KB |
+| `DOMElement` | 27,300 | 1,066 KB |
+
+**Diagnosis**: dompdf creates a `Frame` for every DOM node, then wraps each in a
+`FrameDecorator` (Text/TableCell/Block/etc), and creates a `LineBox` for each text
+line. 100 tables × 50 rows × 4 cells = 20,000 TableCells alone. Each Frame holds
+multiple arrays (style, position, children), explaining the 447K array allocations.
+
+**Note**: The v_node_paths recursive CTE failed (SQLite file reached 1GB) because
+the object graph is too deep/wide (179K objects). This reveals a **reli-prof
+scalability issue**: the SQLite output's recursive path view doesn't scale beyond
+~100K objects.
+
+**New improvement idea**: Add `LIMIT` or depth control to `v_node_paths`, or provide
+a non-recursive alternative for large processes.
+
+---
+
+### 7. CuyZ/Valinor#680 — AsConverter OOM (NOT REPRODUCED)
+
+The `#[AsConverter]` attribute isn't in the stable release (v1.17). The issue is
+specific to a dev-next feature. Without the attribute, 10K mappings use only 4MB.
+
+---
+
+### 8. Symfony StreamedJsonResponse#60257 (SKIPPED)
+
+Transient memory spike during `json_encode()` — not a persistent allocation that
+reli-prof can meaningfully capture. The issue is about output buffering design, not
+object accumulation.
+
+---
+
 ### Revised Proposals (What's Actually Needed)
 
 **Problem**: JSON output is 70-140MB for a 26-46MB process. This makes the output
@@ -227,6 +285,20 @@ would show growth patterns.
 
 ---
 
+### P5: Scalable Path Queries (Medium Impact, discovered via dompdf)
+
+**Problem**: `v_node_paths` uses a recursive CTE that generates a row for every
+reachable node. For dompdf (179K objects, 447K arrays), the SQLite file reached
+1GB and the CTE failed with "database or disk is full".
+
+**Proposal**: Either:
+- Add a `v_top_arrays_with_paths` materialized view that only computes paths for
+  the top N arrays/strings by size (much smaller working set)
+- Or provide a non-recursive path function that walks UP from a specific node_id
+  (on-demand rather than pre-computed for all nodes)
+
+---
+
 ## Revised Priority Matrix
 
 | Proposal | Impact | Effort | Priority |
@@ -234,4 +306,5 @@ would show growth patterns.
 | P1: CLI summary with top allocations | High | Low | **1st** |
 | P2: Bundled diagnostic queries/docs | Medium | Very Low | **2nd** |
 | P3: JSON compact mode | Medium | Low | **3rd** |
-| P4: Diff/snapshot comparison | Medium | Medium | **4th** |
+| P5: Scalable path queries for large processes | Medium | Medium | **4th** |
+| P4: Diff/snapshot comparison | Medium | Medium | **5th** |

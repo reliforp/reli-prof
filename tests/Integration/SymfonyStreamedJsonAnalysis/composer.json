@@ -1,0 +1,6 @@
+{
+    "name": "test/symfony-streamedjson",
+    "require": {
+        "symfony/http-foundation": "^7.0"
+    }
+}
