@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
+use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
@@ -21,16 +22,16 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
  * Parallelizes the context-graph traversal by forking one child process
  * per top-level branch of the ReferenceContext graph.
  *
- * Each child opens its own DB connection and writes its subtree
- * independently.  Node-ID ranges are partitioned so that children never
- * collide (each branch gets a 100 000 000-wide ID band).
+ * Each child writes its subtree into a private temporary SQLite file
+ * with maximum throughput (journal_mode=OFF, no locking contention).
+ * After all children finish, the parent merges the temp files into the
+ * main database via ATTACH + INSERT … SELECT.
  *
- * For nodes that are reachable from multiple branches (DAG cross-edges),
- * each child traverses them independently.  The INSERT-OR-IGNORE
- * semantics of context_nodes prevent exact duplicates when two children
- * happen to assign the same ID (which cannot happen with the current
- * partitioning), and the minor data duplication across different ID
- * ranges is an acceptable trade-off for the parallelism gained.
+ * For non-SQLite drivers, children write directly to the shared
+ * database (MySQL/PostgreSQL handle concurrent writers natively).
+ *
+ * Node-ID ranges are partitioned (100 000 000 IDs per branch) so that
+ * children never collide.
  */
 final class ParallelContextAnalyzer
 {
@@ -65,7 +66,7 @@ final class ParallelContextAnalyzer
 
         // For a single branch, skip forking overhead.
         if (count($branches) === 1) {
-            $this->processBranch(
+            $this->processBranchDirect(
                 $branches[0][0],
                 $branches[0][1],
                 $driver,
@@ -76,25 +77,53 @@ final class ParallelContextAnalyzer
             return;
         }
 
+        $use_temp_files = $driver instanceof SqliteDriver;
+
+        /**
+         * @var array<int, string> $temp_paths  index => temp file path (SQLite only)
+         * Pre-computed deterministic paths so both parent and children know where to look.
+         */
+        $temp_paths = [];
         $child_pids = [];
+
+        if ($use_temp_files) {
+            $tmp_dir = sys_get_temp_dir();
+            $pid_prefix = getmypid();
+            foreach ($branches as $index => $_) {
+                $temp_paths[$index] = "{$tmp_dir}/reli_par_{$pid_prefix}_{$index}.db";
+            }
+        }
+
         foreach ($branches as $index => [$link_name, $linked_context]) {
             $pid = pcntl_fork();
             if ($pid === -1) {
-                // Fork failed — wait for already-forked children, then throw.
                 $this->waitForChildren($child_pids);
+                $this->cleanupTempFiles($temp_paths);
                 throw new \RuntimeException('pcntl_fork() failed');
             }
             if ($pid === 0) {
                 // Child process
                 try {
-                    $this->processBranch(
-                        $link_name,
-                        $linked_context,
-                        $driver,
-                        $run_id,
-                        $index * self::NODE_ID_RANGE_PER_BRANCH,
-                        $region_boundaries,
-                    );
+                    if ($use_temp_files) {
+                        $this->processBranchToTempSqlite(
+                            $link_name,
+                            $linked_context,
+                            $driver,
+                            $run_id,
+                            $index * self::NODE_ID_RANGE_PER_BRANCH,
+                            $region_boundaries,
+                            $temp_paths[$index],
+                        );
+                    } else {
+                        $this->processBranchDirect(
+                            $link_name,
+                            $linked_context,
+                            $driver,
+                            $run_id,
+                            $index * self::NODE_ID_RANGE_PER_BRANCH,
+                            $region_boundaries,
+                        );
+                    }
                 } catch (\Throwable $e) {
                     fwrite(STDERR, "ParallelContextAnalyzer child {$index} error: {$e->getMessage()}\n");
                     // @codeCoverageIgnoreStart
@@ -108,10 +137,24 @@ final class ParallelContextAnalyzer
             $child_pids[$index] = $pid;
         }
 
-        $this->waitForChildren($child_pids);
+        try {
+            $this->waitForChildren($child_pids);
+
+            if ($use_temp_files) {
+                $merge_db = $driver->createConnection();
+                $driver->tuneForParallelInsert($merge_db);
+                $this->mergeFromTempFiles($merge_db, $temp_paths);
+                unset($merge_db);
+            }
+        } finally {
+            $this->cleanupTempFiles($temp_paths);
+        }
     }
 
-    private function processBranch(
+    /**
+     * Write directly to the target database (for MySQL/PostgreSQL or single-branch fallback).
+     */
+    private function processBranchDirect(
         string $link_name,
         ReferenceContext $linked_context,
         PdoDriverInterface $driver,
@@ -135,6 +178,142 @@ final class ParallelContextAnalyzer
     }
 
     /**
+     * Write to a private temp SQLite file (zero contention, maximum throughput).
+     */
+    private function processBranchToTempSqlite(
+        string $link_name,
+        ReferenceContext $linked_context,
+        PdoDriverInterface $driver,
+        int $run_id,
+        int $start_node_id,
+        ?RegionBoundaries $region_boundaries,
+        string $temp_path,
+    ): void {
+        $db = new \PDO('sqlite:' . $temp_path);
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $db->exec('PRAGMA journal_mode=OFF');
+        $db->exec('PRAGMA synchronous=OFF');
+        $db->exec('PRAGMA cache_size=-65536');
+        $db->exec('PRAGMA temp_store=MEMORY');
+
+        $this->createTempTables($db);
+
+        $db->beginTransaction();
+
+        $sink = new PdoContextTreeSink($db, $driver, $run_id, $region_boundaries);
+        $analyzer = new ContextAnalyzer($start_node_id);
+        $wrapper = new SingleLinkContext($link_name, $linked_context);
+
+        $analyzer->analyze($wrapper, $sink);
+        $sink->flush();
+
+        $db->commit();
+
+        // Explicitly close before exit so locks are released.
+        unset($sink, $db);
+    }
+
+    private function createTempTables(\PDO $db): void
+    {
+        $db->exec('
+            CREATE TABLE context_nodes (
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                PRIMARY KEY (run_id, node_id)
+            )
+        ');
+        $db->exec('
+            CREATE TABLE context_edges (
+                run_id INTEGER NOT NULL,
+                parent_node_id INTEGER,
+                child_node_id INTEGER NOT NULL,
+                link_name TEXT NOT NULL,
+                is_tree INTEGER NOT NULL
+            )
+        ');
+        $db->exec('
+            CREATE TABLE context_node_locations (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                address BIGINT,
+                size BIGINT,
+                location_type TEXT NOT NULL,
+                class_name TEXT,
+                string_value TEXT,
+                refcount BIGINT,
+                type_info BIGINT,
+                region TEXT
+            )
+        ');
+        $db->exec('
+            CREATE TABLE context_node_attributes (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                "key" TEXT NOT NULL,
+                "value" TEXT
+            )
+        ');
+    }
+
+    /**
+     * ATTACH each temp file and bulk-copy rows into the main DB.
+     *
+     * The caller MUST close any PDO connections to the main database
+     * before forking children; otherwise the inherited file descriptor
+     * causes "database is locked" on ATTACH.
+     *
+     * @param array<int, string> $temp_paths
+     */
+    private function mergeFromTempFiles(\PDO $main_db, array $temp_paths): void
+    {
+        // ATTACH all temp databases first (outside transaction).
+        $aliases = [];
+        foreach ($temp_paths as $index => $path) {
+            if (!file_exists($path)) {
+                continue;
+            }
+            $alias = "tmp{$index}";
+            $main_db->exec("ATTACH DATABASE '{$path}' AS {$alias}");
+            $aliases[] = $alias;
+        }
+
+        // Bulk-copy inside a single transaction.
+        $main_db->beginTransaction();
+        foreach ($aliases as $alias) {
+            $main_db->exec("
+                INSERT OR IGNORE INTO context_nodes (run_id, node_id, type)
+                SELECT run_id, node_id, type FROM {$alias}.context_nodes
+            ");
+            $main_db->exec("
+                INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree)
+                SELECT run_id, parent_node_id, child_node_id, link_name, is_tree FROM {$alias}.context_edges
+            ");
+            $main_db->exec("
+                INSERT INTO context_node_locations
+                    (run_id, node_id, address, size, location_type, class_name,
+                     string_value, refcount, type_info, region)
+                SELECT run_id, node_id, address, size, location_type, class_name,
+                       string_value, refcount, type_info, region
+                FROM {$alias}.context_node_locations
+            ");
+            $main_db->exec("
+                INSERT INTO context_node_attributes (run_id, node_id, \"key\", \"value\")
+                SELECT run_id, node_id, \"key\", \"value\"
+                FROM {$alias}.context_node_attributes
+            ");
+        }
+        $main_db->commit();
+
+        // DETACH after commit.
+        foreach ($aliases as $alias) {
+            $main_db->exec("DETACH DATABASE {$alias}");
+        }
+    }
+
+    /**
      * @param array<int, int> $child_pids  index => pid
      * @throws \RuntimeException if any child exited with non-zero status
      */
@@ -151,6 +330,19 @@ final class ParallelContextAnalyzer
             throw new \RuntimeException(
                 'ParallelContextAnalyzer: child process failures: ' . implode('; ', $errors)
             );
+        }
+    }
+
+    /**
+     * @param array<int, string> $temp_paths
+     */
+    private function cleanupTempFiles(array $temp_paths): void
+    {
+        foreach ($temp_paths as $path) {
+            @unlink($path);
+            // WAL/SHM sidecar files
+            @unlink($path . '-wal');
+            @unlink($path . '-shm');
         }
     }
 }

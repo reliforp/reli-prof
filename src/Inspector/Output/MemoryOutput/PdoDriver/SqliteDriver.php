@@ -94,5 +94,6 @@ final class SqliteDriver implements PdoDriverInterface
         $db->exec('PRAGMA cache_size=-65536');
         $db->exec('PRAGMA temp_store=MEMORY');
         $db->exec('PRAGMA mmap_size=268435456');
+        $db->exec('PRAGMA busy_timeout=60000');
     }
 }

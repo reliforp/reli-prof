@@ -32,7 +32,15 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     public function output(MemoryAnalysisResult $result): void
     {
         $db = $this->driver->createConnection();
-        $this->driver->tuneForBulkInsert($db);
+        $use_parallel = $this->parallel && ParallelContextAnalyzer::isAvailable();
+
+        // In parallel mode the parent must not hold an exclusive lock,
+        // so use the parallel-friendly tuning for the parent connection too.
+        if ($use_parallel) {
+            $this->driver->tuneForParallelInsert($db);
+        } else {
+            $this->driver->tuneForBulkInsert($db);
+        }
 
         $this->createTables($db);
 
@@ -41,10 +49,11 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $run_id = $this->insertRun($db);
             $this->insertSummary($db, $run_id, $result->summary);
 
-            if ($this->parallel && ParallelContextAnalyzer::isAvailable()) {
-                // Commit run + summary so child processes can see them,
-                // then run the tree walk in parallel child processes.
+            if ($use_parallel) {
+                // Commit run + summary, then close the connection before
+                // forking so that children don't inherit the file descriptor.
                 $db->commit();
+                unset($db);
 
                 $parallel = new ParallelContextAnalyzer();
                 $parallel->analyze(
@@ -54,7 +63,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                     $this->region_boundaries,
                 );
 
-                // Aggregate queries run in the parent after children finish.
+                // Reopen connection for post-merge work.
+                $db = $this->driver->createConnection();
+                $this->driver->tuneForBulkInsert($db);
+
                 $db->beginTransaction();
                 $this->insertLocationTypesSummaryFromDb($db, $run_id);
                 $this->insertClassObjectsSummaryFromDb($db, $run_id);
@@ -71,7 +83,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 $db->commit();
             }
         } catch (\Throwable $e) {
-            if ($db->inTransaction()) {
+            if (isset($db) && $db->inTransaction()) {
                 $db->rollBack();
             }
             throw $e;
