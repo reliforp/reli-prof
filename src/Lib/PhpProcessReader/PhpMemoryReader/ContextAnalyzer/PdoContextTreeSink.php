@@ -136,6 +136,60 @@ final class PdoContextTreeSink implements ContextTreeSink
         $this->bufferEdge($parent_node_id, $reference_node_id, $link_name, 0);
     }
 
+    /**
+     * Accept a node whose locations have already been flattened into
+     * [address, size, location_type, class_name, string_value, refcount, type_info, region]
+     * tuples.  Used by ParallelContextAnalyzer's pipe reader to avoid
+     * re-extracting fields from MemoryLocation objects.
+     *
+     * @param list<array{int, int, string, ?string, ?string, ?int, ?int, ?string}> $flat_locations
+     * @param array<string, mixed> $attributes
+     */
+    public function emitNodeFlat(
+        int $node_id,
+        ?int $parent_node_id,
+        string $link_name,
+        string $type,
+        array $flat_locations,
+        array $attributes,
+    ): void {
+        $this->node_stmt->execute([$this->run_id, $node_id, $type]);
+        $this->bufferEdge($parent_node_id, $node_id, $link_name, 1);
+
+        foreach ($flat_locations as $loc) {
+            $this->location_buffer[] = $this->run_id;
+            $this->location_buffer[] = $node_id;
+            $this->location_buffer[] = $loc[0]; // address
+            $this->location_buffer[] = $loc[1]; // size
+            $this->location_buffer[] = $loc[2]; // location_type
+            $this->location_buffer[] = $loc[3]; // class_name
+            $this->location_buffer[] = $loc[4]; // string_value
+            $this->location_buffer[] = $loc[5]; // refcount
+            $this->location_buffer[] = $loc[6]; // type_info
+            $this->location_buffer[] = $loc[7]; // region
+            $this->location_row_count++;
+
+            if ($this->location_row_count >= self::LOCATION_BATCH_SIZE) {
+                $this->flushLocations();
+            }
+        }
+
+        /** @psalm-suppress MixedAssignment -- $attributes is array<string, mixed> */
+        foreach ($attributes as $key => $value) {
+            $this->attr_buffer[] = $this->run_id;
+            $this->attr_buffer[] = $node_id;
+            $this->attr_buffer[] = $key;
+            $string_value = is_scalar($value) ? (string)$value : json_encode($value);
+            assert(is_string($string_value));
+            $this->attr_buffer[] = $string_value;
+            $this->attr_row_count++;
+
+            if ($this->attr_row_count >= self::ATTR_BATCH_SIZE) {
+                $this->flushAttributes();
+            }
+        }
+    }
+
     public function flush(): void
     {
         if ($this->location_row_count > 0) {

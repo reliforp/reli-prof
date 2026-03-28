@@ -14,21 +14,17 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
-use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
 /**
- * Parallelizes the context-graph traversal by forking one child process
- * per top-level branch of the ReferenceContext graph.
+ * Parallelizes the context-graph traversal using a pipe-based
+ * producer–consumer architecture.
  *
- * Each child writes its subtree into a private temporary SQLite file
- * with maximum throughput (journal_mode=OFF, no locking contention).
- * After all children finish, the parent merges the temp files into the
- * main database via ATTACH + INSERT … SELECT.
- *
- * For non-SQLite drivers, children write directly to the shared
- * database (MySQL/PostgreSQL handle concurrent writers natively).
+ * Workers (forked children) traverse their assigned branch of the
+ * ReferenceContext graph and stream flattened records through a pipe.
+ * The parent process reads from all pipes and feeds a single
+ * PdoContextTreeSink — no temp files, no merge, no lock contention.
  *
  * Node-ID ranges are partitioned (100 000 000 IDs per branch) so that
  * children never collide.
@@ -46,12 +42,17 @@ final class ParallelContextAnalyzer
     }
 
     /**
+     * Run the parallel analysis.
+     *
+     * The caller must pass a ready-to-use PdoContextTreeSink (already
+     * inside a transaction).  This method writes to the sink and calls
+     * flush() when done, but does NOT commit.
+     *
      * @throws \RuntimeException if any child process fails
      */
     public function analyze(
         ReferenceContext $root,
-        PdoDriverInterface $driver,
-        int $run_id,
+        PdoContextTreeSink $sink,
         ?RegionBoundaries $region_boundaries = null,
     ): void {
         $branches = [];
@@ -66,64 +67,53 @@ final class ParallelContextAnalyzer
 
         // For a single branch, skip forking overhead.
         if (count($branches) === 1) {
-            $this->processBranchDirect(
-                $branches[0][0],
-                $branches[0][1],
-                $driver,
-                $run_id,
-                0,
-                $region_boundaries,
-            );
+            $analyzer = new ContextAnalyzer();
+            $wrapper = new SingleLinkContext($branches[0][0], $branches[0][1]);
+            $analyzer->analyze($wrapper, $sink);
+            $sink->flush();
             return;
         }
 
-        $use_temp_files = $driver instanceof SqliteDriver;
-
-        /**
-         * @var array<int, string> $temp_paths  index => temp file path (SQLite only)
-         * Pre-computed deterministic paths so both parent and children know where to look.
-         */
-        $temp_paths = [];
+        // Create pipes: one per worker.
+        /** @var array<int, resource[]> $pipes  index => [read_fd, write_fd] */
+        $pipes = [];
+        /** @var array<int, int> $child_pids */
         $child_pids = [];
 
-        if ($use_temp_files) {
-            $tmp_dir = sys_get_temp_dir();
-            $pid_prefix = getmypid();
-            foreach ($branches as $index => $_) {
-                $temp_paths[$index] = "{$tmp_dir}/reli_par_{$pid_prefix}_{$index}.db";
+        foreach ($branches as $index => $_) {
+            $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+            if ($pair === false) {
+                throw new \RuntimeException('stream_socket_pair() failed');
             }
+            $pipes[$index] = $pair;
         }
 
+        // Fork workers.
         foreach ($branches as $index => [$link_name, $linked_context]) {
             $pid = pcntl_fork();
             if ($pid === -1) {
                 $this->waitForChildren($child_pids);
-                $this->cleanupTempFiles($temp_paths);
                 throw new \RuntimeException('pcntl_fork() failed');
             }
             if ($pid === 0) {
-                // Child process
-                try {
-                    if ($use_temp_files) {
-                        $this->processBranchToTempSqlite(
-                            $link_name,
-                            $linked_context,
-                            $driver,
-                            $run_id,
-                            $index * self::NODE_ID_RANGE_PER_BRANCH,
-                            $region_boundaries,
-                            $temp_paths[$index],
-                        );
-                    } else {
-                        $this->processBranchDirect(
-                            $link_name,
-                            $linked_context,
-                            $driver,
-                            $run_id,
-                            $index * self::NODE_ID_RANGE_PER_BRANCH,
-                            $region_boundaries,
-                        );
+                // ---- Child process ----
+                // Close all read ends and other workers' write ends.
+                foreach ($pipes as $i => $pair) {
+                    fclose($pair[0]); // close read end
+                    if ($i !== $index) {
+                        fclose($pair[1]); // close other workers' write ends
                     }
+                }
+                $write_fd = $pipes[$index][1];
+
+                try {
+                    $pipe_sink = new PipeContextTreeSink($write_fd, $region_boundaries);
+                    $analyzer = new ContextAnalyzer($index * self::NODE_ID_RANGE_PER_BRANCH);
+                    $wrapper = new SingleLinkContext($link_name, $linked_context);
+
+                    $analyzer->analyze($wrapper, $pipe_sink);
+                    $pipe_sink->sendEnd();
+                    fclose($write_fd);
                 } catch (\Throwable $e) {
                     fwrite(STDERR, "ParallelContextAnalyzer child {$index} error: {$e->getMessage()}\n");
                     // @codeCoverageIgnoreStart
@@ -137,179 +127,124 @@ final class ParallelContextAnalyzer
             $child_pids[$index] = $pid;
         }
 
-        try {
-            $this->waitForChildren($child_pids);
-
-            if ($use_temp_files) {
-                $merge_db = $driver->createConnection();
-                $driver->tuneForParallelInsert($merge_db);
-                $this->mergeFromTempFiles($merge_db, $temp_paths);
-                unset($merge_db);
-            }
-        } finally {
-            $this->cleanupTempFiles($temp_paths);
+        // ---- Parent process ----
+        // Close all write ends.
+        foreach ($pipes as $pair) {
+            fclose($pair[1]);
         }
-    }
 
-    /**
-     * Write directly to the target database (for MySQL/PostgreSQL or single-branch fallback).
-     */
-    private function processBranchDirect(
-        string $link_name,
-        ReferenceContext $linked_context,
-        PdoDriverInterface $driver,
-        int $run_id,
-        int $start_node_id,
-        ?RegionBoundaries $region_boundaries,
-    ): void {
-        $db = $driver->createConnection();
-        $driver->tuneForParallelInsert($db);
+        // Read from all pipes and feed the sink.
+        /** @var array<int, resource> $read_fds  index => read fd */
+        $read_fds = [];
+        foreach ($pipes as $index => $pair) {
+            $read_fds[$index] = $pair[0];
+            stream_set_blocking($pair[0], false);
+        }
 
-        $db->beginTransaction();
-
-        $sink = new PdoContextTreeSink($db, $driver, $run_id, $region_boundaries);
-        $analyzer = new ContextAnalyzer($start_node_id);
-        $wrapper = new SingleLinkContext($link_name, $linked_context);
-
-        $analyzer->analyze($wrapper, $sink);
+        $this->drainPipes($read_fds, $sink);
         $sink->flush();
 
-        $db->commit();
+        // Clean up: close remaining read fds, wait for children.
+        foreach ($read_fds as $fd) {
+            if (is_resource($fd)) {
+                fclose($fd);
+            }
+        }
+
+        $this->waitForChildren($child_pids);
     }
 
     /**
-     * Write to a private temp SQLite file (zero contention, maximum throughput).
-     */
-    private function processBranchToTempSqlite(
-        string $link_name,
-        ReferenceContext $linked_context,
-        PdoDriverInterface $driver,
-        int $run_id,
-        int $start_node_id,
-        ?RegionBoundaries $region_boundaries,
-        string $temp_path,
-    ): void {
-        $db = new \PDO('sqlite:' . $temp_path);
-        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-        $db->exec('PRAGMA journal_mode=OFF');
-        $db->exec('PRAGMA synchronous=OFF');
-        $db->exec('PRAGMA cache_size=-65536');
-        $db->exec('PRAGMA temp_store=MEMORY');
-
-        $this->createTempTables($db);
-
-        $db->beginTransaction();
-
-        $sink = new PdoContextTreeSink($db, $driver, $run_id, $region_boundaries);
-        $analyzer = new ContextAnalyzer($start_node_id);
-        $wrapper = new SingleLinkContext($link_name, $linked_context);
-
-        $analyzer->analyze($wrapper, $sink);
-        $sink->flush();
-
-        $db->commit();
-
-        // Explicitly close before exit so locks are released.
-        unset($sink, $db);
-    }
-
-    private function createTempTables(\PDO $db): void
-    {
-        $db->exec('
-            CREATE TABLE context_nodes (
-                run_id INTEGER NOT NULL,
-                node_id INTEGER NOT NULL,
-                type TEXT NOT NULL,
-                PRIMARY KEY (run_id, node_id)
-            )
-        ');
-        $db->exec('
-            CREATE TABLE context_edges (
-                run_id INTEGER NOT NULL,
-                parent_node_id INTEGER,
-                child_node_id INTEGER NOT NULL,
-                link_name TEXT NOT NULL,
-                is_tree INTEGER NOT NULL
-            )
-        ');
-        $db->exec('
-            CREATE TABLE context_node_locations (
-                id INTEGER PRIMARY KEY,
-                run_id INTEGER NOT NULL,
-                node_id INTEGER NOT NULL,
-                address BIGINT,
-                size BIGINT,
-                location_type TEXT NOT NULL,
-                class_name TEXT,
-                string_value TEXT,
-                refcount BIGINT,
-                type_info BIGINT,
-                region TEXT
-            )
-        ');
-        $db->exec('
-            CREATE TABLE context_node_attributes (
-                id INTEGER PRIMARY KEY,
-                run_id INTEGER NOT NULL,
-                node_id INTEGER NOT NULL,
-                "key" TEXT NOT NULL,
-                "value" TEXT
-            )
-        ');
-    }
-
-    /**
-     * ATTACH each temp file and bulk-copy rows into the main DB.
+     * Read messages from all worker pipes and replay them into the sink.
      *
-     * The caller MUST close any PDO connections to the main database
-     * before forking children; otherwise the inherited file descriptor
-     * causes "database is locked" on ATTACH.
+     * Uses stream_select() to multiplex across all pipes, processing
+     * whichever pipe has data ready.
      *
-     * @param array<int, string> $temp_paths
+     * @param array<int, resource> $read_fds
      */
-    private function mergeFromTempFiles(\PDO $main_db, array $temp_paths): void
+    private function drainPipes(array &$read_fds, PdoContextTreeSink $sink): void
     {
-        // ATTACH all temp databases first (outside transaction).
-        $aliases = [];
-        foreach ($temp_paths as $index => $path) {
-            if (!file_exists($path)) {
+        $active = $read_fds;
+        $buffers = array_fill_keys(array_keys($read_fds), '');
+        $finished = [];
+
+        while ($active !== []) {
+            $r = $active;
+            $w = null;
+            $e = null;
+            $changed = @stream_select($r, $w, $e, 1);
+            if ($changed === false) {
+                break;
+            }
+            if ($changed === 0) {
                 continue;
             }
-            $alias = "tmp{$index}";
-            $main_db->exec("ATTACH DATABASE '{$path}' AS {$alias}");
-            $aliases[] = $alias;
-        }
 
-        // Bulk-copy inside a single transaction.
-        $main_db->beginTransaction();
-        foreach ($aliases as $alias) {
-            $main_db->exec("
-                INSERT OR IGNORE INTO context_nodes (run_id, node_id, type)
-                SELECT run_id, node_id, type FROM {$alias}.context_nodes
-            ");
-            $main_db->exec("
-                INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree)
-                SELECT run_id, parent_node_id, child_node_id, link_name, is_tree FROM {$alias}.context_edges
-            ");
-            $main_db->exec("
-                INSERT INTO context_node_locations
-                    (run_id, node_id, address, size, location_type, class_name,
-                     string_value, refcount, type_info, region)
-                SELECT run_id, node_id, address, size, location_type, class_name,
-                       string_value, refcount, type_info, region
-                FROM {$alias}.context_node_locations
-            ");
-            $main_db->exec("
-                INSERT INTO context_node_attributes (run_id, node_id, \"key\", \"value\")
-                SELECT run_id, node_id, \"key\", \"value\"
-                FROM {$alias}.context_node_attributes
-            ");
-        }
-        $main_db->commit();
+            foreach ($r as $fd) {
+                $index = array_search($fd, $active, true);
+                if ($index === false) {
+                    continue;
+                }
 
-        // DETACH after commit.
-        foreach ($aliases as $alias) {
-            $main_db->exec("DETACH DATABASE {$alias}");
+                $chunk = fread($fd, 65536);
+                if ($chunk === false || $chunk === '') {
+                    // Pipe closed — worker done.
+                    $finished[$index] = true;
+                    unset($active[$index]);
+                    continue;
+                }
+
+                $buffers[$index] .= $chunk;
+
+                // Process complete messages from this buffer.
+                while (strlen($buffers[$index]) >= 4) {
+                    $header = substr($buffers[$index], 0, 4);
+                    /** @var array{len: int} $unpacked */
+                    $unpacked = unpack('Vlen', $header);
+                    $msg_len = $unpacked['len'];
+
+                    if (strlen($buffers[$index]) < 4 + $msg_len) {
+                        break; // Incomplete message, wait for more data.
+                    }
+
+                    $payload = substr($buffers[$index], 4, $msg_len);
+                    $buffers[$index] = substr($buffers[$index], 4 + $msg_len);
+
+                    /** @var array $message */
+                    $message = unserialize($payload);
+                    $this->replayMessage($message, $sink);
+
+                    if ($message[0] === 'E') {
+                        $finished[$index] = true;
+                        unset($active[$index]);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Replay a deserialized message into the PdoContextTreeSink.
+     *
+     * @param array $message
+     */
+    private function replayMessage(array $message, PdoContextTreeSink $sink): void
+    {
+        switch ($message[0]) {
+            case 'N':
+                // emitNode: [type, node_id, parent_node_id, link_name, type, flat_locations, attributes]
+                [, $node_id, $parent_node_id, $link_name, $type, $flat_locations, $attributes] = $message;
+                $sink->emitNodeFlat($node_id, $parent_node_id, $link_name, $type, $flat_locations, $attributes);
+                break;
+            case 'R':
+                // emitReference: [type, reference_node_id, parent_node_id, link_name]
+                [, $reference_node_id, $parent_node_id, $link_name] = $message;
+                $sink->emitReference($reference_node_id, $parent_node_id, $link_name);
+                break;
+            case 'E':
+                // End of stream — nothing to do.
+                break;
         }
     }
 
@@ -330,19 +265,6 @@ final class ParallelContextAnalyzer
             throw new \RuntimeException(
                 'ParallelContextAnalyzer: child process failures: ' . implode('; ', $errors)
             );
-        }
-    }
-
-    /**
-     * @param array<int, string> $temp_paths
-     */
-    private function cleanupTempFiles(array $temp_paths): void
-    {
-        foreach ($temp_paths as $path) {
-            @unlink($path);
-            // WAL/SHM sidecar files
-            @unlink($path . '-wal');
-            @unlink($path . '-shm');
         }
     }
 }
