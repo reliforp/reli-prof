@@ -687,3 +687,113 @@ inspector:memory:query --db=out.sqlite3 --query=all  # full report
 
 Implementation: Opens existing SQLite, runs the same Pass queries.
 Much simpler than the full report — just SQL + formatting.
+
+## Memory Watch with Threshold-Triggered Dump
+
+### Concept
+
+```bash
+# Watch a process, dump when memory exceeds 80% of limit
+inspector:memory:watch -p <PID> --threshold=80% --interval=1s
+
+# Or absolute threshold
+inspector:memory:watch -p <PID> --threshold=200M --interval=500ms
+
+# Output when triggered
+inspector:memory:watch -p <PID> --threshold=80% --output-format=report
+inspector:memory:watch -p <PID> --threshold=80% -f sqlite3 -o dump.sqlite3
+```
+
+### Why This is Cheap
+
+`ZendMmHeap` already has lazy field access. Reading just `heap->size`
+(= `memory_get_usage`) and `heap->limit` (= `memory_limit`) requires
+a single `process_vm_readv` call of ~48 bytes. Cost: **~1μs per poll**.
+
+At 1-second intervals, overhead on the target process is **zero**
+(`process_vm_readv` doesn't stop the target), and reli-prof's CPU
+cost is negligible.
+
+### Architecture
+
+```
+Phase 1: Setup (once)
+  - Resolve EG address → find ZendMM main chunk → get heap slot address
+  - Read heap->limit to know the memory_limit
+  - Reuses existing PhpGlobalsFinder + PhpZendMemoryManagerChunkFinder
+
+Phase 2: Poll loop (cheap, ~1μs per iteration)
+  - Read heap->size (8 bytes) via process_vm_readv
+  - Compare with threshold
+  - If below: sleep(interval), continue
+  - If above: proceed to Phase 3
+
+Phase 3: Triggered analysis (expensive, once)
+  - Stop the process (optional)
+  - Run full MemoryLocationsCollector::collectAll()
+  - Output via selected format (report/json/sqlite3)
+  - Optionally resume process and continue watching
+
+Phase 4: Optional continuous monitoring
+  - --max-dumps=N to limit total dumps
+  - --cooldown=60s to avoid repeated dumps during sustained high usage
+```
+
+### Data Available During Polling (from ZendMmHeap)
+
+| Field | PHP Equivalent | Bytes |
+|---|---|---|
+| `size` | `memory_get_usage(false)` | 8 |
+| `real_size` | `memory_get_usage(true)` | 8 |
+| `peak` | `memory_get_peak_usage(false)` | 8 |
+| `real_peak` | `memory_get_peak_usage(true)` | 8 |
+| `limit` | `ini_get('memory_limit')` | 8 |
+| `overflow` | internal overflow flag | 8 |
+
+Total: 48 bytes per poll. Single `process_vm_readv` iovec.
+
+### Display During Watch Mode
+
+```
+$ inspector:memory:watch -p 12345 --threshold=80% --interval=1s
+
+Watching PID 12345 (PHP 8.4, limit: 128M, threshold: 102.4M)
+  [12:00:01]  32.4 MB / 128 MB (25.3%)
+  [12:00:02]  45.1 MB / 128 MB (35.2%)
+  [12:00:03]  67.8 MB / 128 MB (53.0%)
+  [12:00:04]  89.2 MB / 128 MB (69.7%)
+  [12:00:05] 105.3 MB / 128 MB (82.3%) ⚠ THRESHOLD EXCEEDED
+  Capturing memory analysis...
+  [saved to 12345_memory_20260328_120005.sqlite3]
+```
+
+### vs register_shutdown_function
+
+| | shutdown handler | memory:watch |
+|---|---|---|
+| Timing | After OOM (process dying) | Before OOM (configurable %) |
+| Target modification | Requires code change | None |
+| Threshold | Fixed at limit | Configurable (50%, 80%, ...) |
+| Multiple snapshots | No | Yes (--max-dumps) |
+| Polling overhead | Zero until OOM | ~1μs per interval |
+| Large targets | reli may OOM in shutdown | Separate process, full control |
+| Process state | Dying, partial state | Alive, stoppable |
+
+### Implementation Effort
+
+Polling (Phase 1-2): **1-2 days** — reuse PhpGlobalsFinder, read heap fields in loop.
+Triggered dump (Phase 3): **trivial** — existing MemoryCommand logic.
+Continuous (Phase 4): **1 day** — cooldown/max-dumps.
+
+Core loop is ~10 lines:
+```php
+$heap_address = $chunk_finder->findHeapAddress($process, $php_settings, $eg_address);
+while (true) {
+    $size = $field_reader->readIntField($heap_pointer, 'size');
+    if ($size > $threshold) {
+        // trigger full analysis
+        break;
+    }
+    usleep($interval_us);
+}
+```
