@@ -354,7 +354,159 @@ no SQLite database is created at all — analysis uses only the pre-computed
 ======================================================================
 ```
 
-## CLI Options
+## Non-Tree Edge Analysis (Shared Reference Diagnostics)
+
+### Background
+
+Non-tree edges (`is_tree=0` in `context_edges`) represent shared references —
+cases where the same value/object is reachable from multiple paths in the graph.
+Investigation across 17 SQLite datasets shows non-tree edges account for **30-44%**
+of all edges, but the majority is noise.
+
+### Edge Category Breakdown (observed across datasets)
+
+| Category | % of non-tree edges | Signal? | Filter |
+|---|---|---|---|
+| `object_handlers` | ~14% | Noise | Every object shares a handler table. Always filter out. |
+| `name`/`key`/`value` | ~54% | Noise | Interned strings shared across definitions. Filter out. |
+| **Property-level shared refs** | **~12%** | **Signal** | Same object referenced by multiple property paths |
+| Other (local vars, objects_store) | ~20% | Mixed | Keep for advanced analysis |
+
+### Three Patterns in Property-Level Shared Refs
+
+After filtering noise, remaining non-tree property edges fall into 3 clear patterns:
+
+**Pattern 1: SINGLETON** (1 target, many referrers)
+```
+refs_per_target >>> 1, distinct_targets = 1
+```
+Examples: `formFactory` (3,611 refs → 1 target), `method`, `action`, `required`
+Meaning: One shared instance used everywhere. **Normal — not a problem.**
+
+**Pattern 2: FAN-IN / CIRCULAR** (few targets, many refs each)
+```
+refs_per_target > 2, distinct_targets < total_refs / 2
+```
+Examples: `oMessage` (603 refs → 201 targets, 3 refs each), `parent` (tree nav)
+Meaning: Multiple objects point to the same target — cycles or shared ownership.
+**Potentially problematic — investigate for cycles and GC prevention.**
+
+**Pattern 3: SCATTERED** (many targets, ~1 ref each)
+```
+refs_per_target ≈ 1.0, distinct_targets ≈ total_refs
+```
+Examples: `options` (1,809 copies), `dispatcher` (1,801 copies, ALL SAME SIZE)
+Meaning: Every object has its own copy of the same thing.
+**Sharing opportunity — if ALL SAME SIZE, these could be deduplicated.**
+
+### Implementation: Non-Tree Edge Analysis Pass
+
+```php
+// New analysis pass for the report
+class SharedRefAnalysisPass implements AnalysisPassInterface
+{
+    public function analyze(PDO $db, int $runId): ReportSection
+    {
+        // Step 1: Filter noise (object_handlers, name/key/value)
+        // Step 2: Classify remaining into SINGLETON / FAN-IN / SCATTERED
+        // Step 3: For SCATTERED with ALL SAME SIZE → flag as dedup candidate
+        // Step 4: For FAN-IN → check if cycle (target is ancestor of referrer)
+    }
+}
+```
+
+Query for classification:
+
+```sql
+SELECT
+    e.link_name,
+    count(*) as total_refs,
+    count(DISTINCT e.child_node_id) as distinct_targets,
+    round(cast(count(*) as real) / count(DISTINCT e.child_node_id), 1)
+        as refs_per_target,
+    CASE
+        WHEN count(DISTINCT e.child_node_id) = 1 THEN 'SINGLETON'
+        WHEN cast(count(*) as real) / count(DISTINCT e.child_node_id) > 2.0
+            THEN 'FAN-IN'
+        ELSE 'SCATTERED'
+    END as pattern
+FROM context_edges e
+JOIN context_nodes cn ON cn.node_id = e.parent_node_id
+WHERE e.is_tree = 0
+    AND cn.type = 'ObjectPropertiesContext'
+    AND e.link_name NOT IN ('name', 'key', 'value', 'object_handlers')
+GROUP BY e.link_name
+HAVING count(*) > 50
+ORDER BY total_refs DESC;
+```
+
+Query for SCATTERED dedup candidates (waste quantification):
+
+```sql
+SELECT
+    e.link_name,
+    count(DISTINCT e.child_node_id) as copies,
+    round(sum(cnl.size) / 1024.0, 2) as total_kb,
+    round(avg(cnl.size), 0) as avg_size,
+    CASE
+        WHEN count(DISTINCT cnl.size) = 1 THEN 'ALL SAME SIZE → dedup candidate'
+        ELSE count(DISTINCT cnl.size) || ' different sizes'
+    END as recommendation
+FROM context_edges e
+JOIN context_nodes cn ON cn.node_id = e.parent_node_id
+LEFT JOIN context_node_locations cnl ON cnl.node_id = e.child_node_id
+WHERE e.is_tree = 0
+    AND cn.type = 'ObjectPropertiesContext'
+    AND e.link_name NOT IN ('name', 'key', 'value', 'object_handlers')
+GROUP BY e.link_name
+HAVING count(DISTINCT e.child_node_id) > 100
+    AND cast(count(*) as real) / count(DISTINCT e.child_node_id) < 2.0
+ORDER BY sum(cnl.size) DESC;
+```
+
+### Example Report Output
+
+```
+=== Shared Reference Analysis ===
+  Property-level shared refs: 7,636 (filtered from 62,787 total non-tree edges)
+
+  Singletons (normal sharing):
+    formFactory:     3,611 refs → 1 shared instance       [OK]
+    method:          3,611 refs → 1 shared instance       [OK]
+    required:        1,806 refs → 1 shared instance       [OK]
+
+  Fan-in / Cycles:
+    ⚠ oMessage:      603 refs → 201 targets (3.0 refs each) — circular ref
+    ⚠ parent:        246K refs → 118K targets (2.1 refs each) — tree navigation
+
+  Dedup Candidates:
+    ⚠ dispatcher:    1,801 copies × 88 bytes (ALL SAME SIZE) = 155 KB wasted
+    ⚠ options:       1,809 copies × 56 bytes (ALL SAME SIZE) =  99 KB wasted
+    ⚠ emptyData:     1,402 copies (2 sizes)                  = 491 KB wasted
+```
+
+### Retained Size Adjustment Using Non-Tree Edges
+
+For the retained size estimate (Pass 8), non-tree edge patterns directly affect
+confidence:
+
+| Pattern | retained size confidence |
+|---|---|
+| No non-tree incoming | HIGH — cutting owner frees the target |
+| SINGLETON incoming | HIGH — the singleton is shared, but target belongs to tree parent |
+| FAN-IN incoming | LOW — target has multiple owners, cutting one doesn't free it |
+| SCATTERED (is target) | N/A — target is the one with non-tree outgoing |
+
+```
+adjusted_confidence = CASE
+    WHEN non_tree_incoming = 0 THEN 'HIGH'
+    WHEN non_tree_incoming = 1 AND pattern = 'SINGLETON' THEN 'HIGH'
+    WHEN non_tree_incoming > 0 AND pattern = 'FAN-IN' THEN 'LOW'
+    ELSE 'MEDIUM'
+END
+```
+
+
 
 ```
 inspector:memory -p PID                          # report format (default)
