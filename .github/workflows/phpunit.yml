@@ -243,9 +243,171 @@ jobs:
           mkdir -p /tmp/reli-test
           docker compose run reli-test-for-ci vendor/bin/phpunit --group frankenphp --no-coverage
 
+  build-dev-image-arm64:
+    name: Build dev image (ARM64)
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/dev
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute Dockerfile hash
+        id: hash
+        run: echo "tag=sha-$(sha256sum Dockerfile-dev | cut -c1-16)-arm64" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if image already exists
+        id: check
+        run: |
+          if docker manifest inspect "${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push dev image
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile-dev
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
+            ${{ env.IMAGE }}:latest-arm64
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=arm64
+    outputs:
+      image: ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
+
+  phpunit-unit-arm64:
+    name: phpunit (unit, ARM64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP Action
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.2
+          extensions: ffi, dom, mbstring
+          coverage: pcov
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
+
+      - name: Cache dependencies
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-${{ runner.arch }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-composer-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Run unit tests
+        run: |
+          mkdir -p build/logs
+          vendor/bin/phpunit --exclude-group target-version,frankenphp,mod_php --coverage-clover build/logs/clover.xml
+
+      - name: Send to coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/logs/clover.xml
+          flag-name: unit-arm64
+          parallel: true
+
+  phpunit-target-version-arm64:
+    name: phpunit (${{ matrix.name }}, ARM64)
+    needs: build-dev-image-arm64
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "PHP 7.4"
+            targets: "v74"
+          - name: "PHP 8.2"
+            targets: "v82"
+          - name: "PHP 8.4"
+            targets: "v84"
+          - name: "PHP 8.4 ZTS"
+            targets: "v84_zts"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull dev image
+        run: |
+          docker pull ${{ needs.build-dev-image-arm64.outputs.image }}
+          docker tag ${{ needs.build-dev-image-arm64.outputs.image }} reli-dev
+
+      - name: Restore target Docker image cache
+        id: target-cache
+        uses: actions/cache@v5
+        with:
+          path: /tmp/target-image.tar.gz
+          key: docker-target-arm64-${{ matrix.targets }}
+
+      - name: Load cached target Docker image
+        if: steps.target-cache.outputs.cache-hit == 'true'
+        run: docker load < /tmp/target-image.tar.gz
+
+      - name: Install dependencies
+        run: docker run --rm -v ${{ github.workspace }}:/app -w /app reli-dev composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Run target version tests
+        env:
+          RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
+        run: |
+          mkdir -p build/logs
+          docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version --coverage-clover build/logs/clover.xml
+
+      - name: Fix coverage paths from Docker container
+        run: sed -i 's|/app/|${{ github.workspace }}/|g' build/logs/clover.xml
+
+      - name: Send to coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/logs/clover.xml
+          flag-name: ${{ matrix.targets }}-arm64
+          parallel: true
+
+      - name: Save target Docker image for cache
+        if: steps.target-cache.outputs.cache-hit != 'true'
+        run: |
+          TARGET_IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^php:' | head -1)
+          if [ -n "$TARGET_IMAGE" ]; then
+            docker save "$TARGET_IMAGE" | gzip > /tmp/target-image.tar.gz
+          fi
+
   coveralls-finish:
     name: Coveralls finish
-    needs: [phpunit-unit, phpunit-target-version]
+    needs: [phpunit-unit, phpunit-unit-arm64, phpunit-target-version, phpunit-target-version-arm64]
     if: always()
     runs-on: ubuntu-latest
     steps:

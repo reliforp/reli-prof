@@ -13,15 +13,14 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\ProcessStopper;
 
-use FFI\CInteger;
 use Reli\Lib\Libc\Errno\Errno;
+use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
-use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
 
 final class ProcessStopper
 {
     public function __construct(
-        private PtraceX64 $ptrace,
+        private Ptrace $ptrace,
         private Errno $errno,
     ) {
     }

@@ -17,6 +17,7 @@ use Reli\BaseTestCase;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\System\Architecture;
 
 class EhFrameParserTest extends BaseTestCase
 {
@@ -95,12 +96,20 @@ class EhFrameParserTest extends BaseTestCase
         );
 
         // All FDEs should have valid CIE references
+        $is_aarch64 = Architecture::detect() === Architecture::AARCH64;
         foreach (array_slice($fdes, 0, 50) as $fde) {
             $this->assertNotNull($fde->cie);
-            // x86_64 standard: code_alignment=1, data_alignment=-8, return_address=16
-            $this->assertSame(1, $fde->cie->codeAlignmentFactor);
-            $this->assertSame(-8, $fde->cie->dataAlignmentFactor);
-            $this->assertSame(16, $fde->cie->returnAddressRegister);
+            if ($is_aarch64) {
+                // AArch64 standard: code_alignment=4, data_alignment=-8, return_address=30 (LR)
+                $this->assertSame(4, $fde->cie->codeAlignmentFactor);
+                $this->assertSame(-8, $fde->cie->dataAlignmentFactor);
+                $this->assertSame(30, $fde->cie->returnAddressRegister);
+            } else {
+                // x86_64 standard: code_alignment=1, data_alignment=-8, return_address=16 (RIP)
+                $this->assertSame(1, $fde->cie->codeAlignmentFactor);
+                $this->assertSame(-8, $fde->cie->dataAlignmentFactor);
+                $this->assertSame(16, $fde->cie->returnAddressRegister);
+            }
         }
     }
 

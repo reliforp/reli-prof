@@ -66,4 +66,44 @@ class RegisterStateTest extends BaseTestCase
         $this->assertSame(7, RegisterState::RSP);
         $this->assertSame(16, RegisterState::RIP);
     }
+
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps
+    public function testDefaultArchitectureIsX86_64(): void
+    {
+        $state = new RegisterState();
+        $this->assertSame(DwarfArchitecture::X86_64, $state->getArchitecture());
+    }
+
+    public function testAarch64Architecture(): void
+    {
+        $state = new RegisterState(DwarfArchitecture::AARCH64);
+        $this->assertSame(DwarfArchitecture::AARCH64, $state->getArchitecture());
+    }
+
+    public function testAarch64ConvenienceMethods(): void
+    {
+        $state = new RegisterState(DwarfArchitecture::AARCH64);
+        // AArch64 DWARF: PC=32, SP=31, FP(X29)=29
+        $state->set(32, 0x400000);  // PC
+        $state->set(31, 0x7fff0000);  // SP
+        $state->set(29, 0x7fff0010);  // FP (X29)
+
+        $this->assertSame(0x400000, $state->getRip());
+        $this->assertSame(0x7fff0000, $state->getRsp());
+        $this->assertSame(0x7fff0010, $state->getRbp());
+    }
+
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps
+    public function testX86_64ConvenienceMethodsUnchanged(): void
+    {
+        // Ensure x86_64 convenience methods still use the correct registers
+        $state = new RegisterState(DwarfArchitecture::X86_64);
+        $state->set(16, 0x400000);  // RIP
+        $state->set(7, 0x7fff0000);  // RSP
+        $state->set(6, 0x7fff0010);  // RBP
+
+        $this->assertSame(0x400000, $state->getRip());
+        $this->assertSame(0x7fff0000, $state->getRsp());
+        $this->assertSame(0x7fff0010, $state->getRbp());
+    }
 }

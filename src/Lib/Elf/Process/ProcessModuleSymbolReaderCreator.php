@@ -17,9 +17,11 @@ use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\SymbolResolver\Elf64CachedSymbolResolver;
 use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
+use Reli\Lib\Elf\Tls\Aarch64LinuxThreadPointerRetriever;
 use Reli\Lib\Elf\Tls\LibThreadDbTlsFinder;
 use Reli\Lib\Elf\Tls\TlsFinderException;
 use Reli\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
+use Reli\Lib\System\Architecture;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
@@ -81,9 +83,13 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                         $libpthread_module_map
                     );
                 }
+                $thread_pointer_retriever = match (Architecture::detect()) {
+                    Architecture::X86_64 => X64LinuxThreadPointerRetriever::createDefault(),
+                    Architecture::AARCH64 => Aarch64LinuxThreadPointerRetriever::createDefault(),
+                };
                 $tls_finder = new LibThreadDbTlsFinder(
                     $libpthread_symbol_reader,
-                    X64LinuxThreadPointerRetriever::createDefault(),
+                    $thread_pointer_retriever,
                     $this->memory_reader,
                     $this->integer_reader,
                     $this->binary_analysis_cache,
@@ -95,7 +101,8 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                     $root_link_map_address,
                 );
                 $tls_block_address = $tls_finder->findTlsBlock($pid, $link_map?->this_address);
-            } catch (TlsFinderException $e) {
+            } catch (TlsFinderException) {
+            } catch (\Reli\Lib\Process\MemoryReader\MemoryReaderException) {
             }
         }
 

@@ -21,6 +21,7 @@ use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\System\Architecture;
 
 /**
  * This class uses some debugging symbols from libpthread.so,
@@ -50,7 +51,14 @@ final class LibThreadDbTlsFinder implements TlsFinderInterface
 
         $descriptors = $this->resolveDescriptors();
 
-        $dtv_pointer_address = $thread_pointer + $descriptors['pthread_dtvp_offset'];
+        // On AArch64 (TLS Variant I), TPIDR_EL0 points to tcbhead_t, where
+        // dtv is the first field (offset 0). On x86_64 (TLS Variant II),
+        // FS_BASE points to struct pthread, so _thread_db_pthread_dtvp gives
+        // the correct offset to the DTV pointer within the struct.
+        $dtv_pointer_address = match (Architecture::detect()) {
+            Architecture::AARCH64 => $thread_pointer,
+            Architecture::X86_64 => $thread_pointer + $descriptors['pthread_dtvp_offset'],
+        };
         $dtv_pointer_cdata = $this->memory_reader->read($pid, $dtv_pointer_address, 8);
         $dtv_pointer = $this->integer_reader->read64(new CDataByteReader($dtv_pointer_cdata), 0)->toInt();
 
