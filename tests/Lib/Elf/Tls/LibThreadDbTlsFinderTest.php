@@ -19,6 +19,7 @@ use Reli\BaseTestCase;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\System\Architecture;
 
 class LibThreadDbTlsFinderTest extends BaseTestCase
 {
@@ -58,7 +59,13 @@ class LibThreadDbTlsFinderTest extends BaseTestCase
         $module_id[0] = 1;
 
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
-        $memory_reader->expects()->read(1, 0x10008, 8)->andReturns($dtv_address);
+        // On AArch64 (TLS Variant I), DTV is read from thread_pointer + 0;
+        // on x86_64 (TLS Variant II), from thread_pointer + dtvp_offset (8).
+        $dtv_read_address = match (Architecture::detect()) {
+            Architecture::AARCH64 => 0x10000,
+            Architecture::X86_64 => 0x10008,
+        };
+        $memory_reader->expects()->read(1, $dtv_read_address, 8)->andReturns($dtv_address);
         $memory_reader->expects()->read(1, 0x20008, 8)->andReturns($tls_block_address);
         $memory_reader->expects()->read(1, 0x40080, 4)->andReturns($module_id);
 
