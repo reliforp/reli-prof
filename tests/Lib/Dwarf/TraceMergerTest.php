@@ -72,7 +72,7 @@ class TraceMergerTest extends BaseTestCase
             new NativeFrame(0x2000, 'execute_ex', 'php', 0),
             new NativeFrame(0x3000, 'zend_execute', 'php', 0),
         );
-        // PHP frames: deepest first in call_frames
+        // PHP frames: innermost (current) first in call_frames
         $php = new CallTrace(
             new CallFrame('', 'sleep_wrapper', '/app/test.php', null),
             new CallFrame('', 'main', '/app/test.php', null),
@@ -80,10 +80,14 @@ class TraceMergerTest extends BaseTestCase
 
         $merged = $this->merger->merge($native, $php);
 
-        // execute_ex should get the first PHP frame (main - deepest, consumed from end)
-        // zend_execute should get sleep_wrapper
-        $php_frames = array_filter($merged->frames, fn($f) => $f->isPhp());
-        $this->assertCount(2, $php_frames);
+        // execute_ex (inner VM boundary) should get sleep_wrapper (innermost PHP frame)
+        // zend_execute (outer VM boundary) should get main (outermost PHP frame)
+        $this->assertCount(5, $merged->frames);
+        $this->assertSame('zif_sleep', $merged->frames[0]->nativeFrame->symbol_name);
+        $this->assertSame('execute_ex', $merged->frames[1]->nativeFrame->symbol_name);
+        $this->assertSame('sleep_wrapper', $merged->frames[2]->phpFrame->function_name);
+        $this->assertSame('zend_execute', $merged->frames[3]->nativeFrame->symbol_name);
+        $this->assertSame('main', $merged->frames[4]->phpFrame->function_name);
     }
 
     public function testMergeEmptyNative(): void
