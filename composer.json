@@ -38,7 +38,8 @@
     "mockery/mockery": "1.6.12",
     "jetbrains/phpstorm-stubs": "2025.3",
     "php-coveralls/php-coveralls": "2.7.0",
-    "psalm/phar": "^6.0"
+    "psalm/phar": "^6.0",
+    "brianium/paratest": "^7.4.5"
   },
   "autoload": {
     "files": ["src/Lib/Defer/defer.php"],
@@ -64,6 +65,9 @@
     ],
     "test-for-ci": [
       "docker compose run reli-test-for-ci"
+    ],
+    "test-parallel": [
+      "docker compose run reli-test-parallel"
     ],
     "psalm": [
       "psalm.phar"

@@ -33,6 +33,22 @@ services:
       - ./build:/app/build
     container_name: reli-test
     command: ["vendor/bin/phpunit" , "--colors=always", "--testdox", "--coverage-clover", "build/logs/clover.xml"]
+  reli-test-parallel:
+    image: reli-dev
+    build:
+      context: .
+      dockerfile: Dockerfile-dev
+    pid: "host"
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/reli-test:/tmp/reli-test
+    container_name: reli-test-parallel
+    command: ["vendor/bin/paratest", "--colors", "--exclude-group", "target-version,frankenphp,mod_php"]
   reli-test-for-ci:
     image: reli-dev
     build:
