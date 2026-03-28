@@ -649,13 +649,48 @@ This would make reli's memory usage O(stack depth) instead of O(target size).
 
 ---
 
-## Revised Priority Matrix
+## Revised Priority Matrix (post-investigation)
 
-| Proposal | Impact | Effort | Priority |
-|----------|--------|--------|----------|
-| P1: CLI summary with top allocations | High | Low | **1st** |
-| P2: Bundled diagnostic queries/docs | Medium | Very Low | **2nd** |
-| P3: JSON compact mode | Medium | Low | **3rd** |
-| P5: Scalable path queries for large processes | Medium | Medium | **4th** |
-| P4: Diff/snapshot comparison | Medium | Medium | **5th** |
-| P6: Lightweight summary-only mode (no context tree) | Medium | Medium | **6th** |
+Based on 25 issues investigated + architectural analysis of reli-prof internals
++ database design review:
+
+### Tier 1: Immediate wins (index + view, hours of work)
+
+| Item | Impact | Evidence |
+|---|---|---|
+| Add `(run_id, parent_node_id, link_name, is_tree)` index | All queries using link_name filter | Used in every SQLite analysis |
+| Add `(run_id, location_type)` index | Type-filtered queries | Every `WHERE location_type = ...` |
+| Add `v_node_ancestors` (3-hop non-recursive) | Replace `v_node_paths` for 90% of cases | PHP-Parser: 3 hops found 6.5MB token array |
+| CLI summary output (P1) | Every investigation started with this | 25/25 investigations needed class/type summary first |
+
+### Tier 2: Retained size + sharedness (days of work)
+
+| Item | Impact | Evidence |
+|---|---|---|
+| Tree-based retained size (subtree sum) | 8/10 diagnosed cases had single dominator | PrinsFrank, smalot, PhpSpreadsheet, Monolog, etc. |
+| Sharedness indicator (non_tree_incoming count) | 2/10 cases had shared references | php-imap, SimplePie |
+| Accumulation point detection | "Small owner + huge retained" pattern | PhpSpreadsheet IgnoredErrors, CommonMark DotAccessData |
+
+### Tier 3: Structural analysis (weeks of work)
+
+| Item | Impact | Evidence |
+|---|---|---|
+| Structure dedup detection | Same-shape objects that could be shared | Symfony Forms: 1,806 identical OptionsResolvers |
+| Incoming frontier for subgraphs | "Cut these N edges to free M bytes" | php-imap: 3 paths to same string content |
+| Dominator tree (Lengauer-Tarjan) | Exact retained size | Needed for complex graphs |
+
+### Tier 4: Temporal analysis (research, months)
+
+| Item | Impact | Evidence |
+|---|---|---|
+| Multi-snapshot diff | Leak detection over time | Monolog: linear growth visible |
+| Selective access tracing (Zend object handlers) | "Is this retained object actually used?" | Theoretical but architecturally feasible |
+| Last-use / reuse distance | Prioritize cold retained objects | Would distinguish cache vs leak |
+
+### Tier 5: Collection-phase optimization (P6, ongoing)
+
+| Item | Savings | Evidence |
+|---|---|---|
+| `$referencing_contexts` null init | -150-200MB | Agent analysis: 144B per empty array × millions |
+| Streaming context to SQLite during collection | -60-80% of reli memory | PHP-Parser: 6GB reli for 162MB target |
+| Lazy string value loading | -30-50% for string-heavy | php-imap: 151MB of strings copied into reli |
