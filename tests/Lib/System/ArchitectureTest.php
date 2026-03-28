@@ -17,7 +17,7 @@ use Reli\BaseTestCase;
 
 class ArchitectureTest extends BaseTestCase
 {
-    public function testFromX86_64(): void
+    public function testFromX86(): void
     {
         $this->assertSame(Architecture::X86_64, Architecture::from('x86_64'));
     }
