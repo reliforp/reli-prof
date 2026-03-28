@@ -492,6 +492,46 @@ GraphQL-PHP is memory-efficient.
 
 ---
 
+### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
+
+**Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
+we could change." Reporter found `upload_max_size_message` Closure saves 20%.
+
+**reli-prof Result** (200 sub-forms × 8 fields = 1,600 fields → 28MB, 17.5 KB/field):
+
+| Type | Count | Memory |
+|---|---|---|
+| ZendArrayTable | 26,193 | 11.00 MB |
+| ZendArrayTableOverhead | 26,001 | 6.28 MB |
+| ZendObject | 20,152 | 4.59 MB |
+
+| Class | Count | Per-field |
+|---|---|---|
+| **Closure** | **3,619** | **2.26/field** |
+| FormBuilder | 3,611 | 2.26/field |
+| OptionsResolver | 1,806 | 1.13/field |
+| EventDispatcher | 1,810 | 1.13/field |
+| Form | 1,801 | 1.13/field |
+
+**What holds the 3,619 Closures:**
+- `value` (OptionsResolver defaults): 2,214
+- `emptyData` option: **1,402** ← `fn() => ''` per field, could be a string
+
+**Diagnosis**: Arrays dominate (17.3MB = 63%). Each field creates ~16 arrays
+(OptionsResolver internals: `$defaults`, `$required`, `$defined`, `$normalizers`,
+`$allowedValues`, `$allowedTypes`, `$lazy`, etc.) plus the Closure overhead.
+
+**Concrete optimization targets**:
+1. `empty_data` default: replace `fn() => ''` with `''` — saves 1,402 Closures
+2. OptionsResolver: share immutable option sets across same-type fields instead
+   of cloning per field
+3. Lazy OptionsResolver initialization: don't resolve until form is submitted
+
+At 17.5 KB/field, 10K fields = 175MB, 30K fields = 525MB — matching the
+reporter's "hundreds of MB" observation.
+
+---
+
 ### 23. PHP-DI Container — Efficient (460 bytes/service)
 
 1,000 services with autowiring: 8MB total. Each service definition:

@@ -1,0 +1,8 @@
+{
+    "name": "test/symfony-forms-memory",
+    "require": {
+        "symfony/form": "^7.0",
+        "symfony/validator": "^7.0",
+        "symfony/property-access": "^7.0"
+    }
+}
