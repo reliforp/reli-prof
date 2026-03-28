@@ -1,0 +1,6 @@
+{
+    "name": "test/dbal-memory",
+    "require": {
+        "doctrine/dbal": "^4.0"
+    }
+}

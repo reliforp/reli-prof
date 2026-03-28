@@ -492,6 +492,24 @@ GraphQL-PHP is memory-efficient.
 
 ---
 
+### 23. PHP-DI Container — Efficient (460 bytes/service)
+
+1,000 services with autowiring: 8MB total. Each service definition:
+AutowireDefinition (164B) + Helper (120B) + MethodInjection (72B) + References.
+Resolved service instances are held weakly — only a few visible in reli.
+
+---
+
+### 24. Doctrine DBAL QueryBuilder — 3,146 bytes per QB
+
+10K QueryBuilders: 32MB. Per QB: 4 objects (QB + Join + From + CompositeExpression
+= 656 bytes) + 8 arrays (~2,490 bytes). Arrays dominate (20MB of 30MB).
+
+**Nextcloud #59018 context**: 3,146 bytes/QB × 1.6M QBs = 5GB. A cron job
+that creates QBs in a loop without releasing them would hit 5GB after ~1.6M iterations.
+
+---
+
 ### 18. Symfony Serializer — Transient Normalization Arrays
 
 **Scenario**: 10K Orders (50K items, 10K addresses) → serialize to JSON.
