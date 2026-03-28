@@ -101,7 +101,8 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                     $root_link_map_address,
                 );
                 $tls_block_address = $tls_finder->findTlsBlock($pid, $link_map?->this_address);
-            } catch (TlsFinderException $e) {
+            } catch (TlsFinderException) {
+            } catch (\Reli\Lib\Process\MemoryReader\MemoryReaderException) {
             }
         }
 
