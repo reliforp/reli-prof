@@ -717,7 +717,35 @@ load the graph into PHP and run iterative post-order DFS.
 3. Iterative post-order DFS to compute `$subtree_sizes[]`
 4. Greedy drill-down: at each level, pick the heaviest child, show top 3
 
-**Measured Performance:**
+### Scaling to Multi-GB Targets (PHPStan 4GB scenario)
+
+Edge density varies by target: 800-38,000 tree edges per MB of heap.
+A 4GB PHPStan process could have 3-150M edges.
+
+**PHP array approach does NOT scale beyond ~500 MB targets:**
+
+| Target | Edges (est.) | PHP array memory | FFI CSR memory |
+|---|---|---|---|
+| 160 MB | 6M | 2.2 GB | ~50 MB |
+| 1 GB | 25M | ~9 GB | ~120 MB |
+| 4 GB | 80M | ~30 GB ❌ | **~350 MB** ✅ |
+| 10 GB | 200M | ~75 GB ❌ | **~900 MB** ✅ |
+
+**FFI CSR (Compressed Sparse Row)** stores the graph as:
+- `offsets[n_nodes]`: FFI int32 — byte offset into edges[] per node
+- `edges[n_edges]`: FFI int32 — flat child node IDs
+- `node_sizes[n_nodes]`: FFI int64 — shallow size per node
+- `subtree_sizes[n_nodes]`: FFI int64 — computed via post-order DFS
+
+Measured: FFI int32[6M] = 23 MB, sequential read 0.12s, 1M random reads 0.16s.
+reli-prof already uses FFI extensively, so this is a natural fit.
+
+Time for 4GB target (80M edges): edge loading ~3 min + DFS ~30 sec = **~4 min**.
+
+Implementation: auto-switch to FFI CSR when edge count exceeds threshold (e.g., 10M).
+Same DFS algorithm, different backing data structure.
+
+**Measured Performance (current PHP array approach):**
 
 | Dataset | Edges | Load edges | DFS compute | Total | PHP Memory |
 |---|---|---|---|---|---|
