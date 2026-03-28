@@ -30,6 +30,7 @@ final class MemoryOutputFactory
 
         return match ($settings->output_format) {
             'json' => new JsonMemoryOutput($settings->pretty_print, $settings->output_path),
+            // SQLite: temp-file merge overhead negates parallelism gains.
             'sqlite3' => new PdoMemoryOutput(
                 new SqliteDriver(
                     $settings->output_path ?? throw new \RuntimeException(
@@ -37,7 +38,6 @@ final class MemoryOutputFactory
                     ),
                 ),
                 $region_boundaries,
-                $parallel,
             ),
             'mysql' => new PdoMemoryOutput(
                 new MySqlDriver(
