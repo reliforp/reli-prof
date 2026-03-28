@@ -22,6 +22,7 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapParser;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapReader;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\System\Architecture;
 
 final class NativeTraceCollector
 {
@@ -142,7 +143,25 @@ final class NativeTraceCollector
 
     private function ensureRegsFfi(): void
     {
-        if ($this->regsFfi === null) {
+        if ($this->regsFfi !== null) {
+            return;
+        }
+
+        if (Architecture::detect() === Architecture::AARCH64) {
+            $this->regsFfi = \FFI::cdef('
+                struct user_pt_regs {
+                    unsigned long long regs[31];
+                    unsigned long long sp;
+                    unsigned long long pc;
+                    unsigned long long pstate;
+                };
+                struct iovec {
+                    void  *iov_base;
+                    unsigned long iov_len;
+                };
+            ');
+            $this->regsBuffer = $this->regsFfi->new('struct user_pt_regs');
+        } else {
             $this->regsFfi = \FFI::cdef('
                 struct user_regs_struct {
                     unsigned long r15;
@@ -187,6 +206,10 @@ final class NativeTraceCollector
                 return null;
             }
 
+            if (Architecture::detect() === Architecture::AARCH64) {
+                return $this->readRegistersAarch64($pid, $regs);
+            }
+
             $result = $this->ptrace->ptrace(
                 PtraceRequest::PTRACE_GETREGS,
                 $pid,
@@ -202,5 +225,32 @@ final class NativeTraceCollector
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /** @psalm-suppress UndefinedPropertyAssignment */
+    private function readRegistersAarch64(int $pid, \FFI\CData $regs): ?RegisterState
+    {
+        assert($this->regsFfi !== null);
+
+        $iov = $this->regsFfi->new('struct iovec');
+        if ($iov === null) {
+            return null;
+        }
+        $iov->iov_base = \FFI::addr($regs);
+        $iov->iov_len = \FFI::sizeof($regs);
+
+        // NT_PRSTATUS = 1
+        $result = $this->ptrace->ptrace(
+            PtraceRequest::PTRACE_GETREGSET,
+            $pid,
+            1,
+            \FFI::addr($iov),
+        );
+
+        if ($result === -1) {
+            return null;
+        }
+
+        return RegisterState::fromAarch64PtraceRegs($regs);
     }
 }

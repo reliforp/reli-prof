@@ -186,8 +186,9 @@ final class NativeStackUnwinder
             }
 
             // Create new register state
-            $new_registers = new RegisterState();
-            $new_registers->set(RegisterState::RSP, $cfa);
+            $arch = $registers->getArchitecture();
+            $new_registers = new RegisterState($arch);
+            $new_registers->set($arch->spRegister(), $cfa);
 
             // Restore return address register
             $ra_register = $fde->cie->returnAddressRegister;
@@ -196,13 +197,10 @@ final class NativeStackUnwinder
             if ($ra === null) {
                 return null;
             }
-            $new_registers->set(RegisterState::RIP, $ra);
+            $new_registers->set($arch->ipRegister(), $ra);
 
             // Restore callee-saved registers
-            foreach (
-                [RegisterState::RBP, RegisterState::RBX, RegisterState::R12,
-                       RegisterState::R13, RegisterState::R14, RegisterState::R15] as $reg
-            ) {
+            foreach ($arch->calleeSavedRegisters() as $reg) {
                 $rule = $row->getRegisterRule($reg);
                 $value = $this->applyRegisterRule($rule, $cfa, $registers, $pid);
                 if ($value !== null) {
@@ -330,29 +328,31 @@ final class NativeStackUnwinder
 
     private function framePointerUnwind(int $pid, RegisterState $registers): ?RegisterState
     {
-        $rbp = $registers->getRbp();
-        if ($rbp === 0) {
+        $fp = $registers->getRbp();
+        if ($fp === 0) {
             return null;
         }
 
         try {
-            // Standard frame pointer chain: [rbp] = saved rbp, [rbp+8] = return address
-            $saved_rbp = $this->readMemoryInt64($pid, $rbp);
-            $return_address = $this->readMemoryInt64($pid, $rbp + 8);
+            // Frame pointer chain: [fp] = saved fp, [fp+8] = return address
+            // This layout is identical on both x86_64 and AArch64
+            $saved_fp = $this->readMemoryInt64($pid, $fp);
+            $return_address = $this->readMemoryInt64($pid, $fp + 8);
 
-            if ($saved_rbp === null || $return_address === null || $return_address === 0) {
+            if ($saved_fp === null || $return_address === null || $return_address === 0) {
                 return null;
             }
 
-            // Sanity: saved RBP should be higher than current (stack grows down)
-            if ($saved_rbp !== 0 && $saved_rbp <= $rbp) {
+            // Sanity: saved FP should be higher than current (stack grows down)
+            if ($saved_fp !== 0 && $saved_fp <= $fp) {
                 return null;
             }
 
-            $new_registers = new RegisterState();
-            $new_registers->set(RegisterState::RIP, $return_address);
-            $new_registers->set(RegisterState::RSP, $rbp + 16);
-            $new_registers->set(RegisterState::RBP, $saved_rbp);
+            $arch = $registers->getArchitecture();
+            $new_registers = new RegisterState($arch);
+            $new_registers->set($arch->ipRegister(), $return_address);
+            $new_registers->set($arch->spRegister(), $fp + 16);
+            $new_registers->set($arch->fpRegister(), $saved_fp);
             return $new_registers;
         } catch (\Throwable) {
             return null;

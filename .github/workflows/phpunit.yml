@@ -243,9 +243,49 @@ jobs:
           mkdir -p /tmp/reli-test
           docker compose run reli-test-for-ci vendor/bin/phpunit --group frankenphp --no-coverage
 
+  phpunit-unit-arm64:
+    name: phpunit (unit, ARM64)
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP Action
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.2
+          extensions: ffi, dom, mbstring
+          coverage: pcov
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
+
+      - name: Cache dependencies
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-${{ runner.arch }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-composer-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Run unit tests
+        run: |
+          mkdir -p build/logs
+          vendor/bin/phpunit --exclude-group target-version,frankenphp --coverage-clover build/logs/clover.xml
+
+      - name: Send to coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/logs/clover.xml
+          flag-name: unit-arm64
+          parallel: true
+
   coveralls-finish:
     name: Coveralls finish
-    needs: [phpunit-unit, phpunit-target-version]
+    needs: [phpunit-unit, phpunit-unit-arm64, phpunit-target-version]
     if: always()
     runs-on: ubuntu-latest
     steps:

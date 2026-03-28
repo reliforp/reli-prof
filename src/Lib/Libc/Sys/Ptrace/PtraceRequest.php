@@ -38,4 +38,5 @@ enum PtraceRequest: int
     case PTRACE_GETEVENTMSG = 0x4201;
     case PTRACE_GETSIGINFO = 0x4202;
     case PTRACE_SETSIGINFO = 0x4203;
+    case PTRACE_GETREGSET = 0x4204;
 }

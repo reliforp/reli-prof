@@ -14,15 +14,19 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 /**
- * x86_64 register state with DWARF register number mapping.
+ * Architecture-aware register state with DWARF register number mapping.
  *
  * DWARF register numbers for x86_64 (System V ABI):
  *  0: RAX,  1: RDX,  2: RCX,  3: RBX,  4: RSI,  5: RDI,
  *  6: RBP,  7: RSP,  8: R8,   9: R9,  10: R10, 11: R11,
  * 12: R12, 13: R13, 14: R14, 15: R15, 16: RIP (Return Address)
+ *
+ * DWARF register numbers for AArch64:
+ *  0-30: X0-X30,  31: SP,  32: PC
  */
 final class RegisterState
 {
+    // x86_64 DWARF register numbers
     public const RAX = 0;
     public const RDX = 1;
     public const RCX = 2;
@@ -44,6 +48,16 @@ final class RegisterState
     /** @var array<int, int> DWARF register number => value */
     private array $registers = [];
 
+    public function __construct(
+        private DwarfArchitecture $architecture = DwarfArchitecture::X86_64,
+    ) {
+    }
+
+    public function getArchitecture(): DwarfArchitecture
+    {
+        return $this->architecture;
+    }
+
     public function get(int $dwarfRegNum): int
     {
         return $this->registers[$dwarfRegNum] ?? 0;
@@ -56,17 +70,17 @@ final class RegisterState
 
     public function getRip(): int
     {
-        return $this->get(self::RIP);
+        return $this->get($this->architecture->ipRegister());
     }
 
     public function getRsp(): int
     {
-        return $this->get(self::RSP);
+        return $this->get($this->architecture->spRegister());
     }
 
     public function getRbp(): int
     {
-        return $this->get(self::RBP);
+        return $this->get($this->architecture->fpRegister());
     }
 
     /**
@@ -78,14 +92,13 @@ final class RegisterState
     }
 
     /**
-     * Create from ptrace user_regs_struct FFI data.
-     * The struct layout matches PtraceX64.php's definition.
+     * Create from x86_64 ptrace user_regs_struct FFI data.
      *
      * @psalm-suppress UndefinedPropertyFetch
      */
     public static function fromPtraceRegs(\FFI\CData $regs): self
     {
-        $state = new self();
+        $state = new self(DwarfArchitecture::X86_64);
         $state->set(self::R15, (int)$regs->r15);
         $state->set(self::R14, (int)$regs->r14);
         $state->set(self::R13, (int)$regs->r13);
@@ -103,6 +116,23 @@ final class RegisterState
         $state->set(self::RDI, (int)$regs->di);
         $state->set(self::RIP, (int)$regs->ip);
         $state->set(self::RSP, (int)$regs->sp);
+        return $state;
+    }
+
+    /**
+     * Create from AArch64 ptrace user_pt_regs FFI data.
+     *
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress MixedArrayAccess
+     */
+    public static function fromAarch64PtraceRegs(\FFI\CData $regs): self
+    {
+        $state = new self(DwarfArchitecture::AARCH64);
+        for ($i = 0; $i <= 30; $i++) {
+            $state->set($i, (int)$regs->regs[$i]);
+        }
+        $state->set(31, (int)$regs->sp);
+        $state->set(32, (int)$regs->pc);
         return $state;
     }
 }

@@ -37,7 +37,9 @@ use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Directory\AppDirectory;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
+use Reli\Lib\Libc\Sys\Ptrace\PtraceAarch64;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
+use Reli\Lib\System\Architecture;
 use Reli\Lib\Log\StateCollector\CallerStateCollector;
 use Reli\Lib\Log\StateCollector\GroupedStateCollector;
 use Reli\Lib\Log\StateCollector\ProcessStateCollector;
@@ -100,7 +102,12 @@ return [
     BinaryAnalysisCache::class => fn () => new BinaryAnalysisCache(
         AppDirectory::getCacheDir() . '/binary-analysis'
     ),
-    Ptrace::class => autowire(PtraceX64::class),
+    Ptrace::class => function () {
+        return match (Architecture::detect()) {
+            Architecture::X86_64 => new PtraceX64(),
+            Architecture::AARCH64 => new PtraceAarch64(),
+        };
+    },
     Reli\Lib\Dwarf\NativeTraceCollector::class => autowire(),
     Reli\Command\Inspector\GetTraceCommand::class => autowire()
         ->constructorParameter(
