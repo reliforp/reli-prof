@@ -172,14 +172,21 @@ final class MemoryLocationsCollector
         return $chunk_address;
     }
 
-    /** @param TargetPhpSettings<VersionDecided> $target_php_settings */
-    public function collectAll(
+    /**
+     * Prepare heap metadata and EG/CG for collection.
+     *
+     * This is the sequential pre-processing phase that MUST complete
+     * before per-branch collection can begin.  The returned
+     * CollectionPreparation holds everything the collect* methods need.
+     *
+     * @param TargetPhpSettings<VersionDecided> $target_php_settings
+     */
+    public function prepare(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
         int $eg_address,
         int $cg_address,
-        ?MemoryLimitErrorDetails $memory_limit_error_details = null,
-    ): CollectedMemories {
+    ): CollectionPreparation {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
         $dereferencer = $this->getDereferencer($pid, $php_version);
@@ -196,22 +203,21 @@ final class MemoryLocationsCollector
             $zend_type_reader->sizeOf('zend_mm_chunk'),
         );
 
-        $memory_locations = new MemoryLocations();
         $chunk_memory_locations = new MemoryLocations();
+        $huge_memory_locations = new MemoryLocations();
+        $huge_list_memory_locations = new MemoryLocations();
 
         $zend_mm_main_chunk = $dereferencer->deref($main_chunk_header_pointer);
         foreach ($zend_mm_main_chunk->iterateChunks($dereferencer) as $chunk) {
-            $chunk_memory_location = ZendMmChunkMemoryLocation::fromZendMmChunk($chunk);
             $chunk_memory_locations->add(
-                $chunk_memory_location
+                ZendMmChunkMemoryLocation::fromZendMmChunk($chunk)
             );
         }
-        $huge_memory_locations = new MemoryLocations();
         foreach ($zend_mm_main_chunk->heap_slot->iterateHugeList($dereferencer) as $huge_list) {
             $huge_memory_locations->add(
                 ZendMmChunkMemoryLocation::fromZendMmHugeList($huge_list)
             );
-            $memory_locations->add(
+            $huge_list_memory_locations->add(
                 ZendMmHugeListMemoryLocation::fromZendMmHugeList($huge_list)
             );
         }
@@ -242,7 +248,6 @@ final class MemoryLocationsCollector
                 );
             }
         }
-
         if ($cg->ast_arena !== null) {
             $ast_arena_root = $dereferencer->deref($cg->ast_arena);
             foreach ($ast_arena_root->iterateChain($dereferencer) as $ast_arena) {
@@ -265,6 +270,67 @@ final class MemoryLocationsCollector
             }
         }
 
+        assert(!is_null($eg->function_table));
+        assert(!is_null($eg->class_table));
+        assert(!is_null($eg->zend_constants));
+
+        return new CollectionPreparation(
+            $dereferencer,
+            $zend_type_reader,
+            $eg,
+            $cg,
+            $dereferencer->deref($eg->function_table),
+            $dereferencer->deref($eg->class_table),
+            $dereferencer->deref($eg->zend_constants),
+            $chunk_memory_locations,
+            $huge_memory_locations,
+            $huge_list_memory_locations,
+            $vm_stack_memory_locations,
+            $compiler_arena_memory_locations,
+            $cached_chunks_size,
+            $memory_get_usage_size,
+            $memory_get_usage_real_size,
+        );
+    }
+
+    /**
+     * Collect all branches and assemble the full result.
+     *
+     * @param TargetPhpSettings<VersionDecided> $target_php_settings
+     */
+    public function collectAll(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        int $eg_address,
+        int $cg_address,
+        ?MemoryLimitErrorDetails $memory_limit_error_details = null,
+    ): CollectedMemories {
+        $prep = $this->prepare($process_specifier, $target_php_settings, $eg_address, $cg_address);
+        return $this->collectBranches($prep, $memory_limit_error_details);
+    }
+
+    /**
+     * Collect all branches using the given preparation.
+     *
+     * This is the part that can potentially be parallelized at the
+     * branch level.
+     */
+    public function collectBranches(
+        CollectionPreparation $prep,
+        ?MemoryLimitErrorDetails $memory_limit_error_details = null,
+    ): CollectedMemories {
+        $dereferencer = $prep->dereferencer;
+        $zend_type_reader = $prep->zend_type_reader;
+        $eg = $prep->eg;
+        $cg = $prep->cg;
+
+        $memory_locations = new MemoryLocations();
+
+        // Seed memory_locations with huge list entries from preparation.
+        foreach ($prep->huge_list_memory_locations->memory_locations as $huge_loc) {
+            $memory_locations->add($huge_loc);
+        }
+
         $context_pools = ContextPools::createDefault();
 
         $included_files_context = $this->collectIncludedFiles(
@@ -282,14 +348,6 @@ final class MemoryLocationsCollector
             $memory_locations,
             $context_pools,
         );
-
-        assert(!is_null($eg->function_table));
-        assert(!is_null($eg->class_table));
-        assert(!is_null($eg->zend_constants));
-
-        $function_table = $dereferencer->deref($eg->function_table);
-        $class_table = $dereferencer->deref($eg->class_table);
-        $zend_constants = $dereferencer->deref($eg->zend_constants);
 
         $global_variables_context = $this->collectGlobalVariables(
             $eg->symbol_table,
@@ -312,7 +370,7 @@ final class MemoryLocationsCollector
         );
 
         $defined_functions_context = $this->collectFunctionTable(
-            $function_table,
+            $prep->function_table,
             $cg->map_ptr_base,
             $dereferencer,
             $zend_type_reader,
@@ -322,7 +380,7 @@ final class MemoryLocationsCollector
         );
 
         $defined_classes_context = $this->collectClassTable(
-            $class_table,
+            $prep->class_table,
             $cg->map_ptr_base,
             $dereferencer,
             $zend_type_reader,
@@ -332,7 +390,7 @@ final class MemoryLocationsCollector
         );
 
         $global_constants_context = $this->collectGlobalConstants(
-            $zend_constants,
+            $prep->zend_constants,
             $cg->map_ptr_base,
             $dereferencer,
             $zend_type_reader,
@@ -377,15 +435,15 @@ final class MemoryLocationsCollector
         );
 
         return new CollectedMemories(
-            $chunk_memory_locations,
-            $huge_memory_locations,
-            $vm_stack_memory_locations,
-            $compiler_arena_memory_locations,
-            $cached_chunks_size,
+            $prep->chunk_memory_locations,
+            $prep->huge_memory_locations,
+            $prep->vm_stack_memory_locations,
+            $prep->compiler_arena_memory_locations,
+            $prep->cached_chunks_size,
             $memory_locations,
             $top_reference_context,
-            $memory_get_usage_size,
-            $memory_get_usage_real_size,
+            $prep->memory_get_usage_size,
+            $prep->memory_get_usage_real_size,
         );
     }
 
@@ -1472,7 +1530,7 @@ final class MemoryLocationsCollector
     }
 
     /** @param Pointer<ZendClassEntry> $pointer */
-    private function collectClassDefinitionPointer(
+    public function collectClassDefinitionPointer(
         Pointer $pointer,
         int $map_ptr_base,
         Dereferencer $dereferencer,
@@ -1496,7 +1554,7 @@ final class MemoryLocationsCollector
         );
     }
 
-    private function collectClassDefinition(
+    public function collectClassDefinition(
         ZendClassEntry $class_entry,
         int $map_ptr_base,
         Dereferencer $dereferencer,
@@ -1633,7 +1691,7 @@ final class MemoryLocationsCollector
         return $class_definition_context;
     }
 
-    private function collectPropertiesInfo(
+    public function collectPropertiesInfo(
         ZendClassEntry $class_entry,
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
@@ -1674,7 +1732,7 @@ final class MemoryLocationsCollector
         return $properties_info_context;
     }
 
-    private function collectGlobalConstants(
+    public function collectGlobalConstants(
         ZendArray $array,
         int $map_ptr_base,
         Dereferencer $dereferencer,
@@ -1727,7 +1785,7 @@ final class MemoryLocationsCollector
         return $global_constants_context;
     }
 
-    private function collectIncludedFiles(
+    public function collectIncludedFiles(
         ZendArray $included_files,
         Dereferencer $dereferencer,
         MemoryLocations $memory_locations,
@@ -1753,7 +1811,7 @@ final class MemoryLocationsCollector
         return $included_files_context;
     }
 
-    private function collectInternedStrings(
+    public function collectInternedStrings(
         ZendArray $interned_string,
         int $map_ptr_base,
         Dereferencer $dereferencer,
@@ -1772,7 +1830,7 @@ final class MemoryLocationsCollector
         );
     }
 
-    private function collectObjectsStore(
+    public function collectObjectsStore(
         ZendObjectsStore $objects_store,
         int $map_ptr_base,
         Dereferencer $dereferencer,
