@@ -267,6 +267,55 @@ ORDER BY b.memory_usage DESC
 LIMIT 5;
 ```
 
+### Pass 7b: Dynamic Properties Detection (needs context tree)
+
+Detects the "Psalm pattern": classes with unnecessary dynamic property tables.
+reli-prof explicitly tracks `dynamic_properties` as a named child of ObjectContext
+(MemoryLocationsCollector.php L1009-1023). When `$object->properties` is non-null
+and not an enum, the HashTable is collected and linked.
+
+```
+=== ⚠ Unnecessary Dynamic Property Tables ===
+  Monolog\JsonSerializableDateTimeImmutable: 93,315 objects with dynamic_properties
+    Total overhead: 5,103 KB
+    This class extends a C extension class (DateTimeImmutable).
+    The dynamic property table may be avoidable.
+```
+
+Query:
+```sql
+SELECT
+    cnl.class_name,
+    count(*) as objects_with_dynprops,
+    round(sum(dyn_loc.size) / 1024.0, 2) as dynprops_total_kb
+FROM context_edges e_dyn
+JOIN context_edges e_obj
+    ON e_obj.parent_node_id = e_dyn.parent_node_id
+    AND e_obj.link_name = 'object_properties' AND e_obj.is_tree = 1
+JOIN context_node_locations cnl
+    ON cnl.node_id = e_dyn.parent_node_id
+    AND cnl.location_type = 'ZendObjectMemoryLocation'
+LEFT JOIN context_node_locations dyn_loc
+    ON dyn_loc.node_id = e_dyn.child_node_id
+    AND dyn_loc.location_type IN ('ZendArrayMemoryLocation', 'ZendArrayTableMemoryLocation')
+WHERE e_dyn.link_name = 'dynamic_properties' AND e_dyn.is_tree = 1
+GROUP BY cnl.class_name
+HAVING count(*) > 100
+ORDER BY count(*) DESC;
+```
+
+This was validated against the Monolog dataset where 93,315
+JsonSerializableDateTimeImmutable objects each carry a dynamic property table
+(5.1 MB total). The class extends C-extension DateTimeImmutable and adds one
+PHP property, which triggers the dynamic property table creation.
+
+Cause determination is harder — possible reasons include:
+- PHP class extending a C extension class (ext properties layout mismatch)
+- unserialize() without __unserialize() on the class
+- Explicit dynamic property assignment at runtime
+
+The report flags the anomaly; the user investigates the specific cause.
+
 ### Pass 8: Retained Size Estimate (needs context tree, optional)
 
 ```
