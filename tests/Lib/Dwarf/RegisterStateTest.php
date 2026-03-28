@@ -67,7 +67,7 @@ class RegisterStateTest extends BaseTestCase
         $this->assertSame(16, RegisterState::RIP);
     }
 
-    public function testDefaultArchitectureIsX8664(): void
+    public function testDefaultArchitectureIsX86(): void
     {
         $state = new RegisterState();
         $this->assertSame(DwarfArchitecture::X86_64, $state->getArchitecture());
@@ -92,7 +92,7 @@ class RegisterStateTest extends BaseTestCase
         $this->assertSame(0x7fff0010, $state->getRbp());
     }
 
-    public function testX8664ConvenienceMethodsUnchanged(): void
+    public function testX86ConvenienceMethodsUnchanged(): void
     {
         // Ensure x86_64 convenience methods still use the correct registers
         $state = new RegisterState(DwarfArchitecture::X86_64);
