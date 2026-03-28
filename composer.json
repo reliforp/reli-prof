@@ -37,7 +37,7 @@
     "squizlabs/php_codesniffer": "4.0.1",
     "mockery/mockery": "1.6.12",
     "jetbrains/phpstorm-stubs": "2025.3",
-    "php-coveralls/php-coveralls": "2.7.0",
+    "php-coveralls/php-coveralls": "2.9.1",
     "psalm/phar": "^6.0",
     "brianium/paratest": "^7.4.5"
   },
