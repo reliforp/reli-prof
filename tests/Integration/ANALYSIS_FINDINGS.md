@@ -623,6 +623,29 @@ lazily initialized or shared.
 
 ---
 
+### 34. Symfony Skeleton Boot — 6 MB (lighter than Laravel)
+
+Symfony skeleton boot: 6MB vs Laravel 8MB. Symfony's compiled DI container
+means fewer runtime objects. (Request handling failed due to missing env vars
+in the test setup, but boot-only comparison is valid.)
+
+---
+
+### 35. PHP Data Structure Comparison — Array vs SplFixedArray vs Objects
+
+500K elements:
+| Structure | Per-element | Total |
+|---|---|---|
+| Regular array (int) | 17 bytes | 8 MB |
+| SplFixedArray (int) | 16 bytes | 7.6 MB |
+| Array of Tiny objects | **80 bytes** | **38 MB** |
+
+SplFixedArray offers no advantage on PHP 8.4 (packed arrays are already efficient).
+Object wrapping costs 4.7x more per element. reli confirms: 500K Tiny objects =
+26.7MB (ZendObject) + 4MB (ObjectsStore) + 7.6MB (container array).
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
