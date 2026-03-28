@@ -1,5 +1,19 @@
 # reli-prof Memory Analysis: Real-World Issue Investigation
 
+## Prior Art
+
+reli-prof has been used for real-world memory diagnostics since v0.11:
+- [psalm#10522](https://github.com/vimeo/psalm/issues/10522#issuecomment-1881729504):
+  `unserialize()` dynamic property table overhead (255K strings = 159MB)
+- [PhpSpreadsheet#3814](https://github.com/PHPOffice/PhpSpreadsheet/issues/3814#issuecomment-1862367771):
+  `toArray()` allocating 1M×1K null array (16GB needed, fixable to 32MB via CoW)
+- [smalot/pdfparser#631](https://github.com/smalot/pdfparser/issues/631#issuecomment-1847772214):
+  `Font::$uchrCache` static cache = 42MB (1M items)
+
+Those analyses used JSON output with manual tree traversal. The investigation
+below uses the newer SQLite output with SQL queries, which is significantly
+faster for diagnosis.
+
 ## Investigated Issues
 
 ### 1. PrinsFrank/pdfparser#301 — CrossReference PREV Chain OOM
