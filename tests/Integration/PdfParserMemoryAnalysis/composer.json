@@ -1,0 +1,6 @@
+{
+    "name": "test/pdfparser-memory",
+    "require": {
+        "prinsfrank/pdfparser": "*"
+    }
+}
