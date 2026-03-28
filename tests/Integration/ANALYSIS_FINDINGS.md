@@ -59,53 +59,45 @@ However:
 
 ## reli-prof Improvement Proposals
 
-### P1: Array/String Attribution by Owner (High Impact)
+### Correction: SQLite Output Already Has the Data
 
-**Problem**: When arrays or strings dominate memory (cases #2 and #3), you only see
-aggregate counts. You can't answer "which object's property holds the 22MB array?"
+After testing with `--output-format=sqlite3`, it turned out the existing SQLite output
+combined with the built-in views (`v_node_paths`, `v_arrays`) **already supports all
+the queries we initially thought were missing**:
 
-**Proposal**: Add a `--top-allocations=N` mode that ranks individual allocations by size
-and shows the reference context path for each:
+```sql
+-- Top arrays with full context path (smalot/pdfparser case)
+SELECT a.total_size, np.path
+FROM v_arrays a JOIN v_node_paths np ON np.node_id = a.node_id
+ORDER BY a.total_size DESC LIMIT 10;
 
-```
-Top 10 memory allocations:
-  #1  ZendArray   2.12 MB  Font#4_0->table (Font::$table)
-  #2  ZendArray   2.12 MB  Font#6_0->table (Font::$table)
-  #3  ZendString  1.05 MB  Message#1->raw_body
-  #4  ZendString  1.05 MB  Message#2->raw_body
-  ...
-```
+-- Result:
+-- 2.62 MB  class_table -> smalot\pdfparser\font -> static_properties -> uchrCache
+-- 1.05 MB  ... -> fonts -> F1 -> ... -> table
+-- 1.05 MB  ... -> fonts -> F2 -> ... -> table
 
-This would immediately solve cases #2 and #3 where the aggregate summary says
-"arrays use 22MB" but doesn't tell you which specific array or who owns it.
+-- Top strings with context path (php-imap case)
+SELECT cnl.size, substr(cnl.string_value, 1, 60), np.path
+FROM context_node_locations cnl JOIN v_node_paths np ON np.node_id = cnl.node_id
+WHERE cnl.location_type = 'ZendStringMemoryLocation'
+ORDER BY cnl.size DESC LIMIT 10;
 
-**Implementation**: During `MemoryLocationsCollector::collectAll()`, maintain a
-max-heap of the N largest allocations encountered. For each, record the current
-context path. Emit as a separate output section.
+-- Result:
+-- 210 KB  "From: sender@..."  ... -> structure -> object_properties -> raw
+-- 210 KB  "From: sender@..."  ... -> structure -> object_properties -> raw
 
----
+-- Circular references (php-imap case)
+SELECT e.link_name, parent_np.path, child_np.path
+FROM context_edges e
+JOIN v_node_paths parent_np ON parent_np.node_id = e.parent_node_id
+JOIN v_node_paths child_np ON child_np.node_id = e.child_node_id
+WHERE e.is_tree = 0 AND e.link_name = 'oMessage';
 
-### P2: Circular Reference Detection and Reporting (Medium Impact)
-
-**Problem**: The context tree handles circular refs to prevent infinite recursion
-(via `#reference_node_id`), but doesn't report them as a diagnostic finding.
-
-**Proposal**: When `ContextAnalyzer` detects a back-reference (existing_node_id != null),
-record it as a potential circular reference. In the output, add a section:
-
-```
-Circular References Detected:
-  Message#95335 → attachments → AttachmentCollection#95718 → items[0] → Attachment#95719 → oMessage → Message#95335
-  Total memory reachable from cycle: 876 KB
+-- Result:
+-- oMessage  Message[0] -> attachments -> items[0] -> oMessage  →  Message[0]
 ```
 
-**Implementation**: In `ContextAnalyzer::analyze()`, when emitting a reference to an
-already-visited node, check if the reference creates a cycle (current node is a
-descendant of the target). If so, record the path. After tree walk, emit cycle report.
-
----
-
-### P3: Compact Output Mode (High Impact, Usability)
+### Revised Proposals (What's Actually Needed)
 
 **Problem**: JSON output is 70-140MB for a 26-46MB process. This makes the output
 hard to work with, slow to parse, and impractical for CI/automated analysis.
@@ -120,76 +112,71 @@ hard to work with, slow to parse, and impractical for CI/automated analysis.
 Skip the full context tree. This would reduce output from 140MB to ~10KB.
 
 For the full tree, consider:
-- `--output-format=json-compact` that deduplicates locations and uses references
-- `--output-format=sqlite3` (already exists) which is better for querying
+- `--output-format=sqlite3` (already exists) which is the right tool for detailed queries
 
 ---
 
-### P4: String Deduplication Report (Medium Impact)
+### P1: CLI Summary with Top Allocations (High Impact, Low Effort)
 
-**Problem**: In case #2, strings account for 151MB. Many are duplicated
-(same email body stored in Message->raw_body, Part->content, etc.)
+**Problem**: JSON output is 70-140MB, SQLite requires manual SQL queries.
+Users need a quick CLI-friendly summary with actionable information.
 
-**Proposal**: Add a `--string-dedup-report` option that groups strings by value hash
-and reports duplicates:
+**Proposal**: Add `--output-format=top` (or a subcommand) that emits a compact
+text report to stdout:
 
 ```
-Duplicate String Groups (by total memory):
-  Hash abc123: 3 copies, 1.05 MB each = 3.15 MB total
-    - Message#1->raw_body
-    - Part#3->content
-    - Attachment#7->content
+=== Top 10 Arrays by Size ===
+  2.62 MB  class_table -> Font -> static_properties -> uchrCache
+  1.05 MB  ... -> fonts -> F1 -> table
+  ...
+
+=== Top 10 Strings by Size ===
+  210 KB   ... -> structure -> raw
+
+=== Circular References ===
+  Message -> attachments -> items[0] -> oMessage → Message (×603)
 ```
 
-**Implementation**: During string collection, hash string values (first 64 bytes +
-length as key). Group by hash. For groups with refcount == 1 but multiple locations,
-report as "semantic duplicates" (different zend_string allocations with same content).
+**Implementation**: Use SQLite in-memory (or the existing PdoContextTreeSink),
+then run the v_node_paths / v_arrays queries internally and format to text.
+Minimal new code — just a new output formatter that wraps existing SQL views.
 
 ---
 
-### P5: Diff/Snapshot Comparison Mode (Medium Impact)
+### P2: Bundled Diagnostic SQL Queries (Medium Impact, Very Low Effort)
 
-**Problem**: For gradual memory leaks (case #2's inbox fetch loop), you want to
-compare "before iteration N" vs "after iteration N" to see what grew.
+**Problem**: The SQL views exist but users need to know the right queries.
 
-**Proposal**: Add `inspector:memory:diff` that takes two snapshots and shows:
-- New allocations by type/class
-- Growth per class
-- New circular references
-
-**Implementation**: Save two JSON/SQLite snapshots, compare summaries.
-This is largely a post-processing tool, possibly operating on SQLite output.
+**Proposal**: Ship a `docs/memory-profiler-queries.md` with copy-paste SQL recipes,
+or add `inspector:memory:query` subcommand with presets like `--top-arrays`,
+`--top-strings`, `--circular-refs`.
 
 ---
 
-### P6: Non-Object Array Classification (Low-Medium Impact)
+### P3: JSON Compact Mode (Medium Impact, Low Effort)
 
-**Problem**: In case #3, 235 arrays consume 22.6MB but have no class attribution.
-The `ObjectClassAnalyzer` only works for objects.
+**Problem**: Full JSON context tree is 70-140MB, mainly useful for tooling.
+Most users only need summary + top allocations.
 
-**Proposal**: For arrays that are reachable as object properties, attribute them
-to the owning class + property name. For example:
-
-```
-Array Memory by Owner:
-  Smalot\PdfParser\Font::$table          20 arrays,  21.20 MB
-  Smalot\PdfParser\Font::$uchrCache       1 array,    1.40 MB
-  (unattributed)                        214 arrays,   0.00 MB
-```
-
-**Implementation**: When traversing object properties in MemoryLocationsCollector,
-if the property value is an array, tag the array location with the class+property.
-Add a new `ArrayOwnerAnalyzer` similar to `ObjectClassAnalyzer`.
+**Proposal**: Default `--output-format=json` emits only summary/types/classes.
+`--output-format=json-full` for the current full tree.
 
 ---
 
-## Priority Matrix
+### P4: Diff/Snapshot Comparison (Medium Impact, Medium Effort)
+
+**Problem**: For gradual memory leaks (inbox fetch loops), comparing two snapshots
+would show growth patterns.
+
+**Proposal**: `inspector:memory:diff --before=snap1.sqlite3 --after=snap2.sqlite3`
+
+---
+
+## Revised Priority Matrix
 
 | Proposal | Impact | Effort | Priority |
 |----------|--------|--------|----------|
-| P1: Top allocations with context | High | Medium | **1st** |
-| P3: Compact output mode | High | Low | **2nd** |
-| P6: Array classification by owner | Medium | Medium | **3rd** |
-| P2: Circular reference reporting | Medium | Medium | **4th** |
-| P4: String dedup report | Medium | Low | **5th** |
-| P5: Diff/snapshot mode | Medium | High | **6th** |
+| P1: CLI summary with top allocations | High | Low | **1st** |
+| P2: Bundled diagnostic queries/docs | Medium | Very Low | **2nd** |
+| P3: JSON compact mode | Medium | Low | **3rd** |
+| P4: Diff/snapshot comparison | Medium | Medium | **4th** |
