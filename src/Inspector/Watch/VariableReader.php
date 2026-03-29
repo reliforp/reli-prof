@@ -704,7 +704,11 @@ final class VariableReader
                     return null;
                 }
                 $ref = $dereferencer->deref($ref_pointer);
-                $current = $ref->val;
+                // Re-deref val for independent CData
+                // (ref->val is a view into ref's CData)
+                $current = $dereferencer->deref(
+                    $ref->val->getPointer(),
+                );
                 continue;
             }
             break;
