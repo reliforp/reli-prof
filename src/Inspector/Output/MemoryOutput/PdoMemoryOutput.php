@@ -17,7 +17,6 @@ use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\CollectionPreparation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ParallelContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ParallelCollectAnalyzer;
@@ -28,7 +27,6 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     public function __construct(
         private PdoDriverInterface $driver,
         private ?RegionBoundaries $region_boundaries = null,
-        private bool $parallel = false,
     ) {
     }
 
@@ -46,15 +44,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $this->insertSummary($db, $run_id, $result->summary);
 
             $sink = new PdoContextTreeSink($db, $this->driver, $run_id, $this->region_boundaries);
-
-            if ($this->parallel && ParallelContextAnalyzer::isAvailable()) {
-                $parallel = new ParallelContextAnalyzer();
-                $parallel->analyze($result->context, $sink, $this->region_boundaries);
-            } else {
-                $analyzer = new ContextAnalyzer();
-                $analyzer->analyze($result->context, $sink);
-                $sink->flush();
-            }
+            $analyzer = new ContextAnalyzer();
+            $analyzer->analyze($result->context, $sink);
+            $sink->flush();
 
             $this->insertLocationTypesSummaryFromDb($db, $run_id);
             $this->insertClassObjectsSummaryFromDb($db, $run_id);
@@ -73,8 +65,11 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
-     * Parallel collect + analyze path: workers fork, collect branches,
-     * analyze, and pipe results; this method reads pipes and writes to DB.
+     * Parallel collect + analyze + write path.
+     *
+     * Workers fork before the heap grows, each writes to a private temp
+     * SQLite.  After all workers finish, the parent creates the main DB,
+     * merges via ATTACH + INSERT SELECT, then builds indexes and views.
      *
      * @param array<int, array<string, mixed>> $summary
      */
@@ -85,41 +80,47 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         RegionBoundaries $region_boundaries,
         ?MemoryLimitErrorDetails $memory_limit_error_details = null,
     ): void {
+        // Create main DB, insert run+summary, then CLOSE before fork.
         $db = $this->driver->createConnection();
         $this->driver->tuneForBulkInsert($db);
-
         $this->createTables($db);
 
         $db->beginTransaction();
+        $run_id = $this->insertRun($db);
+        $this->insertSummary($db, $run_id, $summary);
+        $db->commit();
+        unset($db); // Close before fork — critical for ATTACH to work.
+
+        // Workers fork here — no open DB connection, so no
+        // shared file descriptor problem.
+        $parallel = new ParallelCollectAnalyzer();
+        $temp_paths = $parallel->run(
+            $collector,
+            $prep,
+            $this->driver,
+            $run_id,
+            $region_boundaries,
+            $memory_limit_error_details,
+        );
+
         try {
-            $run_id = $this->insertRun($db);
-            $this->insertSummary($db, $run_id, $summary);
+            // All workers done.  Reopen main DB and merge.
+            $db = $this->driver->createConnection();
+            $this->driver->tuneForBulkInsert($db);
 
-            $sink = new PdoContextTreeSink($db, $this->driver, $run_id, $region_boundaries);
+            ParallelCollectAnalyzer::mergeInto($db, $temp_paths);
 
-            $parallel = new ParallelCollectAnalyzer();
-            $parallel->run(
-                $collector,
-                $prep,
-                $sink,
-                $region_boundaries,
-                $memory_limit_error_details,
-            );
-
+            $db->beginTransaction();
             $this->insertLocationTypesSummaryFromDb($db, $run_id);
             $this->insertClassObjectsSummaryFromDb($db, $run_id);
-
             $db->commit();
-        } catch (\Throwable $e) {
-            if ($db->inTransaction()) {
-                $db->rollBack();
-            }
-            throw $e;
-        }
 
-        $this->driver->afterBulkInsert($db);
-        $this->createIndexes($db);
-        $this->createViews($db);
+            $this->driver->afterBulkInsert($db);
+            $this->createIndexes($db);
+            $this->createViews($db);
+        } finally {
+            ParallelCollectAnalyzer::cleanupTempFiles($temp_paths);
+        }
     }
 
     private function createTables(\PDO $db): void

@@ -17,7 +17,6 @@ use Reli\Inspector\Output\MemoryOutput\PdoDriver\MySqlDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PostgreSqlDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ParallelContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
 final class MemoryOutputFactory
@@ -26,8 +25,6 @@ final class MemoryOutputFactory
         MemoryProfilerSettings $settings,
         ?RegionBoundaries $region_boundaries = null,
     ): MemoryOutputInterface {
-        $parallel = ParallelContextAnalyzer::isAvailable();
-
         return match ($settings->output_format) {
             'json' => new JsonMemoryOutput($settings->pretty_print, $settings->output_path),
             'sqlite3' => new PdoMemoryOutput(
@@ -37,7 +34,6 @@ final class MemoryOutputFactory
                     ),
                 ),
                 $region_boundaries,
-                $parallel,
             ),
             'mysql' => new PdoMemoryOutput(
                 new MySqlDriver(
@@ -52,7 +48,6 @@ final class MemoryOutputFactory
                     $settings->db_password ?? '',
                 ),
                 $region_boundaries,
-                $parallel,
             ),
             'postgresql' => new PdoMemoryOutput(
                 new PostgreSqlDriver(
@@ -67,7 +62,6 @@ final class MemoryOutputFactory
                     $settings->db_password ?? '',
                 ),
                 $region_boundaries,
-                $parallel,
             ),
             default => throw new \RuntimeException(
                 "unsupported output format: {$settings->output_format} (supported: json, sqlite3, mysql, postgresql)"
