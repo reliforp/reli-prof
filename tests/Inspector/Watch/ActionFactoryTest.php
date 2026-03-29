@@ -21,6 +21,10 @@ use Reli\Inspector\Watch\Action\DaemonTraceAction;
 use Reli\Inspector\Watch\Action\ExecAction;
 use Reli\Inspector\Watch\Action\LogAction;
 
+/**
+ * @runTestsInSeparateProcesses
+ * @preserveGlobalState disabled
+ */
 class ActionFactoryTest extends BaseTestCase
 {
     private function makeSettings(array $overrides = []): WatchSettings
