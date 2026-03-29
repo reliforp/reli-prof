@@ -122,8 +122,7 @@ final class VariableReader
                 if ($value !== null) {
                     $results[$key] = $value;
                 }
-            } catch (\Throwable $__e) {
-                fwrite(STDERR, "DBG: {$key}: {$__e->getMessage()}\n");
+            } catch (\Throwable) {
                 continue;
             }
         }

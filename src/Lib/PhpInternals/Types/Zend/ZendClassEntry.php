@@ -172,12 +172,7 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
                 $this->casted_cdata->casted->default_static_members_count
             ,
             'static_members_table' => $this->static_members_table =
-                $this->casted_cdata->casted->static_members_table__ptr !== null
-                ? Pointer::fromCData(
-                    Zval::class,
-                    $this->casted_cdata->casted->static_members_table__ptr,
-                )
-                : null
+                $this->readStaticMembersTable()
             ,
             'function_table' => $this->function_table = $this->createInlineDereferencable(
                 'function_table',
@@ -310,6 +305,32 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
             $real_offset = $property_info->offset;
             yield $name => $this->static_properties_table_cache[$real_offset];
         }
+    }
+
+    /**
+     * Read static_members_table pointer from CData.
+     * PHP 7.1+: static_members_table__ptr
+     * PHP 7.0: static_members_table (second occurrence, zval*)
+     *
+     * @return Pointer<Zval>|null
+     */
+    private function readStaticMembersTable(): ?Pointer
+    {
+        assert($this->casted_cdata !== null);
+        try {
+            $ptr = $this->casted_cdata->casted->static_members_table__ptr;
+        } catch (\Throwable) {
+            // v70: field is named static_members_table (not __ptr)
+            try {
+                $ptr = $this->casted_cdata->casted->static_members_table;
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+        if ($ptr === null) {
+            return null;
+        }
+        return Pointer::fromCData(Zval::class, $ptr);
     }
 
     #[\Override]
