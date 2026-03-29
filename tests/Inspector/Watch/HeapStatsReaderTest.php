@@ -177,5 +177,13 @@ class HeapStatsReaderTest extends BaseTestCase
         $this->assertGreaterThanOrEqual($stats->size, $stats->peak);
         // memory_limit is typically -1 (unlimited) or a large value
         $this->assertNotSame(0, $stats->limit);
+
+        // Test hasException — target is not throwing, so false
+        $has_exception = $heap_stats_reader->hasException(
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+        );
+        $this->assertFalse($has_exception);
     }
 }
