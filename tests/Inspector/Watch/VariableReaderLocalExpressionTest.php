@@ -34,7 +34,7 @@ class VariableReaderLocalExpressionTest extends TestCase
     public function testFunctionScoped(): void
     {
         [$func, $var] = VariableReader::parseLocalExpression(
-            'handleRequest()::$items',
+            'handleRequest()$items',
         );
         $this->assertSame('handleRequest', $func);
         $this->assertSame('items', $var);
@@ -43,7 +43,7 @@ class VariableReaderLocalExpressionTest extends TestCase
     public function testClassMethodScoped(): void
     {
         [$func, $var] = VariableReader::parseLocalExpression(
-            'App\Service::process()::$retries',
+            'App\Service::process()$retries',
         );
         $this->assertSame('App\Service::process', $func);
         $this->assertSame('retries', $var);
@@ -52,7 +52,7 @@ class VariableReaderLocalExpressionTest extends TestCase
     public function testMainScope(): void
     {
         [$func, $var] = VariableReader::parseLocalExpression(
-            'main()::$counter',
+            'main()$counter',
         );
         $this->assertSame('main', $func);
         $this->assertSame('counter', $var);
@@ -61,7 +61,7 @@ class VariableReaderLocalExpressionTest extends TestCase
     public function testWithPathExpression(): void
     {
         [$func, $var] = VariableReader::parseLocalExpression(
-            'App\Controller::index()::$response->body[errors]',
+            'App\Controller::index()$response->body[errors]',
         );
         $this->assertSame('App\Controller::index', $func);
         $this->assertSame('response->body[errors]', $var);

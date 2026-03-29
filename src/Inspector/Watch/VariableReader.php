@@ -153,11 +153,11 @@ final class VariableReader
      * Read a local variable by walking up the call stack.
      *
      * Name format:
-     *   $var                     — walk stack, return first match
-     *   App\Service::process()::$var — only look in that function's frame
-     *   main()::$var             — only look in the main script frame
+     *   $var                            — walk stack, return first match
+     *   App\Service::process()$var      — only look in that function's frame
+     *   main()$var                      — only look in the main script frame
      *
-     * The () suffix marks the function name, $ marks the variable.
+     * () marks the function name, $ marks the variable start.
      */
     private function readLocalVariable(
         ZendExecutorGlobals $eg,
@@ -223,22 +223,32 @@ final class VariableReader
     /**
      * Parse local expression into optional function filter + variable part.
      *
-     * "App\Svc::process()::$retries" → ["App\Svc::process", "retries"]
-     * "handleRequest()::$items"       → ["handleRequest", "items"]
-     * "$counter"                      → [null, "counter"]
-     * "counter"                       → [null, "counter"]
+     * "App\Svc::process()$retries"    → ["App\Svc::process", "retries"]
+     * "handleRequest()$items"          → ["handleRequest", "items"]
+     * "main()$counter"                 → ["main", "counter"]
+     * "$counter"                       → [null, "counter"]
+     * "counter"                        → [null, "counter"]
+     *
+     * () marks the function, $ marks the variable start.
      *
      * @return array{?string, string} [function_name, var_name_with_path]
      */
     public static function parseLocalExpression(string $name): array
     {
-        // Look for ():: pattern — function marker
-        $marker = '()::$';
+        // Look for ()$ pattern — function()$variable
+        $marker = ')$';
         $pos = strpos($name, $marker);
         if ($pos !== false) {
-            $func = substr($name, 0, $pos);
-            $var = substr($name, $pos + strlen($marker));
-            return [$func, $var];
+            // Find the matching ( before )
+            $paren_open = strrpos(
+                substr($name, 0, $pos + 1),
+                '(',
+            );
+            if ($paren_open !== false) {
+                $func = substr($name, 0, $paren_open);
+                $var = substr($name, $pos + strlen($marker));
+                return [$func, $var];
+            }
         }
 
         // No function filter — strip leading $ if present
