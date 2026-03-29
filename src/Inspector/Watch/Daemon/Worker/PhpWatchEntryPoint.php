@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Daemon\Worker;
 
+use Reli\Inspector\Watch\CooldownManager;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
@@ -62,6 +63,17 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                 break;
             }
         }
+
+        // Worker handles cooldown/backoff per-process.
+        // Global max_triggers is enforced by the controller (not here),
+        // since it must be a single counter across all workers.
+        $cooldown = new CooldownManager(
+            base_cooldown_seconds: (float)$watch_settings->cooldown_seconds,
+            backoff_multiplier: $watch_settings->backoff_multiplier,
+            backoff_max_seconds: (float)$watch_settings->backoff_max_seconds,
+            max_triggers_per_hour: $watch_settings->max_triggers_per_hour,
+            max_triggers: 0, // unlimited — controller enforces the global limit
+        );
 
         $poll_sleep_us = $watch_settings->poll_interval_ms * 1000;
 
@@ -116,17 +128,23 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         previous: $previous_context,
                     );
 
-                    // Evaluate triggers
+                    // Evaluate triggers (with cooldown/rate limiting in worker)
                     foreach ($triggers as $trigger) {
                         $event = $trigger->evaluate($context);
-                        if ($event !== null) {
-                            $this->protocol->sendTrigger(new WatchTriggerMessage(
-                                pid: $descriptor->pid,
-                                event: $event,
-                                heap_stats: $heap_stats,
-                                call_trace: $call_trace,
-                            ));
+                        if ($event === null) {
+                            $cooldown->recordClear($trigger->name());
+                            continue;
                         }
+                        if (!$cooldown->canFire($trigger->name(), $now)) {
+                            continue;
+                        }
+                        $cooldown->recordFire($trigger->name(), $now);
+                        $this->protocol->sendTrigger(new WatchTriggerMessage(
+                            pid: $descriptor->pid,
+                            event: $event,
+                            heap_stats: $heap_stats,
+                            call_trace: $call_trace,
+                        ));
                     }
 
                     $previous_context = $context;

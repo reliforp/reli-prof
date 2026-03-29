@@ -461,14 +461,10 @@ final class WatchCommand extends Command
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput($output, $output_settings);
         $actions = $this->buildDaemonActions($watch_settings, $trace_output);
 
-        $cooldown = new CooldownManager(
-            base_cooldown_seconds: (float)$watch_settings->cooldown_seconds,
-            backoff_multiplier: $watch_settings->backoff_multiplier,
-            backoff_max_seconds: (float)$watch_settings->backoff_max_seconds,
-            max_triggers_per_hour: $watch_settings->max_triggers_per_hour,
-            max_triggers: $watch_settings->max_triggers,
-        );
-
+        // Per-process cooldown/backoff is handled inside each worker.
+        // Global max-triggers is enforced here in the controller as a single counter.
+        $max_triggers = $watch_settings->max_triggers;
+        $global_trigger_count = 0;
         $quiet = $watch_settings->quiet;
 
         // Start process searcher (reuses existing daemon infrastructure)
@@ -526,6 +522,9 @@ final class WatchCommand extends Command
             ));
         }
 
+        /** @var array<int, true> $exhausted_pids PIDs whose workers reached max-triggers */
+        $exhausted_pids = [];
+
         $futures = [];
 
         // Searcher future: discover processes and assign to free workers
@@ -534,6 +533,7 @@ final class WatchCommand extends Command
             &$workers,
             &$worker_free,
             &$pid_to_worker,
+            &$exhausted_pids,
             $output,
             $quiet,
         ) {
@@ -541,8 +541,8 @@ final class WatchCommand extends Command
                 $update = $searcher_context->receivePidList();
                 foreach ($update->target_process_list->getArray() as $descriptor) {
                     $pid = $descriptor->pid;
-                    if (isset($pid_to_worker[$pid])) {
-                        continue; // Already assigned
+                    if (isset($pid_to_worker[$pid]) || isset($exhausted_pids[$pid])) {
+                        continue; // Already assigned or exhausted
                     }
                     // Find a free worker
                     foreach ($worker_free as $idx => $is_free) {
@@ -564,45 +564,41 @@ final class WatchCommand extends Command
             }
         });
 
-        // Worker futures: receive trigger events from watch workers
+        // Worker futures: receive trigger events from watch workers.
+        // Per-process cooldown is in worker; global max-triggers is here.
         foreach ($workers as $idx => $worker) {
             $futures[] = async(
                 function () use (
                     $idx,
                     $worker,
                     $actions,
-                    $cooldown,
                     $output,
                     $quiet,
+                    $max_triggers,
+                    $cancellation,
+                    &$global_trigger_count,
                     &$worker_free,
                     &$pid_to_worker,
+                    &$exhausted_pids,
                 ) {
                     while (1) {
                         $result = $worker->receiveTriggerOrDetach();
                         if ($result instanceof WatchTriggerMessage) {
-                            $now = $result->event->timestamp;
+                            $global_trigger_count++;
 
-                            if (!$cooldown->canFire($result->event->trigger_name, $now)) {
-                                if (!$quiet) {
-                                    $reason = $cooldown->getSkipReason($result->event->trigger_name, $now);
-                                    $output->writeln(sprintf(
-                                        '<comment>[SKIPPED] PID=%d | trigger=%s | reason=%s</comment>',
-                                        $result->pid,
-                                        $result->event->trigger_name,
-                                        $reason ?? 'cooldown',
-                                    ));
-                                }
+                            if ($max_triggers > 0 && $global_trigger_count > $max_triggers) {
+                                // Silently drop — already past limit
                                 continue;
                             }
 
-                            $cooldown->recordFire($result->event->trigger_name, $now);
-
                             if (!$quiet) {
                                 $output->writeln(sprintf(
-                                    '<info>[TRIGGERED] PID=%d | trigger=%s | %s</info>',
+                                    '<info>[TRIGGERED] PID=%d | trigger=%s | %s (%d/%s)</info>',
                                     $result->pid,
                                     $result->event->trigger_name,
                                     $result->event->description,
+                                    $global_trigger_count,
+                                    $max_triggers > 0 ? (string)$max_triggers : 'unlimited',
                                 ));
                             }
 
@@ -611,7 +607,7 @@ final class WatchCommand extends Command
                                 heap_stats: $result->heap_stats,
                                 call_trace: $result->call_trace,
                                 has_exception: null,
-                                timestamp: $now,
+                                timestamp: $result->event->timestamp,
                                 previous: null,
                             );
 
@@ -621,6 +617,19 @@ final class WatchCommand extends Command
                                     new \Reli\Lib\Process\ProcessSpecifier($result->pid),
                                     $context,
                                 );
+                            }
+
+                            // Cancel all workers when global limit reached
+                            if ($max_triggers > 0 && $global_trigger_count >= $max_triggers) {
+                                if (!$quiet) {
+                                    $output->writeln(sprintf(
+                                        '<comment>[watch-daemon] Global max-triggers reached (%d/%d), stopping.</comment>',
+                                        $global_trigger_count,
+                                        $max_triggers,
+                                    ));
+                                }
+                                $cancellation->cancel();
+                                return;
                             }
                         } elseif ($result instanceof WatchDetachMessage) {
                             if (!$quiet) {
