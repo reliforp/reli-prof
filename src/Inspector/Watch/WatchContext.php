@@ -17,6 +17,10 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 final class WatchContext
 {
+    /**
+     * @param array<string, VariableValue> $variable_values
+     *     Keyed by "scope::name" (e.g. "global::cache")
+     */
     public function __construct(
         public readonly int $pid,
         public readonly HeapStats $heap_stats,
@@ -24,6 +28,7 @@ final class WatchContext
         public readonly ?bool $has_exception,
         public readonly float $timestamp,
         public readonly ?self $previous,
+        public readonly array $variable_values = [],
     ) {
     }
 }

@@ -50,6 +50,7 @@ use Reli\Inspector\Watch\Trigger\ExceptionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\TraceDepthTrigger;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
+use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
@@ -419,6 +420,10 @@ final class WatchCommand extends Command
         // Tier 3 triggers
         if ($settings->on_exception) {
             $triggers[] = new ExceptionDetectionTrigger();
+        }
+
+        foreach ($settings->watch_var as $expr) {
+            $triggers[] = new VariableValueTrigger($expr);
         }
 
         return $triggers;

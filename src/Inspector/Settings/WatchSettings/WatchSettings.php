@@ -42,8 +42,8 @@ final class WatchSettings
         public ?string $watch_function,
         public ?int $trace_depth_limit,
         public bool $on_exception,
-        public ?string $watch_global_array_size,
-        public ?string $watch_var,
+        /** @var list<string> Variable watch expressions (scope::name:op:value) */
+        public array $watch_var,
         // Action configs
         /** @var list<string> */
         public array $actions,

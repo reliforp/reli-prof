@@ -26,6 +26,7 @@ use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
 use Reli\Inspector\Watch\Trigger\TraceDepthTrigger;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
+use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Amphp\WorkerEntryPointInterface;
 use Reli\Lib\Log\Log;
@@ -187,6 +188,9 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         }
         if ($settings->on_exception) {
             $triggers[] = new ExceptionDetectionTrigger();
+        }
+        foreach ($settings->watch_var as $expr) {
+            $triggers[] = new VariableValueTrigger($expr);
         }
 
         return $triggers;

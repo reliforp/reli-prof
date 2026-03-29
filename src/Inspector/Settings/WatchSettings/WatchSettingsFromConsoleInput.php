@@ -64,16 +64,12 @@ final class WatchSettingsFromConsoleInput
                 'trigger when an exception is in flight (EG->exception is non-null)',
             )
             ->addOption(
-                'watch-global-array-size',
-                null,
-                InputOption::VALUE_REQUIRED,
-                'trigger when global array size exceeds limit (format: name:limit)',
-            )
-            ->addOption(
                 'watch-var',
                 null,
-                InputOption::VALUE_REQUIRED,
-                'trigger on variable value condition (format: scope::name:op:value)',
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'trigger on variable value condition'
+                    . ' (format: scope::name:op:value,'
+                    . ' e.g. global::cache:count_gt:10000)',
             )
             // Action options
             ->addOption(
@@ -235,8 +231,14 @@ final class WatchSettingsFromConsoleInput
             watch_function: NullableCast::toString($input->getOption('watch-function')),
             trace_depth_limit: $trace_depth_limit,
             on_exception: (bool)$input->getOption('on-exception'),
-            watch_global_array_size: NullableCast::toString($input->getOption('watch-global-array-size')),
-            watch_var: NullableCast::toString($input->getOption('watch-var')),
+            watch_var: array_values(array_filter(
+                array_map(
+                    /** @param mixed $v */
+                    fn ($v): ?string => NullableCast::toString($v),
+                    (array)$input->getOption('watch-var'),
+                ),
+                fn (?string $v): bool => $v !== null,
+            )),
             actions: $actions,
             action_exec_command: NullableCast::toString($input->getOption('action-exec-command')),
             log_file: NullableCast::toString($input->getOption('log-file')),
