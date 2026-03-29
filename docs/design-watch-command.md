@@ -250,7 +250,7 @@ Multi-layer controls to prevent disk explosion and performance degradation of th
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--cooldown=<seconds>` | `60` | Minimum wait time before the same trigger can fire again |
-| `--max-triggers=<N>` | `0` (unlimited) | Cumulative trigger count limit. Monitoring ends when reached |
+| `--max-triggers=<N>` | `0` (unlimited) | Cumulative trigger count limit. Monitoring ends when reached. Alias: `--oneshot=<N>` |
 | `--max-triggers-per-hour=<N>` | `10` | Trigger count limit per hour. Excess triggers are ignored |
 | `--max-dump-size=<size>` | `1G` | Cumulative size limit for dump files. memory-dump action is skipped when exceeded |
 | `--backoff-multiplier=<float>` | `2.0` | Exponential backoff multiplier for cooldown on consecutive triggers |
@@ -271,6 +271,35 @@ Cap: capped at backoff_max (3600s = 1 hour)
 ```
 
 When the trigger condition is no longer met, the backoff counter is reset.
+
+**Design note: `--max-triggers` vs. long-running daemons**
+
+`--max-triggers` causes the watch process to exit after N trigger fires. This is
+intentionally designed for **one-shot investigation** ("capture 3 dumps and stop"),
+not for long-running daemon deployments.
+
+In production daemon deployments (k8s sidecar, systemd service, etc.) where the
+process is restarted by a supervisor, `--max-triggers` is **not recommended** because:
+- The counter resets on restart, making the limit effectively meaningless
+- A daemon should run indefinitely and protect itself through other mechanisms
+
+For long-running daemons, protection is provided by:
+- `--max-dump-size`: caps cumulative disk usage (the primary risk in production)
+- `--max-triggers-per-hour`: rate-limits trigger fires (sliding window, naturally recovers after restart)
+- `--cooldown` + `--backoff-multiplier`: prevents burst firing
+
+These three mechanisms are **restart-resilient** — they naturally re-engage after a
+process restart without accumulating unbounded state.
+
+`--max-triggers` (alias `--oneshot`) is intended for ad-hoc debugging sessions:
+```bash
+# One-shot: "grab 5 memory dumps when usage exceeds 512M, then stop"
+reli inspector:watch -p <PID> --memory-limit=512M --oneshot=5
+
+# Long-running daemon: never exits, disk-protected
+reli inspector:watch --target-regex="php-fpm" --memory-limit=512M \
+  --max-dump-size=2G --max-triggers-per-hour=10
+```
 
 **CooldownManager extension:**
 

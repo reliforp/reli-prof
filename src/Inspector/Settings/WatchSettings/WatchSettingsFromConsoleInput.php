@@ -126,7 +126,13 @@ final class WatchSettingsFromConsoleInput
                 'max-triggers',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'maximum total trigger count, 0 for unlimited (default: 0)',
+                'maximum total trigger count, 0 for unlimited (default: 0). Use --oneshot as alias for ad-hoc debugging.',
+            )
+            ->addOption(
+                'oneshot',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'alias for --max-triggers: capture N trigger events then exit',
             )
             ->addOption(
                 'max-triggers-per-hour',
@@ -192,10 +198,13 @@ final class WatchSettingsFromConsoleInput
         /** @var list<string> $actions */
         $actions = $input->getOption('action');
 
+        // --oneshot=N is an alias for --max-triggers=N
+        $max_triggers_raw = $input->getOption('max-triggers') ?? $input->getOption('oneshot') ?? WatchSettings::MAX_TRIGGERS_DEFAULT;
+
         return new WatchSettings(
             poll_interval_ms: $poll_interval,
             cooldown_seconds: (int)($input->getOption('cooldown') ?? WatchSettings::COOLDOWN_SECONDS_DEFAULT),
-            max_triggers: (int)($input->getOption('max-triggers') ?? WatchSettings::MAX_TRIGGERS_DEFAULT),
+            max_triggers: (int)$max_triggers_raw,
             max_triggers_per_hour: (int)($input->getOption('max-triggers-per-hour') ?? WatchSettings::MAX_TRIGGERS_PER_HOUR_DEFAULT),
             max_dump_size_bytes: $max_dump_size,
             backoff_multiplier: (float)($input->getOption('backoff-multiplier') ?? WatchSettings::BACKOFF_MULTIPLIER_DEFAULT),
