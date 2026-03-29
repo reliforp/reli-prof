@@ -43,6 +43,7 @@ use Reli\Inspector\Watch\CooldownManager;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
+use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
@@ -77,6 +78,7 @@ final class WatchCommand extends Command
         private PhpGlobalsFinder $php_globals_finder,
         private PhpVersionDetector $php_version_detector,
         private HeapStatsReader $heap_stats_reader,
+        private VariableReader $variable_reader,
         private CallTraceReader $call_trace_reader,
         private TraceLoopProvider $loop_provider,
         private TargetProcessResolver $target_process_resolver,
@@ -169,12 +171,16 @@ final class WatchCommand extends Command
             return 1;
         }
 
-        // Check if any trigger requires call trace
+        // Check if any trigger requires call trace or deep inspection
         $needs_call_trace = false;
+        /** @var list<VariableValueTrigger> $var_triggers */
+        $var_triggers = [];
         foreach ($triggers as $trigger) {
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
-                break;
+            }
+            if ($trigger instanceof VariableValueTrigger) {
+                $var_triggers[] = $trigger;
             }
         }
 
@@ -239,6 +245,7 @@ final class WatchCommand extends Command
                 $depth,
                 $stop_process,
                 $needs_call_trace,
+                $var_triggers,
                 $triggers,
                 $actions,
                 $cooldown,
@@ -278,6 +285,17 @@ final class WatchCommand extends Command
                     );
                 }
 
+                // Read variable values if any watch-var triggers
+                $variable_values = [];
+                if (count($var_triggers) > 0) {
+                    $variable_values = $this->variable_reader->readVariables(
+                        $var_triggers,
+                        $process_specifier,
+                        $target_php_settings,
+                        $eg_address,
+                    );
+                }
+
                 $context = new WatchContext(
                     pid: $process_specifier->pid,
                     heap_stats: $heap_stats,
@@ -285,6 +303,7 @@ final class WatchCommand extends Command
                     has_exception: null,
                     timestamp: $now,
                     previous: $previous_context,
+                    variable_values: $variable_values,
                 );
 
                 // Stop early if max action executions already reached
