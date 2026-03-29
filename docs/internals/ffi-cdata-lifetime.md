@@ -118,17 +118,35 @@ constructed inline from `$this->casted_cdata->casted->val`.
 
 ### 2. WeakMap-Based Dependency Tracking
 
-Use `WeakMap<object, list<CData>>` in the dereferencer to track
-which deref results depend on which buffers. When a child view is
-created, register the parent buffer as a dependency. The WeakMap
-would prevent the parent from being collected while children exist.
+Use `WeakMap` with the **child view as key** and the **parent buffer
+as value**:
 
-**Concern:** `WeakMap` works on object keys (key GC'd → entry removed),
-which is the opposite of what we want (we want "keep parent alive
-while child exists"). Would need `SplObjectStorage` or an explicit
-retain list instead. WeakMap is also not extensively battle-tested
-in PHP FFI contexts — unclear if it correctly interacts with CData
-ref counting.
+```php
+/** @var WeakMap<object, CData> */
+$prevent_gc = new WeakMap();
+
+// When creating a child view from a parent's CData field:
+$child_view = FFI::cast($type, $parent_cdata->field);
+$prevent_gc[$child_view] = $parent_cdata;
+```
+
+While the child view (key) is alive, the WeakMap entry persists,
+holding a strong reference to the parent buffer (value) — preventing
+it from being GC'd. When the child is GC'd, the WeakMap entry is
+removed automatically, releasing the parent reference.
+
+This matches `WeakMap` semantics naturally:
+- Key (child view) alive → entry exists → value (parent) retained
+- Key (child view) GC'd → entry removed → parent may be collected
+
+**Practical integration point:** `CastedCData` or the `Zval`/`Bucket`
+constructors that create inline views could register the dependency
+in a process-global or dereferencer-scoped `WeakMap`.
+
+**Remaining concern:** Not extensively battle-tested with PHP FFI
+CData objects specifically. Need to verify that CData objects work
+correctly as WeakMap keys (they should, since CData extends the base
+object type in PHP 8.x).
 
 ### 3. Dereferencer Read Cache
 
