@@ -130,7 +130,18 @@ final class WatchCommand extends Command
             return $this->executeDaemonMode($input, $output, $watch_settings, $get_trace_settings, $no_cache);
         }
 
-        // Single-process mode
+        // Single-process mode: check triggers early (before PID resolution)
+        $triggers = $this->trigger_factory->build($watch_settings);
+        if (count($triggers) === 0) {
+            $output->writeln(
+                '<error>No triggers specified.'
+                . ' Use --memory-limit,'
+                . ' --memory-growth-rate,'
+                . ' --watch-function, etc.</error>'
+            );
+            return 1;
+        }
+
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
 
@@ -160,16 +171,6 @@ final class WatchCommand extends Command
             $process_specifier,
             $target_php_settings,
         );
-
-        // Build triggers
-        $triggers = $this->trigger_factory->build($watch_settings);
-        if (count($triggers) === 0) {
-            $output->writeln(
-                '<error>No triggers specified.'
-                . ' Use --memory-limit, --memory-growth-rate, --watch-function, etc.</error>'
-            );
-            return 1;
-        }
 
         // Check what each trigger needs
         $needs_call_trace = false;

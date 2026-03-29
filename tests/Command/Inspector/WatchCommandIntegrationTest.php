@@ -168,11 +168,8 @@ class WatchCommandIntegrationTest extends BaseTestCase
         );
     }
 
-    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
-    public function testWatchNoTriggerReturnsError(
-        string $php_version,
-        string $docker_image_name,
-    ): void {
+    public function testWatchNoTriggerReturnsError(): void
+    {
         $container_builder = new \DI\ContainerBuilder();
         $container_builder->addDefinitions(
             __DIR__ . '/../../../config/di.php',
@@ -185,9 +182,9 @@ class WatchCommandIntegrationTest extends BaseTestCase
         $app->add($command);
 
         $tester = new CommandTester($command);
+        // No triggers specified — should fail before PID resolution
         $tester->execute([
             '-p' => '999999',
-            '--php-version' => $php_version,
         ]);
 
         $this->assertSame(1, $tester->getStatusCode());
