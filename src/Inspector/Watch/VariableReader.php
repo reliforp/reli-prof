@@ -17,6 +17,8 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
+use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
+use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
 use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
@@ -112,6 +114,7 @@ final class VariableReader
                         $dereferencer,
                         $zend_type_reader,
                         $name,
+                        $cg_address,
                     ),
                     default => null,
                 };
@@ -139,8 +142,12 @@ final class VariableReader
         if ($bucket === null) {
             return null;
         }
+        // Re-deref for independent CData (avoid dangling view)
+        $root_zval = $dereferencer->deref(
+            $bucket->val->getPointer(),
+        );
         $zval = $this->resolvePath(
-            $bucket->val,
+            $root_zval,
             $path_segments,
             $dereferencer,
             $zend_type_reader,
@@ -373,6 +380,7 @@ final class VariableReader
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         string $name,
+        int $cg_address,
     ): ?VariableValue {
         // Parse "funcName()$varName" using same ()$ pattern as local
         [$func_name, $var_part] = self::parseLocalExpression($name);
@@ -407,12 +415,19 @@ final class VariableReader
             return null;
         }
 
-        $static_vars_ptr = $func->op_array->static_variables;
-        if ($static_vars_ptr === null) {
+        // Try runtime static variables first (PHP 7.4+).
+        // op_array->static_variables_ptr__ptr is a ZEND_MAP_PTR
+        // that points to the live copy (updated at runtime).
+        // op_array->static_variables is the template (initial values).
+        $static_vars = $this->resolveRuntimeStaticVars(
+            $func,
+            $dereferencer,
+            $zend_type_reader,
+            $cg_address,
+        );
+        if ($static_vars === null) {
             return null;
         }
-
-        $static_vars = $dereferencer->deref($static_vars_ptr);
         $sv_bucket = $static_vars->findByKey(
             $dereferencer,
             $var_name,
@@ -420,9 +435,11 @@ final class VariableReader
         if ($sv_bucket === null) {
             return null;
         }
+        // Re-deref for independent CData (avoid dangling view)
+        $sv_zval = $dereferencer->deref($sv_bucket->val->getPointer());
 
         $resolved = $this->resolvePath(
-            $sv_bucket->val,
+            $sv_zval,
             $path_segments,
             $dereferencer,
             $zend_type_reader,
@@ -584,6 +601,74 @@ final class VariableReader
      *
      * @param list<array{string, string}> $path_segments
      */
+    /**
+     * Resolve runtime static variables for a function.
+     *
+     * PHP 7.4+ stores static vars via ZEND_MAP_PTR. The op_array has:
+     * - static_variables: template (initial values)
+     * - static_variables_ptr__ptr: MAP_PTR to runtime copy
+     *
+     * Returns the runtime ZendArray if available, falls back to template.
+     */
+    private function resolveRuntimeStaticVars(
+        ZendFunction $func,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        int $cg_address,
+    ): ?ZendArray {
+        $op_array = $func->op_array;
+
+        // Try MAP_PTR resolution (PHP 7.4+)
+        $map_ptr_raw = $op_array->static_variables_ptr;
+        if ($map_ptr_raw !== 0 && $cg_address > 0) {
+            $map_ptr_base = $this->getMapPtrBase(
+                $cg_address,
+                $dereferencer,
+                $zend_type_reader,
+            );
+            $resolved_address = $zend_type_reader->resolveMapPtr(
+                $map_ptr_base,
+                $map_ptr_raw,
+                $dereferencer,
+            );
+            if ($resolved_address !== 0) {
+                $runtime_ptr = new Pointer(
+                    ZendArray::class,
+                    $resolved_address,
+                    $zend_type_reader->sizeOf('HashTable'),
+                );
+                return $dereferencer->deref($runtime_ptr);
+            }
+        }
+
+        // Fall back to template
+        if ($op_array->static_variables !== null) {
+            return $dereferencer->deref($op_array->static_variables);
+        }
+
+        return null;
+    }
+
+    private ?int $map_ptr_base_cache = null;
+
+    private function getMapPtrBase(
+        int $cg_address,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): int {
+        if ($this->map_ptr_base_cache !== null) {
+            return $this->map_ptr_base_cache;
+        }
+        $cg_pointer = new Pointer(
+            ZendCompilerGlobals::class,
+            $cg_address,
+            $zend_type_reader->sizeOf('zend_compiler_globals'),
+        );
+        $cg = $dereferencer->deref($cg_pointer);
+        $this->map_ptr_base_cache = $cg->map_ptr_base;
+        return $this->map_ptr_base_cache;
+    }
+
     /**
      * Follow IS_INDIRECT and IS_REFERENCE pointers to the real zval.
      */

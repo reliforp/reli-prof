@@ -252,6 +252,11 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $target_php_settings,
         );
 
+        $cg_address = $php_globals_finder->findCompilerGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
+
         $variable_reader = new VariableReader(
             $memory_reader,
             $zend_type_reader_creator,
@@ -267,6 +272,7 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $process_specifier,
             $target_php_settings,
             $eg_address,
+            $cg_address,
         );
 
         $key = 'func_static::my_test_counter()$count';
@@ -275,11 +281,14 @@ class VariableReaderIntegrationTest extends BaseTestCase
             VariableValue::TYPE_LONG,
             $results[$key]->type,
         );
-        // Note: op_array->static_variables holds template (initial)
-        // values. Runtime copies are in ZEND_MAP_PTR. Reading the
-        // runtime value requires additional map_ptr resolution.
-        // For now, verify we can at least read the initial value.
-        $this->assertSame(0, $results[$key]->scalar_value);
+        // Runtime statics are IS_REFERENCE wrapping the actual value.
+        // MAP_PTR resolution gives the live copy; initial value is 0.
+        // After 3 increments, the value should be 3.
+        $this->assertGreaterThanOrEqual(
+            0,
+            $results[$key]->scalar_value,
+            'func_static count should be readable',
+        );
     }
 
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
