@@ -117,6 +117,14 @@ final class ActionFactory
                         );
                     }
                     break;
+                case 'memory-dump':
+                    throw new \RuntimeException(
+                        '--action=memory-dump is not supported in'
+                        . ' daemon mode (--target-regex). Use'
+                        . ' --action=trace or --action=log instead,'
+                        . ' or use single-process mode (-p PID)'
+                        . ' for memory dumps.',
+                    );
             }
         }
 

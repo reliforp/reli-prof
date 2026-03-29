@@ -171,7 +171,7 @@ final class WatchCommand extends Command
             return 1;
         }
 
-        // Check if any trigger requires call trace or deep inspection
+        // Check what each trigger needs
         $needs_call_trace = false;
         $needs_exception_check = false;
         /** @var list<VariableValueTrigger> $var_triggers */
@@ -180,7 +180,7 @@ final class WatchCommand extends Command
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
             }
-            if ($trigger->requiresDeepInspection()) {
+            if ($trigger instanceof \Reli\Inspector\Watch\Trigger\ExceptionDetectionTrigger) {
                 $needs_exception_check = true;
             }
             if ($trigger instanceof VariableValueTrigger) {

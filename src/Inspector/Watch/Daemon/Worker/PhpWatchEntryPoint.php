@@ -67,7 +67,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
             }
-            if ($trigger->requiresDeepInspection()) {
+            if ($trigger instanceof ExceptionDetectionTrigger) {
                 $needs_exception_check = true;
             }
             if ($trigger instanceof VariableValueTrigger) {
