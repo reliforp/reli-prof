@@ -56,10 +56,7 @@ class ActionFactoryTest extends BaseTestCase
     {
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryReader\MemoryReaderInterface::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpInternals\ZendTypeReaderCreator::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -75,10 +72,7 @@ class ActionFactoryTest extends BaseTestCase
     {
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryReader\MemoryReaderInterface::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpInternals\ZendTypeReaderCreator::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -94,10 +88,7 @@ class ActionFactoryTest extends BaseTestCase
     {
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryReader\MemoryReaderInterface::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpInternals\ZendTypeReaderCreator::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -116,10 +107,7 @@ class ActionFactoryTest extends BaseTestCase
     {
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryReader\MemoryReaderInterface::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpInternals\ZendTypeReaderCreator::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -135,10 +123,7 @@ class ActionFactoryTest extends BaseTestCase
     {
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryReader\MemoryReaderInterface::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpInternals\ZendTypeReaderCreator::class),
-            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder::class),
-            Mockery::mock(\Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 

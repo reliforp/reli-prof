@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch;
 
+use Reli\Inspector\MemoryDump\MemoryDumper;
 use Reli\Inspector\Output\TraceOutput\TraceOutput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
@@ -23,18 +24,12 @@ use Reli\Inspector\Watch\Action\LogAction;
 use Reli\Inspector\Watch\Action\MemoryDumpAction;
 use Reli\Inspector\Watch\Action\TraceAction;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
-use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
-use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
-use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 final class ActionFactory
 {
     public function __construct(
         private CallTraceReader $call_trace_reader,
-        private MemoryReaderInterface $memory_reader,
-        private \Reli\Lib\PhpInternals\ZendTypeReaderCreator $zend_type_reader_creator,
-        private PhpZendMemoryManagerChunkFinder $chunk_finder,
-        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
+        private MemoryDumper $memory_dumper,
     ) {
     }
 
@@ -82,10 +77,7 @@ final class ActionFactory
         if (count($actions) === 0) {
             /** @psalm-suppress InvalidArgument */
             $actions[] = new MemoryDumpAction(
-                $this->memory_reader,
-                $this->zend_type_reader_creator,
-                $this->chunk_finder,
-                $this->process_memory_map_creator,
+                $this->memory_dumper,
                 $target_php_settings,
                 $eg_address,
                 $cg_address,
@@ -167,10 +159,7 @@ final class ActionFactory
                 : new LogAction(),
             /** @psalm-suppress InvalidArgument */
             'memory-dump' => new MemoryDumpAction(
-                $this->memory_reader,
-                $this->zend_type_reader_creator,
-                $this->chunk_finder,
-                $this->process_memory_map_creator,
+                $this->memory_dumper,
                 $target_php_settings,
                 $eg_address,
                 $cg_address,
