@@ -115,6 +115,41 @@ $GLOBALS['x'] = 42;
 `VariableReader::resolveIndirectAndRef()` handles this by following the
 pointer chain before accessing the actual value.
 
+## Function Static Variables: Template vs Runtime (PHP 7.4+)
+
+`zend_op_array` has two fields for static variables:
+- `static_variables` (`HashTable*`): **template** with initial values
+- `static_variables_ptr__ptr` (`HashTable**`): **ZEND_MAP_PTR** to
+  runtime copy (PHP 7.4+)
+
+When a function is first called, PHP copies `static_variables` and
+stores the pointer via `ZEND_MAP_PTR_SET`. Subsequent calls modify
+the runtime copy. The template stays unchanged.
+
+```
+static $count = 0;  // template: count=0
+$count++;           // runtime copy: count=1, 2, 3, ...
+```
+
+To read the runtime value:
+```php
+$map_ptr_raw = $op_array->static_variables_ptr;
+$resolved = $zend_type_reader->resolveMapPtr(
+    $cg->map_ptr_base, $map_ptr_raw, $dereferencer
+);
+$runtime_array = $dereferencer->deref(new Pointer(
+    ZendArray::class, $resolved, sizeOf('HashTable')
+));
+```
+
+**Note:** Runtime static vars entries are `IS_REFERENCE` wrapping
+the actual value. Must follow the reference to get the value.
+
+**Known issue:** `MemoryLocationsCollector` (line ~1295) reads
+`op_array->static_variables` (template) instead of resolving the
+MAP_PTR. This means memory analysis reports show initial values,
+not runtime values, for function static variables.
+
 ## Version Differences
 
 | Feature | PHP 7.x | PHP 8.0 | PHP 8.1+ |
