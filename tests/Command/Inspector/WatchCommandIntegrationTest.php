@@ -168,6 +168,60 @@ class WatchCommandIntegrationTest extends BaseTestCase
         );
     }
 
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testWatchDaemonMode(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $target_script = <<<'CODE'
+            <?php
+            $data = [];
+            fputs(STDOUT, "ready\n");
+            while (true) {
+                $data[] = str_repeat("x", 10240);
+                usleep(5000);
+            }
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+
+        $s = fgets($pipes[1]);
+        $this->assertSame("ready\n", $s);
+
+        // Run reli as a subprocess (not CommandTester) because
+        // daemon mode uses Amphp EventLoop + async futures that
+        // don't work well with CommandTester's synchronous execute().
+        $reli_cmd = sprintf(
+            'timeout 30 php %s inspector:watch'
+            . ' --target-regex=source'
+            . ' --memory-limit=1M'
+            . ' --max-triggers=2'
+            . ' --action=log'
+            . ' --poll-interval=200'
+            . ' --cooldown=0'
+            . ' --php-version=%s'
+            . ' 2>&1',
+            escapeshellarg(__DIR__ . '/../../../reli'),
+            escapeshellarg($php_version),
+        );
+
+        $output = shell_exec($reli_cmd);
+        $this->assertNotNull($output);
+        $this->assertStringContainsString(
+            '[TRIGGERED]',
+            $output,
+        );
+        $this->assertStringContainsString(
+            'memory-limit',
+            $output,
+        );
+    }
+
     public function testWatchNoTriggerReturnsError(): void
     {
         $container_builder = new \DI\ContainerBuilder();
