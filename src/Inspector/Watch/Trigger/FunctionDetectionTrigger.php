@@ -50,7 +50,7 @@ final class FunctionDetectionTrigger implements TriggerInterface
 
         foreach ($context->call_trace->call_frames as $frame) {
             $fqn = $frame->getFullyQualifiedFunctionName();
-            if ($fqn === $this->function_name || str_contains($fqn, $this->function_name)) {
+            if ($fqn === $this->function_name) {
                 return new TriggerEvent(
                     trigger_name: $this->name(),
                     description: sprintf(
