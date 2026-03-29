@@ -321,9 +321,9 @@ class VariableReaderIntegrationTest extends BaseTestCase
         $target_script = <<<'CODE'
             <?php
             class Config {
-                public string $mode = 'production';
-                public int $workers = 8;
-                public array $tags = ['web', 'api'];
+                public $mode = 'production';
+                public $workers = 8;
+                public $tags = array('web', 'api');
             }
             $GLOBALS['app_config'] = new Config();
             fputs(STDOUT, "ready\n");
