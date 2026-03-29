@@ -150,10 +150,10 @@ class VariableValueTriggerPathTest extends TestCase
     public function testFuncStaticWithPath(): void
     {
         $parsed = VariableValueTrigger::parseExpression(
-            'func_static::retry::$state->attempts:gte:5',
+            'func_static::retry()$state->attempts:gte:5',
         );
         $this->assertSame('func_static', $parsed['scope']);
-        $this->assertSame('retry::$state->attempts', $parsed['name']);
+        $this->assertSame('retry()$state->attempts', $parsed['name']);
         $this->assertSame('gte', $parsed['op']);
         $this->assertSame('5', $parsed['value']);
     }

@@ -367,7 +367,7 @@ final class VariableReader
 
     /**
      * Read a function's static variable.
-     * Name format: "App\retry::$attempt"
+     * Name format: "App\retry()$attempt" or "App\retry()$cache->items"
      */
     private function readFuncStaticVariable(
         ZendExecutorGlobals $eg,
@@ -375,15 +375,12 @@ final class VariableReader
         ZendTypeReader $zend_type_reader,
         string $name,
     ): ?VariableValue {
-        // Parse "funcName::$varName" or "funcName::$varName->path[key]"
-        $parts = explode('::$', $name, 2);
-        if (count($parts) !== 2) {
-            return null;
+        // Parse "funcName()$varName" using same ()$ pattern as local
+        [$func_name, $var_part] = self::parseLocalExpression($name);
+        if ($func_name === null) {
+            return null; // func_static requires a function name
         }
-        [$func_name, $var_name_with_path] = $parts;
-        [$var_name, $path_segments] = self::parsePathExpression(
-            $var_name_with_path,
-        );
+        [$var_name, $path_segments] = self::parsePathExpression($var_part);
         $func_name_lower = strtolower($func_name);
 
         // Look up function in EG->function_table

@@ -25,7 +25,7 @@ use Reli\Inspector\Watch\WatchContext;
  *   global::cache:count_gt:10000
  *   local::retries:gte:3
  *   static::App\Cache::$size:gt:100000
- *   func_static::App\retry::$attempt:gt:10
+ *   func_static::App\retry()$attempt:gt:10
  *   global::status:eq:error
  */
 final class VariableValueTrigger implements TriggerInterface

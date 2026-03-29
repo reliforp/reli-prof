@@ -45,10 +45,10 @@ class VariableValueTriggerTest extends TestCase
     public function testParseFuncStaticExpression(): void
     {
         $parsed = VariableValueTrigger::parseExpression(
-            'func_static::App\retry::$attempt:gte:10'
+            'func_static::App\retry()$attempt:gte:10'
         );
         $this->assertSame('func_static', $parsed['scope']);
-        $this->assertSame('App\retry::$attempt', $parsed['name']);
+        $this->assertSame('App\retry()$attempt', $parsed['name']);
         $this->assertSame('gte', $parsed['op']);
         $this->assertSame('10', $parsed['value']);
     }
