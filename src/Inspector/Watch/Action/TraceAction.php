@@ -22,6 +22,12 @@ use Reli\Lib\Process\ProcessSpecifier;
 
 final class TraceAction implements ActionInterface
 {
+    /**
+     * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @param int $eg_address
+     * @param int $sg_address
+     * @param int $depth
+     */
     public function __construct(
         private CallTraceReader $call_trace_reader,
         private TraceOutput $trace_output,

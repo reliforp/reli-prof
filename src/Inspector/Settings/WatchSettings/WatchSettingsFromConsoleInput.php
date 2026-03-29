@@ -126,7 +126,8 @@ final class WatchSettingsFromConsoleInput
                 'max-triggers',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'maximum total trigger count, 0 for unlimited (default: 0). Use --oneshot as alias for ad-hoc debugging.',
+                'maximum total trigger count, 0 for unlimited (default: 0).'
+                . ' Use --oneshot as alias for ad-hoc debugging.',
             )
             ->addOption(
                 'oneshot',
@@ -199,18 +200,34 @@ final class WatchSettingsFromConsoleInput
         $actions = $input->getOption('action');
 
         // --oneshot=N is an alias for --max-triggers=N
-        $max_triggers_raw = $input->getOption('max-triggers') ?? $input->getOption('oneshot') ?? WatchSettings::MAX_TRIGGERS_DEFAULT;
+        $max_triggers_raw = (string)(
+            $input->getOption('max-triggers')
+            ?? $input->getOption('oneshot')
+            ?? WatchSettings::MAX_TRIGGERS_DEFAULT
+        );
 
         return new WatchSettings(
             poll_interval_ms: $poll_interval,
             cooldown_seconds: (int)($input->getOption('cooldown') ?? WatchSettings::COOLDOWN_SECONDS_DEFAULT),
             max_triggers: (int)$max_triggers_raw,
-            max_triggers_per_hour: (int)($input->getOption('max-triggers-per-hour') ?? WatchSettings::MAX_TRIGGERS_PER_HOUR_DEFAULT),
+            max_triggers_per_hour: (int)(
+                $input->getOption('max-triggers-per-hour')
+                ?? WatchSettings::MAX_TRIGGERS_PER_HOUR_DEFAULT
+            ),
             max_dump_size_bytes: $max_dump_size,
-            backoff_multiplier: (float)($input->getOption('backoff-multiplier') ?? WatchSettings::BACKOFF_MULTIPLIER_DEFAULT),
-            backoff_max_seconds: (int)($input->getOption('backoff-max') ?? WatchSettings::BACKOFF_MAX_SECONDS_DEFAULT),
+            backoff_multiplier: (float)(
+                $input->getOption('backoff-multiplier')
+                ?? WatchSettings::BACKOFF_MULTIPLIER_DEFAULT
+            ),
+            backoff_max_seconds: (int)(
+                $input->getOption('backoff-max')
+                ?? WatchSettings::BACKOFF_MAX_SECONDS_DEFAULT
+            ),
             action_output_dir: (string)($input->getOption('action-output-dir') ?? '.'),
-            status_interval_seconds: (int)($input->getOption('status-interval') ?? WatchSettings::STATUS_INTERVAL_SECONDS_DEFAULT),
+            status_interval_seconds: (int)(
+                $input->getOption('status-interval')
+                ?? WatchSettings::STATUS_INTERVAL_SECONDS_DEFAULT
+            ),
             quiet: (bool)$input->getOption('quiet-watch'),
             memory_limit_bytes: $memory_limit_bytes,
             memory_growth_rate: $memory_growth_rate,

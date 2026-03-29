@@ -51,11 +51,13 @@ final class CooldownManager
         $this->total_fires++;
 
         if (!isset($this->states[$trigger_name])) {
+            /** @var \SplQueue<float> $hourly_timestamps */
+            $hourly_timestamps = new \SplQueue();
             $this->states[$trigger_name] = new CooldownState(
                 last_fire_time: $now,
                 consecutive_fires: 1,
                 current_cooldown: $this->base_cooldown_seconds,
-                hourly_timestamps: new \SplQueue(),
+                hourly_timestamps: $hourly_timestamps,
             );
             $this->states[$trigger_name]->hourly_timestamps->enqueue($now);
             return;
@@ -65,7 +67,7 @@ final class CooldownManager
         $state->last_fire_time = $now;
         $state->consecutive_fires++;
         $state->current_cooldown = min(
-            $this->base_cooldown_seconds * ($this->backoff_multiplier ** ($state->consecutive_fires - 1)),
+            $this->base_cooldown_seconds * ($this->backoff_multiplier ** (float)($state->consecutive_fires - 1)),
             $this->backoff_max_seconds,
         );
         $state->hourly_timestamps->enqueue($now);
@@ -128,18 +130,5 @@ final class CooldownManager
     public function hasReachedMaxTriggers(): bool
     {
         return $this->max_triggers > 0 && $this->total_fires >= $this->max_triggers;
-    }
-}
-
-/** @internal */
-final class CooldownState
-{
-    public function __construct(
-        public float $last_fire_time,
-        public int $consecutive_fires,
-        public float $current_cooldown,
-        /** @var \SplQueue<float> */
-        public \SplQueue $hourly_timestamps,
-    ) {
     }
 }

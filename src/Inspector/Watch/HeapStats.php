@@ -48,9 +48,9 @@ final class HeapStats
         $last = strtoupper(substr($size, -1));
         $value = (float)substr($size, 0, -1);
         return match ($last) {
-            'G' => (int)($value * 1024 * 1024 * 1024),
-            'M' => (int)($value * 1024 * 1024),
-            'K' => (int)($value * 1024),
+            'G' => (int)((int)$value * 1024 * 1024 * 1024),
+            'M' => (int)((int)$value * 1024 * 1024),
+            'K' => (int)((int)$value * 1024),
             default => (int)$size,
         };
     }

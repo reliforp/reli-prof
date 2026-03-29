@@ -161,7 +161,10 @@ final class WatchCommand extends Command
         // Build triggers
         $triggers = $this->buildTriggers($watch_settings);
         if (count($triggers) === 0) {
-            $output->writeln('<error>No triggers specified. Use --memory-limit, --memory-growth-rate, --watch-function, etc.</error>');
+            $output->writeln(
+                '<error>No triggers specified.'
+                . ' Use --memory-limit, --memory-growth-rate, --watch-function, etc.</error>'
+            );
             return 1;
         }
 
@@ -179,7 +182,14 @@ final class WatchCommand extends Command
             $output,
             $output_settings,
         );
-        $actions = $this->buildActions($watch_settings, $trace_output, $target_php_settings->php_version, $eg_address, $sg_address, $get_trace_settings->depth);
+        $actions = $this->buildActions(
+            $watch_settings,
+            $trace_output,
+            $target_php_settings->php_version,
+            $eg_address,
+            $sg_address,
+            $get_trace_settings->depth,
+        );
 
         // Build rate limiters
         // CooldownManager handles per-trigger cooldown/backoff only.
@@ -323,8 +333,20 @@ final class WatchCommand extends Command
                     $merged_event = count($fired_events) === 1
                         ? $fired_events[0]
                         : new TriggerEvent(
-                            trigger_name: implode('+', array_map(fn (TriggerEvent $e) => $e->trigger_name, $fired_events)),
-                            description: implode('; ', array_map(fn (TriggerEvent $e) => $e->description, $fired_events)),
+                            trigger_name: implode(
+                                '+',
+                                array_map(
+                                    fn (TriggerEvent $e) => $e->trigger_name,
+                                    $fired_events,
+                                ),
+                            ),
+                            description: implode(
+                                '; ',
+                                array_map(
+                                    fn (TriggerEvent $e) => $e->description,
+                                    $fired_events,
+                                ),
+                            ),
                             timestamp: $now,
                         );
 
@@ -339,7 +361,11 @@ final class WatchCommand extends Command
                         "\r<info>[watching]</info> PID=%d | mem=%s/%s | polls=%d | triggers=%d | disk=%s",
                         $process_specifier->pid,
                         HeapStats::humanReadableBytes($heap_stats->size),
-                        HeapStats::humanReadableBytes($heap_stats->limit > 0 ? $heap_stats->limit : $heap_stats->real_size),
+                        HeapStats::humanReadableBytes(
+                            $heap_stats->limit > 0
+                                ? $heap_stats->limit
+                                : $heap_stats->real_size
+                        ),
                         $poll_count,
                         $cooldown->getTotalFires(),
                         HeapStats::humanReadableBytes($disk_tracker->getTotalBytes()),
@@ -399,6 +425,7 @@ final class WatchCommand extends Command
     }
 
     /**
+     * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @return list<ActionInterface>
      */
     private function buildActions(
@@ -646,7 +673,8 @@ final class WatchCommand extends Command
                             if ($max_triggers > 0 && $global_trigger_count >= $max_triggers) {
                                 if (!$quiet) {
                                     $output->writeln(sprintf(
-                                        '<comment>[watch-daemon] Global max-triggers reached (%d/%d), stopping.</comment>',
+                                        '<comment>[watch-daemon] Global max-triggers'
+                                        . ' reached (%d/%d), stopping.</comment>',
                                         $global_trigger_count,
                                         $max_triggers,
                                     ));
@@ -654,7 +682,7 @@ final class WatchCommand extends Command
                                 $cancellation->cancel();
                                 return;
                             }
-                        } elseif ($result instanceof WatchDetachMessage) {
+                        } else {
                             if (!$quiet) {
                                 $output->writeln(sprintf(
                                     '<comment>[-process] PID=%d detached from worker %d</comment>',

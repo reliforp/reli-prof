@@ -67,7 +67,7 @@ final class MemoryGrowthRateTrigger implements TriggerInterface
             return null;
         }
 
-        $rate_per_second = (int)($growth / $elapsed);
+        $rate_per_second = (int)((float)$growth / $elapsed);
         if ($rate_per_second > $this->threshold_bytes_per_second) {
             return new TriggerEvent(
                 trigger_name: $this->name(),
@@ -91,7 +91,10 @@ final class MemoryGrowthRateTrigger implements TriggerInterface
     public static function parseRate(string $rate): array
     {
         if (!preg_match('/^(\d+(?:\.\d+)?)\s*([KMGT]?)\s*\/\s*(s|sec|min|h|hour)$/i', $rate, $matches)) {
-            throw new \InvalidArgumentException("Invalid growth rate format: {$rate}. Expected format: <size>/<period> (e.g., 10M/min)");
+            throw new \InvalidArgumentException(
+                "Invalid growth rate format: {$rate}."
+                . " Expected format: <size>/<period> (e.g., 10M/min)"
+            );
         }
 
         $value = (float)$matches[1];
@@ -99,10 +102,10 @@ final class MemoryGrowthRateTrigger implements TriggerInterface
         $period = strtolower($matches[3]);
 
         $bytes = match ($unit) {
-            'K' => (int)($value * 1024),
-            'M' => (int)($value * 1024 * 1024),
-            'G' => (int)($value * 1024 * 1024 * 1024),
-            'T' => (int)($value * 1024 * 1024 * 1024 * 1024),
+            'K' => (int)((int)$value * 1024),
+            'M' => (int)((int)$value * 1024 * 1024),
+            'G' => (int)((int)$value * 1024 * 1024 * 1024),
+            'T' => (int)((int)$value * 1024 * 1024 * 1024 * 1024),
             default => (int)$value,
         };
 

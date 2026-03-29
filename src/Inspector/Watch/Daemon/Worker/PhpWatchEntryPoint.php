@@ -83,7 +83,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
             Log::debug('watch worker: attached', ['pid' => $descriptor->pid]);
 
             $process_specifier = new ProcessSpecifier($descriptor->pid);
-            /** @var \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings $target_php_settings */
+            /** @var \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
             $target_php_settings = new \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings(
                 php_regex: '/.+/',
                 libpthread_regex: '/.+/',
