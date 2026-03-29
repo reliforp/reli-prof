@@ -324,8 +324,11 @@ final class VariableReader
             return null;
         }
 
-        // bucket->val is a zval pointing to ZendClassEntry
-        $ce_pointer = $bucket->val->value->ce;
+        // Re-deref for independent CData
+        $class_zval = $dereferencer->deref(
+            $bucket->val->getPointer(),
+        );
+        $ce_pointer = $class_zval->value->ce;
         if ($ce_pointer === null) {
             return null;
         }
@@ -404,8 +407,11 @@ final class VariableReader
             return null;
         }
 
-        // bucket->val is a zval pointing to ZendFunction
-        $func_pointer = $bucket->val->value->func;
+        // Re-deref for independent CData
+        $func_zval = $dereferencer->deref(
+            $bucket->val->getPointer(),
+        );
+        $func_pointer = $func_zval->value->func;
         if ($func_pointer === null) {
             return null;
         }
