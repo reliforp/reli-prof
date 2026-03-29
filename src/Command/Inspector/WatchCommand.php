@@ -182,12 +182,14 @@ final class WatchCommand extends Command
         $actions = $this->buildActions($watch_settings, $trace_output, $target_php_settings->php_version, $eg_address, $sg_address, $get_trace_settings->depth);
 
         // Build rate limiters
+        // CooldownManager handles per-trigger cooldown/backoff only.
+        // Global max-triggers is managed via $action_count above.
         $cooldown = new CooldownManager(
             base_cooldown_seconds: (float)$watch_settings->cooldown_seconds,
             backoff_multiplier: $watch_settings->backoff_multiplier,
             backoff_max_seconds: (float)$watch_settings->backoff_max_seconds,
             max_triggers_per_hour: $watch_settings->max_triggers_per_hour,
-            max_triggers: $watch_settings->max_triggers,
+            max_triggers: 0,
         );
         $disk_tracker = new DiskUsageTracker($watch_settings->max_dump_size_bytes);
 
@@ -198,6 +200,7 @@ final class WatchCommand extends Command
 
         $previous_context = null;
         $poll_count = 0;
+        $action_count = 0;
 
         $loop_settings = new TraceLoopSettings(
             sleep_nano_seconds: $watch_settings->poll_interval_ms * 1000 * 1000,
@@ -230,9 +233,11 @@ final class WatchCommand extends Command
                 $cooldown,
                 $disk_tracker,
                 $quiet,
+                $watch_settings,
                 $output,
                 &$previous_context,
                 &$poll_count,
+                &$action_count,
             ): bool {
                 $poll_count++;
                 $now = microtime(true);
@@ -271,7 +276,14 @@ final class WatchCommand extends Command
                     previous: $previous_context,
                 );
 
-                // Evaluate triggers
+                // Stop early if max action executions already reached
+                if ($watch_settings->max_triggers > 0 && $action_count >= $watch_settings->max_triggers) {
+                    return false;
+                }
+
+                // Evaluate triggers — collect all fired events in this poll
+                /** @var list<TriggerEvent> $fired_events */
+                $fired_events = [];
                 foreach ($triggers as $trigger) {
                     $event = $trigger->evaluate($context);
                     if ($event === null) {
@@ -292,8 +304,8 @@ final class WatchCommand extends Command
                         continue;
                     }
 
-                    // Fire!
                     $cooldown->recordFire($trigger->name(), $now);
+                    $fired_events[] = $event;
 
                     if (!$quiet) {
                         $output->writeln(sprintf(
@@ -303,9 +315,21 @@ final class WatchCommand extends Command
                             $event->description,
                         ));
                     }
+                }
+
+                // Execute actions once per poll (not per trigger)
+                if (count($fired_events) > 0) {
+                    $action_count++;
+                    $merged_event = count($fired_events) === 1
+                        ? $fired_events[0]
+                        : new TriggerEvent(
+                            trigger_name: implode('+', array_map(fn (TriggerEvent $e) => $e->trigger_name, $fired_events)),
+                            description: implode('; ', array_map(fn (TriggerEvent $e) => $e->description, $fired_events)),
+                            timestamp: $now,
+                        );
 
                     foreach ($actions as $action) {
-                        $action->execute($event, $process_specifier, $context);
+                        $action->execute($merged_event, $process_specifier, $context);
                     }
                 }
 
@@ -324,8 +348,7 @@ final class WatchCommand extends Command
 
                 $previous_context = $context;
 
-                // Stop if max triggers reached
-                return !$cooldown->hasReachedMaxTriggers();
+                return true;
             },
             $loop_settings,
         )->invoke();
