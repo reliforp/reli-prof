@@ -152,10 +152,12 @@ final class VariableReader
     /**
      * Read a local variable by walking up the call stack.
      *
-     * Starts from current_execute_data and traverses prev_execute_data
-     * until the variable is found. This handles the case where the
-     * process is stopped inside an internal function (e.g. fgets)
-     * and the user variable is in a parent frame.
+     * Name format:
+     *   $var                     — walk stack, return first match
+     *   App\Service::process()::$var — only look in that function's frame
+     *   main()::$var             — only look in the main script frame
+     *
+     * The () suffix marks the function name, $ marks the variable.
      */
     private function readLocalVariable(
         ZendExecutorGlobals $eg,
@@ -163,12 +165,26 @@ final class VariableReader
         ZendTypeReader $zend_type_reader,
         string $name,
     ): ?VariableValue {
-        [$root, $path_segments] = self::parsePathExpression($name);
+        [$func_filter, $var_part] = self::parseLocalExpression($name);
+        [$root, $path_segments] = self::parsePathExpression($var_part);
         $frame_pointer = $eg->current_execute_data;
 
-        // Walk up the call stack
         while ($frame_pointer !== null) {
             $execute_data = $dereferencer->deref($frame_pointer);
+
+            // If function filter is set, check frame matches
+            if ($func_filter !== null) {
+                $matches = $this->frameMatchesFunction(
+                    $execute_data,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $func_filter,
+                );
+                if (!$matches) {
+                    $frame_pointer = $execute_data->prev_execute_data;
+                    continue;
+                }
+            }
 
             foreach (
                 $execute_data->getVariables(
@@ -193,10 +209,68 @@ final class VariableReader
                 }
             }
 
+            // If function filter matched but var not found, stop
+            if ($func_filter !== null) {
+                return null;
+            }
+
             $frame_pointer = $execute_data->prev_execute_data;
         }
 
         return null;
+    }
+
+    /**
+     * Parse local expression into optional function filter + variable part.
+     *
+     * "App\Svc::process()::$retries" → ["App\Svc::process", "retries"]
+     * "handleRequest()::$items"       → ["handleRequest", "items"]
+     * "$counter"                      → [null, "counter"]
+     * "counter"                       → [null, "counter"]
+     *
+     * @return array{?string, string} [function_name, var_name_with_path]
+     */
+    public static function parseLocalExpression(string $name): array
+    {
+        // Look for ():: pattern — function marker
+        $marker = '()::$';
+        $pos = strpos($name, $marker);
+        if ($pos !== false) {
+            $func = substr($name, 0, $pos);
+            $var = substr($name, $pos + strlen($marker));
+            return [$func, $var];
+        }
+
+        // No function filter — strip leading $ if present
+        if (str_starts_with($name, '$')) {
+            return [null, substr($name, 1)];
+        }
+
+        return [null, $name];
+    }
+
+    /**
+     * Check if an execute_data frame matches the given function name.
+     */
+    private function frameMatchesFunction(
+        \Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData $execute_data,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        string $function_name,
+    ): bool {
+        if ($execute_data->func === null) {
+            return $function_name === 'main'
+                || $function_name === '<main>';
+        }
+
+        $func = $dereferencer->deref($execute_data->func);
+        $fqn = $func->getFullyQualifiedFunctionName(
+            $dereferencer,
+            $zend_type_reader,
+        );
+
+        return $fqn === $function_name
+            || str_ends_with($fqn, $function_name);
     }
 
     /**
