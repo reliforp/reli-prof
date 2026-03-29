@@ -38,6 +38,7 @@ use Revolt\EventLoop;
 use Reli\Inspector\Watch\Action\ActionInterface;
 use Reli\Inspector\Watch\Action\ExecAction;
 use Reli\Inspector\Watch\Action\LogAction;
+use Reli\Inspector\Watch\Action\MemoryDumpAction;
 use Reli\Inspector\Watch\Action\TraceAction;
 use Reli\Inspector\Watch\CooldownManager;
 use Reli\Inspector\Watch\DiskUsageTracker;
@@ -58,6 +59,7 @@ use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
 use Reli\Lib\PhpProcessReader\CallTraceReader\TraceCache;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Symfony\Component\Console\Command\Command;
@@ -80,6 +82,7 @@ final class WatchCommand extends Command
         private HeapStatsReader $heap_stats_reader,
         private VariableReader $variable_reader,
         private CallTraceReader $call_trace_reader,
+        private MemoryLocationsCollector $memory_locations_collector,
         private TraceLoopProvider $loop_provider,
         private TargetProcessResolver $target_process_resolver,
         private RetryingLoopProvider $retrying_loop_provider,
@@ -161,6 +164,11 @@ final class WatchCommand extends Command
             $target_php_settings,
         );
 
+        $cg_address = $this->php_globals_finder->findCompilerGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
+
         // Build triggers
         $triggers = $this->buildTriggers($watch_settings);
         if (count($triggers) === 0) {
@@ -189,16 +197,24 @@ final class WatchCommand extends Command
             $output,
             $output_settings,
         );
+        // Build rate limiters (need disk_tracker before actions)
+        $disk_tracker = new DiskUsageTracker(
+            $watch_settings->max_dump_size_bytes,
+        );
+
         $actions = $this->buildActions(
             $watch_settings,
             $trace_output,
             $target_php_settings->php_version,
             $eg_address,
             $sg_address,
+            $cg_address,
             $get_trace_settings->depth,
+            $target_php_settings,
+            $disk_tracker,
         );
 
-        // Build rate limiters
+        // Build cooldown
         // CooldownManager handles per-trigger cooldown/backoff only.
         // Global max-triggers is managed via $action_count above.
         $cooldown = new CooldownManager(
@@ -208,7 +224,6 @@ final class WatchCommand extends Command
             max_triggers_per_hour: $watch_settings->max_triggers_per_hour,
             max_triggers: 0,
         );
-        $disk_tracker = new DiskUsageTracker($watch_settings->max_dump_size_bytes);
 
         $php_version = $target_php_settings->php_version;
         $depth = $get_trace_settings->depth;
@@ -450,6 +465,10 @@ final class WatchCommand extends Command
 
     /**
      * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @param \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings $target_php_settings
+     * @phpstan-param \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings<
+     *     'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'
+     * > $target_php_settings
      * @return list<ActionInterface>
      */
     private function buildActions(
@@ -458,7 +477,10 @@ final class WatchCommand extends Command
         string $php_version,
         int $eg_address,
         int $sg_address,
+        int $cg_address,
         int $depth,
+        \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings $target_php_settings,
+        DiskUsageTracker $disk_tracker,
     ): array {
         $actions = [];
 
@@ -480,7 +502,15 @@ final class WatchCommand extends Command
                         : new LogAction();
                     break;
                 case 'memory-dump':
-                    // Phase 2: MemoryDumpAction
+                    $actions[] = new MemoryDumpAction(
+                        $this->memory_locations_collector,
+                        $target_php_settings,
+                        $eg_address,
+                        $cg_address,
+                        $settings->action_output_dir,
+                        $settings->memory_output_format ?? 'json',
+                        $disk_tracker,
+                    );
                     break;
                 case 'exec':
                     if ($settings->action_exec_command !== null) {
@@ -490,16 +520,15 @@ final class WatchCommand extends Command
             }
         }
 
-        // If no actions were built (e.g., only memory-dump requested but not yet implemented),
-        // fall back to trace
         if (count($actions) === 0) {
-            $actions[] = new TraceAction(
-                $this->call_trace_reader,
-                $trace_output,
-                $php_version,
+            $actions[] = new MemoryDumpAction(
+                $this->memory_locations_collector,
+                $target_php_settings,
                 $eg_address,
-                $sg_address,
-                $depth,
+                $cg_address,
+                $settings->action_output_dir,
+                $settings->memory_output_format ?? 'json',
+                $disk_tracker,
             );
         }
 
