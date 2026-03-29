@@ -71,7 +71,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
         // Build the DI container and get command
         $container_builder = new \DI\ContainerBuilder();
         $container_builder->addDefinitions(
-            __DIR__ . '/../../config/di.php',
+            __DIR__ . '/../../../config/di.php',
         );
         $container = $container_builder->build();
 
@@ -136,7 +136,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
 
         $container_builder = new \DI\ContainerBuilder();
         $container_builder->addDefinitions(
-            __DIR__ . '/../../config/di.php',
+            __DIR__ . '/../../../config/di.php',
         );
         $container = $container_builder->build();
 
@@ -175,7 +175,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
     ): void {
         $container_builder = new \DI\ContainerBuilder();
         $container_builder->addDefinitions(
-            __DIR__ . '/../../config/di.php',
+            __DIR__ . '/../../../config/di.php',
         );
         $container = $container_builder->build();
 
