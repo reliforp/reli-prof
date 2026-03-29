@@ -262,7 +262,7 @@ final class ParallelCollectAnalyzer
 
         $db->beginTransaction();
         $sink = new PdoContextTreeSink($db, $driver, $run_id, $region_boundaries);
-        $analyzer = new ContextAnalyzer($node_id_offset * self::NODE_ID_RANGE_PER_WORKER);
+        $analyzer = new ContextAnalyzer($node_id_offset * self::NODE_ID_RANGE_PER_WORKER, true);
 
         foreach ($branch_contexts as $branch_name => $branch_context) {
             $wrapper = new SingleLinkContext($branch_name, $branch_context);
@@ -313,7 +313,7 @@ final class ParallelCollectAnalyzer
         $db->beginTransaction();
 
         $sink = new PdoContextTreeSink($db, $driver, $run_id, $region_boundaries);
-        $analyzer = new ContextAnalyzer($index * self::NODE_ID_RANGE_PER_WORKER);
+        $analyzer = new ContextAnalyzer($index * self::NODE_ID_RANGE_PER_WORKER, true);
         $wrapper = new SingleLinkContext($branch_name, $branch_context);
 
         // Pass the pre-fork memo so already-emitted contexts are

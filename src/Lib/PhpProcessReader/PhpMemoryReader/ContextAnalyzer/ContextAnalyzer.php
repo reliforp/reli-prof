@@ -18,12 +18,20 @@ use WeakMap;
 
 final class ContextAnalyzer
 {
-    private int $node_id;
+    /** Counter for contexts that don't have a stable address. */
+    private int $seq_node_id;
 
+    /**
+     * @param int $start_node_id       Base for sequential IDs (contexts without an address).
+     * @param bool $address_based_ids  When true, use the first MemoryLocation address as node_id
+     *                                 for contexts that have locations.  This makes IDs deterministic
+     *                                 across parallel workers for the same memory location.
+     */
     public function __construct(
         int $start_node_id = 0,
+        private bool $address_based_ids = false,
     ) {
-        $this->node_id = $start_node_id;
+        $this->seq_node_id = $start_node_id;
     }
 
     /**
@@ -49,7 +57,7 @@ final class ContextAnalyzer
                 continue;
             }
 
-            $current_node_id = $this->node_id++;
+            $current_node_id = $this->assignNodeId($linked_context);
             $memo[$linked_context] = $current_node_id;
 
             $contexts = $linked_context->getContexts();
@@ -73,5 +81,18 @@ final class ContextAnalyzer
         if ($sink->allowsRelease()) {
             $reference_context->releaseLinks();
         }
+    }
+
+    private function assignNodeId(ReferenceContext $context): int
+    {
+        if ($this->address_based_ids) {
+            $locations = $context->getLocations();
+            // Use the first location's address as a stable, deterministic ID.
+            foreach ($locations as $location) {
+                return $location->address;
+            }
+        }
+        // No locations or address_based_ids disabled: fall back to sequential.
+        return $this->seq_node_id++;
     }
 }
