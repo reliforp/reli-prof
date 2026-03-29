@@ -15,6 +15,7 @@ namespace Reli\Inspector\Watch;
 
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
+use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
 use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
@@ -78,6 +79,35 @@ final class HeapStatsReader
             peak: $heap->peak,
             limit: $heap->limit,
         );
+    }
+
+    /**
+     * Check if an exception is currently in flight (EG->exception != null).
+     *
+     * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
+     */
+    public function hasException(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        int $eg_address,
+    ): bool {
+        $php_version = $target_php_settings->php_version;
+        $dereferencer = $this->getDereferencer(
+            $process_specifier,
+            $php_version,
+        );
+        $zend_type_reader = $this->zend_type_reader_creator->create(
+            $php_version,
+        );
+
+        $eg_pointer = new Pointer(
+            ZendExecutorGlobals::class,
+            $eg_address,
+            $zend_type_reader->sizeOf('zend_executor_globals'),
+        );
+        $eg = $dereferencer->deref($eg_pointer);
+
+        return $eg->exception !== null;
     }
 
     /**

@@ -173,11 +173,15 @@ final class WatchCommand extends Command
 
         // Check if any trigger requires call trace or deep inspection
         $needs_call_trace = false;
+        $needs_exception_check = false;
         /** @var list<VariableValueTrigger> $var_triggers */
         $var_triggers = [];
         foreach ($triggers as $trigger) {
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
+            }
+            if ($trigger->requiresDeepInspection()) {
+                $needs_exception_check = true;
             }
             if ($trigger instanceof VariableValueTrigger) {
                 $var_triggers[] = $trigger;
@@ -253,6 +257,7 @@ final class WatchCommand extends Command
                 $depth,
                 $stop_process,
                 $needs_call_trace,
+                $needs_exception_check,
                 $var_triggers,
                 $triggers,
                 $actions,
@@ -305,11 +310,22 @@ final class WatchCommand extends Command
                     );
                 }
 
+                // Check for exception in flight
+                $has_exception = null;
+                if ($needs_exception_check) {
+                    $has_exception = $this->heap_stats_reader
+                        ->hasException(
+                            $process_specifier,
+                            $target_php_settings,
+                            $eg_address,
+                        );
+                }
+
                 $context = new WatchContext(
                     pid: $process_specifier->pid,
                     heap_stats: $heap_stats,
                     call_trace: $call_trace,
-                    has_exception: null,
+                    has_exception: $has_exception,
                     timestamp: $now,
                     previous: $previous_context,
                     variable_values: $variable_values,

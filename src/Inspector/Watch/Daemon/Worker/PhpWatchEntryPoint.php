@@ -19,6 +19,7 @@ use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
+use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\Trigger\ExceptionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
@@ -41,6 +42,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
     public function __construct(
         private HeapStatsReader $heap_stats_reader,
         private CallTraceReader $call_trace_reader,
+        private VariableReader $variable_reader,
         private PhpWatchWorkerProtocolInterface $protocol,
         private LoopConditionInterface $loop_condition = new InfiniteLoopCondition(),
     ) {
@@ -58,10 +60,18 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         // Build triggers from settings
         $triggers = $this->buildTriggers($watch_settings);
         $needs_call_trace = false;
+        $needs_exception_check = false;
+        /** @var list<VariableValueTrigger> $var_triggers */
+        $var_triggers = [];
         foreach ($triggers as $trigger) {
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
-                break;
+            }
+            if ($trigger->requiresDeepInspection()) {
+                $needs_exception_check = true;
+            }
+            if ($trigger instanceof VariableValueTrigger) {
+                $var_triggers[] = $trigger;
             }
         }
 
@@ -120,13 +130,37 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         );
                     }
 
+                    // Check for exception in flight
+                    $has_exception = null;
+                    if ($needs_exception_check) {
+                        $has_exception = $this->heap_stats_reader
+                            ->hasException(
+                                $process_specifier,
+                                $target_php_settings,
+                                $descriptor->eg_address,
+                            );
+                    }
+
+                    // Read variable values
+                    $variable_values = [];
+                    if (count($var_triggers) > 0) {
+                        $variable_values = $this->variable_reader
+                            ->readVariables(
+                                $var_triggers,
+                                $process_specifier,
+                                $target_php_settings,
+                                $descriptor->eg_address,
+                            );
+                    }
+
                     $context = new WatchContext(
                         pid: $descriptor->pid,
                         heap_stats: $heap_stats,
                         call_trace: $call_trace,
-                        has_exception: null,
+                        has_exception: $has_exception,
                         timestamp: $now,
                         previous: $previous_context,
+                        variable_values: $variable_values,
                     );
 
                     // Evaluate triggers (with cooldown/rate limiting in worker)

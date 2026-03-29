@@ -65,6 +65,12 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendObjectsStore $objects_store;
 
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<ZendObject>|null
+     */
+    public ?Pointer $exception;
+
     private ?FieldReader $field_reader = null;
 
     /**
@@ -85,6 +91,7 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
         unset($this->vm_stack);
         unset($this->vm_stack_top);
         unset($this->objects_store);
+        unset($this->exception);
         unset($this->included_files);
     }
 
@@ -152,6 +159,11 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
                 $this->pointer,
                 'modified_ini_directives',
                 ZendArray::class,
+            ),
+            'exception' => $this->exception = $this->field_reader->readPointerField(
+                $this->pointer,
+                'exception',
+                ZendObject::class,
             ),
             default => throw new \LogicException(
                 "Field '{$field_name}' is not available in lazy deref mode for ZendExecutorGlobals"

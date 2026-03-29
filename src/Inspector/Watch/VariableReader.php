@@ -281,8 +281,21 @@ final class VariableReader
             $zend_type_reader,
         );
 
-        return $fqn === $function_name
-            || str_ends_with($fqn, $function_name);
+        if ($fqn === $function_name) {
+            return true;
+        }
+
+        // Allow matching without full namespace prefix,
+        // but only at a namespace boundary (\ or ::)
+        if (str_ends_with($fqn, $function_name)) {
+            $prefix_len = strlen($fqn) - strlen($function_name);
+            if ($prefix_len > 0) {
+                $boundary_char = $fqn[$prefix_len - 1];
+                return $boundary_char === '\\' || $boundary_char === ':';
+            }
+        }
+
+        return false;
     }
 
     /**

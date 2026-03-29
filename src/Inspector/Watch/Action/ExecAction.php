@@ -45,10 +45,12 @@ final class ExecAction implements ActionInterface
             'RELI_WATCH_TIMESTAMP' => date('c', (int)$event->timestamp),
         ];
 
+        // Fire-and-forget: redirect stdout/stderr to /dev/null
+        // so proc_open doesn't block the monitoring loop.
         $descriptors = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
+            0 => ['file', '/dev/null', 'r'],
+            1 => ['file', '/dev/null', 'w'],
+            2 => ['file', '/dev/null', 'w'],
         ];
 
         $proc = proc_open(
@@ -63,9 +65,9 @@ final class ExecAction implements ActionInterface
             return;
         }
 
-        fclose($pipes[0]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        proc_close($proc);
+        // Don't wait for completion — detach immediately.
+        // The child process runs independently.
+        // proc_close() would block, so we intentionally skip it.
+        // PHP will clean up the process handle on GC.
     }
 }
