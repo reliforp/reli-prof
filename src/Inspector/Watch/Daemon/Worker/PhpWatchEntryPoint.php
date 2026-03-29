@@ -180,6 +180,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                             heap_stats: $heap_stats,
                             call_trace: $call_trace,
                             eg_address: $descriptor->eg_address,
+                            cg_address: $descriptor->cg_address,
                             php_version: $descriptor->php_version,
                         ));
                     }

@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch\Daemon\Protocol\Message;
 
 use PHPUnit\Framework\TestCase;
-use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Watch\Daemon\Searcher\WatchTargetDescriptor;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
@@ -28,10 +28,11 @@ class WatchMessagesTest extends TestCase
 {
     public function testWatchAttachMessage(): void
     {
-        $desc = new TargetProcessDescriptor(
+        $desc = new WatchTargetDescriptor(
             123,
             0x1000,
             0x2000,
+            0x3000,
             ZendTypeReader::V84,
         );
         $msg = new WatchAttachMessage($desc);

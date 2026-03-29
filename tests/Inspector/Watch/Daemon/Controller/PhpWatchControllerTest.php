@@ -16,7 +16,7 @@ namespace Reli\Inspector\Watch\Daemon\Controller;
 use Mockery;
 use Reli\BaseTestCase;
 use Reli\Inspector\Daemon\AutoContextRecoveringInterface;
-use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Watch\Daemon\Searcher\WatchTargetDescriptor;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
@@ -112,7 +112,7 @@ final class PhpWatchControllerTest extends BaseTestCase
 
         $controller = new PhpWatchController($auto);
         $controller->sendAttach(
-            new TargetProcessDescriptor(123, 0, 0, ZendTypeReader::V84),
+            new WatchTargetDescriptor(123, 0, 0, 0, ZendTypeReader::V84),
         );
     }
 

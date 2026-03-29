@@ -31,6 +31,8 @@ final class WatchContext
         public readonly array $variable_values = [],
         /** Daemon mode: EG address from WatchTriggerMessage */
         public readonly int $daemon_eg_address = 0,
+        /** Daemon mode: CG address from WatchTriggerMessage */
+        public readonly int $daemon_cg_address = 0,
         /** Daemon mode: PHP version from WatchTriggerMessage */
         public readonly string $daemon_php_version = '',
     ) {

@@ -13,12 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Daemon\Protocol\Message;
 
-use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
+use Reli\Inspector\Watch\Daemon\Searcher\WatchTargetDescriptor;
 
 final class WatchAttachMessage
 {
     public function __construct(
-        public readonly TargetProcessDescriptor $process_descriptor,
+        public readonly WatchTargetDescriptor $process_descriptor,
     ) {
     }
 }

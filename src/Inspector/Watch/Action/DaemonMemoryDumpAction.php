@@ -19,23 +19,18 @@ use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Log\Log;
-use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\Process\ProcessSpecifier;
 
 /**
  * Memory dump action for daemon mode.
  *
- * Resolves CG address on demand via PhpGlobalsFinder,
- * then delegates to MemoryDumper.
+ * Uses EG/CG addresses from WatchTriggerMessage (via WatchContext)
+ * which originate from WatchTargetDescriptor resolved by the searcher.
  */
 final class DaemonMemoryDumpAction implements ActionInterface
 {
-    /** @var array<int, int> PID → CG address cache */
-    private array $cg_cache = [];
-
     public function __construct(
         private MemoryDumper $memory_dumper,
-        private PhpGlobalsFinder $php_globals_finder,
         private string $output_dir,
         private DiskUsageTracker $disk_tracker,
     ) {
@@ -58,59 +53,35 @@ final class DaemonMemoryDumpAction implements ActionInterface
             return;
         }
 
-        // Need eg_address and php_version from WatchTriggerMessage
-        // These are stored in the merged event description or
-        // accessible via the context. For daemon mode, we get them
-        // from the WatchTriggerMessage fields passed through.
-        // The caller sets these as extra context.
-        $eg_address = $context->daemon_eg_address;
-        $php_version = $context->daemon_php_version;
-        if ($eg_address === 0 || $php_version === '') {
+        $eg = $context->daemon_eg_address;
+        $cg = $context->daemon_cg_address;
+        $ver = $context->daemon_php_version;
+        if ($eg === 0 || $cg === 0 || $ver === '') {
             Log::debug(
-                'memory-dump skipped: no EG address in daemon context',
+                'memory-dump skipped: missing addresses'
+                    . ' in daemon context',
             );
             return;
         }
 
-        // Resolve CG address (cached per PID)
-        $pid = $process->pid;
-        if (!isset($this->cg_cache[$pid])) {
-            try {
-                /** @psalm-suppress ArgumentTypeCoercion,InvalidArgument */
-                $target_settings = new TargetPhpSettings(
-                    php_version: $php_version,
-                );
-                /** @psalm-suppress InvalidArgument */
-                $this->cg_cache[$pid] = $this->php_globals_finder
-                    ->findCompilerGlobals($process, $target_settings);
-            } catch (\Throwable $e) {
-                Log::debug('memory-dump: CG resolution failed', [
-                    'pid' => $pid,
-                    'error' => $e->getMessage(),
-                ]);
-                return;
-            }
-        }
-        $cg_address = $this->cg_cache[$pid];
-
         $output_path = sprintf(
             '%s/watch-%d-%s.dump',
             rtrim($this->output_dir, '/'),
-            $pid,
+            $process->pid,
             date('Ymd-His', (int)$event->timestamp),
         );
 
         try {
             /** @psalm-suppress ArgumentTypeCoercion,InvalidArgument */
             $target_settings = new TargetPhpSettings(
-                php_version: $php_version,
+                php_version: $ver,
             );
             /** @psalm-suppress InvalidArgument */
             $result = $this->memory_dumper->dump(
                 $process,
                 $target_settings,
-                $eg_address,
-                $cg_address,
+                $eg,
+                $cg,
                 $output_path,
             );
             $this->disk_tracker->recordFile($output_path);
@@ -120,7 +91,7 @@ final class DaemonMemoryDumpAction implements ActionInterface
             ]);
         } catch (\Throwable $e) {
             Log::debug('memory-dump failed', [
-                'pid' => $pid,
+                'pid' => $process->pid,
                 'error' => $e->getMessage(),
             ]);
         }

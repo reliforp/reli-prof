@@ -30,7 +30,6 @@ final class ActionFactory
     public function __construct(
         private CallTraceReader $call_trace_reader,
         private MemoryDumper $memory_dumper,
-        private \Reli\Lib\PhpProcessReader\PhpGlobalsFinder $php_globals_finder,
     ) {
     }
 
@@ -122,7 +121,6 @@ final class ActionFactory
                 case 'memory-dump':
                     $actions[] = new Action\DaemonMemoryDumpAction(
                         $this->memory_dumper,
-                        $this->php_globals_finder,
                         $settings->action_output_dir,
                         $disk_tracker,
                     );

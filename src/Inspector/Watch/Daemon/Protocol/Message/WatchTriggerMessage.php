@@ -25,6 +25,7 @@ final class WatchTriggerMessage
         public readonly HeapStats $heap_stats,
         public readonly ?CallTrace $call_trace,
         public readonly int $eg_address = 0,
+        public readonly int $cg_address = 0,
         public readonly string $php_version = '',
     ) {
     }

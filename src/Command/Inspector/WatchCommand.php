@@ -532,9 +532,18 @@ final class WatchCommand extends Command
 
         $futures = [];
 
+        // Enrich TargetProcessDescriptor with CG address for watch
+        $watch_descriptor_retriever
+            = new \Reli\Inspector\Watch\Daemon\Searcher\WatchDescriptorRetriever(
+                $this->php_globals_finder,
+                $this->php_version_detector,
+            );
+
         // Searcher future: discover processes and assign to free workers
         $futures[] = async(function () use (
             $searcher_context,
+            $watch_descriptor_retriever,
+            $target_php_settings,
             &$workers,
             &$worker_free,
             &$pid_to_worker,
@@ -547,14 +556,20 @@ final class WatchCommand extends Command
                 foreach ($update->target_process_list->getArray() as $descriptor) {
                     $pid = $descriptor->pid;
                     if (isset($pid_to_worker[$pid]) || isset($exhausted_pids[$pid])) {
-                        continue; // Already assigned or exhausted
+                        continue;
+                    }
+                    // Enrich with CG address
+                    $watch_desc = $watch_descriptor_retriever
+                        ->getDescriptor($pid, $target_php_settings);
+                    if ($watch_desc->pid === 0) {
+                        continue; // Invalid
                     }
                     // Find a free worker
                     foreach ($worker_free as $idx => $is_free) {
                         if ($is_free) {
                             $worker_free[$idx] = false;
                             $pid_to_worker[$pid] = $idx;
-                            $workers[$idx]->sendAttach($descriptor);
+                            $workers[$idx]->sendAttach($watch_desc);
                             if (!$quiet) {
                                 $output->writeln(sprintf(
                                     '<info>[+process] PID=%d assigned to worker %d</info>',
@@ -615,6 +630,7 @@ final class WatchCommand extends Command
                                 timestamp: $result->event->timestamp,
                                 previous: null,
                                 daemon_eg_address: $result->eg_address,
+                                daemon_cg_address: $result->cg_address,
                                 daemon_php_version: $result->php_version,
                             );
 

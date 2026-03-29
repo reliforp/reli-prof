@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch\Daemon\Controller;
 
 use Reli\Inspector\Daemon\AutoContextRecoveringInterface;
-use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
@@ -88,8 +87,9 @@ final class PhpWatchController implements PhpWatchControllerInterface
     }
 
     #[\Override]
-    public function sendAttach(TargetProcessDescriptor $process_descriptor): void
-    {
+    public function sendAttach(
+        \Reli\Inspector\Watch\Daemon\Searcher\WatchTargetDescriptor $process_descriptor,
+    ): void {
         $attach_message = new WatchAttachMessage($process_descriptor);
         $this->auto_context_recovering->withAutoRecover(
             function (PhpWatchControllerProtocolInterface $protocol) use ($attach_message) {

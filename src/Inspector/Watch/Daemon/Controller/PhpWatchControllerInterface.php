@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Daemon\Controller;
 
-use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
@@ -32,7 +31,9 @@ interface PhpWatchControllerInterface
         GetTraceSettings $get_trace_settings,
     ): void;
 
-    public function sendAttach(TargetProcessDescriptor $process_descriptor): void;
+    public function sendAttach(
+        \Reli\Inspector\Watch\Daemon\Searcher\WatchTargetDescriptor $process_descriptor,
+    ): void;
 
     public function receiveTriggerOrDetach(): WatchTriggerMessage|WatchDetachMessage;
 }
