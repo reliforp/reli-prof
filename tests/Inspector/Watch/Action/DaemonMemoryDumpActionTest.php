@@ -17,7 +17,6 @@ use Mockery;
 use Reli\BaseTestCase;
 use Reli\Inspector\MemoryDump\MemoryDumper;
 use Reli\Inspector\MemoryDump\MemoryDumpResult;
-use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\TriggerEvent;
@@ -28,19 +27,16 @@ use Reli\Lib\Process\ProcessSpecifier;
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
-class MemoryDumpActionTest extends BaseTestCase
+class DaemonMemoryDumpActionTest extends BaseTestCase
 {
     public function testName(): void
     {
         $dumper = Mockery::mock(
             'overload:' . MemoryDumper::class,
         );
-        $action = new MemoryDumpAction(
+        $action = new DaemonMemoryDumpAction(
             $dumper,
-            new TargetPhpSettings(php_version: 'v84'),
-            0x1000,
-            0x2000,
-            sys_get_temp_dir(),
+            '/tmp',
             new DiskUsageTracker(1024 * 1024),
         );
         $this->assertSame('memory-dump', $action->name());
@@ -60,12 +56,9 @@ class MemoryDumpActionTest extends BaseTestCase
         $tracker->recordFile($tmp);
         unlink($tmp);
 
-        $action = new MemoryDumpAction(
+        $action = new DaemonMemoryDumpAction(
             $dumper,
-            new TargetPhpSettings(php_version: 'v84'),
-            0x1000,
-            0x2000,
-            sys_get_temp_dir(),
+            '/tmp',
             $tracker,
         );
 
@@ -73,6 +66,27 @@ class MemoryDumpActionTest extends BaseTestCase
             new TriggerEvent('test', 'desc', 100.0),
             new ProcessSpecifier(1),
             $this->makeContext(),
+        );
+    }
+
+    public function testSkipsWhenMissingAddresses(): void
+    {
+        $dumper = Mockery::mock(
+            'overload:' . MemoryDumper::class,
+        );
+        $dumper->shouldNotReceive('dump');
+
+        $action = new DaemonMemoryDumpAction(
+            $dumper,
+            '/tmp',
+            new DiskUsageTracker(1024 * 1024),
+        );
+
+        // No daemon addresses → skip
+        $action->execute(
+            new TriggerEvent('test', 'desc', 100.0),
+            new ProcessSpecifier(1),
+            $this->makeContext(0, 0, ''),
         );
     }
 
@@ -84,11 +98,8 @@ class MemoryDumpActionTest extends BaseTestCase
         );
         $dumper->shouldReceive('dump')->once()->andReturn($result);
 
-        $action = new MemoryDumpAction(
+        $action = new DaemonMemoryDumpAction(
             $dumper,
-            new TargetPhpSettings(php_version: 'v84'),
-            0x1000,
-            0x2000,
             sys_get_temp_dir(),
             new DiskUsageTracker(1024 * 1024),
         );
@@ -96,46 +107,25 @@ class MemoryDumpActionTest extends BaseTestCase
         $action->execute(
             new TriggerEvent('mem', 'desc', 100.0),
             new ProcessSpecifier(42),
-            $this->makeContext(),
+            $this->makeContext(0x1000, 0x2000, 'v84'),
         );
     }
 
-    public function testHandlesDumpException(): void
-    {
-        $dumper = Mockery::mock(
-            'overload:' . MemoryDumper::class,
-        );
-        $dumper->shouldReceive('dump')->once()->andThrow(
-            new \RuntimeException('chunk not found'),
-        );
-
-        $action = new MemoryDumpAction(
-            $dumper,
-            new TargetPhpSettings(php_version: 'v84'),
-            0x1000,
-            0x2000,
-            sys_get_temp_dir(),
-            new DiskUsageTracker(1024 * 1024),
-        );
-
-        // Should not throw — gracefully catches
-        $action->execute(
-            new TriggerEvent('mem', 'desc', 100.0),
-            new ProcessSpecifier(42),
-            $this->makeContext(),
-        );
-        $this->assertTrue(true); // No exception
-    }
-
-    private function makeContext(): WatchContext
-    {
+    private function makeContext(
+        int $eg = 0,
+        int $cg = 0,
+        string $ver = '',
+    ): WatchContext {
         return new WatchContext(
             pid: 1,
-            heap_stats: new HeapStats(1024, 2048, 1024, 0),
+            heap_stats: new HeapStats(0, 0, 0, 0),
             call_trace: null,
             has_exception: null,
             timestamp: 100.0,
             previous: null,
+            daemon_eg_address: $eg,
+            daemon_cg_address: $cg,
+            daemon_php_version: $ver,
         );
     }
 }
