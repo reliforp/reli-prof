@@ -16,6 +16,7 @@ namespace Reli\Lib\PhpInternals\Types\Zend;
 use FFI\PhpInternals\zend_class_entry;
 use Reli\Lib\FFI\Cast;
 use Reli\Lib\PhpInternals\CastedCData;
+use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -266,11 +267,24 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
         if (!isset($this->static_properties_table_cache)) {
             $property_count = $this->default_static_members_count;
             $table_size = $property_count * $type_reader->sizeOf(Zval::getCTypeName());
-            $table_address = $type_reader->resolveMapPtr(
-                $map_ptr_base,
-                $this->static_members_table->address,
-                $dereferencer,
-            );
+            $raw_ptr = $this->static_members_table->address;
+            if ($map_ptr_base !== 0) {
+                $table_address = $type_reader->resolveMapPtr(
+                    $map_ptr_base,
+                    $raw_ptr,
+                    $dereferencer,
+                );
+            } else {
+                // PHP 7.4-8.1: map_ptr_base is 0, static_members_table
+                // is a direct double pointer — deref once to get the
+                // actual table address.
+                $ptr = new Pointer(
+                    RawInt64::class,
+                    $raw_ptr,
+                    8,
+                );
+                $table_address = $dereferencer->deref($ptr)->value;
+            }
             if ($table_address === 0) {
                 return;
             }
