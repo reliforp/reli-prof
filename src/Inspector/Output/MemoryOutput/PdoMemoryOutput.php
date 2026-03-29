@@ -65,6 +65,96 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
+     * Pipelined path: read pre-flattened data from a pipe and write to DB.
+     *
+     * @param array<int, array<string, mixed>> $summary
+     * @param resource $read_fd  readable pipe from collect worker
+     */
+    public function outputFromPipe(array $summary, mixed $read_fd): void
+    {
+        $db = $this->driver->createConnection();
+        $this->driver->tuneForBulkInsert($db);
+
+        $this->createTables($db);
+
+        $db->beginTransaction();
+        try {
+            $run_id = $this->insertRun($db);
+            $this->insertSummary($db, $run_id, $summary);
+
+            $sink = new PdoContextTreeSink($db, $this->driver, $run_id, $this->region_boundaries);
+
+            $this->drainSinglePipe($read_fd, $sink);
+            $sink->flush();
+
+            $this->insertLocationTypesSummaryFromDb($db, $run_id);
+            $this->insertClassObjectsSummaryFromDb($db, $run_id);
+
+            $db->commit();
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
+
+        $this->driver->afterBulkInsert($db);
+        $this->createIndexes($db);
+        $this->createViews($db);
+    }
+
+    /**
+     * @param resource $read_fd
+     */
+    private function drainSinglePipe(mixed $read_fd, PdoContextTreeSink $sink): void
+    {
+        $buffer = '';
+
+        while (true) {
+            if (strlen($buffer) < 4) {
+                $chunk = fread($read_fd, 262144);
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+                $buffer .= $chunk;
+            }
+
+            while (strlen($buffer) >= 4) {
+                /** @var array{len: int} $unpacked */
+                $unpacked = unpack('Vlen', $buffer);
+                $msg_len = $unpacked['len'];
+
+                if (strlen($buffer) < 4 + $msg_len) {
+                    // Need more data.
+                    $chunk = fread($read_fd, max(262144, 4 + $msg_len - strlen($buffer)));
+                    if ($chunk === false || $chunk === '') {
+                        return;
+                    }
+                    $buffer .= $chunk;
+                    continue;
+                }
+
+                $payload = substr($buffer, 4, $msg_len);
+                $buffer = substr($buffer, 4 + $msg_len);
+
+                /** @var list<mixed> $message */
+                $message = unserialize($payload);
+
+                if ($message[0] === 'E') {
+                    return;
+                }
+                if ($message[0] === 'N') {
+                    /** @var array{1: int, 2: ?int, 3: string, 4: string, 5: list<array{int, int, string, ?string, ?string, ?int, ?int, ?string}>, 6: array<string, mixed>} $message */
+                    $sink->emitNodeFlat($message[1], $message[2], $message[3], $message[4], $message[5], $message[6]);
+                } elseif ($message[0] === 'R') {
+                    /** @var array{1: int, 2: ?int, 3: string} $message */
+                    $sink->emitReference($message[1], $message[2], $message[3]);
+                }
+            }
+        }
+    }
+
+    /**
      * Parallel collect + analyze + write path.
      *
      * Workers fork before the heap grows, each writes to a private temp
