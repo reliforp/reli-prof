@@ -236,7 +236,24 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
                 'included_files',
                 ZendArray::class,
             ),
+            'exception' => $this->exception = $this->readExceptionEager(),
         };
+    }
+
+    /**
+     * @return Pointer<ZendObject>|null
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress MixedArgument
+     */
+    private function readExceptionEager(): ?Pointer
+    {
+        assert($this->casted_cdata !== null);
+        return $this->casted_cdata->casted->exception !== null
+            ? Pointer::fromCData(
+                ZendObject::class,
+                $this->casted_cdata->casted->exception,
+            )
+            : null;
     }
 
     #[\Override]
