@@ -35,6 +35,9 @@ use Reli\Lib\Process\ProcessSpecifier;
  */
 final class HeapStatsReader
 {
+    /** @var array<int, int> PID → chunk address cache */
+    private array $chunk_address_cache = [];
+
     public function __construct(
         private PhpZendMemoryManagerChunkFinder $chunk_finder,
         private MemoryReaderInterface $memory_reader,
@@ -51,18 +54,20 @@ final class HeapStatsReader
         int $eg_address,
     ): HeapStats {
         $php_version = $target_php_settings->php_version;
-        $dereferencer = $this->getDereferencer($process_specifier, $php_version);
-        $zend_type_reader = $this->zend_type_reader_creator->create($php_version);
+        $dereferencer = $this->getDereferencer(
+            $process_specifier,
+            $php_version,
+        );
+        $zend_type_reader = $this->zend_type_reader_creator->create(
+            $php_version,
+        );
 
-        $chunk_address = $this->chunk_finder->findAddress(
+        $chunk_address = $this->getChunkAddress(
             $process_specifier,
             $target_php_settings,
             $eg_address,
             $dereferencer,
         );
-        if (is_null($chunk_address)) {
-            throw new \RuntimeException('chunk address not found');
-        }
 
         $main_chunk_pointer = new Pointer(
             ZendMmChunk::class,
@@ -108,6 +113,37 @@ final class HeapStatsReader
         $eg = $dereferencer->deref($eg_pointer);
 
         return $eg->exception !== null;
+    }
+
+    /**
+     * Get chunk address, cached per PID.
+     * The main chunk address doesn't change while the process is alive.
+     *
+     * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
+     */
+    private function getChunkAddress(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        int $eg_address,
+        Dereferencer $dereferencer,
+    ): int {
+        $pid = $process_specifier->pid;
+        if (isset($this->chunk_address_cache[$pid])) {
+            return $this->chunk_address_cache[$pid];
+        }
+
+        $chunk_address = $this->chunk_finder->findAddress(
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+            $dereferencer,
+        );
+        if (is_null($chunk_address)) {
+            throw new \RuntimeException('chunk address not found');
+        }
+
+        $this->chunk_address_cache[$pid] = $chunk_address;
+        return $chunk_address;
     }
 
     /**
