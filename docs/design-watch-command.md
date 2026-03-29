@@ -2,71 +2,71 @@
 
 ## Overview
 
-PHP プロセスを継続的に監視し、条件ベースのトリガが発火したときに自動的に
-プロファイリングアクション（トレース取得、メモリダンプ、ログ記録等）を実行する
-`inspector:watch` コマンドを追加する。
+Add an `inspector:watch` command that continuously monitors PHP processes and automatically
+executes profiling actions (trace capture, memory dump, log recording, etc.) when
+condition-based triggers fire.
 
-既存の `inspector:top`（リアルタイム表示）や `inspector:daemon`（複数プロセストレース）
-とは異なり、**「条件を満たしたときだけアクションを起こす」** という受動的な監視に特化する。
+Unlike the existing `inspector:top` (real-time display) and `inspector:daemon` (multi-process tracing),
+this specializes in passive monitoring that **"only takes action when conditions are met."**
 
 ### Motivation
 
-- メモリリークの兆候を早期検出し、閾値到達時に自動でスナップショットを残す
-- 特定の重い関数が呼ばれた瞬間を捕捉する
-- 例外発生時のコールスタック状態を記録する
-- プロダクション環境での低オーバーヘッド監視（条件非該当時はヒープ統計の読み取りのみ）
+- Detect early signs of memory leaks and automatically take snapshots when thresholds are reached
+- Capture the moment a specific heavy function is called
+- Record call stack state when exceptions occur
+- Low-overhead monitoring in production environments (only reads heap statistics when conditions are not met)
 
 ## CLI Interface
 
 ```bash
-# 基本: 単一プロセス、メモリ閾値で trace を取得
+# Basic: single process, capture trace on memory threshold
 reli inspector:watch -p <PID> \
   --memory-limit=256M \
   --action=trace
 
-# daemon モード: 複数プロセス同時監視
+# Daemon mode: monitor multiple processes simultaneously
 reli inspector:watch --target-regex="php-fpm" \
   --memory-limit=512M \
   --memory-growth-rate=10M/min \
   --action=memory-dump \
   --action-output-dir=/var/log/reli-watch/
 
-# 関数検出 + 例外検出
+# Function detection + exception detection
 reli inspector:watch -p <PID> \
   --watch-function="App\\HeavyService::process" \
   --on-exception \
   --action=trace \
   --action=log
 
-# 複数トリガ + カスタムコマンド実行
+# Multiple triggers + custom command execution
 reli inspector:watch --target-regex="artisan" \
   --memory-limit=256M \
   --trace-depth-limit=200 \
   --action=exec --action-exec-command="curl -s -X POST https://hooks.example.com/alert" \
   --cooldown=30
 
-# グローバル変数の配列サイズ監視
+# Monitor global variable array size
 reli inspector:watch -p <PID> \
   --watch-global-array-size='cache:10000' \
   --action=memory-dump
 
-# 変数値の監視 (グローバル変数)
+# Monitor variable values (global variables)
 reli inspector:watch -p <PID> \
   --watch-var='global::retry_count:gt:5' \
   --action=trace --action=log
 
-# クラス静的プロパティの監視
+# Monitor class static properties
 reli inspector:watch -p <PID> \
   --watch-var='static::App\Cache::$size:gt:100000' \
   --action=memory-dump
 
-# ローカル変数の監視
+# Monitor local variables
 reli inspector:watch -p <PID> \
   --watch-var='local::items:count_gt:10000' \
   --watch-function="App\\process" \
   --action=trace
 
-# 関数静的変数の監視
+# Monitor function static variables
 reli inspector:watch -p <PID> \
   --watch-var='func_static::App\retry::$attempt:gt:10' \
   --action=log
@@ -74,132 +74,132 @@ reli inspector:watch -p <PID> \
 
 ## Trigger System
 
-### Tier 1: 軽量トリガ (ヒープ統計のみ、process_vm_readv 1-2回)
+### Tier 1: Lightweight Triggers (heap statistics only, 1-2 process_vm_readv calls)
 
-| トリガ | オプション | 説明 |
-|--------|-----------|------|
-| Memory Limit | `--memory-limit=<size>` | `ZendMmHeap::$size` が閾値を超過 |
-| Memory Growth Rate | `--memory-growth-rate=<size>/<period>` | 直近 N サンプルの増加率が閾値を超過 |
-| Memory Peak Watch | `--memory-peak-watch` | `ZendMmHeap::$peak` が更新されるたび |
+| Trigger | Option | Description |
+|---------|--------|-------------|
+| Memory Limit | `--memory-limit=<size>` | `ZendMmHeap::$size` exceeds threshold |
+| Memory Growth Rate | `--memory-growth-rate=<size>/<period>` | Growth rate over the last N samples exceeds threshold |
+| Memory Peak Watch | `--memory-peak-watch` | Fires each time `ZendMmHeap::$peak` is updated |
 
-**実装の要点:**
-`ZendMmHeap` の `size`, `real_size`, `peak` フィールドは `process_vm_readv` 1回で読める。
-既存の `MemoryLocationsCollector` はフルスキャン（数百ms〜数秒）だが、このパスは
-`ZendMmChunk::heap_slot` → `ZendMmHeap` の数フィールドを読むだけで完了する（< 1ms）。
+**Implementation key points:**
+The `size`, `real_size`, and `peak` fields of `ZendMmHeap` can be read with a single `process_vm_readv` call.
+The existing `MemoryLocationsCollector` performs a full scan (hundreds of ms to seconds), but this path
+only reads a few fields from `ZendMmChunk::heap_slot` to `ZendMmHeap` and completes in < 1ms.
 
-### Tier 2: トレース依存トリガ (コールスタック読み取り、process_vm_readv 数十回)
+### Tier 2: Trace-Dependent Triggers (call stack reading, tens of process_vm_readv calls)
 
-| トリガ | オプション | 説明 |
-|--------|-----------|------|
-| Function Detection | `--watch-function=<name>` | 指定関数がコールスタックに出現 |
-| Trace Depth Limit | `--trace-depth-limit=<N>` | コールスタックが N 段を超過 |
+| Trigger | Option | Description |
+|---------|--------|-------------|
+| Function Detection | `--watch-function=<name>` | Specified function appears in the call stack |
+| Trace Depth Limit | `--trace-depth-limit=<N>` | Call stack exceeds N levels |
 
-**実装の要点:**
-既存の `CallTraceReader::readCallTrace()` をそのまま利用。
-Tier 2 トリガが1つでも有効な場合、ポーリングごとにトレースを読む。
-`--stop-process` (`-S`) との併用で一貫性を確保可能。
+**Implementation key points:**
+Uses the existing `CallTraceReader::readCallTrace()` directly.
+When at least one Tier 2 trigger is enabled, the trace is read on every poll.
+Consistency can be ensured by combining with `--stop-process` (`-S`).
 
-### Tier 3: 高度なトリガ (PHP内部構造の深い読み取り)
+### Tier 3: Advanced Triggers (deep reading of PHP internal structures)
 
-| トリガ | オプション | 説明 |
-|--------|-----------|------|
-| Exception Detection | `--on-exception` | `EG->exception` が非null（例外飛行中） |
-| Global Array Size | `--watch-global-array-size=<name>:<limit>` | `EG->symbol_table` 内の配列の `nNumOfElements` が閾値超過 |
-| Variable Value | `--watch-var=<scope>::<name>:<op>:<value>` | 指定スコープの変数値が条件を満たした時 |
+| Trigger | Option | Description |
+|---------|--------|-------------|
+| Exception Detection | `--on-exception` | `EG->exception` is non-null (exception in flight) |
+| Global Array Size | `--watch-global-array-size=<name>:<limit>` | `nNumOfElements` of an array in `EG->symbol_table` exceeds threshold |
+| Variable Value | `--watch-var=<scope>::<name>:<op>:<value>` | Fires when a variable in the specified scope meets the condition |
 
-**実装の要点:**
+**Implementation key points:**
 
 **Variable Value (`--watch-var`):**
 
-4つのスコープの変数を監視可能。スコープは `<scope>::<name>` 形式で指定する。
+Variables in four scopes can be monitored. The scope is specified in the format `<scope>::<name>`.
 
 ```bash
-# グローバル変数
+# Global variables
 --watch-var='global::counter:gt:1000'
 --watch-var='global::status:eq:error'
 
-# ローカル変数 (現在のコールフレームの変数)
+# Local variables (variables in the current call frame)
 --watch-var='local::items:count_gt:10000'
 --watch-var='local::retries:gte:3'
 
-# クラス静的プロパティ
+# Class static properties
 --watch-var='static::App\Cache::$entries:count_gt:50000'
 --watch-var='static::App\Config::$debug:eq:true'
 
-# 関数静的変数
+# Function static variables
 --watch-var='func_static::App\retry::$attempt:gt:10'
 ```
 
-**各スコープの読み取りパス:**
+**Read paths for each scope:**
 
-| スコープ | 内部構造 | アクセスパス |
-|----------|---------|-------------|
-| `global` | `EG->symbol_table` | `ZendArray` からキーで lookup → `Zval` |
-| `local` | `zend_execute_data` 直後の CV 領域 | `EG->current_execute_data` → `ZendOpArray->last_var` + 変数名テーブルで index 解決 → `execute_data + sizeof(zend_execute_data) + index * sizeof(zval)` |
-| `static` | `ZendClassEntry->static_members_table` | `EG->class_table` からクラス名で lookup → `ZendClassEntry` → `static_members_table` + `PropertyInfo` で offset 解決 |
-| `func_static` | `ZendOpArray->static_variables` | `EG->function_table` から関数名で lookup → `ZendOpArray->static_variables` (`ZendArray`) からキーで lookup |
+| Scope | Internal Structure | Access Path |
+|-------|-------------------|-------------|
+| `global` | `EG->symbol_table` | Lookup by key from `ZendArray` -> `Zval` |
+| `local` | CV area immediately after `zend_execute_data` | `EG->current_execute_data` -> `ZendOpArray->last_var` + resolve index via variable name table -> `execute_data + sizeof(zend_execute_data) + index * sizeof(zval)` |
+| `static` | `ZendClassEntry->static_members_table` | Lookup class name from `EG->class_table` -> `ZendClassEntry` -> `static_members_table` + resolve offset via `PropertyInfo` |
+| `func_static` | `ZendOpArray->static_variables` | Lookup function name from `EG->function_table` -> `ZendOpArray->static_variables` (`ZendArray`) lookup by key |
 
-**比較演算子:**
+**Comparison operators:**
 
-| 演算子 | 対象型 | 説明 |
-|--------|--------|------|
-| `eq`, `ne` | 全型 | 等値/非等値 |
-| `gt`, `lt`, `gte`, `lte` | `IS_LONG`, `IS_DOUBLE` | 数値比較 |
-| `contains` | `IS_STRING` | 部分文字列一致 |
-| `count_gt`, `count_lt`, `count_eq` | `IS_ARRAY` | 配列要素数の比較 |
-| `is_null` | 全型 | `IS_NULL` チェック |
+| Operator | Target Types | Description |
+|----------|-------------|-------------|
+| `eq`, `ne` | All types | Equality / inequality |
+| `gt`, `lt`, `gte`, `lte` | `IS_LONG`, `IS_DOUBLE` | Numeric comparison |
+| `contains` | `IS_STRING` | Substring match |
+| `count_gt`, `count_lt`, `count_eq` | `IS_ARRAY` | Comparison of array element count |
+| `is_null` | All types | `IS_NULL` check |
 
-**既存の型読み取り基盤:**
-- `ZendArray`: ハッシュテーブル走査 (`iterateBucket()` 等)
-- `Zval`: 型判定 (`type` フィールド) + 値読み取り
-- `ZendClassEntry`: クラス名解決 + `static_members_table` アクセス
-- `ZendOpArray`: `static_variables` (ZendArray), `last_var`, 変数名テーブル
-- `ZendExecuteData`: `symbol_table`, `func`, CV 領域アクセス
+**Existing type reading infrastructure:**
+- `ZendArray`: Hash table traversal (`iterateBucket()`, etc.)
+- `Zval`: Type determination (`type` field) + value reading
+- `ZendClassEntry`: Class name resolution + `static_members_table` access
+- `ZendOpArray`: `static_variables` (ZendArray), `last_var`, variable name table
+- `ZendExecuteData`: `symbol_table`, `func`, CV area access
 
 **Exception Detection:**
-`zend_executor_globals` の C 構造体には `zend_object *exception` フィールドがある
-（`src/Lib/PhpInternals/Headers/v84.h:916`）。現在の `ZendExecutorGlobals.php` には
-未公開のため、`exception` ポインタフィールドを追加する必要がある。
-ポインタの非null チェックだけなので軽量（`process_vm_readv` 1回追加）。
+The `zend_executor_globals` C struct has a `zend_object *exception` field
+(`src/Lib/PhpInternals/Headers/v84.h:916`). The current `ZendExecutorGlobals.php` does not
+expose it, so the `exception` pointer field needs to be added.
+This is lightweight since it only requires a non-null pointer check (1 additional `process_vm_readv` call).
 
 ```php
-// ZendExecutorGlobals.php に追加
+// Add to ZendExecutorGlobals.php
 /** @var Pointer<ZendObject>|null */
 public ?Pointer $exception;
 ```
 
 **Global Array Size:**
-`EG->symbol_table`（`ZendArray` 型）から変数名をキーに lookup し、
-該当する zval が `IS_ARRAY` なら `ZendArray::$nNumOfElements` を読む。
-`ZendArray` のハッシュテーブル走査が必要だが、グローバル変数名は
-シンボルテーブルの先頭付近にあることが多く、実用的に高速。
+Looks up the variable name as a key from `EG->symbol_table` (type `ZendArray`),
+and if the corresponding zval is `IS_ARRAY`, reads `ZendArray::$nNumOfElements`.
+Hash table traversal of `ZendArray` is required, but global variable names are
+often near the beginning of the symbol table, making this practically fast.
 
 ## Action System
 
 ### Built-in Actions
 
-| アクション | `--action=` 値 | 説明 |
-|-----------|----------------|------|
-| Trace Capture | `trace` | コールトレースを出力 |
-| Memory Dump | `memory-dump` | フルメモリプロファイリング (JSON/SQLite3) (デフォルト) |
-| Event Log | `log` | タイムスタンプ、PID、トリガ情報をログに記録 |
-| Exec | `exec` | 外部コマンドを実行 |
+| Action | `--action=` value | Description |
+|--------|-------------------|-------------|
+| Trace Capture | `trace` | Output call trace |
+| Memory Dump | `memory-dump` | Full memory profiling (JSON/SQLite3) (default) |
+| Event Log | `log` | Record timestamp, PID, and trigger information to log |
+| Exec | `exec` | Execute an external command |
 
-`--action` は複数指定可能。未指定時は `memory-dump` がデフォルト。
+Multiple `--action` options can be specified. If none are specified, `memory-dump` is the default.
 
 ### Trace Capture (`--action=trace`)
 
-既存の `CallTraceReader` + `TraceOutputFactory` を利用。
-Tier 2 トリガが有効な場合はトリガ評価時に取得済みのトレースを再利用。
+Uses the existing `CallTraceReader` + `TraceOutputFactory`.
+When Tier 2 triggers are enabled, reuses the trace already captured during trigger evaluation.
 
 ### Memory Dump (`--action=memory-dump`)
 
-既存の `MemoryLocationsCollector` + `MemoryOutputFactory` でフルスナップショットを取得。
-`--action-output-dir` 配下に `watch-<PID>-<timestamp>.<format>` で出力。
-フォーマットは `--memory-output-format={json,sqlite3}` で指定。
+Captures a full snapshot using the existing `MemoryLocationsCollector` + `MemoryOutputFactory`.
+Outputs as `watch-<PID>-<timestamp>.<format>` under `--action-output-dir`.
+Format is specified with `--memory-output-format={json,sqlite3}`.
 
-**注意:** フルメモリスキャンは重い (数百ms〜数秒)。アクション実行中はプロセスを
-`-S` で停止することを推奨。
+**Note:** Full memory scans are heavy (hundreds of ms to seconds). It is recommended to
+stop the process with `-S` during action execution.
 
 ### Event Log (`--action=log`)
 
@@ -209,99 +209,99 @@ Tier 2 トリガが有効な場合はトリガ評価時に取得済みのトレ�
 [2026-03-29T12:36:01+09:00] PID=5678 trigger=on-exception
 ```
 
-`--log-file=<path>` で出力先指定。未指定時は stderr。
+Output destination is specified with `--log-file=<path>`. If not specified, defaults to stderr.
 
 ### Exec (`--action=exec`)
 
-`--action-exec-command=<command>` で指定したコマンドを実行。
-環境変数でコンテキストを渡す:
+Executes the command specified with `--action-exec-command=<command>`.
+Context is passed via environment variables:
 
-| 環境変数 | 説明 |
-|----------|------|
-| `RELI_WATCH_PID` | 対象プロセスの PID |
-| `RELI_WATCH_TRIGGER` | 発火したトリガ名 |
-| `RELI_WATCH_MEMORY_USAGE` | 現在のメモリ使用量 (bytes) |
-| `RELI_WATCH_MEMORY_PEAK` | メモリピーク (bytes) |
-| `RELI_WATCH_TIMESTAMP` | ISO 8601 タイムスタンプ |
-| `RELI_WATCH_FUNCTION` | (watch-function時) 検出された関数名 |
-| `RELI_WATCH_DUMP_PATH` | (memory-dump時) 出力されたダンプファイルのパス |
+| Environment Variable | Description |
+|---------------------|-------------|
+| `RELI_WATCH_PID` | PID of the target process |
+| `RELI_WATCH_TRIGGER` | Name of the fired trigger |
+| `RELI_WATCH_MEMORY_USAGE` | Current memory usage (bytes) |
+| `RELI_WATCH_MEMORY_PEAK` | Memory peak (bytes) |
+| `RELI_WATCH_TIMESTAMP` | ISO 8601 timestamp |
+| `RELI_WATCH_FUNCTION` | (for watch-function) Detected function name |
+| `RELI_WATCH_DUMP_PATH` | (for memory-dump) Path of the output dump file |
 
-**セキュリティ:** コマンド文字列はユーザーが明示的に指定するものであり、
-reli-prof 自体が実行するのでシェルインジェクションのリスクは限定的だが、
-環境変数経由でのみ動的値を渡し、コマンド文字列自体にはプレースホルダーを使わない。
+**Security:** The command string is explicitly specified by the user, and since reli-prof
+itself executes it, the risk of shell injection is limited. However, dynamic values are
+passed only via environment variables, and no placeholders are used in the command string itself.
 
 ## Common Options
 
-### 監視間隔
+### Monitoring Interval
 
-| オプション | デフォルト | 説明 |
-|---|---|---|
-| `--poll-interval=<ms>` | `1000` | ポーリング間隔 (ミリ秒)。最小値 100ms。 |
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--poll-interval=<ms>` | `1000` | Polling interval (milliseconds). Minimum value: 100ms. |
 
-`--poll-interval` はポーリングごとのスリープ時間。Tier 1 トリガのみの場合は
-短い間隔 (100-500ms) でも対象プロセスへの影響は最小限 (`process_vm_readv` 1回/poll)。
-Tier 2/3 トリガが有効な場合はトレース読み取りコストがあるため、
-1000ms 以上を推奨。
+`--poll-interval` is the sleep duration between each poll. When only Tier 1 triggers are active,
+the impact on the target process is minimal even at short intervals (100-500ms) (1 `process_vm_readv` call/poll).
+When Tier 2/3 triggers are enabled, trace reading costs apply, so
+1000ms or more is recommended.
 
-### レートリミット・ディスク保護
+### Rate Limiting and Disk Protection
 
-連続トリガによるディスク爆発と対象プロセスの性能劣化を防ぐ多層制御:
+Multi-layer controls to prevent disk explosion and performance degradation of the target process from continuous triggers:
 
-| オプション | デフォルト | 説明 |
-|---|---|---|
-| `--cooldown=<seconds>` | `60` | 同一トリガの再発火までの最小待機時間 |
-| `--max-triggers=<N>` | `0` (無制限) | 累計トリガ回数上限。到達したら監視終了 |
-| `--max-triggers-per-hour=<N>` | `10` | 1時間あたりのトリガ回数上限。超過分は無視 |
-| `--max-dump-size=<size>` | `1G` | ダンプファイルの累計サイズ上限。超過したら memory-dump アクションをスキップ |
-| `--backoff-multiplier=<float>` | `2.0` | 連続トリガ時の cooldown 指数バックオフ倍率 |
-| `--backoff-max=<seconds>` | `3600` | バックオフの上限秒数 |
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--cooldown=<seconds>` | `60` | Minimum wait time before the same trigger can fire again |
+| `--max-triggers=<N>` | `0` (unlimited) | Cumulative trigger count limit. Monitoring ends when reached |
+| `--max-triggers-per-hour=<N>` | `10` | Trigger count limit per hour. Excess triggers are ignored |
+| `--max-dump-size=<size>` | `1G` | Cumulative size limit for dump files. memory-dump action is skipped when exceeded |
+| `--backoff-multiplier=<float>` | `2.0` | Exponential backoff multiplier for cooldown on consecutive triggers |
+| `--backoff-max=<seconds>` | `3600` | Maximum backoff duration in seconds |
 
-**指数バックオフの動作:**
+**Exponential backoff behavior:**
 
-同一トリガが連続で発火する場合、cooldown を指数的に増加させてディスク・性能への
-影響を抑制する。
+When the same trigger fires consecutively, the cooldown increases exponentially to
+reduce impact on disk and performance.
 
 ```
-1回目: 即座に発火
-2回目: cooldown (60s) 待機
-3回目: cooldown × backoff_multiplier (120s) 待機
-4回目: cooldown × backoff_multiplier² (240s) 待機
+1st: fires immediately
+2nd: waits cooldown (60s)
+3rd: waits cooldown x backoff_multiplier (120s)
+4th: waits cooldown x backoff_multiplier^2 (240s)
   ...
-上限: backoff_max (3600s = 1時間) で頭打ち
+Cap: capped at backoff_max (3600s = 1 hour)
 ```
 
-トリガ条件を満たさなくなった場合、バックオフカウンタはリセットされる。
+When the trigger condition is no longer met, the backoff counter is reset.
 
-**CooldownManager の拡張:**
+**CooldownManager extension:**
 
 ```php
 final class CooldownManager
 {
-    /** @var array<string, CooldownState> トリガ名 → 状態 */
+    /** @var array<string, CooldownState> trigger name -> state */
     private array $states = [];
 
     public function canFire(string $trigger_name, float $now): bool;
     public function recordFire(string $trigger_name, float $now): void;
-    public function recordClear(string $trigger_name): void;  // 条件解除時のリセット
+    public function recordClear(string $trigger_name): void;  // Reset when condition clears
     public function getHourlyCount(): int;
 }
 
 final class CooldownState
 {
     public int $fire_count = 0;
-    public int $consecutive_fires = 0;      // 連続発火回数 (バックオフ計算用)
+    public int $consecutive_fires = 0;      // Consecutive fire count (for backoff calculation)
     public float $last_fire_time = 0.0;
-    public float $current_cooldown;          // 現在の実効 cooldown
+    public float $current_cooldown;          // Current effective cooldown
     /** @var \SplQueue<float> */
-    public \SplQueue $hourly_timestamps;     // 直近1時間のタイムスタンプ
+    public \SplQueue $hourly_timestamps;     // Timestamps within the last hour
 }
 ```
 
-**ディスク使用量トラッキング:**
+**Disk Usage Tracking:**
 
-`MemoryDumpAction` 実行時にファイルサイズを記録し、累計が `--max-dump-size` を
-超過したら以降の dump をスキップして警告を出力する。trace/log アクションは
-サイズが小さいため制限対象外。
+When `MemoryDumpAction` is executed, the file size is recorded, and if the cumulative total
+exceeds `--max-dump-size`, subsequent dumps are skipped and a warning is output. Trace/log
+actions are exempt from this limit since their sizes are small.
 
 ```php
 final class DiskUsageTracker
@@ -320,28 +320,28 @@ final class DiskUsageTracker
 }
 ```
 
-### ステータス表示
+### Status Display
 
-**単一プロセスモード:**
+**Single-Process Mode:**
 
-ターミナルにインラインでステータスラインを上書き表示 (`\r` + ANSI)。
-`inspector:top` と同じスタイルで、画面を埋め尽くさずに状態を把握可能:
+Overwrites the status line inline in the terminal (`\r` + ANSI).
+Uses the same style as `inspector:top`, allowing you to grasp the state without filling the screen:
 
 ```
 [watching] PID=1234 | mem=45.2M/256M | polls=1523 | triggers=3/10 | disk=127M/1G | cooldown=OK
 ```
 
-トリガ発火・スキップ時のみ改行付きで記録:
+Only records with a newline when a trigger fires or is skipped:
 
 ```
 [TRIGGERED] PID=1234 | trigger=memory-limit | mem=261.3M>256M | action=memory-dump → watch-1234-20260329T123456.json
 [SKIPPED]   PID=1234 | trigger=memory-limit | reason=hourly limit (10/10)
 ```
 
-**daemon モード:**
+**Daemon Mode:**
 
-複数プロセスを監視するため、ポーリングごとのステータスライン表示は行わない。
-代わりに `--status-interval=<seconds>` (デフォルト: 60) で定期的にサマリを出力:
+Since multiple processes are being monitored, per-poll status line display is not performed.
+Instead, a periodic summary is output at `--status-interval=<seconds>` (default: 60):
 
 ```
 [status] 2026-03-29T12:35:00+09:00 | watching=12 procs | triggers=5 total | disk=423M/1G
@@ -351,34 +351,34 @@ final class DiskUsageTracker
   ... (12 procs, showing top 5 by memory)
 ```
 
-daemon のステータスは **イベント駆動 + 定期サマリ** のハイブリッド:
-- トリガ発火/スキップ時: 即座にイベント行を出力 (`[TRIGGERED]`, `[SKIPPED]`)
-- プロセス発見/消失時: 即座に通知 (`[+process]`, `[-process]`)
-- 定期サマリ: `--status-interval` ごとに全プロセスの概要を出力
-- `--quiet`: イベント行もサマリも抑制 (ログファイルのみに出力)
+Daemon status uses a **hybrid of event-driven + periodic summary**:
+- On trigger fire/skip: Immediately outputs an event line (`[TRIGGERED]`, `[SKIPPED]`)
+- On process discovery/disappearance: Immediately notifies (`[+process]`, `[-process]`)
+- Periodic summary: Outputs an overview of all processes at every `--status-interval`
+- `--quiet`: Suppresses both event lines and summaries (output only to log file)
 
-**ログファイル出力 (`--log-file`):**
+**Log File Output (`--log-file`):**
 
-`--log-file` が指定されている場合、全イベント (ステータス含む) を構造化ログとして
-ファイルに書き出す。ターミナルへの表示とは独立して動作。
+When `--log-file` is specified, all events (including status) are written to the file as
+structured logs. This operates independently of terminal display.
 
 ```
---status-log-level=<level>   # ステータスサマリのログレベル (debug/info/none)
-                              # デフォルト: daemon=info, single=debug
+--status-log-level=<level>   # Log level for status summaries (debug/info/none)
+                              # Default: daemon=info, single=debug
 ```
 
-| オプション | デフォルト | 説明 |
+| Option | Default | Description |
 |---|---|---|
-| `--status-interval=<seconds>` | `60` | daemon モードのサマリ出力間隔 |
-| `--status-log-level=<level>` | `info` (daemon) / `debug` (single) | ステータスのログレベル |
+| `--status-interval=<seconds>` | `60` | Summary output interval for daemon mode |
+| `--status-log-level=<level>` | `info` (daemon) / `debug` (single) | Log level for status |
 
-### その他
+### Miscellaneous
 
-| オプション | デフォルト | 説明 |
+| Option | Default | Description |
 |---|---|---|
-| `--action-output-dir=<path>` | `.` | dump/log のファイル出力先ディレクトリ |
-| `--stop-process` / `-S` | `false` | アクション実行時にプロセスを ptrace で停止 |
-| `--quiet` | `false` | トリガ発火時のターミナル出力を抑制 |
+| `--action-output-dir=<path>` | `.` | Output directory for dump/log files |
+| `--stop-process` / `-S` | `false` | Stop the process via ptrace during action execution |
+| `--quiet` | `false` | Suppress terminal output on trigger fire |
 
 ## Architecture
 
@@ -428,25 +428,25 @@ src/
 ```php
 interface TriggerInterface
 {
-    /** トリガの名前 (CLI表示・ログ用) */
+    /** Trigger name (for CLI display and logging) */
     public function name(): string;
 
-    /** トリガが Tier 2 (トレース読み取り) を必要とするか */
+    /** Whether the trigger requires Tier 2 (call trace reading) */
     public function requiresCallTrace(): bool;
 
-    /** トリガが Tier 3 (EG深読み) を必要とするか */
+    /** Whether the trigger requires Tier 3 (deep EG reading) */
     public function requiresDeepInspection(): bool;
 
-    /** 評価: 条件を満たせば TriggerEvent を返す、そうでなければ null */
+    /** Evaluation: returns a TriggerEvent if the condition is met, otherwise null */
     public function evaluate(WatchContext $context): ?TriggerEvent;
 }
 
 interface ActionInterface
 {
-    /** アクション名 */
+    /** Action name */
     public function name(): string;
 
-    /** トリガ発火時に実行 */
+    /** Executed when a trigger fires */
     public function execute(
         TriggerEvent $event,
         ProcessSpecifier $process,
@@ -463,10 +463,10 @@ final class WatchContext
     public function __construct(
         public readonly int $pid,
         public readonly HeapStats $heap_stats,
-        public readonly ?CallTrace $call_trace,       // Tier 2 トリガ有効時のみ
-        public readonly ?bool $has_exception,          // Tier 3: on-exception 有効時のみ
+        public readonly ?CallTrace $call_trace,       // Only when Tier 2 triggers are enabled
+        public readonly ?bool $has_exception,          // Tier 3: only when on-exception is enabled
         public readonly float $timestamp,
-        public readonly ?WatchContext $previous,       // 前回コンテキスト (growth rate 用)
+        public readonly ?WatchContext $previous,       // Previous context (for growth rate)
     ) {}
 }
 ```
@@ -477,52 +477,52 @@ final class WatchContext
 final class HeapStats
 {
     public function __construct(
-        public readonly int $size,           // memory_get_usage(false) 相当
-        public readonly int $real_size,      // memory_get_usage(true) 相当
-        public readonly int $peak,           // memory_get_peak_usage(false) 相当
-        public readonly int $limit,          // memory_limit の値
+        public readonly int $size,           // Equivalent to memory_get_usage(false)
+        public readonly int $real_size,      // Equivalent to memory_get_usage(true)
+        public readonly int $peak,           // Equivalent to memory_get_peak_usage(false)
+        public readonly int $limit,          // Value of memory_limit
     ) {}
 }
 ```
 
-`HeapStatsReader` は `MemoryLocationsCollector::collectAll()` (L131-L220) の最初のパス
-—— main_chunk 取得 → `ZendMmChunk::heap_slot` → `ZendMmHeap` フィールド読み取り ——
-を軽量版として切り出す。`PhpZendMemoryManagerChunkFinder` と `Dereferencer` を利用。
+`HeapStatsReader` extracts the first pass of `MemoryLocationsCollector::collectAll()` (L131-L220)
+-- main_chunk retrieval -> `ZendMmChunk::heap_slot` -> `ZendMmHeap` field reading --
+as a lightweight version. It uses `PhpZendMemoryManagerChunkFinder` and `Dereferencer`.
 
 ### Adaptive Polling (Tier-based Optimization)
 
-有効なトリガの最大 Tier に応じて、ポーリングごとの読み取り量を最適化する:
+Optimizes the amount of data read per poll based on the maximum Tier of enabled triggers:
 
 ```
-Tier 1 のみ有効 → HeapStatsReader だけ実行 (< 1ms)
-Tier 2 が有効   → HeapStats + CallTraceReader (数ms)
-Tier 3 が有効   → HeapStats + CallTrace + EG deep fields (数ms〜数十ms)
+Only Tier 1 enabled → Execute only HeapStatsReader (< 1ms)
+Tier 2 enabled      → HeapStats + CallTraceReader (a few ms)
+Tier 3 enabled      → HeapStats + CallTrace + EG deep fields (a few ms to tens of ms)
 ```
 
-Tier 1 のみの場合、ターゲットプロセスへのパフォーマンス影響はほぼゼロ。
+When only Tier 1 is active, the performance impact on the target process is nearly zero.
 
 ### Single-Process Mode Flow
 
 ```
 WatchCommand::execute()
   │
-  ├── TargetProcessResolver::resolve()           // PID 取得
-  ├── PhpVersionDetector::decidePhpVersion()     // PHP バージョン判定
-  ├── PhpGlobalsFinder::findExecutorGlobals()    // EG アドレス取得
-  ├── WatchSettings から Trigger[] / Action[] を構築
+  ├── TargetProcessResolver::resolve()           // Obtain PID
+  ├── PhpVersionDetector::decidePhpVersion()     // Determine PHP version
+  ├── PhpGlobalsFinder::findExecutorGlobals()    // Obtain EG address
+  ├── Build Trigger[] / Action[] from WatchSettings
   │
-  └── LoopBuilder で監視ループ構築
+  └── Build watch loop with LoopBuilder
        ├── ExitLoopOnSpecificExceptionMiddleware
        ├── RetryOnExceptionMiddleware
        ├── KeyboardCancelMiddleware ('q')
        ├── NanoSleepMiddleware (poll_interval)
        └── CallableMiddleware:
             │
-            ├── HeapStatsReader::read()              // 常時
-            ├── CallTraceReader::readCallTrace()     // Tier 2+ が有効時
-            ├── EG->exception チェック               // Tier 3 が有効時
+            ├── HeapStatsReader::read()              // Always
+            ├── CallTraceReader::readCallTrace()     // When Tier 2+ is enabled
+            ├── EG->exception check                  // When Tier 3 is enabled
             │
-            ├── WatchContext 構築
+            ├── Build WatchContext
             │
             ├── foreach (triggers as trigger):
             │     event = trigger->evaluate(context)
@@ -530,35 +530,35 @@ WatchCommand::execute()
             │       foreach (actions as action):
             │         action->execute(event, process, context)
             │
-            └── return true  // ループ継続
+            └── return true  // Continue loop
 ```
 
 ### Daemon Mode
 
-既存の `inspector:daemon` パターンを拡張し、`DaemonWatchCoordinator` が
-複数プロセスの監視を並行管理する。
+Extends the existing `inspector:daemon` pattern, with `DaemonWatchCoordinator`
+managing monitoring of multiple processes in parallel.
 
 ```
 WatchCommand::execute() [daemon mode]
   │
-  ├── PhpSearcherContextCreator で検索ワーカー起動
-  │     └── target-regex にマッチするプロセスを継続的に発見
+  ├── Launch search worker with PhpSearcherContextCreator
+  │     └── Continuously discover processes matching target-regex
   │
   ├── DaemonWatchCoordinator
-  │     ├── 発見プロセスごとに WatchLoop を Amphp ワーカーに割り当て
-  │     ├── プロセス消失時にワーカー解放
-  │     └── トリガイベントをメインスレッドに送信
+  │     ├── Assign a WatchLoop to an Amphp worker for each discovered process
+  │     ├── Release worker when a process disappears
+  │     └── Send trigger events to the main thread
   │
-  └── メインスレッド
-        ├── ワーカーからのトリガイベント受信
-        ├── アクション実行 (ファイル出力の排他制御)
-        └── 'q' キーでキャンセル
+  └── Main thread
+        ├── Receive trigger events from workers
+        ├── Execute actions (with exclusive control for file output)
+        └── Cancel with 'q' key
 ```
 
-**Amphp ワーカープロトコルの拡張:**
+**Extension of the Amphp Worker Protocol:**
 
-既存の Reader ワーカーは `TraceMessage` / `DetachWorkerMessage` を送信するが、
-Watch 用ワーカーは `WatchTriggerMessage` を送信する新しいプロトコルが必要。
+The existing Reader worker sends `TraceMessage` / `DetachWorkerMessage`, but the
+Watch worker requires a new protocol that sends `WatchTriggerMessage`.
 
 ```php
 final class WatchTriggerMessage
@@ -572,37 +572,37 @@ final class WatchTriggerMessage
 }
 ```
 
-既存の `PhpReaderContextCreator` / `PhpReaderEntryPoint` を参考に、
-`PhpWatcherContextCreator` / `PhpWatcherEntryPoint` を新規作成する。
-ワーカー内で WatchLoop を実行し、トリガ発火時にメッセージを送信する。
+Referring to the existing `PhpReaderContextCreator` / `PhpReaderEntryPoint`,
+create new `PhpWatcherContextCreator` / `PhpWatcherEntryPoint`.
+Execute the WatchLoop within a worker and send a message when a trigger fires.
 
 ## Reused Existing Classes
 
-| クラス | 用途 |
+| Class | Purpose |
 |--------|------|
-| `LoopBuilder` / `TraceLoopProvider` | ミドルウェア付き監視ループ構築 |
-| `CallTraceReader` | コールトレース読み取り (Tier 2) |
-| `MemoryLocationsCollector` | memory-dump アクション用フルスキャン |
-| `MemoryOutputFactory` | memory-dump の出力フォーマット |
-| `TraceOutputFactory` | trace アクションの出力 |
-| `PhpGlobalsFinder` | EG/SG/CG アドレス解決 |
-| `PhpVersionDetector` | PHP バージョン判定 |
-| `ProcessSearcher` | daemon モードのプロセス発見 |
-| `PhpSearcherContextCreator` | daemon モードの検索ワーカー |
-| `WorkerPool` | daemon モードのワーカー管理 (参考) |
-| `DispatchTable` | daemon モードのプロセス割り当て (参考) |
-| `MemoryReaderInterface` | `process_vm_readv` によるメモリ読み取り |
+| `LoopBuilder` / `TraceLoopProvider` | Build watch loop with middleware |
+| `CallTraceReader` | Call trace reading (Tier 2) |
+| `MemoryLocationsCollector` | Full scan for memory-dump action |
+| `MemoryOutputFactory` | Output format for memory-dump |
+| `TraceOutputFactory` | Output for trace action |
+| `PhpGlobalsFinder` | EG/SG/CG address resolution |
+| `PhpVersionDetector` | PHP version detection |
+| `ProcessSearcher` | Process discovery for daemon mode |
+| `PhpSearcherContextCreator` | Search worker for daemon mode |
+| `WorkerPool` | Worker management for daemon mode (reference) |
+| `DispatchTable` | Process assignment for daemon mode (reference) |
+| `MemoryReaderInterface` | Memory reading via `process_vm_readv` |
 | `ProcessStopper` | ptrace attach/detach |
-| `TargetProcessResolver` | PID / コマンド実行による対象解決 |
-| `ZendMmHeap` | ヒープメタデータ型 |
-| `ZendMmChunk` | チャンクからの heap_slot アクセス |
-| `PhpZendMemoryManagerChunkFinder` | main_chunk アドレス取得 |
-| `DaemonSettingsFromConsoleInput` | `--target-regex`, `--threads` の設定 |
-| `EchoBackCanceller` | ターミナルエコーバック制御 |
+| `TargetProcessResolver` | Target resolution by PID / command execution |
+| `ZendMmHeap` | Heap metadata type |
+| `ZendMmChunk` | heap_slot access from chunk |
+| `PhpZendMemoryManagerChunkFinder` | Obtain main_chunk address |
+| `DaemonSettingsFromConsoleInput` | Settings for `--target-regex`, `--threads` |
+| `EchoBackCanceller` | Terminal echo-back control |
 
 ## Required Modifications to Existing Code
 
-### 1. ZendExecutorGlobals に `exception` フィールドを追加
+### 1. Add `exception` field to ZendExecutorGlobals
 
 ```php
 // src/Lib/PhpInternals/Types/Zend/ZendExecutorGlobals.php
@@ -610,7 +610,7 @@ final class WatchTriggerMessage
 /** @var Pointer<ZendObject>|null */
 public ?Pointer $exception;
 
-// getFieldLazy() に追加:
+// Add to getFieldLazy():
 'exception' => $this->exception = $this->field_reader->readPointerField(
     $this->pointer,
     'exception',
@@ -618,76 +618,76 @@ public ?Pointer $exception;
 ),
 ```
 
-### 2. DI Container への登録
+### 2. Registration in the DI Container
 
 ```php
-// config/di.php に WatchCommand 関連のバインディングを追加
-// ほとんどは autowire で解決可能
+// Add WatchCommand-related bindings to config/di.php
+// Most can be resolved via autowire
 ```
 
 ## Implementation Plan
 
-### Phase 1: Core (単一プロセスモード)
+### Phase 1: Core (Single Process Mode)
 
-1. `HeapStats` / `HeapStatsReader` — 軽量ヒープ統計リーダー
-2. `TriggerInterface` + Tier 1 トリガ (`MemoryLimitTrigger`, `MemoryGrowthRateTrigger`, `MemoryPeakTrigger`)
+1. `HeapStats` / `HeapStatsReader` — Lightweight heap statistics reader
+2. `TriggerInterface` + Tier 1 triggers (`MemoryLimitTrigger`, `MemoryGrowthRateTrigger`, `MemoryPeakTrigger`)
 3. `ActionInterface` + `TraceAction`, `LogAction`
 4. `WatchContext`, `TriggerEvent`, `CooldownManager`
-5. `WatchLoop` — 単一プロセス監視ループ
+5. `WatchLoop` — Single process watch loop
 6. `WatchSettings` / `WatchSettingsFromConsoleInput`
-7. `WatchCommand` — Symfony Console コマンド
+7. `WatchCommand` — Symfony Console command
 
 ### Phase 2: Advanced Triggers
 
-8. `ZendExecutorGlobals` に `exception` フィールド追加
-9. Tier 2 トリガ (`FunctionDetectionTrigger`, `TraceDepthTrigger`)
-10. Tier 3 トリガ (`ExceptionDetectionTrigger`, `GlobalArraySizeTrigger`)
+8. Add `exception` field to `ZendExecutorGlobals`
+9. Tier 2 triggers (`FunctionDetectionTrigger`, `TraceDepthTrigger`)
+10. Tier 3 triggers (`ExceptionDetectionTrigger`, `GlobalArraySizeTrigger`)
 11. `MemoryDumpAction`, `ExecAction`
 
 ### Phase 3: Daemon Mode
 
-12. `WatchTriggerMessage` — ワーカー通信プロトコル
-13. `PhpWatcherEntryPoint` / `PhpWatcherContextCreator` — Watch 用ワーカー
-14. `DaemonWatchCoordinator` — マルチプロセスオーケストレーター
-15. `WatchCommand` に daemon モードパスを追加
+12. `WatchTriggerMessage` — Worker communication protocol
+13. `PhpWatcherEntryPoint` / `PhpWatcherContextCreator` — Worker for Watch
+14. `DaemonWatchCoordinator` — Multi-process orchestrator
+15. Add daemon mode path to `WatchCommand`
 
 ## Testing Strategy
 
 ### Unit Tests
 
-- 各 Trigger の `evaluate()` ロジック (mock WatchContext で閾値前後をテスト)
-- `CooldownManager` のタイミング制御
-- `MemoryGrowthRateTrigger` の rate 計算
-- `HeapStats` のサイズパース (`256M` → bytes)
+- `evaluate()` logic for each Trigger (test around thresholds with mock WatchContext)
+- Timing control for `CooldownManager`
+- Rate calculation for `MemoryGrowthRateTrigger`
+- Size parsing for `HeapStats` (`256M` -> bytes)
 
 ### Integration Tests
 
-- `HeapStatsReader` が実プロセスからヒープ統計を読めるか
-- `WatchLoop` がトリガ発火 → アクション実行のパイプラインを正しく動かすか
+- Whether `HeapStatsReader` can read heap statistics from a real process
+- Whether `WatchLoop` correctly runs the trigger firing -> action execution pipeline
 
 ### Manual Tests
 
 ```bash
-# メモリリークする PHP スクリプト
+# PHP script that leaks memory
 php -r 'while(true){$a[]=str_repeat("x",1024);usleep(10000);}'
 
-# 監視
+# Watch
 reli inspector:watch -p <PID> --memory-limit=10M --action=trace --action=log
 ```
 
 ### CI
 
-- `composer test` — 既存テスト回帰なし
-- `composer phpstan` — 静的解析パス
+- `composer test` — No regression in existing tests
+- `composer phpstan` — Static analysis passes
 
 ## Container / Orchestrator Deployment
 
-`process_vm_readv` と ptrace は **同一 PID namespace** のプロセスにしかアクセスできない。
-コンテナ環境では PID namespace の共有設定が必須となる。
+`process_vm_readv` and ptrace can only access processes within the **same PID namespace**.
+In container environments, PID namespace sharing must be configured.
 
 ### Kubernetes
 
-**推奨: サイドカーコンテナ**
+**Recommended: Sidecar Container**
 
 ```yaml
 apiVersion: v1
@@ -695,7 +695,7 @@ kind: Pod
 metadata:
   name: php-app
 spec:
-  shareProcessNamespace: true    # 必須: PID namespace を共有
+  shareProcessNamespace: true    # Required: share PID namespace
   containers:
   - name: app
     image: php-app:latest
@@ -714,25 +714,25 @@ spec:
     - --quiet
     securityContext:
       capabilities:
-        add: ["SYS_PTRACE"]      # 必須: process_vm_readv / ptrace
+        add: ["SYS_PTRACE"]      # Required: process_vm_readv / ptrace
     volumeMounts:
     - name: reli-logs
       mountPath: /var/log/reli
   volumes:
   - name: reli-logs
     emptyDir:
-      sizeLimit: 3Gi             # ディスク保護の二重化
+      sizeLimit: 3Gi             # Dual-layer disk protection
 ```
 
-**ポイント:**
-- `shareProcessNamespace: true` で Pod 内の全コンテナが同じ PID namespace
-- `SYS_PTRACE` capability のみ追加 (privileged は不要)
-- `--quiet` + `--log-file` で stdout ノイズ防止
-- emptyDir の `sizeLimit` と `--max-dump-size` でディスク保護を二重化
-- dump ファイルは emptyDir に書いて、別途 FluentBit 等で転送 or
-  `--action=exec` で S3 アップロード
+**Key Points:**
+- `shareProcessNamespace: true` places all containers in the Pod within the same PID namespace
+- Only `SYS_PTRACE` capability is added (privileged is not required)
+- `--quiet` + `--log-file` prevents stdout noise
+- Dual-layer disk protection via emptyDir `sizeLimit` and `--max-dump-size`
+- Dump files are written to emptyDir and can be forwarded via FluentBit, etc., or
+  uploaded to S3 using `--action=exec`
 
-**k8s Ephemeral Container (一時的な調査用):**
+**k8s Ephemeral Container (for temporary investigation):**
 
 ```bash
 kubectl debug -it php-app \
@@ -741,10 +741,10 @@ kubectl debug -it php-app \
   -- reli inspector:watch --target-regex=php --memory-limit=256M --action=trace
 ```
 
-サイドカーを事前にデプロイせず、問題発生時にオンデマンドでアタッチ可能。
-ただし `shareProcessNamespace` が Pod 作成時に有効でないと使えない。
+Allows on-demand attachment when issues occur, without pre-deploying a sidecar.
+However, `shareProcessNamespace` must be enabled at Pod creation time.
 
-**DaemonSet パターン (ノード全体の監視):**
+**DaemonSet Pattern (node-wide monitoring):**
 
 ```yaml
 apiVersion: apps/v1
@@ -754,7 +754,7 @@ metadata:
 spec:
   template:
     spec:
-      hostPID: true               # ホストの PID namespace を使用
+      hostPID: true               # Use the host's PID namespace
       containers:
       - name: reli-watch
         image: reli-prof:latest
@@ -771,7 +771,7 @@ spec:
             add: ["SYS_PTRACE"]
 ```
 
-ノード上の全 PHP プロセスを一括監視。セキュリティ要件が許す環境向け。
+Monitors all PHP processes on the node at once. Suitable for environments where security requirements permit it.
 
 ### Amazon ECS
 
@@ -810,46 +810,45 @@ spec:
 }
 ```
 
-**ポイント:**
-- `pidMode: "task"` で PID namespace 共有 (Fargate 1.4.0+, EC2 共に対応)
-- `essential: false` でウォッチャーが落ちてもアプリは継続
+**Key Points:**
+- `pidMode: "task"` enables PID namespace sharing (supported on both Fargate 1.4.0+ and EC2)
+- `essential: false` allows the app to continue running even if the watcher goes down
 
-### Dump ファイルの転送
+### Dump File Transfer
 
-コンテナ環境ではローカルディスクは揮発的。dump ファイルの永続化パターン:
+In container environments, local disk is ephemeral. Patterns for persisting dump files:
 
-| パターン | 実装 | 適用場面 |
+| Pattern | Implementation | Use Case |
 |----------|------|----------|
-| S3 直接アップロード | `--action=exec --action-exec-command='aws s3 cp $RELI_WATCH_DUMP_PATH s3://...'` | AWS 環境 |
-| FluentBit サイドカー | dump ディレクトリを tail して転送 | ログ基盤が整っている場合 |
-| Persistent Volume | PVC マウント | k8s で EBS/EFS 利用可能な場合 |
-| `--action=log` のみ | dump は取らずイベントログだけ記録 | ディスクに余裕がない場合 |
+| Direct S3 upload | `--action=exec --action-exec-command='aws s3 cp $RELI_WATCH_DUMP_PATH s3://...'` | AWS environments |
+| FluentBit sidecar | Tail and forward from the dump directory | When log infrastructure is in place |
+| Persistent Volume | PVC mount | When EBS/EFS is available in k8s |
+| `--action=log` only | Record only event logs without taking dumps | When disk space is limited |
 
-**exec アクション + 環境変数で S3 転送:**
+**exec action + environment variables for S3 transfer:**
 
 ```bash
 --action=exec \
 --action-exec-command='aws s3 cp "$RELI_WATCH_DUMP_PATH" "s3://my-bucket/reli-dumps/$(hostname)/" && rm "$RELI_WATCH_DUMP_PATH"'
 ```
 
-`RELI_WATCH_DUMP_PATH` 環境変数は `memory-dump` アクションが出力したファイルパスを
-格納する。exec アクションは memory-dump の後に実行されるため、dump → upload → 削除
-のパイプラインが構成可能。
+The `RELI_WATCH_DUMP_PATH` environment variable stores the file path output by the `memory-dump` action.
+Since the exec action runs after memory-dump, a dump -> upload -> delete pipeline can be configured.
 
-### セキュリティ考慮事項
+### Security Considerations
 
-- `SYS_PTRACE` capability は他プロセスのメモリを読める強力な権限
-- 本番環境では RBAC / Pod Security Standards で reli-watch サイドカーのデプロイを制限
-- `--target-regex` を絞って意図しないプロセスへのアタッチを防止
-- dump ファイルにはメモリ内容が含まれるため、転送・保存時の暗号化を推奨
-- `--action=exec` のコマンドは Pod spec / Task Definition でハードコードし、
-  環境変数経由での動的コマンド組み立ては避ける
+- `SYS_PTRACE` capability is a powerful permission that allows reading other processes' memory
+- In production environments, restrict deployment of the reli-watch sidecar using RBAC / Pod Security Standards
+- Use a narrow `--target-regex` to prevent attaching to unintended processes
+- Dump files contain memory contents, so encryption during transfer and storage is recommended
+- Hard-code `--action=exec` commands in the Pod spec / Task Definition;
+  avoid dynamic command assembly via environment variables
 
 ## Future Considerations
 
-- **Auto-analysis report** 連携: `--action=report` で feature branch の自動分析レポート出力
-- **Prometheus / StatsD 連携**: メトリクス export アクション
-- **Conditional action**: トリガごとに異なるアクションを設定 (`--on memory-limit do memory-dump`)
-- **Watch profile**: YAML/JSON でトリガ・アクションの設定をファイルから読み込み
-- **Web UI**: WebSocket でリアルタイム監視ダッシュボード
-- **OCI image**: reli-prof のサイドカー用 Docker イメージ公式提供
+- **Auto-analysis report** integration: Output automatic analysis reports for feature branches with `--action=report`
+- **Prometheus / StatsD integration**: Metrics export action
+- **Conditional action**: Configure different actions per trigger (`--on memory-limit do memory-dump`)
+- **Watch profile**: Load trigger and action settings from a YAML/JSON file
+- **Web UI**: Real-time monitoring dashboard via WebSocket
+- **OCI image**: Official Docker image for reli-prof sidecar deployment
