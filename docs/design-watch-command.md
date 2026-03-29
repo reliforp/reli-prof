@@ -224,6 +224,7 @@ Tier 2 トリガが有効な場合はトリガ評価時に取得済みのトレ�
 | `RELI_WATCH_MEMORY_PEAK` | メモリピーク (bytes) |
 | `RELI_WATCH_TIMESTAMP` | ISO 8601 タイムスタンプ |
 | `RELI_WATCH_FUNCTION` | (watch-function時) 検出された関数名 |
+| `RELI_WATCH_DUMP_PATH` | (memory-dump時) 出力されたダンプファイルのパス |
 
 **セキュリティ:** コマンド文字列はユーザーが明示的に指定するものであり、
 reli-prof 自体が実行するのでシェルインジェクションのリスクは限定的だが、
@@ -321,15 +322,55 @@ final class DiskUsageTracker
 
 ### ステータス表示
 
-ポーリング中、ターミナルに定期的に監視ステータスを表示する (--quiet 時は抑制):
+**単一プロセスモード:**
+
+ターミナルにインラインでステータスラインを上書き表示 (`\r` + ANSI)。
+`inspector:top` と同じスタイルで、画面を埋め尽くさずに状態を把握可能:
 
 ```
 [watching] PID=1234 | mem=45.2M/256M | polls=1523 | triggers=3/10 | disk=127M/1G | cooldown=OK
-[watching] PID=1234 | mem=198.7M/256M | polls=2841 | triggers=5/10 | disk=423M/1G | cooldown=backoff(240s)
-[TRIGGERED] PID=1234 | trigger=memory-limit | mem=261.3M>256M | action=memory-dump → /var/log/reli-watch/watch-1234-20260329T123456.json
-[SKIPPED] PID=1234 | trigger=memory-limit | reason=hourly limit reached (10/10)
-[SKIPPED] PID=1234 | trigger=memory-limit | action=memory-dump | reason=disk limit reached (1.02G/1G)
 ```
+
+トリガ発火・スキップ時のみ改行付きで記録:
+
+```
+[TRIGGERED] PID=1234 | trigger=memory-limit | mem=261.3M>256M | action=memory-dump → watch-1234-20260329T123456.json
+[SKIPPED]   PID=1234 | trigger=memory-limit | reason=hourly limit (10/10)
+```
+
+**daemon モード:**
+
+複数プロセスを監視するため、ポーリングごとのステータスライン表示は行わない。
+代わりに `--status-interval=<seconds>` (デフォルト: 60) で定期的にサマリを出力:
+
+```
+[status] 2026-03-29T12:35:00+09:00 | watching=12 procs | triggers=5 total | disk=423M/1G
+  PID=1234 (php-fpm) mem=198.7M  triggers=2  last=12:34:01  cooldown=backoff(240s)
+  PID=2345 (php-fpm) mem=45.2M   triggers=0  last=never     cooldown=OK
+  PID=3456 (artisan) mem=312.1M  triggers=3  last=12:34:55  cooldown=60s
+  ... (12 procs, showing top 5 by memory)
+```
+
+daemon のステータスは **イベント駆動 + 定期サマリ** のハイブリッド:
+- トリガ発火/スキップ時: 即座にイベント行を出力 (`[TRIGGERED]`, `[SKIPPED]`)
+- プロセス発見/消失時: 即座に通知 (`[+process]`, `[-process]`)
+- 定期サマリ: `--status-interval` ごとに全プロセスの概要を出力
+- `--quiet`: イベント行もサマリも抑制 (ログファイルのみに出力)
+
+**ログファイル出力 (`--log-file`):**
+
+`--log-file` が指定されている場合、全イベント (ステータス含む) を構造化ログとして
+ファイルに書き出す。ターミナルへの表示とは独立して動作。
+
+```
+--status-log-level=<level>   # ステータスサマリのログレベル (debug/info/none)
+                              # デフォルト: daemon=info, single=debug
+```
+
+| オプション | デフォルト | 説明 |
+|---|---|---|
+| `--status-interval=<seconds>` | `60` | daemon モードのサマリ出力間隔 |
+| `--status-log-level=<level>` | `info` (daemon) / `debug` (single) | ステータスのログレベル |
 
 ### その他
 
@@ -639,6 +680,171 @@ reli inspector:watch -p <PID> --memory-limit=10M --action=trace --action=log
 - `composer test` — 既存テスト回帰なし
 - `composer phpstan` — 静的解析パス
 
+## Container / Orchestrator Deployment
+
+`process_vm_readv` と ptrace は **同一 PID namespace** のプロセスにしかアクセスできない。
+コンテナ環境では PID namespace の共有設定が必須となる。
+
+### Kubernetes
+
+**推奨: サイドカーコンテナ**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: php-app
+spec:
+  shareProcessNamespace: true    # 必須: PID namespace を共有
+  containers:
+  - name: app
+    image: php-app:latest
+  - name: reli-watch
+    image: reli-prof:latest
+    command:
+    - reli
+    - inspector:watch
+    - --target-regex=php-fpm
+    - --memory-limit=512M
+    - --action=memory-dump
+    - --action=log
+    - --log-file=/var/log/reli/watch.log
+    - --action-output-dir=/var/log/reli/dumps/
+    - --max-dump-size=2G
+    - --quiet
+    securityContext:
+      capabilities:
+        add: ["SYS_PTRACE"]      # 必須: process_vm_readv / ptrace
+    volumeMounts:
+    - name: reli-logs
+      mountPath: /var/log/reli
+  volumes:
+  - name: reli-logs
+    emptyDir:
+      sizeLimit: 3Gi             # ディスク保護の二重化
+```
+
+**ポイント:**
+- `shareProcessNamespace: true` で Pod 内の全コンテナが同じ PID namespace
+- `SYS_PTRACE` capability のみ追加 (privileged は不要)
+- `--quiet` + `--log-file` で stdout ノイズ防止
+- emptyDir の `sizeLimit` と `--max-dump-size` でディスク保護を二重化
+- dump ファイルは emptyDir に書いて、別途 FluentBit 等で転送 or
+  `--action=exec` で S3 アップロード
+
+**k8s Ephemeral Container (一時的な調査用):**
+
+```bash
+kubectl debug -it php-app \
+  --image=reli-prof:latest \
+  --target=app \
+  -- reli inspector:watch --target-regex=php --memory-limit=256M --action=trace
+```
+
+サイドカーを事前にデプロイせず、問題発生時にオンデマンドでアタッチ可能。
+ただし `shareProcessNamespace` が Pod 作成時に有効でないと使えない。
+
+**DaemonSet パターン (ノード全体の監視):**
+
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: reli-watch
+spec:
+  template:
+    spec:
+      hostPID: true               # ホストの PID namespace を使用
+      containers:
+      - name: reli-watch
+        image: reli-prof:latest
+        command:
+        - reli
+        - inspector:watch
+        - --target-regex=php-fpm
+        - --memory-limit=1G
+        - --action=log
+        - --action=exec
+        - --action-exec-command=<alert script>
+        securityContext:
+          capabilities:
+            add: ["SYS_PTRACE"]
+```
+
+ノード上の全 PHP プロセスを一括監視。セキュリティ要件が許す環境向け。
+
+### Amazon ECS
+
+```json
+{
+  "family": "php-app",
+  "pidMode": "task",
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "image": "php-app:latest",
+      "essential": true
+    },
+    {
+      "name": "reli-watch",
+      "image": "reli-prof:latest",
+      "essential": false,
+      "command": [
+        "reli", "inspector:watch",
+        "--target-regex=php",
+        "--memory-limit=512M",
+        "--action=memory-dump",
+        "--action=log",
+        "--log-file=/var/log/reli/watch.log",
+        "--action-output-dir=/var/log/reli/dumps/",
+        "--max-dump-size=2G",
+        "--quiet"
+      ],
+      "linuxParameters": {
+        "capabilities": {
+          "add": ["SYS_PTRACE"]
+        }
+      }
+    }
+  ]
+}
+```
+
+**ポイント:**
+- `pidMode: "task"` で PID namespace 共有 (Fargate 1.4.0+, EC2 共に対応)
+- `essential: false` でウォッチャーが落ちてもアプリは継続
+
+### Dump ファイルの転送
+
+コンテナ環境ではローカルディスクは揮発的。dump ファイルの永続化パターン:
+
+| パターン | 実装 | 適用場面 |
+|----------|------|----------|
+| S3 直接アップロード | `--action=exec --action-exec-command='aws s3 cp $RELI_WATCH_DUMP_PATH s3://...'` | AWS 環境 |
+| FluentBit サイドカー | dump ディレクトリを tail して転送 | ログ基盤が整っている場合 |
+| Persistent Volume | PVC マウント | k8s で EBS/EFS 利用可能な場合 |
+| `--action=log` のみ | dump は取らずイベントログだけ記録 | ディスクに余裕がない場合 |
+
+**exec アクション + 環境変数で S3 転送:**
+
+```bash
+--action=exec \
+--action-exec-command='aws s3 cp "$RELI_WATCH_DUMP_PATH" "s3://my-bucket/reli-dumps/$(hostname)/" && rm "$RELI_WATCH_DUMP_PATH"'
+```
+
+`RELI_WATCH_DUMP_PATH` 環境変数は `memory-dump` アクションが出力したファイルパスを
+格納する。exec アクションは memory-dump の後に実行されるため、dump → upload → 削除
+のパイプラインが構成可能。
+
+### セキュリティ考慮事項
+
+- `SYS_PTRACE` capability は他プロセスのメモリを読める強力な権限
+- 本番環境では RBAC / Pod Security Standards で reli-watch サイドカーのデプロイを制限
+- `--target-regex` を絞って意図しないプロセスへのアタッチを防止
+- dump ファイルにはメモリ内容が含まれるため、転送・保存時の暗号化を推奨
+- `--action=exec` のコマンドは Pod spec / Task Definition でハードコードし、
+  環境変数経由での動的コマンド組み立ては避ける
+
 ## Future Considerations
 
 - **Auto-analysis report** 連携: `--action=report` で feature branch の自動分析レポート出力
@@ -646,3 +852,4 @@ reli inspector:watch -p <PID> --memory-limit=10M --action=trace --action=log
 - **Conditional action**: トリガごとに異なるアクションを設定 (`--on memory-limit do memory-dump`)
 - **Watch profile**: YAML/JSON でトリガ・アクションの設定をファイルから読み込み
 - **Web UI**: WebSocket でリアルタイム監視ダッシュボード
+- **OCI image**: reli-prof のサイドカー用 Docker イメージ公式提供
