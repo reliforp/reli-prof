@@ -148,6 +148,8 @@ final class MemoryDumpReaderFactory
             $php_version,
             $parsed['eg_address'],
             $parsed['cg_address'],
+            $file_path,
+            $path_mapping,
         );
     }
 

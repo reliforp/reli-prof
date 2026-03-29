@@ -119,12 +119,23 @@ final class MemoryLocationsCollector
 {
     private ?ZendTypeReader $zend_type_reader = null;
     private ?UserFunctionDefinitionContext $memory_limit_error_function_context = null;
+    private ?SharedAddressSet $shared_address_set = null;
 
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private PhpZendMemoryManagerChunkFinder $chunk_finder,
     ) {
+    }
+
+    /**
+     * Set a cross-thread shared address set for parallel dedup.
+     * When set, collect*Pointer methods use CAS to decide which
+     * thread "owns" deep traversal of a given address.
+     */
+    public function setSharedAddressSet(?SharedAddressSet $set): void
+    {
+        $this->shared_address_set = $set;
     }
 
     /**
@@ -623,6 +634,15 @@ final class MemoryLocationsCollector
                 ;
             }
         }
+        // Cross-thread dedup for arrays.
+        if ($this->shared_address_set !== null
+            && !$this->shared_address_set->tryInsert($pointer->address)
+        ) {
+            $array = $dereferencer->deref($pointer);
+            $loc = ZendArrayMemoryLocation::fromZendArray($array);
+            $memory_locations->add($loc);
+            return $context_pools->array_context_pool->getContextForLocation($loc);
+        }
         $array = $dereferencer->deref($pointer);
         return $this->collectZendArray(
             $array,
@@ -656,6 +676,16 @@ final class MemoryLocationsCollector
                     ->getContextForLocation($memory_location)
                     ;
             }
+        }
+        // Cross-thread dedup: CAS claims ownership of this address.
+        // Loser gets a shallow context (no property traversal).
+        if ($this->shared_address_set !== null
+            && !$this->shared_address_set->tryInsert($pointer->address)
+        ) {
+            $obj = $dereferencer->deref($pointer);
+            $loc = ZendObjectMemoryLocation::fromZendObject($obj, $dereferencer, $zend_type_reader);
+            $memory_locations->add($loc);
+            return $context_pools->object_context_pool->getContextForLocation($loc);
         }
         $obj = $dereferencer->deref($pointer);
         return $this->collectZendObject(
