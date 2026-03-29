@@ -211,6 +211,12 @@ class VariableReaderIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
+        // static_variables_ptr (MAP_PTR) requires PHP 7.4+
+        if ($php_version < 'v74') {
+            $this->markTestSkipped(
+                'func_static MAP_PTR requires PHP 7.4+',
+            );
+        }
         $memory_reader = new MemoryReader();
         $zend_type_reader_creator = new ZendTypeReaderCreator();
 
@@ -296,6 +302,13 @@ class VariableReaderIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
+        // Static property iterator + map_ptr_base requires PHP 7.4+
+        if ($php_version < 'v74') {
+            $this->markTestSkipped(
+                'static property reading requires PHP 7.4+',
+            );
+        }
+
         $memory_reader = new MemoryReader();
         $zend_type_reader_creator = new ZendTypeReaderCreator();
 
