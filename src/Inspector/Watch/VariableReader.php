@@ -19,6 +19,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
+use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
 use Reli\Lib\PhpInternals\Types\Zend\Zval;
 use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -90,6 +91,7 @@ final class VariableReader
                     'global' => $this->readGlobalVariable(
                         $eg,
                         $dereferencer,
+                        $zend_type_reader,
                         $name,
                     ),
                     'local' => $this->readLocalVariable(
@@ -108,6 +110,7 @@ final class VariableReader
                     'func_static' => $this->readFuncStaticVariable(
                         $eg,
                         $dereferencer,
+                        $zend_type_reader,
                         $name,
                     ),
                     default => null,
@@ -126,13 +129,24 @@ final class VariableReader
     private function readGlobalVariable(
         ZendExecutorGlobals $eg,
         Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
         string $name,
     ): ?VariableValue {
-        $bucket = $eg->symbol_table->findByKey($dereferencer, $name);
+        [$root, $path_segments] = self::parsePathExpression($name);
+        $bucket = $eg->symbol_table->findByKey($dereferencer, $root);
         if ($bucket === null) {
             return null;
         }
-        return $this->zvalToVariableValue($bucket->val, $dereferencer);
+        $zval = $this->resolvePath(
+            $bucket->val,
+            $path_segments,
+            $dereferencer,
+            $zend_type_reader,
+        );
+        if ($zval === null) {
+            return null;
+        }
+        return $this->zvalToVariableValue($zval, $dereferencer);
     }
 
     /**
@@ -145,6 +159,7 @@ final class VariableReader
         ZendTypeReader $zend_type_reader,
         string $name,
     ): ?VariableValue {
+        [$root, $path_segments] = self::parsePathExpression($name);
         $current = $eg->current_execute_data;
         if ($current === null) {
             return null;
@@ -157,9 +172,18 @@ final class VariableReader
                 $zend_type_reader,
             ) as $var_name => $zval
         ) {
-            if ($var_name === $name) {
-                return $this->zvalToVariableValue(
+            if ($var_name === $root) {
+                $resolved = $this->resolvePath(
                     $zval,
+                    $path_segments,
+                    $dereferencer,
+                    $zend_type_reader,
+                );
+                if ($resolved === null) {
+                    return null;
+                }
+                return $this->zvalToVariableValue(
+                    $resolved,
                     $dereferencer,
                 );
             }
@@ -219,6 +243,8 @@ final class VariableReader
             $map_ptr_base = $cg->map_ptr_base;
         }
 
+        [$prop_root, $prop_path] = self::parsePathExpression($prop_name);
+
         foreach (
             $ce->getStaticPropertyIterator(
                 $dereferencer,
@@ -226,9 +252,18 @@ final class VariableReader
                 $map_ptr_base,
             ) as $static_name => $zval
         ) {
-            if ($static_name === $prop_name) {
-                return $this->zvalToVariableValue(
+            if ($static_name === $prop_root) {
+                $resolved = $this->resolvePath(
                     $zval,
+                    $prop_path,
+                    $dereferencer,
+                    $zend_type_reader,
+                );
+                if ($resolved === null) {
+                    return null;
+                }
+                return $this->zvalToVariableValue(
+                    $resolved,
                     $dereferencer,
                 );
             }
@@ -243,14 +278,18 @@ final class VariableReader
     private function readFuncStaticVariable(
         ZendExecutorGlobals $eg,
         Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
         string $name,
     ): ?VariableValue {
-        // Parse "funcName::$varName"
+        // Parse "funcName::$varName" or "funcName::$varName->path[key]"
         $parts = explode('::$', $name, 2);
         if (count($parts) !== 2) {
             return null;
         }
-        [$func_name, $var_name] = $parts;
+        [$func_name, $var_name_with_path] = $parts;
+        [$var_name, $path_segments] = self::parsePathExpression(
+            $var_name_with_path,
+        );
         $func_name_lower = strtolower($func_name);
 
         // Look up function in EG->function_table
@@ -292,10 +331,16 @@ final class VariableReader
             return null;
         }
 
-        return $this->zvalToVariableValue(
+        $resolved = $this->resolvePath(
             $sv_bucket->val,
+            $path_segments,
             $dereferencer,
+            $zend_type_reader,
         );
+        if ($resolved === null) {
+            return null;
+        }
+        return $this->zvalToVariableValue($resolved, $dereferencer);
     }
 
     private function zvalToVariableValue(
@@ -378,6 +423,148 @@ final class VariableReader
             null,
             null,
         );
+    }
+
+    /**
+     * Parse a name like "cache[users]->items[0]" into
+     * root "cache" and path segments ["[users]", "->items", "[0]"].
+     *
+     * @return array{string, list<array{string, string}>}
+     *     [root_name, list of [type, key]] where type is "[]" or "->"
+     */
+    public static function parsePathExpression(string $name): array
+    {
+        // Find the first [ or -> after the root name
+        $first_bracket = strpos($name, '[');
+        $first_arrow = strpos($name, '->');
+
+        $first_path = PHP_INT_MAX;
+        if ($first_bracket !== false) {
+            $first_path = min($first_path, $first_bracket);
+        }
+        if ($first_arrow !== false) {
+            $first_path = min($first_path, $first_arrow);
+        }
+
+        if ($first_path === PHP_INT_MAX) {
+            return [$name, []];
+        }
+
+        $root = substr($name, 0, $first_path);
+        $rest = substr($name, $first_path);
+        $segments = [];
+
+        while ($rest !== '') {
+            if (str_starts_with($rest, '[')) {
+                $close = strpos($rest, ']');
+                if ($close === false) {
+                    break;
+                }
+                $key = substr($rest, 1, $close - 1);
+                $segments[] = ['[]', $key];
+                $rest = substr($rest, $close + 1);
+            } elseif (str_starts_with($rest, '->')) {
+                $rest = substr($rest, 2);
+                // Find next delimiter
+                $next_bracket = strpos($rest, '[');
+                $next_arrow = strpos($rest, '->');
+                $end = strlen($rest);
+                if ($next_bracket !== false) {
+                    $end = min($end, $next_bracket);
+                }
+                if ($next_arrow !== false) {
+                    $end = min($end, $next_arrow);
+                }
+                $prop = substr($rest, 0, $end);
+                $segments[] = ['->', $prop];
+                $rest = substr($rest, $end);
+            } else {
+                break;
+            }
+        }
+
+        return [$root, $segments];
+    }
+
+    /**
+     * Resolve a path of array keys and object properties from a zval.
+     *
+     * @param list<array{string, string}> $path_segments
+     */
+    private function resolvePath(
+        Zval $zval,
+        array $path_segments,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): ?Zval {
+        $current = $zval;
+
+        // Follow references first
+        while ($current->isReference()) {
+            $ref_pointer = $current->value->ref;
+            if ($ref_pointer === null) {
+                return null;
+            }
+            $ref = $dereferencer->deref($ref_pointer);
+            $current = $ref->val;
+        }
+
+        foreach ($path_segments as [$type, $key]) {
+            // Follow references at each step
+            while ($current->isReference()) {
+                $ref_pointer = $current->value->ref;
+                if ($ref_pointer === null) {
+                    return null;
+                }
+                $ref = $dereferencer->deref($ref_pointer);
+                $current = $ref->val;
+            }
+
+            if ($type === '[]') {
+                // Array key access
+                if (!$current->isArray()) {
+                    return null;
+                }
+                $arr_pointer = $current->value->arr;
+                if ($arr_pointer === null) {
+                    return null;
+                }
+                $arr = $dereferencer->deref($arr_pointer);
+                $bucket = $arr->findByKey($dereferencer, $key);
+                if ($bucket === null) {
+                    return null;
+                }
+                $current = $bucket->val;
+            } elseif ($type === '->') {
+                // Object property access
+                if (!$current->isObject()) {
+                    return null;
+                }
+                $obj_pointer = $current->value->obj;
+                if ($obj_pointer === null) {
+                    return null;
+                }
+                $obj = $dereferencer->deref($obj_pointer);
+                $found = false;
+                /** @var iterable<string, Zval> $props */
+                $props = $obj->getPropertiesIterator(
+                    $dereferencer,
+                    $zend_type_reader,
+                );
+                foreach ($props as $prop_name => $prop_zval) {
+                    if ($prop_name === $key) {
+                        $current = $prop_zval;
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    return null;
+                }
+            }
+        }
+
+        return $current;
     }
 
     /**
