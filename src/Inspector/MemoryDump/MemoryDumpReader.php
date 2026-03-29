@@ -21,6 +21,8 @@ use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\CollectedMemories;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\FfiContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
@@ -52,13 +54,124 @@ final class MemoryDumpReader
         $target_php_settings = new TargetPhpSettings(php_version: $this->php_version);
 
         $is_db = in_array($memory_profiler_settings->output_format, ['sqlite3', 'mysql', 'postgresql'], true);
-        $use_parallel = $is_db && ParallelCollectAnalyzer::isAvailable();
+        $use_ext_parallel = $is_db && class_exists(\parallel\Runtime::class);
 
-        if ($use_parallel) {
-            $this->readParallel($process_specifier, $target_php_settings, $memory_profiler_settings);
+        if ($use_ext_parallel) {
+            $this->readWithExtParallel($process_specifier, $target_php_settings, $memory_profiler_settings);
         } else {
             $this->readSequential($process_specifier, $target_php_settings, $memory_profiler_settings);
         }
+    }
+
+    /**
+     * ext-parallel path: collect in main thread, write to DB in worker thread.
+     * Data flows via FFI shared memory + Channel (zero serialize).
+     *
+     * @param TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     */
+    private function readWithExtParallel(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        MemoryProfilerSettings $memory_profiler_settings,
+    ): void {
+        // Create named channels.
+        $data_ch = \parallel\Channel::make('reli_data', \parallel\Channel::Infinite);
+        $meta_ch = \parallel\Channel::make('reli_meta');
+        $done_ch = \parallel\Channel::make('reli_done');
+
+        // Capture settings for the writer closure.
+        $output_format = $memory_profiler_settings->output_format;
+        $output_path = $memory_profiler_settings->output_path;
+        $pretty_print = $memory_profiler_settings->pretty_print;
+        $db_host = $memory_profiler_settings->db_host;
+        $db_port = $memory_profiler_settings->db_port;
+        $db_name = $memory_profiler_settings->db_name;
+        $db_user = $memory_profiler_settings->db_user;
+        $db_password = $memory_profiler_settings->db_password;
+        $php_version = $target_php_settings->php_version;
+        $autoload = dirname(__DIR__, 3) . '/vendor/autoload.php';
+
+        // Start writer thread.
+        $writer = new \parallel\Runtime($autoload);
+        $writer->run(function () use (
+            $output_format,
+            $output_path,
+            $db_host,
+            $db_port,
+            $db_name,
+            $db_user,
+            $db_password,
+            $php_version,
+        ) {
+            $data_ch = \parallel\Channel::open('reli_data');
+            $meta_ch = \parallel\Channel::open('reli_meta');
+            $done_ch = \parallel\Channel::open('reli_done');
+
+            // Create DB driver.
+            $driver = match ($output_format) {
+                'sqlite3' => new \Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver($output_path),
+                'mysql' => new \Reli\Inspector\Output\MemoryOutput\PdoDriver\MySqlDriver(
+                    $db_host, $db_port ?? 3306, $db_name, $db_user, $db_password ?? '',
+                ),
+                'postgresql' => new \Reli\Inspector\Output\MemoryOutput\PdoDriver\PostgreSqlDriver(
+                    $db_host, $db_port ?? 5432, $db_name, $db_user, $db_password ?? '',
+                ),
+            };
+
+            $output = new \Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput($driver);
+
+            // Wait for summary metadata from main thread.
+            /** @var array<int, array<string, mixed>> $summary */
+            $summary = $meta_ch->recv();
+
+            // Set up DB.
+            $db = $driver->createConnection();
+            $driver->tuneForBulkInsert($db);
+
+            // Use reflection to call private methods — or better, add a public method.
+            // For now, call outputFromFfiChannel which we'll add.
+            $output->outputFromFfiChannel($summary, $data_ch, $db, $driver);
+
+            $done_ch->send('ok');
+        });
+
+        // ---- Main thread: collect + analyze + send via FFI ----
+        $collected = $this->memory_locations_collector->collectAll(
+            $process_specifier,
+            $target_php_settings,
+            $this->eg_address,
+            $this->cg_address,
+            $memory_profiler_settings->memory_exhaustion_error_details,
+        );
+
+        $region_boundaries = new RegionBoundaries(
+            $collected->chunk_memory_locations,
+            $collected->huge_memory_locations,
+            $collected->vm_stack_memory_locations,
+            $collected->compiler_arena_memory_locations,
+        );
+
+        $summary = [
+            [
+                'memory_get_usage' => $collected->memory_get_usage_size,
+                'memory_get_real_usage' => $collected->memory_get_usage_real_size,
+                'cached_chunks_size' => $collected->cached_chunks_size,
+                'php_version' => $php_version,
+                'analyzer' => ReliProfiler::toolSignature(),
+            ]
+        ];
+
+        // Send summary to writer.
+        $meta_ch->send($summary);
+
+        // Analyze and stream via FFI.
+        $ffi_sink = new FfiContextTreeSink($data_ch, $region_boundaries);
+        $analyzer = new ContextAnalyzer();
+        $analyzer->analyze($collected->top_reference_context, $ffi_sink);
+        $ffi_sink->sendEnd();
+
+        // Wait for writer to finish.
+        $done_ch->recv();
     }
 
     /**

@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\CollectionPreparation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\FfiContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ParallelCollectAnalyzer;
@@ -67,6 +68,50 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     /**
      * Pipelined path: read pre-flattened data from a pipe and write to DB.
      *
+     * @param array<int, array<string, mixed>> $summary
+     * @param \parallel\Channel $data_ch
+     */
+    public function outputFromFfiChannel(
+        array $summary,
+        object $data_ch,
+        \PDO $db,
+        PdoDriverInterface $driver,
+    ): void {
+        $this->createTables($db);
+
+        $db->beginTransaction();
+        try {
+            $run_id = $this->insertRun($db);
+            $this->insertSummary($db, $run_id, $summary);
+
+            $sink = new PdoContextTreeSink($db, $driver, $run_id, $this->region_boundaries);
+
+            while (true) {
+                /** @var int $addr */
+                $addr = $data_ch->recv();
+                if (!FfiContextTreeSink::readAndReplay($addr, $sink)) {
+                    break;
+                }
+            }
+            $sink->flush();
+
+            $this->insertLocationTypesSummaryFromDb($db, $run_id);
+            $this->insertClassObjectsSummaryFromDb($db, $run_id);
+
+            $db->commit();
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
+
+        $driver->afterBulkInsert($db);
+        $this->createIndexes($db);
+        $this->createViews($db);
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $summary
      * @param resource $read_fd  readable pipe from collect worker
      */
