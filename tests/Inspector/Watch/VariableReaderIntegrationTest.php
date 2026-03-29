@@ -282,6 +282,110 @@ class VariableReaderIntegrationTest extends BaseTestCase
         $this->assertSame(0, $results[$key]->scalar_value);
     }
 
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testReadStaticProperty(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $memory_reader = new MemoryReader();
+        $zend_type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script = <<<'CODE'
+            <?php
+            class AppCache {
+                public static $size = 42;
+                public static $name = "default";
+                public static $items = array(1, 2, 3);
+            }
+            // Access the class to ensure it's loaded
+            AppCache::$size;
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+
+        $s = fgets($pipes[1]);
+        $this->assertSame("ready\n", $s);
+
+        $process_specifier = new ProcessSpecifier($pid);
+        $target_php_settings = new TargetPhpSettings(
+            php_version: $php_version,
+        );
+
+        $php_globals_finder = $this->createGlobalsFinder(
+            $memory_reader,
+            $zend_type_reader_creator,
+        );
+        $eg_address = $php_globals_finder->findExecutorGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
+        $cg_address = $php_globals_finder->findCompilerGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
+
+        $variable_reader = new VariableReader(
+            $memory_reader,
+            $zend_type_reader_creator,
+        );
+
+        $triggers = [
+            new VariableValueTrigger(
+                'static::AppCache::$size:gt:0',
+            ),
+            new VariableValueTrigger(
+                'static::AppCache::$name:eq:default',
+            ),
+            new VariableValueTrigger(
+                'static::AppCache::$items:count_gt:1',
+            ),
+        ];
+        $results = $variable_reader->readVariables(
+            $triggers,
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+            $cg_address,
+        );
+
+        // Int static property
+        $key_size = 'static::AppCache::$size';
+        $this->assertArrayHasKey($key_size, $results);
+        $this->assertSame(
+            VariableValue::TYPE_LONG,
+            $results[$key_size]->type,
+        );
+        $this->assertSame(42, $results[$key_size]->scalar_value);
+
+        // String static property
+        $key_name = 'static::AppCache::$name';
+        $this->assertArrayHasKey($key_name, $results);
+        $this->assertSame(
+            VariableValue::TYPE_STRING,
+            $results[$key_name]->type,
+        );
+        $this->assertSame(
+            'default',
+            $results[$key_name]->scalar_value,
+        );
+
+        // Array static property
+        $key_items = 'static::AppCache::$items';
+        $this->assertArrayHasKey($key_items, $results);
+        $this->assertSame(
+            VariableValue::TYPE_ARRAY,
+            $results[$key_items]->type,
+        );
+        $this->assertSame(3, $results[$key_items]->array_count);
+    }
+
     /**
      * Nested array and object property access tests.
      * Note: $GLOBALS entries use IS_INDIRECT in PHP 8.1+,
