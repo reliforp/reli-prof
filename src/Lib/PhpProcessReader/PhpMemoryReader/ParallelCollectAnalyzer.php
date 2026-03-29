@@ -52,9 +52,41 @@ final class ParallelCollectAnalyzer
     }
 
     /**
+     * Branches that are collected sequentially BEFORE fork.
+     *
+     * These build a shared MemoryLocations base that workers inherit
+     * via CoW, preventing massive duplication of interned strings.
+     *
      * @return list<array{string, \Closure}>
      */
-    private static function branchDefinitions(
+    private static function preforkBranches(
+        CollectionPreparation $prep,
+    ): array {
+        $d = $prep->dereferencer;
+        $z = $prep->zend_type_reader;
+        $cg = $prep->cg;
+        $eg = $prep->eg;
+        $map_ptr_base = $cg->map_ptr_base;
+
+        return [
+            ['included_files', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($eg, $d) {
+                return $c->collectIncludedFiles($eg->included_files, $d, $ml, $cp);
+            }],
+            ['interned_strings', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($cg, $map_ptr_base, $d, $z) {
+                return $c->collectInternedStrings($cg->interned_strings, $map_ptr_base, $d, $z, $ml, $cp);
+            }],
+            ['objects_store', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($eg, $map_ptr_base, $d, $z) {
+                return $c->collectObjectsStore($eg->objects_store, $map_ptr_base, $d, $z, $ml, $cp, null);
+            }],
+        ];
+    }
+
+    /**
+     * Branches that are collected in parallel by forked workers.
+     *
+     * @return list<array{string, \Closure}>
+     */
+    private static function parallelBranches(
         CollectionPreparation $prep,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): array {
@@ -65,12 +97,6 @@ final class ParallelCollectAnalyzer
         $map_ptr_base = $cg->map_ptr_base;
 
         return [
-            ['included_files', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($eg, $d) {
-                return $c->collectIncludedFiles($eg->included_files, $d, $ml, $cp);
-            }],
-            ['interned_strings', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($cg, $map_ptr_base, $d, $z) {
-                return $c->collectInternedStrings($cg->interned_strings, $map_ptr_base, $d, $z, $ml, $cp);
-            }],
             ['global_variables', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($eg, $map_ptr_base, $d, $z, $memory_limit_error_details) {
                 return $c->collectGlobalVariables($eg->symbol_table, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
             }],
@@ -85,9 +111,6 @@ final class ParallelCollectAnalyzer
             }],
             ['global_constants', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($prep, $map_ptr_base, $d, $z, $memory_limit_error_details) {
                 return $c->collectGlobalConstants($prep->zend_constants, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
-            }],
-            ['objects_store', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($eg, $map_ptr_base, $d, $z, $memory_limit_error_details) {
-                return $c->collectObjectsStore($eg->objects_store, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
             }],
         ];
     }
@@ -108,20 +131,68 @@ final class ParallelCollectAnalyzer
         ?RegionBoundaries $region_boundaries,
         ?MemoryLimitErrorDetails $memory_limit_error_details = null,
     ): array {
-        $branches = self::branchDefinitions($prep, $memory_limit_error_details);
+        // ---- Phase 1: sequential pre-fork collection ----
+        // Collect interned_strings and included_files into a shared
+        // MemoryLocations+ContextPools.  Workers inherit these via CoW,
+        // so strings already seen won't be re-traversed.
+        $shared_ml = new MemoryLocations();
+        foreach ($prep->huge_list_memory_locations->memory_locations as $loc) {
+            $shared_ml->add($loc);
+        }
+        $shared_cp = ContextPools::createDefault();
 
+        $prefork = self::preforkBranches($prep);
+
+        // First temp DB: pre-fork branches (written by main process).
         $tmp_dir = sys_get_temp_dir();
         $pid_prefix = getmypid();
-        /** @var list<string> $temp_paths */
-        $temp_paths = [];
-        foreach ($branches as $index => $_) {
-            $temp_paths[$index] = "{$tmp_dir}/reli_par_{$pid_prefix}_{$index}.db";
+        $prefork_temp_path = "{$tmp_dir}/reli_par_{$pid_prefix}_prefork.db";
+
+        /** @var array<string, ReferenceContext> $prefork_contexts */
+        $prefork_contexts = [];
+        foreach ($prefork as [$branch_name, $collect_fn]) {
+            /** @var ReferenceContext $ctx */
+            $ctx = $collect_fn($collector, $shared_ml, $shared_cp);
+            $prefork_contexts[$branch_name] = $ctx;
+        }
+
+        // Write pre-fork branches to a temp DB and capture the memo
+        // (context → node_id mapping) so workers can recognise
+        // pre-fork contexts and emit references instead of full nodes.
+        /** @var \WeakMap<ReferenceContext, int> $prefork_memo */
+        $prefork_memo = new \WeakMap();
+        $this->writeBranchesToTempDb(
+            $prefork_temp_path,
+            $prefork_contexts,
+            $driver,
+            $run_id,
+            0, // node_id offset for pre-fork branches
+            $region_boundaries,
+            $prefork_memo,
+        );
+        // Free the context objects — they're in the DB now.
+        // But keep the memo alive: workers need it (via CoW) to
+        // recognize already-emitted contexts.
+        unset($prefork_contexts);
+
+        // $shared_ml now contains all interned string / included file
+        // addresses.  Workers inherit this via CoW after fork.
+        // $prefork_memo maps all pre-fork ReferenceContext objects to
+        // their assigned node_ids — workers inherit this via CoW too.
+
+        // ---- Phase 2: parallel worker collection ----
+        $parallel_branches = self::parallelBranches($prep, $memory_limit_error_details);
+
+        /** @var array<int, string> $temp_paths */
+        $temp_paths = [$prefork_temp_path];
+        foreach ($parallel_branches as $index => $_) {
+            $temp_paths[$index + 1] = "{$tmp_dir}/reli_par_{$pid_prefix}_{$index}.db";
         }
 
         /** @var array<int, int> $child_pids */
         $child_pids = [];
 
-        foreach ($branches as $index => [$branch_name, $collect_fn]) {
+        foreach ($parallel_branches as $index => [$branch_name, $collect_fn]) {
             $pid = pcntl_fork();
             if ($pid === -1) {
                 $this->waitForChildren($child_pids);
@@ -133,14 +204,16 @@ final class ParallelCollectAnalyzer
                 try {
                     $this->runWorker(
                         $collector,
-                        $prep,
+                        $shared_ml,
+                        $shared_cp,
+                        $prefork_memo,
                         $driver,
                         $run_id,
                         $branch_name,
                         $collect_fn,
-                        $index,
+                        $index + 1, // offset: 0 = prefork, 1+ = workers
                         $region_boundaries,
-                        $temp_paths[$index],
+                        $temp_paths[$index + 1],
                     );
                 } catch (\Throwable $e) {
                     fwrite(STDERR, "ParallelCollectAnalyzer worker {$index} ({$branch_name}) error: {$e->getMessage()}\n");
@@ -165,9 +238,51 @@ final class ParallelCollectAnalyzer
         return $temp_paths;
     }
 
+    /**
+     * Write collected branch contexts to a temp SQLite file.
+     *
+     * @param array<string, ReferenceContext> $branch_contexts  name => context
+     * @param \WeakMap<ReferenceContext, int>|null $memo  if provided, populated with context → node_id mappings
+     */
+    private function writeBranchesToTempDb(
+        string $temp_path,
+        array $branch_contexts,
+        PdoDriverInterface $driver,
+        int $run_id,
+        int $node_id_offset,
+        ?RegionBoundaries $region_boundaries,
+        ?\WeakMap $memo = null,
+    ): void {
+        $db = new \PDO('sqlite:' . $temp_path);
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $db->exec('PRAGMA journal_mode=OFF');
+        $db->exec('PRAGMA synchronous=OFF');
+        $db->exec('PRAGMA cache_size=-65536');
+        $db->exec('PRAGMA temp_store=MEMORY');
+
+        $this->createTempTables($db);
+
+        $db->beginTransaction();
+        $sink = new PdoContextTreeSink($db, $driver, $run_id, $region_boundaries);
+        $analyzer = new ContextAnalyzer($node_id_offset * self::NODE_ID_RANGE_PER_WORKER);
+
+        foreach ($branch_contexts as $branch_name => $branch_context) {
+            $wrapper = new SingleLinkContext($branch_name, $branch_context);
+            $analyzer->analyze($wrapper, $sink, null, $memo);
+        }
+        $sink->flush();
+        $db->commit();
+        unset($sink, $db);
+    }
+
+    /**
+     * @param \WeakMap<ReferenceContext, int> $prefork_memo
+     */
     private function runWorker(
         MemoryLocationsCollector $collector,
-        CollectionPreparation $prep,
+        MemoryLocations $shared_ml,
+        ContextPools $shared_cp,
+        \WeakMap $prefork_memo,
         PdoDriverInterface $driver,
         int $run_id,
         string $branch_name,
@@ -176,12 +291,13 @@ final class ParallelCollectAnalyzer
         ?RegionBoundaries $region_boundaries,
         string $temp_path,
     ): void {
-        // Each worker has its own memory_locations and context_pools.
-        $ml = new MemoryLocations();
-        foreach ($prep->huge_list_memory_locations->memory_locations as $loc) {
-            $ml->add($loc);
-        }
-        $cp = ContextPools::createDefault();
+        // Clone the shared memory_locations so this worker's additions
+        // don't affect other workers (CoW: the shared data is read-only).
+        // The shared context_pools already contain interned string contexts
+        // from the pre-fork phase.  The prefork_memo maps those contexts
+        // to their node_ids so ContextAnalyzer emits references, not nodes.
+        $ml = new MemoryLocations($shared_ml->memory_locations);
+        $cp = $shared_cp;
 
         /** @var ReferenceContext $branch_context */
         $branch_context = $collect_fn($collector, $ml, $cp);
@@ -202,7 +318,9 @@ final class ParallelCollectAnalyzer
         $analyzer = new ContextAnalyzer($index * self::NODE_ID_RANGE_PER_WORKER);
         $wrapper = new SingleLinkContext($branch_name, $branch_context);
 
-        $analyzer->analyze($wrapper, $sink);
+        // Pass the pre-fork memo so already-emitted contexts are
+        // recognised and emitted as references rather than full nodes.
+        $analyzer->analyze($wrapper, $sink, null, $prefork_memo);
         $sink->flush();
 
         $db->commit();
