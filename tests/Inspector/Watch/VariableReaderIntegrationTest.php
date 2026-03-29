@@ -218,17 +218,6 @@ class VariableReaderIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
-        // $GLOBALS entries may use IS_INDIRECT pointing to CV slots.
-        // Nested key lookup on the resolved array works for simple
-        // types but hash table traversal for sub-keys needs further
-        // investigation across PHP versions. Path resolution logic
-        // is fully covered by unit tests (VariableReaderTest,
-        // VariableValueTriggerPathTest).
-        $this->markTestSkipped(
-            'Nested array access via $GLOBALS requires'
-                . ' version-specific hash table handling',
-        );
-        /** @phpstan-ignore deadCode.unreachable */
         $memory_reader = new MemoryReader();
         $zend_type_reader_creator = new ZendTypeReaderCreator();
 
@@ -321,23 +310,11 @@ class VariableReaderIntegrationTest extends BaseTestCase
         $this->assertSame(200, $results[$key3]->array_count);
     }
 
-    /**
-     * Object property access test.
-     * Skipped: getPropertiesIterator requires complex property_info
-     * table handling that varies across PHP versions. The path
-     * resolution logic is tested via unit tests; full integration
-     * test deferred until property iteration is more robust.
-     */
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
     public function testReadObjectProperty(
         string $php_version,
         string $docker_image_name,
     ): void {
-        $this->markTestSkipped(
-            'Object property reading requires'
-                . ' version-specific property info table handling',
-        );
-        /** @phpstan-ignore deadCode.unreachable */
         $memory_reader = new MemoryReader();
         $zend_type_reader_creator = new ZendTypeReaderCreator();
 

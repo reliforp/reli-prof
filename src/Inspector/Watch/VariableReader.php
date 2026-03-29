@@ -590,16 +590,19 @@ final class VariableReader
     private function resolveIndirectAndRef(
         Zval $zval,
         Dereferencer $dereferencer,
+        ?ZendTypeReader $zend_type_reader = null,
     ): ?Zval {
         $current = $zval;
-        $limit = 10; // prevent infinite loops
+        $limit = 10;
+        $zval_size = $zend_type_reader !== null
+            ? $zend_type_reader->sizeOf('zval')
+            : 16;
 
         while ($limit-- > 0) {
             if ($current->isIndirect()) {
-                // IS_INDIRECT: value.zv points to real zval
                 $ptr = $current->value->getAsPointer(
                     Zval::class,
-                    16, // sizeof(zval) = 16
+                    $zval_size,
                 );
                 $current = $dereferencer->deref($ptr);
                 continue;
@@ -631,6 +634,7 @@ final class VariableReader
         $current = $this->resolveIndirectAndRef(
             $current,
             $dereferencer,
+            $zend_type_reader,
         );
         if ($current === null) {
             return null;
@@ -642,6 +646,7 @@ final class VariableReader
             $current = $this->resolveIndirectAndRef(
                 $current,
                 $dereferencer,
+                $zend_type_reader,
             );
             if ($current === null) {
                 return null;
@@ -661,7 +666,13 @@ final class VariableReader
                 if ($bucket === null) {
                     return null;
                 }
-                $current = $bucket->val;
+                // Re-deref the zval from its pointer to get an
+                // independent CData copy. Bucket->val is a CData
+                // view into the Bucket's memory that becomes
+                // dangling when the Bucket is GC'd.
+                $current = $dereferencer->deref(
+                    $bucket->val->getPointer(),
+                );
             } elseif ($type === '->') {
                 // Object property access
                 if (!$current->isObject()) {
@@ -680,7 +691,10 @@ final class VariableReader
                 );
                 foreach ($props as $prop_name => $prop_zval) {
                     if ($prop_name === $key) {
-                        $current = $prop_zval;
+                        // Re-deref for independent CData copy
+                        $current = $dereferencer->deref(
+                            $prop_zval->getPointer(),
+                        );
                         $found = true;
                         break;
                     }
