@@ -72,6 +72,9 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $GLOBALS['gcache'] = array_fill(0, 100, "item");
             $GLOBALS['gflag'] = true;
             $GLOBALS['gnull'] = null;
+            // Local variables in script scope (main frame CVs)
+            $local_counter = 42;
+            $local_items = array_fill(0, 50, "x");
             fputs(STDOUT, "ready\n");
             fgets(STDIN);
             CODE;
@@ -167,6 +170,39 @@ class VariableReaderIntegrationTest extends BaseTestCase
         $this->assertArrayNotHasKey(
             'global::nonexistent',
             $results,
+        );
+
+        // Test local scope: walk up call stack to find
+        // script-level variables even when stopped in fgets
+        $triggers_local = [
+            new VariableValueTrigger('local::local_counter:gt:0'),
+            new VariableValueTrigger('local::local_items:count_gt:10'),
+        ];
+        $results_local = $variable_reader->readVariables(
+            $triggers_local,
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+        );
+
+        $this->assertArrayHasKey('local::local_counter', $results_local);
+        $this->assertSame(
+            VariableValue::TYPE_LONG,
+            $results_local['local::local_counter']->type,
+        );
+        $this->assertSame(
+            42,
+            $results_local['local::local_counter']->scalar_value,
+        );
+
+        $this->assertArrayHasKey('local::local_items', $results_local);
+        $this->assertSame(
+            VariableValue::TYPE_ARRAY,
+            $results_local['local::local_items']->type,
+        );
+        $this->assertSame(
+            50,
+            $results_local['local::local_items']->array_count,
         );
     }
 

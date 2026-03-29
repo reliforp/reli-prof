@@ -150,8 +150,12 @@ final class VariableReader
     }
 
     /**
-     * Read a local variable from the current call frame.
-     * CVs are stored after zend_execute_data, with names from op_array.
+     * Read a local variable by walking up the call stack.
+     *
+     * Starts from current_execute_data and traverses prev_execute_data
+     * until the variable is found. This handles the case where the
+     * process is stopped inside an internal function (e.g. fgets)
+     * and the user variable is in a parent frame.
      */
     private function readLocalVariable(
         ZendExecutorGlobals $eg,
@@ -160,34 +164,38 @@ final class VariableReader
         string $name,
     ): ?VariableValue {
         [$root, $path_segments] = self::parsePathExpression($name);
-        $current = $eg->current_execute_data;
-        if ($current === null) {
-            return null;
-        }
-        $execute_data = $dereferencer->deref($current);
+        $frame_pointer = $eg->current_execute_data;
 
-        foreach (
-            $execute_data->getVariables(
-                $dereferencer,
-                $zend_type_reader,
-            ) as $var_name => $zval
-        ) {
-            if ($var_name === $root) {
-                $resolved = $this->resolvePath(
-                    $zval,
-                    $path_segments,
+        // Walk up the call stack
+        while ($frame_pointer !== null) {
+            $execute_data = $dereferencer->deref($frame_pointer);
+
+            foreach (
+                $execute_data->getVariables(
                     $dereferencer,
                     $zend_type_reader,
-                );
-                if ($resolved === null) {
-                    return null;
+                ) as $var_name => $zval
+            ) {
+                if ($var_name === $root) {
+                    $resolved = $this->resolvePath(
+                        $zval,
+                        $path_segments,
+                        $dereferencer,
+                        $zend_type_reader,
+                    );
+                    if ($resolved === null) {
+                        return null;
+                    }
+                    return $this->zvalToVariableValue(
+                        $resolved,
+                        $dereferencer,
+                    );
                 }
-                return $this->zvalToVariableValue(
-                    $resolved,
-                    $dereferencer,
-                );
             }
+
+            $frame_pointer = $execute_data->prev_execute_data;
         }
+
         return null;
     }
 
