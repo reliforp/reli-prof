@@ -231,12 +231,111 @@ reli-prof 自体が実行するのでシェルインジェクションのリス�
 
 ## Common Options
 
+### 監視間隔
+
 | オプション | デフォルト | 説明 |
 |---|---|---|
-| `--poll-interval=<ms>` | `1000` | ポーリング間隔 (ミリ秒) |
-| `--cooldown=<seconds>` | `60` | 同一トリガの再発火までの待機時間 |
+| `--poll-interval=<ms>` | `1000` | ポーリング間隔 (ミリ秒)。最小値 100ms。 |
+
+`--poll-interval` はポーリングごとのスリープ時間。Tier 1 トリガのみの場合は
+短い間隔 (100-500ms) でも対象プロセスへの影響は最小限 (`process_vm_readv` 1回/poll)。
+Tier 2/3 トリガが有効な場合はトレース読み取りコストがあるため、
+1000ms 以上を推奨。
+
+### レートリミット・ディスク保護
+
+連続トリガによるディスク爆発と対象プロセスの性能劣化を防ぐ多層制御:
+
+| オプション | デフォルト | 説明 |
+|---|---|---|
+| `--cooldown=<seconds>` | `60` | 同一トリガの再発火までの最小待機時間 |
+| `--max-triggers=<N>` | `0` (無制限) | 累計トリガ回数上限。到達したら監視終了 |
+| `--max-triggers-per-hour=<N>` | `10` | 1時間あたりのトリガ回数上限。超過分は無視 |
+| `--max-dump-size=<size>` | `1G` | ダンプファイルの累計サイズ上限。超過したら memory-dump アクションをスキップ |
+| `--backoff-multiplier=<float>` | `2.0` | 連続トリガ時の cooldown 指数バックオフ倍率 |
+| `--backoff-max=<seconds>` | `3600` | バックオフの上限秒数 |
+
+**指数バックオフの動作:**
+
+同一トリガが連続で発火する場合、cooldown を指数的に増加させてディスク・性能への
+影響を抑制する。
+
+```
+1回目: 即座に発火
+2回目: cooldown (60s) 待機
+3回目: cooldown × backoff_multiplier (120s) 待機
+4回目: cooldown × backoff_multiplier² (240s) 待機
+  ...
+上限: backoff_max (3600s = 1時間) で頭打ち
+```
+
+トリガ条件を満たさなくなった場合、バックオフカウンタはリセットされる。
+
+**CooldownManager の拡張:**
+
+```php
+final class CooldownManager
+{
+    /** @var array<string, CooldownState> トリガ名 → 状態 */
+    private array $states = [];
+
+    public function canFire(string $trigger_name, float $now): bool;
+    public function recordFire(string $trigger_name, float $now): void;
+    public function recordClear(string $trigger_name): void;  // 条件解除時のリセット
+    public function getHourlyCount(): int;
+}
+
+final class CooldownState
+{
+    public int $fire_count = 0;
+    public int $consecutive_fires = 0;      // 連続発火回数 (バックオフ計算用)
+    public float $last_fire_time = 0.0;
+    public float $current_cooldown;          // 現在の実効 cooldown
+    /** @var \SplQueue<float> */
+    public \SplQueue $hourly_timestamps;     // 直近1時間のタイムスタンプ
+}
+```
+
+**ディスク使用量トラッキング:**
+
+`MemoryDumpAction` 実行時にファイルサイズを記録し、累計が `--max-dump-size` を
+超過したら以降の dump をスキップして警告を出力する。trace/log アクションは
+サイズが小さいため制限対象外。
+
+```php
+final class DiskUsageTracker
+{
+    private int $total_bytes = 0;
+
+    public function recordFile(string $path): void
+    {
+        $this->total_bytes += filesize($path);
+    }
+
+    public function canWrite(int $limit_bytes): bool
+    {
+        return $this->total_bytes < $limit_bytes;
+    }
+}
+```
+
+### ステータス表示
+
+ポーリング中、ターミナルに定期的に監視ステータスを表示する (--quiet 時は抑制):
+
+```
+[watching] PID=1234 | mem=45.2M/256M | polls=1523 | triggers=3/10 | disk=127M/1G | cooldown=OK
+[watching] PID=1234 | mem=198.7M/256M | polls=2841 | triggers=5/10 | disk=423M/1G | cooldown=backoff(240s)
+[TRIGGERED] PID=1234 | trigger=memory-limit | mem=261.3M>256M | action=memory-dump → /var/log/reli-watch/watch-1234-20260329T123456.json
+[SKIPPED] PID=1234 | trigger=memory-limit | reason=hourly limit reached (10/10)
+[SKIPPED] PID=1234 | trigger=memory-limit | action=memory-dump | reason=disk limit reached (1.02G/1G)
+```
+
+### その他
+
+| オプション | デフォルト | 説明 |
+|---|---|---|
 | `--action-output-dir=<path>` | `.` | dump/log のファイル出力先ディレクトリ |
-| `--max-triggers=<N>` | `0` (無制限) | 最大トリガ回数。到達したら終了 |
 | `--stop-process` / `-S` | `false` | アクション実行時にプロセスを ptrace で停止 |
 | `--quiet` | `false` | トリガ発火時のターミナル出力を抑制 |
 
@@ -259,7 +358,8 @@ src/
 │       ├── TriggerEvent.php                       # Trigger fire event DTO
 │       ├── HeapStats.php                          # Lightweight heap statistics DTO
 │       ├── HeapStatsReader.php                    # ZendMmHeap lightweight reader
-│       ├── CooldownManager.php                    # Per-trigger cooldown tracking
+│       ├── CooldownManager.php                    # Per-trigger cooldown + backoff tracking
+│       ├── DiskUsageTracker.php                   # Cumulative dump size limiter
 │       ├── WatchLoop.php                          # Single-process watch loop
 │       ├── DaemonWatchCoordinator.php             # Multi-process daemon orchestrator
 │       │
