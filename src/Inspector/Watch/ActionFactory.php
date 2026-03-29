@@ -23,13 +23,18 @@ use Reli\Inspector\Watch\Action\LogAction;
 use Reli\Inspector\Watch\Action\MemoryDumpAction;
 use Reli\Inspector\Watch\Action\TraceAction;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
+use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 final class ActionFactory
 {
     public function __construct(
         private CallTraceReader $call_trace_reader,
-        private MemoryLocationsCollector $memory_locations_collector,
+        private MemoryReaderInterface $memory_reader,
+        private \Reli\Lib\PhpInternals\ZendTypeReaderCreator $zend_type_reader_creator,
+        private PhpZendMemoryManagerChunkFinder $chunk_finder,
+        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
     ) {
     }
 
@@ -77,12 +82,14 @@ final class ActionFactory
         if (count($actions) === 0) {
             /** @psalm-suppress InvalidArgument */
             $actions[] = new MemoryDumpAction(
-                $this->memory_locations_collector,
+                $this->memory_reader,
+                $this->zend_type_reader_creator,
+                $this->chunk_finder,
+                $this->process_memory_map_creator,
                 $target_php_settings,
                 $eg_address,
                 $cg_address,
                 $settings->action_output_dir,
-                $settings->memory_output_format ?? 'json',
                 $disk_tracker,
             );
         }
@@ -158,13 +165,16 @@ final class ActionFactory
             'log' => $settings->log_file !== null
                 ? LogAction::toFile($settings->log_file)
                 : new LogAction(),
+            /** @psalm-suppress InvalidArgument */
             'memory-dump' => new MemoryDumpAction(
-                $this->memory_locations_collector,
+                $this->memory_reader,
+                $this->zend_type_reader_creator,
+                $this->chunk_finder,
+                $this->process_memory_map_creator,
                 $target_php_settings,
                 $eg_address,
                 $cg_address,
                 $settings->action_output_dir,
-                $settings->memory_output_format ?? 'json',
                 $disk_tracker,
             ),
             'exec' => $settings->action_exec_command !== null

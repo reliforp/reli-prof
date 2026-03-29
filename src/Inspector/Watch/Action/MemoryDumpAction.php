@@ -13,32 +13,43 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Action;
 
-use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
-use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
-use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
+use Reli\Inspector\MemoryDump\MemoryDumpWriter;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Log\Log;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
+use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
+use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
+use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
+use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
+use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
 use Reli\Lib\Process\ProcessSpecifier;
-use Reli\ReliProfiler;
 
+/**
+ * Fast binary memory dump action.
+ *
+ * Dumps ZendMM chunks + huge allocations as a binary file
+ * (same format as inspector:memory:dump) for offline analysis.
+ * Much faster than the full analysis path (inspector:memory).
+ */
 final class MemoryDumpAction implements ActionInterface
 {
     public function __construct(
-        private MemoryLocationsCollector $memory_locations_collector,
+        private MemoryReaderInterface $memory_reader,
+        private ZendTypeReaderCreator $zend_type_reader_creator,
+        private PhpZendMemoryManagerChunkFinder $chunk_finder,
+        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
         /** @var TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> */
         private TargetPhpSettings $target_php_settings,
         private int $eg_address,
         private int $cg_address,
         private string $output_dir,
-        private string $output_format,
         private DiskUsageTracker $disk_tracker,
     ) {
     }
@@ -61,113 +72,110 @@ final class MemoryDumpAction implements ActionInterface
         }
 
         $output_path = sprintf(
-            '%s/watch-%d-%s.%s',
+            '%s/watch-%d-%s.dump',
             rtrim($this->output_dir, '/'),
             $process->pid,
             date('Ymd-His', (int)$event->timestamp),
-            $this->output_format === 'sqlite3' ? 'sqlite3' : 'json',
         );
 
         try {
-            $collected = $this->memory_locations_collector->collectAll(
+            $php_version = $this->target_php_settings->php_version;
+            $zend_type_reader = $this->zend_type_reader_creator
+                ->create($php_version);
+            $dereferencer = new RemoteProcessDereferencer(
+                $this->memory_reader,
+                $process,
+                new ZendCastedTypeProvider($zend_type_reader),
+                new VersionedPointedTypeResolver($php_version),
+            );
+
+            // Find main chunk
+            $chunk_address = $this->chunk_finder->findAddress(
                 $process,
                 $this->target_php_settings,
                 $this->eg_address,
-                $this->cg_address,
+                $dereferencer,
             );
-
-            $region_analyzer = new RegionAnalyzer(
-                $collected->chunk_memory_locations,
-                $collected->huge_memory_locations,
-                $collected->vm_stack_memory_locations,
-                $collected->compiler_arena_memory_locations,
-            );
-
-            $analyzed = $region_analyzer->analyze(
-                $collected->memory_locations,
-            );
-
-            $summary = [
-                $analyzed->summary->toArray()
-                + [
-                    'memory_get_usage'
-                        => $collected->memory_get_usage_size,
-                    'memory_get_real_usage'
-                        => $collected->memory_get_usage_real_size,
-                    'cached_chunks_size'
-                        => $collected->cached_chunks_size,
-                ]
-                + [
-                    'heap_memory_analyzed_percentage' =>
-                        (float)$analyzed->summary->zend_mm_heap_usage
-                        / (float)$collected->memory_get_usage_size
-                        * 100.0,
-                ]
-                + [
-                    'php_version'
-                        => $this->target_php_settings->php_version,
-                    'analyzer' => ReliProfiler::toolSignature(),
-                    'trigger' => $event->trigger_name,
-                ]
-            ];
-
-            $is_db = in_array(
-                $this->output_format,
-                ['sqlite3', 'mysql', 'postgresql'],
-                true,
-            );
-
-            $location_types_summary = null;
-            $class_objects_summary = null;
-            if (!$is_db) {
-                $location_type_analyzer = new LocationTypeAnalyzer();
-                $location_types_summary = $location_type_analyzer
-                    ->analyze(
-                        $analyzed
-                            ->regional_memory_locations
-                            ->locations_in_zend_mm_heap,
-                    )
-                    ->per_type_usage;
-
-                $object_class_analyzer = new ObjectClassAnalyzer();
-                $class_objects_summary = $object_class_analyzer
-                    ->analyze(
-                        $analyzed
-                            ->regional_memory_locations
-                            ->locations_in_zend_mm_heap,
-                    )
-                    ->per_class_usage;
+            if ($chunk_address === null) {
+                Log::debug('memory-dump: chunk not found');
+                return;
             }
 
-            $region_boundaries = new RegionBoundaries(
-                $collected->chunk_memory_locations,
-                $collected->huge_memory_locations,
-                $collected->vm_stack_memory_locations,
-                $collected->compiler_arena_memory_locations,
-            );
-            $top_reference_context = $collected->top_reference_context;
-            unset($collected, $analyzed, $region_analyzer);
+            $main_chunk = $dereferencer->deref(new Pointer(
+                ZendMmChunk::class,
+                $chunk_address,
+                $zend_type_reader->sizeOf('zend_mm_chunk'),
+            ));
 
-            $result = new MemoryAnalysisResult(
-                $summary,
-                $top_reference_context,
-                $location_types_summary,
-                $class_objects_summary,
-            );
+            // Build read list: EG + CG + chunks + huge allocs
+            /** @var list<array{address: int, size: int}> $read_list */
+            $read_list = [];
 
-            $profiler_settings = new MemoryProfilerSettings(
-                stop_process: false,
-                pretty_print: true,
-                output_format: $this->output_format,
-                output_path: $output_path,
-            );
+            $read_list[] = [
+                'address' => $this->eg_address,
+                'size' => $zend_type_reader->sizeOf(
+                    'zend_executor_globals',
+                ),
+            ];
+            $read_list[] = [
+                'address' => $this->cg_address,
+                'size' => $zend_type_reader->sizeOf(
+                    'zend_compiler_globals',
+                ),
+            ];
 
-            $output_factory = new MemoryOutputFactory();
-            $memory_output = $output_factory->create(
-                $profiler_settings,
-                $region_boundaries,
+            foreach ($main_chunk->iterateChunks($dereferencer) as $chunk) {
+                $read_list[] = [
+                    'address' => $chunk->getPointer()->address,
+                    'size' => ZendMmChunk::SIZE,
+                ];
+            }
+
+            $huge_list = $main_chunk->heap_slot->iterateHugeList(
+                $dereferencer,
             );
-            $memory_output->output($result);
+            foreach ($huge_list as $huge) {
+                $read_list[] = [
+                    'address' => $huge->ptr,
+                    'size' => $huge->size,
+                ];
+            }
+
+            // Bulk read
+            /** @var array<array{address: int, size: int, data: string}> $regions */
+            $regions = [];
+            foreach ($read_list as $entry) {
+                try {
+                    $data = $this->memory_reader->read(
+                        $process->pid,
+                        $entry['address'],
+                        $entry['size'],
+                    );
+                    $regions[] = [
+                        'address' => $entry['address'],
+                        'size' => $entry['size'],
+                        'data' => \FFI::string($data, $entry['size']),
+                    ];
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+
+            // Write dump file
+            $memory_map = $this->process_memory_map_creator
+                ->getProcessMemoryMap($process->pid);
+            $all_areas = $memory_map->findByNameRegex('.*');
+
+            $writer = new MemoryDumpWriter();
+            $writer->write(
+                $output_path,
+                $process->pid,
+                $php_version,
+                $this->eg_address,
+                $this->cg_address,
+                $all_areas,
+                $regions,
+            );
 
             $this->disk_tracker->recordFile($output_path);
             Log::info('memory-dump saved', ['path' => $output_path]);
