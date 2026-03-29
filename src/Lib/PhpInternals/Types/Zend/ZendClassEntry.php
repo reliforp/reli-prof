@@ -269,21 +269,25 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
             $table_size = $property_count * $type_reader->sizeOf(Zval::getCTypeName());
             $raw_ptr = $this->static_members_table->address;
             if ($map_ptr_base !== 0) {
+                // PHP 8.2+: MAP_PTR offset resolution
                 $table_address = $type_reader->resolveMapPtr(
                     $map_ptr_base,
                     $raw_ptr,
                     $dereferencer,
                 );
-            } else {
-                // PHP 7.4-8.1: map_ptr_base is 0, static_members_table
-                // is a direct double pointer — deref once to get the
-                // actual table address.
-                $ptr = new Pointer(
-                    RawInt64::class,
-                    $raw_ptr,
-                    8,
-                );
+            } elseif (
+                !$type_reader->isPhpVersionLowerThan(
+                    \Reli\Lib\PhpInternals\ZendTypeReader::V74,
+                )
+            ) {
+                // PHP 7.4-8.1: static_members_table__ptr is zval**
+                // (double pointer), deref once
+                $ptr = new Pointer(RawInt64::class, $raw_ptr, 8);
                 $table_address = $dereferencer->deref($ptr)->value;
+            } else {
+                // PHP 7.0-7.3: static_members_table__ptr is zval*
+                // (direct pointer to table)
+                $table_address = $raw_ptr;
             }
             if ($table_address === 0) {
                 return;
@@ -297,7 +301,10 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
         }
 
         foreach ($this->iteratePropertyInfo($dereferencer, $type_reader) as $name => $property_info) {
-            if (!$property_info->isStatic()) {
+            $is_74_plus = !$type_reader->isPhpVersionLowerThan(
+                \Reli\Lib\PhpInternals\ZendTypeReader::V74,
+            );
+            if (!$property_info->isStatic($is_74_plus)) {
                 continue;
             }
             $real_offset = $property_info->offset;

@@ -298,14 +298,7 @@ class VariableReaderIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
-        // PHP 7.0-7.3: no static_members_table__ptr, different
-        // property_info layout. Needs version-specific handling.
-        if ($php_version < 'v74') {
-            $this->markTestSkipped(
-                'static property iteration needs PHP 7.4+'
-                    . ' (7.0-7.3 property_info layout differs)',
-            );
-        }
+        // v70-v73: zval* direct, v74-v81: zval** double ptr, v82+: MAP_PTR
 
         $memory_reader = new MemoryReader();
         $zend_type_reader_creator = new ZendTypeReaderCreator();
