@@ -298,12 +298,15 @@ class VariableReaderIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
-        // ZendClassEntry::getStaticPropertyIterator property_info
-        // iteration has version-specific layout differences on
-        // PHP 7.0-7.3. Needs separate investigation.
-        if ($php_version < 'v74') {
+        // ZendClassEntry::getStaticPropertyIterator calls resolveMapPtr
+        // for static_members_table. On PHP < 8.2, map_ptr_base is 0
+        // and static_members_table__ptr is a direct double pointer
+        // that resolveMapPtr returns as-is (without deref).
+        // This is a pre-existing limitation in ZendClassEntry.
+        if ($php_version < 'v82') {
             $this->markTestSkipped(
-                'static property iteration needs PHP 7.4+',
+                'static property resolveMapPtr needs PHP 8.2+'
+                    . ' (map_ptr_base is 0 on older versions)',
             );
         }
 

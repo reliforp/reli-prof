@@ -17,6 +17,7 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
+use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
@@ -121,7 +122,8 @@ final class VariableReader
                 if ($value !== null) {
                     $results[$key] = $value;
                 }
-            } catch (\Throwable) {
+            } catch (\Throwable $__e) {
+                fwrite(STDERR, "DBG: {$key}: {$__e->getMessage()}\n");
                 continue;
             }
         }
@@ -624,23 +626,39 @@ final class VariableReader
     ): ?ZendArray {
         $op_array = $func->op_array;
 
-        // Try MAP_PTR resolution (PHP 7.4+)
+        // Try runtime static variables (PHP 7.4+)
+        // static_variables_ptr__ptr is HashTable**
         $map_ptr_raw = $op_array->static_variables_ptr;
-        if ($map_ptr_raw !== 0 && $cg_address > 0) {
-            $map_ptr_base = $this->getMapPtrBase(
-                $cg_address,
-                $dereferencer,
-                $zend_type_reader,
-            );
-            $resolved_address = $zend_type_reader->resolveMapPtr(
-                $map_ptr_base,
-                $map_ptr_raw,
-                $dereferencer,
-            );
-            if ($resolved_address !== 0) {
+        if ($map_ptr_raw !== 0) {
+            $map_ptr_base = $cg_address > 0
+                ? $this->getMapPtrBase(
+                    $cg_address,
+                    $dereferencer,
+                    $zend_type_reader,
+                )
+                : 0;
+
+            if ($map_ptr_base !== 0) {
+                // PHP 8.2+: use MAP_PTR offset resolution
+                $resolved = $zend_type_reader->resolveMapPtr(
+                    $map_ptr_base,
+                    $map_ptr_raw,
+                    $dereferencer,
+                );
+            } else {
+                // PHP 7.4-8.1: direct double pointer, deref once
+                $ptr_to_ht = new Pointer(
+                    \Reli\Lib\PhpInternals\Types\C\RawInt64::class,
+                    $map_ptr_raw,
+                    8,
+                );
+                $resolved = $dereferencer->deref($ptr_to_ht)->value;
+            }
+
+            if ($resolved !== 0) {
                 $runtime_ptr = new Pointer(
                     ZendArray::class,
-                    $resolved_address,
+                    $resolved,
                     $zend_type_reader->sizeOf('HashTable'),
                 );
                 return $dereferencer->deref($runtime_ptr);
