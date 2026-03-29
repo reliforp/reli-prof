@@ -30,6 +30,7 @@ final class ActionFactory
     public function __construct(
         private CallTraceReader $call_trace_reader,
         private MemoryDumper $memory_dumper,
+        private \Reli\Lib\PhpProcessReader\PhpGlobalsFinder $php_globals_finder,
     ) {
     }
 
@@ -97,6 +98,7 @@ final class ActionFactory
     public function buildDaemonActions(
         WatchSettings $settings,
         TraceOutput $trace_output,
+        DiskUsageTracker $disk_tracker,
     ): array {
         $actions = [];
 
@@ -118,13 +120,13 @@ final class ActionFactory
                     }
                     break;
                 case 'memory-dump':
-                    throw new \RuntimeException(
-                        '--action=memory-dump is not supported in'
-                        . ' daemon mode (--target-regex). Use'
-                        . ' --action=trace or --action=log instead,'
-                        . ' or use single-process mode (-p PID)'
-                        . ' for memory dumps.',
+                    $actions[] = new Action\DaemonMemoryDumpAction(
+                        $this->memory_dumper,
+                        $this->php_globals_finder,
+                        $settings->action_output_dir,
+                        $disk_tracker,
                     );
+                    break;
             }
         }
 

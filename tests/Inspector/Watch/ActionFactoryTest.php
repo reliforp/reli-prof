@@ -20,6 +20,7 @@ use Reli\Inspector\Settings\WatchSettings\WatchSettings;
 use Reli\Inspector\Watch\Action\DaemonTraceAction;
 use Reli\Inspector\Watch\Action\ExecAction;
 use Reli\Inspector\Watch\Action\LogAction;
+use Reli\Inspector\Watch\DiskUsageTracker;
 
 /**
  * @runTestsInSeparateProcesses
@@ -61,12 +62,14 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpGlobalsFinder::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
         $actions = $factory->buildDaemonActions(
             $this->makeSettings(['actions' => ['log']]),
             $output,
+            new DiskUsageTracker(1024 * 1024 * 1024),
         );
         $this->assertCount(1, $actions);
         $this->assertInstanceOf(LogAction::class, $actions[0]);
@@ -77,12 +80,14 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpGlobalsFinder::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
         $actions = $factory->buildDaemonActions(
             $this->makeSettings(['actions' => ['trace']]),
             $output,
+            new DiskUsageTracker(1024 * 1024 * 1024),
         );
         $this->assertCount(1, $actions);
         $this->assertInstanceOf(DaemonTraceAction::class, $actions[0]);
@@ -93,6 +98,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpGlobalsFinder::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -102,6 +108,7 @@ class ActionFactoryTest extends BaseTestCase
                 'action_exec_command' => 'echo test',
             ]),
             $output,
+            new DiskUsageTracker(1024 * 1024 * 1024),
         );
         $this->assertCount(1, $actions);
         $this->assertInstanceOf(ExecAction::class, $actions[0]);
@@ -112,12 +119,14 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpGlobalsFinder::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
         $actions = $factory->buildDaemonActions(
             $this->makeSettings(['actions' => []]),
             $output,
+            new DiskUsageTracker(1024 * 1024 * 1024),
         );
         $this->assertCount(1, $actions);
         $this->assertInstanceOf(LogAction::class, $actions[0]);
@@ -128,6 +137,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\PhpGlobalsFinder::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -137,6 +147,7 @@ class ActionFactoryTest extends BaseTestCase
                 'action_exec_command' => 'curl http://localhost',
             ]),
             $output,
+            new DiskUsageTracker(1024 * 1024 * 1024),
         );
         $this->assertCount(3, $actions);
         $this->assertInstanceOf(DaemonTraceAction::class, $actions[0]);

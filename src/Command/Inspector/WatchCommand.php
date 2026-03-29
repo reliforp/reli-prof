@@ -459,7 +459,12 @@ final class WatchCommand extends Command
         // Build actions for daemon mode
         $output_settings = $this->output_settings_from_console_input->createSettings($input);
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput($output, $output_settings);
-        $actions = $this->action_factory->buildDaemonActions($watch_settings, $trace_output);
+        $disk_tracker = new DiskUsageTracker($watch_settings->max_dump_size_bytes);
+        $actions = $this->action_factory->buildDaemonActions(
+            $watch_settings,
+            $trace_output,
+            $disk_tracker,
+        );
 
         // Per-process cooldown/backoff is handled inside each worker.
         // Global max-triggers is enforced here in the controller as a single counter.
@@ -609,6 +614,8 @@ final class WatchCommand extends Command
                                 has_exception: null,
                                 timestamp: $result->event->timestamp,
                                 previous: null,
+                                daemon_eg_address: $result->eg_address,
+                                daemon_php_version: $result->php_version,
                             );
 
                             foreach ($actions as $action) {

@@ -19,7 +19,7 @@ final class WatchContext
 {
     /**
      * @param array<string, VariableValue> $variable_values
-     *     Keyed by "scope::name" (e.g. "global::cache")
+     *     Keyed by "scope::name" (e.g. "global::$cache")
      */
     public function __construct(
         public readonly int $pid,
@@ -29,6 +29,10 @@ final class WatchContext
         public readonly float $timestamp,
         public readonly ?self $previous,
         public readonly array $variable_values = [],
+        /** Daemon mode: EG address from WatchTriggerMessage */
+        public readonly int $daemon_eg_address = 0,
+        /** Daemon mode: PHP version from WatchTriggerMessage */
+        public readonly string $daemon_php_version = '',
     ) {
     }
 }

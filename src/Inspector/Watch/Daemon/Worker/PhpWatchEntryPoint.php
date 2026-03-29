@@ -179,6 +179,8 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                             event: $event,
                             heap_stats: $heap_stats,
                             call_trace: $call_trace,
+                            eg_address: $descriptor->eg_address,
+                            php_version: $descriptor->php_version,
                         ));
                     }
 
