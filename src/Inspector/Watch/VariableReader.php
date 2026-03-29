@@ -437,6 +437,20 @@ final class VariableReader
         Zval $zval,
         Dereferencer $dereferencer,
     ): VariableValue {
+        // Follow IS_INDIRECT and IS_REFERENCE
+        $resolved = $this->resolveIndirectAndRef(
+            $zval,
+            $dereferencer,
+        );
+        if ($resolved === null) {
+            return new VariableValue(
+                VariableValue::TYPE_UNKNOWN,
+                null,
+                null,
+            );
+        }
+        $zval = $resolved;
+
         if ($zval->isLong()) {
             return new VariableValue(
                 VariableValue::TYPE_LONG,
@@ -497,17 +511,6 @@ final class VariableReader
                 null,
             );
         }
-        if ($zval->isReference()) {
-            $ref_pointer = $zval->value->ref;
-            if ($ref_pointer !== null) {
-                $ref = $dereferencer->deref($ref_pointer);
-                return $this->zvalToVariableValue(
-                    $ref->val,
-                    $dereferencer,
-                );
-            }
-        }
-
         return new VariableValue(
             VariableValue::TYPE_UNKNOWN,
             null,
@@ -581,6 +584,41 @@ final class VariableReader
      *
      * @param list<array{string, string}> $path_segments
      */
+    /**
+     * Follow IS_INDIRECT and IS_REFERENCE pointers to the real zval.
+     */
+    private function resolveIndirectAndRef(
+        Zval $zval,
+        Dereferencer $dereferencer,
+    ): ?Zval {
+        $current = $zval;
+        $limit = 10; // prevent infinite loops
+
+        while ($limit-- > 0) {
+            if ($current->isIndirect()) {
+                // IS_INDIRECT: value.zv points to real zval
+                $ptr = $current->value->getAsPointer(
+                    Zval::class,
+                    16, // sizeof(zval) = 16
+                );
+                $current = $dereferencer->deref($ptr);
+                continue;
+            }
+            if ($current->isReference()) {
+                $ref_pointer = $current->value->ref;
+                if ($ref_pointer === null) {
+                    return null;
+                }
+                $ref = $dereferencer->deref($ref_pointer);
+                $current = $ref->val;
+                continue;
+            }
+            break;
+        }
+
+        return $current->isUndef() ? null : $current;
+    }
+
     private function resolvePath(
         Zval $zval,
         array $path_segments,
@@ -589,25 +627,24 @@ final class VariableReader
     ): ?Zval {
         $current = $zval;
 
-        // Follow references first
-        while ($current->isReference()) {
-            $ref_pointer = $current->value->ref;
-            if ($ref_pointer === null) {
-                return null;
-            }
-            $ref = $dereferencer->deref($ref_pointer);
-            $current = $ref->val;
+        // Follow indirects and references
+        $current = $this->resolveIndirectAndRef(
+            $current,
+            $dereferencer,
+        );
+        if ($current === null) {
+            return null;
         }
 
-        foreach ($path_segments as [$type, $key]) {
-            // Follow references at each step
-            while ($current->isReference()) {
-                $ref_pointer = $current->value->ref;
-                if ($ref_pointer === null) {
-                    return null;
-                }
-                $ref = $dereferencer->deref($ref_pointer);
-                $current = $ref->val;
+        /** @var array{string, string} $segment */
+        foreach ($path_segments as $segment) {
+            [$type, $key] = $segment;
+            $current = $this->resolveIndirectAndRef(
+                $current,
+                $dereferencer,
+            );
+            if ($current === null) {
+                return null;
             }
 
             if ($type === '[]') {
