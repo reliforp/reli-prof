@@ -132,6 +132,8 @@ final class VariableReader
         ZendTypeReader $zend_type_reader,
         string $name,
     ): ?VariableValue {
+        // Strip leading $ if present
+        $name = str_starts_with($name, '$') ? substr($name, 1) : $name;
         [$root, $path_segments] = self::parsePathExpression($name);
         $bucket = $eg->symbol_table->findByKey($dereferencer, $root);
         if ($bucket === null) {

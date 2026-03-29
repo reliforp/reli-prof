@@ -41,7 +41,7 @@ class WatchContextTest extends TestCase
             timestamp: 100.0,
             previous: $prev,
             variable_values: [
-                'global::x' => new VariableValue('long', 5, null),
+                'global::$x' => new VariableValue('long', 5, null),
             ],
         );
 

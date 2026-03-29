@@ -26,11 +26,11 @@ class VariableValueTriggerPathTest extends TestCase
     public function testArrayKeyInGlobalExpression(): void
     {
         $parsed = VariableValueTrigger::parseExpression(
-            'global::cache[users]:count_gt:1000',
+            'global::$cache[users]:count_gt:1000',
         );
         $this->assertSame('global', $parsed['scope']);
         // The name includes the path — VariableReader handles splitting
-        $this->assertSame('cache[users]', $parsed['name']);
+        $this->assertSame('$cache[users]', $parsed['name']);
         $this->assertSame('count_gt', $parsed['op']);
         $this->assertSame('1000', $parsed['value']);
     }
@@ -38,10 +38,10 @@ class VariableValueTriggerPathTest extends TestCase
     public function testObjectPropertyInExpression(): void
     {
         $parsed = VariableValueTrigger::parseExpression(
-            'global::config->db->pool:gt:50',
+            'global::$config->db->pool:gt:50',
         );
         $this->assertSame('global', $parsed['scope']);
-        $this->assertSame('config->db->pool', $parsed['name']);
+        $this->assertSame('$config->db->pool', $parsed['name']);
         $this->assertSame('gt', $parsed['op']);
         $this->assertSame('50', $parsed['value']);
     }
@@ -63,18 +63,18 @@ class VariableValueTriggerPathTest extends TestCase
     public function testNestedArrayCountGt(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::data[items]:count_gt:500',
+            'global::$data[items]:count_gt:500',
         );
         // The trigger's lookup_key includes the full path
         $this->assertSame(
-            'global::data[items]',
+            'global::$data[items]',
             $trigger->lookup_key,
         );
 
         // When VariableReader resolves the path and puts
         // the final value in context, the trigger evaluates it
         $context = $this->makeContext([
-            'global::data[items]' => new VariableValue(
+            'global::$data[items]' => new VariableValue(
                 VariableValue::TYPE_ARRAY,
                 null,
                 1000,
@@ -88,11 +88,11 @@ class VariableValueTriggerPathTest extends TestCase
     public function testObjectPropertyStringEq(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::config->mode:eq:debug',
+            'global::$config->mode:eq:debug',
         );
 
         $context = $this->makeContext([
-            'global::config->mode' => new VariableValue(
+            'global::$config->mode' => new VariableValue(
                 VariableValue::TYPE_STRING,
                 'debug',
                 null,
@@ -104,11 +104,11 @@ class VariableValueTriggerPathTest extends TestCase
     public function testObjectPropertyStringNeq(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::config->mode:eq:debug',
+            'global::$config->mode:eq:debug',
         );
 
         $context = $this->makeContext([
-            'global::config->mode' => new VariableValue(
+            'global::$config->mode' => new VariableValue(
                 VariableValue::TYPE_STRING,
                 'production',
                 null,
@@ -120,11 +120,11 @@ class VariableValueTriggerPathTest extends TestCase
     public function testDeepNestedIntGt(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::app->db->pool[active]:gt:100',
+            'global::$app->db->pool[active]:gt:100',
         );
 
         $context = $this->makeContext([
-            'global::app->db->pool[active]' => new VariableValue(
+            'global::$app->db->pool[active]' => new VariableValue(
                 VariableValue::TYPE_LONG,
                 150,
                 null,

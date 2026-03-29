@@ -23,10 +23,10 @@ class VariableValueTriggerTest extends TestCase
     public function testParseGlobalIntExpression(): void
     {
         $parsed = VariableValueTrigger::parseExpression(
-            'global::counter:gt:1000'
+            'global::$counter:gt:1000'
         );
         $this->assertSame('global', $parsed['scope']);
-        $this->assertSame('counter', $parsed['name']);
+        $this->assertSame('$counter', $parsed['name']);
         $this->assertSame('gt', $parsed['op']);
         $this->assertSame('1000', $parsed['value']);
     }
@@ -67,10 +67,10 @@ class VariableValueTriggerTest extends TestCase
     public function testParseIsNull(): void
     {
         $parsed = VariableValueTrigger::parseExpression(
-            'global::result:is_null'
+            'global::$result:is_null'
         );
         $this->assertSame('global', $parsed['scope']);
-        $this->assertSame('result', $parsed['name']);
+        $this->assertSame('$result', $parsed['name']);
         $this->assertSame('is_null', $parsed['op']);
         $this->assertSame('', $parsed['value']);
     }
@@ -84,14 +84,14 @@ class VariableValueTriggerTest extends TestCase
     public function testParseNoOperatorThrows(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        VariableValueTrigger::parseExpression('global::name');
+        VariableValueTrigger::parseExpression('global::$name');
     }
 
     public function testIntGtFires(): void
     {
-        $trigger = new VariableValueTrigger('global::counter:gt:100');
+        $trigger = new VariableValueTrigger('global::$counter:gt:100');
         $context = $this->makeContext([
-            'global::counter' => new VariableValue(
+            'global::$counter' => new VariableValue(
                 VariableValue::TYPE_LONG,
                 150,
                 null,
@@ -104,9 +104,9 @@ class VariableValueTriggerTest extends TestCase
 
     public function testIntGtDoesNotFire(): void
     {
-        $trigger = new VariableValueTrigger('global::counter:gt:100');
+        $trigger = new VariableValueTrigger('global::$counter:gt:100');
         $context = $this->makeContext([
-            'global::counter' => new VariableValue(
+            'global::$counter' => new VariableValue(
                 VariableValue::TYPE_LONG,
                 50,
                 null,
@@ -118,10 +118,10 @@ class VariableValueTriggerTest extends TestCase
     public function testArrayCountGt(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::cache:count_gt:1000'
+            'global::$cache:count_gt:1000'
         );
         $context = $this->makeContext([
-            'global::cache' => new VariableValue(
+            'global::$cache' => new VariableValue(
                 VariableValue::TYPE_ARRAY,
                 null,
                 5000,
@@ -135,10 +135,10 @@ class VariableValueTriggerTest extends TestCase
     public function testArrayCountGtDoesNotFire(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::cache:count_gt:1000'
+            'global::$cache:count_gt:1000'
         );
         $context = $this->makeContext([
-            'global::cache' => new VariableValue(
+            'global::$cache' => new VariableValue(
                 VariableValue::TYPE_ARRAY,
                 null,
                 500,
@@ -150,10 +150,10 @@ class VariableValueTriggerTest extends TestCase
     public function testStringEq(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::status:eq:error'
+            'global::$status:eq:error'
         );
         $context = $this->makeContext([
-            'global::status' => new VariableValue(
+            'global::$status' => new VariableValue(
                 VariableValue::TYPE_STRING,
                 'error',
                 null,
@@ -165,10 +165,10 @@ class VariableValueTriggerTest extends TestCase
     public function testStringContains(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::msg:contains:fatal'
+            'global::$msg:contains:fatal'
         );
         $context = $this->makeContext([
-            'global::msg' => new VariableValue(
+            'global::$msg' => new VariableValue(
                 VariableValue::TYPE_STRING,
                 'a fatal error occurred',
                 null,
@@ -180,10 +180,10 @@ class VariableValueTriggerTest extends TestCase
     public function testBoolEq(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::debug:eq:true'
+            'global::$debug:eq:true'
         );
         $context = $this->makeContext([
-            'global::debug' => new VariableValue(
+            'global::$debug' => new VariableValue(
                 VariableValue::TYPE_BOOL,
                 true,
                 null,
@@ -195,10 +195,10 @@ class VariableValueTriggerTest extends TestCase
     public function testIsNull(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::result:is_null'
+            'global::$result:is_null'
         );
         $context = $this->makeContext([
-            'global::result' => new VariableValue(
+            'global::$result' => new VariableValue(
                 VariableValue::TYPE_NULL,
                 null,
                 null,
@@ -210,10 +210,10 @@ class VariableValueTriggerTest extends TestCase
     public function testIsNullDoesNotFireOnNonNull(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::result:is_null'
+            'global::$result:is_null'
         );
         $context = $this->makeContext([
-            'global::result' => new VariableValue(
+            'global::$result' => new VariableValue(
                 VariableValue::TYPE_LONG,
                 42,
                 null,
@@ -225,7 +225,7 @@ class VariableValueTriggerTest extends TestCase
     public function testMissingVariableReturnsNull(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::nonexistent:gt:0'
+            'global::$nonexistent:gt:0'
         );
         $context = $this->makeContext([]);
         $this->assertNull($trigger->evaluate($context));
@@ -234,7 +234,7 @@ class VariableValueTriggerTest extends TestCase
     public function testProperties(): void
     {
         $trigger = new VariableValueTrigger(
-            'global::x:gt:0'
+            'global::$x:gt:0'
         );
         $this->assertSame('watch-var', $trigger->name());
         $this->assertFalse($trigger->requiresCallTrace());

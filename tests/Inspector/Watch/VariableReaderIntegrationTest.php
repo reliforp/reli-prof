@@ -110,12 +110,12 @@ class VariableReaderIntegrationTest extends BaseTestCase
 
         // Test all types at once
         $triggers = [
-            new VariableValueTrigger('global::gcount:gt:0'),
-            new VariableValueTrigger('global::gname:eq:test'),
-            new VariableValueTrigger('global::gcache:count_gt:50'),
-            new VariableValueTrigger('global::gflag:eq:true'),
-            new VariableValueTrigger('global::gnull:is_null'),
-            new VariableValueTrigger('global::nonexistent:gt:0'),
+            new VariableValueTrigger('global::$gcount:gt:0'),
+            new VariableValueTrigger('global::$gname:eq:test'),
+            new VariableValueTrigger('global::$gcache:count_gt:50'),
+            new VariableValueTrigger('global::$gflag:eq:true'),
+            new VariableValueTrigger('global::$gnull:is_null'),
+            new VariableValueTrigger('global::$nonexistent:gt:0'),
         ];
         $results = $variable_reader->readVariables(
             $triggers,
@@ -125,50 +125,50 @@ class VariableReaderIntegrationTest extends BaseTestCase
         );
 
         // Integer
-        $this->assertArrayHasKey('global::gcount', $results);
+        $this->assertArrayHasKey('global::$gcount', $results);
         $this->assertSame(
             VariableValue::TYPE_LONG,
-            $results['global::gcount']->type,
+            $results['global::$gcount']->type,
         );
-        $this->assertSame(99, $results['global::gcount']->scalar_value);
+        $this->assertSame(99, $results['global::$gcount']->scalar_value);
 
         // String
-        $this->assertArrayHasKey('global::gname', $results);
+        $this->assertArrayHasKey('global::$gname', $results);
         $this->assertSame(
             VariableValue::TYPE_STRING,
-            $results['global::gname']->type,
+            $results['global::$gname']->type,
         );
         $this->assertSame(
             'test_global',
-            $results['global::gname']->scalar_value,
+            $results['global::$gname']->scalar_value,
         );
 
         // Array count
-        $this->assertArrayHasKey('global::gcache', $results);
+        $this->assertArrayHasKey('global::$gcache', $results);
         $this->assertSame(
             VariableValue::TYPE_ARRAY,
-            $results['global::gcache']->type,
+            $results['global::$gcache']->type,
         );
-        $this->assertSame(100, $results['global::gcache']->array_count);
+        $this->assertSame(100, $results['global::$gcache']->array_count);
 
         // Bool
-        $this->assertArrayHasKey('global::gflag', $results);
+        $this->assertArrayHasKey('global::$gflag', $results);
         $this->assertSame(
             VariableValue::TYPE_BOOL,
-            $results['global::gflag']->type,
+            $results['global::$gflag']->type,
         );
-        $this->assertTrue($results['global::gflag']->scalar_value);
+        $this->assertTrue($results['global::$gflag']->scalar_value);
 
         // Null
-        $this->assertArrayHasKey('global::gnull', $results);
+        $this->assertArrayHasKey('global::$gnull', $results);
         $this->assertSame(
             VariableValue::TYPE_NULL,
-            $results['global::gnull']->type,
+            $results['global::$gnull']->type,
         );
 
         // Nonexistent
         $this->assertArrayNotHasKey(
-            'global::nonexistent',
+            'global::$nonexistent',
             $results,
         );
 
