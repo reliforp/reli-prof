@@ -101,4 +101,52 @@ class VariableReaderTest extends TestCase
             $segments,
         );
     }
+
+    public function testParseEmptyBrackets(): void
+    {
+        [$root, $segments] = VariableReader::parsePathExpression(
+            'arr[]',
+        );
+        $this->assertSame('arr', $root);
+        $this->assertSame([['[]', '']], $segments);
+    }
+
+    public function testParseNumericKeys(): void
+    {
+        [$root, $segments] = VariableReader::parsePathExpression(
+            'list[0][1][2]',
+        );
+        $this->assertSame('list', $root);
+        $this->assertSame(
+            [['[]', '0'], ['[]', '1'], ['[]', '2']],
+            $segments,
+        );
+    }
+
+    public function testParseSingleArrow(): void
+    {
+        [$root, $segments] = VariableReader::parsePathExpression(
+            'obj->x',
+        );
+        $this->assertSame('obj', $root);
+        $this->assertSame([['->',  'x']], $segments);
+    }
+
+    public function testParsePropertyChainedWithArray(): void
+    {
+        [$root, $segments] = VariableReader::parsePathExpression(
+            'svc->pool[default]->connections[0]->host',
+        );
+        $this->assertSame('svc', $root);
+        $this->assertSame(
+            [
+                ['->', 'pool'],
+                ['[]', 'default'],
+                ['->', 'connections'],
+                ['[]', '0'],
+                ['->', 'host'],
+            ],
+            $segments,
+        );
+    }
 }

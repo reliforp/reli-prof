@@ -1,0 +1,73 @@
+<?php
+
+/**
+ * This file is part of the reliforp/reli-prof package.
+ *
+ * (c) sji <sji@sj-i.dev>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+declare(strict_types=1);
+
+namespace Reli\Inspector\Watch;
+
+use Reli\Inspector\Settings\WatchSettings\WatchSettings;
+use Reli\Inspector\Watch\Trigger\ExceptionDetectionTrigger;
+use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
+use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
+use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
+use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
+use Reli\Inspector\Watch\Trigger\TraceDepthTrigger;
+use Reli\Inspector\Watch\Trigger\TriggerInterface;
+use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
+
+final class TriggerFactory
+{
+    /**
+     * @return list<TriggerInterface>
+     */
+    public function build(WatchSettings $settings): array
+    {
+        $triggers = [];
+
+        // Tier 1 triggers
+        if ($settings->memory_limit_bytes !== null) {
+            $triggers[] = new MemoryLimitTrigger(
+                $settings->memory_limit_bytes,
+            );
+        }
+        if ($settings->memory_growth_rate !== null) {
+            [$bytes, $seconds] = MemoryGrowthRateTrigger::parseRate(
+                $settings->memory_growth_rate,
+            );
+            $triggers[] = new MemoryGrowthRateTrigger($bytes, $seconds);
+        }
+        if ($settings->memory_peak_watch) {
+            $triggers[] = new MemoryPeakTrigger();
+        }
+
+        // Tier 2 triggers
+        if ($settings->watch_function !== null) {
+            $triggers[] = new FunctionDetectionTrigger(
+                $settings->watch_function,
+            );
+        }
+        if ($settings->trace_depth_limit !== null) {
+            $triggers[] = new TraceDepthTrigger(
+                $settings->trace_depth_limit,
+            );
+        }
+
+        // Tier 3 triggers
+        if ($settings->on_exception) {
+            $triggers[] = new ExceptionDetectionTrigger();
+        }
+        foreach ($settings->watch_var as $expr) {
+            $triggers[] = new VariableValueTrigger($expr);
+        }
+
+        return $triggers;
+    }
+}

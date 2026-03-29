@@ -36,21 +36,13 @@ use Reli\Lib\Console\EchoBackCanceller;
 use Reli\Lib\Log\Log;
 use Revolt\EventLoop;
 use Reli\Inspector\Watch\Action\ActionInterface;
-use Reli\Inspector\Watch\Action\ExecAction;
-use Reli\Inspector\Watch\Action\LogAction;
-use Reli\Inspector\Watch\Action\MemoryDumpAction;
-use Reli\Inspector\Watch\Action\TraceAction;
+use Reli\Inspector\Watch\ActionFactory;
 use Reli\Inspector\Watch\CooldownManager;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
+use Reli\Inspector\Watch\TriggerFactory;
 use Reli\Inspector\Watch\VariableReader;
-use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
-use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
-use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
-use Reli\Inspector\Watch\Trigger\ExceptionDetectionTrigger;
-use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
-use Reli\Inspector\Watch\Trigger\TraceDepthTrigger;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Inspector\Watch\TriggerEvent;
@@ -59,7 +51,6 @@ use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
 use Reli\Lib\PhpProcessReader\CallTraceReader\TraceCache;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Symfony\Component\Console\Command\Command;
@@ -82,7 +73,8 @@ final class WatchCommand extends Command
         private HeapStatsReader $heap_stats_reader,
         private VariableReader $variable_reader,
         private CallTraceReader $call_trace_reader,
-        private MemoryLocationsCollector $memory_locations_collector,
+        private TriggerFactory $trigger_factory,
+        private ActionFactory $action_factory,
         private TraceLoopProvider $loop_provider,
         private TargetProcessResolver $target_process_resolver,
         private RetryingLoopProvider $retrying_loop_provider,
@@ -170,7 +162,7 @@ final class WatchCommand extends Command
         );
 
         // Build triggers
-        $triggers = $this->buildTriggers($watch_settings);
+        $triggers = $this->trigger_factory->build($watch_settings);
         if (count($triggers) === 0) {
             $output->writeln(
                 '<error>No triggers specified.'
@@ -202,7 +194,7 @@ final class WatchCommand extends Command
             $watch_settings->max_dump_size_bytes,
         );
 
-        $actions = $this->buildActions(
+        $actions = $this->action_factory->buildActions(
             $watch_settings,
             $trace_output,
             $target_php_settings->php_version,
@@ -425,119 +417,6 @@ final class WatchCommand extends Command
     }
 
     /**
-     * @return list<TriggerInterface>
-     */
-    private function buildTriggers(\Reli\Inspector\Settings\WatchSettings\WatchSettings $settings): array
-    {
-        $triggers = [];
-
-        if ($settings->memory_limit_bytes !== null) {
-            $triggers[] = new MemoryLimitTrigger($settings->memory_limit_bytes);
-        }
-
-        if ($settings->memory_growth_rate !== null) {
-            [$bytes, $seconds] = MemoryGrowthRateTrigger::parseRate($settings->memory_growth_rate);
-            $triggers[] = new MemoryGrowthRateTrigger($bytes, $seconds);
-        }
-
-        if ($settings->memory_peak_watch) {
-            $triggers[] = new MemoryPeakTrigger();
-        }
-
-        // Tier 2 triggers
-        if ($settings->watch_function !== null) {
-            $triggers[] = new FunctionDetectionTrigger($settings->watch_function);
-        }
-
-        if ($settings->trace_depth_limit !== null) {
-            $triggers[] = new TraceDepthTrigger($settings->trace_depth_limit);
-        }
-
-        // Tier 3 triggers
-        if ($settings->on_exception) {
-            $triggers[] = new ExceptionDetectionTrigger();
-        }
-
-        foreach ($settings->watch_var as $expr) {
-            $triggers[] = new VariableValueTrigger($expr);
-        }
-
-        return $triggers;
-    }
-
-    /**
-     * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
-     * @param \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings $target_php_settings
-     * @phpstan-param \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings<
-     *     'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'
-     * > $target_php_settings
-     * @return list<ActionInterface>
-     */
-    private function buildActions(
-        \Reli\Inspector\Settings\WatchSettings\WatchSettings $settings,
-        \Reli\Inspector\Output\TraceOutput\TraceOutput $trace_output,
-        string $php_version,
-        int $eg_address,
-        int $sg_address,
-        int $cg_address,
-        int $depth,
-        \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings $target_php_settings,
-        DiskUsageTracker $disk_tracker,
-    ): array {
-        $actions = [];
-
-        foreach ($settings->actions as $action_name) {
-            switch ($action_name) {
-                case 'trace':
-                    $actions[] = new TraceAction(
-                        $this->call_trace_reader,
-                        $trace_output,
-                        $php_version,
-                        $eg_address,
-                        $sg_address,
-                        $depth,
-                    );
-                    break;
-                case 'log':
-                    $actions[] = $settings->log_file !== null
-                        ? LogAction::toFile($settings->log_file)
-                        : new LogAction();
-                    break;
-                case 'memory-dump':
-                    $actions[] = new MemoryDumpAction(
-                        $this->memory_locations_collector,
-                        $target_php_settings,
-                        $eg_address,
-                        $cg_address,
-                        $settings->action_output_dir,
-                        $settings->memory_output_format ?? 'json',
-                        $disk_tracker,
-                    );
-                    break;
-                case 'exec':
-                    if ($settings->action_exec_command !== null) {
-                        $actions[] = new ExecAction($settings->action_exec_command);
-                    }
-                    break;
-            }
-        }
-
-        if (count($actions) === 0) {
-            $actions[] = new MemoryDumpAction(
-                $this->memory_locations_collector,
-                $target_php_settings,
-                $eg_address,
-                $cg_address,
-                $settings->action_output_dir,
-                $settings->memory_output_format ?? 'json',
-                $disk_tracker,
-            );
-        }
-
-        return $actions;
-    }
-
-    /**
      * Daemon mode: monitor multiple processes matching --target-regex.
      *
      * Uses PhpWatchContextCreator (WatchTriggerMessage-based workers) that evaluate
@@ -555,7 +434,7 @@ final class WatchCommand extends Command
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
 
-        $triggers = $this->buildTriggers($watch_settings);
+        $triggers = $this->trigger_factory->build($watch_settings);
         if (count($triggers) === 0) {
             $output->writeln('<error>No triggers specified.</error>');
             return 1;
@@ -564,7 +443,7 @@ final class WatchCommand extends Command
         // Build actions for daemon mode
         $output_settings = $this->output_settings_from_console_input->createSettings($input);
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput($output, $output_settings);
-        $actions = $this->buildDaemonActions($watch_settings, $trace_output);
+        $actions = $this->action_factory->buildDaemonActions($watch_settings, $trace_output);
 
         // Per-process cooldown/backoff is handled inside each worker.
         // Global max-triggers is enforced here in the controller as a single counter.
@@ -765,43 +644,5 @@ final class WatchCommand extends Command
         }
 
         return 0;
-    }
-
-    /**
-     * Build actions for daemon mode (trace comes from worker via WatchTriggerMessage).
-     *
-     * @return list<ActionInterface>
-     */
-    private function buildDaemonActions(
-        \Reli\Inspector\Settings\WatchSettings\WatchSettings $settings,
-        \Reli\Inspector\Output\TraceOutput\TraceOutput $trace_output,
-    ): array {
-        $actions = [];
-
-        foreach ($settings->actions as $action_name) {
-            switch ($action_name) {
-                case 'trace':
-                    $actions[] = new \Reli\Inspector\Watch\Action\DaemonTraceAction($trace_output);
-                    break;
-                case 'log':
-                    $actions[] = $settings->log_file !== null
-                        ? LogAction::toFile($settings->log_file)
-                        : new LogAction();
-                    break;
-                case 'exec':
-                    if ($settings->action_exec_command !== null) {
-                        $actions[] = new ExecAction($settings->action_exec_command);
-                    }
-                    break;
-            }
-        }
-
-        if (count($actions) === 0) {
-            $actions[] = $settings->log_file !== null
-                ? LogAction::toFile($settings->log_file)
-                : new LogAction();
-        }
-
-        return $actions;
     }
 }
