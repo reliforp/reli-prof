@@ -256,6 +256,7 @@ final class WatchCommand extends Command
                 $target_php_settings,
                 $eg_address,
                 $sg_address,
+                $cg_address,
                 $php_version,
                 $depth,
                 $stop_process,
@@ -308,6 +309,7 @@ final class WatchCommand extends Command
                         $process_specifier,
                         $target_php_settings,
                         $eg_address,
+                        $cg_address,
                     );
                 }
 
