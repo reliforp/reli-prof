@@ -1831,24 +1831,23 @@ final class MemoryLocationsCollector
     }
 
     /**
-     * Pre-dereference all objects in the store and register them in
-     * memory_locations + context_pools, WITHOUT traversing properties.
+     * Pre-create ObjectContext entries in context_pools for all objects
+     * in the store, WITHOUT traversing properties or adding to memory_locations.
      *
-     * The returned set of addresses lets other branches skip the initial
-     * deref (already done) while still performing full property traversal
-     * when they first encounter the object.  Callers should use this
-     * alongside the modified collectZendObjectPointer flow where the
-     * pool cache hit returns the context that workers then populate.
+     * After fork, workers that encounter object pointers via collectZendObject
+     * will get the same cached ObjectContext instance from the pool (CoW).
+     * The ContextAnalyzer memo can be pre-populated with these contexts so
+     * non-owner workers emit reference edges instead of full nodes.
      *
-     * @return array<int, ZendObjectMemoryLocation>  address => location
+     * @return array<int, ObjectContext>  address => ObjectContext (for memo pre-population)
      */
-    public function preregisterObjectAddresses(
+    public function preregisterObjectContexts(
         ZendObjectsStore $objects_store,
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
     ): array {
-        /** @var array<int, ZendObjectMemoryLocation> $registered */
+        /** @var array<int, ObjectContext> $registered */
         $registered = [];
 
         assert($objects_store->object_buckets instanceof Pointer);
@@ -1877,10 +1876,11 @@ final class MemoryLocationsCollector
                 $dereferencer,
                 $zend_type_reader,
             );
-            $registered[$bucket->address] = $object_location;
-            // Register in context_pools so all workers share the same
-            // ObjectContext instance (identity matters for ContextAnalyzer memo).
-            $context_pools->object_context_pool->getContextForLocation($object_location);
+            // Create and cache the ObjectContext in the pool.
+            // Do NOT add to memory_locations — collectZendObjectPointer
+            // must still enter collectZendObject for property traversal.
+            $context = $context_pools->object_context_pool->getContextForLocation($object_location);
+            $registered[$bucket->address] = $context;
         }
 
         return $registered;

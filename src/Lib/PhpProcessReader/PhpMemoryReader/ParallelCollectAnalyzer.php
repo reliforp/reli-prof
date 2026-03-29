@@ -84,7 +84,7 @@ final class ParallelCollectAnalyzer
     /**
      * Branches that are collected in parallel by forked workers.
      *
-     * @return list<array{string, \Closure}>
+     * @return list<array{string, \Closure, bool}>  [name, callable, needs_prefork_memo]
      */
     private static function parallelBranches(
         CollectionPreparation $prep,
@@ -97,21 +97,26 @@ final class ParallelCollectAnalyzer
         $map_ptr_base = $cg->map_ptr_base;
 
         return [
+            // objects_store: must NOT receive prefork_memo (needs to traverse properties)
+            ['objects_store', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($eg, $map_ptr_base, $d, $z, $memory_limit_error_details) {
+                return $c->collectObjectsStore($eg->objects_store, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
+            }, false],
+            // Other branches: receive prefork_memo so objects are reference-only
             ['global_variables', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($eg, $map_ptr_base, $d, $z, $memory_limit_error_details) {
                 return $c->collectGlobalVariables($eg->symbol_table, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
-            }],
+            }, true],
             ['call_frames', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($eg, $map_ptr_base, $d, $z, $memory_limit_error_details) {
                 return $c->collectCallFrames($eg, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
-            }],
+            }, true],
             ['function_table', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($prep, $map_ptr_base, $d, $z, $memory_limit_error_details) {
                 return $c->collectFunctionTable($prep->function_table, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
-            }],
+            }, true],
             ['class_table', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($prep, $map_ptr_base, $d, $z, $memory_limit_error_details) {
                 return $c->collectClassTable($prep->class_table, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
-            }],
+            }, true],
             ['global_constants', function (MemoryLocationsCollector $c, MemoryLocations $ml, ContextPools $cp) use ($prep, $map_ptr_base, $d, $z, $memory_limit_error_details) {
                 return $c->collectGlobalConstants($prep->zend_constants, $map_ptr_base, $d, $z, $ml, $cp, $memory_limit_error_details);
-            }],
+            }, true],
         ];
     }
 
@@ -156,9 +161,7 @@ final class ParallelCollectAnalyzer
             $prefork_contexts[$branch_name] = $ctx;
         }
 
-        // Write pre-fork branches to a temp DB and capture the memo
-        // (context → node_id mapping) so workers can recognise
-        // pre-fork contexts and emit references instead of full nodes.
+        // Write pre-fork branches to a temp DB and capture the memo.
         /** @var \WeakMap<ReferenceContext, int> $prefork_memo */
         $prefork_memo = new \WeakMap();
         $this->writeBranchesToTempDb(
@@ -174,11 +177,6 @@ final class ParallelCollectAnalyzer
         // But keep the memo alive: workers need it (via CoW) to
         // recognize already-emitted contexts.
         unset($prefork_contexts);
-
-        // $shared_ml now contains all interned string / included file
-        // addresses.  Workers inherit this via CoW after fork.
-        // $prefork_memo maps all pre-fork ReferenceContext objects to
-        // their assigned node_ids — workers inherit this via CoW too.
 
         // ---- Phase 2: parallel worker collection ----
         $parallel_branches = self::parallelBranches($prep, $memory_limit_error_details);
