@@ -15,11 +15,11 @@ namespace Reli\Command\Inspector;
 
 use Amp\CancelledException;
 use Amp\DeferredCancellation;
-use Reli\Inspector\Daemon\Dispatcher\DispatchTable;
-use Reli\Inspector\Daemon\Dispatcher\WorkerPool;
-use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
-use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
+use Reli\Inspector\Watch\Daemon\Context\PhpWatchContextCreator;
+use Reli\Inspector\Watch\Daemon\Controller\PhpWatchControllerInterface;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
 use Reli\Inspector\RetryingLoopProvider;
 use Reli\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
@@ -91,7 +91,7 @@ final class WatchCommand extends Command
         private DaemonSettingsFromConsoleInput $daemon_settings_from_console_input,
         private TraceOutputFactory $trace_output_factory,
         private PhpSearcherContextCreator $php_searcher_context_creator,
-        private PhpReaderContextCreator $php_reader_context_creator,
+        private PhpWatchContextCreator $php_watch_context_creator,
     ) {
         parent::__construct();
     }
@@ -435,8 +435,9 @@ final class WatchCommand extends Command
     /**
      * Daemon mode: monitor multiple processes matching --target-regex.
      *
-     * Reuses existing daemon infrastructure (PhpSearcherContextCreator + PhpReaderContextCreator)
-     * but evaluates triggers on received traces in the main thread instead of outputting them.
+     * Uses PhpWatchContextCreator (WatchTriggerMessage-based workers) that evaluate
+     * triggers inside the worker process and send only trigger events back.
+     * All trigger tiers (including Tier 1 memory-limit) work in daemon mode.
      */
     private function executeDaemonMode(
         InputInterface $input,
@@ -449,18 +450,15 @@ final class WatchCommand extends Command
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
 
-        // Build triggers (daemon mode: only Tier 1 triggers use heap stats from main thread,
-        // Tier 2 triggers evaluate on traces received from workers)
         $triggers = $this->buildTriggers($watch_settings);
         if (count($triggers) === 0) {
             $output->writeln('<error>No triggers specified.</error>');
             return 1;
         }
 
-        // Build actions (daemon mode: log action is most practical, trace output goes to stdout)
+        // Build actions for daemon mode
         $output_settings = $this->output_settings_from_console_input->createSettings($input);
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput($output, $output_settings);
-        // In daemon mode, actions don't need eg/sg addresses (trace comes from worker)
         $actions = $this->buildDaemonActions($watch_settings, $trace_output);
 
         $cooldown = new CooldownManager(
@@ -473,7 +471,7 @@ final class WatchCommand extends Command
 
         $quiet = $watch_settings->quiet;
 
-        // Start process searcher
+        // Start process searcher (reuses existing daemon infrastructure)
         $searcher_context = $this->php_searcher_context_creator->create();
         $searcher_context->start();
         $my_pid = getmypid();
@@ -487,15 +485,23 @@ final class WatchCommand extends Command
             $no_cache,
         );
 
-        // Create worker pool
-        $worker_pool = WorkerPool::create(
-            $this->php_reader_context_creator,
-            $daemon_settings->threads,
-            $loop_settings,
-            $get_trace_settings,
-        );
+        // Create watch worker pool (WatchTriggerMessage-based)
+        $num_workers = $daemon_settings->threads;
+        /** @var list<PhpWatchControllerInterface> $workers */
+        $workers = [];
+        /** @var array<int, bool> $worker_free */
+        $worker_free = [];
+        for ($i = 0; $i < $num_workers; $i++) {
+            $worker = $this->php_watch_context_creator->create();
+            $worker->start();
+            $worker->sendSettings($watch_settings, $loop_settings, $get_trace_settings);
+            $workers[] = $worker;
+            $worker_free[$i] = true;
+        }
 
-        $dispatch_table = new DispatchTable($worker_pool);
+        // PID → worker index mapping
+        /** @var array<int, int> $pid_to_worker */
+        $pid_to_worker = [];
 
         $_echo_back_canceler = new EchoBackCanceller();
         $cancellation = new DeferredCancellation();
@@ -513,97 +519,119 @@ final class WatchCommand extends Command
 
         if (!$quiet) {
             $output->writeln(sprintf(
-                '<info>[watch-daemon] Monitoring processes matching "%s" | triggers=%s</info>',
+                '<info>[watch-daemon] Monitoring processes matching "%s" | triggers=%s | workers=%d</info>',
                 $daemon_settings->target_regex,
                 implode(',', array_map(fn (TriggerInterface $t) => $t->name(), $triggers)),
+                $num_workers,
             ));
         }
 
-        /** @var array<int, WatchContext> $per_process_context */
-        $per_process_context = [];
-
         $futures = [];
 
-        // Searcher future: continuously discovers processes
-        $futures[] = async(function () use ($searcher_context, $dispatch_table, $output, $quiet) {
+        // Searcher future: discover processes and assign to free workers
+        $futures[] = async(function () use (
+            $searcher_context,
+            &$workers,
+            &$worker_free,
+            &$pid_to_worker,
+            $output,
+            $quiet,
+        ) {
             while (1) {
-                $update_target_message = $searcher_context->receivePidList();
-                $dispatch_table->updateTargets($update_target_message->target_process_list);
-                Log::debug('watch daemon targets updated');
+                $update = $searcher_context->receivePidList();
+                foreach ($update->target_process_list->getArray() as $descriptor) {
+                    $pid = $descriptor->pid;
+                    if (isset($pid_to_worker[$pid])) {
+                        continue; // Already assigned
+                    }
+                    // Find a free worker
+                    foreach ($worker_free as $idx => $is_free) {
+                        if ($is_free) {
+                            $worker_free[$idx] = false;
+                            $pid_to_worker[$pid] = $idx;
+                            $workers[$idx]->sendAttach($descriptor);
+                            if (!$quiet) {
+                                $output->writeln(sprintf(
+                                    '<info>[+process] PID=%d assigned to worker %d</info>',
+                                    $pid,
+                                    $idx,
+                                ));
+                            }
+                            break;
+                        }
+                    }
+                }
             }
         });
 
-        // Reader futures: receive traces from workers and evaluate triggers
-        foreach ($worker_pool->getWorkers() as $reader) {
+        // Worker futures: receive trigger events from watch workers
+        foreach ($workers as $idx => $worker) {
             $futures[] = async(
                 function () use (
-                    $reader,
-                    $dispatch_table,
-                    $triggers,
+                    $idx,
+                    $worker,
                     $actions,
                     $cooldown,
                     $output,
                     $quiet,
-                    &$per_process_context,
+                    &$worker_free,
+                    &$pid_to_worker,
                 ) {
                     while (1) {
-                        $result = $reader->receiveTraceOrDetachWorker();
-                        if ($result instanceof TraceMessage) {
-                            // We don't have heap stats in daemon mode (workers only send traces),
-                            // so create a minimal WatchContext with the trace
-                            $now = microtime(true);
-                            // Use a placeholder HeapStats — daemon mode primarily uses Tier 2 triggers
-                            $heap_stats = new HeapStats(0, 0, 0, 0);
-                            $pid = 0; // PID is not directly available from TraceMessage
+                        $result = $worker->receiveTriggerOrDetach();
+                        if ($result instanceof WatchTriggerMessage) {
+                            $now = $result->event->timestamp;
+
+                            if (!$cooldown->canFire($result->event->trigger_name, $now)) {
+                                if (!$quiet) {
+                                    $reason = $cooldown->getSkipReason($result->event->trigger_name, $now);
+                                    $output->writeln(sprintf(
+                                        '<comment>[SKIPPED] PID=%d | trigger=%s | reason=%s</comment>',
+                                        $result->pid,
+                                        $result->event->trigger_name,
+                                        $reason ?? 'cooldown',
+                                    ));
+                                }
+                                continue;
+                            }
+
+                            $cooldown->recordFire($result->event->trigger_name, $now);
+
+                            if (!$quiet) {
+                                $output->writeln(sprintf(
+                                    '<info>[TRIGGERED] PID=%d | trigger=%s | %s</info>',
+                                    $result->pid,
+                                    $result->event->trigger_name,
+                                    $result->event->description,
+                                ));
+                            }
 
                             $context = new WatchContext(
-                                pid: $pid,
-                                heap_stats: $heap_stats,
-                                call_trace: $result->trace,
+                                pid: $result->pid,
+                                heap_stats: $result->heap_stats,
+                                call_trace: $result->call_trace,
                                 has_exception: null,
                                 timestamp: $now,
                                 previous: null,
                             );
 
-                            foreach ($triggers as $trigger) {
-                                if (!$trigger->requiresCallTrace()) {
-                                    continue; // Skip Tier 1 triggers in daemon mode (no heap stats)
-                                }
-                                $event = $trigger->evaluate($context);
-                                if ($event === null) {
-                                    $cooldown->recordClear($trigger->name());
-                                    continue;
-                                }
-                                if (!$cooldown->canFire($trigger->name(), $now)) {
-                                    if (!$quiet) {
-                                        $reason = $cooldown->getSkipReason($trigger->name(), $now);
-                                        $output->writeln(sprintf(
-                                            '<comment>[SKIPPED] trigger=%s | reason=%s</comment>',
-                                            $trigger->name(),
-                                            $reason ?? 'cooldown',
-                                        ));
-                                    }
-                                    continue;
-                                }
-                                $cooldown->recordFire($trigger->name(), $now);
-                                if (!$quiet) {
-                                    $output->writeln(sprintf(
-                                        '<info>[TRIGGERED] trigger=%s | %s</info>',
-                                        $event->trigger_name,
-                                        $event->description,
-                                    ));
-                                }
-                                foreach ($actions as $action) {
-                                    $action->execute(
-                                        $event,
-                                        new \Reli\Lib\Process\ProcessSpecifier($pid),
-                                        $context,
-                                    );
-                                }
+                            foreach ($actions as $action) {
+                                $action->execute(
+                                    $result->event,
+                                    new \Reli\Lib\Process\ProcessSpecifier($result->pid),
+                                    $context,
+                                );
                             }
-                        } else {
-                            Log::debug('watch daemon worker detached', [$result]);
-                            $dispatch_table->releaseOne($result->pid);
+                        } elseif ($result instanceof WatchDetachMessage) {
+                            if (!$quiet) {
+                                $output->writeln(sprintf(
+                                    '<comment>[-process] PID=%d detached from worker %d</comment>',
+                                    $result->pid,
+                                    $idx,
+                                ));
+                            }
+                            $worker_free[$idx] = true;
+                            unset($pid_to_worker[$result->pid]);
                         }
                     }
                 }
@@ -625,7 +653,7 @@ final class WatchCommand extends Command
     }
 
     /**
-     * Build actions for daemon mode (no per-process EG/SG addresses available).
+     * Build actions for daemon mode (trace comes from worker via WatchTriggerMessage).
      *
      * @return list<ActionInterface>
      */
@@ -638,7 +666,6 @@ final class WatchCommand extends Command
         foreach ($settings->actions as $action_name) {
             switch ($action_name) {
                 case 'trace':
-                    // In daemon mode, trace output uses the trace from worker directly
                     $actions[] = new \Reli\Inspector\Watch\Action\DaemonTraceAction($trace_output);
                     break;
                 case 'log':
