@@ -100,6 +100,43 @@ class MemoryDumpActionTest extends BaseTestCase
         );
     }
 
+    public function testPassesIncludeBinaryFlag(): void
+    {
+        $result = new MemoryDumpResult('/tmp/test.dump', 5, 1024);
+        $dumper = Mockery::mock(
+            'overload:' . MemoryDumper::class,
+        );
+        $dumper->shouldReceive('dump')
+            ->once()
+            ->withArgs(function (
+                ProcessSpecifier $ps,
+                TargetPhpSettings $tps,
+                int $eg,
+                int $cg,
+                string $path,
+                bool $include_binary,
+            ): bool {
+                return $include_binary === true;
+            })
+            ->andReturn($result);
+
+        $action = new MemoryDumpAction(
+            $dumper,
+            new TargetPhpSettings(php_version: 'v84'),
+            0x1000,
+            0x2000,
+            sys_get_temp_dir(),
+            new DiskUsageTracker(1024 * 1024),
+            true,
+        );
+
+        $action->execute(
+            new TriggerEvent('mem', 'desc', 100.0),
+            new ProcessSpecifier(42),
+            $this->makeContext(),
+        );
+    }
+
     public function testHandlesDumpException(): void
     {
         $dumper = Mockery::mock(
