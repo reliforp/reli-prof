@@ -362,6 +362,59 @@ class MemoryDumpCommandTest extends BaseTestCase
         $this->assertSame(0, $analyze_result);
     }
 
+    // dependency-root で /proc/<pid>/root を指定して
+    // include-binary なしのダンプを解析できることを確認
+    #[DataProvider('provideFromV72')]
+    public function testDumpAndAnalyzeWithDependencyRoot(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('no target version');
+        }
+
+        $output_path = $this->createTmpFile();
+        $container = $this->createContainer();
+        [, $pid, ] = $this->startTargetProcess($docker_image_name);
+
+        // Dump WITHOUT --include-binary
+        /** @var MemoryDumpCommand $dump_command */
+        $dump_command = $container->make(MemoryDumpCommand::class);
+
+        $input = new ArrayInput([
+            '--pid' => (string)$pid,
+            '--output' => $output_path,
+        ]);
+        $input->setInteractive(false);
+        $result = $dump_command->run($input, new BufferedOutput());
+        $this->assertSame(0, $result);
+
+        // Analyze with --dependency-root pointing to the container's root
+        // via /proc/<pid>/root so that read-only binary segments can be
+        // resolved without --include-binary in the dump
+        /** @var MemoryAnalyzeCommand $analyze_command */
+        $analyze_command = $container->make(MemoryAnalyzeCommand::class);
+
+        $dependency_root = "/proc/{$pid}/root";
+        $analyze_input = new ArrayInput([
+            'dump-file' => $output_path,
+            '--dependency-root' => $dependency_root,
+        ]);
+        $analyze_input->setInteractive(false);
+        $analyze_output = new BufferedOutput();
+
+        ob_start();
+        try {
+            $analyze_result = $analyze_command->run(
+                $analyze_input,
+                $analyze_output,
+            );
+        } finally {
+            ob_end_clean();
+        }
+        $this->assertSame(0, $analyze_result);
+    }
+
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
     public function testDumpWithNoCache(
         string $php_version,
