@@ -127,6 +127,76 @@ final class MemoryDumper
             ];
         }
 
+        // [heap] region (internal function/class definitions).
+        // After heavy extension usage + free, glibc returns pages via
+        // MADV_DONTNEED but brk doesn't shrink, leaving non-resident
+        // gaps. Use pagemap to skip them when [heap] is large.
+        $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
+        foreach ($heap_areas as $area) {
+            $addr = (int)hexdec($area->begin);
+            $size = (int)hexdec($area->end) - $addr;
+            if ($size <= 0) {
+                continue;
+            }
+            $resident_runs = $this->findResidentRuns(
+                $pid,
+                $addr,
+                $size,
+            );
+            if ($resident_runs !== null && $resident_runs !== []) {
+                foreach ($resident_runs as $run) {
+                    $read_list[] = $run;
+                }
+            } else {
+                $read_list[] = ['address' => $addr, 'size' => $size];
+            }
+        }
+
+        // Opcache SHM regions (e.g. /dev/zero mmap).
+        // When opcache is enabled, interned strings and cached scripts
+        // live in shared memory that can be very large (128-320MB+)
+        // but mostly empty. Use pagemap to identify resident pages.
+        $shm_areas = $memory_map->findByNameRegex('/dev/zero');
+        foreach ($shm_areas as $area) {
+            if (!$area->attribute->read) {
+                continue;
+            }
+            $addr = (int)hexdec($area->begin);
+            $size = (int)hexdec($area->end) - $addr;
+            if ($size <= 0) {
+                continue;
+            }
+            $resident_runs = $this->findResidentRuns(
+                $pid,
+                $addr,
+                $size,
+            );
+            if ($resident_runs !== null) {
+                foreach ($resident_runs as $run) {
+                    $read_list[] = $run;
+                }
+            } else {
+                $read_list[] = ['address' => $addr, 'size' => $size];
+            }
+        }
+
+        // PHP binary's writable data/BSS segments
+        $php_rw_areas = $memory_map->findByNameRegex(
+            $target_php_settings->php_regex,
+        );
+        foreach ($php_rw_areas as $area) {
+            if ($area->attribute->write && $area->attribute->read) {
+                $addr = (int)hexdec($area->begin);
+                $size = (int)hexdec($area->end) - $addr;
+                if ($size > 0) {
+                    $read_list[] = [
+                        'address' => $addr,
+                        'size' => $size,
+                    ];
+                }
+            }
+        }
+
         // VM stacks
         $eg = $dereferencer->deref(new Pointer(
             ZendExecutorGlobals::class,
@@ -263,5 +333,104 @@ final class MemoryDumper
             region_count: count($regions),
             total_bytes: $total_size,
         );
+    }
+
+    private static ?\FFI $libc = null;
+
+    private static function libc(): \FFI
+    {
+        if (self::$libc === null) {
+            self::$libc = \FFI::cdef(
+                'int open(const char *pathname, int flags);'
+                . 'int close(int fd);'
+                . 'long pread(int fd, void *buf, long count,'
+                . ' long offset);',
+                'libc.so.6',
+            );
+        }
+        return self::$libc;
+    }
+
+    /**
+     * Find contiguous runs of resident pages in a memory region
+     * using /proc/pid/pagemap via direct syscalls.
+     * Returns null if pagemap is inaccessible.
+     * @return list<array{address: int, size: int}>|null
+     */
+    private function findResidentRuns(
+        int $pid,
+        int $region_addr,
+        int $region_size,
+    ): ?array {
+        $libc = self::libc();
+        $page_size = 4096;
+        $num_pages = (int)($region_size / $page_size);
+        if ($num_pages === 0) {
+            return [];
+        }
+        $start_vpn = (int)($region_addr / $page_size);
+
+        $pagemap_path = "/proc/{$pid}/pagemap";
+        /** @var int $fd */
+        $fd = $libc->open($pagemap_path, 0); // O_RDONLY = 0
+        if ($fd < 0) {
+            return null;
+        }
+
+        $bytes_needed = $num_pages * 8;
+        $buf = \FFI::new("char[{$bytes_needed}]");
+        if ($buf === null) {
+            $libc->close($fd);
+            return null;
+        }
+
+        $offset = $start_vpn * 8;
+        /** @var int $read */
+        $read = $libc->pread($fd, $buf, $bytes_needed, $offset);
+        $libc->close($fd);
+
+        if ($read < 8) {
+            return null;
+        }
+        $pages_read = (int)($read / 8);
+        $data = \FFI::string($buf, $pages_read * 8);
+
+        /** @var list<array{address: int, size: int}> $runs */
+        $runs = [];
+        $run_start_page = -1;
+        $run_count = 0;
+
+        for ($i = 0; $i < $pages_read; $i++) {
+            /** @var array{val: int} $entry */
+            $entry = unpack('Pval', $data, $i * 8);
+            $present = ($entry['val'] >> 63) & 1;
+
+            if ($present) {
+                if ($run_start_page < 0) {
+                    $run_start_page = $i;
+                    $run_count = 1;
+                } else {
+                    $run_count++;
+                }
+            } else {
+                if ($run_start_page >= 0) {
+                    $runs[] = [
+                        'address' => $region_addr
+                            + $run_start_page * $page_size,
+                        'size' => $run_count * $page_size,
+                    ];
+                    $run_start_page = -1;
+                }
+            }
+        }
+        if ($run_start_page >= 0) {
+            $runs[] = [
+                'address' => $region_addr
+                    + $run_start_page * $page_size,
+                'size' => $run_count * $page_size,
+            ];
+        }
+
+        return $runs;
     }
 }
