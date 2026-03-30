@@ -250,15 +250,19 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
                 }
             }
         } else {
-            $func = $dereferencer->deref($this->func);
-            $function_name = $func->getFunctionName($dereferencer, $zend_type_reader);
-            $func = $dereferencer->deref($this->func);
-            if (is_null($function_name)) {
-                if ($this->isFunctionlessCall($zend_type_reader)) {
-                    $function_name = '<main>';
-                } elseif (!$func->isUserFunction()) {
-                    $function_name = '<internal>';
+            try {
+                $func = $dereferencer->deref($this->func);
+                $function_name = $func->getFunctionName($dereferencer, $zend_type_reader);
+                $func = $dereferencer->deref($this->func);
+                if (is_null($function_name)) {
+                    if ($this->isFunctionlessCall($zend_type_reader)) {
+                        $function_name = '<main>';
+                    } elseif (!$func->isUserFunction()) {
+                        $function_name = '<internal>';
+                    }
                 }
+            } catch (\RuntimeException) {
+                $function_name = '<unknown>';
             }
         }
         if ($function_name === '' or is_null($function_name)) {
@@ -273,8 +277,12 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         if (is_null($this->func)) {
             return '';
         }
-        $func = $dereferencer->deref($this->func);
-        return $func->getClassName($dereferencer) ?? '';
+        try {
+            $func = $dereferencer->deref($this->func);
+            return $func->getClassName($dereferencer) ?? '';
+        } catch (\RuntimeException) {
+            return '';
+        }
     }
 
     public function getFullyQualifiedFunctionName(
