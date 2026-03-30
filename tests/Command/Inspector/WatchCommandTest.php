@@ -101,7 +101,7 @@ class WatchCommandTest extends TestCase
         $this->assertSame(['memory-dump'], $action_opt->getDefault());
 
         $output_dir = $def->getOption('action-output-dir');
-        $this->assertSame('.', $output_dir->getDefault());
+        $this->assertNull($output_dir->getDefault());
 
         $format = $def->getOption('memory-output-format');
         $this->assertSame('json', $format->getDefault());

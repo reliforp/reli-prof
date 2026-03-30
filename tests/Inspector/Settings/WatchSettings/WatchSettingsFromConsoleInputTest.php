@@ -15,6 +15,7 @@ namespace Reli\Inspector\Settings\WatchSettings;
 
 use Mockery;
 use Reli\BaseTestCase;
+use Reli\Lib\Directory\AppDirectory;
 use Symfony\Component\Console\Input\InputInterface;
 
 class WatchSettingsFromConsoleInputTest extends BaseTestCase
@@ -30,7 +31,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'watch-var' => [],
             'action' => ['memory-dump'],
             'action-exec-command' => null,
-            'action-output-dir' => '.',
+            'action-output-dir' => null,
             'log-file' => null,
             'memory-output-format' => 'json',
             'poll-interval' => null,
@@ -73,6 +74,37 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
         $this->assertNull($settings->memory_growth_rate);
         $this->assertFalse($settings->memory_peak_watch);
         $this->assertFalse($settings->include_binary);
+        $this->assertSame(AppDirectory::getWatchDumpDir(), $settings->action_output_dir);
+    }
+
+    public function testActionOutputDirAbsolutePath(): void
+    {
+        $settings = (new WatchSettingsFromConsoleInput())
+            ->createSettings($this->makeInput([
+                'action-output-dir' => '/tmp/my-dumps',
+            ]));
+
+        $this->assertSame('/tmp/my-dumps', $settings->action_output_dir);
+    }
+
+    public function testActionOutputDirRelativePathResolvesToAbsolute(): void
+    {
+        $settings = (new WatchSettingsFromConsoleInput())
+            ->createSettings($this->makeInput([
+                'action-output-dir' => 'my-dumps',
+            ]));
+
+        $this->assertSame(getcwd() . '/my-dumps', $settings->action_output_dir);
+    }
+
+    public function testLogFileRelativePathResolvesToAbsolute(): void
+    {
+        $settings = (new WatchSettingsFromConsoleInput())
+            ->createSettings($this->makeInput([
+                'log-file' => 'watch.log',
+            ]));
+
+        $this->assertSame(getcwd() . '/watch.log', $settings->log_file);
     }
 
     public function testMemoryLimit(): void

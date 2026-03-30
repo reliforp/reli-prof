@@ -77,11 +77,27 @@ final class AppDirectory
     }
 
     /**
+     * Log directory. Falls back to temp directory.
+     */
+    public static function getLogDir(): string
+    {
+        return self::getStateDir() . '/logs';
+    }
+
+    /**
+     * Watch dump directory. Falls back to temp directory.
+     */
+    public static function getWatchDumpDir(): string
+    {
+        return self::getStateDir() . '/watch-dumps';
+    }
+
+    /**
      * Log file path.
      */
     public static function getLogPath(): string
     {
-        return self::getStateDir() . '/reli.log';
+        return self::getLogDir() . '/reli.log';
     }
 
     /**

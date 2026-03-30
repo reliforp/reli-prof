@@ -128,11 +128,49 @@ class AppDirectoryTest extends BaseTestCase
 
     // --- Log path ---
 
+    // --- Log directory ---
+
+    public function testGetLogDirWithHome(): void
+    {
+        putenv('XDG_STATE_HOME');
+        putenv('HOME=/tmp/app-test-home');
+        $this->assertSame('/tmp/app-test-home/.local/state/reli/logs', AppDirectory::getLogDir());
+    }
+
+    public function testGetLogDirWithoutHomeReturnsAbsolutePath(): void
+    {
+        putenv('HOME');
+        putenv('XDG_STATE_HOME');
+        $result = AppDirectory::getLogDir();
+        $this->assertStringStartsWith('/', $result);
+        $this->assertStringEndsWith('/logs', $result);
+    }
+
+    // --- Watch dump directory ---
+
+    public function testGetWatchDumpDirWithHome(): void
+    {
+        putenv('XDG_STATE_HOME');
+        putenv('HOME=/tmp/app-test-home');
+        $this->assertSame('/tmp/app-test-home/.local/state/reli/watch-dumps', AppDirectory::getWatchDumpDir());
+    }
+
+    public function testGetWatchDumpDirWithoutHomeReturnsAbsolutePath(): void
+    {
+        putenv('HOME');
+        putenv('XDG_STATE_HOME');
+        $result = AppDirectory::getWatchDumpDir();
+        $this->assertStringStartsWith('/', $result);
+        $this->assertStringEndsWith('/watch-dumps', $result);
+    }
+
+    // --- Log path ---
+
     public function testGetLogPathWithHome(): void
     {
         putenv('XDG_STATE_HOME');
         putenv('HOME=/tmp/app-test-home');
-        $this->assertSame('/tmp/app-test-home/.local/state/reli/reli.log', AppDirectory::getLogPath());
+        $this->assertSame('/tmp/app-test-home/.local/state/reli/logs/reli.log', AppDirectory::getLogPath());
     }
 
     public function testGetLogPathWithoutHomeReturnsAbsolutePath(): void
@@ -141,7 +179,7 @@ class AppDirectoryTest extends BaseTestCase
         putenv('XDG_STATE_HOME');
         $result = AppDirectory::getLogPath();
         $this->assertStringStartsWith('/', $result);
-        $this->assertStringEndsWith('/reli.log', $result);
+        $this->assertStringEndsWith('/logs/reli.log', $result);
     }
 
     // --- ensureDirectoryExists delegates ---
