@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Command\Inspector;
 
 use DI\ContainerBuilder;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
 use Reli\BaseTestCase;
@@ -100,9 +101,9 @@ class MemoryDumpCommandTest extends BaseTestCase
         return [$this->child, $pid, $pipes];
     }
 
-    public static function provideFromV80(): \Generator
+    public static function provideFromV72(): \Generator
     {
-        yield from TargetPhpVmProvider::from(ZendTypeReader::V80);
+        yield from TargetPhpVmProvider::from(ZendTypeReader::V72);
     }
 
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
@@ -311,7 +312,9 @@ class MemoryDumpCommandTest extends BaseTestCase
         );
     }
 
-    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    // PHP 7.0/7.1 の内部構造だと analyzer が追うポインタ先が
+    // --include-binary のカバー範囲外になるため v72 以降に限定
+    #[DataProvider('provideFromV72')]
     public function testDumpAndAnalyzeRoundtrip(
         string $php_version,
         string $docker_image_name,
