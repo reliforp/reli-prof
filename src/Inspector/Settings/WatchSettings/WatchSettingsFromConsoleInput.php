@@ -78,7 +78,7 @@ final class WatchSettingsFromConsoleInput
                 'action-exec-command',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'command to execute for exec action',
+                'command to execute for exec action (placeholders: {pid}, {trigger}, {memory_usage}, {memory_peak}, {timestamp})',
             )
             ->addOption(
                 'action-output-dir',

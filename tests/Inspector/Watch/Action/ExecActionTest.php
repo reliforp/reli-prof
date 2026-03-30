@@ -66,4 +66,42 @@ class ExecActionTest extends TestCase
 
         unlink($tmpFile);
     }
+
+    public function testPlaceholderSubstitution(): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'reli_exec_test_');
+        $this->assertNotFalse($tmpFile);
+
+        $command = 'echo "{pid} {trigger}" > ' . escapeshellarg($tmpFile);
+
+        $action = new ExecAction($command);
+        $event = new TriggerEvent(
+            'memory-usage',
+            'mem=10M>5M',
+            1711684800.0,
+        );
+        $context = new WatchContext(
+            pid: 99,
+            heap_stats: new HeapStats(
+                10 * 1024 * 1024,
+                16 * 1024 * 1024,
+                12 * 1024 * 1024,
+                0,
+            ),
+            call_trace: null,
+            timestamp: 1711684800.0,
+            previous: null,
+        );
+
+        $action->execute($event, new ProcessSpecifier(99), $context);
+
+        usleep(100000);
+
+        $output = file_get_contents($tmpFile);
+        $this->assertNotFalse($output);
+        $this->assertStringContainsString('99', $output);
+        $this->assertStringContainsString('memory-usage', $output);
+
+        unlink($tmpFile);
+    }
 }

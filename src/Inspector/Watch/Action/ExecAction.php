@@ -37,6 +37,16 @@ final class ExecAction implements ActionInterface
         ProcessSpecifier $process,
         WatchContext $context,
     ): void {
+        $replacements = [
+            '{pid}' => (string)$process->pid,
+            '{trigger}' => $event->trigger_name,
+            '{memory_usage}' => (string)$context->heap_stats->size,
+            '{memory_peak}' => (string)$context->heap_stats->peak,
+            '{timestamp}' => date('c', (int)$event->timestamp),
+        ];
+
+        $command = strtr($this->command, $replacements);
+
         $env = [
             'RELI_WATCH_PID' => (string)$process->pid,
             'RELI_WATCH_TRIGGER' => $event->trigger_name,
@@ -54,7 +64,7 @@ final class ExecAction implements ActionInterface
         ];
 
         $proc = proc_open(
-            $this->command,
+            $command,
             $descriptors,
             $pipes,
             null,
