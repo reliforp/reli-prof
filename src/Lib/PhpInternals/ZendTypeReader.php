@@ -186,9 +186,18 @@ final class ZendTypeReader
         }
 
         if ($map_ptr & 1) {
+            // PHP 8.1+ uses ZEND_MAP_PTR_BIASED_BASE: map_ptr_base
+            // is pre-decremented by 1, so adding the offset with
+            // flag bit set (offset|1) naturally cancels out:
+            //   (real_base - 1) + (offset | 1) = real_base + offset
+            // PHP 7.4-8.0: map_ptr_base is the real base, so the
+            // flag bit must be masked off before adding.
+            $offset = $this->isPhpVersionLowerThan(self::V81)
+                ? ($map_ptr & ~1)
+                : $map_ptr;
             $pointer = new Pointer(
                 RawInt64::class,
-                $map_ptr_base + ($map_ptr & ~1),
+                $map_ptr_base + $offset,
                 8,
             );
             return $dereferencer->deref($pointer)->value;
