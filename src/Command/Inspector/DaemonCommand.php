@@ -119,6 +119,9 @@ final class DaemonCommand extends Command
                     EventLoop::cancel($watcher_id);
                     $cancellation->cancel();
                 }
+                if ($key === '' || $key === false) {
+                    EventLoop::cancel($watcher_id);
+                }
             }
         );
         $futures = [];
