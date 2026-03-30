@@ -1,0 +1,366 @@
+# inspector:watch — Condition-Based PHP Process Monitoring
+
+`inspector:watch` monitors PHP processes and automatically triggers profiling actions when configurable conditions are met.
+
+Unlike `inspector:top` (real-time display) or `inspector:daemon` (continuous tracing), this command specializes in **passive monitoring that only takes action when triggers fire**, making it suitable for low-overhead production monitoring.
+
+## Quick Start
+
+```bash
+# Monitor a single process: dump memory when usage exceeds 256M
+reli inspector:watch -p <pid> --memory-usage=256M
+
+# Monitor multiple processes matching a regex
+reli inspector:watch --target-regex="php-fpm" --memory-usage=512M
+
+# Watch for a specific function appearing in the call stack
+reli inspector:watch -p <pid> --watch-function="App\Service::heavyProcess"
+
+# Grab 3 dumps and stop (ad-hoc debugging)
+reli inspector:watch -p <pid> --memory-usage=128M --oneshot=3
+```
+
+## Requirements
+
+- Same as other `inspector:*` commands (FFI, PCNTL, PHP 8.1+ for execution, PHP 7.0+ for targets)
+- `CAP_SYS_PTRACE` capability (usually root)
+- For `--target-regex` (daemon mode): same as `inspector:daemon`
+
+## Triggers
+
+Triggers define **when** to take action. At least one trigger must be specified.
+
+### Memory Limit (`--memory-usage=<size>`)
+
+Fires when heap usage exceeds the threshold.
+
+```bash
+reli inspector:watch -p <pid> --memory-usage=256M
+reli inspector:watch -p <pid> --memory-usage=1G
+```
+
+### Memory Growth Rate (`--memory-growth-rate=<size>/<period>`)
+
+Fires when memory grows faster than the specified rate. Useful for detecting memory leaks.
+
+```bash
+reli inspector:watch -p <pid> --memory-growth-rate=10M/min
+reli inspector:watch -p <pid> --memory-growth-rate=500K/s
+```
+
+Supported periods: `s` (seconds), `min` (minutes), `h` (hours).
+
+### Memory Peak Watch (`--memory-peak-watch`)
+
+Fires whenever the memory peak is updated. Useful for tracking peak memory progression.
+
+```bash
+reli inspector:watch -p <pid> --memory-peak-watch
+```
+
+Note: with exponential backoff cooldown, frequent peak updates are naturally throttled.
+
+### Function Detection (`--watch-function=<name>`)
+
+Fires when the specified function appears in the call stack. Requires the **fully qualified function name** (exact match).
+
+```bash
+reli inspector:watch -p <pid> --watch-function="sleep"
+reli inspector:watch -p <pid> --watch-function="App\Service::process"
+reli inspector:watch -p <pid> --watch-function="PDO::query"
+```
+
+### Trace Depth Limit (`--trace-depth-limit=<N>`)
+
+Fires when the call stack exceeds N frames. Detects runaway recursion or deeply nested framework calls.
+
+```bash
+reli inspector:watch -p <pid> --trace-depth-limit=200
+```
+
+### Variable Value (`--watch-var=<expression>`)
+
+Fires when a PHP variable meets a condition. Multiple `--watch-var` flags can be specified.
+
+**Syntax:** `scope::identifier:operator:value`
+
+#### Scopes
+
+| Scope | Syntax | What it reads |
+|-------|--------|---------------|
+| Global | `global::$var` | `$GLOBALS['var']` |
+| Local | `local::func()$var` | Local variable in a specific function frame |
+| Static property | `static::Class::$prop` | Class static property |
+| Function static | `func_static::func()$var` | Function's `static $var` |
+
+For `local::` and `func_static::`, the function name is **required**. Use `<main>` for the top-level script scope.
+
+#### Operators
+
+| Operator | Types | Description |
+|----------|-------|-------------|
+| `eq`, `ne` | All | Equal / not equal |
+| `gt`, `lt`, `gte`, `lte` | int, float | Numeric comparison |
+| `contains` | string | Substring match |
+| `count_gt`, `count_lt`, `count_eq` | array | Array element count |
+| `is_null` | All | Check if null |
+
+#### Nested Access
+
+Variable names support path expressions for nested array keys and object properties:
+
+```bash
+# Array key access
+--watch-var='global::$config[database][pool_size]:gt:50'
+
+# Object property access
+--watch-var='global::$app->cache->size:gt:10000'
+
+# Mixed
+--watch-var='global::$container->services[cache]->pool[active]:gt:100'
+```
+
+#### Examples
+
+```bash
+# Global array growing too large
+--watch-var='global::$cache:count_gt:10000'
+
+# Local variable in a specific function
+--watch-var='local::App\Controller::index()$response->statusCode:eq:500'
+
+# Class static property
+--watch-var='static::App\Cache::$entries:count_gt:50000'
+
+# Function static variable (reads runtime value, not initial)
+--watch-var='func_static::App\retry()$attempts:gt:10'
+
+# Top-level script variable
+--watch-var='local::<main>()$counter:gt:1000'
+```
+
+### Combining Triggers
+
+Multiple triggers can be active simultaneously. When multiple triggers fire in the same poll cycle, actions execute **once** with a merged event:
+
+```bash
+reli inspector:watch -p <pid> \
+  --memory-usage=256M \
+  --memory-peak-watch \
+  --watch-function="sleep" \
+  --action=log
+```
+
+Output: `[TRIGGERED] PID=1234 | trigger=memory-usage+memory-peak-watch | ...`
+
+## Actions
+
+Actions define **what to do** when a trigger fires. Default: `memory-dump`.
+
+### Memory Dump (`--action=memory-dump`)
+
+Captures a binary memory dump (same format as `inspector:memory:dump`) for offline analysis via `inspector:memory:analyze`.
+
+```bash
+reli inspector:watch -p <pid> --memory-usage=256M --action=memory-dump
+```
+
+Output files: `<output-dir>/watch-<pid>-<timestamp>.dump`
+
+### Trace Capture (`--action=trace`)
+
+Outputs the call trace at the moment the trigger fires.
+
+```bash
+reli inspector:watch -p <pid> --watch-function="sleep" --action=trace
+```
+
+### Event Log (`--action=log`)
+
+Logs trigger events with timestamp, PID, trigger name, and memory stats.
+
+```bash
+reli inspector:watch -p <pid> --memory-usage=256M --action=log --log-file=/var/log/reli-watch.log
+```
+
+Log format:
+```
+[2026-03-30T12:34:56+00:00] PID=1234 trigger=memory-usage mem=261.3M>256M mem=261.3M peak=261.3M
+```
+
+### External Command (`--action=exec`)
+
+Executes an external command (fire-and-forget, non-blocking). Context is passed via environment variables.
+
+```bash
+reli inspector:watch -p <pid> --memory-usage=256M \
+  --action=exec \
+  --action-exec-command='curl -s -X POST https://hooks.example.com/alert'
+```
+
+| Environment Variable | Description |
+|---------------------|-------------|
+| `RELI_WATCH_PID` | Target process PID |
+| `RELI_WATCH_TRIGGER` | Trigger name(s) |
+| `RELI_WATCH_MEMORY_USAGE` | Current memory usage (bytes) |
+| `RELI_WATCH_MEMORY_PEAK` | Memory peak (bytes) |
+| `RELI_WATCH_TIMESTAMP` | ISO 8601 timestamp |
+| `RELI_WATCH_DUMP_PATH` | Dump file path (if memory-dump action ran) |
+
+### Multiple Actions
+
+Actions can be combined:
+
+```bash
+reli inspector:watch -p <pid> --memory-usage=256M \
+  --action=memory-dump --action=log --action=exec \
+  --action-exec-command='notify-send "Memory alert"' \
+  --log-file=/var/log/reli.log
+```
+
+## Rate Limiting & Disk Protection
+
+### Cooldown (`--cooldown=<seconds>`)
+
+Minimum wait time before the same trigger fires again. Default: 60 seconds.
+
+With consecutive fires, the cooldown increases exponentially:
+- 1st fire: immediate
+- 2nd: 60s wait
+- 3rd: 120s wait (60 × 2)
+- 4th: 240s wait (60 × 2²)
+- Capped at `--backoff-max` (default: 3600s)
+
+Resets when the trigger condition is no longer met.
+
+```bash
+--cooldown=30 --backoff-multiplier=2.0 --backoff-max=3600
+```
+
+### Hourly Rate Limit (`--max-triggers-per-hour=<N>`)
+
+Maximum trigger fires per hour (sliding window). Default: 10.
+
+### Disk Size Limit (`--max-dump-size=<size>`)
+
+Maximum cumulative size of dump files. Default: 1G. Scans existing `watch-*.dump` files in the output directory on startup, so the limit persists across restarts.
+
+```bash
+--max-dump-size=2G --action-output-dir=/var/log/reli/dumps
+```
+
+### Oneshot Mode (`--oneshot=<N>`)
+
+Capture N trigger events then exit. Alias for `--max-triggers`.
+
+```bash
+# Grab 5 memory dumps and stop
+reli inspector:watch -p <pid> --memory-usage=128M --oneshot=5
+```
+
+**Note:** `--oneshot` is for ad-hoc debugging. For long-running daemons, use `--max-dump-size` + `--max-triggers-per-hour` + `--cooldown` instead — these persist across process restarts.
+
+## Daemon Mode (`--target-regex`)
+
+Monitor multiple processes simultaneously:
+
+```bash
+reli inspector:watch --target-regex="php-fpm" \
+  --memory-usage=512M \
+  --action=log \
+  --log-file=/var/log/reli-watch.log
+```
+
+Each discovered process gets its own worker that independently reads heap stats, evaluates triggers, and applies cooldown. Only trigger events are sent back to the controller.
+
+Global `--max-triggers` (or `--oneshot`) is a single counter across all workers.
+
+### Output
+
+```
+[watch-daemon] Monitoring processes matching "{php-fpm}" | triggers=memory-usage | workers=8
+[+process] PID=1234 assigned to worker 0
+[+process] PID=2345 assigned to worker 1
+[TRIGGERED] PID=1234 | trigger=memory-usage | mem=523.4M>512M (1/unlimited)
+[-process] PID=2345 detached from worker 1
+```
+
+## All Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-p, --pid` | — | Target process PID (single-process mode) |
+| `-P, --target-regex` | — | Regex to find target processes (daemon mode) |
+| `--memory-usage` | — | Trigger on heap usage threshold |
+| `--memory-growth-rate` | — | Trigger on memory growth rate |
+| `--memory-peak-watch` | off | Trigger on peak memory update |
+| `--watch-function` | — | Trigger on function in call stack |
+| `--trace-depth-limit` | — | Trigger on call stack depth |
+| `--watch-var` | — | Trigger on variable value condition (repeatable) |
+| `--action` | `memory-dump` | Actions to execute (repeatable) |
+| `--action-exec-command` | — | Command for exec action |
+| `--action-output-dir` | `.` | Output directory for dumps and logs |
+| `--log-file` | stderr | Log file path for log action |
+| `--poll-interval` | `1000` | Polling interval in ms (min: 100) |
+| `--cooldown` | `60` | Cooldown seconds between trigger fires |
+| `--backoff-multiplier` | `2.0` | Exponential backoff multiplier |
+| `--backoff-max` | `3600` | Maximum backoff seconds |
+| `--max-triggers-per-hour` | `10` | Hourly trigger rate limit |
+| `--max-dump-size` | `1G` | Cumulative dump file size limit |
+| `--max-triggers` | `0` | Total trigger limit (0=unlimited) |
+| `--oneshot` | — | Alias for --max-triggers |
+| `--quiet-watch` | off | Suppress terminal status output |
+| `-S, --stop-process` | off | Stop target with ptrace during reads |
+| `-T, --threads` | `8` | Worker count (daemon mode) |
+| `--no-cache` | off | Disable binary analysis cache |
+
+## Container Deployment
+
+### Kubernetes (Sidecar)
+
+```yaml
+spec:
+  shareProcessNamespace: true
+  containers:
+  - name: app
+    image: php-app:latest
+  - name: reli-watch
+    image: reli-prof:latest
+    command: ["reli", "inspector:watch",
+      "--target-regex=php-fpm",
+      "--memory-usage=512M",
+      "--action=memory-dump", "--action=log",
+      "--log-file=/var/log/reli/watch.log",
+      "--action-output-dir=/var/log/reli/dumps/",
+      "--max-dump-size=2G", "--quiet-watch"]
+    securityContext:
+      capabilities:
+        add: ["SYS_PTRACE"]
+```
+
+### Amazon ECS
+
+```json
+{
+  "pidMode": "task",
+  "containerDefinitions": [{
+    "name": "reli-watch",
+    "essential": false,
+    "linuxParameters": {"capabilities": {"add": ["SYS_PTRACE"]}}
+  }]
+}
+```
+
+## Performance
+
+Measured polling overhead (PHP 8.4, median):
+
+| Configuration | Latency | Max polls/sec |
+|---------------|---------|---------------|
+| Tier 1 only (memory triggers) | ~680μs | ~1,470 |
+| Tier 1 + Tier 2 (+ function/depth) | ~750μs | ~1,330 |
+| Tier 1 + 2 + 3 (+ variable watch) | ~2,170μs | ~460 |
+
+Trigger evaluation itself is < 1μs. The cost is dominated by `process_vm_readv` calls for reading target process memory.
+
+At the default `--poll-interval=1000` (1 second), even the heaviest configuration uses only ~0.2% of the polling interval.

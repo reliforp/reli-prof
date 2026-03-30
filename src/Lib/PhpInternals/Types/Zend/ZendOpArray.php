@@ -48,6 +48,13 @@ final class ZendOpArray
      */
     public ?Pointer $static_variables;
 
+    /**
+     * Runtime pointer to static variables (PHP 7.4+).
+     * static_variables is the template; this points to the live copy.
+     * @psalm-suppress PropertyNotSetInConstructor
+     */
+    public int $static_variables_ptr;
+
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $fn_flags;
 
@@ -111,6 +118,7 @@ final class ZendOpArray
         unset($this->filename);
         unset($this->arg_info);
         unset($this->static_variables);
+        unset($this->static_variables_ptr);
         unset($this->last);
         unset($this->T);
         unset($this->num_args);
@@ -162,6 +170,9 @@ final class ZendOpArray
                     $this->cdata->static_variables,
                 )
                 : null
+            ,
+            'static_variables_ptr' => $this->static_variables_ptr
+                = $this->readStaticVariablesPtr()
             ,
             'last' => $this->cdata->last,
             'T' => $this->cdata->T,
@@ -316,6 +327,27 @@ final class ZendOpArray
         }
         $filename = $dereferencer->deref($this->filename);
         return $filename->toString($dereferencer);
+    }
+
+    /**
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress MixedArgument
+     */
+    private function readStaticVariablesPtr(): int
+    {
+        try {
+            $ptr = $this->cdata->static_variables_ptr__ptr;
+            if ($ptr === null) {
+                return 0;
+            }
+            return Cast::toInt(
+                FFI::cast('long', $ptr)?->cdata,
+            );
+        } catch (\Throwable) {
+            // Field doesn't exist in PHP < 7.4
+            return 0;
+        }
     }
 
     /** @return iterable<int, Pointer<ZendString>> */

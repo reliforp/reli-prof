@@ -70,9 +70,15 @@ final class ZendPropertyInfo implements CDataDereferencable
         };
     }
 
-    public function isStatic(): bool
+    /**
+     * ZEND_ACC_STATIC changed across PHP versions:
+     * - PHP 7.0-7.3: ZEND_ACC_STATIC = 0x01
+     * - PHP 7.4+:     ZEND_ACC_STATIC = 0x10 (1 << 4)
+     */
+    public function isStatic(bool $php74_or_later = true): bool
     {
-        return (bool)($this->flags & (1 << 4));
+        $mask = $php74_or_later ? (1 << 4) : 0x01;
+        return (bool)($this->flags & $mask);
     }
 
     #[\Override]

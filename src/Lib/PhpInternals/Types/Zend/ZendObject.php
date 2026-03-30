@@ -132,7 +132,10 @@ final class ZendObject implements CDataDereferencable
                 $type_reader->sizeOf(ZendPropertyInfo::getCTypeName()),
             );
             $property_info = $dereferencer->deref($property_info_pointer);
-            if ($property_info->isStatic()) {
+            $is_74_plus = !$type_reader->isPhpVersionLowerThan(
+                \Reli\Lib\PhpInternals\ZendTypeReader::V74,
+            );
+            if ($property_info->isStatic($is_74_plus)) {
                 continue;
             }
             $real_offset = $property_info->offset - $table_offset;
