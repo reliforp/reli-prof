@@ -19,7 +19,26 @@ final class DiskUsageTracker
 
     public function __construct(
         private int $limit_bytes,
+        ?string $output_dir = null,
     ) {
+        if ($output_dir !== null) {
+            $this->scanExistingFiles($output_dir);
+        }
+    }
+
+    private function scanExistingFiles(string $dir): void
+    {
+        $pattern = rtrim($dir, '/') . '/watch-*.dump';
+        $files = glob($pattern);
+        if ($files === false) {
+            return;
+        }
+        foreach ($files as $file) {
+            $size = filesize($file);
+            if ($size !== false) {
+                $this->total_bytes += $size;
+            }
+        }
     }
 
     public function recordFile(string $path): void

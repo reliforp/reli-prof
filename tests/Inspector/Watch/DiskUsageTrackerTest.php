@@ -57,4 +57,34 @@ class DiskUsageTrackerTest extends TestCase
 
         unlink($tmpFile);
     }
+
+    public function testScansExistingFilesOnConstruction(): void
+    {
+        $dir = sys_get_temp_dir() . '/reli_disk_test_' . uniqid();
+        mkdir($dir);
+
+        // Create existing dump files
+        file_put_contents($dir . '/watch-123-20260330.dump', str_repeat('x', 300));
+        file_put_contents($dir . '/watch-456-20260330.dump', str_repeat('x', 200));
+        // Non-matching file should be ignored
+        file_put_contents($dir . '/other.txt', str_repeat('x', 999));
+
+        $tracker = new DiskUsageTracker(1000, $dir);
+        $this->assertSame(500, $tracker->getTotalBytes());
+
+        // Adding more should accumulate
+        file_put_contents($dir . '/watch-789-20260330.dump', str_repeat('x', 400));
+        $tracker->recordFile($dir . '/watch-789-20260330.dump');
+        $this->assertSame(900, $tracker->getTotalBytes());
+        $this->assertTrue($tracker->canWrite());
+
+        // Over limit
+        file_put_contents($dir . '/watch-999-20260330.dump', str_repeat('x', 200));
+        $tracker->recordFile($dir . '/watch-999-20260330.dump');
+        $this->assertFalse($tracker->canWrite());
+
+        // Cleanup
+        array_map('unlink', glob($dir . '/*'));
+        rmdir($dir);
+    }
 }

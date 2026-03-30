@@ -193,6 +193,7 @@ final class WatchCommand extends Command
         // Build rate limiters (need disk_tracker before actions)
         $disk_tracker = new DiskUsageTracker(
             $watch_settings->max_dump_size_bytes,
+            $watch_settings->action_output_dir,
         );
 
         $actions = $this->action_factory->buildActions(
@@ -443,7 +444,10 @@ final class WatchCommand extends Command
         // Build actions for daemon mode
         $output_settings = $this->output_settings_from_console_input->createSettings($input);
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput($output, $output_settings);
-        $disk_tracker = new DiskUsageTracker($watch_settings->max_dump_size_bytes);
+        $disk_tracker = new DiskUsageTracker(
+            $watch_settings->max_dump_size_bytes,
+            $watch_settings->action_output_dir,
+        );
         $actions = $this->action_factory->buildDaemonActions(
             $watch_settings,
             $trace_output,
