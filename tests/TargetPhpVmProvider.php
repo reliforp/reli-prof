@@ -108,10 +108,16 @@ class TargetPhpVmProvider
         };
     }
 
+    public static function opcacheSupported()
+    {
+        return self::from(ZendTypeReader::V74);
+    }
+
     public static function runScriptViaContainer(
         string $docker_image_name,
         string $script,
         array &$pipes,
+        string $extra_php_ini = '',
     ) {
         $tmp_file = tempnam('/tmp/reli-test', 'reli-prof-test');
         $pid_writer = tempnam('/tmp/reli-test', 'reli-prof-test-pid-writer');
@@ -134,9 +140,12 @@ class TargetPhpVmProvider
             $script
         );
 
+        $php_command = 'php'
+            . ($extra_php_ini !== '' ? ' ' . $extra_php_ini : '')
+            . ' -dauto_prepend_file=/pid-writer /source';
         $proc_handle = self::procOpenViaDocker(
             $docker_image_name,
-            'php -dauto_prepend_file=/pid-writer /source',
+            $php_command,
             [
                 ['pipe', 'r'],
                 ['pipe', 'w'],

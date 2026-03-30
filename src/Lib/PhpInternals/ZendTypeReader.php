@@ -181,18 +181,33 @@ final class ZendTypeReader
         Dereferencer $dereferencer,
     ): int {
         $address_candidate = $map_ptr;
+
+        if ($map_ptr & 1) {
+            // PHP 8.0+ has biased base (map_ptr_base = real_base - 1,
+            // commit 27815959 in php-src), so the LSB in the offset
+            // cancels out and no masking is needed.
+            // PHP 7.4 stores the raw base and encodes offsets with
+            // | 1 (ZEND_MAP_PTR_PTR2OFFSET), requiring - 1 (or & ~1)
+            // when resolving (ZEND_MAP_PTR_OFFSET2PTR = base+off-1).
+            // This applies even when map_ptr_base is 0:
+            //   PTR2OFFSET with base=0 gives (ptr-0)|1 = ptr|1
+            //   OFFSET2PTR gives 0 + (ptr|1) - 1 = ptr
+            $offset = $this->isPhpVersionLowerThan(ZendTypeReader::V80)
+                ? ($map_ptr & ~1)
+                : $map_ptr;
+            $pointer = new Pointer(
+                RawInt64::class,
+                $map_ptr_base + $offset,
+                8,
+            );
+            return $dereferencer->deref($pointer)->value;
+        }
+
         if ($map_ptr_base === 0) {
             return $map_ptr;
         }
 
-        if ($map_ptr & 1) {
-            $pointer = new Pointer(
-                RawInt64::class,
-                $map_ptr_base + $map_ptr,
-                8,
-            );
-            return $dereferencer->deref($pointer)->value;
-        } elseif ($this->isPhpVersionLowerThan(ZendTypeReader::V82)) {
+        if ($this->isPhpVersionLowerThan(ZendTypeReader::V82)) {
             $pointer = new Pointer(
                 RawInt64::class,
                 $address_candidate,
