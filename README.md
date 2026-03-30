@@ -17,6 +17,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 - Investigating the cause of a bug or performance failure
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
 - [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md)
+- [Condition-based monitoring](docs/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
 
 ## How it works
 It's implemented by using following techniques:
@@ -360,6 +361,35 @@ Options:
   -v|vv|vvv, --verbose                                               Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
 
 ```
+
+## [Experimental] Watch: Condition-Based Process Monitoring
+
+`inspector:watch` monitors PHP processes and triggers profiling actions when configurable conditions are met. It only takes action when triggers fire, making it suitable for low-overhead production monitoring.
+
+```bash
+# Dump memory when usage exceeds 256M
+./reli inspector:watch -p <pid> --memory-limit=256M
+
+# Monitor multiple php-fpm processes
+./reli inspector:watch --target-regex="php-fpm" --memory-limit=512M --action=log
+
+# Watch for a specific function in the call stack
+./reli inspector:watch -p <pid> --watch-function="App\Service::process" --action=trace
+
+# Monitor a PHP variable
+./reli inspector:watch -p <pid> --watch-var='global::$cache:count_gt:10000'
+
+# Grab 3 memory dumps and stop
+./reli inspector:watch -p <pid> --memory-limit=128M --oneshot=3
+```
+
+Available triggers: `--memory-limit`, `--memory-growth-rate`, `--memory-peak-watch`, `--watch-function`, `--trace-depth-limit`, `--watch-var`.
+
+Available actions: `memory-dump` (default), `trace`, `log`, `exec`.
+
+Rate limiting: `--cooldown` (with exponential backoff), `--max-triggers-per-hour`, `--max-dump-size`.
+
+See [docs/watch-command.md](docs/watch-command.md) for full documentation.
 
 ## Examples
 ### Trace a script
