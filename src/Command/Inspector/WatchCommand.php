@@ -516,16 +516,18 @@ final class WatchCommand extends Command
         $_echo_back_canceler = new EchoBackCanceller();
         $cancellation = new DeferredCancellation();
 
-        EventLoop::onReadable(
-            STDIN,
-            function (string $watcher_id, $stream) use ($cancellation) {
-                $key = fread($stream, 1);
-                if ($key === 'q') {
-                    EventLoop::cancel($watcher_id);
-                    $cancellation->cancel();
+        if (stream_isatty(STDIN)) {
+            EventLoop::onReadable(
+                STDIN,
+                function (string $watcher_id, $stream) use ($cancellation) {
+                    $key = fread($stream, 1);
+                    if ($key === 'q') {
+                        EventLoop::cancel($watcher_id);
+                        $cancellation->cancel();
+                    }
                 }
-            }
-        );
+            );
+        }
 
         if (!$quiet) {
             $output->writeln(sprintf(
