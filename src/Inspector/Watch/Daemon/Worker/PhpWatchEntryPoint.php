@@ -100,10 +100,13 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
 
             $previous_context = null;
             $trace_cache = new TraceCache();
+            $consecutive_failures = 0;
+            $max_consecutive_failures = 10;
 
             try {
                 while ($this->loop_condition->shouldContinue()) {
                     $now = microtime(true);
+                    $call_trace = null;
 
                     // Read process state. Skip poll on failure
                     // (target may be between requests).
@@ -114,7 +117,6 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                             $descriptor->eg_address,
                         );
 
-                        $call_trace = null;
                         if ($needs_call_trace) {
                             $call_trace = $this->call_trace_reader
                                 ->readCallTrace(
@@ -138,10 +140,22 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                                 );
                         }
                     } catch (\Throwable) {
+                        $consecutive_failures++;
+                        if ($consecutive_failures >= $max_consecutive_failures) {
+                            Log::debug('watch worker: process seems dead', [
+                                'pid' => $descriptor->pid,
+                                'consecutive_failures' => $consecutive_failures,
+                            ]);
+                            break;
+                        }
                         $previous_context = null;
                         usleep($poll_sleep_us);
                         continue;
                     }
+                    $consecutive_failures = 0;
+
+                    assert(isset($heap_stats));
+                    assert(isset($variable_values));
 
                     $context = new WatchContext(
                         pid: $descriptor->pid,
