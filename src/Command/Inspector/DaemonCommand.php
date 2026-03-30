@@ -110,20 +110,19 @@ final class DaemonCommand extends Command
 
         $cancellation = new DeferredCancellation();
 
-        EventLoop::onReadable(
-            STDIN,
-            /** @param resource $stream */
-            function (string $watcher_id, $stream) use ($cancellation) {
-                $key = fread($stream, 1);
-                if ($key === 'q') {
-                    EventLoop::cancel($watcher_id);
-                    $cancellation->cancel();
+        if (stream_isatty(STDIN)) {
+            EventLoop::onReadable(
+                STDIN,
+                /** @param resource $stream */
+                function (string $watcher_id, $stream) use ($cancellation) {
+                    $key = fread($stream, 1);
+                    if ($key === 'q') {
+                        EventLoop::cancel($watcher_id);
+                        $cancellation->cancel();
+                    }
                 }
-                if ($key === '' || $key === false) {
-                    EventLoop::cancel($watcher_id);
-                }
-            }
-        );
+            );
+        }
         $futures = [];
         $futures[] = async(function () use ($searcher_context, $dispatch_table) {
             while (1) {
