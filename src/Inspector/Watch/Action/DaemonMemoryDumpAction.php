@@ -33,6 +33,7 @@ final class DaemonMemoryDumpAction implements ActionInterface
         private MemoryDumper $memory_dumper,
         private string $output_dir,
         private DiskUsageTracker $disk_tracker,
+        private bool $include_binary = false,
     ) {
     }
 
@@ -83,6 +84,7 @@ final class DaemonMemoryDumpAction implements ActionInterface
                 $eg,
                 $cg,
                 $output_path,
+                $this->include_binary,
             );
             $this->disk_tracker->recordFile($output_path);
             Log::info('memory-dump saved', [

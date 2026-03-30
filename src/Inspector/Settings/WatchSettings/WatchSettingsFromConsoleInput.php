@@ -156,6 +156,12 @@ final class WatchSettingsFromConsoleInput
                 'status summary interval in seconds for daemon mode (default: 60)',
             )
             ->addOption(
+                'include-binary',
+                null,
+                InputOption::VALUE_NONE,
+                'include read-only binary segments in memory dumps',
+            )
+            ->addOption(
                 'quiet-watch',
                 null,
                 InputOption::VALUE_NONE,
@@ -236,6 +242,7 @@ final class WatchSettingsFromConsoleInput
             action_exec_command: NullableCast::toString($input->getOption('action-exec-command')),
             log_file: NullableCast::toString($input->getOption('log-file')),
             memory_output_format: NullableCast::toString($input->getOption('memory-output-format')),
+            include_binary: (bool)$input->getOption('include-binary'),
         );
     }
 }

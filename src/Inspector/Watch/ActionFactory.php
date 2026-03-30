@@ -83,6 +83,7 @@ final class ActionFactory
                 $cg_address,
                 $settings->action_output_dir,
                 $disk_tracker,
+                $settings->include_binary,
             );
         }
 
@@ -123,6 +124,7 @@ final class ActionFactory
                         $this->memory_dumper,
                         $settings->action_output_dir,
                         $disk_tracker,
+                        $settings->include_binary,
                     );
                     break;
             }
@@ -173,6 +175,7 @@ final class ActionFactory
                 $cg_address,
                 $settings->action_output_dir,
                 $disk_tracker,
+                $settings->include_binary,
             ),
             'exec' => $settings->action_exec_command !== null
                 ? new ExecAction($settings->action_exec_command)

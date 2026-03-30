@@ -43,6 +43,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'backoff-max' => null,
             'status-interval' => null,
             'quiet-watch' => false,
+            'include-binary' => false,
         ];
         $merged = array_merge($defaults, $overrides);
         $input = Mockery::mock(InputInterface::class);
@@ -71,6 +72,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
         $this->assertNull($settings->memory_usage_bytes);
         $this->assertNull($settings->memory_growth_rate);
         $this->assertFalse($settings->memory_peak_watch);
+        $this->assertFalse($settings->include_binary);
     }
 
     public function testMemoryLimit(): void
@@ -155,6 +157,16 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             2 * 1024 * 1024 * 1024,
             $settings->max_dump_size_bytes,
         );
+    }
+
+    public function testIncludeBinary(): void
+    {
+        $settings = (new WatchSettingsFromConsoleInput())
+            ->createSettings($this->makeInput([
+                'include-binary' => true,
+            ]));
+
+        $this->assertTrue($settings->include_binary);
     }
 
     public function testAllTriggerFlags(): void

@@ -49,6 +49,7 @@ final class WatchSettings
         public ?string $action_exec_command,
         public ?string $log_file,
         public ?string $memory_output_format,
+        public bool $include_binary = false,
     ) {
     }
 }

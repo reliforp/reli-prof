@@ -37,6 +37,7 @@ final class MemoryDumpAction implements ActionInterface
         private int $cg_address,
         private string $output_dir,
         private DiskUsageTracker $disk_tracker,
+        private bool $include_binary = false,
     ) {
     }
 
@@ -71,6 +72,7 @@ final class MemoryDumpAction implements ActionInterface
                 $this->eg_address,
                 $this->cg_address,
                 $output_path,
+                $this->include_binary,
             );
 
             $this->disk_tracker->recordFile($output_path);

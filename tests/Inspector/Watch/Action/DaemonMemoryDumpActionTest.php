@@ -111,6 +111,40 @@ class DaemonMemoryDumpActionTest extends BaseTestCase
         );
     }
 
+    public function testPassesIncludeBinaryFlag(): void
+    {
+        $result = new MemoryDumpResult('/tmp/test.dump', 5, 1024);
+        $dumper = Mockery::mock(
+            'overload:' . MemoryDumper::class,
+        );
+        $dumper->shouldReceive('dump')
+            ->once()
+            ->withArgs(function (
+                ProcessSpecifier $ps,
+                $tps,
+                int $eg,
+                int $cg,
+                string $path,
+                bool $include_binary,
+            ): bool {
+                return $include_binary === true;
+            })
+            ->andReturn($result);
+
+        $action = new DaemonMemoryDumpAction(
+            $dumper,
+            sys_get_temp_dir(),
+            new DiskUsageTracker(1024 * 1024),
+            true,
+        );
+
+        $action->execute(
+            new TriggerEvent('mem', 'desc', 100.0),
+            new ProcessSpecifier(42),
+            $this->makeContext(0x1000, 0x2000, 'v84'),
+        );
+    }
+
     private function makeContext(
         int $eg = 0,
         int $cg = 0,
