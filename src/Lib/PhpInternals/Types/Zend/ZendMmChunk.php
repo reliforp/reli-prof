@@ -144,9 +144,14 @@ final class ZendMmChunk implements CDataDereferencable
      */
     public function iterateChunks(Dereferencer $dereferencer): iterable
     {
+        $visited = [$this->getPointer()->address => true];
         yield $this;
         $chunk = $this;
         while (!is_null($chunk->next) and $chunk->next->address !== $this->getPointer()->address) {
+            if (isset($visited[$chunk->next->address])) {
+                break;
+            }
+            $visited[$chunk->next->address] = true;
             $chunk = $dereferencer->deref($chunk->next);
             yield $chunk;
         }
