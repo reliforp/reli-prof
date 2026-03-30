@@ -50,6 +50,11 @@ final class WatchSettings
         public ?string $log_file,
         public ?string $memory_output_format,
         public bool $include_binary = false,
+        public string $db_host = '127.0.0.1',
+        public ?int $db_port = null,
+        public ?string $db_name = null,
+        public ?string $db_user = null,
+        public ?string $db_password = null,
     ) {
     }
 }

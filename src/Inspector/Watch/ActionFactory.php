@@ -14,7 +14,9 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch;
 
 use Reli\Inspector\MemoryDump\MemoryDumper;
+use Reli\Inspector\MemoryDump\MemoryDumpReaderFactory;
 use Reli\Inspector\Output\TraceOutput\TraceOutput;
+use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
 use Reli\Inspector\Watch\Action\ActionInterface;
@@ -30,6 +32,7 @@ final class ActionFactory
     public function __construct(
         private CallTraceReader $call_trace_reader,
         private MemoryDumper $memory_dumper,
+        private MemoryDumpReaderFactory $memory_dump_reader_factory,
     ) {
     }
 
@@ -76,14 +79,12 @@ final class ActionFactory
 
         if (count($actions) === 0) {
             /** @psalm-suppress InvalidArgument */
-            $actions[] = new MemoryDumpAction(
-                $this->memory_dumper,
+            $actions[] = $this->buildMemoryDumpAction(
+                $settings,
                 $target_php_settings,
                 $eg_address,
                 $cg_address,
-                $settings->action_output_dir,
                 $disk_tracker,
-                $settings->include_binary,
             );
         }
 
@@ -120,11 +121,9 @@ final class ActionFactory
                     }
                     break;
                 case 'memory-dump':
-                    $actions[] = new Action\DaemonMemoryDumpAction(
-                        $this->memory_dumper,
-                        $settings->action_output_dir,
+                    $actions[] = $this->buildDaemonMemoryDumpAction(
+                        $settings,
                         $disk_tracker,
-                        $settings->include_binary,
                     );
                     break;
             }
@@ -168,19 +167,82 @@ final class ActionFactory
                 ? LogAction::toFile($settings->log_file)
                 : new LogAction(),
             /** @psalm-suppress InvalidArgument */
-            'memory-dump' => new MemoryDumpAction(
-                $this->memory_dumper,
+            'memory-dump' => $this->buildMemoryDumpAction(
+                $settings,
                 $target_php_settings,
                 $eg_address,
                 $cg_address,
-                $settings->action_output_dir,
                 $disk_tracker,
-                $settings->include_binary,
             ),
             'exec' => $settings->action_exec_command !== null
                 ? new ExecAction($settings->action_exec_command)
                 : null,
             default => null,
         };
+    }
+
+    /**
+     * @psalm-suppress InvalidArgument
+     * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
+     */
+    private function buildMemoryDumpAction(
+        WatchSettings $settings,
+        TargetPhpSettings $target_php_settings,
+        int $eg_address,
+        int $cg_address,
+        DiskUsageTracker $disk_tracker,
+    ): MemoryDumpAction {
+        $format = $settings->memory_output_format;
+        $profiler_settings = $format !== null
+            ? $this->buildMemoryProfilerSettings($settings)
+            : null;
+
+        /** @psalm-suppress InvalidArgument */
+        return new MemoryDumpAction(
+            $this->memory_dumper,
+            $target_php_settings,
+            $eg_address,
+            $cg_address,
+            $settings->action_output_dir,
+            $disk_tracker,
+            $settings->include_binary,
+            $format,
+            $format !== null ? $this->memory_dump_reader_factory : null,
+            $profiler_settings,
+        );
+    }
+
+    private function buildDaemonMemoryDumpAction(
+        WatchSettings $settings,
+        DiskUsageTracker $disk_tracker,
+    ): Action\DaemonMemoryDumpAction {
+        $format = $settings->memory_output_format;
+        $profiler_settings = $format !== null
+            ? $this->buildMemoryProfilerSettings($settings)
+            : null;
+
+        return new Action\DaemonMemoryDumpAction(
+            $this->memory_dumper,
+            $settings->action_output_dir,
+            $disk_tracker,
+            $settings->include_binary,
+            $format,
+            $format !== null ? $this->memory_dump_reader_factory : null,
+            $profiler_settings,
+        );
+    }
+
+    private function buildMemoryProfilerSettings(WatchSettings $settings): MemoryProfilerSettings
+    {
+        return new MemoryProfilerSettings(
+            stop_process: false,
+            pretty_print: true,
+            output_format: $settings->memory_output_format ?? 'json',
+            db_host: $settings->db_host,
+            db_port: $settings->db_port,
+            db_name: $settings->db_name,
+            db_user: $settings->db_user,
+            db_password: $settings->db_password,
+        );
     }
 }

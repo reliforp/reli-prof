@@ -67,6 +67,9 @@ class ActionFactoryBuildActionsTest extends BaseTestCase
             Mockery::mock(
                 'overload:' . MemoryDumper::class,
             ),
+            Mockery::mock(
+                'overload:' . \Reli\Inspector\MemoryDump\MemoryDumpReaderFactory::class,
+            ),
         );
     }
 

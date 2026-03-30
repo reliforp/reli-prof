@@ -61,6 +61,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumpReaderFactory::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -78,6 +79,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumpReaderFactory::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -95,6 +97,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumpReaderFactory::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -115,6 +118,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumpReaderFactory::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -132,6 +136,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumpReaderFactory::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 

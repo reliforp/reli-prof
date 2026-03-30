@@ -96,8 +96,38 @@ final class WatchSettingsFromConsoleInput
                 'memory-output-format',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'output format for memory-dump action (json, sqlite3)',
-                'json',
+                'output format for memory-dump action'
+                    . ' (json, sqlite3, mysql, postgresql)',
+            )
+            ->addOption(
+                'db-host',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'database host for mysql/postgresql output (default: 127.0.0.1)',
+            )
+            ->addOption(
+                'db-port',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'database port for mysql/postgresql output',
+            )
+            ->addOption(
+                'db-name',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'database name for mysql/postgresql output',
+            )
+            ->addOption(
+                'db-user',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'database user for mysql/postgresql output',
+            )
+            ->addOption(
+                'db-password',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'database password for mysql/postgresql output',
             )
             // Rate limiting options
             ->addOption(
@@ -247,6 +277,13 @@ final class WatchSettingsFromConsoleInput
             ),
             memory_output_format: NullableCast::toString($input->getOption('memory-output-format')),
             include_binary: (bool)$input->getOption('include-binary'),
+            db_host: NullableCast::toString($input->getOption('db-host')) ?? '127.0.0.1',
+            db_port: ($db_port_raw = NullableCast::toString($input->getOption('db-port'))) !== null
+                ? (int)$db_port_raw
+                : null,
+            db_name: NullableCast::toString($input->getOption('db-name')),
+            db_user: NullableCast::toString($input->getOption('db-user')),
+            db_password: NullableCast::toString($input->getOption('db-password')),
         );
     }
 
