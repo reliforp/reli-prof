@@ -160,12 +160,11 @@ final class VariableReader
     }
 
     /**
-     * Read a local variable by walking up the call stack.
+     * Read a local variable from a specific call frame.
      *
-     * Name format:
-     *   $var                            — walk stack, return first match
-     *   App\Service::process()$var      — only look in that function's frame
-     *   main()$var                      — only look in the main script frame
+     * Function specification is required:
+     *   App\Service::process()$var      — look in that function's frame
+     *   main()$var                      — look in the main script frame
      *
      * () marks the function name, $ marks the variable start.
      */
@@ -176,24 +175,24 @@ final class VariableReader
         string $name,
     ): ?VariableValue {
         [$func_filter, $var_part] = self::parseLocalExpression($name);
+        if ($func_filter === null) {
+            return null; // function specification is required
+        }
         [$root, $path_segments] = self::parsePathExpression($var_part);
         $frame_pointer = $eg->current_execute_data;
 
         while ($frame_pointer !== null) {
             $execute_data = $dereferencer->deref($frame_pointer);
 
-            // If function filter is set, check frame matches
-            if ($func_filter !== null) {
-                $matches = $this->frameMatchesFunction(
-                    $execute_data,
-                    $dereferencer,
-                    $zend_type_reader,
-                    $func_filter,
-                );
-                if (!$matches) {
-                    $frame_pointer = $execute_data->prev_execute_data;
-                    continue;
-                }
+            $matches = $this->frameMatchesFunction(
+                $execute_data,
+                $dereferencer,
+                $zend_type_reader,
+                $func_filter,
+            );
+            if (!$matches) {
+                $frame_pointer = $execute_data->prev_execute_data;
+                continue;
             }
 
             foreach (
@@ -219,37 +218,28 @@ final class VariableReader
                 }
             }
 
-            // If function filter matched but var not found, stop
-            if ($func_filter !== null) {
-                return null;
-            }
-
-            $frame_pointer = $execute_data->prev_execute_data;
+            return null; // frame matched but var not found
         }
 
         return null;
     }
 
     /**
-     * Parse local expression into optional function filter + variable part.
+     * Parse local/func_static expression: function()$variable
      *
      * "App\Svc::process()$retries"    → ["App\Svc::process", "retries"]
      * "handleRequest()$items"          → ["handleRequest", "items"]
      * "main()$counter"                 → ["main", "counter"]
-     * "$counter"                       → [null, "counter"]
-     * "counter"                        → [null, "counter"]
      *
-     * () marks the function, $ marks the variable start.
+     * Returns [null, name] if no ()$ pattern found (invalid for local).
      *
      * @return array{?string, string} [function_name, var_name_with_path]
      */
     public static function parseLocalExpression(string $name): array
     {
-        // Look for ()$ pattern — function()$variable
         $marker = ')$';
         $pos = strpos($name, $marker);
         if ($pos !== false) {
-            // Find the matching ( before )
             $paren_open = strrpos(
                 substr($name, 0, $pos + 1),
                 '(',
@@ -259,11 +249,6 @@ final class VariableReader
                 $var = substr($name, $pos + strlen($marker));
                 return [$func, $var];
             }
-        }
-
-        // No function filter — strip leading $ if present
-        if (str_starts_with($name, '$')) {
-            return [null, substr($name, 1)];
         }
 
         return [null, $name];
@@ -279,8 +264,9 @@ final class VariableReader
         string $function_name,
     ): bool {
         if ($execute_data->func === null) {
-            return $function_name === 'main'
-                || $function_name === '<main>';
+            // Top-level script scope: use <main> to avoid
+            // collision with a function named "main"
+            return $function_name === '<main>';
         }
 
         $func = $dereferencer->deref($execute_data->func);

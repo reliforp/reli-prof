@@ -17,18 +17,10 @@ use PHPUnit\Framework\TestCase;
 
 class VariableReaderLocalExpressionTest extends TestCase
 {
-    public function testSimpleVariable(): void
+    public function testNoFuncSpecReturnsNull(): void
     {
         [$func, $var] = VariableReader::parseLocalExpression('$counter');
         $this->assertNull($func);
-        $this->assertSame('counter', $var);
-    }
-
-    public function testWithoutDollar(): void
-    {
-        [$func, $var] = VariableReader::parseLocalExpression('counter');
-        $this->assertNull($func);
-        $this->assertSame('counter', $var);
     }
 
     public function testFunctionScoped(): void
@@ -52,9 +44,9 @@ class VariableReaderLocalExpressionTest extends TestCase
     public function testMainScope(): void
     {
         [$func, $var] = VariableReader::parseLocalExpression(
-            'main()$counter',
+            '<main>()$counter',
         );
-        $this->assertSame('main', $func);
+        $this->assertSame('<main>', $func);
         $this->assertSame('counter', $var);
     }
 

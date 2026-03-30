@@ -172,11 +172,15 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $results,
         );
 
-        // Test local scope: walk up call stack to find
-        // script-level variables even when stopped in fgets
+        // Test local scope: function spec required
+        // <main>() is the script-level frame
         $triggers_local = [
-            new VariableValueTrigger('local::local_counter:gt:0'),
-            new VariableValueTrigger('local::local_items:count_gt:10'),
+            new VariableValueTrigger(
+                'local::<main>()$local_counter:gt:0',
+            ),
+            new VariableValueTrigger(
+                'local::<main>()$local_items:count_gt:10',
+            ),
         ];
         $results_local = $variable_reader->readVariables(
             $triggers_local,
@@ -185,24 +189,26 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $eg_address,
         );
 
-        $this->assertArrayHasKey('local::local_counter', $results_local);
+        $key_counter = 'local::<main>()$local_counter';
+        $this->assertArrayHasKey($key_counter, $results_local);
         $this->assertSame(
             VariableValue::TYPE_LONG,
-            $results_local['local::local_counter']->type,
+            $results_local[$key_counter]->type,
         );
         $this->assertSame(
             42,
-            $results_local['local::local_counter']->scalar_value,
+            $results_local[$key_counter]->scalar_value,
         );
 
-        $this->assertArrayHasKey('local::local_items', $results_local);
+        $key_items = 'local::<main>()$local_items';
+        $this->assertArrayHasKey($key_items, $results_local);
         $this->assertSame(
             VariableValue::TYPE_ARRAY,
-            $results_local['local::local_items']->type,
+            $results_local[$key_items]->type,
         );
         $this->assertSame(
             50,
-            $results_local['local::local_items']->array_count,
+            $results_local[$key_items]->array_count,
         );
     }
 
