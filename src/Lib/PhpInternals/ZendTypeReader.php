@@ -188,7 +188,7 @@ final class ZendTypeReader
         if ($map_ptr & 1) {
             $pointer = new Pointer(
                 RawInt64::class,
-                $map_ptr_base + $map_ptr,
+                $map_ptr_base + ($map_ptr & ~1),
                 8,
             );
             return $dereferencer->deref($pointer)->value;
