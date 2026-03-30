@@ -79,6 +79,27 @@ max-triggers is NOT in CooldownManager.
   └── Daemon: global_trigger_count in controller, cancels all workers
 ```
 
+**Future: per-trigger cooldown override**
+
+Currently `--cooldown` applies to all triggers equally. A natural
+extension would be per-trigger overrides:
+
+```bash
+--cooldown=60                          # default for all
+--cooldown-memory-peak-watch=300       # override for peak trigger
+--cooldown-memory-limit=10             # override for memory-limit
+```
+
+Implementation: add `array<string, float> $per_trigger_cooldown`
+to `CooldownManager`. In `canFire()` / `recordFire()`, look up
+the trigger name in the per-trigger map first, fall back to
+`base_cooldown_seconds`. CLI option names follow
+`--cooldown-{trigger-name}` convention.
+
+This is particularly relevant for `memory-peak-watch` which fires
+on every peak update (one-directional, never clears) — a longer
+cooldown prevents noise while still capturing major peaks.
+
 ## Variable Reading
 
 ### --watch-var Syntax
