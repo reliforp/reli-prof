@@ -68,6 +68,14 @@ final class MemoryDumpAction implements ActionInterface
         );
 
         $stopped = $this->process_stopper->stop($process->pid);
+        if (!$stopped) {
+            Log::info(
+                'memory-dump skipped: failed to stop process'
+                    . ' (ptrace attach failed)',
+                ['pid' => $process->pid],
+            );
+            return;
+        }
         try {
             $result = $this->memory_dumper->dump(
                 $process,
@@ -90,9 +98,7 @@ final class MemoryDumpAction implements ActionInterface
                 'error' => $e->getMessage(),
             ]);
         } finally {
-            if ($stopped) {
-                $this->process_stopper->resume($process->pid);
-            }
+            $this->process_stopper->resume($process->pid);
         }
     }
 }
