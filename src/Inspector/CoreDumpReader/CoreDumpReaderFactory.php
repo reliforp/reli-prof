@@ -195,9 +195,10 @@ final class CoreDumpReaderFactory
                             $size
                         );
                     } else {
-                        $fp = fopen($memory_area->name, 'rb');
+                        $resolved_path = $this->path_resolver->resolve($pid, $memory_area->name);
+                        $fp = fopen($resolved_path, 'rb');
                         if ($fp === false) {
-                            throw new \RuntimeException("failed to open file: $memory_area->name");
+                            throw new \RuntimeException("failed to open file: $memory_area->name (resolved: $resolved_path)");
                         }
                         $offset = $remote_address - hexdec($memory_area->begin);
                         fseek(
