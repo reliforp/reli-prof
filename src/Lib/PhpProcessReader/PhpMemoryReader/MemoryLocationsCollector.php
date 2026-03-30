@@ -1124,16 +1124,23 @@ final class MemoryLocationsCollector
         foreach ($array->getItemIterator($dereferencer) as $function_name => $zval) {
             assert(is_string($function_name));
             assert(!is_null($zval->value->func));
-            $function_context = $this->collectZendFunctionPointer(
-                $zval->value->func,
-                $map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $defined_functions_context->add($function_name, $function_context);
+            try {
+                $function_context = $this->collectZendFunctionPointer(
+                    $zval->value->func,
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                $defined_functions_context->add($function_name, $function_context);
+            } catch (\RuntimeException $e) {
+                Log::debug(
+                    'skipping function due to unreadable memory',
+                    ['function' => $function_name, 'error' => $e->getMessage()],
+                );
+            }
         }
         return $defined_functions_context;
     }
@@ -1462,17 +1469,24 @@ final class MemoryLocationsCollector
         $defined_classes_context = new DefinedClassesContext();
         foreach ($array->getItemIterator($dereferencer) as $class_name => $zval) {
             assert(!is_null($zval->value->ce));
-            $class_definition_context = $this->collectClassDefinitionPointer(
-                $zval->value->ce,
-                $map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            if (!is_null($class_definition_context)) {
-                $defined_classes_context->add((string)$class_name, $class_definition_context);
+            try {
+                $class_definition_context = $this->collectClassDefinitionPointer(
+                    $zval->value->ce,
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                if (!is_null($class_definition_context)) {
+                    $defined_classes_context->add((string)$class_name, $class_definition_context);
+                }
+            } catch (\RuntimeException $e) {
+                Log::debug(
+                    'skipping class due to unreadable memory',
+                    ['class' => (string)$class_name, 'error' => $e->getMessage()],
+                );
             }
         }
         return $defined_classes_context;
