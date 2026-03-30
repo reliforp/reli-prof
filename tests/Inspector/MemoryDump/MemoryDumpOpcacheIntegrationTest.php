@@ -46,8 +46,20 @@ use Reli\TargetPhpVmProvider;
 #[Group('target-version')]
 class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
 {
-    private const OPCACHE_INI = '-dzend_extension=opcache'
-        . ' -dopcache.enable_cli=1 -dopcache.enable=1';
+    private const OPCACHE_INI = '-dopcache.enable_cli=1'
+        . ' -dopcache.enable=1';
+
+    private static function opcacheIniFor(string $php_version): string
+    {
+        // PHP 8.5+ ships opcache as a built-in Zend extension.
+        // Older versions need explicit loading via zend_extension.
+        $load = version_compare(
+            ltrim($php_version, 'v'),
+            '85',
+            '<',
+        ) ? '-dzend_extension=opcache ' : '';
+        return $load . self::OPCACHE_INI;
+    }
 
     /** @var resource|null */
     private $child = null;
@@ -77,6 +89,9 @@ class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('no matching target');
+        }
         $memory_reader = new MemoryReader();
         $zend_type_reader_creator = new ZendTypeReaderCreator();
         $process_memory_map_creator = ProcessMemoryMapCreator::create();
@@ -116,7 +131,7 @@ class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
             $docker_image_name,
             $target_script,
             $pipes,
-            self::OPCACHE_INI,
+            self::opcacheIniFor($php_version),
         );
 
         $this->waitForOpcacheReady($pipes[1], $docker_image_name);
@@ -174,6 +189,9 @@ class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('no matching target');
+        }
         $memory_reader = new MemoryReader();
         $zend_type_reader_creator = new ZendTypeReaderCreator();
         $process_memory_map_creator = ProcessMemoryMapCreator::create();
@@ -207,7 +225,7 @@ class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
             $docker_image_name,
             $target_script,
             $pipes,
-            self::OPCACHE_INI,
+            self::opcacheIniFor($php_version),
         );
 
         $this->waitForOpcacheReady($pipes[1], $docker_image_name);
@@ -258,6 +276,9 @@ class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('no matching target');
+        }
         $memory_reader = new MemoryReader();
         $zend_type_reader_creator = new ZendTypeReaderCreator();
         $process_memory_map_creator = ProcessMemoryMapCreator::create();
@@ -293,7 +314,7 @@ class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
             $docker_image_name,
             $target_script,
             $pipes,
-            self::OPCACHE_INI,
+            self::opcacheIniFor($php_version),
         );
 
         $opcache_used_str = $this->waitForOpcacheReadyWithUsage(
