@@ -21,6 +21,7 @@ use Reli\Inspector\Watch\Action\DaemonTraceAction;
 use Reli\Inspector\Watch\Action\ExecAction;
 use Reli\Inspector\Watch\Action\LogAction;
 use Reli\Inspector\Watch\DiskUsageTracker;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 /**
  * @runTestsInSeparateProcesses
@@ -61,6 +62,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . ProcessStopper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -78,6 +80,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . ProcessStopper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -95,6 +98,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . ProcessStopper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -115,6 +119,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . ProcessStopper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 
@@ -132,6 +137,7 @@ class ActionFactoryTest extends BaseTestCase
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
+            Mockery::mock('overload:' . ProcessStopper::class),
         );
         $output = Mockery::mock(TraceOutput::class);
 

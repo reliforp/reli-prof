@@ -24,12 +24,14 @@ use Reli\Inspector\Watch\Action\LogAction;
 use Reli\Inspector\Watch\Action\MemoryDumpAction;
 use Reli\Inspector\Watch\Action\TraceAction;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 final class ActionFactory
 {
     public function __construct(
         private CallTraceReader $call_trace_reader,
         private MemoryDumper $memory_dumper,
+        private ProcessStopper $process_stopper,
     ) {
     }
 
@@ -78,6 +80,7 @@ final class ActionFactory
             /** @psalm-suppress InvalidArgument */
             $actions[] = new MemoryDumpAction(
                 $this->memory_dumper,
+                $this->process_stopper,
                 $target_php_settings,
                 $eg_address,
                 $cg_address,
@@ -122,6 +125,7 @@ final class ActionFactory
                 case 'memory-dump':
                     $actions[] = new Action\DaemonMemoryDumpAction(
                         $this->memory_dumper,
+                        $this->process_stopper,
                         $settings->action_output_dir,
                         $disk_tracker,
                         $settings->include_binary,
@@ -170,6 +174,7 @@ final class ActionFactory
             /** @psalm-suppress InvalidArgument */
             'memory-dump' => new MemoryDumpAction(
                 $this->memory_dumper,
+                $this->process_stopper,
                 $target_php_settings,
                 $eg_address,
                 $cg_address,

@@ -20,6 +20,7 @@ use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Log\Log;
 use Reli\Lib\Process\ProcessSpecifier;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 /**
  * Fast binary memory dump action.
@@ -31,6 +32,7 @@ final class MemoryDumpAction implements ActionInterface
 {
     public function __construct(
         private MemoryDumper $memory_dumper,
+        private ProcessStopper $process_stopper,
         /** @var TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> */
         private TargetPhpSettings $target_php_settings,
         private int $eg_address,
@@ -65,6 +67,7 @@ final class MemoryDumpAction implements ActionInterface
             date('Ymd-His', (int)$event->timestamp),
         );
 
+        $stopped = $this->process_stopper->stop($process->pid);
         try {
             $result = $this->memory_dumper->dump(
                 $process,
@@ -86,6 +89,10 @@ final class MemoryDumpAction implements ActionInterface
                 'pid' => $process->pid,
                 'error' => $e->getMessage(),
             ]);
+        } finally {
+            if ($stopped) {
+                $this->process_stopper->resume($process->pid);
+            }
         }
     }
 }

@@ -24,6 +24,7 @@ use Reli\Inspector\Watch\Action\ExecAction;
 use Reli\Inspector\Watch\Action\LogAction;
 use Reli\Inspector\Watch\Action\MemoryDumpAction;
 use Reli\Inspector\Watch\Action\TraceAction;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 /**
  * @runTestsInSeparateProcesses
@@ -67,6 +68,7 @@ class ActionFactoryBuildActionsTest extends BaseTestCase
             Mockery::mock(
                 'overload:' . MemoryDumper::class,
             ),
+            Mockery::mock('overload:' . ProcessStopper::class),
         );
     }
 
