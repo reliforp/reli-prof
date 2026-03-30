@@ -16,6 +16,7 @@ namespace Reli\Inspector\Settings\WatchSettings;
 use PhpCast\NullableCast;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
+use Reli\Lib\Directory\AppDirectory;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -84,7 +85,6 @@ final class WatchSettingsFromConsoleInput
                 null,
                 InputOption::VALUE_REQUIRED,
                 'output directory for dump and log files',
-                '.',
             )
             ->addOption(
                 'log-file',
@@ -219,7 +219,9 @@ final class WatchSettingsFromConsoleInput
                 $input->getOption('backoff-max')
                 ?? WatchSettings::BACKOFF_MAX_SECONDS_DEFAULT
             ),
-            action_output_dir: (string)($input->getOption('action-output-dir') ?? '.'),
+            action_output_dir: self::resolveOutputDir(
+                NullableCast::toString($input->getOption('action-output-dir'))
+            ),
             status_interval_seconds: (int)(
                 $input->getOption('status-interval')
                 ?? WatchSettings::STATUS_INTERVAL_SECONDS_DEFAULT
@@ -240,9 +242,39 @@ final class WatchSettingsFromConsoleInput
             )),
             actions: $actions,
             action_exec_command: NullableCast::toString($input->getOption('action-exec-command')),
-            log_file: NullableCast::toString($input->getOption('log-file')),
+            log_file: self::resolveAbsolutePathOrNull(
+                NullableCast::toString($input->getOption('log-file'))
+            ),
             memory_output_format: NullableCast::toString($input->getOption('memory-output-format')),
             include_binary: (bool)$input->getOption('include-binary'),
         );
+    }
+
+    private static function resolveOutputDir(?string $path): string
+    {
+        if ($path === null || $path === '') {
+            return AppDirectory::getWatchDumpDir();
+        }
+        return self::resolveAbsolutePath($path);
+    }
+
+    private static function resolveAbsolutePath(string $path): string
+    {
+        if ($path[0] === '/') {
+            return $path;
+        }
+        $cwd = getcwd();
+        if ($cwd === false) {
+            throw new \RuntimeException('Failed to get current working directory');
+        }
+        return $cwd . '/' . $path;
+    }
+
+    private static function resolveAbsolutePathOrNull(?string $path): ?string
+    {
+        if ($path === null) {
+            return null;
+        }
+        return self::resolveAbsolutePath($path);
     }
 }

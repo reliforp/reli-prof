@@ -33,6 +33,7 @@ use Reli\Inspector\Settings\WatchSettings\WatchSettingsFromConsoleInput;
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Inspector\TraceLoopProvider;
 use Reli\Lib\Console\EchoBackCanceller;
+use Reli\Lib\Directory\AppDirectory;
 use Reli\Lib\Log\Log;
 use Revolt\EventLoop;
 use Reli\Inspector\Watch\Action\ActionInterface;
@@ -190,6 +191,9 @@ final class WatchCommand extends Command
             $output,
             $output_settings,
         );
+        // Ensure output directory exists
+        AppDirectory::ensureDirectoryExists($watch_settings->action_output_dir);
+
         // Build rate limiters (need disk_tracker before actions)
         $disk_tracker = new DiskUsageTracker(
             $watch_settings->max_dump_size_bytes,
@@ -463,6 +467,7 @@ final class WatchCommand extends Command
         }
 
         // Build actions for daemon mode
+        AppDirectory::ensureDirectoryExists($watch_settings->action_output_dir);
         $output_settings = $this->output_settings_from_console_input->createSettings($input);
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput($output, $output_settings);
         $disk_tracker = new DiskUsageTracker(
