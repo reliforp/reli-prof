@@ -180,6 +180,43 @@ final class MemoryDumper
             }
         }
 
+        // Anonymous writable mmap regions.
+        // glibc's malloc uses mmap for large allocations
+        // (> M_MMAP_THRESHOLD, typically 128KB). Persistent PHP
+        // data such as EG(function_table)->arData and interned
+        // strings can end up here. Use pagemap to skip
+        // non-resident pages.
+        $anon_areas = $memory_map->findByNameRegex('^$');
+        foreach ($anon_areas as $area) {
+            if (
+                $area->inode_num === 0
+                && $area->attribute->read
+                && $area->attribute->write
+                && !$area->attribute->execute
+            ) {
+                $addr = (int)hexdec($area->begin);
+                $size = (int)hexdec($area->end) - $addr;
+                if ($size <= 0) {
+                    continue;
+                }
+                $resident_runs = $this->findResidentRuns(
+                    $pid,
+                    $addr,
+                    $size,
+                );
+                if ($resident_runs !== null && $resident_runs !== []) {
+                    foreach ($resident_runs as $run) {
+                        $read_list[] = $run;
+                    }
+                } else {
+                    $read_list[] = [
+                        'address' => $addr,
+                        'size' => $size,
+                    ];
+                }
+            }
+        }
+
         // PHP binary's writable data/BSS segments
         $php_rw_areas = $memory_map->findByNameRegex(
             $target_php_settings->php_regex,
