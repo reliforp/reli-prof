@@ -135,7 +135,7 @@ final class WatchCommand extends Command
         if (count($triggers) === 0) {
             $output->writeln(
                 '<error>No triggers specified.'
-                . ' Use --memory-limit,'
+                . ' Use --memory-usage,'
                 . ' --memory-growth-rate,'
                 . ' --watch-function, etc.</error>'
             );
@@ -422,7 +422,7 @@ final class WatchCommand extends Command
      *
      * Uses PhpWatchContextCreator (WatchTriggerMessage-based workers) that evaluate
      * triggers inside the worker process and send only trigger events back.
-     * All trigger tiers (including Tier 1 memory-limit) work in daemon mode.
+     * All trigger tiers (including Tier 1 memory-usage) work in daemon mode.
      */
     private function executeDaemonMode(
         InputInterface $input,

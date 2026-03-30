@@ -30,7 +30,7 @@ class WatchSettingsTest extends TestCase
             action_output_dir: '/tmp',
             status_interval_seconds: 120,
             quiet: true,
-            memory_limit_bytes: 256 * 1024 * 1024,
+            memory_usage_bytes: 256 * 1024 * 1024,
             memory_growth_rate: '10M/min',
             memory_peak_watch: true,
             watch_function: 'sleep',
@@ -51,7 +51,7 @@ class WatchSettingsTest extends TestCase
         $this->assertSame('/tmp', $settings->action_output_dir);
         $this->assertSame(120, $settings->status_interval_seconds);
         $this->assertTrue($settings->quiet);
-        $this->assertSame(256 * 1024 * 1024, $settings->memory_limit_bytes);
+        $this->assertSame(256 * 1024 * 1024, $settings->memory_usage_bytes);
         $this->assertSame('10M/min', $settings->memory_growth_rate);
         $this->assertTrue($settings->memory_peak_watch);
         $this->assertSame('sleep', $settings->watch_function);

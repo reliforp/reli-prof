@@ -342,9 +342,9 @@ Options:
       --db-name=DB-NAME                                              database name (for mysql/postgresql)
       --db-user=DB-USER                                              database user (for mysql/postgresql)
       --db-password=DB-PASSWORD                                      database password (for mysql/postgresql)
-      --memory-limit-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
-      --memory-limit-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
-      --memory-limit-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
+      --memory-usage-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
+      --memory-usage-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
+      --memory-usage-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
   -p, --pid=PID                                                      process id
       --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
@@ -368,10 +368,10 @@ Options:
 
 ```bash
 # Dump memory when usage exceeds 256M
-./reli inspector:watch -p <pid> --memory-limit=256M
+./reli inspector:watch -p <pid> --memory-usage=256M
 
 # Monitor multiple php-fpm processes
-./reli inspector:watch --target-regex="php-fpm" --memory-limit=512M --action=log
+./reli inspector:watch --target-regex="php-fpm" --memory-usage=512M --action=log
 
 # Watch for a specific function in the call stack
 ./reli inspector:watch -p <pid> --watch-function="App\Service::process" --action=trace
@@ -380,10 +380,10 @@ Options:
 ./reli inspector:watch -p <pid> --watch-var='global::$cache:count_gt:10000'
 
 # Grab 3 memory dumps and stop
-./reli inspector:watch -p <pid> --memory-limit=128M --oneshot=3
+./reli inspector:watch -p <pid> --memory-usage=128M --oneshot=3
 ```
 
-Available triggers: `--memory-limit`, `--memory-growth-rate`, `--memory-peak-watch`, `--watch-function`, `--trace-depth-limit`, `--watch-var`.
+Available triggers: `--memory-usage`, `--memory-growth-rate`, `--memory-peak-watch`, `--watch-function`, `--trace-depth-limit`, `--watch-var`.
 
 Available actions: `memory-dump` (default), `trace`, `log`, `exec`.
 

@@ -44,7 +44,7 @@ class ActionFactoryBuildActionsTest extends BaseTestCase
             'action_output_dir' => '.',
             'status_interval_seconds' => 60,
             'quiet' => false,
-            'memory_limit_bytes' => null,
+            'memory_usage_bytes' => null,
             'memory_growth_rate' => null,
             'memory_peak_watch' => false,
             'watch_function' => null,

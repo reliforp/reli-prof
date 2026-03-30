@@ -17,21 +17,21 @@ use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\WatchContext;
 
-class MemoryLimitTriggerTest extends TestCase
+class MemoryUsageTriggerTest extends TestCase
 {
     public function testFiresWhenAboveLimit(): void
     {
-        $trigger = new MemoryLimitTrigger(100 * 1024 * 1024); // 100M
+        $trigger = new MemoryUsageTrigger(100 * 1024 * 1024); // 100M
         $context = $this->makeContext(150 * 1024 * 1024);
 
         $event = $trigger->evaluate($context);
         $this->assertNotNull($event);
-        $this->assertSame('memory-limit', $event->trigger_name);
+        $this->assertSame('memory-usage', $event->trigger_name);
     }
 
     public function testDoesNotFireWhenBelowLimit(): void
     {
-        $trigger = new MemoryLimitTrigger(100 * 1024 * 1024);
+        $trigger = new MemoryUsageTrigger(100 * 1024 * 1024);
         $context = $this->makeContext(50 * 1024 * 1024);
 
         $this->assertNull($trigger->evaluate($context));
@@ -39,7 +39,7 @@ class MemoryLimitTriggerTest extends TestCase
 
     public function testDoesNotFireWhenExactlyAtLimit(): void
     {
-        $trigger = new MemoryLimitTrigger(100 * 1024 * 1024);
+        $trigger = new MemoryUsageTrigger(100 * 1024 * 1024);
         $context = $this->makeContext(100 * 1024 * 1024);
 
         $this->assertNull($trigger->evaluate($context));
@@ -47,8 +47,8 @@ class MemoryLimitTriggerTest extends TestCase
 
     public function testProperties(): void
     {
-        $trigger = new MemoryLimitTrigger(1024);
-        $this->assertSame('memory-limit', $trigger->name());
+        $trigger = new MemoryUsageTrigger(1024);
+        $this->assertSame('memory-usage', $trigger->name());
         $this->assertFalse($trigger->requiresCallTrace());
         $this->assertFalse($trigger->requiresDeepInspection());
     }

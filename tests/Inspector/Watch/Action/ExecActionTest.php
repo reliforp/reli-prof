@@ -37,7 +37,7 @@ class ExecActionTest extends TestCase
 
         $action = new ExecAction($command);
         $event = new TriggerEvent(
-            'memory-limit',
+            'memory-usage',
             'mem=10M>5M',
             1711684800.0,
         );
@@ -62,7 +62,7 @@ class ExecActionTest extends TestCase
         $output = file_get_contents($tmpFile);
         $this->assertNotFalse($output);
         $this->assertStringContainsString('PID=42', $output);
-        $this->assertStringContainsString('TRIGGER=memory-limit', $output);
+        $this->assertStringContainsString('TRIGGER=memory-usage', $output);
 
         unlink($tmpFile);
     }

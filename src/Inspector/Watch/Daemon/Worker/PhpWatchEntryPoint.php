@@ -22,7 +22,7 @@ use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
-use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
+use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
 use Reli\Inspector\Watch\Trigger\TraceDepthTrigger;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
@@ -190,8 +190,8 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
     {
         $triggers = [];
 
-        if ($settings->memory_limit_bytes !== null) {
-            $triggers[] = new MemoryLimitTrigger($settings->memory_limit_bytes);
+        if ($settings->memory_usage_bytes !== null) {
+            $triggers[] = new MemoryUsageTrigger($settings->memory_usage_bytes);
         }
         if ($settings->memory_growth_rate !== null) {
             [$bytes, $seconds] = MemoryGrowthRateTrigger::parseRate($settings->memory_growth_rate);

@@ -22,7 +22,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
     private function makeInput(array $overrides = []): InputInterface
     {
         $defaults = [
-            'memory-limit' => null,
+            'memory-usage' => null,
             'memory-growth-rate' => null,
             'memory-peak-watch' => false,
             'watch-function' => null,
@@ -68,7 +68,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
         $this->assertSame(2.0, $settings->backoff_multiplier);
         $this->assertSame(3600, $settings->backoff_max_seconds);
         $this->assertFalse($settings->quiet);
-        $this->assertNull($settings->memory_limit_bytes);
+        $this->assertNull($settings->memory_usage_bytes);
         $this->assertNull($settings->memory_growth_rate);
         $this->assertFalse($settings->memory_peak_watch);
     }
@@ -77,10 +77,10 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
     {
         $settings = (new WatchSettingsFromConsoleInput())
             ->createSettings($this->makeInput([
-                'memory-limit' => '256M',
+                'memory-usage' => '256M',
             ]));
 
-        $this->assertSame(256 * 1024 * 1024, $settings->memory_limit_bytes);
+        $this->assertSame(256 * 1024 * 1024, $settings->memory_usage_bytes);
     }
 
     public function testMemoryGrowthRate(): void

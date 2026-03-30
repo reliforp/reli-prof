@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
-use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
+use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
 use Reli\Inspector\Watch\Trigger\TraceDepthTrigger;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
@@ -37,7 +37,7 @@ class TriggerFactoryTest extends TestCase
             'action_output_dir' => '.',
             'status_interval_seconds' => 60,
             'quiet' => false,
-            'memory_limit_bytes' => null,
+            'memory_usage_bytes' => null,
             'memory_growth_rate' => null,
             'memory_peak_watch' => false,
             'watch_function' => null,
@@ -63,10 +63,10 @@ class TriggerFactoryTest extends TestCase
     {
         $factory = new TriggerFactory();
         $triggers = $factory->build($this->makeSettings([
-            'memory_limit_bytes' => 256 * 1024 * 1024,
+            'memory_usage_bytes' => 256 * 1024 * 1024,
         ]));
         $this->assertCount(1, $triggers);
-        $this->assertInstanceOf(MemoryLimitTrigger::class, $triggers[0]);
+        $this->assertInstanceOf(MemoryUsageTrigger::class, $triggers[0]);
     }
 
     public function testMemoryGrowthRate(): void
@@ -136,7 +136,7 @@ class TriggerFactoryTest extends TestCase
     {
         $factory = new TriggerFactory();
         $triggers = $factory->build($this->makeSettings([
-            'memory_limit_bytes' => 100,
+            'memory_usage_bytes' => 100,
             'memory_growth_rate' => '1K/s',
             'memory_peak_watch' => true,
             'watch_function' => 'sleep',

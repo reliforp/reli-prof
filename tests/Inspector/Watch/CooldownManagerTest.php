@@ -117,15 +117,15 @@ class CooldownManagerTest extends TestCase
     {
         $mgr = new CooldownManager(10.0, 2.0, 3600.0, 100, 0);
 
-        $mgr->recordFire('memory-limit', 100.0);
+        $mgr->recordFire('memory-usage', 100.0);
         $mgr->recordFire('watch-function', 100.0);
 
-        // memory-limit in cooldown, watch-function in cooldown
-        $this->assertFalse($mgr->canFire('memory-limit', 105.0));
+        // memory-usage in cooldown, watch-function in cooldown
+        $this->assertFalse($mgr->canFire('memory-usage', 105.0));
         $this->assertFalse($mgr->canFire('watch-function', 105.0));
 
         // Both should be available after cooldown
-        $this->assertTrue($mgr->canFire('memory-limit', 110.0));
+        $this->assertTrue($mgr->canFire('memory-usage', 110.0));
         $this->assertTrue($mgr->canFire('watch-function', 110.0));
     }
 

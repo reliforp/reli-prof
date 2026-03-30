@@ -20,13 +20,13 @@ class TriggerEventTest extends TestCase
     public function testConstruction(): void
     {
         $event = new TriggerEvent(
-            trigger_name: 'memory-limit',
+            trigger_name: 'memory-usage',
             description: 'mem=256M>128M',
             timestamp: 1234567890.5,
             value: 268435456.0,
         );
 
-        $this->assertSame('memory-limit', $event->trigger_name);
+        $this->assertSame('memory-usage', $event->trigger_name);
         $this->assertSame('mem=256M>128M', $event->description);
         $this->assertSame(1234567890.5, $event->timestamp);
         $this->assertSame(268435456.0, $event->value);

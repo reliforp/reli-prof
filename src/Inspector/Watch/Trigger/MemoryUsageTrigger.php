@@ -17,7 +17,7 @@ use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 
-final class MemoryLimitTrigger implements TriggerInterface
+final class MemoryUsageTrigger implements TriggerInterface
 {
     public function __construct(
         private int $limit_bytes,
@@ -27,7 +27,7 @@ final class MemoryLimitTrigger implements TriggerInterface
     #[\Override]
     public function name(): string
     {
-        return 'memory-limit';
+        return 'memory-usage';
     }
 
     #[\Override]

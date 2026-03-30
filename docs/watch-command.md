@@ -8,16 +8,16 @@ Unlike `inspector:top` (real-time display) or `inspector:daemon` (continuous tra
 
 ```bash
 # Monitor a single process: dump memory when usage exceeds 256M
-reli inspector:watch -p <pid> --memory-limit=256M
+reli inspector:watch -p <pid> --memory-usage=256M
 
 # Monitor multiple processes matching a regex
-reli inspector:watch --target-regex="php-fpm" --memory-limit=512M
+reli inspector:watch --target-regex="php-fpm" --memory-usage=512M
 
 # Watch for a specific function appearing in the call stack
 reli inspector:watch -p <pid> --watch-function="App\Service::heavyProcess"
 
 # Grab 3 dumps and stop (ad-hoc debugging)
-reli inspector:watch -p <pid> --memory-limit=128M --oneshot=3
+reli inspector:watch -p <pid> --memory-usage=128M --oneshot=3
 ```
 
 ## Requirements
@@ -30,13 +30,13 @@ reli inspector:watch -p <pid> --memory-limit=128M --oneshot=3
 
 Triggers define **when** to take action. At least one trigger must be specified.
 
-### Memory Limit (`--memory-limit=<size>`)
+### Memory Limit (`--memory-usage=<size>`)
 
 Fires when heap usage exceeds the threshold.
 
 ```bash
-reli inspector:watch -p <pid> --memory-limit=256M
-reli inspector:watch -p <pid> --memory-limit=1G
+reli inspector:watch -p <pid> --memory-usage=256M
+reli inspector:watch -p <pid> --memory-usage=1G
 ```
 
 ### Memory Growth Rate (`--memory-growth-rate=<size>/<period>`)
@@ -145,13 +145,13 @@ Multiple triggers can be active simultaneously. When multiple triggers fire in t
 
 ```bash
 reli inspector:watch -p <pid> \
-  --memory-limit=256M \
+  --memory-usage=256M \
   --memory-peak-watch \
   --watch-function="sleep" \
   --action=log
 ```
 
-Output: `[TRIGGERED] PID=1234 | trigger=memory-limit+memory-peak-watch | ...`
+Output: `[TRIGGERED] PID=1234 | trigger=memory-usage+memory-peak-watch | ...`
 
 ## Actions
 
@@ -162,7 +162,7 @@ Actions define **what to do** when a trigger fires. Default: `memory-dump`.
 Captures a binary memory dump (same format as `inspector:memory:dump`) for offline analysis via `inspector:memory:analyze`.
 
 ```bash
-reli inspector:watch -p <pid> --memory-limit=256M --action=memory-dump
+reli inspector:watch -p <pid> --memory-usage=256M --action=memory-dump
 ```
 
 Output files: `<output-dir>/watch-<pid>-<timestamp>.dump`
@@ -180,12 +180,12 @@ reli inspector:watch -p <pid> --watch-function="sleep" --action=trace
 Logs trigger events with timestamp, PID, trigger name, and memory stats.
 
 ```bash
-reli inspector:watch -p <pid> --memory-limit=256M --action=log --log-file=/var/log/reli-watch.log
+reli inspector:watch -p <pid> --memory-usage=256M --action=log --log-file=/var/log/reli-watch.log
 ```
 
 Log format:
 ```
-[2026-03-30T12:34:56+00:00] PID=1234 trigger=memory-limit mem=261.3M>256M mem=261.3M peak=261.3M
+[2026-03-30T12:34:56+00:00] PID=1234 trigger=memory-usage mem=261.3M>256M mem=261.3M peak=261.3M
 ```
 
 ### External Command (`--action=exec`)
@@ -193,7 +193,7 @@ Log format:
 Executes an external command (fire-and-forget, non-blocking). Context is passed via environment variables.
 
 ```bash
-reli inspector:watch -p <pid> --memory-limit=256M \
+reli inspector:watch -p <pid> --memory-usage=256M \
   --action=exec \
   --action-exec-command='curl -s -X POST https://hooks.example.com/alert'
 ```
@@ -212,7 +212,7 @@ reli inspector:watch -p <pid> --memory-limit=256M \
 Actions can be combined:
 
 ```bash
-reli inspector:watch -p <pid> --memory-limit=256M \
+reli inspector:watch -p <pid> --memory-usage=256M \
   --action=memory-dump --action=log --action=exec \
   --action-exec-command='notify-send "Memory alert"' \
   --log-file=/var/log/reli.log
@@ -255,7 +255,7 @@ Capture N trigger events then exit. Alias for `--max-triggers`.
 
 ```bash
 # Grab 5 memory dumps and stop
-reli inspector:watch -p <pid> --memory-limit=128M --oneshot=5
+reli inspector:watch -p <pid> --memory-usage=128M --oneshot=5
 ```
 
 **Note:** `--oneshot` is for ad-hoc debugging. For long-running daemons, use `--max-dump-size` + `--max-triggers-per-hour` + `--cooldown` instead — these persist across process restarts.
@@ -266,7 +266,7 @@ Monitor multiple processes simultaneously:
 
 ```bash
 reli inspector:watch --target-regex="php-fpm" \
-  --memory-limit=512M \
+  --memory-usage=512M \
   --action=log \
   --log-file=/var/log/reli-watch.log
 ```
@@ -278,10 +278,10 @@ Global `--max-triggers` (or `--oneshot`) is a single counter across all workers.
 ### Output
 
 ```
-[watch-daemon] Monitoring processes matching "{php-fpm}" | triggers=memory-limit | workers=8
+[watch-daemon] Monitoring processes matching "{php-fpm}" | triggers=memory-usage | workers=8
 [+process] PID=1234 assigned to worker 0
 [+process] PID=2345 assigned to worker 1
-[TRIGGERED] PID=1234 | trigger=memory-limit | mem=523.4M>512M (1/unlimited)
+[TRIGGERED] PID=1234 | trigger=memory-usage | mem=523.4M>512M (1/unlimited)
 [-process] PID=2345 detached from worker 1
 ```
 
@@ -291,7 +291,7 @@ Global `--max-triggers` (or `--oneshot`) is a single counter across all workers.
 |--------|---------|-------------|
 | `-p, --pid` | — | Target process PID (single-process mode) |
 | `-P, --target-regex` | — | Regex to find target processes (daemon mode) |
-| `--memory-limit` | — | Trigger on heap usage threshold |
+| `--memory-usage` | — | Trigger on heap usage threshold |
 | `--memory-growth-rate` | — | Trigger on memory growth rate |
 | `--memory-peak-watch` | off | Trigger on peak memory update |
 | `--watch-function` | — | Trigger on function in call stack |
@@ -328,7 +328,7 @@ spec:
     image: reli-prof:latest
     command: ["reli", "inspector:watch",
       "--target-regex=php-fpm",
-      "--memory-limit=512M",
+      "--memory-usage=512M",
       "--action=memory-dump", "--action=log",
       "--log-file=/var/log/reli/watch.log",
       "--action-output-dir=/var/log/reli/dumps/",

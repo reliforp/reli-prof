@@ -59,7 +59,7 @@ class WatchMessagesTest extends TestCase
 
     public function testWatchTriggerMessage(): void
     {
-        $event = new TriggerEvent('memory-limit', 'test', 100.0);
+        $event = new TriggerEvent('memory-usage', 'test', 100.0);
         $heap = new HeapStats(1024, 2048, 1024, 0);
         $trace = new CallTrace(
             new CallFrame('', 'main', 'f.php', null),
@@ -94,7 +94,7 @@ class WatchMessagesTest extends TestCase
             action_output_dir: '.',
             status_interval_seconds: 60,
             quiet: false,
-            memory_limit_bytes: null,
+            memory_usage_bytes: null,
             memory_growth_rate: null,
             memory_peak_watch: false,
             watch_function: null,

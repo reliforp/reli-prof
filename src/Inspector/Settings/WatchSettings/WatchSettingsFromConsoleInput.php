@@ -28,7 +28,7 @@ final class WatchSettingsFromConsoleInput
         $command
             // Trigger options
             ->addOption(
-                'memory-limit',
+                'memory-usage',
                 null,
                 InputOption::VALUE_REQUIRED,
                 'trigger when heap usage exceeds this limit (e.g., 256M)',
@@ -166,8 +166,8 @@ final class WatchSettingsFromConsoleInput
 
     public function createSettings(InputInterface $input): WatchSettings
     {
-        $memory_limit_str = NullableCast::toString($input->getOption('memory-limit'));
-        $memory_limit_bytes = $memory_limit_str !== null ? HeapStats::parseSize($memory_limit_str) : null;
+        $memory_usage_str = NullableCast::toString($input->getOption('memory-usage'));
+        $memory_usage_bytes = $memory_usage_str !== null ? HeapStats::parseSize($memory_usage_str) : null;
 
         $memory_growth_rate = NullableCast::toString($input->getOption('memory-growth-rate'));
         if ($memory_growth_rate !== null) {
@@ -219,7 +219,7 @@ final class WatchSettingsFromConsoleInput
                 ?? WatchSettings::STATUS_INTERVAL_SECONDS_DEFAULT
             ),
             quiet: (bool)$input->getOption('quiet-watch'),
-            memory_limit_bytes: $memory_limit_bytes,
+            memory_usage_bytes: $memory_usage_bytes,
             memory_growth_rate: $memory_growth_rate,
             memory_peak_watch: (bool)$input->getOption('memory-peak-watch'),
             watch_function: NullableCast::toString($input->getOption('watch-function')),

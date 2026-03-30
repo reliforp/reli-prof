@@ -120,7 +120,7 @@ final class PhpWatchControllerTest extends BaseTestCase
     {
         $triggerMsg = new WatchTriggerMessage(
             pid: 123,
-            event: new TriggerEvent('memory-limit', 'test', 100.0),
+            event: new TriggerEvent('memory-usage', 'test', 100.0),
             heap_stats: new HeapStats(1024, 2048, 1024, 0),
             call_trace: null,
         );
@@ -188,7 +188,7 @@ final class PhpWatchControllerTest extends BaseTestCase
             action_output_dir: '.',
             status_interval_seconds: 60,
             quiet: false,
-            memory_limit_bytes: null,
+            memory_usage_bytes: null,
             memory_growth_rate: null,
             memory_peak_watch: false,
             watch_function: null,

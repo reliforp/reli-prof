@@ -15,7 +15,7 @@ require __DIR__ . '/../../vendor/autoload.php';
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\VariableReader;
-use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
+use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Inspector\Watch\HeapStats;
@@ -150,7 +150,7 @@ for ($i = 0; $i < $iterations; $i++) {
 reportTimes('HeapStatsReader::read()', $times);
 
 // Tier 1: Trigger evaluation (pure CPU, no I/O)
-$trigger_mem = new MemoryLimitTrigger(999999999);
+$trigger_mem = new MemoryUsageTrigger(999999999);
 $ctx = new WatchContext(
     pid: $pid,
     heap_stats: $stats,
@@ -165,7 +165,7 @@ for ($i = 0; $i < $iterations; $i++) {
     $t1 = hrtime(true);
     $times[] = ($t1 - $t0) / 1000;
 }
-reportTimes('MemoryLimitTrigger::evaluate()', $times);
+reportTimes('MemoryUsageTrigger::evaluate()', $times);
 
 // --- Tier 1: hasException ---
 echo "\n--- Tier 1+: hasException check ---\n";

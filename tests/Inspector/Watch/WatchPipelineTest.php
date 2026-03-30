@@ -16,7 +16,7 @@ namespace Reli\Inspector\Watch;
 use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
 use Reli\Inspector\Watch\Action\LogAction;
-use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
+use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
 use Reli\Lib\Process\ProcessSpecifier;
 
@@ -28,7 +28,7 @@ class WatchPipelineTest extends TestCase
 {
     public function testSingleTriggerFiresAndExecutesAction(): void
     {
-        $trigger = new MemoryLimitTrigger(100);
+        $trigger = new MemoryUsageTrigger(100);
         $stream = fopen('php://memory', 'rw');
         $this->assertNotFalse($stream);
         $action = new LogAction($stream);
@@ -49,13 +49,13 @@ class WatchPipelineTest extends TestCase
         rewind($stream);
         $output = stream_get_contents($stream);
         fclose($stream);
-        $this->assertStringContainsString('memory-limit', $output);
+        $this->assertStringContainsString('memory-usage', $output);
         $this->assertStringContainsString('PID=42', $output);
     }
 
     public function testCooldownPreventsRefire(): void
     {
-        $trigger = new MemoryLimitTrigger(100);
+        $trigger = new MemoryUsageTrigger(100);
         $cooldown = new CooldownManager(
             60.0,
             2.0,
@@ -74,23 +74,23 @@ class WatchPipelineTest extends TestCase
 
         $event = $trigger->evaluate($ctx1);
         $this->assertNotNull($event);
-        $this->assertTrue($cooldown->canFire('memory-limit', 1000.0));
-        $cooldown->recordFire('memory-limit', 1000.0);
+        $this->assertTrue($cooldown->canFire('memory-usage', 1000.0));
+        $cooldown->recordFire('memory-usage', 1000.0);
 
         // 30s later — still in cooldown
         $this->assertFalse(
-            $cooldown->canFire('memory-limit', 1030.0),
+            $cooldown->canFire('memory-usage', 1030.0),
         );
 
         // 60s later — can fire again
         $this->assertTrue(
-            $cooldown->canFire('memory-limit', 1060.0),
+            $cooldown->canFire('memory-usage', 1060.0),
         );
     }
 
     public function testMultipleTriggersFireAndMerge(): void
     {
-        $t1 = new MemoryLimitTrigger(100);
+        $t1 = new MemoryUsageTrigger(100);
         $t2 = new MemoryPeakTrigger();
 
         $prev = new WatchContext(
@@ -121,7 +121,7 @@ class WatchPipelineTest extends TestCase
         );
 
         $this->assertSame(
-            'memory-limit+memory-peak-watch',
+            'memory-usage+memory-peak-watch',
             $merged->trigger_name,
         );
 
@@ -139,7 +139,7 @@ class WatchPipelineTest extends TestCase
         $output = stream_get_contents($stream);
         fclose($stream);
         $this->assertStringContainsString(
-            'memory-limit+memory-peak-watch',
+            'memory-usage+memory-peak-watch',
             $output,
         );
     }
@@ -172,7 +172,7 @@ class WatchPipelineTest extends TestCase
             action_output_dir: '.',
             status_interval_seconds: 60,
             quiet: false,
-            memory_limit_bytes: 1024,
+            memory_usage_bytes: 1024,
             memory_growth_rate: null,
             memory_peak_watch: true,
             watch_function: null,
@@ -198,7 +198,7 @@ class WatchPipelineTest extends TestCase
         // Memory limit should fire
         $event = $triggers[0]->evaluate($context);
         $this->assertNotNull($event);
-        $this->assertSame('memory-limit', $event->trigger_name);
+        $this->assertSame('memory-usage', $event->trigger_name);
 
         // Memory peak should not fire (no previous)
         $event2 = $triggers[1]->evaluate($context);

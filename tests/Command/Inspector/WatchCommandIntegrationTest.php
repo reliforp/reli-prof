@@ -83,7 +83,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
         $tester = new CommandTester($command);
         $tester->execute([
             '-p' => (string)$pid,
-            '--memory-limit' => '1M',
+            '--memory-usage' => '1M',
             '--oneshot' => '2',
             '--action' => ['log'],
             '--poll-interval' => '200',
@@ -98,7 +98,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
             $display,
         );
         $this->assertStringContainsString(
-            'memory-limit',
+            'memory-usage',
             $display,
         );
         $this->assertStringContainsString(
@@ -199,7 +199,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
         $reli_cmd = sprintf(
             'timeout 30 php %s inspector:watch'
             . ' --target-regex=source'
-            . ' --memory-limit=1M'
+            . ' --memory-usage=1M'
             . ' --max-triggers=2'
             . ' --action=log'
             . ' --poll-interval=200'
@@ -217,7 +217,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
             $output,
         );
         $this->assertStringContainsString(
-            'memory-limit',
+            'memory-usage',
             $output,
         );
     }

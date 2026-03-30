@@ -36,7 +36,7 @@ final class WatchSettings
         public int $status_interval_seconds,
         public bool $quiet,
         // Trigger configs
-        public ?int $memory_limit_bytes,
+        public ?int $memory_usage_bytes,
         public ?string $memory_growth_rate,
         public bool $memory_peak_watch,
         public ?string $watch_function,

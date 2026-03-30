@@ -30,7 +30,7 @@ class LogActionTest extends TestCase
         $this->assertSame('log', $action->name());
 
         $event = new TriggerEvent(
-            trigger_name: 'memory-limit',
+            trigger_name: 'memory-usage',
             description: 'mem=10M>5M',
             timestamp: 1711684800.0,
         );
@@ -55,7 +55,7 @@ class LogActionTest extends TestCase
         fclose($stream);
 
         $this->assertStringContainsString('PID=42', $output);
-        $this->assertStringContainsString('trigger=memory-limit', $output);
+        $this->assertStringContainsString('trigger=memory-usage', $output);
         $this->assertStringContainsString('mem=10M>5M', $output);
         $this->assertStringContainsString('mem=10.0M', $output);
     }

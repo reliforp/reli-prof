@@ -49,7 +49,7 @@ class WatchCommandTest extends TestCase
     {
         $cmd = self::makeCommand();
         $def = $cmd->getDefinition();
-        $this->assertTrue($def->hasOption('memory-limit'));
+        $this->assertTrue($def->hasOption('memory-usage'));
         $this->assertTrue($def->hasOption('memory-growth-rate'));
         $this->assertTrue($def->hasOption('memory-peak-watch'));
         $this->assertTrue($def->hasOption('watch-function'));
