@@ -64,6 +64,8 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
+        ini_set('memory_limit', '2G');
+
         $target_script = <<<'CODE'
             <?php
             $data = array_fill(0, 1000, str_repeat('x', 100));
@@ -93,7 +95,7 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         $container_builder = new ContainerBuilder();
         $factory = new CoreDumpReaderFactory($container_builder, $elf64_parser);
 
-        // Use /proc/<pid>/root as dependency root (container filesystem via host PID mode)
+        // Use /proc/<pid>/root/ as dependency root (container filesystem via host PID mode)
         $path_mapping = ['/' => "/proc/{$pid}/root"];
 
         $core_dump_reader = $factory->createFromPath($this->core_file, $path_mapping);
@@ -134,6 +136,10 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
 
     private function takeCoreDump(int $pid): string
     {
+        // Include all memory pages in the coredump (file-backed pages are needed
+        // for symbol resolution from read-only segments like .dynamic, .got, etc.)
+        @file_put_contents("/proc/{$pid}/coredump_filter", '0x7f');
+
         $core_prefix = '/tmp/reli-test/coredump-test-core';
         $command = sprintf('gcore -o %s %d 2>&1', escapeshellarg($core_prefix), $pid);
         exec($command, $output, $exit_code);
