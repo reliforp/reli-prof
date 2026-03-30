@@ -75,6 +75,19 @@ class MappedPathResolverTest extends TestCase
                     '/proc/1/1',
                 ],
             ],
+            'map root to directory' => [
+                'expects' => [
+                    '/mnt/target/usr/lib/php.so',
+                    '/mnt/target/usr/bin/php',
+                ],
+                'path_map' => [
+                    '/' => '/mnt/target',
+                ],
+                'paths' => [
+                    '/usr/lib/php.so',
+                    '/usr/bin/php',
+                ],
+            ],
         ];
     }
 }
