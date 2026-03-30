@@ -91,20 +91,38 @@ $bfc = new BinaryFingerprintCreator($mr);
 $psrc = new PhpSymbolReaderCreator(
     new ProcessModuleSymbolReaderCreator(
         new Elf64SymbolResolverCreator(new CatFileReader(), new Elf64Parser($ir)),
-        $mr, new PerBinarySymbolCacheRetriever(), $ir,
-        new LinkMapLoader($mr, $ir), new ContainerAwarePathResolver(), $bac,
+        $mr,
+        new PerBinarySymbolCacheRetriever(),
+        $ir,
+        new LinkMapLoader($mr, $ir),
+        new ContainerAwarePathResolver(),
+        $bac,
     ),
-    $pmc, $bac,
+    $pmc,
+    $bac,
 );
 $tgr = new TsrmGlobalsResolver($psrc, $ir, $mr, $bac, $pmc, $bfc);
 $finder = new PhpGlobalsFinder(
-    $psrc, $ir, $mr,
+    $psrc,
+    $ir,
+    $mr,
     new PhpTsrmLsCacheFinder(
-        $psrc, $tgr, $mr, $ir, new Elf64Parser($ir),
-        new CatFileReader(), ProcessMemoryMapCreator::create(),
-        new ContainerAwarePathResolver(), $ztrc, $bac, $bfc,
+        $psrc,
+        $tgr,
+        $mr,
+        $ir,
+        new Elf64Parser($ir),
+        new CatFileReader(),
+        ProcessMemoryMapCreator::create(),
+        new ContainerAwarePathResolver(),
+        $ztrc,
+        $bac,
+        $bfc,
     ),
-    $tgr, $bac, $pmc, $bfc,
+    $tgr,
+    $bac,
+    $pmc,
+    $bfc,
 );
 
 $ps = new ProcessSpecifier($pid);
@@ -167,8 +185,12 @@ $times = [];
 for ($i = 0; $i < $iterations; $i++) {
     $t0 = hrtime(true);
     $trace = $call_trace_reader->readCallTrace(
-        $pid, $php_version, $eg_address, $sg_address,
-        PHP_INT_MAX, $trace_cache,
+        $pid,
+        $php_version,
+        $eg_address,
+        $sg_address,
+        PHP_INT_MAX,
+        $trace_cache,
     );
     $t1 = hrtime(true);
     $times[] = ($t1 - $t0) / 1000;
@@ -202,7 +224,11 @@ $times = [];
 for ($i = 0; $i < $iterations; $i++) {
     $t0 = hrtime(true);
     $variable_reader->readVariables(
-        $var_triggers, $ps, $tps, $eg_address, $cg_address,
+        $var_triggers,
+        $ps,
+        $tps,
+        $eg_address,
+        $cg_address,
     );
     $t1 = hrtime(true);
     $times[] = ($t1 - $t0) / 1000;
@@ -215,7 +241,11 @@ $times = [];
 for ($i = 0; $i < $iterations; $i++) {
     $t0 = hrtime(true);
     $variable_reader->readVariables(
-        $var_triggers_arr, $ps, $tps, $eg_address, $cg_address,
+        $var_triggers_arr,
+        $ps,
+        $tps,
+        $eg_address,
+        $cg_address,
     );
     $t1 = hrtime(true);
     $times[] = ($t1 - $t0) / 1000;
@@ -241,8 +271,12 @@ for ($i = 0; $i < $iterations; $i++) {
     $t0 = hrtime(true);
     $s = $heap_reader->read($ps, $tps, $eg_address);
     $t = $call_trace_reader->readCallTrace(
-        $pid, $php_version, $eg_address, $sg_address,
-        PHP_INT_MAX, $trace_cache,
+        $pid,
+        $php_version,
+        $eg_address,
+        $sg_address,
+        PHP_INT_MAX,
+        $trace_cache,
     );
     $c = new WatchContext($pid, $s, $t, null, microtime(true), null);
     $trigger_mem->evaluate($c);
@@ -259,11 +293,19 @@ for ($i = 0; $i < $iterations; $i++) {
     $s = $heap_reader->read($ps, $tps, $eg_address);
     $exc = $heap_reader->hasException($ps, $tps, $eg_address);
     $t = $call_trace_reader->readCallTrace(
-        $pid, $php_version, $eg_address, $sg_address,
-        PHP_INT_MAX, $trace_cache,
+        $pid,
+        $php_version,
+        $eg_address,
+        $sg_address,
+        PHP_INT_MAX,
+        $trace_cache,
     );
     $vars = $variable_reader->readVariables(
-        $var_triggers, $ps, $tps, $eg_address, $cg_address,
+        $var_triggers,
+        $ps,
+        $tps,
+        $eg_address,
+        $cg_address,
     );
     $c = new WatchContext($pid, $s, $t, $exc, microtime(true), null, $vars);
     $trigger_mem->evaluate($c);
@@ -295,6 +337,11 @@ function reportTimes(string $label, array $times): void
     printf(
         "  %-45s avg=%7.1fμs  med=%7.1fμs  p95=%7.1fμs  p99=%7.1fμs  min=%7.1fμs  max=%7.1fμs\n",
         $label,
-        $avg, $median, $p95, $p99, $min, $max,
+        $avg,
+        $median,
+        $p95,
+        $p99,
+        $min,
+        $max,
     );
 }
