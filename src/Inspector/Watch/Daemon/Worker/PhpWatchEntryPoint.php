@@ -105,36 +105,42 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                 while ($this->loop_condition->shouldContinue()) {
                     $now = microtime(true);
 
-                    // Read heap stats (lightweight)
-                    $heap_stats = $this->heap_stats_reader->read(
-                        $process_specifier,
-                        $target_php_settings,
-                        $descriptor->eg_address,
-                    );
-
-                    // Read call trace if needed
-                    $call_trace = null;
-                    if ($needs_call_trace) {
-                        $call_trace = $this->call_trace_reader->readCallTrace(
-                            $descriptor->pid,
-                            $descriptor->php_version,
+                    // Read process state. Skip poll on failure
+                    // (target may be between requests).
+                    try {
+                        $heap_stats = $this->heap_stats_reader->read(
+                            $process_specifier,
+                            $target_php_settings,
                             $descriptor->eg_address,
-                            $descriptor->sg_address,
-                            $get_trace_settings->depth,
-                            $trace_cache,
                         );
-                    }
 
-                    // Read variable values
-                    $variable_values = [];
-                    if (count($var_triggers) > 0) {
-                        $variable_values = $this->variable_reader
-                            ->readVariables(
-                                $var_triggers,
-                                $process_specifier,
-                                $target_php_settings,
-                                $descriptor->eg_address,
-                            );
+                        $call_trace = null;
+                        if ($needs_call_trace) {
+                            $call_trace = $this->call_trace_reader
+                                ->readCallTrace(
+                                    $descriptor->pid,
+                                    $descriptor->php_version,
+                                    $descriptor->eg_address,
+                                    $descriptor->sg_address,
+                                    $get_trace_settings->depth,
+                                    $trace_cache,
+                                );
+                        }
+
+                        $variable_values = [];
+                        if (count($var_triggers) > 0) {
+                            $variable_values = $this->variable_reader
+                                ->readVariables(
+                                    $var_triggers,
+                                    $process_specifier,
+                                    $target_php_settings,
+                                    $descriptor->eg_address,
+                                );
+                        }
+                    } catch (\Throwable) {
+                        $previous_context = null;
+                        usleep($poll_sleep_us);
+                        continue;
                     }
 
                     $context = new WatchContext(

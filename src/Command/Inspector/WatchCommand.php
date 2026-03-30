@@ -231,7 +231,7 @@ final class WatchCommand extends Command
         $loop_settings = new TraceLoopSettings(
             sleep_nano_seconds: $watch_settings->poll_interval_ms * 1000 * 1000,
             cancel_key: 'q',
-            max_retries: 10,
+            max_retries: 0, // no retry — we handle errors per poll
             stop_process: false,
         );
 
@@ -270,41 +270,67 @@ final class WatchCommand extends Command
                 $poll_count++;
                 $now = microtime(true);
 
-                // Stop process if needed for reading
-                if ($stop_process && $this->process_stopper->stop($process_specifier->pid)) {
-                    defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
+                // Stop early if max action executions already reached
+                if (
+                    $watch_settings->max_triggers > 0
+                    && $action_count >= $watch_settings->max_triggers
+                ) {
+                    return false;
                 }
 
-                // Read heap stats (lightweight, < 1ms)
-                $heap_stats = $this->heap_stats_reader->read(
-                    $process_specifier,
-                    $target_php_settings,
-                    $eg_address,
-                );
+                // Read process state. If the target is between
+                // requests (e.g., fpm accept() wait) or temporarily
+                // unreadable, skip this poll and try again next cycle.
+                try {
+                    if (
+                        $stop_process
+                        && $this->process_stopper->stop(
+                            $process_specifier->pid,
+                        )
+                    ) {
+                        defer(
+                            $_,
+                            fn () => $this->process_stopper->resume(
+                                $process_specifier->pid,
+                            ),
+                        );
+                    }
 
-                // Read call trace if needed
-                $call_trace = null;
-                if ($needs_call_trace) {
-                    $call_trace = $this->call_trace_reader->readCallTrace(
-                        $process_specifier->pid,
-                        $php_version,
-                        $eg_address,
-                        $sg_address,
-                        $depth,
-                        new TraceCache(),
-                    );
-                }
-
-                // Read variable values if any watch-var triggers
-                $variable_values = [];
-                if (count($var_triggers) > 0) {
-                    $variable_values = $this->variable_reader->readVariables(
-                        $var_triggers,
+                    $heap_stats = $this->heap_stats_reader->read(
                         $process_specifier,
                         $target_php_settings,
                         $eg_address,
-                        $cg_address,
                     );
+
+                    $call_trace = null;
+                    if ($needs_call_trace) {
+                        $call_trace = $this->call_trace_reader
+                            ->readCallTrace(
+                                $process_specifier->pid,
+                                $php_version,
+                                $eg_address,
+                                $sg_address,
+                                $depth,
+                                new TraceCache(),
+                            );
+                    }
+
+                    $variable_values = [];
+                    if (count($var_triggers) > 0) {
+                        $variable_values = $this->variable_reader
+                            ->readVariables(
+                                $var_triggers,
+                                $process_specifier,
+                                $target_php_settings,
+                                $eg_address,
+                                $cg_address,
+                            );
+                    }
+                } catch (\Throwable) {
+                    // Target may be between requests or temporarily
+                    // unreadable. Skip this poll, try next cycle.
+                    $previous_context = null;
+                    return true;
                 }
 
                 $context = new WatchContext(
@@ -315,11 +341,6 @@ final class WatchCommand extends Command
                     previous: $previous_context,
                     variable_values: $variable_values,
                 );
-
-                // Stop early if max action executions already reached
-                if ($watch_settings->max_triggers > 0 && $action_count >= $watch_settings->max_triggers) {
-                    return false;
-                }
 
                 // Evaluate triggers — collect all fired events in this poll
                 /** @var list<TriggerEvent> $fired_events */
