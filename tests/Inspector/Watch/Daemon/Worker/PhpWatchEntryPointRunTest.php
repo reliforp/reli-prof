@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Daemon\Worker;
 
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
@@ -28,6 +29,7 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 
+#[RunTestsInSeparateProcesses]
 class PhpWatchEntryPointRunTest extends TestCase
 {
     private function createSettingsMessage(): WatchSettingsMessage
