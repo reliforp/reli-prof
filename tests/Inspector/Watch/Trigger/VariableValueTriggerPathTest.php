@@ -167,7 +167,6 @@ class VariableValueTriggerPathTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(0, 0, 0, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: microtime(true),
             previous: null,
             variable_values: $vars,

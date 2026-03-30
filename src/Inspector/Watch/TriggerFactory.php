@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch;
 
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
-use Reli\Inspector\Watch\Trigger\ExceptionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
@@ -61,9 +60,6 @@ final class TriggerFactory
         }
 
         // Tier 3 triggers
-        if ($settings->on_exception) {
-            $triggers[] = new ExceptionDetectionTrigger();
-        }
         foreach ($settings->watch_var as $expr) {
             $triggers[] = new VariableValueTrigger($expr);
         }

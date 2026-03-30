@@ -58,12 +58,6 @@ final class WatchSettingsFromConsoleInput
                 'trigger when call stack exceeds N frames',
             )
             ->addOption(
-                'on-exception',
-                null,
-                InputOption::VALUE_NONE,
-                'trigger when an exception is in flight (EG->exception is non-null)',
-            )
-            ->addOption(
                 'watch-var',
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
@@ -230,7 +224,6 @@ final class WatchSettingsFromConsoleInput
             memory_peak_watch: (bool)$input->getOption('memory-peak-watch'),
             watch_function: NullableCast::toString($input->getOption('watch-function')),
             trace_depth_limit: $trace_depth_limit,
-            on_exception: (bool)$input->getOption('on-exception'),
             watch_var: array_values(array_filter(
                 array_map(
                     /** @param mixed $v */

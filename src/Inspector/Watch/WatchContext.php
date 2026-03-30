@@ -25,7 +25,6 @@ final class WatchContext
         public readonly int $pid,
         public readonly HeapStats $heap_stats,
         public readonly ?CallTrace $call_trace,
-        public readonly ?bool $has_exception,
         public readonly float $timestamp,
         public readonly ?self $previous,
         public readonly array $variable_values = [],

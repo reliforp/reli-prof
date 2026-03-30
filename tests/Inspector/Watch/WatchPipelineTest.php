@@ -37,7 +37,6 @@ class WatchPipelineTest extends TestCase
             pid: 42,
             heap_stats: new HeapStats(200, 200, 200, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 1000.0,
             previous: null,
         );
@@ -69,7 +68,6 @@ class WatchPipelineTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(200, 200, 200, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 1000.0,
             previous: null,
         );
@@ -99,7 +97,6 @@ class WatchPipelineTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(50, 50, 50, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 999.0,
             previous: null,
         );
@@ -107,7 +104,6 @@ class WatchPipelineTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(200, 200, 200, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 1000.0,
             previous: $prev,
         );
@@ -181,7 +177,6 @@ class WatchPipelineTest extends TestCase
             memory_peak_watch: true,
             watch_function: null,
             trace_depth_limit: null,
-            on_exception: false,
             watch_var: [],
             actions: ['log'],
             action_exec_command: null,
@@ -196,7 +191,6 @@ class WatchPipelineTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(2048, 2048, 2048, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: microtime(true),
             previous: null,
         );

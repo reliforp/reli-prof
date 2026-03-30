@@ -54,7 +54,6 @@ class WatchCommandTest extends TestCase
         $this->assertTrue($def->hasOption('memory-peak-watch'));
         $this->assertTrue($def->hasOption('watch-function'));
         $this->assertTrue($def->hasOption('trace-depth-limit'));
-        $this->assertTrue($def->hasOption('on-exception'));
         $this->assertTrue($def->hasOption('watch-var'));
     }
 

@@ -35,7 +35,6 @@ class WatchSettingsTest extends TestCase
             memory_peak_watch: true,
             watch_function: 'sleep',
             trace_depth_limit: 200,
-            on_exception: true,
             watch_var: ['global::x:gt:0'],
             actions: ['trace', 'log'],
             action_exec_command: 'echo test',
@@ -57,7 +56,6 @@ class WatchSettingsTest extends TestCase
         $this->assertTrue($settings->memory_peak_watch);
         $this->assertSame('sleep', $settings->watch_function);
         $this->assertSame(200, $settings->trace_depth_limit);
-        $this->assertTrue($settings->on_exception);
         $this->assertSame(['global::x:gt:0'], $settings->watch_var);
         $this->assertSame(['trace', 'log'], $settings->actions);
         $this->assertSame('echo test', $settings->action_exec_command);

@@ -137,7 +137,6 @@ $ctx = new WatchContext(
     pid: $pid,
     heap_stats: $stats,
     call_trace: null,
-    has_exception: null,
     timestamp: microtime(true),
     previous: null,
 );
@@ -183,7 +182,6 @@ if ($trace !== null) {
         pid: $pid,
         heap_stats: $stats,
         call_trace: $trace,
-        has_exception: null,
         timestamp: microtime(true),
         previous: null,
     );

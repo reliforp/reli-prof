@@ -133,7 +133,6 @@ class MemoryDumpActionTest extends BaseTestCase
             pid: 1,
             heap_stats: new HeapStats(1024, 2048, 1024, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 100.0,
             previous: null,
         );

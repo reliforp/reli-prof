@@ -50,7 +50,6 @@ class ExecActionTest extends TestCase
                 0,
             ),
             call_trace: null,
-            has_exception: null,
             timestamp: 1711684800.0,
             previous: null,
         );

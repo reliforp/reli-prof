@@ -72,7 +72,6 @@ class DaemonTraceActionTest extends BaseTestCase
             pid: 1,
             heap_stats: new HeapStats(0, 0, 0, 0),
             call_trace: $trace,
-            has_exception: null,
             timestamp: 100.0,
             previous: null,
         );

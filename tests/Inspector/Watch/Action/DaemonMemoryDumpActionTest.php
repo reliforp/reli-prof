@@ -120,7 +120,6 @@ class DaemonMemoryDumpActionTest extends BaseTestCase
             pid: 1,
             heap_stats: new HeapStats(0, 0, 0, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 100.0,
             previous: null,
             daemon_eg_address: $eg,

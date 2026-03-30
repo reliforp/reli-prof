@@ -65,7 +65,6 @@ class FunctionDetectionTriggerTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(0, 0, 0, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 0.0,
             previous: null,
         );
@@ -86,7 +85,6 @@ class FunctionDetectionTriggerTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(0, 0, 0, 0),
             call_trace: $trace,
-            has_exception: null,
             timestamp: microtime(true),
             previous: null,
         );

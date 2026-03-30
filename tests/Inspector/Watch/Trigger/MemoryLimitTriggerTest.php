@@ -59,7 +59,6 @@ class MemoryLimitTriggerTest extends TestCase
             pid: 1234,
             heap_stats: new HeapStats($size, $size, $size, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: microtime(true),
             previous: null,
         );

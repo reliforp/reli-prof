@@ -20,7 +20,6 @@ use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\VariableReader;
-use Reli\Inspector\Watch\Trigger\ExceptionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
@@ -60,15 +59,11 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         // Build triggers from settings
         $triggers = $this->buildTriggers($watch_settings);
         $needs_call_trace = false;
-        $needs_exception_check = false;
         /** @var list<VariableValueTrigger> $var_triggers */
         $var_triggers = [];
         foreach ($triggers as $trigger) {
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
-            }
-            if ($trigger instanceof ExceptionDetectionTrigger) {
-                $needs_exception_check = true;
             }
             if ($trigger instanceof VariableValueTrigger) {
                 $var_triggers[] = $trigger;
@@ -130,17 +125,6 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         );
                     }
 
-                    // Check for exception in flight
-                    $has_exception = null;
-                    if ($needs_exception_check) {
-                        $has_exception = $this->heap_stats_reader
-                            ->hasException(
-                                $process_specifier,
-                                $target_php_settings,
-                                $descriptor->eg_address,
-                            );
-                    }
-
                     // Read variable values
                     $variable_values = [];
                     if (count($var_triggers) > 0) {
@@ -157,7 +141,6 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         pid: $descriptor->pid,
                         heap_stats: $heap_stats,
                         call_trace: $call_trace,
-                        has_exception: $has_exception,
                         timestamp: $now,
                         previous: $previous_context,
                         variable_values: $variable_values,
@@ -222,9 +205,6 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         }
         if ($settings->trace_depth_limit !== null) {
             $triggers[] = new TraceDepthTrigger($settings->trace_depth_limit);
-        }
-        if ($settings->on_exception) {
-            $triggers[] = new ExceptionDetectionTrigger();
         }
         foreach ($settings->watch_var as $expr) {
             $triggers[] = new VariableValueTrigger($expr);

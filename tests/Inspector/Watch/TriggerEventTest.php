@@ -35,8 +35,8 @@ class TriggerEventTest extends TestCase
     public function testNullValue(): void
     {
         $event = new TriggerEvent(
-            trigger_name: 'on-exception',
-            description: 'exception in flight',
+            trigger_name: 'test',
+            description: 'test event',
             timestamp: 100.0,
         );
 

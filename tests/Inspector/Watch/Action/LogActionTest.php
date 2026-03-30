@@ -44,7 +44,6 @@ class LogActionTest extends TestCase
                 128 * 1024 * 1024,
             ),
             call_trace: null,
-            has_exception: null,
             timestamp: 1711684800.0,
             previous: null,
         );
@@ -77,7 +76,6 @@ class LogActionTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(0, 0, 0, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 1711684800.0,
             previous: null,
         );

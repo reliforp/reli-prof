@@ -27,7 +27,6 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'memory-peak-watch' => false,
             'watch-function' => null,
             'trace-depth-limit' => null,
-            'on-exception' => false,
             'watch-var' => [],
             'action' => ['memory-dump'],
             'action-exec-command' => null,
@@ -163,13 +162,11 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
         $settings = (new WatchSettingsFromConsoleInput())
             ->createSettings($this->makeInput([
                 'memory-peak-watch' => true,
-                'on-exception' => true,
                 'watch-function' => 'sleep',
                 'trace-depth-limit' => '200',
             ]));
 
         $this->assertTrue($settings->memory_peak_watch);
-        $this->assertTrue($settings->on_exception);
         $this->assertSame('sleep', $settings->watch_function);
         $this->assertSame(200, $settings->trace_depth_limit);
     }

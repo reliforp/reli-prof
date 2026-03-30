@@ -29,7 +29,6 @@ class WatchContextTest extends TestCase
             pid: 1,
             heap_stats: $heap,
             call_trace: null,
-            has_exception: null,
             timestamp: 99.0,
             previous: null,
         );
@@ -37,7 +36,6 @@ class WatchContextTest extends TestCase
             pid: 42,
             heap_stats: $heap,
             call_trace: $trace,
-            has_exception: true,
             timestamp: 100.0,
             previous: $prev,
             variable_values: [
@@ -48,7 +46,6 @@ class WatchContextTest extends TestCase
         $this->assertSame(42, $ctx->pid);
         $this->assertSame($heap, $ctx->heap_stats);
         $this->assertSame($trace, $ctx->call_trace);
-        $this->assertTrue($ctx->has_exception);
         $this->assertSame(100.0, $ctx->timestamp);
         $this->assertSame($prev, $ctx->previous);
         $this->assertCount(1, $ctx->variable_values);
@@ -60,7 +57,6 @@ class WatchContextTest extends TestCase
             pid: 1,
             heap_stats: new HeapStats(0, 0, 0, 0),
             call_trace: null,
-            has_exception: null,
             timestamp: 0.0,
             previous: null,
         );

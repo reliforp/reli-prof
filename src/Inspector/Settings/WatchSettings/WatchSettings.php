@@ -41,7 +41,6 @@ final class WatchSettings
         public bool $memory_peak_watch,
         public ?string $watch_function,
         public ?int $trace_depth_limit,
-        public bool $on_exception,
         /** @var list<string> Variable watch expressions (scope::name:op:value) */
         public array $watch_var,
         // Action configs

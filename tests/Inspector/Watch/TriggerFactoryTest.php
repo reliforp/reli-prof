@@ -15,7 +15,6 @@ namespace Reli\Inspector\Watch;
 
 use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
-use Reli\Inspector\Watch\Trigger\ExceptionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryLimitTrigger;
@@ -43,7 +42,6 @@ class TriggerFactoryTest extends TestCase
             'memory_peak_watch' => false,
             'watch_function' => null,
             'trace_depth_limit' => null,
-            'on_exception' => false,
             'watch_var' => [],
             'actions' => ['log'],
             'action_exec_command' => null,
@@ -117,19 +115,6 @@ class TriggerFactoryTest extends TestCase
         $this->assertInstanceOf(TraceDepthTrigger::class, $triggers[0]);
     }
 
-    public function testOnException(): void
-    {
-        $factory = new TriggerFactory();
-        $triggers = $factory->build($this->makeSettings([
-            'on_exception' => true,
-        ]));
-        $this->assertCount(1, $triggers);
-        $this->assertInstanceOf(
-            ExceptionDetectionTrigger::class,
-            $triggers[0],
-        );
-    }
-
     public function testWatchVar(): void
     {
         $factory = new TriggerFactory();
@@ -156,9 +141,8 @@ class TriggerFactoryTest extends TestCase
             'memory_peak_watch' => true,
             'watch_function' => 'sleep',
             'trace_depth_limit' => 50,
-            'on_exception' => true,
             'watch_var' => ['global::$a:gt:0'],
         ]));
-        $this->assertCount(7, $triggers);
+        $this->assertCount(6, $triggers);
     }
 }

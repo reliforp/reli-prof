@@ -46,7 +46,6 @@ class ActionFactoryTest extends BaseTestCase
             'memory_peak_watch' => false,
             'watch_function' => null,
             'trace_depth_limit' => null,
-            'on_exception' => false,
             'watch_var' => [],
             'actions' => ['log'],
             'action_exec_command' => null,
