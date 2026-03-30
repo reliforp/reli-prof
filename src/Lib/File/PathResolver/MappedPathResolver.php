@@ -38,7 +38,7 @@ final class MappedPathResolver implements ProcessPathResolver
         $original_path = $path;
         while ($path !== '/') {
             $path = $this->getDirectory($path);
-            if ($path === '/' ) {
+            if ($path === '/') {
                 break;
             }
             if (isset($this->path_map[$path])) {
