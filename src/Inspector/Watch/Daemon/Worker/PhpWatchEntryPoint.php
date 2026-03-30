@@ -106,6 +106,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
             try {
                 while ($this->loop_condition->shouldContinue()) {
                     $now = microtime(true);
+                    $call_trace = null;
 
                     // Read process state. Skip poll on failure
                     // (target may be between requests).
@@ -116,7 +117,6 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                             $descriptor->eg_address,
                         );
 
-                        $call_trace = null;
                         if ($needs_call_trace) {
                             $call_trace = $this->call_trace_reader
                                 ->readCallTrace(
@@ -153,6 +153,9 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         continue;
                     }
                     $consecutive_failures = 0;
+
+                    assert(isset($heap_stats));
+                    assert(isset($variable_values));
 
                     $context = new WatchContext(
                         pid: $descriptor->pid,
