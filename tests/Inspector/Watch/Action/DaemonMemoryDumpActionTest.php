@@ -22,6 +22,7 @@ use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Process\ProcessSpecifier;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 /**
  * @runTestsInSeparateProcesses
@@ -34,8 +35,10 @@ class DaemonMemoryDumpActionTest extends BaseTestCase
         $dumper = Mockery::mock(
             'overload:' . MemoryDumper::class,
         );
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
         $action = new DaemonMemoryDumpAction(
             $dumper,
+            $stopper,
             '/tmp',
             new DiskUsageTracker(1024 * 1024),
         );
@@ -56,8 +59,10 @@ class DaemonMemoryDumpActionTest extends BaseTestCase
         $tracker->recordFile($tmp);
         unlink($tmp);
 
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
         $action = new DaemonMemoryDumpAction(
             $dumper,
+            $stopper,
             '/tmp',
             $tracker,
         );
@@ -76,8 +81,10 @@ class DaemonMemoryDumpActionTest extends BaseTestCase
         );
         $dumper->shouldNotReceive('dump');
 
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
         $action = new DaemonMemoryDumpAction(
             $dumper,
+            $stopper,
             '/tmp',
             new DiskUsageTracker(1024 * 1024),
         );
@@ -98,8 +105,13 @@ class DaemonMemoryDumpActionTest extends BaseTestCase
         );
         $dumper->shouldReceive('dump')->once()->andReturn($result);
 
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
+        $stopper->shouldReceive('stop')->once()->andReturn(true);
+        $stopper->shouldReceive('resume')->once();
+
         $action = new DaemonMemoryDumpAction(
             $dumper,
+            $stopper,
             sys_get_temp_dir(),
             new DiskUsageTracker(1024 * 1024),
         );
@@ -131,8 +143,13 @@ class DaemonMemoryDumpActionTest extends BaseTestCase
             })
             ->andReturn($result);
 
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
+        $stopper->shouldReceive('stop')->once()->andReturn(true);
+        $stopper->shouldReceive('resume')->once();
+
         $action = new DaemonMemoryDumpAction(
             $dumper,
+            $stopper,
             sys_get_temp_dir(),
             new DiskUsageTracker(1024 * 1024),
             true,

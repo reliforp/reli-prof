@@ -23,6 +23,7 @@ use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Process\ProcessSpecifier;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 /**
  * @runTestsInSeparateProcesses
@@ -35,8 +36,10 @@ class MemoryDumpActionTest extends BaseTestCase
         $dumper = Mockery::mock(
             'overload:' . MemoryDumper::class,
         );
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
         $action = new MemoryDumpAction(
             $dumper,
+            $stopper,
             new TargetPhpSettings(php_version: 'v84'),
             0x1000,
             0x2000,
@@ -60,8 +63,10 @@ class MemoryDumpActionTest extends BaseTestCase
         $tracker->recordFile($tmp);
         unlink($tmp);
 
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
         $action = new MemoryDumpAction(
             $dumper,
+            $stopper,
             new TargetPhpSettings(php_version: 'v84'),
             0x1000,
             0x2000,
@@ -83,9 +88,13 @@ class MemoryDumpActionTest extends BaseTestCase
             'overload:' . MemoryDumper::class,
         );
         $dumper->shouldReceive('dump')->once()->andReturn($result);
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
+        $stopper->shouldReceive('stop')->once()->andReturn(true);
+        $stopper->shouldReceive('resume')->once();
 
         $action = new MemoryDumpAction(
             $dumper,
+            $stopper,
             new TargetPhpSettings(php_version: 'v84'),
             0x1000,
             0x2000,
@@ -120,8 +129,13 @@ class MemoryDumpActionTest extends BaseTestCase
             })
             ->andReturn($result);
 
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
+        $stopper->shouldReceive('stop')->once()->andReturn(true);
+        $stopper->shouldReceive('resume')->once();
+
         $action = new MemoryDumpAction(
             $dumper,
+            $stopper,
             new TargetPhpSettings(php_version: 'v84'),
             0x1000,
             0x2000,
@@ -146,8 +160,13 @@ class MemoryDumpActionTest extends BaseTestCase
             new \RuntimeException('chunk not found'),
         );
 
+        $stopper = Mockery::mock('overload:' . ProcessStopper::class);
+        $stopper->shouldReceive('stop')->once()->andReturn(true);
+        $stopper->shouldReceive('resume')->once();
+
         $action = new MemoryDumpAction(
             $dumper,
+            $stopper,
             new TargetPhpSettings(php_version: 'v84'),
             0x1000,
             0x2000,
