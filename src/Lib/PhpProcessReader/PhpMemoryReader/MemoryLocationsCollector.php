@@ -656,16 +656,23 @@ final class MemoryLocationsCollector
         }
         $execute_data = $dereferencer->deref($eg->current_execute_data);
         foreach ($execute_data->iterateStackChain($dereferencer) as $key => $execute_data) {
-            $call_frame_context = $this->collectCallFrame(
-                $execute_data,
-                $map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $call_frames_context->add((string)$key, $call_frame_context);
+            try {
+                $call_frame_context = $this->collectCallFrame(
+                    $execute_data,
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                $call_frames_context->add((string)$key, $call_frame_context);
+            } catch (\RuntimeException $e) {
+                Log::debug(
+                    'skipping call frame due to unreadable memory',
+                    ['frame' => $key, 'error' => $e->getMessage()],
+                );
+            }
         }
         return $call_frames_context;
     }
