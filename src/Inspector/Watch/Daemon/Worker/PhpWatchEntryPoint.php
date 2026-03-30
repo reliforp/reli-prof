@@ -100,6 +100,8 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
 
             $previous_context = null;
             $trace_cache = new TraceCache();
+            $consecutive_failures = 0;
+            $max_consecutive_failures = 10;
 
             try {
                 while ($this->loop_condition->shouldContinue()) {
@@ -138,10 +140,19 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                                 );
                         }
                     } catch (\Throwable) {
+                        $consecutive_failures++;
+                        if ($consecutive_failures >= $max_consecutive_failures) {
+                            Log::debug('watch worker: process seems dead', [
+                                'pid' => $descriptor->pid,
+                                'consecutive_failures' => $consecutive_failures,
+                            ]);
+                            break;
+                        }
                         $previous_context = null;
                         usleep($poll_sleep_us);
                         continue;
                     }
+                    $consecutive_failures = 0;
 
                     $context = new WatchContext(
                         pid: $descriptor->pid,
