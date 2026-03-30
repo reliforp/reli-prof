@@ -119,7 +119,7 @@ class TriggerFactoryTest extends TestCase
     {
         $factory = new TriggerFactory();
         $triggers = $factory->build($this->makeSettings([
-            'watch_var' => ['global::$x:gt:0', 'local::y:eq:test'],
+            'watch_var' => ['global::$x:gt:0', 'local::func()$y:eq:test'],
         ]));
         $this->assertCount(2, $triggers);
         $this->assertInstanceOf(

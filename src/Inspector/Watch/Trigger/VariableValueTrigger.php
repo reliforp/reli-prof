@@ -45,6 +45,37 @@ final class VariableValueTrigger implements TriggerInterface
         $this->operator = $parsed['op'];
         $this->operand = $parsed['value'];
         $this->lookup_key = $this->scope . '::' . $this->var_name;
+
+        $this->validateScope();
+    }
+
+    private function validateScope(): void
+    {
+        if (
+            $this->scope === 'local'
+            || $this->scope === 'func_static'
+        ) {
+            if (!str_contains($this->var_name, ')$')) {
+                throw new \InvalidArgumentException(
+                    "Invalid watch-var expression:"
+                        . " '{$this->expression}'."
+                        . " {$this->scope}:: requires"
+                        . ' function()$variable syntax'
+                        . " (e.g., {$this->scope}"
+                        . '::myFunc()$var:op:value)',
+                );
+            }
+        }
+        if ($this->scope === 'global') {
+            if (!str_starts_with($this->var_name, '$')) {
+                throw new \InvalidArgumentException(
+                    'Invalid watch-var expression:'
+                        . " '{$this->expression}'."
+                        . ' global:: requires $ prefix'
+                        . ' (e.g., global::$var:op:value)',
+                );
+            }
+        }
     }
 
     #[\Override]

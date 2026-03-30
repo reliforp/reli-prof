@@ -87,6 +87,24 @@ class VariableValueTriggerTest extends TestCase
         VariableValueTrigger::parseExpression('global::$name');
     }
 
+    public function testLocalWithoutFuncSpecThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new VariableValueTrigger('local::$counter:gt:0');
+    }
+
+    public function testFuncStaticWithoutFuncSpecThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new VariableValueTrigger('func_static::$count:gt:0');
+    }
+
+    public function testGlobalWithoutDollarThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new VariableValueTrigger('global::counter:gt:0');
+    }
+
     public function testIntGtFires(): void
     {
         $trigger = new VariableValueTrigger('global::$counter:gt:100');
