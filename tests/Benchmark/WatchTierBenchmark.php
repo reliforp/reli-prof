@@ -1,4 +1,4 @@
-<?php
+<?php // phpcs:ignoreFile
 
 /**
  * Benchmark: Watch trigger polling overhead per tier.
