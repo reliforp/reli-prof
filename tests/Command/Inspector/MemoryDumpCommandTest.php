@@ -312,6 +312,54 @@ class MemoryDumpCommandTest extends BaseTestCase
     }
 
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testDumpAndAnalyzeRoundtrip(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('no target version');
+        }
+
+        $output_path = $this->createTmpFile();
+        $container = $this->createContainer();
+        [, $pid, ] = $this->startTargetProcess($docker_image_name);
+
+        // Dump with --include-binary so analyze can resolve all addresses
+        /** @var MemoryDumpCommand $dump_command */
+        $dump_command = $container->make(MemoryDumpCommand::class);
+
+        $input = new ArrayInput([
+            '--pid' => (string)$pid,
+            '--output' => $output_path,
+            '--include-binary' => true,
+        ]);
+        $input->setInteractive(false);
+        $result = $dump_command->run($input, new BufferedOutput());
+        $this->assertSame(0, $result);
+
+        // Analyze (the command writes JSON to real stdout, so capture it)
+        /** @var MemoryAnalyzeCommand $analyze_command */
+        $analyze_command = $container->make(MemoryAnalyzeCommand::class);
+
+        $analyze_input = new ArrayInput([
+            'dump-file' => $output_path,
+        ]);
+        $analyze_input->setInteractive(false);
+        $analyze_output = new BufferedOutput();
+
+        ob_start();
+        try {
+            $analyze_result = $analyze_command->run(
+                $analyze_input,
+                $analyze_output,
+            );
+        } finally {
+            ob_end_clean();
+        }
+        $this->assertSame(0, $analyze_result);
+    }
+
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
     public function testDumpWithNoCache(
         string $php_version,
         string $docker_image_name,
