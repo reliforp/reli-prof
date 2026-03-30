@@ -20,6 +20,7 @@ use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Log\Log;
 use Reli\Lib\Process\ProcessSpecifier;
+use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 /**
  * Memory dump action for daemon mode.
@@ -31,6 +32,7 @@ final class DaemonMemoryDumpAction implements ActionInterface
 {
     public function __construct(
         private MemoryDumper $memory_dumper,
+        private ProcessStopper $process_stopper,
         private string $output_dir,
         private DiskUsageTracker $disk_tracker,
         private bool $include_binary = false,
@@ -72,6 +74,7 @@ final class DaemonMemoryDumpAction implements ActionInterface
             date('Ymd-His', (int)$event->timestamp),
         );
 
+        $stopped = $this->process_stopper->stop($process->pid);
         try {
             /** @psalm-suppress ArgumentTypeCoercion,InvalidArgument */
             $target_settings = new TargetPhpSettings(
@@ -96,6 +99,10 @@ final class DaemonMemoryDumpAction implements ActionInterface
                 'pid' => $process->pid,
                 'error' => $e->getMessage(),
             ]);
+        } finally {
+            if ($stopped) {
+                $this->process_stopper->resume($process->pid);
+            }
         }
     }
 }
