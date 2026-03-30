@@ -264,8 +264,6 @@ final class VariableReader
         string $function_name,
     ): bool {
         if ($execute_data->func === null) {
-            // Top-level script scope: use <main> to avoid
-            // collision with a function named "main"
             return $function_name === '<main>';
         }
 
@@ -274,6 +272,11 @@ final class VariableReader
             $dereferencer,
             $zend_type_reader,
         );
+
+        // Top-level script scope: func exists but has empty name
+        if ($fqn === '' && $function_name === '<main>') {
+            return true;
+        }
 
         return $fqn === $function_name;
     }
