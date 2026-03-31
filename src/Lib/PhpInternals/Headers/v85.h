@@ -1365,8 +1365,18 @@ struct _zend_mm_heap {
             void       (*_shutdown)(bool full, bool silent);
 		} std;
 	} custom_heap;
-	HashTable *tracked_allocs;
-	pid_t pid;
+	union {
+		HashTable *tracked_allocs;
+		struct {
+			bool    poison_alloc;
+			uint8_t poison_alloc_value;
+			bool    poison_free;
+			uint8_t poison_free_value;
+			uint8_t padding;
+			bool    check_freelists_on_shutdown;
+		} debug;
+	};
+	/* pid_t pid; -- only present in ZEND_DEBUG builds */
 	zend_random_bytes_insecure_state rand_state;
 };
 
