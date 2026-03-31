@@ -1030,6 +1030,10 @@ final class MemoryLocationsCollector
             $zend_type_reader,
         );
         $memory_locations->add($object_location);
+        $zend_object_address = $object->getPointer()->address;
+        if ($object_location->address !== $zend_object_address) {
+            $memory_locations->memory_locations[$zend_object_address] = $object_location;
+        }
         $memory_locations->add($object_handlers_memory_location);
 
         $object_context = $context_pools
