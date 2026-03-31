@@ -64,19 +64,20 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
-        // ZTS PHP 8.2+ stores _tsrm_ls_cache as a non-exported TLS symbol.
-        // Coredump-based brute-force TLS scanning currently cannot validate
-        // candidates correctly (uninitialized_zval check). Skip until fixed.
+        ini_set('memory_limit', '2G');
+
+        // ZTS PHP 8.2+: _tsrm_ls_cache is not in .dynsym (stripped binary) so
+        // PhpTsrmLsCacheFinder falls back to brute-force TLS scanning. However,
+        // with the auto_prepend_file mechanism used by runScriptViaContainer,
+        // the TLS block does not contain _tsrm_ls_cache at the expected location.
         if (
             str_contains($docker_image_name, '-zts')
             && $php_version >= 'v82'
         ) {
             $this->markTestSkipped(
-                'Coredump reading for ZTS PHP 8.2+ is not yet supported'
+                'ZTS PHP 8.2+ coredump: _tsrm_ls_cache not found in TLS block'
             );
         }
-
-        ini_set('memory_limit', '2G');
 
         $target_script = <<<'CODE'
             <?php

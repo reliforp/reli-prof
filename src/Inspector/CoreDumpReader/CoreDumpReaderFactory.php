@@ -23,6 +23,7 @@ use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Structure\Elf64\Elf64Note;
 use Reli\Lib\Elf\Structure\Elf64\Elf64PrStatus;
 use Reli\Lib\Elf\Structure\Elf64\NtFileEntry;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\Tls\CoreDumpThreadPointerRetriever;
 use Reli\Lib\Elf\Tls\ThreadPointerRetrieverInterface;
 use Reli\Lib\File\PathResolver\MappedPathResolver;
@@ -280,8 +281,12 @@ final class CoreDumpReaderFactory
                     },
                 ProcessPathResolver::class => autowire(MappedPathResolver::class)
                     ->constructorParameter('path_map', $path_mapping),
-                ThreadPointerRetrieverInterface::class =>
-                    new CoreDumpThreadPointerRetriever($pr_statuses),
+                ProcessModuleSymbolReaderCreator::class =>
+                    autowire(ProcessModuleSymbolReaderCreator::class)
+                        ->constructorParameter(
+                            'thread_pointer_retriever',
+                            new CoreDumpThreadPointerRetriever($pr_statuses)
+                        ),
             ])
             ->build()
         ;
