@@ -37,6 +37,9 @@ class ZendFiber implements PointedTypeResolverAware
     /** @var Pointer<ZendExecuteData>|null */
     public ?Pointer $stack_bottom;
 
+    /** @var Pointer<ZendVmStack>|null */
+    public ?Pointer $vm_stack;
+
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_fiber> $casted_cdata
      * @param Pointer<ZendFiber> $pointer
@@ -48,6 +51,7 @@ class ZendFiber implements PointedTypeResolverAware
         unset($this->std);
         unset($this->execute_data);
         unset($this->stack_bottom);
+        unset($this->vm_stack);
     }
 
     public function __get(string $field_name): mixed
@@ -77,6 +81,14 @@ class ZendFiber implements PointedTypeResolverAware
                 ? Pointer::fromCData(
                     ZendExecuteData::class,
                     $this->casted_cdata->casted->stack_bottom,
+                )
+                : null
+            ,
+            'vm_stack' => $this->vm_stack =
+                $this->casted_cdata->casted->vm_stack !== null
+                ? Pointer::fromCData(
+                    ZendVmStack::class,
+                    $this->casted_cdata->casted->vm_stack,
                 )
                 : null
             ,

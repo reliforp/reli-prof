@@ -127,6 +127,7 @@ final class MemoryLocationsCollector
 {
     private ?ZendTypeReader $zend_type_reader = null;
     private ?UserFunctionDefinitionContext $memory_limit_error_function_context = null;
+    private ?MemoryLocations $fiber_vm_stack_memory_locations = null;
 
     public function __construct(
         private MemoryReaderInterface $memory_reader,
@@ -273,6 +274,8 @@ final class MemoryLocationsCollector
                 );
             }
         }
+
+        $this->fiber_vm_stack_memory_locations = $vm_stack_memory_locations;
 
         $context_pools = ContextPools::createDefault();
 
@@ -1321,6 +1324,22 @@ final class MemoryLocationsCollector
                     $call_frames_context->add((string)$key, $call_frame_context);
                 }
                 $fiber_context->add('call_frames', $call_frames_context);
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            if (
+                !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V82)
+                and $zend_fiber->vm_stack !== null
+                and $this->fiber_vm_stack_memory_locations !== null
+            ) {
+                $vm_stack_current = $dereferencer->deref($zend_fiber->vm_stack);
+                foreach ($vm_stack_current->iterateStackChain($dereferencer) as $vm_stack) {
+                    $this->fiber_vm_stack_memory_locations->add(
+                        VmStackMemoryLocation::fromZendVmStack($vm_stack),
+                    );
+                }
             }
         } catch (\Throwable) {
         }
