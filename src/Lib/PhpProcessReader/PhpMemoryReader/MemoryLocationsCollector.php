@@ -833,9 +833,13 @@ final class MemoryLocationsCollector
         // emalloc for generators). Tracking them separately would cause
         // allocation overhead to be calculated for each piece independently,
         // double-counting the bin slot overhead.
-        $variable_table_pointer = $execute_data->getVariableTablePointer($dereferencer);
-        $frame_end = $variable_table_pointer->address + $variable_table_pointer->size;
-        $frame_size = $frame_end - $execute_data->getPointer()->address;
+        try {
+            $variable_table_pointer = $execute_data->getVariableTablePointer($dereferencer);
+            $frame_end = $variable_table_pointer->address + $variable_table_pointer->size;
+            $frame_size = $frame_end - $execute_data->getPointer()->address;
+        } catch (\Throwable) {
+            $frame_size = $execute_data->getPointer()->size;
+        }
         $memory_locations->add(
             new CallFrameHeaderMemoryLocation(
                 $execute_data->getPointer()->address,
