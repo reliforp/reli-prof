@@ -18,6 +18,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
 - [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md)
 - [Condition-based monitoring](docs/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
+- [Variable inspection](docs/peek-var-command.md): read PHP variable values from a running process without modifying it
 
 ## How it works
 It's implemented by using following techniques:
@@ -390,6 +391,25 @@ Available actions: `memory-dump` (default), `trace`, `log`, `exec`.
 Rate limiting: `--cooldown` (with exponential backoff), `--max-triggers-per-hour`, `--max-dump-size`.
 
 See [docs/watch-command.md](docs/watch-command.md) for full documentation.
+
+## [Experimental] Peek Variable: One-Shot Variable Inspection
+
+`inspector:peek-var` reads PHP variable values from a running process — no triggers or actions, just the current value.
+
+```bash
+# Read global variables
+./reli inspector:peek-var -p <pid> --var='global::$counter' --var='global::$cache'
+
+# Repeat every 500ms
+./reli inspector:peek-var -p <pid> --var='global::$queue' --repeat=500
+
+# JSON output for scripting
+./reli inspector:peek-var -p <pid> --var='global::$counter' --format=json
+```
+
+Supported scopes: `global::$var`, `local::func()$var`, `static::Class::$prop`, `func_static::func()$var`.
+
+See [docs/peek-var-command.md](docs/peek-var-command.md) for full documentation.
 
 ## Examples
 ### Trace a script

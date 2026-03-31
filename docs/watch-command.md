@@ -82,6 +82,8 @@ reli inspector:watch -p <pid> --trace-depth-limit=200
 
 Fires when a PHP variable meets a condition. Multiple `--watch-var` flags can be specified.
 
+> **Tip:** To simply read a variable's current value without trigger conditions, use [`inspector:peek-var`](peek-var-command.md).
+
 **Syntax:** `scope::identifier:operator:value`
 
 #### Scopes
