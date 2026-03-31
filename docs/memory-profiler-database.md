@@ -458,6 +458,99 @@ WHERE node_id = 42
 LIMIT 100;
 ```
 
+### Instances of a specific class (top 20)
+
+```sql
+SELECT
+    cn.node_id,
+    loc.address,
+    loc.size,
+    loc.refcount,
+    loc.region
+FROM context_nodes cn
+JOIN context_node_locations loc
+    ON loc.run_id = cn.run_id AND loc.node_id = cn.node_id
+WHERE cn.run_id = 1
+  AND loc.class_name = 'App\Entity\User'
+  AND loc.location_type = 'ZendObjectMemoryLocation'
+LIMIT 20;
+```
+
+### All paths from context root to a specific node
+
+All non-circular paths from root to a given node, following both tree and back-reference edges:
+
+```sql
+WITH RECURSIVE paths(node_id, path, depth, visited) AS (
+    SELECT child_node_id, link_name, 0, ',' || child_node_id || ','
+    FROM context_edges
+    WHERE run_id = 1 AND parent_node_id IS NULL
+    UNION ALL
+    SELECT e.child_node_id,
+           p.path || ' -> ' || e.link_name,
+           p.depth + 1,
+           p.visited || e.child_node_id || ','
+    FROM context_edges e
+    JOIN paths p ON e.parent_node_id = p.node_id
+    WHERE e.run_id = 1
+      AND p.visited NOT LIKE '%,' || e.child_node_id || ',%'
+      AND p.depth < 50
+)
+SELECT path, depth
+FROM paths
+WHERE node_id = 42
+ORDER BY depth
+LIMIT 100;
+```
+
+### Function name at a specific call frame number
+
+Call frames are stored as a tree: root → `call_frames` → frame number (`0`, `1`, ...) → attributes (`function_name`, `lineno`).
+
+```sql
+-- Get the function name at frame #3
+SELECT attr.value AS function_name
+FROM context_edges frames_edge
+JOIN context_edges frame_edge
+    ON frame_edge.run_id = frames_edge.run_id
+   AND frame_edge.parent_node_id = frames_edge.child_node_id
+   AND frame_edge.is_tree = 1
+   AND frame_edge.link_name = '3'
+JOIN context_node_attributes attr
+    ON attr.run_id = frame_edge.run_id
+   AND attr.node_id = frame_edge.child_node_id
+   AND attr.key = 'function_name'
+WHERE frames_edge.run_id = 1
+  AND frames_edge.link_name = 'call_frames'
+  AND frames_edge.is_tree = 1;
+```
+
+List all frames with function name and line number:
+
+```sql
+SELECT
+    CAST(frame_edge.link_name AS INTEGER) AS frame_no,
+    fn.value AS function_name,
+    ln.value AS lineno
+FROM context_edges frames_edge
+JOIN context_edges frame_edge
+    ON frame_edge.run_id = frames_edge.run_id
+   AND frame_edge.parent_node_id = frames_edge.child_node_id
+   AND frame_edge.is_tree = 1
+LEFT JOIN context_node_attributes fn
+    ON fn.run_id = frame_edge.run_id
+   AND fn.node_id = frame_edge.child_node_id
+   AND fn.key = 'function_name'
+LEFT JOIN context_node_attributes ln
+    ON ln.run_id = frame_edge.run_id
+   AND ln.node_id = frame_edge.child_node_id
+   AND ln.key = 'lineno'
+WHERE frames_edge.run_id = 1
+  AND frames_edge.link_name = 'call_frames'
+  AND frames_edge.is_tree = 1
+ORDER BY frame_no;
+```
+
 ### Comparing runs: memory growth by class
 
 ```sql
