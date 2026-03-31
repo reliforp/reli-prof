@@ -1347,12 +1347,16 @@ final class MemoryLocationsCollector
                     );
                 }
             } elseif (
-                $zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V82)
-                and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)
+                !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)
                 and $zend_fiber->execute_data !== null
                 and $this->fiber_vm_stack_memory_locations !== null
                 and $this->chunk_memory_locations !== null
             ) {
+                // fiber->vm_stack is only set when the fiber's callback returns
+                // (end of zend_fiber_execute). For suspended fibers, EG(vm_stack)
+                // is saved to a local zend_fiber_vm_state on the C stack via
+                // zend_fiber_capture_vm_state(), so we must scan the C stack to
+                // find it. This applies to all PHP versions with Fiber support.
                 $this->scanFiberCStackForVmStack(
                     $zend_fiber,
                     $dereferencer,
@@ -1366,10 +1370,11 @@ final class MemoryLocationsCollector
     }
 
     /**
-     * PHP 8.1's zend_fiber lacks the vm_stack field (added in 8.2).
-     * When a fiber suspends, EG(vm_stack) is saved to a local variable on the
-     * fiber's C stack by the context switch code, but there's no stable struct
-     * field to read it from.
+     * When a fiber suspends, zend_fiber_switch_context() saves EG(vm_stack) to
+     * a local zend_fiber_vm_state variable on the C stack via
+     * zend_fiber_capture_vm_state(). The fiber->vm_stack field is only set at
+     * the end of zend_fiber_execute() when the fiber's callback returns, so it
+     * is always NULL for suspended fibers regardless of PHP version.
      *
      * This method brute-force scans the fiber's C stack memory to locate the
      * saved vm_stack pointer. For each pointer-sized value on the C stack:
