@@ -804,4 +804,51 @@ multiple entry points:
 3. **Heaviest array** (drill from the largest v_arrays entry upward)
 
 This gives 3 perspectives on the same data, catching cases where the heaviest
-*path* doesn't align with the heaviest *class*.
+### Phase 3: SCC (Strongly Connected Components) Analysis
+
+Collapse cycles into single nodes via Tarjan's algorithm, producing a DAG.
+This replaces the simple "is_tree=0 back-edge" detection with structural insight.
+
+**What SCC reveals (validated on real data):**
+
+| Dataset | SCCs | Insight |
+|---|---|---|
+| php-imap | 201 × 15 nodes | 201 identical Message↔Attachment cycles |
+| SimplePie | 1 × 2,011 nodes | All Items form one giant cycle |
+| Symfony Forms | 1,803 SCCs | OptionsResolver↔Closure cycles × 1,800 |
+| Monolog | 0 | No cycles — retained size fully reliable |
+
+**Per-SCC metrics:**
+- Node count
+- Total shallow size
+- External incoming edge count ("how many entry points")
+- External outgoing edge count ("what does this cycle retain")
+- Class composition (e.g., "3× Attachment + 1× Message + 1× Collection")
+
+**Report output example:**
+```
+=== Cycle Analysis (SCC) ===
+  201 identical cycles detected (Message ↔ Attachment pattern):
+    Each: 1 Message + 3 Attachments + 1 AttachmentCollection
+    Each: 0.85 KB shallow, 35 outgoing refs
+    External entry points: 1 per cycle (from $messages array)
+    → Breaking oMessage back-reference would eliminate all 201 cycles
+
+  1,800 OptionsResolver ↔ Closure micro-cycles:
+    Each: 1 Closure + 1 OptionsResolver
+    → Replace Closure defaults with static values to break cycles
+```
+
+**Performance (measured):**
+
+| Dataset | Edges | SCC Time | Memory |
+|---|---|---|---|
+| php-imap | 200K | 0.15s | 111 MB |
+| Symfony Forms | 1.1M | 0.75s | 516 MB |
+| Monolog | 4.5M | 2.88s | 2.1 GB |
+
+Tarjan's is O(V+E), same as DFS. Can share loaded edge data with drill-down.
+
+**Key benefit for retained size:** If SCC count = 0, the graph is a DAG and
+tree-based retained size is exact. If SCCs exist, they can be collapsed into
+super-nodes for an adjusted DAG where retained size becomes exact again.
