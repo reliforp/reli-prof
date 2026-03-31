@@ -1150,7 +1150,13 @@ final class MemoryLocationsCollector
         $generator_context = new GeneratorContext();
 
         try {
-            if ($zend_generator->execute_data !== null) {
+            if (
+                $zend_generator->execute_data !== null
+                and !$this->isExecuteDataInsideGeneratorStruct(
+                    $zend_generator,
+                    $zend_type_reader,
+                )
+            ) {
                 $execute_data = $dereferencer->deref($zend_generator->execute_data);
                 $call_frames_context = new CallFramesContext();
                 foreach ($execute_data->iterateStackChain($dereferencer) as $key => $frame) {
@@ -1219,6 +1225,24 @@ final class MemoryLocationsCollector
         }
 
         return $generator_context;
+    }
+
+    /**
+     * Check if generator->execute_data points to the inline execute_fake field
+     * inside the zend_generator struct. This happens during yield-from delegation.
+     * Collecting call frames from execute_fake would double-count the generator's
+     * own ZendMM allocation, inflating analyzed_percentage above 100%.
+     */
+    private function isExecuteDataInsideGeneratorStruct(
+        ZendGenerator $zend_generator,
+        ZendTypeReader $zend_type_reader,
+    ): bool {
+        assert($zend_generator->execute_data !== null);
+        $execute_data_address = $zend_generator->execute_data->address;
+        $generator_address = $zend_generator->getPointer()->address;
+        $generator_size = $zend_type_reader->sizeOf('zend_generator');
+        return $execute_data_address >= $generator_address
+            && $execute_data_address < $generator_address + $generator_size;
     }
 
     public function collectFiber(
