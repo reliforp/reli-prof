@@ -351,25 +351,35 @@ final class MemoryLocationsCollector
             $memory_limit_error_details,
         );
 
-        $global_callbacks_context = $this->collectGlobalCallbacks(
-            $eg,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
+        try {
+            $global_callbacks_context = $this->collectGlobalCallbacks(
+                $eg,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+        } catch (\Throwable $e) {
+            Log::info('failed to collect global callbacks', ['error' => $e->getMessage()]);
+            $global_callbacks_context = new GlobalCallbacksContext();
+        }
 
-        $modules_context = $this->collectModules(
-            $bg_address,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
+        try {
+            $modules_context = $this->collectModules(
+                $bg_address,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+        } catch (\Throwable $e) {
+            Log::info('failed to collect modules', ['error' => $e->getMessage()]);
+            $modules_context = new ModulesContext();
+        }
 
         $objects_store_context = $this->collectObjectsStore(
             $eg->objects_store,
@@ -2027,39 +2037,78 @@ final class MemoryLocationsCollector
     ): GlobalCallbacksContext {
         $global_callbacks_context = new GlobalCallbacksContext();
 
-        $user_error_handler = $eg->user_error_handler;
-        if (!$user_error_handler->isUndef()) {
-            $error_handler_context = $this->collectZval(
-                $user_error_handler,
-                $map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            if ($error_handler_context !== null) {
-                $global_callbacks_context->add('error_handler', $error_handler_context);
-            }
-        }
-
-        $user_exception_handler = $eg->user_exception_handler;
-        if (!$user_exception_handler->isUndef()) {
-            $exception_handler_context = $this->collectZval(
-                $user_exception_handler,
-                $map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            if ($exception_handler_context !== null) {
-                $global_callbacks_context->add('exception_handler', $exception_handler_context);
-            }
-        }
+        $this->collectGlobalCallbackField(
+            $eg,
+            'user_error_handler',
+            'error_handler',
+            $global_callbacks_context,
+            $map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        $this->collectGlobalCallbackField(
+            $eg,
+            'user_exception_handler',
+            'exception_handler',
+            $global_callbacks_context,
+            $map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
 
         return $global_callbacks_context;
+    }
+
+    /**
+     * Read a handler zval directly from the remote process memory via a
+     * separate process_vm_readv call, avoiding CData struct navigation on
+     * the large zend_executor_globals buffer (which can trigger FFI issues
+     * on certain architectures like ARM).
+     */
+    private function collectGlobalCallbackField(
+        ZendExecutorGlobals $eg,
+        string $eg_field_name,
+        string $link_name,
+        GlobalCallbacksContext $context,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): void {
+        [$offset,] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_executor_globals',
+            $eg_field_name,
+        );
+        $zval_size = $zend_type_reader->sizeOf('zval');
+        $zval_pointer = new Pointer(
+            Zval::class,
+            $eg->getPointer()->address + $offset,
+            $zval_size,
+        );
+        $zval = $dereferencer->deref($zval_pointer);
+        if ($zval->isUndef()) {
+            return;
+        }
+        $handler_context = $this->collectZval(
+            $zval,
+            $map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        if ($handler_context !== null) {
+            $context->add($link_name, $handler_context);
+        }
     }
 
     private function collectModules(
