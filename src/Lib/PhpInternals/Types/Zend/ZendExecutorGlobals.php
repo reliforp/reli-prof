@@ -71,6 +71,12 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
      */
     public ?Pointer $exception;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public Zval $user_error_handler;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public Zval $user_exception_handler;
+
     private ?FieldReader $field_reader = null;
 
     /**
@@ -93,6 +99,8 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
         unset($this->objects_store);
         unset($this->exception);
         unset($this->included_files);
+        unset($this->user_error_handler);
+        unset($this->user_exception_handler);
     }
 
     #[\Override]
@@ -237,6 +245,14 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
                 ZendArray::class,
             ),
             'exception' => $this->exception = $this->readExceptionEager(),
+            'user_error_handler' => $this->user_error_handler = $this->createInlineDereferencable(
+                'user_error_handler',
+                Zval::class,
+            ),
+            'user_exception_handler' => $this->user_exception_handler = $this->createInlineDereferencable(
+                'user_exception_handler',
+                Zval::class,
+            ),
         };
     }
 

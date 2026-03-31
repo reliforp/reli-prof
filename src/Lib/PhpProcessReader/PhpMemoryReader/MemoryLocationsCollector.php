@@ -92,6 +92,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FunctionDefinitio
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FiberContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GeneratorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalConstantContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalCallbacksContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalConstantsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalVariablesContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\IncludedFilesContext;
@@ -345,6 +346,16 @@ final class MemoryLocationsCollector
             $memory_limit_error_details,
         );
 
+        $global_callbacks_context = $this->collectGlobalCallbacks(
+            $eg,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+
         $objects_store_context = $this->collectObjectsStore(
             $eg->objects_store,
             $cg->map_ptr_base,
@@ -378,6 +389,7 @@ final class MemoryLocationsCollector
             $included_files_context,
             $interned_strings_context,
             $objects_store_context,
+            $global_callbacks_context,
         );
 
         return new CollectedMemories(
@@ -1986,5 +1998,51 @@ final class MemoryLocationsCollector
             $objects_store_context->add((string)$key, $objects_store_bucket_context);
         }
         return $objects_store_context;
+    }
+
+    private function collectGlobalCallbacks(
+        ZendExecutorGlobals $eg,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): GlobalCallbacksContext {
+        $global_callbacks_context = new GlobalCallbacksContext();
+
+        $user_error_handler = $eg->user_error_handler;
+        if (!$user_error_handler->isUndef()) {
+            $error_handler_context = $this->collectZval(
+                $user_error_handler,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            if ($error_handler_context !== null) {
+                $global_callbacks_context->add('error_handler', $error_handler_context);
+            }
+        }
+
+        $user_exception_handler = $eg->user_exception_handler;
+        if (!$user_exception_handler->isUndef()) {
+            $exception_handler_context = $this->collectZval(
+                $user_exception_handler,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            if ($exception_handler_context !== null) {
+                $global_callbacks_context->add('exception_handler', $exception_handler_context);
+            }
+        }
+
+        return $global_callbacks_context;
     }
 }
