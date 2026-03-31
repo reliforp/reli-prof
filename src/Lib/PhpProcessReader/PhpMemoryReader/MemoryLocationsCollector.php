@@ -1364,6 +1364,22 @@ final class MemoryLocationsCollector
         return $fiber_context;
     }
 
+    /**
+     * PHP 8.1's zend_fiber lacks the vm_stack field (added in 8.2).
+     * When a fiber suspends, EG(vm_stack) is saved to a local variable on the
+     * fiber's C stack by the context switch code, but there's no stable struct
+     * field to read it from.
+     *
+     * This method brute-force scans the fiber's C stack memory to locate the
+     * saved vm_stack pointer. For each pointer-sized value on the C stack:
+     *   1. Check if it points into a ZendMM chunk (quick rejection of most values)
+     *   2. Read the candidate's first two fields (top, end) as raw integers
+     *   3. Validate: top < end, top > candidate address, top is in a chunk
+     *   4. Verify the fiber's execute_data falls within the [top, end) range
+     *
+     * The execute_data check is the strongest validation — it's very unlikely
+     * for a false positive to pass all four checks.
+     */
     private function scanFiberCStackForVmStack(
         ZendFiber $zend_fiber,
         Dereferencer $dereferencer,
@@ -1382,7 +1398,8 @@ final class MemoryLocationsCollector
             return;
         }
 
-        // Skip guard page at the bottom of the C stack (typically 4KB)
+        // The C stack region starts with a guard page (PROT_NONE, typically 4KB).
+        // Reading it via process_vm_readv would fail, so skip it.
         $guard_page_size = 4096;
         $stack_start = $fiber_stack->pointer + $guard_page_size;
         $usable_size = $fiber_stack->size - $guard_page_size;
@@ -1390,7 +1407,6 @@ final class MemoryLocationsCollector
             return;
         }
 
-        // Limit scan size to avoid excessive memory usage
         $scan_size = min($usable_size, 256 * 1024);
 
         $c_stack_pointer = new Pointer(
@@ -1408,13 +1424,16 @@ final class MemoryLocationsCollector
                 continue;
             }
 
-            // Check if this value looks like a pointer into a ZendMM chunk
+            // Step 1: is this value a pointer into a ZendMM chunk?
             $candidate_location = new \Reli\Lib\Process\MemoryLocation($value, 1);
             if (!$this->chunk_memory_locations->contains($candidate_location)) {
                 continue;
             }
 
-            // Read top and end as raw integers to validate before full ZendVmStack deref
+            // Step 2: read the candidate's top/end fields as raw integers.
+            // We avoid deref-ing as ZendVmStack here because FFI can SEGV when
+            // casting garbage data that happens to contain a non-null void* to
+            // Pointer (FFI dereferences void* internally on cast).
             try {
                 $raw_top_pointer = new Pointer(RawInt64::class, $value, 8);
                 $raw_top = $dereferencer->deref($raw_top_pointer)->value;
@@ -1424,24 +1443,23 @@ final class MemoryLocationsCollector
                 continue;
             }
 
-            // Basic sanity on raw values
+            // Step 3: structural sanity checks on the vm_stack layout
             if ($raw_top === 0 || $raw_end === 0) {
                 continue;
             }
             if ($raw_top >= $raw_end) {
                 continue;
             }
+            // top must be above the struct header (top points into the data area)
             if ($raw_top <= $value) {
                 continue;
             }
-
-            // top should also be within a ZendMM chunk
             $top_location = new \Reli\Lib\Process\MemoryLocation($raw_top, 1);
             if (!$this->chunk_memory_locations->contains($top_location)) {
                 continue;
             }
 
-            // Check if fiber's execute_data falls within this vm_stack's range
+            // Step 4: the fiber's execute_data must reside within [top, end)
             if (
                 $execute_data_address < $raw_top
                 || $execute_data_address >= $raw_end
@@ -1449,7 +1467,7 @@ final class MemoryLocationsCollector
                 continue;
             }
 
-            // Passed all validation - now safe to deref as ZendVmStack
+            // All checks passed — collect this vm_stack and its prev chain
             try {
                 $vm_stack_pointer = new Pointer(
                     ZendVmStack::class,

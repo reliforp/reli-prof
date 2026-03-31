@@ -17,7 +17,20 @@ use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-/** @psalm-consistent-constructor */
+/**
+ * Represents the C stack allocated for a fiber.
+ *
+ * The actual struct definition is not exposed in PHP's public headers
+ * (only a forward declaration exists). The layout is taken from
+ * zend_fibers.c: { void *pointer; size_t size; }.
+ *
+ * Note: the `pointer` field is declared as `uintptr_t` (not `void*`) in
+ * our header copy. PHP FFI will SEGV when casting a `void*` CData value
+ * that holds a remote process address to `long` — it internally tries to
+ * dereference the pointer. Using `uintptr_t` avoids this.
+ *
+ * @psalm-consistent-constructor
+ */
 final class ZendFiberStack implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
