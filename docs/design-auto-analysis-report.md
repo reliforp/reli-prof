@@ -804,10 +804,21 @@ multiple entry points:
 3. **Heaviest array** (drill from the largest v_arrays entry upward)
 
 This gives 3 perspectives on the same data, catching cases where the heaviest
-### Phase 3: SCC (Strongly Connected Components) Analysis
+### Phase 3: SCC (Strongly Connected Components) — Analysis Substrate
 
-Collapse cycles into single nodes via Tarjan's algorithm, producing a DAG.
-This replaces the simple "is_tree=0 back-edge" detection with structural insight.
+SCC is not just a "cycle detection pass" — it produces a **reusable intermediate
+representation** that multiple subsequent analyses can build on. Computed once
+via Tarjan's O(V+E), the results are stored in DB and referenced by other passes.
+
+**What depends on SCC results:**
+
+| Pass | How it uses SCC |
+|---|---|
+| Retained size | SCC count = 0 → exact on DAG. Otherwise collapse cycles to super-nodes. |
+| Circular ref reporting | SCC replaces the simple `is_tree=0` count with structured cycle profiles. |
+| Blame allocation | SCC members are grouped — blame the SCC's external entry points, not internals. |
+| Choke point | Gateway SCCs (small but high ext_out) are a specific choke point pattern. |
+| Drill-down | Can skip into/through SCCs in the condensed DAG. |
 
 **What SCC reveals (validated on real data):**
 
@@ -819,11 +830,23 @@ This replaces the simple "is_tree=0 back-edge" detection with structural insight
 | Monolog | 0 | No cycles — retained size fully reliable |
 
 **Per-SCC metrics:**
-- Node count
-- Total shallow size
-- External incoming edge count ("how many entry points")
-- External outgoing edge count ("what does this cycle retain")
-- Class composition (e.g., "3× Attachment + 1× Message + 1× Collection")
+- Node count, total shallow size
+- External incoming/outgoing edge counts
+- Dominant class name + ratio (count-based and size-based)
+- Class composition signature (for pattern grouping)
+
+**Dominant class ratio** indicates structural homogeneity:
+
+| Ratio | Interpretation |
+|---|---|
+| > 90% | Homogeneous — single data structure repeated at scale |
+| 60-90% | One main class with helpers |
+| 30-60% | Composite structure |
+| < 30% | Mixed graph — no single class explanation |
+
+Two variants: `dominant_class_ratio_by_count` and `dominant_class_ratio_by_size`.
+When they diverge (e.g., count=95% but size=40%), the dominant class is numerous
+but lightweight, while a minority class holds the actual bytes.
 
 **Report output example:**
 ```
@@ -831,12 +854,16 @@ This replaces the simple "is_tree=0 back-edge" detection with structural insight
   201 identical cycles detected (Message ↔ Attachment pattern):
     Each: 1 Message + 3 Attachments + 1 AttachmentCollection
     Each: 0.85 KB shallow, 35 outgoing refs
+    Dominant class ratio: 99.8% (count), 99.4% (size) — homogeneous
     External entry points: 1 per cycle (from $messages array)
     → Breaking oMessage back-reference would eliminate all 201 cycles
 
   1,800 OptionsResolver ↔ Closure micro-cycles:
     Each: 1 Closure + 1 OptionsResolver
+    Dominant class ratio: 50% — balanced pair
     → Replace Closure defaults with static values to break cycles
+
+  Graph is a DAG after SCC condensation → retained size is EXACT on condensed graph.
 ```
 
 **Performance (measured):**
@@ -847,23 +874,28 @@ This replaces the simple "is_tree=0 back-edge" detection with structural insight
 | Symfony Forms | 1.1M | 0.75s | 516 MB |
 | Monolog | 4.5M | 2.88s | 2.1 GB |
 
-Tarjan's is O(V+E), same as DFS. Can share loaded edge data with drill-down.
+Tarjan's is O(V+E), same as DFS. Shares loaded edge data with drill-down.
 
-**Key benefit for retained size:** If SCC count = 0, the graph is a DAG and
-tree-based retained size is exact. If SCCs exist, they can be collapsed into
-super-nodes for an adjusted DAG where retained size becomes exact again.
+**Design principle:** SCC computation happens in PHP (not SQL — graph algorithms
+don't fit recursive CTEs well). Results are flushed to DB tables, then subsequent
+passes query them via SQL. This keeps the boundary clean:
+- **reli PHP side**: graph algorithms (Tarjan, DFS, subtree sums)
+- **DB side**: storage, filtering, ranking, JOINs, preset queries
 
-**DB schema for SCC results:**
+**DB schema (v1 — core tables):**
 
 ```sql
--- Only stores SCCs with size > 1 (cycles). Singletons are not stored.
 CREATE TABLE scc_components (
     run_id              INTEGER NOT NULL,
     scc_id              INTEGER NOT NULL,
     node_count          INTEGER NOT NULL,
     total_shallow_size  INTEGER NOT NULL,
-    ext_incoming_edges  INTEGER NOT NULL, -- entry points from outside
-    ext_outgoing_edges  INTEGER NOT NULL, -- what the cycle retains
+    internal_edge_count INTEGER NOT NULL,
+    ext_incoming_edges  INTEGER NOT NULL,
+    ext_outgoing_edges  INTEGER NOT NULL,
+    dominant_class_name TEXT,
+    dominant_class_ratio_by_count REAL,
+    dominant_class_ratio_by_size  REAL,
     PRIMARY KEY (run_id, scc_id)
 );
 
@@ -885,6 +917,32 @@ CREATE TABLE scc_class_summary (
 CREATE INDEX idx_scc_class ON scc_class_summary(run_id, scc_id);
 ```
 
+**DB schema (v2 — enrichment):**
+
+```sql
+-- Condensed DAG edges between SCCs (and singleton pseudo-SCCs)
+CREATE TABLE scc_edges (
+    run_id       INTEGER NOT NULL,
+    from_scc_id  INTEGER NOT NULL,
+    to_scc_id    INTEGER NOT NULL,
+    edge_count   INTEGER NOT NULL,
+    PRIMARY KEY (run_id, from_scc_id, to_scc_id)
+);
+
+-- Representative entry paths into each SCC
+CREATE TABLE scc_entry_paths (
+    run_id              INTEGER NOT NULL,
+    scc_id              INTEGER NOT NULL,
+    rank                INTEGER NOT NULL,
+    representative_path TEXT NOT NULL,
+    from_root_kind      TEXT,  -- 'call_frames', 'class_table', 'objects_store', etc.
+    PRIMARY KEY (run_id, scc_id, rank)
+);
+
+-- Downstream reachable size from each SCC in condensed DAG
+ALTER TABLE scc_components ADD COLUMN downstream_reachable_size INTEGER;
+```
+
 Data volume is tiny: php-imap 201 SCCs = 3,015 member rows + 201 component rows.
 Even Symfony Forms with 1,803 SCCs = ~22K member rows. Negligible vs millions of edges.
 
@@ -897,25 +955,29 @@ SELECT scc_id FROM scc_members WHERE node_id = :id;
 -- Largest cycles
 SELECT * FROM scc_components ORDER BY total_shallow_size DESC LIMIT 10;
 
+-- Homogeneous vs mixed SCCs
+SELECT scc_id, node_count, dominant_class_name, dominant_class_ratio_by_count,
+    CASE WHEN dominant_class_ratio_by_count > 0.9 THEN 'homogeneous'
+         WHEN dominant_class_ratio_by_count > 0.6 THEN 'dominated'
+         ELSE 'mixed' END as structure_type
+FROM scc_components ORDER BY total_shallow_size DESC;
+
 -- Group identical cycle patterns (php-imap: "201× Message:1,Attachment:3")
 SELECT composition, count(*) as pattern_count,
-       sum(total_shallow_size) as total_kb
+       sum(total_shallow_size) as total_bytes
 FROM (
     SELECT scc_id,
         group_concat(class_name || ':' || count, ', ') as composition
     FROM scc_class_summary GROUP BY run_id, scc_id
 )
-GROUP BY composition ORDER BY total_kb DESC;
+GROUP BY composition ORDER BY total_bytes DESC;
 
--- Retained size confidence: is the subgraph cycle-free?
+-- Retained size confidence
 SELECT CASE WHEN count(*) = 0 THEN 'EXACT (DAG)' ELSE 'APPROXIMATE (cycles exist)' END
 FROM scc_components WHERE run_id = :run_id;
 
--- Entry points into a specific cycle
-SELECT e.link_name, cn.type as from_type
-FROM context_edges e
-JOIN scc_members sm ON sm.node_id = e.child_node_id AND sm.scc_id = :scc_id
-LEFT JOIN context_nodes cn ON cn.node_id = e.parent_node_id
-WHERE e.parent_node_id NOT IN (SELECT node_id FROM scc_members WHERE scc_id = :scc_id)
-  AND e.run_id = :run_id;
+-- Single-owner cycle clusters (most actionable)
+SELECT * FROM scc_components
+WHERE ext_incoming_edges <= 2
+ORDER BY total_shallow_size DESC LIMIT 10;
 ```
