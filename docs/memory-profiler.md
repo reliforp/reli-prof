@@ -738,6 +738,7 @@ The references in the objects_store don't add refcount to the objects.
 - internal classes other than `\Closure`, `\Fiber`, and `\Generator`
 - The contents of resources
 - Data that can only be reached from circular references that don't contain any objects
+- Support for the opcache SHM
 
 # Troubleshooting
 ## jq says "parse error: Exceeds depth limit for parsing at line 1"
