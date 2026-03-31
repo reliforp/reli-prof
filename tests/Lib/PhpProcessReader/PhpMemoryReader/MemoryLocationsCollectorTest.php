@@ -1269,29 +1269,17 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
     }
 
-    #[DataProvider('provideFromV80')]
-    public function testGlobalCallbacksTracking(string $php_version, string $docker_image_name): void
-    {
-        if ($php_version === 'skip') {
-            $this->markTestSkipped('No matching PHP versions for this target set');
-        }
+    /**
+     * @return array<string, mixed>
+     */
+    private function collectContextsFromScript(
+        string $php_version,
+        string $docker_image_name,
+        string $target_script,
+    ): array {
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
-        $target_script =
-            <<<'CODE'
-            <?php
-            set_error_handler(function ($errno, $errstr) {
-                return true;
-            });
-            set_exception_handler(function ($exception) {
-            });
-            register_shutdown_function(function () {
-            });
-            fputs(STDOUT, "a\n");
-            fgets(STDIN);
-            CODE
-        ;
         $pipes = [];
         [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
             $docker_image_name,
@@ -1361,22 +1349,15 @@ class MemoryLocationsCollectorTest extends BaseTestCase
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
             new ProcessSpecifier($pid),
-            new TargetPhpSettings(
-                php_version: $php_version,
-            )
+            new TargetPhpSettings(php_version: $php_version),
         );
         $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
             new ProcessSpecifier($pid),
-            new TargetPhpSettings(
-                php_version: $php_version,
-            )
+            new TargetPhpSettings(php_version: $php_version),
         );
-
         $basic_globals_address = $php_globals_finder->findBasicGlobals(
             new ProcessSpecifier($pid),
-            new TargetPhpSettings(
-                php_version: $php_version,
-            )
+            new TargetPhpSettings(php_version: $php_version),
         );
 
         $memory_locations_collector = new MemoryLocationsCollector(
@@ -1403,33 +1384,165 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $collected_memories->top_reference_context,
             $sink,
         );
-        $contexts_analyzed = $sink->getResult();
+        return $sink->getResult();
+    }
 
-        $this->assertArrayHasKey('global_callbacks', $contexts_analyzed);
-        $this->assertArrayHasKey('error_handler', $contexts_analyzed['global_callbacks']);
-        $this->assertArrayHasKey('exception_handler', $contexts_analyzed['global_callbacks']);
+    #[DataProvider('provideFromV80')]
+    public function testGlobalCallbacksWithAllHandlers(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $contexts = $this->collectContextsFromScript($php_version, $docker_image_name, <<<'CODE'
+            <?php
+            set_error_handler(function ($errno, $errstr) {
+                return true;
+            });
+            set_exception_handler(function ($exception) {
+            });
+            register_shutdown_function(function () {
+            });
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        );
+
+        $this->assertArrayHasKey('global_callbacks', $contexts);
+        $this->assertArrayHasKey('error_handler', $contexts['global_callbacks']);
+        $this->assertArrayHasKey('exception_handler', $contexts['global_callbacks']);
         $this->assertSame(
             'ObjectContext',
-            $contexts_analyzed['global_callbacks']['error_handler']['#type'],
+            $contexts['global_callbacks']['error_handler']['#type'],
         );
         $this->assertArrayHasKey(
             'closure',
-            $contexts_analyzed['global_callbacks']['error_handler'],
+            $contexts['global_callbacks']['error_handler'],
         );
         $this->assertSame(
             'ObjectContext',
-            $contexts_analyzed['global_callbacks']['exception_handler']['#type'],
+            $contexts['global_callbacks']['exception_handler']['#type'],
         );
         $this->assertArrayHasKey(
             'closure',
-            $contexts_analyzed['global_callbacks']['exception_handler'],
+            $contexts['global_callbacks']['exception_handler'],
         );
 
-        $this->assertArrayHasKey('modules', $contexts_analyzed);
-        $this->assertArrayHasKey('standard', $contexts_analyzed['modules']);
+        $this->assertArrayHasKey('modules', $contexts);
+        $this->assertArrayHasKey('standard', $contexts['modules']);
         $this->assertArrayHasKey(
             'shutdown_function[0]',
-            $contexts_analyzed['modules']['standard'],
+            $contexts['modules']['standard'],
         );
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testNoHandlersSet(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $contexts = $this->collectContextsFromScript($php_version, $docker_image_name, <<<'CODE'
+            <?php
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        );
+
+        $this->assertArrayHasKey('global_callbacks', $contexts);
+        $this->assertArrayNotHasKey('error_handler', $contexts['global_callbacks']);
+        $this->assertArrayNotHasKey('exception_handler', $contexts['global_callbacks']);
+        $this->assertArrayHasKey('modules', $contexts);
+        $this->assertArrayHasKey('standard', $contexts['modules']);
+        $this->assertArrayNotHasKey(
+            'shutdown_function[0]',
+            $contexts['modules']['standard'],
+        );
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testErrorHandlerOnly(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $contexts = $this->collectContextsFromScript($php_version, $docker_image_name, <<<'CODE'
+            <?php
+            set_error_handler(function ($errno, $errstr) {
+                return true;
+            });
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        );
+
+        $this->assertArrayHasKey('global_callbacks', $contexts);
+        $this->assertArrayHasKey('error_handler', $contexts['global_callbacks']);
+        $this->assertArrayNotHasKey('exception_handler', $contexts['global_callbacks']);
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testExceptionHandlerOnly(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $contexts = $this->collectContextsFromScript($php_version, $docker_image_name, <<<'CODE'
+            <?php
+            set_exception_handler(function ($exception) {
+            });
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        );
+
+        $this->assertArrayHasKey('global_callbacks', $contexts);
+        $this->assertArrayNotHasKey('error_handler', $contexts['global_callbacks']);
+        $this->assertArrayHasKey('exception_handler', $contexts['global_callbacks']);
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testStringCallbackHandler(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $contexts = $this->collectContextsFromScript($php_version, $docker_image_name, <<<'CODE'
+            <?php
+            function my_error_handler($errno, $errstr) { return true; }
+            set_error_handler('my_error_handler');
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        );
+
+        $this->assertArrayHasKey('global_callbacks', $contexts);
+        $this->assertArrayHasKey('error_handler', $contexts['global_callbacks']);
+        $this->assertTrue(
+            ($contexts['global_callbacks']['error_handler']['#type'] ?? null) === 'StringContext'
+            || isset($contexts['global_callbacks']['error_handler']['#reference_node_id']),
+        );
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testMultipleShutdownFunctions(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $contexts = $this->collectContextsFromScript($php_version, $docker_image_name, <<<'CODE'
+            <?php
+            register_shutdown_function(function () {});
+            register_shutdown_function(function () {});
+            register_shutdown_function(function () {});
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        );
+
+        $this->assertArrayHasKey('modules', $contexts);
+        $this->assertArrayHasKey('standard', $contexts['modules']);
+        $this->assertArrayHasKey('shutdown_function[0]', $contexts['modules']['standard']);
+        $this->assertArrayHasKey('shutdown_function[1]', $contexts['modules']['standard']);
+        $this->assertArrayHasKey('shutdown_function[2]', $contexts['modules']['standard']);
     }
 }
