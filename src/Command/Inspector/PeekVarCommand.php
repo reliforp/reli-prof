@@ -90,8 +90,8 @@ final class PeekVarCommand extends Command
             $this->binary_analysis_cache->disable();
         }
 
-        /** @var list<string> $var_expressions */
         $var_expressions = $input->getOption('var');
+        assert(is_array($var_expressions));
         if (count($var_expressions) === 0) {
             $output->writeln(
                 '<error>No variables specified.'
@@ -102,6 +102,7 @@ final class PeekVarCommand extends Command
 
         $specs = [];
         foreach ($var_expressions as $expr) {
+            assert(is_string($expr));
             try {
                 $specs[] = VariableSpec::parse($expr);
             } catch (\InvalidArgumentException $e) {
@@ -150,10 +151,10 @@ final class PeekVarCommand extends Command
             );
         }
 
-        /** @var string $format */
         $format = $input->getOption('format');
-        /** @var string|null $repeat_ms */
+        assert(is_string($format));
         $repeat_ms = $input->getOption('repeat');
+        assert(is_string($repeat_ms) || is_null($repeat_ms));
         $repeat_us = $repeat_ms !== null
             ? (int)$repeat_ms * 1000
             : null;
