@@ -35,6 +35,7 @@ final class MemoryDumpReader
         private string $php_version,
         private int $eg_address,
         private int $cg_address,
+        private ?int $bg_address = null,
     ) {
     }
 
@@ -52,6 +53,7 @@ final class MemoryDumpReader
             $this->eg_address,
             $this->cg_address,
             $memory_profiler_settings->memory_exhaustion_error_details,
+            $this->bg_address,
         );
 
         $region_analyzer = new RegionAnalyzer(

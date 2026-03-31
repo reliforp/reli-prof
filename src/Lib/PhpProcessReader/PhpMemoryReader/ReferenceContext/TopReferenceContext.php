@@ -27,6 +27,7 @@ final class TopReferenceContext implements ReferenceContext
         public ArrayHeaderContext $interned_strings,
         public ObjectsStoreContext $objects_store,
         public GlobalCallbacksContext $global_callbacks,
+        public ModulesContext $modules,
     ) {
     }
 
@@ -42,6 +43,7 @@ final class TopReferenceContext implements ReferenceContext
             'included_files' => $this->included_files,
             'interned_strings' => $this->interned_strings,
             'global_callbacks' => $this->global_callbacks,
+            'modules' => $this->modules,
             'objects_store' => $this->objects_store,
         ];
     }

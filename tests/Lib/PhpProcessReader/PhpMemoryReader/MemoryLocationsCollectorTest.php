@@ -1286,6 +1286,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             });
             set_exception_handler(function ($exception) {
             });
+            register_shutdown_function(function () {
+            });
             fputs(STDOUT, "a\n");
             fgets(STDIN);
             CODE
@@ -1370,6 +1372,13 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             )
         );
 
+        $basic_globals_address = $php_globals_finder->findBasicGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+
         $memory_locations_collector = new MemoryLocationsCollector(
             $memory_reader,
             $type_reader_creator,
@@ -1383,7 +1392,9 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
-            $compiler_globals_address
+            $compiler_globals_address,
+            null,
+            $basic_globals_address,
         );
 
         $context_analyzer = new ContextAnalyzer();
@@ -1412,6 +1423,13 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertArrayHasKey(
             'closure',
             $contexts_analyzed['global_callbacks']['exception_handler'],
+        );
+
+        $this->assertArrayHasKey('modules', $contexts_analyzed);
+        $this->assertArrayHasKey('standard', $contexts_analyzed['modules']);
+        $this->assertArrayHasKey(
+            'shutdown_function[0]',
+            $contexts_analyzed['modules']['standard'],
         );
     }
 }

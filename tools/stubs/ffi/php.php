@@ -453,3 +453,28 @@ class sapi_globals_struct extends CData
 {
     public float $global_request_time;
 }
+
+class zend_fcall_info extends CData
+{
+    public int $size;
+    public zval $function_name;
+}
+
+/**
+ * Version-dependent fields:
+ *   v70-v80: {zval function_name; zval *arguments; int arg_count;}
+ *   v81-v84: {zend_fcall_info fci; zend_fcall_info_cache fci_cache;}
+ *   v85+:    {zend_fcall_info_cache fci_cache; zval *params; uint32_t param_count;}
+ *
+ * @property zval $function_name
+ * @property zend_fcall_info $fci
+ * @property zend_fcall_info_cache $fci_cache
+ */
+class php_shutdown_function_entry extends CData
+{
+}
+
+/** @property \FFI\CPointer|null $user_shutdown_function_names */
+class php_basic_globals extends CData
+{
+}

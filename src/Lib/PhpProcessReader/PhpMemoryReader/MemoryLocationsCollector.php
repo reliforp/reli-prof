@@ -92,11 +92,15 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FunctionDefinitio
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FiberContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GeneratorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalConstantContext;
+use Reli\Lib\PhpInternals\Types\Php\PhpBasicGlobals;
+use Reli\Lib\PhpInternals\Types\Php\PhpShutdownFunctionEntry;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalCallbacksContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalConstantsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalVariablesContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\IncludedFilesContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\InternalFunctionDefinitionContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ModulesContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StandardModuleContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LocalVariableNameTableContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectPropertiesContext;
@@ -184,6 +188,7 @@ final class MemoryLocationsCollector
         int $eg_address,
         int $cg_address,
         ?MemoryLimitErrorDetails $memory_limit_error_details = null,
+        ?int $bg_address = null,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -356,6 +361,16 @@ final class MemoryLocationsCollector
             $memory_limit_error_details,
         );
 
+        $modules_context = $this->collectModules(
+            $bg_address,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+
         $objects_store_context = $this->collectObjectsStore(
             $eg->objects_store,
             $cg->map_ptr_base,
@@ -390,6 +405,7 @@ final class MemoryLocationsCollector
             $interned_strings_context,
             $objects_store_context,
             $global_callbacks_context,
+            $modules_context,
         );
 
         return new CollectedMemories(
@@ -2044,5 +2060,137 @@ final class MemoryLocationsCollector
         }
 
         return $global_callbacks_context;
+    }
+
+    private function collectModules(
+        ?int $bg_address,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): ModulesContext {
+        $modules_context = new ModulesContext();
+
+        if ($bg_address === null) {
+            return $modules_context;
+        }
+
+        $standard_context = $this->collectStandardModule(
+            $bg_address,
+            $map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        $modules_context->add('standard', $standard_context);
+
+        return $modules_context;
+    }
+
+    private function collectStandardModule(
+        int $bg_address,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): StandardModuleContext {
+        $standard_context = new StandardModuleContext();
+
+        $bg_pointer = new Pointer(
+            PhpBasicGlobals::class,
+            $bg_address,
+            $zend_type_reader->sizeOf('php_basic_globals'),
+        );
+        /** @var PhpBasicGlobals $bg */
+        $bg = $dereferencer->deref($bg_pointer);
+
+        if ($bg->user_shutdown_function_names === null) {
+            return $standard_context;
+        }
+
+        $shutdown_table = $dereferencer->deref($bg->user_shutdown_function_names);
+        $entry_size = $zend_type_reader->sizeOf('php_shutdown_function_entry');
+
+        foreach ($shutdown_table->getItemIterator($dereferencer) as $key => $zval) {
+            if ($zval->getType() !== 'IS_PTR') {
+                continue;
+            }
+            $entry_pointer = new Pointer(
+                PhpShutdownFunctionEntry::class,
+                $zval->value->lval,
+                $entry_size,
+            );
+            try {
+                $entry = $dereferencer->deref($entry_pointer);
+                $callable_context = $this->collectShutdownFunctionCallable(
+                    $entry,
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                if ($callable_context !== null) {
+                    $standard_context->add('shutdown_function[' . $key . ']', $callable_context);
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return $standard_context;
+    }
+
+    private function collectShutdownFunctionCallable(
+        PhpShutdownFunctionEntry $entry,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): ?ReferenceContext {
+        if ($zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)) {
+            // v70-v80: function_name is an inline zval
+            $callable_zval = $entry->getFunctionNameDirect();
+        } elseif ($zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V85)) {
+            // v81-v84: function_name is in fci.function_name
+            $callable_zval = $entry->getFunctionNameFromFci();
+        } else {
+            // v85+: callable is in fci_cache.closure
+            $closure_pointer = $entry->getClosureFromFciCache();
+            if ($closure_pointer === null) {
+                return null;
+            }
+            return $this->collectZendObjectPointer(
+                $closure_pointer,
+                $map_ptr_base,
+                $memory_locations,
+                $dereferencer,
+                $zend_type_reader,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+        }
+
+        if ($callable_zval->isUndef()) {
+            return null;
+        }
+        return $this->collectZval(
+            $callable_zval,
+            $map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
     }
 }
