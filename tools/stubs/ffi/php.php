@@ -104,10 +104,19 @@ class zend_fiber extends CData
     public zend_object $std;
     public ?CPointer $execute_data;
     public ?CPointer $stack_bottom;
+    public ?CPointer $vm_stack;
+    public zend_fiber_context $context;
 }
 
 class zend_fiber_context extends CData
 {
+    public ?CPointer $stack;
+}
+
+class zend_fiber_stack extends CData
+{
+    public int $pointer;
+    public int $size;
 }
 
 class zend_function extends CData

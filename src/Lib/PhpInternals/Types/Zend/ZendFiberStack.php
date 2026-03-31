@@ -45,6 +45,7 @@ final class ZendFiberStack implements CDataDereferencable
      */
     public function __construct(
         private CastedCData $casted_cdata,
+        /** @var Pointer<ZendFiberStack> */
         private Pointer $pointer_field,
     ) {
         unset($this->pointer);

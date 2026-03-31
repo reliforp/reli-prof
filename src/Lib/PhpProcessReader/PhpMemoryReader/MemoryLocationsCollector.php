@@ -23,11 +23,12 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClosure;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
+use Reli\Lib\PhpInternals\Types\C\PointerArray;
 use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\PhpInternals\Types\Zend\ZendFiber;
 use Reli\Lib\PhpInternals\Types\Zend\ZendFiberStack;
-use Reli\Lib\PhpInternals\Types\C\PointerArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendGenerator;
+use Reli\Lib\PhpInternals\Types\Zend\ZendVmStack;
 use Reli\Lib\PhpInternals\Types\Zend\ZendConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
@@ -1469,11 +1470,13 @@ final class MemoryLocationsCollector
 
             // All checks passed — collect this vm_stack and its prev chain
             try {
+                /** @var Pointer<ZendVmStack> $vm_stack_pointer */
                 $vm_stack_pointer = new Pointer(
                     ZendVmStack::class,
                     $value,
                     $vm_stack_size,
                 );
+                /** @var ZendVmStack $vm_stack_candidate */
                 $vm_stack_candidate = $dereferencer->deref($vm_stack_pointer);
                 foreach ($vm_stack_candidate->iterateStackChain($dereferencer) as $vm_stack) {
                     $this->fiber_vm_stack_memory_locations->add(
