@@ -37,7 +37,7 @@ final class Elf64Note
 
     public function isCore(): bool
     {
-        return $this->name === 'CORE';
+        return rtrim($this->name, "\0") === 'CORE';
     }
 
     public function isFile(): bool

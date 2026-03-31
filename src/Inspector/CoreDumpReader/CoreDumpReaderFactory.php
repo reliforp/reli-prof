@@ -21,7 +21,10 @@ use Reli\Lib\ByteStream\ByteReaderInterface;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Structure\Elf64\Elf64Note;
+use Reli\Lib\Elf\Structure\Elf64\Elf64PrStatus;
 use Reli\Lib\Elf\Structure\Elf64\NtFileEntry;
+use Reli\Lib\Elf\Tls\CoreDumpThreadPointerRetriever;
+use Reli\Lib\Elf\Tls\ThreadPointerRetrieverInterface;
 use Reli\Lib\File\PathResolver\MappedPathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Integer\UInt64;
@@ -74,19 +77,14 @@ final class CoreDumpReaderFactory
                 )
             ];
         }
-        $threads = [];
-        $current_thread_info = [];
+        /** @var Elf64PrStatus[] $pr_statuses */
+        $pr_statuses = [];
         $file_maps = [];
         /** @var Elf64Note $note */
         foreach ($notes as $note) {
             if ($note->isCore()) {
                 if ($note->isPrStatus()) {
-                    if ($current_thread_info !== []) {
-                        $threads[] = $current_thread_info;
-                    }
-                    $current_thread_info = [
-                        $this->elf64_parser->parsePrStatus($note),
-                    ];
+                    $pr_statuses[] = $this->elf64_parser->parsePrStatus($note);
                 }
             }
             if ($note->isFile()) {
@@ -95,9 +93,6 @@ final class CoreDumpReaderFactory
                     ...$this->elf64_parser->parseNtFile($note)
                 ];
             }
-        }
-        if ($current_thread_info !== []) {
-            $threads[] = $current_thread_info;
         }
         $memory_areas = [];
         /** @var array<string, int> $coredump_offsets vaddr_hex => coredump file offset */
@@ -284,7 +279,9 @@ final class CoreDumpReaderFactory
                         }
                     },
                 ProcessPathResolver::class => autowire(MappedPathResolver::class)
-                    ->constructorParameter('path_map', $path_mapping)
+                    ->constructorParameter('path_map', $path_mapping),
+                ThreadPointerRetrieverInterface::class =>
+                    new CoreDumpThreadPointerRetriever($pr_statuses),
             ])
             ->build()
         ;

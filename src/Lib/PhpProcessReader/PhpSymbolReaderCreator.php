@@ -73,11 +73,7 @@ final class PhpSymbolReaderCreator
             if (is_null($main_executable_reader)) {
                 throw new ProcessSymbolReaderException('main executable not found');
             }
-            try {
-                $root_link_map_address = $main_executable_reader->getLinkMapAddress();
-            } catch (\Reli\Lib\Process\MemoryReader\MemoryReaderException) {
-                // Link map not accessible (e.g., coredump missing required pages)
-            }
+            $root_link_map_address = $main_executable_reader->getLinkMapAddress();
         }
 
         $php_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
