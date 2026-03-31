@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_module_entry;
-use Reli\Lib\FFI\Cast;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawString;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
@@ -49,7 +49,7 @@ final class ZendModuleEntry implements CDataDereferencable
             'zts' => $this->zts = (bool)$this->casted_cdata->casted->zts,
             'version' => $this->version = new Pointer(
                 RawString::class,
-                Cast::castPointerToInt($this->casted_cdata->casted->version),
+                FFIHelper::castPointerToInt($this->casted_cdata->casted->version),
                 3,
             ),
         };

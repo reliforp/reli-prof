@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_class_entry;
-use Reli\Lib\FFI\Cast;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -195,7 +195,7 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
                 $this->casted_cdata->casted->default_properties_table !== null
                 ? new Pointer(
                     ZvalArray::class,
-                    Cast::castPointerToInt(
+                    FFIHelper::castPointerToInt(
                         $this->casted_cdata->casted->default_properties_table
                     ),
                     16 * $this->casted_cdata->casted->default_properties_count,
@@ -206,7 +206,7 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
                 $this->casted_cdata->casted->default_static_members_table !== null
                 ? new Pointer(
                     ZvalArray::class,
-                    Cast::castPointerToInt(
+                    FFIHelper::castPointerToInt(
                         $this->casted_cdata->casted->default_static_members_table
                     ),
                     16 * $this->casted_cdata->casted->default_static_members_count,

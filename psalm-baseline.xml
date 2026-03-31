@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<files psalm-version="6.16.1@f1f5de594dc76faf8784e02d3dc4716c91c6f6ac">
+  <file src="src/Inspector/CoreDumpReader/CoreDumpReaderFactory.php">
+    <TypeDoesNotContainNull>
+      <code><![CDATA[is_null($buf)]]></code>
+      <code><![CDATA[is_null($cdata_buffer)]]></code>
+      <code><![CDATA[is_null($cdata_buffer)]]></code>
+    </TypeDoesNotContainNull>
+  </file>
+  <file src="src/Inspector/MemoryDump/MemoryDumpReaderFactory.php">
+    <TypeDoesNotContainNull>
+      <code><![CDATA[is_null($cdata_buffer)]]></code>
+      <code><![CDATA[is_null($cdata_buffer)]]></code>
+    </TypeDoesNotContainNull>
+  </file>
+  <file src="src/Inspector/MemoryDump/MemoryDumper.php">
+    <TypeDoesNotContainNull>
+      <code><![CDATA[$buf === null]]></code>
+    </TypeDoesNotContainNull>
+  </file>
+  <file src="src/Lib/Libc/Sys/Ptrace/PtraceAarch64.php">
+    <RedundantCondition>
+      <code><![CDATA[FFIHelper::cast('void *', $addr_holder)]]></code>
+      <code><![CDATA[FFIHelper::cast('void *', $data_holder)]]></code>
+      <code><![CDATA[FFIHelper::new('long')]]></code>
+      <code><![CDATA[FFIHelper::new('long')]]></code>
+    </RedundantCondition>
+    <TypeDoesNotContainNull>
+      <code><![CDATA[throw new CannotAllocateBufferException('cannot allocate buffer')]]></code>
+      <code><![CDATA[throw new CannotAllocateBufferException('cannot allocate buffer')]]></code>
+      <code><![CDATA[throw new CannotCastCDataException('cannot cast buffer')]]></code>
+      <code><![CDATA[throw new CannotCastCDataException('cannot cast buffer')]]></code>
+    </TypeDoesNotContainNull>
+  </file>
+  <file src="src/Lib/Libc/Sys/Ptrace/PtraceX64.php">
+    <RedundantCondition>
+      <code><![CDATA[FFIHelper::cast('void *', $addr_holder)]]></code>
+      <code><![CDATA[FFIHelper::cast('void *', $data_holder)]]></code>
+      <code><![CDATA[FFIHelper::new('long')]]></code>
+      <code><![CDATA[FFIHelper::new('long')]]></code>
+    </RedundantCondition>
+    <TypeDoesNotContainNull>
+      <code><![CDATA[throw new CannotAllocateBufferException('cannot allocate buffer')]]></code>
+      <code><![CDATA[throw new CannotAllocateBufferException('cannot allocate buffer')]]></code>
+      <code><![CDATA[throw new CannotCastCDataException('cannot cast buffer')]]></code>
+      <code><![CDATA[throw new CannotCastCDataException('cannot cast buffer')]]></code>
+    </TypeDoesNotContainNull>
+  </file>
+  <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
+    <TypeDoesNotContainNull>
+      <code><![CDATA[FFIHelper::cast('int', $this->casted_cdata->casted->op1)]]></code>
+      <code><![CDATA[FFIHelper::cast('int', $this->casted_cdata->casted->op2)]]></code>
+      <code><![CDATA[FFIHelper::cast('int', $this->casted_cdata->casted->result)]]></code>
+    </TypeDoesNotContainNull>
+  </file>
+  <file src="src/Lib/PhpInternals/Types/Zend/ZendOpArray.php">
+    <PossiblyNullArgument>
+      <code><![CDATA[$this->cdata->run_time_cache]]></code>
+      <code><![CDATA[$this->cdata->run_time_cache__ptr]]></code>
+    </PossiblyNullArgument>
+    <PropertyTypeCoercion>
+      <code><![CDATA[$this->cdata->dynamic_func_defs]]></code>
+      <code><![CDATA[$this->cdata->run_time_cache]]></code>
+      <code><![CDATA[$this->cdata->run_time_cache__ptr]]></code>
+      <code><![CDATA[$this->cdata->vars]]></code>
+    </PropertyTypeCoercion>
+    <RedundantCondition>
+      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $ptr)?->cdata]]></code>
+      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache)?->cdata]]></code>
+      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache__ptr)?->cdata]]></code>
+    </RedundantCondition>
+    <TypeDoesNotContainNull>
+      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $ptr)]]></code>
+      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->dynamic_func_defs)]]></code>
+      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache)]]></code>
+      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache__ptr)]]></code>
+      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->vars)]]></code>
+    </TypeDoesNotContainNull>
+  </file>
+  <file src="src/Lib/PhpInternals/ZendTypeReader.php">
+    <MixedAssignment>
+      <code><![CDATA[$member_addr]]></code>
+    </MixedAssignment>
+    <MixedOperand>
+      <code><![CDATA[$member_addr]]></code>
+    </MixedOperand>
+  </file>
+</files>

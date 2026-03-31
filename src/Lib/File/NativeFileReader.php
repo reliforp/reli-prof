@@ -43,7 +43,7 @@ final class NativeFileReader implements FileReaderInterface
         do {
             $read_len = $this->ffi->read($fd, $buffer, 4096);
             if ($read_len > 0) {
-                $result .= FFI::string($buffer, min($read_len, 4096));
+                $result .= \FFI::string($buffer, min($read_len, 4096));
             } else {
                 $done = true;
             }

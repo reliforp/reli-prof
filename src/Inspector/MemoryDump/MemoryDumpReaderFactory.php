@@ -23,6 +23,7 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\FFI\FFIHelper;
 
 use function DI\autowire;
 
@@ -72,7 +73,7 @@ final class MemoryDumpReaderFactory
                     if ($remote_address >= $region_start && ($remote_address + $size) <= $region_end) {
                         $offset = $remote_address - $region_start;
                         $data = substr($region['data'], $offset, $size);
-                        $cdata_buffer = \FFI::new("unsigned char[$size]");
+                        $cdata_buffer = FFIHelper::new("unsigned char[$size]");
                         if (is_null($cdata_buffer)) {
                             throw new \RuntimeException("failed to allocate memory");
                         }
@@ -99,7 +100,7 @@ final class MemoryDumpReaderFactory
                             if ($data === false) {
                                 continue;
                             }
-                            $cdata_buffer = \FFI::new("unsigned char[$size]");
+                            $cdata_buffer = FFIHelper::new("unsigned char[$size]");
                             if (is_null($cdata_buffer)) {
                                 throw new \RuntimeException("failed to allocate memory");
                             }

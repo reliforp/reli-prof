@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CData;
-use Reli\Lib\FFI\Cast;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\Types\C\PointerArray;
 use Reli\Lib\Process\Pointer\Pointer;
 
@@ -51,7 +51,7 @@ final class ZendObjectsStore
             'object_buckets' => $this->object_buckets = $this->cdata->object_buckets !== null
                 ? new Pointer(
                     PointerArray::class,
-                    Cast::castPointerToInt($this->cdata->object_buckets),
+                    FFIHelper::castPointerToInt($this->cdata->object_buckets),
                     $this->cdata->size * 8,
                 )
                 : null

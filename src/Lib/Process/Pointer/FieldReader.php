@@ -15,6 +15,7 @@ namespace Reli\Lib\Process\Pointer;
 
 use FFI;
 use FFI\CData;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\MemoryReader\BufferedMemoryReader;
@@ -71,7 +72,7 @@ final class FieldReader
             $size,
         );
         /** @var \FFI\CInteger $addr_cdata */
-        $addr_cdata = FFI::cast('long', $buffer);
+        $addr_cdata = FFIHelper::cast('long', $buffer);
         $addr = $addr_cdata->cdata;
         if ($addr === 0) {
             return null;
@@ -117,10 +118,10 @@ final class FieldReader
         );
         /** @var \FFI\CInteger $casted */
         $casted = match ($size) {
-            1 => FFI::cast('uint8_t', $buffer),
-            4 => FFI::cast('uint32_t', $buffer),
-            8 => FFI::cast('long', $buffer),
-            default => FFI::cast('long', $buffer),
+            1 => FFIHelper::cast('uint8_t', $buffer),
+            4 => FFIHelper::cast('uint32_t', $buffer),
+            8 => FFIHelper::cast('long', $buffer),
+            default => FFIHelper::cast('long', $buffer),
         };
         return $casted->cdata;
     }

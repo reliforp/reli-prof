@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\CInteger;
-use Reli\Lib\FFI\Cast;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
@@ -82,7 +82,7 @@ final class ZendObject implements CDataDereferencable
     public function getHandlersAddress(): int
     {
         assert($this->casted_cdata->casted->handlers !== null);
-        return Cast::castPointerToInt(
+        return FFIHelper::castPointerToInt(
             $this->casted_cdata->casted->handlers
         );
     }

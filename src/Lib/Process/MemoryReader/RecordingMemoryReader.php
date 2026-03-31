@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryReader;
 
-use FFI;
 use FFI\CData;
 
 final class RecordingMemoryReader implements MemoryReaderInterface
@@ -35,7 +34,7 @@ final class RecordingMemoryReader implements MemoryReaderInterface
         $this->recorded_regions[] = [
             'address' => $remote_address,
             'size' => $size,
-            'data' => FFI::string($cdata, $size),
+            'data' => \FFI::string($cdata, $size),
         ];
 
         return $cdata;

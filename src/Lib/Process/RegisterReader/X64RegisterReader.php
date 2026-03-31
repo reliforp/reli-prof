@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Process\RegisterReader;
 
 use FFI\CInteger;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\Libc\Errno\Errno;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceX64;
@@ -144,7 +145,7 @@ final class X64RegisterReader
      */
     public function attachAndReadOne(int $pid, int $register): int
     {
-        $target_offset = \FFI::new('long');
+        $target_offset = FFIHelper::new('long');
         /** @var \FFI\CInteger $target_offset */
         $target_offset->cdata = $register;
 
@@ -174,7 +175,7 @@ final class X64RegisterReader
         $fs = $this->ptrace->ptrace(
             PtraceRequest::PTRACE_PEEKUSER,
             $pid,
-            \FFI::cast('void *', $target_offset),
+            FFIHelper::cast('void *', $target_offset),
             null
         );
         if ($fs === -1) {

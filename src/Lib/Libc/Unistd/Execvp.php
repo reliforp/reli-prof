@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Libc\Unistd;
 
 use FFI\CInteger;
+use Reli\Lib\FFI\FFIHelper;
 
 final class Execvp
 {
@@ -32,19 +33,19 @@ final class Execvp
     public function execvp(string $file, array $argv): int
     {
         /** @var CInteger $zero */
-        $zero = \FFI::new('long', false, true);
+        $zero = FFIHelper::new('long', false, true);
         $zero->cdata = 0;
-        $null = \FFI::cast('void *', $zero);
+        $null = FFIHelper::cast('void *', $zero);
 
         $args = [$file, ...$argv];
         $size = \count($args) + 1;
         /** @var \FFI\CArray $argv_real */
-        $argv_real = \FFI::new('char *[' . $size . ']', false, true);
+        $argv_real = FFIHelper::new('char *[' . $size . ']', false, true);
         foreach ($args as $key => $item) {
             $item_len = strlen($item);
             $item_len_nul = $item_len + 1;
             /** @var \FFI\CArray $argv_item */
-            $argv_item = \FFI::new("char[{$item_len_nul}]", false, true);
+            $argv_item = FFIHelper::new("char[{$item_len_nul}]", false, true);
             \FFI::memcpy($argv_item, $item, $item_len);
             $argv_item[$item_len] = "\0";
             $argv_real[$key] = $argv_item;

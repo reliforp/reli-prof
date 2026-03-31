@@ -19,6 +19,7 @@ use Reli\Lib\FFI\CannotAllocateBufferException;
 use Reli\Lib\FFI\CannotCastCDataException;
 use Reli\Lib\FFI\CannotGetTypeForCDataException;
 use Reli\Lib\FFI\CannotLoadCHeaderException;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\Constants\VersionAwareConstants;
 use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -132,7 +133,7 @@ final class ZendTypeReader
                     message: 'cannot get type for a C Data',
                     type: $type
                 );
-            $this->sizeof_cache[$type] = FFI::sizeof($cdata_type);
+            $this->sizeof_cache[$type] = \FFI::sizeof($cdata_type);
         }
         return $this->sizeof_cache[$type];
     }
@@ -159,10 +160,12 @@ final class ZendTypeReader
              * @var FFI\CInteger $member_addr_cdata
              * @psalm-suppress MixedArgument
              */
-            $member_addr_cdata = \FFI::cast('long', FFI::addr($dummy->$member));
+            $member_addr_ptr = \FFI::addr($dummy->$member);
+            $member_addr_cdata = FFIHelper::cast('long', $member_addr_ptr);
             $member_addr = $member_addr_cdata->cdata;
             /** @var FFI\CInteger $dummy_base_addr */
-            $dummy_base_addr = \FFI::cast('long', FFI::addr($dummy));
+            $dummy_base_ptr = \FFI::addr($dummy);
+            $dummy_base_addr = FFIHelper::cast('long', $dummy_base_ptr);
             $addr = $member_addr - $dummy_base_addr->cdata;
             assert(is_int($addr));
             /** @psalm-suppress MixedArgument */
