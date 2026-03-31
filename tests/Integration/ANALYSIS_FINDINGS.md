@@ -661,19 +661,11 @@ heap usage, though the call stack structure is now fully visible).
 
 10,000 suspended generators → 10 MB. Per generator: 839 bytes.
 
-**After 0.12.x Generator support:** reli now creates `GeneratorContext` nodes
-with `call_frames` + `key` for each suspended Generator.
-analyzed improved from 49% → **129%** — still >100% after the fix for
-execute_fake double-counting (#546). The remaining issue:
-`heap_memory_analyzed_percentage` = `zend_mm_heap_usage / memory_get_usage`.
-These measure different things:
-- `zend_mm_heap_usage`: RegionAnalyzer sum (tracked + overhead + vm_stack + arena)
-- `memory_get_usage`: `heap->size` (ZendMM internal counter)
-
-Generator frames inflate the RegionAnalyzer total while `heap->size` counts
-them differently. Generator tracking itself is functionally complete
-(`GeneratorContext` + `call_frames` + `key` in context tree) — the percentage
-formula needs adjustment (e.g., `sum(tracked) / zend_mm_heap_usage`).
+**After 0.12.x Generator support + call frame fix (#549):**
+analyzed: 49% → **99.61%** — effectively full coverage.
+`GeneratorContext` nodes with `call_frames` + `key` in context tree.
+The earlier 129% over-count was fixed by correcting call frame allocation
+overhead double-counting and Generator object size calculation.
 
 ---
 
