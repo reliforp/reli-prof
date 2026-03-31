@@ -56,6 +56,16 @@ class zend_closure extends CData
     public ?CPointer $called_scope;
 }
 
+class zend_generator extends CData
+{
+    public zend_object $std;
+    public ?CPointer $execute_data;
+    public ?CPointer $frozen_call_stack;
+    public zval $value;
+    public zval $key;
+    public zval $retval;
+}
+
 class zend_constants extends CData
 {
     public ?CPointer $name;
