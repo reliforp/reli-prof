@@ -682,6 +682,20 @@ over Fibers saves ~17 KB per concurrent task.
 
 ---
 
+### 38. WeakMap — Works Correctly, Internal Table Partially Tracked
+
+10K entries → 8 MB (629 bytes/entry). After releasing 5K keys:
+- WeakMap correctly drops to 5,000 entries
+- reli sees 5,000 Key + 5,000 Value objects ✅
+- analyzed: 69.8% — WeakMap's internal hash table is the 30% gap
+- WeakMap object itself: 40 bytes
+
+reli correctly walks through WeakMap entries and shows only live (non-GCed)
+key-value pairs. The internal `zend_weakmap` hash table is not yet tracked
+as a named allocation.
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
