@@ -150,12 +150,15 @@ final class PeekVarCommand extends Command
             );
         }
 
+        /** @var string $format */
         $format = $input->getOption('format');
+        /** @var string|null $repeat_ms */
         $repeat_ms = $input->getOption('repeat');
         $repeat_us = $repeat_ms !== null
             ? (int)$repeat_ms * 1000
             : null;
 
+        $results = [];
         do {
             try {
                 $results = $this->variable_reader->readVariables(
@@ -245,19 +248,19 @@ final class PeekVarCommand extends Command
                 ]
                 : null;
         }
-        $output->writeln(json_encode($data, JSON_UNESCAPED_UNICODE));
+        $output->writeln((string)json_encode($data, JSON_UNESCAPED_UNICODE));
     }
 
     private function formatValue(VariableValue $var): string
     {
         return match ($var->type) {
-            VariableValue::TYPE_LONG => '(int) ' . $var->scalar_value,
-            VariableValue::TYPE_DOUBLE => '(float) ' . $var->scalar_value,
+            VariableValue::TYPE_LONG => '(int) ' . (string)$var->scalar_value,
+            VariableValue::TYPE_DOUBLE => '(float) ' . (string)$var->scalar_value,
             VariableValue::TYPE_STRING => '(string) "'
                 . $this->truncate((string)$var->scalar_value, 200)
                 . '"',
             VariableValue::TYPE_BOOL => '(bool) '
-                . ($var->scalar_value ? 'true' : 'false'),
+                . ($var->scalar_value === true ? 'true' : 'false'),
             VariableValue::TYPE_ARRAY => '(array) count='
                 . ($var->array_count ?? '?'),
             VariableValue::TYPE_NULL => 'null',
