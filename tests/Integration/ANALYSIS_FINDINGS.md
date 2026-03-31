@@ -696,6 +696,34 @@ as a named allocation.
 
 ---
 
+### 39. Closure Memory Cost — 419 bytes minimum, op_array per instance
+
+| Type | Per closure | Key insight |
+|---|---|---|
+| Empty `fn(){}` | 419 bytes | Object (328B) + op_array header (256B) + body (112B) |
+| Capturing int | 377 bytes | Slightly cheaper (shared op_array?) |
+| Capturing 1KB string | 1,258 bytes | + string copy |
+| Arrow function | 797 bytes | 2x vs `use()` — implicit capture overhead |
+
+**Critical finding:** Each Closure gets its own `op_array` (256B header + 112B body
+= 368B). Even identical closures don't share op_arrays. For Symfony Forms with
+3,619 closures: 3,619 × 368 = 1.3 MB just in op_array duplication.
+
+ArrayTableOverhead (22 MB for 100K closures) is the other major cost — each
+closure's captured-variables storage has PHP array overhead even for 0-1 captures.
+
+### 40. Reflection API — Zero PHP Heap Cost
+
+282 classes reflected: 0 bytes delta. ReflectionClass wraps C-level class_entry
+directly. No PHP object graph created for method/property metadata.
+
+### 41. Regex preg_match_all — Array + String Amplification
+
+30K matches from 176 KB subject → +18 MB. Each match creates arrays (capture
+groups) + string copies. 30K arrays (6.4 MB) + 150K strings (4.2 MB).
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
