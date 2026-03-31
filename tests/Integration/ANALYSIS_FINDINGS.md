@@ -663,8 +663,13 @@ heap usage, though the call stack structure is now fully visible).
 
 **After 0.12.x Generator support:** reli now creates `GeneratorContext` nodes
 with `call_frames` + `key` for each suspended Generator.
-analyzed improved from 49% → **129%** (full coverage, exceeding memory_get_usage
-due to ZendMM internal accounting differences).
+analyzed improved from 49% → **129%** — the >100% value indicates that
+reli's tracked locations now include VM stack frame data (Generator
+callstack) that `memory_get_usage` (`heap->size`) counts differently.
+The percentage formula (`sum(location sizes) / heap->size`) has a
+denominator mismatch when VM stack regions are tracked as locations
+but `heap->size` accounts for them separately. Coverage is effectively
+complete, but the percentage metric needs adjustment.
 
 ---
 
