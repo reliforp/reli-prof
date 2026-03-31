@@ -1099,6 +1099,42 @@ typedef struct {
 	int proto_num;
 } sapi_request_info;
 
+/** zend_genereators.h */
+typedef struct _zend_generator zend_generator;
+typedef struct _zend_generator_node zend_generator_node;
+
+struct _zend_generator_node {
+	zend_generator *parent; /* NULL for root */
+	uint32_t children;
+	union {
+		HashTable ht; /* if > 4 children */
+		struct {
+			zend_generator *leaf;
+			zend_generator *child;
+		} array[4]; /* if <= 4 children */
+	} child;
+	union {
+		zend_generator *leaf; /* if > 0 children */
+		zend_generator *root; /* if 0 children */
+	} ptr;
+};
+
+struct _zend_generator {
+	zend_object std;
+	zend_object_iterator *iterator;
+	zend_execute_data *execute_data;
+	zend_vm_stack stack;
+	zval value;
+	zval key;
+	zval retval;
+	zval *send_target;
+	zend_long largest_used_integer_key;
+	zval values;
+	zend_generator_node node;
+	zend_execute_data execute_fake;
+	uint8_t flags;
+};
+
 typedef struct _sapi_globals_struct {
 	void *server_context;
 	sapi_request_info request_info;

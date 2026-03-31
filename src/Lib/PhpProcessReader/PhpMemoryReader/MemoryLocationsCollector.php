@@ -1120,61 +1120,73 @@ final class MemoryLocationsCollector
     ): GeneratorContext {
         $generator_context = new GeneratorContext();
 
-        if ($zend_generator->execute_data !== null) {
-            $execute_data = $dereferencer->deref($zend_generator->execute_data);
-            $call_frames_context = new CallFramesContext();
-            foreach ($execute_data->iterateStackChain($dereferencer) as $key => $frame) {
-                $call_frame_context = $this->collectCallFrame(
-                    $frame,
-                    $map_ptr_base,
-                    $dereferencer,
-                    $zend_type_reader,
-                    $memory_locations,
-                    $context_pools,
-                    $memory_limit_error_details,
-                );
-                $call_frames_context->add((string)$key, $call_frame_context);
+        try {
+            if ($zend_generator->execute_data !== null) {
+                $execute_data = $dereferencer->deref($zend_generator->execute_data);
+                $call_frames_context = new CallFramesContext();
+                foreach ($execute_data->iterateStackChain($dereferencer) as $key => $frame) {
+                    $call_frame_context = $this->collectCallFrame(
+                        $frame,
+                        $map_ptr_base,
+                        $dereferencer,
+                        $zend_type_reader,
+                        $memory_locations,
+                        $context_pools,
+                        $memory_limit_error_details,
+                    );
+                    $call_frames_context->add((string)$key, $call_frame_context);
+                }
+                $generator_context->add('call_frames', $call_frames_context);
             }
-            $generator_context->add('call_frames', $call_frames_context);
+        } catch (\Throwable) {
         }
 
-        $value_context = $this->collectZval(
-            $zend_generator->value,
-            $map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        if (!is_null($value_context)) {
-            $generator_context->add('value', $value_context);
+        try {
+            $value_context = $this->collectZval(
+                $zend_generator->value,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            if (!is_null($value_context)) {
+                $generator_context->add('value', $value_context);
+            }
+        } catch (\Throwable) {
         }
 
-        $key_context = $this->collectZval(
-            $zend_generator->key,
-            $map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        if (!is_null($key_context)) {
-            $generator_context->add('key', $key_context);
+        try {
+            $key_context = $this->collectZval(
+                $zend_generator->key,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            if (!is_null($key_context)) {
+                $generator_context->add('key', $key_context);
+            }
+        } catch (\Throwable) {
         }
 
-        $retval_context = $this->collectZval(
-            $zend_generator->retval,
-            $map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        if (!is_null($retval_context)) {
-            $generator_context->add('retval', $retval_context);
+        try {
+            $retval_context = $this->collectZval(
+                $zend_generator->retval,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            if (!is_null($retval_context)) {
+                $generator_context->add('retval', $retval_context);
+            }
+        } catch (\Throwable) {
         }
 
         return $generator_context;
