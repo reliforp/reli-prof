@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
@@ -39,6 +41,8 @@ use Reli\Lib\Process\ProcessSpecifier;
 use Reli\TargetPhpVmProvider;
 
 #[Group('mod_php')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class ModPhpCallTraceReaderTest extends BaseTestCase
 {
     /** @var resource|null */

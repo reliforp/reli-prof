@@ -17,6 +17,8 @@ use DI\ContainerBuilder;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\MemoryDump\MemoryDumpReaderFactory;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -25,6 +27,8 @@ use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 #[Group('target-version')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class MemoryDumpCommandTest extends BaseTestCase
 {
     /** @var resource|null */

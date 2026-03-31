@@ -16,6 +16,8 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
@@ -47,6 +49,8 @@ use Reli\Lib\Process\ProcessSpecifier;
 use Reli\TargetPhpVmProvider;
 
 #[Group('target-version')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class MemoryLocationsCollectorTest extends BaseTestCase
 {
     /** @var resource|null */
@@ -670,7 +674,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
     public function testMemoryLimitViolation(string $php_version, string $docker_image_name)
     {
-        $this->markTestSkipped('Temporarily skipped: can cause SEGV that crashes subsequent tests');
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
@@ -864,7 +867,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
     public function testMemoryLimitViolationOnMethod(string $php_version, string $docker_image_name)
     {
-        $this->markTestSkipped('Temporarily skipped: can cause SEGV that crashes subsequent tests');
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
@@ -1065,7 +1067,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     #[DataProvider('provideFromV71')]
     public function testMemoryLimitViolationOnClosure(string $php_version, string $docker_image_name)
     {
-        $this->markTestSkipped('Temporarily skipped: can cause SEGV that crashes subsequent tests');
         if ($php_version === 'skip') {
             $this->markTestSkipped('No matching PHP versions for this target set');
         }

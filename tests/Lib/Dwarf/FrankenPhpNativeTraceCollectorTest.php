@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
@@ -48,6 +50,8 @@ use Reli\Lib\String\LineFetcher;
 use Reli\TargetPhpVmProvider;
 
 #[Group('frankenphp')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
 {
     /** @var resource|null */

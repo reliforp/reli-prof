@@ -16,6 +16,8 @@ namespace Reli\Inspector\CoreDumpReader;
 use DI\ContainerBuilder;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
@@ -25,6 +27,8 @@ use Reli\TargetPhpVmProvider;
 
 #[Group('target-version')]
 #[Group('coredump')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class CoreDumpReaderIntegrationTest extends BaseTestCase
 {
     /** @var resource|null */
