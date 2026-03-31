@@ -1708,8 +1708,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     }
 
     #[DataProvider('provideFromV82')]
-    public function testFiberVmStackMemoryReflectedInAnalyzedPercentage(string $php_version, string $docker_image_name): void
-    {
+    public function testFiberVmStackMemoryReflectedInAnalyzedPercentage(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
         if ($php_version === 'skip') {
             $this->markTestSkipped('No matching PHP versions for this target set');
         }
