@@ -926,3 +926,27 @@ Based on 25 issues investigated + architectural analysis of reli-prof internals
 | `$referencing_contexts` null init | -150-200MB | Agent analysis: 144B per empty array × millions |
 | Streaming context to SQLite during collection | -60-80% of reli memory | PHP-Parser: 6GB reli for 162MB target |
 | Lazy string value loading | -30-50% for string-heavy | php-imap: 151MB of strings copied into reli |
+
+---
+
+## Appendix: reli-prof Tracking Gaps (Known Invisible Memory)
+
+Summary of memory regions that reli-prof does not currently track,
+discovered across 41 investigated targets.
+
+| Gap | Typical Size | Discovered In | Improvable? |
+|---|---|---|---|
+| **Fiber VM stacks** | 17 KB/fiber | Fiber test (7% analyzed) | ◎ Walk `zend_fiber.stack` |
+| **php://temp stream buffers** | ~500 KB/stream | Guzzle (8.6% analyzed) | △ Resource table scan |
+| **Generator execute_data** | ~400 B/generator | Generator test (49%) | ◎ Walk Generator object internals |
+| **WeakMap internal hash table** | ~30% of WeakMap | WeakMap test (70%) | ◎ Walk `zend_weakmap` struct |
+| **DOMDocument / SimpleXML nodes** | ~100% of DOM | DOM test (near 0%) | △ Walk libxml node tree via C structs |
+| **Extension non-object emalloc** | Variable | Psalm prior art (75%) | △ Per-extension parser needed |
+| **Closure op_array per instance** | 368 B/closure | Closure test | ✅ Already tracked as ZendOpArray |
+| **dynamic_properties HashTable** | ~56 B/object | Monolog (85.7%) | ✅ Already tracked as dynamic_properties |
+| **ZendMM alignment overhead** | ~3-5% of heap | All datasets | ✅ Reported as possible_allocation_overhead |
+
+Legend:
+- ◎ = Architecturally feasible, specific struct to walk
+- △ = Requires extension-specific or C-level knowledge
+- ✅ = Already tracked (listed for completeness)
