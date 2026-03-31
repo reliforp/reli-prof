@@ -1866,4 +1866,309 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             'analyzed_percentage must not exceed 100%'
         );
     }
+
+    public static function provideFromV74()
+    {
+        yield from TargetPhpVmProvider::from(ZendTypeReader::V74);
+    }
+
+    #[DataProvider('provideFromV74')]
+    public function testWeakReferenceReferentTracking(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            class MyTargetObject {
+                public int $value = 42;
+            }
+            $obj = new MyTargetObject();
+            $ref = WeakReference::create($obj);
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+
+        $context_analyzer = new ContextAnalyzer();
+        $sink = new ArrayContextTreeSink();
+        $context_analyzer->analyze(
+            $collected_memories->top_reference_context,
+            $sink,
+        );
+        $contexts_analyzed = $sink->getResult();
+
+        $found_weak_reference_with_referent = false;
+        $findWeakReference = function (array $tree) use (
+            &$findWeakReference,
+            &$found_weak_reference_with_referent,
+        ): void {
+            foreach ($tree as $key => $value) {
+                if ($key === 'weak_reference' && is_array($value) && isset($value['referent'])) {
+                    $found_weak_reference_with_referent = true;
+                    return;
+                }
+                if (is_array($value) && $key !== '#locations') {
+                    $findWeakReference($value);
+                    if ($found_weak_reference_with_referent) {
+                        return;
+                    }
+                }
+            }
+        };
+        $findWeakReference($contexts_analyzed);
+        $this->assertTrue(
+            $found_weak_reference_with_referent,
+            'Should find at least one WeakReference with a tracked referent'
+        );
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testWeakMapEntriesTracking(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            class KeyObject {}
+            $key1 = new KeyObject();
+            $key2 = new KeyObject();
+            $map = new WeakMap();
+            $map[$key1] = 'value_one';
+            $map[$key2] = 'value_two';
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+
+        $context_analyzer = new ContextAnalyzer();
+        $sink = new ArrayContextTreeSink();
+        $context_analyzer->analyze(
+            $collected_memories->top_reference_context,
+            $sink,
+        );
+        $contexts_analyzed = $sink->getResult();
+
+        $found_weak_map_with_entries = false;
+        $findWeakMap = function (array $tree) use (&$findWeakMap, &$found_weak_map_with_entries): void {
+            foreach ($tree as $key => $value) {
+                if ($key === 'weak_map' && is_array($value) && isset($value['entries'])) {
+                    $found_weak_map_with_entries = true;
+                    return;
+                }
+                if (is_array($value) && $key !== '#locations') {
+                    $findWeakMap($value);
+                    if ($found_weak_map_with_entries) {
+                        return;
+                    }
+                }
+            }
+        };
+        $findWeakMap($contexts_analyzed);
+        $this->assertTrue(
+            $found_weak_map_with_entries,
+            'Should find at least one WeakMap with tracked entries'
+        );
+    }
 }

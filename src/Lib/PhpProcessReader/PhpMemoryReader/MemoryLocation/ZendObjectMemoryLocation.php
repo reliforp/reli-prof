@@ -37,6 +37,7 @@ final class ZendObjectMemoryLocation extends RefcountedMemoryLocation
         assert($zend_object->ce !== null);
         $ce = $dereferencer->deref($zend_object->ce);
         $class_name = $ce->getClassName($dereferencer);
+        $address = $zend_object->getPointer()->address;
         if ($class_name === \Fiber::class) {
             $size = $zend_type_reader->sizeOf('zend_fiber');
         } elseif (
@@ -51,16 +52,20 @@ final class ZendObjectMemoryLocation extends RefcountedMemoryLocation
             and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V74)
         ) {
             $size = $zend_type_reader->sizeOf('zend_weakref');
+            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_weakref', 'std');
+            $address -= $std_offset;
         } elseif (
             $class_name === \WeakMap::class
             and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V80)
         ) {
             $size = $zend_type_reader->sizeOf('zend_weakmap');
+            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_weakmap', 'std');
+            $address -= $std_offset;
         } else {
             $size = $zend_object->getMemorySize($dereferencer);
         }
         return new self(
-            $zend_object->getPointer()->address,
+            $address,
             $size,
             $zend_object->zend_refcounted_h->refcount,
             $zend_object->zend_refcounted_h->type_info,

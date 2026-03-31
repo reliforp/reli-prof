@@ -1113,8 +1113,8 @@ struct _zend_generator {
 
 /* zend_weakrefs.h */
 typedef struct _zend_weakref {
-	zend_object std;
 	zend_object *referent;
+	zend_object std;
 } zend_weakref;
 
 // main/SAPI.h

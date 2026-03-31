@@ -21,6 +21,12 @@ use Reli\Lib\Process\Pointer\PointedTypeResolver;
 use Reli\Lib\Process\Pointer\PointedTypeResolverAware;
 
 /**
+ * In PHP internals, the zend_weakmap struct has the layout:
+ *   { HashTable ht; zend_object std; }
+ * The custom field (ht) comes BEFORE the embedded zend_object.
+ * The object store pointer points to &wm->std, so we must subtract
+ * the offset of std to get the struct base.
+ *
  * @psalm-consistent-constructor
  * @psalm-suppress ClassMustBeFinal
  */
@@ -56,7 +62,9 @@ class ZendWeakMap implements PointedTypeResolverAware
                 ),
                 new Pointer(
                     ZendObject::class,
-                    $this->pointer->address,
+                    $this->pointer->address
+                    +
+                    FFI::typeof($this->casted_cdata->casted)->getStructFieldOffset('std'),
                     FFI::typeof($this->casted_cdata->casted->std)->getSize(),
                 ),
             ),
@@ -100,10 +108,12 @@ class ZendWeakMap implements PointedTypeResolverAware
         Pointer $pointer,
         ZendTypeReader $zend_type_reader,
     ): Pointer {
+        $struct_size = $zend_type_reader->sizeOf('zend_weakmap');
+        [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_weakmap', 'std');
         return new Pointer(
             ZendWeakMap::class,
-            $pointer->address,
-            $zend_type_reader->sizeOf('zend_weakmap'),
+            $pointer->address - $std_offset,
+            $struct_size,
         );
     }
 }
