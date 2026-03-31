@@ -23,7 +23,10 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClosure;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
+use Reli\Lib\PhpInternals\Types\C\RawInt64;
 use Reli\Lib\PhpInternals\Types\Zend\ZendFiber;
+use Reli\Lib\PhpInternals\Types\Zend\ZendFiberStack;
+use Reli\Lib\PhpInternals\Types\C\PointerArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendGenerator;
 use Reli\Lib\PhpInternals\Types\Zend\ZendConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
@@ -128,6 +131,7 @@ final class MemoryLocationsCollector
     private ?ZendTypeReader $zend_type_reader = null;
     private ?UserFunctionDefinitionContext $memory_limit_error_function_context = null;
     private ?MemoryLocations $fiber_vm_stack_memory_locations = null;
+    private ?MemoryLocations $chunk_memory_locations = null;
 
     public function __construct(
         private MemoryReaderInterface $memory_reader,
@@ -208,6 +212,7 @@ final class MemoryLocationsCollector
 
         $memory_locations = new MemoryLocations();
         $chunk_memory_locations = new MemoryLocations();
+        $this->chunk_memory_locations = $chunk_memory_locations;
 
         $zend_mm_main_chunk = $dereferencer->deref($main_chunk_header_pointer);
         foreach ($zend_mm_main_chunk->iterateChunks($dereferencer) as $chunk) {
@@ -1340,11 +1345,128 @@ final class MemoryLocationsCollector
                         VmStackMemoryLocation::fromZendVmStack($vm_stack),
                     );
                 }
+            } elseif (
+                $zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V82)
+                and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)
+                and $zend_fiber->execute_data !== null
+                and $this->fiber_vm_stack_memory_locations !== null
+                and $this->chunk_memory_locations !== null
+            ) {
+                $this->scanFiberCStackForVmStack(
+                    $zend_fiber,
+                    $dereferencer,
+                    $zend_type_reader,
+                );
             }
         } catch (\Throwable) {
         }
 
         return $fiber_context;
+    }
+
+    private function scanFiberCStackForVmStack(
+        ZendFiber $zend_fiber,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): void {
+        assert($zend_fiber->execute_data !== null);
+        assert($this->fiber_vm_stack_memory_locations !== null);
+        assert($this->chunk_memory_locations !== null);
+
+        $context_stack = $zend_fiber->context_stack;
+        if ($context_stack === null) {
+            return;
+        }
+        $fiber_stack = $dereferencer->deref($context_stack);
+        if ($fiber_stack->pointer === 0 || $fiber_stack->size === 0) {
+            return;
+        }
+
+        // Skip guard page at the bottom of the C stack (typically 4KB)
+        $guard_page_size = 4096;
+        $stack_start = $fiber_stack->pointer + $guard_page_size;
+        $usable_size = $fiber_stack->size - $guard_page_size;
+        if ($usable_size <= 0) {
+            return;
+        }
+
+        // Limit scan size to avoid excessive memory usage
+        $scan_size = min($usable_size, 256 * 1024);
+
+        $c_stack_pointer = new Pointer(
+            PointerArray::class,
+            $stack_start,
+            $scan_size,
+        );
+        $c_stack = $dereferencer->deref($c_stack_pointer);
+        $execute_data_address = $zend_fiber->execute_data->address;
+
+        $vm_stack_size = $zend_type_reader->sizeOf('struct _zend_vm_stack');
+
+        foreach ($c_stack->getReverseIteratorAsInt() as $value) {
+            if ($value === 0) {
+                continue;
+            }
+
+            // Check if this value looks like a pointer into a ZendMM chunk
+            $candidate_location = new \Reli\Lib\Process\MemoryLocation($value, 1);
+            if (!$this->chunk_memory_locations->contains($candidate_location)) {
+                continue;
+            }
+
+            // Read top and end as raw integers to validate before full ZendVmStack deref
+            try {
+                $raw_top_pointer = new Pointer(RawInt64::class, $value, 8);
+                $raw_top = $dereferencer->deref($raw_top_pointer)->value;
+                $raw_end_pointer = new Pointer(RawInt64::class, $value + 8, 8);
+                $raw_end = $dereferencer->deref($raw_end_pointer)->value;
+            } catch (\Throwable) {
+                continue;
+            }
+
+            // Basic sanity on raw values
+            if ($raw_top === 0 || $raw_end === 0) {
+                continue;
+            }
+            if ($raw_top >= $raw_end) {
+                continue;
+            }
+            if ($raw_top <= $value) {
+                continue;
+            }
+
+            // top should also be within a ZendMM chunk
+            $top_location = new \Reli\Lib\Process\MemoryLocation($raw_top, 1);
+            if (!$this->chunk_memory_locations->contains($top_location)) {
+                continue;
+            }
+
+            // Check if fiber's execute_data falls within this vm_stack's range
+            if (
+                $execute_data_address < $raw_top
+                || $execute_data_address >= $raw_end
+            ) {
+                continue;
+            }
+
+            // Passed all validation - now safe to deref as ZendVmStack
+            try {
+                $vm_stack_pointer = new Pointer(
+                    ZendVmStack::class,
+                    $value,
+                    $vm_stack_size,
+                );
+                $vm_stack_candidate = $dereferencer->deref($vm_stack_pointer);
+                foreach ($vm_stack_candidate->iterateStackChain($dereferencer) as $vm_stack) {
+                    $this->fiber_vm_stack_memory_locations->add(
+                        VmStackMemoryLocation::fromZendVmStack($vm_stack),
+                    );
+                }
+                return;
+            } catch (\Throwable) {
+                continue;
+            }
+        }
     }
 
     public function collectFunctionTable(

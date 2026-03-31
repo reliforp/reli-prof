@@ -902,6 +902,10 @@ typedef enum {
 	ZEND_FIBER_TRANSFER_FLAG_BAILOUT = 1 << 1
 } zend_fiber_transfer_flag;
 
+struct _zend_fiber_stack {
+	uintptr_t pointer;
+	size_t size;
+};
 typedef struct _zend_fiber_stack zend_fiber_stack;
 
 /* Encapsulates data needed for a context switch. */
