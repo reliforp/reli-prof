@@ -19,7 +19,16 @@ use FFI\CPointer;
 
 final class Cast
 {
-    /** @param CPointer|null $cdata */
+    /**
+     * Cast a C pointer to its integer address value.
+     *
+     * WARNING: Do NOT pass a void* CData to this method. PHP FFI internally
+     * dereferences the pointer during FFI::cast('long', ...) for void*, which
+     * causes a SEGV when the pointer holds a remote process address. For void*
+     * fields, declare them as uintptr_t in the header instead.
+     *
+     * @param CPointer|null $cdata
+     */
     public static function castPointerToInt(?CData &$cdata): int
     {
         if ($cdata === null) {
