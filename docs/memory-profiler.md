@@ -734,12 +734,10 @@ The `objects_store` is an important table that holds references to all objects i
 The references in the objects_store don't add refcount to the objects.
 
 # Currently not yet supported
-- Variables captured in inactive Generators
 - TMP/VARs in PHP 7.0 target
-- internal classes other than `\Closure`
+- internal classes other than `\Closure`, `\Fiber`, and `\Generator`
 - The contents of resources
 - Data that can only be reached from circular references that don't contain any objects
-- Support for the opcache SHM
 
 # Troubleshooting
 ## jq says "parse error: Exceeds depth limit for parsing at line 1"
