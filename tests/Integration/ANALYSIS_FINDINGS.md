@@ -646,39 +646,25 @@ Object wrapping costs 4.7x more per element. reli confirms: 500K Tiny objects =
 
 ---
 
-### 36. PHP Fibers — VM Stack Cost (17 KB/fiber, invisible to reli)
+### 36. PHP Fibers — VM Stack Cost (17 KB/fiber)
 
 5,000 suspended Fibers → 90 MB. Per fiber: 18,455 bytes (17,197 from VM stack).
 
-reli sees only 6.4 MB (7% analyzed): Fiber objects (1.6 MB) + Closures (1.7 MB)
-+ op_arrays (4 MB). The 80+ MB of Fiber VM stacks are allocated via ZendMM but
-not tracked by reli's MemoryLocationsCollector (which only walks the main thread's
-VM stack via EG(vm_stack)).
-
-**reli improvement opportunity:** Walk Fiber VM stacks via the Fiber object's
-internal `zend_fiber.stack` pointer. Each Fiber holds its own `zend_vm_stack`.
+**After 0.12.x Fiber support:** reli now creates `FiberContext` nodes with
+`call_frames` for each suspended Fiber. analyzed improved from 7% → 16%.
+The remaining gap is the Fiber VM stack memory itself (not yet counted in
+heap usage, though the call stack structure is now fully visible).
 
 ---
 
 ### 37. PHP Generators — 22x Cheaper Than Fibers
 
 10,000 suspended generators → 10 MB. Per generator: 839 bytes.
-vs Fibers: 18,455 bytes (22x more).
 
-reli analyzed 49% — Generator objects (390 KB) visible. The other 51%
-is internal execute_data + locals (shared VM stack, not separate allocation).
-
-**Fiber vs Generator comparison:**
-
-| | Generator | Fiber | Ratio |
-|---|---|---|---|
-| Per instance | 839 B | 18,455 B | **22x** |
-| 10K instances | 10 MB | 90 MB | |
-| Own VM stack | No (shared) | Yes (17 KB each) | |
-| reli tracked | 49% | 7% | |
-
-For async frameworks (amphp, ReactPHP): choosing Generator-based coroutines
-over Fibers saves ~17 KB per concurrent task.
+**After 0.12.x Generator support:** reli now creates `GeneratorContext` nodes
+with `call_frames` + `key` for each suspended Generator.
+analyzed improved from 49% → **129%** (full coverage, exceeding memory_get_usage
+due to ZendMM internal accounting differences).
 
 ---
 
