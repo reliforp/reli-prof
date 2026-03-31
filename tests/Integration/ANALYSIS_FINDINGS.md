@@ -646,6 +646,20 @@ Object wrapping costs 4.7x more per element. reli confirms: 500K Tiny objects =
 
 ---
 
+### 36. PHP Fibers — VM Stack Cost (17 KB/fiber, invisible to reli)
+
+5,000 suspended Fibers → 90 MB. Per fiber: 18,455 bytes (17,197 from VM stack).
+
+reli sees only 6.4 MB (7% analyzed): Fiber objects (1.6 MB) + Closures (1.7 MB)
++ op_arrays (4 MB). The 80+ MB of Fiber VM stacks are allocated via ZendMM but
+not tracked by reli's MemoryLocationsCollector (which only walks the main thread's
+VM stack via EG(vm_stack)).
+
+**reli improvement opportunity:** Walk Fiber VM stacks via the Fiber object's
+internal `zend_fiber.stack` pointer. Each Fiber holds its own `zend_vm_stack`.
+
+---
+
 ### 25. symfony/symfony#57328 — OptionsResolver Closure/Clone Overhead
 
 **Issue**: Nested Symfony Forms consume hundreds of MB. Maintainer said "nothing
