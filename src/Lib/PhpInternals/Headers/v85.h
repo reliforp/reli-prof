@@ -1480,6 +1480,17 @@ struct _zend_generator {
 	uint8_t flags;
 };
 
+/* zend_weakrefs.h */
+typedef struct _zend_weakref {
+	zend_object std;
+	zend_object *referent;
+} zend_weakref;
+
+typedef struct _zend_weakmap {
+	zend_object std;
+	HashTable ht;
+} zend_weakmap;
+
 /* main/SAPI.h */
 /*
    +----------------------------------------------------------------------+
