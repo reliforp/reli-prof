@@ -91,6 +91,10 @@ final class MemoryCommand extends Command
             $process_specifier,
             $target_php_settings_version_decided
         );
+        $bg_address = $this->php_globals_finder->findBasicGlobals(
+            $process_specifier,
+            $target_php_settings_version_decided
+        );
 
         if ($memory_profiler_settings->stop_process) {
             $this->process_stopper->stop($process_specifier->pid);
@@ -103,6 +107,7 @@ final class MemoryCommand extends Command
             $eg_address,
             $cg_address,
             $memory_profiler_settings->memory_exhaustion_error_details,
+            $bg_address,
         );
 
         $region_analyzer = new RegionAnalyzer(

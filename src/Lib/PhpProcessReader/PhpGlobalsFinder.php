@@ -324,4 +324,20 @@ class PhpGlobalsFinder
             'sapi_globals'
         );
     }
+
+    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
+    public function findBasicGlobals(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings
+    ): ?int {
+        try {
+            return $this->findGlobals(
+                $process_specifier,
+                $target_php_settings,
+                'basic_globals'
+            );
+        } catch (\RuntimeException) {
+            return null;
+        }
+    }
 }

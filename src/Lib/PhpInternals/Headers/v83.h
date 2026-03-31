@@ -1474,3 +1474,13 @@ typedef struct _sapi_globals_struct {
 	zval callback_func;
 	zend_fcall_info_cache fci_cache;
 } sapi_globals_struct;
+
+// ext/standard/basic_functions.h
+typedef struct _php_shutdown_function_entry {
+	zend_fcall_info fci;
+	zend_fcall_info_cache fcc;
+} php_shutdown_function_entry;
+
+typedef struct _php_basic_globals {
+	HashTable *user_shutdown_function_names;
+} php_basic_globals;

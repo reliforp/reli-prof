@@ -164,13 +164,10 @@ final class ZendOpArray
                 )
                 : null
             ,
-            'static_variables' => $this->static_variables = $this->cdata->static_variables !== null
-                ? Pointer::fromCData(
-                    ZendArray::class,
-                    $this->cdata->static_variables,
-                )
-                : null
-            ,
+            'static_variables' => $this->static_variables = $this->readPointerFieldOrNull(
+                'static_variables',
+                ZendArray::class,
+            ),
             'static_variables_ptr' => $this->static_variables_ptr
                 = $this->readStaticVariablesPtr()
             ,
@@ -392,5 +389,27 @@ final class ZendOpArray
             ZendFunction::class,
             $zend_type_reader,
         );
+    }
+
+    /**
+     * Read a pointer field from the CData, returning null if the field is null
+     * or if FFI returns a raw int instead of CData (which can happen for certain
+     * PHP versions when reading from remotely-captured memory).
+     *
+     * @template TType of \Reli\Lib\Process\Pointer\Dereferencable
+     * @param class-string<TType> $pointed_type
+     * @return Pointer<TType>|null
+     * @psalm-suppress ArgumentTypeCoercion
+     */
+    private function readPointerFieldOrNull(string $field_name, string $pointed_type): ?Pointer
+    {
+        $value = $this->cdata->$field_name;
+        if ($value === null) {
+            return null;
+        }
+        if (!$value instanceof CData) {
+            return null;
+        }
+        return Pointer::fromCData($pointed_type, $value);
     }
 }

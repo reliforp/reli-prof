@@ -56,6 +56,10 @@ final class CoreDumpReader
             $process_specifier,
             $target_php_settings_version_decided
         );
+        $bg_address = $this->php_globals_finder->findBasicGlobals(
+            $process_specifier,
+            $target_php_settings_version_decided
+        );
 
         $collected_memories = $this->memory_locations_collector->collectAll(
             $process_specifier,
@@ -63,6 +67,7 @@ final class CoreDumpReader
             $eg_address,
             $cg_address,
             $memory_profiler_settings->memory_exhaustion_error_details,
+            $bg_address,
         );
 
         $region_analyzer = new RegionAnalyzer(
