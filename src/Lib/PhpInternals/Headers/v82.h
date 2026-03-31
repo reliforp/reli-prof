@@ -1307,6 +1307,39 @@ typedef struct _zend_closure {
 	zif_handler       orig_internal_handler;
 } zend_closure;
 
+/** zend_genereators.h */
+typedef struct _zend_generator zend_generator;
+typedef struct _zend_generator_node zend_generator_node;
+
+struct _zend_generator_node {
+	zend_generator *parent; /* NULL for root */
+	uint32_t children;
+	union {
+		HashTable *ht; /* if multiple children */
+		zend_generator *single; /* if one child */
+	} child;
+	/* One generator can cache a direct pointer to the current root.
+	 * The leaf member points back to the generator using the root cache. */
+	union {
+		zend_generator *leaf; /* if parent != NULL */
+		zend_generator *root; /* if parent == NULL */
+	} ptr;
+};
+
+struct _zend_generator {
+	zend_object std;
+	zend_execute_data *execute_data;
+	zend_execute_data *frozen_call_stack;
+	zval value;
+	zval key;
+	zval retval;
+	zval *send_target;
+	zend_long largest_used_integer_key;
+	zval values;
+	zend_generator_node node;
+	zend_execute_data execute_fake;
+	uint8_t flags;
+};
 
 /* main/SAPI.h */
 /*

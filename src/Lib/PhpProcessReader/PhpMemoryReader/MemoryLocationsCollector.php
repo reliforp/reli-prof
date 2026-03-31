@@ -23,6 +23,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClosure;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendGenerator;
 use Reli\Lib\PhpInternals\Types\Zend\ZendConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
@@ -87,6 +88,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\DefinedClassesCon
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\DefinedFunctionsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\DynamicFuncDefsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FunctionDefinitionContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GeneratorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalConstantContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalConstantsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalVariablesContext;
@@ -1046,6 +1048,27 @@ final class MemoryLocationsCollector
             $object_context->add('closure', $closure_context);
         }
 
+        if ($class_entry->getClassName($dereferencer) === 'Generator') {
+            try {
+                $generator_context = $this->collectGenerator(
+                    $dereferencer->deref(
+                        ZendGenerator::getPointerFromZendObjectPointer(
+                            $object->getPointer(),
+                            $zend_type_reader,
+                        ),
+                    ),
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                $object_context->add('generator', $generator_context);
+            } catch (\Throwable) {
+            }
+        }
+
         return $object_context;
     }
 
@@ -1087,6 +1110,89 @@ final class MemoryLocationsCollector
             );
         }
         return $closure_context;
+    }
+
+    public function collectGenerator(
+        ZendGenerator $zend_generator,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): GeneratorContext {
+        $generator_context = new GeneratorContext();
+
+        try {
+            if ($zend_generator->execute_data !== null) {
+                $execute_data = $dereferencer->deref($zend_generator->execute_data);
+                $call_frames_context = new CallFramesContext();
+                foreach ($execute_data->iterateStackChain($dereferencer) as $key => $frame) {
+                    $call_frame_context = $this->collectCallFrame(
+                        $frame,
+                        $map_ptr_base,
+                        $dereferencer,
+                        $zend_type_reader,
+                        $memory_locations,
+                        $context_pools,
+                        $memory_limit_error_details,
+                    );
+                    $call_frames_context->add((string)$key, $call_frame_context);
+                }
+                $generator_context->add('call_frames', $call_frames_context);
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            $value_context = $this->collectZval(
+                $zend_generator->value,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            if (!is_null($value_context)) {
+                $generator_context->add('value', $value_context);
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            $key_context = $this->collectZval(
+                $zend_generator->key,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            if (!is_null($key_context)) {
+                $generator_context->add('key', $key_context);
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            $retval_context = $this->collectZval(
+                $zend_generator->retval,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            if (!is_null($retval_context)) {
+                $generator_context->add('retval', $retval_context);
+            }
+        } catch (\Throwable) {
+        }
+
+        return $generator_context;
     }
 
     public function collectFunctionTable(
