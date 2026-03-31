@@ -852,3 +852,70 @@ Tarjan's is O(V+E), same as DFS. Can share loaded edge data with drill-down.
 **Key benefit for retained size:** If SCC count = 0, the graph is a DAG and
 tree-based retained size is exact. If SCCs exist, they can be collapsed into
 super-nodes for an adjusted DAG where retained size becomes exact again.
+
+**DB schema for SCC results:**
+
+```sql
+-- Only stores SCCs with size > 1 (cycles). Singletons are not stored.
+CREATE TABLE scc_components (
+    run_id              INTEGER NOT NULL,
+    scc_id              INTEGER NOT NULL,
+    node_count          INTEGER NOT NULL,
+    total_shallow_size  INTEGER NOT NULL,
+    ext_incoming_edges  INTEGER NOT NULL, -- entry points from outside
+    ext_outgoing_edges  INTEGER NOT NULL, -- what the cycle retains
+    PRIMARY KEY (run_id, scc_id)
+);
+
+CREATE TABLE scc_members (
+    run_id   INTEGER NOT NULL,
+    scc_id   INTEGER NOT NULL,
+    node_id  INTEGER NOT NULL,
+    PRIMARY KEY (run_id, node_id)
+);
+CREATE INDEX idx_scc_members_scc ON scc_members(run_id, scc_id);
+
+CREATE TABLE scc_class_summary (
+    run_id      INTEGER NOT NULL,
+    scc_id      INTEGER NOT NULL,
+    class_name  TEXT NOT NULL,
+    count       INTEGER NOT NULL,
+    total_size  INTEGER NOT NULL
+);
+CREATE INDEX idx_scc_class ON scc_class_summary(run_id, scc_id);
+```
+
+Data volume is tiny: php-imap 201 SCCs = 3,015 member rows + 201 component rows.
+Even Symfony Forms with 1,803 SCCs = ~22K member rows. Negligible vs millions of edges.
+
+**Useful queries on the SCC tables:**
+
+```sql
+-- Is this node in a cycle?
+SELECT scc_id FROM scc_members WHERE node_id = :id;
+
+-- Largest cycles
+SELECT * FROM scc_components ORDER BY total_shallow_size DESC LIMIT 10;
+
+-- Group identical cycle patterns (php-imap: "201× Message:1,Attachment:3")
+SELECT composition, count(*) as pattern_count,
+       sum(total_shallow_size) as total_kb
+FROM (
+    SELECT scc_id,
+        group_concat(class_name || ':' || count, ', ') as composition
+    FROM scc_class_summary GROUP BY run_id, scc_id
+)
+GROUP BY composition ORDER BY total_kb DESC;
+
+-- Retained size confidence: is the subgraph cycle-free?
+SELECT CASE WHEN count(*) = 0 THEN 'EXACT (DAG)' ELSE 'APPROXIMATE (cycles exist)' END
+FROM scc_components WHERE run_id = :run_id;
+
+-- Entry points into a specific cycle
+SELECT e.link_name, cn.type as from_type
+FROM context_edges e
+JOIN scc_members sm ON sm.node_id = e.child_node_id AND sm.scc_id = :scc_id
+LEFT JOIN context_nodes cn ON cn.node_id = e.parent_node_id
+WHERE e.parent_node_id NOT IN (SELECT node_id FROM scc_members WHERE scc_id = :scc_id)
+  AND e.run_id = :run_id;
+```
