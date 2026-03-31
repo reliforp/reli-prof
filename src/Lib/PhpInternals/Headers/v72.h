@@ -1005,7 +1005,7 @@ struct _zend_mm_heap {
 			void      *(*_realloc)(void*, size_t);
 		} std;
 	} custom_heap;
-	HashTable *tracked_allocs;
+	/* tracked_allocs does not exist in PHP 7.2 */
 };
 
 struct _zend_mm_chunk {

@@ -39,7 +39,6 @@ use Reli\Lib\PhpInternals\Types\Zend\Zval;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\CallFrameHeaderMemoryLocation;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\CallFrameVariableTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DefaultPropertiesTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DefaultStaticMembersTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DynamicFuncDefsTableMemoryLocation;
@@ -823,19 +822,30 @@ final class MemoryLocationsCollector
             $lineno = $opline->lineno;
         }
 
-        $header_memory_location = CallFrameHeaderMemoryLocation::fromZendExecuteData(
-            $execute_data,
-        );
         $call_frame_context = new CallFrameContext(
             $function_name,
             $lineno,
         );
-        $variable_table_memory_location = CallFrameVariableTableMemoryLocation::fromZendExecuteData(
-            $execute_data,
-            $dereferencer
+
+        // Track the entire call frame (header + variable table) as a single
+        // memory location. The execute_data header and variable table are part
+        // of the same allocation (either on the VM stack or via a single
+        // emalloc for generators). Tracking them separately would cause
+        // allocation overhead to be calculated for each piece independently,
+        // double-counting the bin slot overhead.
+        try {
+            $variable_table_pointer = $execute_data->getVariableTablePointer($dereferencer);
+            $frame_end = $variable_table_pointer->address + $variable_table_pointer->size;
+            $frame_size = $frame_end - $execute_data->getPointer()->address;
+        } catch (\Throwable) {
+            $frame_size = $execute_data->getPointer()->size;
+        }
+        $memory_locations->add(
+            new CallFrameHeaderMemoryLocation(
+                $execute_data->getPointer()->address,
+                $frame_size,
+            )
         );
-        $memory_locations->add($variable_table_memory_location);
-        $memory_locations->add($header_memory_location);
 
         if ($execute_data->hasThis()) {
             $this_context = $this->collectZval(

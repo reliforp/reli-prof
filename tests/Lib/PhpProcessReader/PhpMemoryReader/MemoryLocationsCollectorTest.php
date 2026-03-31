@@ -1279,7 +1279,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     ): array {
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
-
         $pipes = [];
         [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
             $docker_image_name,
@@ -1544,5 +1543,162 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertArrayHasKey('shutdown_function[0]', $contexts['modules']['standard']);
         $this->assertArrayHasKey('shutdown_function[1]', $contexts['modules']['standard']);
         $this->assertArrayHasKey('shutdown_function[2]', $contexts['modules']['standard']);
+    }
+
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testGeneratorAllocationOverheadAccuracy(string $php_version, string $docker_image_name): void
+    {
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            function gen() {
+                $a = 1;
+                $b = 2;
+                $c = 3;
+                yield $a;
+                yield $b;
+                yield $c;
+            }
+            $generators = [];
+            for ($i = 0; $i < 1000; $i++) {
+                $g = gen();
+                $g->current();
+                $generators[] = $g;
+            }
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+        );
+        $basic_globals_address = $php_globals_finder->findBasicGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            $basic_globals_address,
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+
+        $region_analyzer = new RegionAnalyzer(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations
+        );
+        $region_analyzed = $region_analyzer->analyze($collected_memories->memory_locations);
+        $this->assertGreaterThan(0, $region_analyzed->summary->zend_mm_heap_usage);
+
+        // The key assertion: with many generators, analyzed heap usage must not
+        // exceed memory_get_usage. Before the call frame overhead fix, this
+        // ratio would exceed 120% due to double-counted bin overhead.
+        $this->assertLessThanOrEqual(
+            $collected_memories->memory_get_usage_size,
+            $region_analyzed->summary->zend_mm_heap_usage,
+            'analyzed_percentage must not exceed 100%'
+        );
+
+        $location_type_analyzer = new LocationTypeAnalyzer();
+        $location_type_analyzed_result = $location_type_analyzer->analyze(
+            $region_analyzed->regional_memory_locations->locations_in_zend_mm_heap,
+        );
+        // Verify that generators are tracked as ZendObjectMemoryLocation
+        $this->assertGreaterThanOrEqual(
+            1000,
+            $location_type_analyzed_result->per_type_usage['ZendObjectMemoryLocation']['count']
+                ?? 0,
+            'Should track at least 1000 generator objects'
+        );
     }
 }
