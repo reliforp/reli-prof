@@ -712,7 +712,6 @@ The references in the objects_store don't add refcount to the objects.
 
 # Currently not yet supported
 - Variables captured in inactive Generators
-- Variables captured in suspended Fibers
 - TMP/VARs in PHP 7.0 target
 - internal classes other than `\Closure`
 - References to `\Closure`s in the engine, such as the callbacks of internal functions like `register_shutdown_function()` or `set_exception_handler()`

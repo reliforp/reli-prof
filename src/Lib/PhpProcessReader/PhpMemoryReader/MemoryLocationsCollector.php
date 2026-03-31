@@ -23,6 +23,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClosure;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendFiber;
 use Reli\Lib\PhpInternals\Types\Zend\ZendGenerator;
 use Reli\Lib\PhpInternals\Types\Zend\ZendConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
@@ -88,6 +89,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\DefinedClassesCon
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\DefinedFunctionsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\DynamicFuncDefsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FunctionDefinitionContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FiberContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GeneratorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalConstantContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\GlobalConstantsContext;
@@ -1069,6 +1071,30 @@ final class MemoryLocationsCollector
             }
         }
 
+        if (
+            $class_entry->getClassName($dereferencer) === 'Fiber'
+            and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)
+        ) {
+            try {
+                $fiber_context = $this->collectFiber(
+                    $dereferencer->deref(
+                        ZendFiber::getPointerFromZendObjectPointer(
+                            $object->getPointer(),
+                            $zend_type_reader,
+                        ),
+                    ),
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                $object_context->add('fiber', $fiber_context);
+            } catch (\Throwable) {
+            }
+        }
+
         return $object_context;
     }
 
@@ -1193,6 +1219,41 @@ final class MemoryLocationsCollector
         }
 
         return $generator_context;
+    }
+
+    public function collectFiber(
+        ZendFiber $zend_fiber,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): FiberContext {
+        $fiber_context = new FiberContext();
+
+        try {
+            if ($zend_fiber->execute_data !== null) {
+                $execute_data = $dereferencer->deref($zend_fiber->execute_data);
+                $call_frames_context = new CallFramesContext();
+                foreach ($execute_data->iterateStackChain($dereferencer) as $key => $frame) {
+                    $call_frame_context = $this->collectCallFrame(
+                        $frame,
+                        $map_ptr_base,
+                        $dereferencer,
+                        $zend_type_reader,
+                        $memory_locations,
+                        $context_pools,
+                        $memory_limit_error_details,
+                    );
+                    $call_frames_context->add((string)$key, $call_frame_context);
+                }
+                $fiber_context->add('call_frames', $call_frames_context);
+            }
+        } catch (\Throwable) {
+        }
+
+        return $fiber_context;
     }
 
     public function collectFunctionTable(
