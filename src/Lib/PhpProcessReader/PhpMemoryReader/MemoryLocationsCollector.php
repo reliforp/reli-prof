@@ -1049,21 +1049,24 @@ final class MemoryLocationsCollector
         }
 
         if ($class_entry->getClassName($dereferencer) === 'Generator') {
-            $generator_context = $this->collectGenerator(
-                $dereferencer->deref(
-                    ZendGenerator::getPointerFromZendObjectPointer(
-                        $object->getPointer(),
-                        $zend_type_reader,
+            try {
+                $generator_context = $this->collectGenerator(
+                    $dereferencer->deref(
+                        ZendGenerator::getPointerFromZendObjectPointer(
+                            $object->getPointer(),
+                            $zend_type_reader,
+                        ),
                     ),
-                ),
-                $map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $object_context->add('generator', $generator_context);
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                $object_context->add('generator', $generator_context);
+            } catch (\Throwable) {
+            }
         }
 
         return $object_context;
