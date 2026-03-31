@@ -512,6 +512,161 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
     }
 
+    public static function provideFromV81()
+    {
+        yield from TargetPhpVmProvider::from(ZendTypeReader::V81);
+    }
+
+    #[DataProvider('provideFromV81')]
+    public function testFiberCallStackTracking(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            $fiber = new Fiber(function () {
+                $x = 1;
+                Fiber::suspend();
+                $x = 2;
+            });
+            $fiber->start();
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+
+        $context_analyzer = new ContextAnalyzer();
+        $sink = new ArrayContextTreeSink();
+        $context_analyzer->analyze(
+            $collected_memories->top_reference_context,
+            $sink,
+        );
+        $contexts_analyzed = $sink->getResult();
+
+        // Verify that a fiber with call_frames exists somewhere in the context tree
+        $found_fiber_with_frames = false;
+        $findFiber = function (array $tree) use (&$findFiber, &$found_fiber_with_frames): void {
+            foreach ($tree as $key => $value) {
+                if ($key === 'fiber' && is_array($value) && isset($value['call_frames'])) {
+                    $found_fiber_with_frames = true;
+                    return;
+                }
+                if (is_array($value) && $key !== '#locations') {
+                    $findFiber($value);
+                    if ($found_fiber_with_frames) {
+                        return;
+                    }
+                }
+            }
+        };
+        $findFiber($contexts_analyzed);
+        $this->assertTrue(
+            $found_fiber_with_frames,
+            'Should find at least one fiber with tracked call frames'
+        );
+    }
+
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
     public function testMemoryLimitViolation(string $php_version, string $docker_image_name)
     {
