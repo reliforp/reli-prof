@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
+use Reli\Inspector\Watch\VariableSpec;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
@@ -109,16 +109,16 @@ class VariableReaderIntegrationTest extends BaseTestCase
         );
 
         // Test all types at once
-        $triggers = [
-            new VariableValueTrigger('global::$gcount:gt:0'),
-            new VariableValueTrigger('global::$gname:eq:test'),
-            new VariableValueTrigger('global::$gcache:count_gt:50'),
-            new VariableValueTrigger('global::$gflag:eq:true'),
-            new VariableValueTrigger('global::$gnull:is_null'),
-            new VariableValueTrigger('global::$nonexistent:gt:0'),
+        $specs = [
+            VariableSpec::parse('global::$gcount'),
+            VariableSpec::parse('global::$gname'),
+            VariableSpec::parse('global::$gcache'),
+            VariableSpec::parse('global::$gflag'),
+            VariableSpec::parse('global::$gnull'),
+            VariableSpec::parse('global::$nonexistent'),
         ];
         $results = $variable_reader->readVariables(
-            $triggers,
+            $specs,
             $process_specifier,
             $target_php_settings,
             $eg_address,
@@ -174,16 +174,16 @@ class VariableReaderIntegrationTest extends BaseTestCase
 
         // Test local scope: function spec required
         // <main>() is the script-level frame
-        $triggers_local = [
-            new VariableValueTrigger(
-                'local::<main>()$local_counter:gt:0',
+        $specs_local = [
+            VariableSpec::parse(
+                'local::<main>()$local_counter',
             ),
-            new VariableValueTrigger(
-                'local::<main>()$local_items:count_gt:10',
+            VariableSpec::parse(
+                'local::<main>()$local_items',
             ),
         ];
         $results_local = $variable_reader->readVariables(
-            $triggers_local,
+            $specs_local,
             $process_specifier,
             $target_php_settings,
             $eg_address,
@@ -270,13 +270,13 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $zend_type_reader_creator,
         );
 
-        $triggers = [
-            new VariableValueTrigger(
-                'func_static::my_test_counter()$count:gt:0',
+        $specs = [
+            VariableSpec::parse(
+                'func_static::my_test_counter()$count',
             ),
         ];
         $results = $variable_reader->readVariables(
-            $triggers,
+            $specs,
             $process_specifier,
             $target_php_settings,
             $eg_address,
@@ -355,19 +355,19 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $zend_type_reader_creator,
         );
 
-        $triggers = [
-            new VariableValueTrigger(
-                'static::AppCache::$size:gt:0',
+        $specs = [
+            VariableSpec::parse(
+                'static::AppCache::$size',
             ),
-            new VariableValueTrigger(
-                'static::AppCache::$name:eq:default',
+            VariableSpec::parse(
+                'static::AppCache::$name',
             ),
-            new VariableValueTrigger(
-                'static::AppCache::$items:count_gt:1',
+            VariableSpec::parse(
+                'static::AppCache::$items',
             ),
         ];
         $results = $variable_reader->readVariables(
-            $triggers,
+            $specs,
             $process_specifier,
             $target_php_settings,
             $eg_address,
@@ -463,19 +463,19 @@ class VariableReaderIntegrationTest extends BaseTestCase
         );
 
         // Test nested array key access: config[db][host]
-        $triggers = [
-            new VariableValueTrigger(
-                'global::$config[db][host]:eq:localhost',
+        $specs = [
+            VariableSpec::parse(
+                'global::$config[db][host]',
             ),
-            new VariableValueTrigger(
-                'global::$config[db][port]:gt:0',
+            VariableSpec::parse(
+                'global::$config[db][port]',
             ),
-            new VariableValueTrigger(
-                'global::$config[cache]:count_gt:100',
+            VariableSpec::parse(
+                'global::$config[cache]',
             ),
         ];
         $results = $variable_reader->readVariables(
-            $triggers,
+            $specs,
             $process_specifier,
             $target_php_settings,
             $eg_address,
@@ -559,19 +559,19 @@ class VariableReaderIntegrationTest extends BaseTestCase
         );
 
         // Test object property access
-        $triggers = [
-            new VariableValueTrigger(
-                'global::$app_config->mode:eq:production',
+        $specs = [
+            VariableSpec::parse(
+                'global::$app_config->mode',
             ),
-            new VariableValueTrigger(
-                'global::$app_config->workers:gt:0',
+            VariableSpec::parse(
+                'global::$app_config->workers',
             ),
-            new VariableValueTrigger(
-                'global::$app_config->tags:count_gt:1',
+            VariableSpec::parse(
+                'global::$app_config->tags',
             ),
         ];
         $results = $variable_reader->readVariables(
-            $triggers,
+            $specs,
             $process_specifier,
             $target_php_settings,
             $eg_address,
@@ -694,19 +694,13 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $zend_type_reader_creator,
         );
 
-        $triggers = [
-            new VariableValueTrigger(
-                'static::StaticTarget::$count:gt:0',
-            ),
-            new VariableValueTrigger(
-                'static::StaticTarget::$label:eq:opcache_test',
-            ),
-            new VariableValueTrigger(
-                'static::StaticTarget::$items:count_gt:1',
-            ),
+        $specs = [
+            VariableSpec::parse('static::StaticTarget::$count'),
+            VariableSpec::parse('static::StaticTarget::$label'),
+            VariableSpec::parse('static::StaticTarget::$items'),
         ];
         $results = $variable_reader->readVariables(
-            $triggers,
+            $specs,
             $process_specifier,
             $target_php_settings,
             $eg_address,
@@ -1062,20 +1056,13 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $zend_type_reader_creator,
         );
 
-        $triggers = [
-            new VariableValueTrigger(
-                'static::PreloadedTarget::$count:gt:0',
-            ),
-            new VariableValueTrigger(
-                'static::PreloadedTarget::$label'
-                . ':eq:preloaded_test',
-            ),
-            new VariableValueTrigger(
-                'static::PreloadedTarget::$items:count_gt:1',
-            ),
+        $specs = [
+            VariableSpec::parse('static::PreloadedTarget::$count'),
+            VariableSpec::parse('static::PreloadedTarget::$label'),
+            VariableSpec::parse('static::PreloadedTarget::$items'),
         ];
         $results = $variable_reader->readVariables(
-            $triggers,
+            $specs,
             $process_specifier,
             $target_php_settings,
             $eg_address,

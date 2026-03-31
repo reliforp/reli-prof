@@ -1,10 +1,14 @@
-# inspector:watch Command Architecture
+# inspector:watch / inspector:peek-var Architecture
 
 ## Overview
 
 `inspector:watch` monitors PHP processes and triggers profiling actions
 when configurable conditions are met. Two modes: single-process (`-p PID`)
 and daemon (`--target-regex`).
+
+`inspector:peek-var` reads variable values directly using `VariableReader`
+without the trigger/action/cooldown machinery — see
+[peek-var-command.md](../peek-var-command.md).
 
 ## Data Flow
 
@@ -101,6 +105,17 @@ on every peak update (one-directional, never clears) — a longer
 cooldown prevents noise while still capturing major peaks.
 
 ## Variable Reading
+
+### VariableSpec and VariableReader
+
+`VariableReader::readVariables()` accepts `VariableSpec[]` — a simple
+value object carrying `scope`, `var_name`, and `lookup_key`. This
+decouples variable reading from trigger evaluation:
+
+- `VariableSpec::parse('scope::name')` — for `inspector:peek-var`
+- `VariableValueTrigger` — carries condition (`op`, `operand`) in
+  addition to scope/name, used by `inspector:watch`. The watch command
+  maps triggers to `VariableSpec` when calling `readVariables()`.
 
 ### --watch-var Syntax
 
