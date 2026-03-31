@@ -44,6 +44,8 @@ final class ZendObjectMemoryLocation extends RefcountedMemoryLocation
             and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
         ) {
             $size = $zend_type_reader->sizeOf('zend_closure');
+        } elseif ($class_name === \Generator::class) {
+            $size = $zend_type_reader->sizeOf('zend_generator');
         } else {
             $size = $zend_object->getMemorySize($dereferencer);
         }
