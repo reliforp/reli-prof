@@ -64,6 +64,18 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         string $php_version,
         string $docker_image_name,
     ): void {
+        // ZTS PHP 8.2+ requires thread pointer retrieval for TLS-based globals
+        // resolution, which is not possible from a coredump (needs ptrace).
+        if (
+            str_contains($docker_image_name, '-zts')
+            && $php_version >= 'v82'
+        ) {
+            $this->markTestSkipped(
+                'Coredump reading for ZTS PHP 8.2+ is not yet supported'
+                . ' (TLS resolution requires ptrace, unavailable from coredump)'
+            );
+        }
+
         ini_set('memory_limit', '2G');
 
         $target_script = <<<'CODE'
