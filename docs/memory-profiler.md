@@ -540,6 +540,8 @@ Reli recursively dumps local variables and `$this` on the call stack from the ru
 - The global constants table
 - The interned strings table
 - The included files strings table
+- The global callbacks (error handler, exception handler)
+- The modules (extension-specific state, e.g. shutdown functions)
 - The objects_store
 
 #### The representation of each context
@@ -704,9 +706,30 @@ See also [this article](https://www.phpinternalsbook.com/php7/internal_types/str
 ##### The "included_files" field
 The `"included_files"` field holds an `IncludedFilesContext`, that represents the included files table. The table contains an array of `StringContext`, that represents the file names of the all included files.
 
+##### The "global_callbacks" field
+The `"global_callbacks"` field represents `GlobalCallbacksContext`, that holds references to user-registered global callback handlers in the PHP VM. The following children may be present:
+
+- `"error_handler"`
+  - The callback set by `set_error_handler()`, corresponding to `EG(user_error_handler)` in the VM
+  - If no error handler is set, this field is absent
+- `"exception_handler"`
+  - The callback set by `set_exception_handler()`, corresponding to `EG(user_exception_handler)` in the VM
+  - If no exception handler is set, this field is absent
+
+##### The "modules" field
+The `"modules"` field represents `ModulesContext`, that holds per-extension state information. Currently only the `standard` module is supported.
+
+###### The "standard" field
+The `"standard"` field under `"modules"` represents `StandardModuleContext`, that holds state from PHP's standard extension (`php_basic_globals`). The following children may be present:
+
+- `"shutdown_function[N]"`
+  - Callbacks registered via `register_shutdown_function()`, corresponding to entries in `BG(user_shutdown_function_names)` in the VM
+  - `N` is the zero-based index of the registered shutdown function
+  - Each entry holds a reference to the callable (typically a `\Closure` object or a string function name)
+
 ##### The "objects_store" field
 
-The `objects_store` is an important table that holds references to all objects inside the script, and most references are represented by `"#reference_node_id"` only, as this is the last top-level child outputted. If there is an object in the objects_store that is represented by `"#node_id"` with its contents, it is most likely to be an object whose reference that is held by an internal structure not supported by this tool, such as `\Closure`s passed to `register_shutdown_function()`, or objects whose reference cannot be followed in the normal path due to circular references.
+The `objects_store` is an important table that holds references to all objects inside the script, and most references are represented by `"#reference_node_id"` only, as this is the last top-level child outputted. If there is an object in the objects_store that is represented by `"#node_id"` with its contents, it is most likely to be an object whose reference cannot be followed in the normal path due to circular references.
 
 The references in the objects_store don't add refcount to the objects.
 
@@ -714,7 +737,6 @@ The references in the objects_store don't add refcount to the objects.
 - Variables captured in inactive Generators
 - TMP/VARs in PHP 7.0 target
 - internal classes other than `\Closure`
-- References to `\Closure`s in the engine, such as the callbacks of internal functions like `register_shutdown_function()` or `set_exception_handler()`
 - The contents of resources
 - Data that can only be reached from circular references that don't contain any objects
 - Support for the opcache SHM
