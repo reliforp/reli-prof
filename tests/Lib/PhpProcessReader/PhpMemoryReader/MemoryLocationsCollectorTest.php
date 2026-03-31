@@ -1701,4 +1701,168 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             'Should track at least 1000 generator objects'
         );
     }
+
+    public static function provideFromV82()
+    {
+        yield from TargetPhpVmProvider::from(ZendTypeReader::V82);
+    }
+
+    #[DataProvider('provideFromV82')]
+    public function testFiberVmStackMemoryReflectedInAnalyzedPercentage(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        // Create many fibers with deep call stacks to make their VM stack usage significant
+        $target_script =
+            <<<'CODE'
+            <?php
+            function deep_call($depth) {
+                if ($depth <= 0) {
+                    Fiber::suspend();
+                    return;
+                }
+                deep_call($depth - 1);
+            }
+            $fibers = [];
+            for ($i = 0; $i < 100; $i++) {
+                $f = new Fiber(function () {
+                    deep_call(50);
+                });
+                $f->start();
+                $fibers[] = $f;
+            }
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+        );
+        $basic_globals_address = $php_globals_finder->findBasicGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            $basic_globals_address,
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+
+        $region_analyzer = new RegionAnalyzer(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations
+        );
+        $region_analyzed = $region_analyzer->analyze($collected_memories->memory_locations);
+        $this->assertGreaterThan(0, $region_analyzed->summary->zend_mm_heap_usage);
+
+        // Fiber VM stacks should contribute to vm_stack_memory_total.
+        // With 100 fibers each having deep call stacks, the total VM stack memory
+        // should be significantly larger than just the main thread's VM stack.
+        $this->assertGreaterThan(
+            0,
+            $region_analyzed->summary->vm_stack_total,
+            'VM stack memory total should be greater than 0'
+        );
+
+        // analyzed_percentage must not exceed 100%
+        $this->assertLessThanOrEqual(
+            $collected_memories->memory_get_usage_size,
+            $region_analyzed->summary->zend_mm_heap_usage,
+            'analyzed_percentage must not exceed 100%'
+        );
+    }
 }
