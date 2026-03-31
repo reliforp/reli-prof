@@ -39,7 +39,6 @@ use Reli\Lib\PhpInternals\Types\Zend\Zval;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\CallFrameHeaderMemoryLocation;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\CallFrameVariableTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DefaultPropertiesTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DefaultStaticMembersTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\DynamicFuncDefsTableMemoryLocation;
@@ -811,7 +810,6 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-        bool $skip_memory_locations = false,
     ): CallFrameContext {
         $function_name = $execute_data->getFullyQualifiedFunctionName(
             $dereferencer,
@@ -829,17 +827,21 @@ final class MemoryLocationsCollector
             $lineno,
         );
 
-        if (!$skip_memory_locations) {
-            $header_memory_location = CallFrameHeaderMemoryLocation::fromZendExecuteData(
-                $execute_data,
-            );
-            $variable_table_memory_location = CallFrameVariableTableMemoryLocation::fromZendExecuteData(
-                $execute_data,
-                $dereferencer
-            );
-            $memory_locations->add($variable_table_memory_location);
-            $memory_locations->add($header_memory_location);
-        }
+        // Track the entire call frame (header + variable table) as a single
+        // memory location. The execute_data header and variable table are part
+        // of the same allocation (either on the VM stack or via a single
+        // emalloc for generators). Tracking them separately would cause
+        // allocation overhead to be calculated for each piece independently,
+        // double-counting the bin slot overhead.
+        $variable_table_pointer = $execute_data->getVariableTablePointer($dereferencer);
+        $frame_end = $variable_table_pointer->address + $variable_table_pointer->size;
+        $frame_size = $frame_end - $execute_data->getPointer()->address;
+        $memory_locations->add(
+            new CallFrameHeaderMemoryLocation(
+                $execute_data->getPointer()->address,
+                $frame_size,
+            )
+        );
 
         if ($execute_data->hasThis()) {
             $this_context = $this->collectZval(
@@ -1107,7 +1109,6 @@ final class MemoryLocationsCollector
                     $memory_locations,
                     $context_pools,
                     $memory_limit_error_details,
-                    $object_location,
                 );
                 $object_context->add('generator', $generator_context);
             } catch (\Throwable) {
@@ -1189,7 +1190,6 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-        ?ZendObjectMemoryLocation $object_location = null,
     ): GeneratorContext {
         $generator_context = new GeneratorContext();
 
@@ -1202,20 +1202,8 @@ final class MemoryLocationsCollector
                 )
             ) {
                 $execute_data = $dereferencer->deref($zend_generator->execute_data);
-                $is_part_of_generator_allocation = $this->isExecuteDataPartOfGeneratorAllocation(
-                    $zend_generator,
-                    $zend_type_reader,
-                );
-                if ($is_part_of_generator_allocation && $object_location !== null) {
-                    $variable_table_pointer = $execute_data->getVariableTablePointer($dereferencer);
-                    $allocation_end = $variable_table_pointer->address + $variable_table_pointer->size;
-                    $full_size = $allocation_end - $zend_generator->getPointer()->address;
-                    $object_location->size = $full_size;
-                }
                 $call_frames_context = new CallFramesContext();
-                $first_frame = true;
                 foreach ($execute_data->iterateStackChain($dereferencer) as $key => $frame) {
-                    $skip_memory_locations = $first_frame && $is_part_of_generator_allocation;
                     $call_frame_context = $this->collectCallFrame(
                         $frame,
                         $map_ptr_base,
@@ -1224,10 +1212,8 @@ final class MemoryLocationsCollector
                         $memory_locations,
                         $context_pools,
                         $memory_limit_error_details,
-                        $skip_memory_locations,
                     );
                     $call_frames_context->add((string)$key, $call_frame_context);
-                    $first_frame = false;
                 }
                 $generator_context->add('call_frames', $call_frames_context);
             }
@@ -1301,34 +1287,6 @@ final class MemoryLocationsCollector
         $generator_size = $zend_type_reader->sizeOf('zend_generator');
         return $execute_data_address >= $generator_address
             && $execute_data_address < $generator_address + $generator_size;
-    }
-
-    /**
-     * Check if generator->execute_data is placed immediately after the
-     * zend_generator struct, meaning it is part of the same emalloc() block.
-     *
-     * PHP allocates generators as:
-     *   emalloc(sizeof(zend_generator) + used_stack)
-     * and places execute_data at:
-     *   (char*)generator + ZEND_ALIGNED_SIZE(sizeof(zend_generator))
-     *
-     * When this is the case, the call frame memory should not be tracked as
-     * a separate allocation; instead the generator's ZendObjectMemoryLocation
-     * size should cover the entire block.
-     */
-    private function isExecuteDataPartOfGeneratorAllocation(
-        ZendGenerator $zend_generator,
-        ZendTypeReader $zend_type_reader,
-    ): bool {
-        assert($zend_generator->execute_data !== null);
-        $execute_data_address = $zend_generator->execute_data->address;
-        $generator_address = $zend_generator->getPointer()->address;
-        $generator_size = $zend_type_reader->sizeOf('zend_generator');
-        // ZEND_ALIGNED_SIZE aligns to ZEND_MM_ALIGNMENT (typically 8 bytes).
-        // sizeof(zend_generator) is usually already aligned due to struct padding,
-        // but allow up to 15 bytes of alignment padding to be robust.
-        $offset = $execute_data_address - $generator_address;
-        return $offset >= $generator_size && $offset <= $generator_size + 15;
     }
 
     public function collectFiber(
