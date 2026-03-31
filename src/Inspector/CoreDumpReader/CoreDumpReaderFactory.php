@@ -15,12 +15,17 @@ namespace Reli\Inspector\CoreDumpReader;
 
 use DI\Container;
 use DI\ContainerBuilder;
+use FFI;
 use FFI\CData;
 use Reli\Lib\ByteStream\ByteReaderInterface;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
 use Reli\Lib\Elf\Structure\Elf64\Elf64Note;
+use Reli\Lib\Elf\Structure\Elf64\Elf64PrStatus;
 use Reli\Lib\Elf\Structure\Elf64\NtFileEntry;
+use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
+use Reli\Lib\Elf\Tls\CoreDumpThreadPointerRetriever;
+use Reli\Lib\Elf\Tls\ThreadPointerRetrieverInterface;
 use Reli\Lib\File\PathResolver\MappedPathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Integer\UInt64;
@@ -31,6 +36,7 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
+use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 use function dechex;
@@ -72,19 +78,14 @@ final class CoreDumpReaderFactory
                 )
             ];
         }
-        $threads = [];
-        $current_thread_info = [];
+        /** @var Elf64PrStatus[] $pr_statuses */
+        $pr_statuses = [];
         $file_maps = [];
         /** @var Elf64Note $note */
         foreach ($notes as $note) {
             if ($note->isCore()) {
                 if ($note->isPrStatus()) {
-                    if ($current_thread_info !== []) {
-                        $threads[] = $current_thread_info;
-                    }
-                    $current_thread_info = [
-                        $this->elf64_parser->parsePrStatus($note),
-                    ];
+                    $pr_statuses[] = $this->elf64_parser->parsePrStatus($note);
                 }
             }
             if ($note->isFile()) {
@@ -94,10 +95,9 @@ final class CoreDumpReaderFactory
                 ];
             }
         }
-        if ($current_thread_info !== []) {
-            $threads[] = $current_thread_info;
-        }
         $memory_areas = [];
+        /** @var array<string, int> $coredump_offsets vaddr_hex => coredump file offset */
+        $coredump_offsets = [];
         foreach ($load_segments as $load_segment) {
             $corresponding_file = null;
             /** @var NtFileEntry $file_map */
@@ -107,18 +107,27 @@ final class CoreDumpReaderFactory
                     break;
                 }
             }
-            $file_offset = $load_segment->p_offset->toInt();
-            if (!$load_segment->isWritable()) {
-                if ($corresponding_file !== null) {
-                    $file_offset = $corresponding_file->file_offset->toInt();
-                }
+
+            $vaddr_hex = dechex($load_segment->p_vaddr->toInt());
+
+            // Always store the coredump p_offset for reading data from the coredump
+            $coredump_offsets[$vaddr_hex] = $load_segment->p_offset->toInt();
+
+            // For ProcessMemoryArea, use the original file offset (matching /proc/pid/maps)
+            // so that ProcessModuleMemoryMap::getMemoryAddressFromOffset() works correctly
+            if ($corresponding_file !== null) {
+                $file_offset = $corresponding_file->file_offset->toInt();
+            } else {
+                // Anonymous memory (heap, BSS, etc.) - use 0 like /proc/pid/maps
+                $file_offset = 0;
             }
+
             $file_path = $corresponding_file?->name ?? '';
             $inode_result = $file_path !== '' && file_exists($file_path) ? fileinode($file_path) : false;
             $file_inode = $inode_result !== false ? $inode_result : 0;
 
             $memory_areas[] = new ProcessMemoryArea(
-                dechex($load_segment->p_vaddr->toInt()),
+                $vaddr_hex,
                 dechex($load_segment->p_vaddr->toInt() + $load_segment->p_memsz->toInt()),
                 dechex($file_offset),
                 new ProcessMemoryAttribute(
@@ -134,19 +143,55 @@ final class CoreDumpReaderFactory
         }
         $path_resolver = new MappedPathResolver($path_mapping);
         $process_memory_map = new ProcessMemoryMap($memory_areas);
+        /** @var FFI&object{open:callable,lseek:callable,read:callable,close:callable} $libc_ffi */
+        $libc_ffi = FFI::cdef('
+            int open(const char *pathname, int flags);
+            off_t lseek(int fd, off_t offset, int whence);
+            ssize_t read(int fd, void *buf, size_t count);
+            int close(int fd);
+        ');
         $memory_reader = new class (
             $binary,
             $process_memory_map,
             $file_maps,
-            $path_resolver
+            $path_resolver,
+            $coredump_offsets,
+            $libc_ffi
         ) implements MemoryReaderInterface {
-            /** @param NtFileEntry[] $file_maps */
+            /**
+             * @param NtFileEntry[] $file_maps
+             * @param array<string, int> $coredump_offsets
+             */
             public function __construct(
                 private ByteReaderInterface $core_dump_file,
                 private ProcessMemoryMap $process_memory_map,
                 private array $file_maps,
                 private MappedPathResolver $path_resolver,
+                private array $coredump_offsets,
+                private FFI $libc_ffi,
             ) {
+            }
+
+            private function readFile(string $path, int $offset, int $size): ?string
+            {
+                /** @var int $fd */
+                $fd = $this->libc_ffi->open($path, 0); // O_RDONLY = 0
+                if ($fd < 0) {
+                    return null;
+                }
+                $this->libc_ffi->lseek($fd, $offset, 0); // SEEK_SET = 0
+                $buf = FFI::new("unsigned char[$size]");
+                if (is_null($buf)) {
+                    $this->libc_ffi->close($fd);
+                    return null;
+                }
+                /** @var int $read_len */
+                $read_len = $this->libc_ffi->read($fd, $buf, $size);
+                $this->libc_ffi->close($fd);
+                if ($read_len < $size) {
+                    return null;
+                }
+                return FFI::string($buf, $size);
             }
             #[\Override]
             public function read(int $pid, int $remote_address, int $size): CData
@@ -155,67 +200,62 @@ final class CoreDumpReaderFactory
                 if ($memory_areas === []) {
                     foreach ($this->file_maps as $file_map) {
                         if ($file_map->isInRange(UInt64::fromInt($remote_address))) {
-                            $fp = fopen($this->path_resolver->resolve($pid, $file_map->name), 'rb');
-                            if ($fp === false) {
-                                throw new \RuntimeException("failed to open file: $file_map->name");
-                            }
+                            $resolved_name = $this->path_resolver->resolve($pid, $file_map->name);
                             $offset = $remote_address - $file_map->start->toInt();
-                            fseek(
-                                $fp,
-                                $file_map->file_offset->toInt() + $offset
+                            $data = $this->readFile(
+                                $resolved_name,
+                                $file_map->file_offset->toInt() + $offset,
+                                $size
                             );
-                            $data = fread($fp, $size);
-                            if ($data === false) {
-                                throw new \RuntimeException("failed to read file: $file_map->name");
+                            if ($data === null) {
+                                continue;
                             }
-                            fclose($fp);
-                            $cdata_buffer = \FFI::new("char[$size]");
+                            $cdata_buffer = FFI::new("unsigned char[$size]");
                             if (is_null($cdata_buffer)) {
                                 throw new \RuntimeException("failed to allocate memory");
                             }
-                            \FFI::memcpy($cdata_buffer, $data, $size);
+                            FFI::memcpy($cdata_buffer, $data, $size);
                             /** @var \FFI\CArray<int> */
                             return $cdata_buffer;
                         }
                     }
-                    throw new \RuntimeException("no memory area found for address: " . dechex($remote_address));
+                    throw new MemoryReaderException("no memory area found for address: " . dechex($remote_address));
                 }
                 $memory_area = $memory_areas[0];
-                if ($memory_area->name === '') {
+                $coredump_offset = $this->coredump_offsets[$memory_area->begin] ?? null;
+                if ($coredump_offset !== null) {
+                    // Data is available in the coredump: always prefer it over the
+                    // original file, because the coredump captures runtime state
+                    // (e.g., ld-linux writes to DT_DEBUG in read-only CoW pages).
                     $offset = $remote_address - hexdec($memory_area->begin);
                     $data = $this->core_dump_file->createSliceAsString(
-                        $offset + hexdec($memory_area->file_offset),
+                        $offset + $coredump_offset,
                         $size
                     );
-                } else {
-                    if ($memory_area->attribute->write) {
-                        $offset = $remote_address - hexdec($memory_area->begin);
-                        $data = $this->core_dump_file->createSliceAsString(
-                            $offset + hexdec($memory_area->file_offset),
-                            $size
+                } elseif ($memory_area->name !== '') {
+                    // No coredump data: fall back to original file via path resolver
+                    $resolved_path = $this->path_resolver->resolve($pid, $memory_area->name);
+                    $offset = $remote_address - hexdec($memory_area->begin);
+                    $data = $this->readFile(
+                        $resolved_path,
+                        (int)hexdec($memory_area->file_offset) + $offset,
+                        $size
+                    );
+                    if ($data === null) {
+                        throw new \RuntimeException(
+                            "failed to read file: $memory_area->name (resolved: $resolved_path)"
                         );
-                    } else {
-                        $fp = fopen($memory_area->name, 'rb');
-                        if ($fp === false) {
-                            throw new \RuntimeException("failed to open file: $memory_area->name");
-                        }
-                        $offset = $remote_address - hexdec($memory_area->begin);
-                        fseek(
-                            $fp,
-                            hexdec($memory_area->file_offset) + $offset
-                        );
-                        $data = fread($fp, $size);
-                        if ($data === false) {
-                            throw new \RuntimeException("failed to read file: $memory_area->name");
-                        }
-                        fclose($fp);
                     }
+                } else {
+                    throw new \RuntimeException(
+                        "no coredump data and no file for memory area: " . $memory_area->begin
+                    );
                 }
-                $cdata_buffer = \FFI::new("char[$size]");
+                $cdata_buffer = FFI::new("unsigned char[$size]");
                 if (is_null($cdata_buffer)) {
                     throw new \RuntimeException("failed to allocate memory");
                 }
-                \FFI::memcpy($cdata_buffer, $data, $size);
+                FFI::memcpy($cdata_buffer, $data, $size);
                 /** @var \FFI\CArray<int> */
                 return $cdata_buffer;
             }
@@ -240,7 +280,13 @@ final class CoreDumpReaderFactory
                         }
                     },
                 ProcessPathResolver::class => autowire(MappedPathResolver::class)
-                    ->constructorParameter('path_map', $path_mapping)
+                    ->constructorParameter('path_map', $path_mapping),
+                ProcessModuleSymbolReaderCreator::class =>
+                    autowire(ProcessModuleSymbolReaderCreator::class)
+                        ->constructorParameter(
+                            'thread_pointer_retriever',
+                            new CoreDumpThreadPointerRetriever($pr_statuses)
+                        ),
             ])
             ->build()
         ;

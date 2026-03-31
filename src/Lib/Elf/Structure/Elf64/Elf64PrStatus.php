@@ -18,6 +18,7 @@ final class Elf64PrStatus
     public function __construct(
         public int $pid, // Elf64_Word
         public int $ppid, // Elf64_Word
+        public ?int $fs_base = null, // x86_64: pr_reg[21] (thread pointer)
     ) {
     }
 }

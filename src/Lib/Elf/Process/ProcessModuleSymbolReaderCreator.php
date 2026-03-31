@@ -19,6 +19,7 @@ use Reli\Lib\Elf\SymbolResolver\Elf64CachedSymbolResolver;
 use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use Reli\Lib\Elf\Tls\Aarch64LinuxThreadPointerRetriever;
 use Reli\Lib\Elf\Tls\LibThreadDbTlsFinder;
+use Reli\Lib\Elf\Tls\ThreadPointerRetrieverInterface;
 use Reli\Lib\Elf\Tls\TlsFinderException;
 use Reli\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
 use Reli\Lib\System\Architecture;
@@ -37,6 +38,7 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
         private LinkMapLoader $link_map_loader,
         private ProcessPathResolver $process_path_resolver,
         private BinaryAnalysisCache $binary_analysis_cache,
+        private ?ThreadPointerRetrieverInterface $thread_pointer_retriever = null,
     ) {
     }
 
@@ -83,10 +85,11 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                         $libpthread_module_map
                     );
                 }
-                $thread_pointer_retriever = match (Architecture::detect()) {
-                    Architecture::X86_64 => X64LinuxThreadPointerRetriever::createDefault(),
-                    Architecture::AARCH64 => Aarch64LinuxThreadPointerRetriever::createDefault(),
-                };
+                $thread_pointer_retriever = $this->thread_pointer_retriever
+                    ?? match (Architecture::detect()) {
+                        Architecture::X86_64 => X64LinuxThreadPointerRetriever::createDefault(),
+                        Architecture::AARCH64 => Aarch64LinuxThreadPointerRetriever::createDefault(),
+                    };
                 $tls_finder = new LibThreadDbTlsFinder(
                     $libpthread_symbol_reader,
                     $thread_pointer_retriever,

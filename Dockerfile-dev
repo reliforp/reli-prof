@@ -3,6 +3,7 @@ FROM php:8.4-cli-bookworm
 RUN apt-get update && apt-get install -y \
       libffi-dev \
       libzip-dev \
+      gdb \
     && docker-php-ext-install ffi \
     && docker-php-ext-install pcntl \
     && docker-php-ext-install zip \

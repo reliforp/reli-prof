@@ -397,22 +397,25 @@ final class Elf64Parser
         $offset += 4;
         $pr_sid = $this->integer_reader->read32($desc, $offset);
         $offset += 4;
-        $pr_utime = $this->integer_reader->read64($desc, $offset);
-        $offset += 8;
-        $pr_stime = $this->integer_reader->read64($desc, $offset);
-        $offset += 8;
-        $pr_cutime = $this->integer_reader->read64($desc, $offset);
-        $offset += 8;
-        $pr_cstime = $this->integer_reader->read64($desc, $offset);
-        $offset += 8;
-        $pr_signal = $this->integer_reader->read32($desc, $offset);
-        $offset += 4;
-        $pr_exit_signal = $this->integer_reader->read32($desc, $offset);
-        $offset += 4;
+        // struct __kernel_old_timeval: { long tv_sec; long tv_usec; } = 16 bytes on x86_64
+        $offset += 16; // pr_utime
+        $offset += 16; // pr_stime
+        $offset += 16; // pr_cutime
+        $offset += 16; // pr_cstime
+
+        // pr_reg (elf_gregset_t = user_regs_struct) starts here
+        // On x86_64: fs_base is at register index 21 (offset 21 * 8 = 168)
+        $pr_reg_offset = $offset;
+        $fs_base = null;
+        $fs_base_offset = $pr_reg_offset + 21 * 8; // 168 bytes into pr_reg
+        if ($fs_base_offset + 8 <= strlen($note->desc)) {
+            $fs_base = $this->integer_reader->read64($desc, $fs_base_offset)->toInt();
+        }
 
         return new Elf64PrStatus(
             $pr_pid,
-            $pr_ppid
+            $pr_ppid,
+            $fs_base
         );
     }
 
