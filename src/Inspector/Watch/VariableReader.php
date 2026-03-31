@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch;
 
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
-use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\PhpInternals\Types\C\RawInt64;
@@ -51,18 +50,18 @@ final class VariableReader
     }
 
     /**
-     * @param list<VariableValueTrigger> $triggers
+     * @param list<VariableSpec> $specs
      * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
      * @return array<string, VariableValue>
      */
     public function readVariables(
-        array $triggers,
+        array $specs,
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
         int $eg_address,
         int $cg_address = 0,
     ): array {
-        if (count($triggers) === 0) {
+        if (count($specs) === 0) {
             return [];
         }
 
@@ -84,10 +83,10 @@ final class VariableReader
 
         $results = [];
 
-        foreach ($triggers as $trigger) {
-            $key = $trigger->lookup_key;
-            $scope = $trigger->scope;
-            $name = $trigger->var_name;
+        foreach ($specs as $spec) {
+            $key = $spec->lookup_key;
+            $scope = $spec->scope;
+            $name = $spec->var_name;
 
             try {
                 $value = match ($scope) {

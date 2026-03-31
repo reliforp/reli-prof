@@ -44,6 +44,7 @@ use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\TriggerFactory;
 use Reli\Inspector\Watch\VariableReader;
+use Reli\Inspector\Watch\VariableSpec;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Inspector\Watch\TriggerEvent;
@@ -175,14 +176,18 @@ final class WatchCommand extends Command
 
         // Check what each trigger needs
         $needs_call_trace = false;
-        /** @var list<VariableValueTrigger> $var_triggers */
-        $var_triggers = [];
+        /** @var list<VariableSpec> $var_specs */
+        $var_specs = [];
         foreach ($triggers as $trigger) {
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
             }
             if ($trigger instanceof VariableValueTrigger) {
-                $var_triggers[] = $trigger;
+                $var_specs[] = new VariableSpec(
+                    scope: $trigger->scope,
+                    var_name: $trigger->var_name,
+                    lookup_key: $trigger->lookup_key,
+                );
             }
         }
 
@@ -259,7 +264,7 @@ final class WatchCommand extends Command
                 $depth,
                 $stop_process,
                 $needs_call_trace,
-                $var_triggers,
+                $var_specs,
                 $triggers,
                 $actions,
                 $cooldown,
@@ -320,10 +325,10 @@ final class WatchCommand extends Command
                     }
 
                     $variable_values = [];
-                    if (count($var_triggers) > 0) {
+                    if (count($var_specs) > 0) {
                         $variable_values = $this->variable_reader
                             ->readVariables(
-                                $var_triggers,
+                                $var_specs,
                                 $process_specifier,
                                 $target_php_settings,
                                 $eg_address,

@@ -15,6 +15,7 @@ require __DIR__ . '/../../vendor/autoload.php';
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\VariableReader;
+use Reli\Inspector\Watch\VariableSpec;
 use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
@@ -219,12 +220,12 @@ if ($trace !== null) {
 
 // --- Tier 3: Variable reading ---
 echo "\n--- Tier 3: Variable read (global) ---\n";
-$var_triggers = [new VariableValueTrigger('global::$counter:gt:0')];
+$var_specs = [VariableSpec::parse('global::$counter')];
 $times = [];
 for ($i = 0; $i < $iterations; $i++) {
     $t0 = hrtime(true);
     $variable_reader->readVariables(
-        $var_triggers,
+        $var_specs,
         $ps,
         $tps,
         $eg_address,
@@ -236,12 +237,12 @@ for ($i = 0; $i < $iterations; $i++) {
 reportTimes('VariableReader::readVariables(global)', $times);
 
 echo "\n--- Tier 3: Variable read (global array) ---\n";
-$var_triggers_arr = [new VariableValueTrigger('global::$cache:count_gt:0')];
+$var_specs_arr = [VariableSpec::parse('global::$cache')];
 $times = [];
 for ($i = 0; $i < $iterations; $i++) {
     $t0 = hrtime(true);
     $variable_reader->readVariables(
-        $var_triggers_arr,
+        $var_specs_arr,
         $ps,
         $tps,
         $eg_address,
@@ -301,7 +302,7 @@ for ($i = 0; $i < $iterations; $i++) {
         $trace_cache,
     );
     $vars = $variable_reader->readVariables(
-        $var_triggers,
+        $var_specs,
         $ps,
         $tps,
         $eg_address,
