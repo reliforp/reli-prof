@@ -61,44 +61,65 @@ CommonMark の DotAccessData (246K) が全 Node サブクラスの companion だ
 count ベースの companion 検出では捕まらない問題を解決。
 graph substrate 必要、規模が大きいので別 PR。
 
-### 3a. パス表示の改善 [重要度: 高]
+### 3a. Overview にコールスタック表示 [重要度: 高]
 
-**3a-1. フレーム番号 → 関数名**
-
-現在:
-```
-call_frames -> 1 -> local_variables -> messages -> ...
-```
-
-フレーム番号 `1` では何の関数か分からない。CallFrameContext には
-`function_name` と `lineno` が attributes にあるので、表示時に
-解決すべき:
+スナップショット取得時点のコールスタックを Overview に出す。
+「何をしていた瞬間のスナップショットか」が一目で分かる。
 
 ```
-call_frames -> <main>:54 -> $messages -> ...
+=== Overview ===
+  Heap: 174.73 MB (100.0% analyzed)
+
+  Call Stack at capture:
+    #0 sleep()                     — (internal)
+    #1 <main>                      — simulate_memory_leak.php:28
 ```
 
-bottleneck_path と choke_point の両方で適用。
+実装: SQL 1 本。graph load 不要。Phase 1 に入れられる。
 
-**3a-2. large_string / large_array にオーナーパスを付ける**
-
-現在:
-```
-[MEDIUM] large_string: 205.88 KB string — raw: --boundary_...
-[LOW] large_array: 0.09 MB array, 2,010 elements — interned_strings
-```
-
-link_name 1 段だけでは「誰が持っているか」分からない。
-3-hop ancestor を付けるとアクショナブルになる:
-
-```
-[MEDIUM] large_string: 205.88 KB — messages[0] -> structure -> raw: --boundary_...
-[LOW] large_array: 0.09 MB, 2,010 elements — class_table -> interned_strings
+```sql
+SELECT e.link_name as frame_no, fn.value as function_name, ln.value as lineno
+FROM context_edges e
+JOIN context_nodes cn ON cn.node_id = e.child_node_id AND cn.type = 'CallFrameContext'
+LEFT JOIN context_node_attributes fn ON fn.node_id = e.child_node_id AND fn.key = 'function_name'
+LEFT JOIN context_node_attributes ln ON ln.node_id = e.child_node_id AND ln.key = 'lineno'
+WHERE e.is_tree = 1 AND e.link_name GLOB '[0-9]*'
+    AND e.parent_node_id IN (
+        SELECT cn2.node_id FROM context_nodes cn2 WHERE cn2.type = 'CallFramesContext'
+        AND cn2.node_id IN (SELECT child_node_id FROM context_edges WHERE parent_node_id IS NULL AND link_name = 'call_frames')
+    )
+ORDER BY cast(e.link_name as integer);
 ```
 
-実装: `--full-analysis` 時は graph substrate から root まで遡るフルパスを出す。
-パスの途中で class_name や function_name を持つノードがあれば解決して表示。
-graph なしの場合は 3-hop JOIN でフォールバック。
+### 3b. 全パス表示の名前解決 [重要度: 高]
+
+パスを出す全ての finding で、フレーム番号→関数名、ノード→クラス名を解決する。
+
+**対象 finding**: bottleneck_path, choke_point, large_string, large_array
+
+**現在**:
+```
+bottleneck_path: call_frames -> 1 -> local_variables -> messages -> ...
+large_string: 205.88 KB string — raw: --boundary_...
+```
+
+**理想**:
+```
+bottleneck_path: <main>:67 -> $messages[0] -> Structure -> raw -> ... (153 MB)
+large_string: 205.88 KB — <main>:67 -> $messages[0] -> Structure::$raw: --boundary_...
+```
+
+**名前解決ルール**:
+- `CallFrameContext` → `function_name:lineno` (attributes から)
+- `ObjectContext` → `class_name` (context_node_locations から)
+- `CallFrameVariableTableContext` の子 → `$変数名` (link_name にプレフィックス)
+- `ArrayElementContext` → `[index]`
+- `ObjectPropertiesContext` の子 → そのまま (プロパティ名)
+
+**実装**:
+- `--full-analysis` 時: graph substrate で root まで遡るフルパス
+- graph なし: 3-hop JOIN でフォールバック
+- 両方で名前解決を適用
 
 `--full-analysis` のコストは Monolog (4.5M edges) でも 44 秒なので、
 フルパスを出すために graph load する価値は十分にある。
