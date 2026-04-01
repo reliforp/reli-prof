@@ -696,3 +696,31 @@ reli inspector:memory:report foo.sqlite3 --memory-limit=2G
 ```
 
 dump → analyze の流れや watch の自動 dump で「いつのスナップショットか」が分かる。
+
+### cycle_cluster に循環パス（back-reference）表示 [重要度: 高]
+
+現在はクラス構成だけ。どの参照が循環を作っているか分からない。
+
+SCC 内の non-tree edge を調べれば back-reference が分かる（検証済み）：
+
+```
+[MEDIUM] cycle_cluster: 200 identical cycles
+  Per cycle: 3× Attachment + 1× AttachmentCollection + 1× Message
+  Back-reference: Attachment::$oMessage → Message (creates cycle)
+```
+
+「Attachment::$oMessage を切れば 200 サイクル全部解消」とアクショナブルに。
+
+SQL:
+```sql
+SELECT e.link_name, cnl_obj.class_name, cnl_target.class_name
+FROM context_edges e
+JOIN context_edges e_to_obj ON e_to_obj.child_node_id = e.parent_node_id
+    AND e_to_obj.link_name = 'object_properties'
+JOIN context_node_locations cnl_obj ON cnl_obj.node_id = e_to_obj.parent_node_id
+LEFT JOIN context_node_locations cnl_target ON cnl_target.node_id = e.child_node_id
+WHERE e.is_tree = 0 AND e.link_name = :back_ref_link_name
+GROUP BY e.link_name, cnl_obj.class_name, cnl_target.class_name
+```
+
+graph substrate でも: SCC 内ノード間の non-tree edge を見つけるだけ。
