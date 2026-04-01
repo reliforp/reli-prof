@@ -103,9 +103,10 @@ final class CompanionDetectionPass implements PassInterface
 
             $names = array_map(
                 fn($c) => sprintf(
-                    '%s (%s)',
+                    '%s (%s, %.2f MB)',
                     $c['name'],
-                    number_format($c['count'])
+                    number_format($c['count']),
+                    $c['memory'] / 1024 / 1024,
                 ),
                 $group_classes
             );
@@ -144,9 +145,10 @@ final class CompanionDetectionPass implements PassInterface
                     severity: FindingSeverity::Medium,
                     confidence: FindingConfidence::Medium,
                     summary: sprintf(
-                        '%d classes with ~%s instances each: %s',
+                        '%d classes x ~%s instances (%.2f MB): %s',
                         count($members),
                         number_format($group_classes[0]['count']),
+                        $total_memory / 1024 / 1024,
                         implode(', ', $names),
                     ),
                     facts: [

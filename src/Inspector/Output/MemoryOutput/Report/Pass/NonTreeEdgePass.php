@@ -115,7 +115,7 @@ final class NonTreeEdgePass implements PassInterface
             } elseif ($target_count > 1 && $avg_refs > 2.0) {
                 $findings[] = new Finding(
                     kind: 'shared_fanin',
-                    severity: FindingSeverity::Medium,
+                    severity: FindingSeverity::Info,
                     confidence: FindingConfidence::Medium,
                     summary: sprintf(
                         '%s -> %s (%s refs -> %s targets, %.1f each)',
@@ -145,6 +145,7 @@ final class NonTreeEdgePass implements PassInterface
                 e.link_name,
                 cnl.size,
                 cnl.class_name as target_class,
+                cnl.location_type,
                 count(*) as cnt,
                 count(*) * cnl.size as total_waste,
                 COALESCE(
@@ -223,6 +224,12 @@ final class NonTreeEdgePass implements PassInterface
             $cnt = (int)$row['cnt'];
             $size = (int)$row['size'];
             $total = (int)$row['total_waste'];
+
+            // Skip array headers (always 56B) — "SAME SIZE" is meaningless
+            if (($row['location_type'] ?? '') === 'ZendArrayMemoryLocation') {
+                continue;
+            }
+
             $dedup_src = $row['source_class'] ?? null;
             $dedup_tgt = $row['target_class'] ?? null;
             $owner_prop = $row['owner_prop'] ?? null;
