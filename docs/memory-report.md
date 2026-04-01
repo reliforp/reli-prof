@@ -62,9 +62,13 @@ Example output:
     (14 scalar properties per-instance, included in object size)
     SHARED: App\Models\User::$relations (array, CoW), App\Models\User::$fillable (array, CoW)
 
-  [MEDIUM] cycle_cluster: 201 identical cycles (3 classes, 170.31 KB total)
+  [MEDIUM] cycle_cluster: 200 identical cycles (3 classes, 170.31 KB shallow, 42.50 MB retained)
     Per cycle: 1x Webklex\PHPIMAP\Message + 3x Webklex\PHPIMAP\Attachment + 1x Webklex\PHPIMAP\AttachmentCollection
-    Single entry point — breaking the owner reference likely frees this cycle
+    Back-reference: Webklex\PHPIMAP\Attachment::$oMessage -> Webklex\PHPIMAP\Message
+    Example: <main>:28::$messages[0]->attachments->items[0]
+    (199 more with same pattern)
+    Single entry point — breaking the back-reference likely frees this cycle
+    Next: Break Webklex\PHPIMAP\Attachment::$oMessage -> Webklex\PHPIMAP\Message to eliminate all 200 cycles
 
   [MEDIUM] companion_cluster: FormBuilder (3,611, 1.74 MB) always paired with Closure (3,619, 1.19 MB) — 2.93 MB
 
@@ -186,7 +190,7 @@ All class names use fully qualified names (FQCN). Paths use PHP syntax: `<main>:
 | `ownership_pattern` | 1:1 parent-child class ownership | "DotAccessData (246K) owned 1:1 by 12 classes (100%)" |
 | `dynamic_properties_overhead` | Classes with dynamic property tables | "93,315 DateTimeImmutable = 4.98 MB" |
 | `expensive_property` | Class-qualified property > 1 MB | "Message::$raw: 200 x 210.00 KB = 41.02 MB" |
-| `cycle_cluster` | Group of identical circular references | "201 identical cycles (3 classes, 170.31 KB)" |
+| `cycle_cluster` | Circular references with back-ref and retained size | "200 cycles (3 classes, 170 KB shallow, 42.50 MB retained)" |
 | `choke_point` | Subtree 10-30% of heap | "Collection (72 B) holds 15.00 MB" |
 | `structural_duplicate` | Objects with identical shape | "246K Data x 56 B = 13.40 MB" |
 | `empty_object` | Objects with no stored properties | "OrderedHashMap: 1,600 x 88 B" |
