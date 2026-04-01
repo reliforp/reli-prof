@@ -61,7 +61,30 @@ CommonMark の DotAccessData (246K) が全 Node サブクラスの companion だ
 count ベースの companion 検出では捕まらない問題を解決。
 graph substrate 必要、規模が大きいので別 PR。
 
-### 3a. Eloquent の bottleneck_path が classMap を指す [重要度: 低]
+### 3a. bottleneck_path のフレーム番号を関数名に [重要度: 高]
+
+現在:
+```
+call_frames -> 1 -> local_variables -> messages -> ...
+```
+
+フレーム番号 `1` では何の関数か分からない。CallFrameContext には
+`function_name` と `lineno` が attributes にあるので、表示時に
+解決すべき:
+
+```
+call_frames -> <main>:54 -> $messages -> ...
+```
+
+あるいは:
+```
+call_frames -> PdfParser::parseFile():42 -> $messages -> ...
+```
+
+bottleneck_path と choke_point の両方で、CallFrameContext の表示を
+`function_name:lineno` に変換する。
+
+### 3b. Eloquent の bottleneck_path が classMap を指す [重要度: 低]
 
 Eloquent のレポートで bottleneck_path が:
 ```
