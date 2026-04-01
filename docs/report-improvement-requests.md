@@ -340,3 +340,13 @@ PHP 構文変換も同じ。`--full-analysis` 時のみで OK。
 2. internal nodes の数は表示しない (ユーザーに意味がない)
 3. 循環を形成している参照パス (back-reference の link_name) を表示
 4. クラスが多い cycle は top 3-5 に省略して class 数だけ出す
+5. 巨大 SCC (数十クラス、各 1 インスタンス) は DI コンテナの構造コストとして
+   提示する。バグではなくコスト情報:
+   ```
+   [INFO] di_container_cycle: 54 classes forming 1 cycle (74.23 KB)
+     This is the structural cost of the DI container.
+     Reducing container instances (e.g., in workers/tests) reduces this proportionally.
+     Top classes: 113× Closure, 4× Route, 1× Application, ...
+   ```
+   アクショナブルでないことが多いが、Worker で毎リクエスト Application を
+   再生成するケースや、テスト setUp ごとの再生成では意味のある情報になる。
