@@ -233,3 +233,19 @@ call_frames -> <main>:28 -> local_variables -> messages -> array_elements -> 0 -
 
 データは全て context_nodes.type から取得可能。
 bottleneck_path, large_string, large_array, choke_point の全パス表示に適用。
+
+## 追加確認済み（report branch 4cc7f8c で対応完了）
+
+- ~~2a-2. PropertyScaling: retained ベース~~ ✅ ($attributes 56B → 599B retained)
+- ~~2a-3. PropertyScaling: scalar 除外~~ ✅ ("12 scalar properties, included in object size")
+- ~~3d. PHP 構文パス (bottleneck_path)~~ ✅ (`<main>:28::$messages[0]->structure->parts`)
+
+## 残り
+
+### 3d-2. large_string/large_array の 3-hop パスにも PHP 構文変換 [重要度: 中]
+
+bottleneck_path は graph pass 経由で `$messages[0]->structure->parts` になるが、
+large_string は SQL 3-hop なので `structure -> object_properties -> raw` のまま。
+
+`--full-analysis` 時は large_string/large_array もフルパス + PHP 構文変換すべき。
+あるいは 3-hop 結果に対しても `object_properties` → `->` の簡易変換を適用。
