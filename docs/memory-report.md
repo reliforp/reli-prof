@@ -134,6 +134,7 @@ Options:
   -o, --output=PATH           Output file path (default: stdout)
       --run-id=ID             Run ID to analyze [default: 1]
       --pretty-print          Pretty print JSON output (default: on)
+      --full-analysis         Run all passes regardless of snapshot size (may use significant memory)
 ```
 
 ### `inspector:memory` with report format
@@ -165,8 +166,9 @@ Each finding has a `kind`, `severity` (high/medium/low/info/warning), and `confi
 |---|---|---|
 | `dominant_type` | One memory type > 50% of heap | "ZendObject accounts for 66% of heap" |
 | `companion_pair` | Two classes with matching instance counts | "Cell (200,020) always paired with IgnoredErrors (200,020)" |
+| `companion_cluster` | N classes with matching instance counts | "6 classes with ~1,800 instances each: A, B, C, D, E, F" |
 | `dynamic_properties_overhead` | Classes with dynamic property tables (> 1 MB) | "93,315 DateTimeImmutable with dynamic props = 5.1 MB" |
-| `expensive_property` | High-frequency property consuming memory (> 1 MB) | "message: 100K occurrences x 121B = 11.5 MB" |
+| `expensive_property` | Class-qualified property consuming memory (> 100 KB) | "Message::$raw: 200 occurrences x 210KB = 41 MB" |
 | `cycle_cluster` | Group of identical circular reference patterns | "201 identical Message <-> Attachment cycles" |
 | `shared_fanin` | Multiple references to shared objects | "oMessage: 603 refs -> 201 targets (3.0 each)" |
 | `structural_duplicate` | Objects with identical shape (class + size + properties) | "246K Data objects with NO properties = 13.4 MB" |
@@ -208,6 +210,14 @@ The report generator adapts its analysis depth based on snapshot size:
 | < 500K edges | Phase 3 (Passes 12-15) | Full graph: drill-down, choke points, blame allocation, retained size confidence |
 
 For very large snapshots (> 500K nodes), only the lightweight summary-based passes run, avoiding graph loading that would consume too much memory.
+
+To force all passes regardless of snapshot size, use `--full-analysis`:
+
+```bash
+./reli inspector:memory:report snapshot.db --full-analysis
+```
+
+This may use significant memory (e.g. ~300 MB for 1M edges, ~2 GB for 6M edges).
 
 ## Tips
 

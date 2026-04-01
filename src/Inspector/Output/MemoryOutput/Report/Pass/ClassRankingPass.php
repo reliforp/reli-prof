@@ -50,15 +50,19 @@ final class ClassRankingPass implements PassInterface
             $pct = $entry['memory_usage'] / $total_object_memory * 100.0;
             if ($pct > 50.0) {
                 $short = preg_replace('/^.*\\\\/', '', $class_name) ?? $class_name;
+                $avg_size = $entry['count'] > 0
+                    ? (int)($entry['memory_usage'] / $entry['count'])
+                    : 0;
 
                 $findings[] = new Finding(
                     kind: 'dominant_class',
                     severity: FindingSeverity::High,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%s: %s instances, %.1f%% of object memory (%.2f MB)',
+                        '%s: %s instances x %dB = %.1f%% of object memory (%.2f MB)',
                         $short,
                         number_format($entry['count']),
+                        $avg_size,
                         $pct,
                         $entry['memory_usage'] / 1024 / 1024,
                     ),
@@ -67,7 +71,7 @@ final class ClassRankingPass implements PassInterface
                         'count' => $entry['count'],
                         'memory_bytes' => $entry['memory_usage'],
                         'percentage_of_object_memory' => round($pct, 1),
-                        'avg_size' => $entry['count'] > 0 ? (int)($entry['memory_usage'] / $entry['count']) : 0,
+                        'avg_size' => $avg_size,
                     ],
                     hypothesis: 'Unbounded accumulation — likely a loop without limit',
                     next_checks: [

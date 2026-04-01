@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report;
 
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\PassInterface;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\BlameAllocationPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\ChokePointPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\ClassRankingPass;
@@ -37,10 +38,14 @@ final class ReportGenerator
      *
      * @return ReportResult
      */
-    public function generateFromDb(\PDO $db, int $run_id = 1): ReportResult
-    {
+    public function generateFromDb(
+        \PDO $db,
+        int $run_id = 1,
+        bool $full_analysis = false,
+    ): ReportResult {
         $meta = $this->loadMeta($db, $run_id);
         $node_count = (int)($meta['node_count'] ?? 0);
+        $edge_count = (int)($meta['edge_count'] ?? 0);
 
         // Phase 1: Summary-based passes (always run)
         $summary = $this->loadSummary($db, $run_id);
@@ -53,30 +58,42 @@ final class ReportGenerator
         $findings = array_merge($findings, (new ClassRankingPass($class_objects))->analyze());
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
 
-        // Phase 2: SQL-based passes (< 500K nodes)
-        if ($node_count < 500000) {
-            $findings = array_merge($findings, (new DynamicPropertiesPass($db, $run_id))->analyze());
-            $findings = array_merge($findings, (new PerPropertyMemoryPass($db, $run_id))->analyze());
-            $findings = array_merge($findings, (new TopArraysPass($db, $run_id))->analyze());
-            $findings = array_merge($findings, (new TopStringsPass($db, $run_id))->analyze());
-            $findings = array_merge($findings, (new NonTreeEdgePass($db, $run_id))->analyze());
-            $findings = array_merge($findings, (new StructuralDedupPass($db, $run_id))->analyze());
+        // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
+        if ($full_analysis || $node_count < 500000) {
+            $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
         }
 
-        // Phase 3: Graph-based passes (< 500K edges)
-        $edge_count = (int)($meta['edge_count'] ?? 0);
-        if ($edge_count > 0 && $edge_count < 500000) {
+        // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
+        if ($full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000)) {
             $substrate = GraphSubstrate::loadFromDb($db, $run_id);
             $meta['scc_count'] = count($substrate->scc_profiles);
 
-            $findings = array_merge($findings, (new CycleClusterPass($substrate))->analyze());
-            $findings = array_merge($findings, (new DrillDownPass($substrate, $db, $run_id))->analyze());
-            $findings = array_merge($findings, (new ChokePointPass($substrate, $db, $run_id))->analyze());
-            $findings = array_merge($findings, (new BlameAllocationPass($substrate, $db, $run_id))->analyze());
-            $findings = array_merge($findings, (new RetainedSizeConfidencePass($substrate))->analyze());
+            $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate)));
+            $findings = array_merge($findings, $this->runPass(new PerPropertyMemoryPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new ChokePointPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
         }
 
         return new ReportResult($meta, $findings);
+    }
+
+    /**
+     * Run a pass safely, returning its findings or empty on error.
+     * @return list<Finding>
+     */
+    private function runPass(PassInterface $pass): array
+    {
+        try {
+            return $pass->analyze();
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /**

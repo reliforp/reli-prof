@@ -63,6 +63,12 @@ final class MemoryReportCommand extends Command
             'pretty print JSON output (default: on)',
             true,
         );
+        $this->addOption(
+            'full-analysis',
+            null,
+            InputOption::VALUE_NONE,
+            'run all analysis passes regardless of snapshot size (may use significant memory)',
+        );
     }
 
     #[\Override]
@@ -88,8 +94,10 @@ final class MemoryReportCommand extends Command
         $db->exec('PRAGMA journal_mode = WAL');
         $db->exec('PRAGMA mmap_size = 268435456');
 
+        $full_analysis = (bool)$input->getOption('full-analysis');
+
         $generator = new ReportGenerator();
-        $result = $generator->generateFromDb($db, $run_id);
+        $result = $generator->generateFromDb($db, $run_id, $full_analysis);
 
         $formatter = match ($format) {
             'report' => new TextReportFormatter(),

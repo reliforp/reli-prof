@@ -51,9 +51,10 @@ final class BlameAllocationPass implements PassInterface
             $root_link_names[$root] = $r !== false ? (string)$r[0] : "root_{$root}";
 
             $queue = [$root];
+            $qi = 0;
             $node_root_owner[$root] = $root;
-            while ($queue) {
-                $node = array_shift($queue);
+            while ($qi < count($queue)) {
+                $node = $queue[$qi++];
                 foreach ($this->substrate->children[$node] ?? [] as $child) {
                     if (!isset($node_root_owner[$child])) {
                         $node_root_owner[$child] = $root;
