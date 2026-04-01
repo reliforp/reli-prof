@@ -21,6 +21,9 @@ final class GraphSubstrate
     /** @var array<int, list<int>> parent_id => [child_id, ...] (tree edges only) */
     public array $children = [];
 
+    /** @var array<int, list<int>> parent_id => [child_id, ...] (all edges including non-tree) */
+    public array $all_children = [];
+
     /** @var array<int, list<int>> child_id => [parent_id, ...] (all edges) */
     public array $all_parents = [];
 
@@ -100,6 +103,9 @@ final class GraphSubstrate
                     $this->roots[] = $child;
                 }
             }
+            if ($parent !== -1) {
+                $this->all_children[$parent][] = $child;
+            }
             $this->all_parents[$child][] = $parent;
         }
         $this->edge_count = count($rows);
@@ -154,7 +160,7 @@ final class GraphSubstrate
 
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
-                $node_children = $this->children[$node] ?? [];
+                $node_children = $this->all_children[$node] ?? [];
 
                 $found_unvisited = false;
                 $count = count($node_children);
@@ -218,7 +224,7 @@ final class GraphSubstrate
                         $ext_in++;
                     }
                 }
-                foreach ($this->children[$node] ?? [] as $child) {
+                foreach ($this->all_children[$node] ?? [] as $child) {
                     if (!isset($scc_set[$child])) {
                         $ext_out++;
                     }

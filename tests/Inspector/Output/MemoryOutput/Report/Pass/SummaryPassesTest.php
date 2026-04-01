@@ -161,8 +161,26 @@ class SummaryPassesTest extends BaseTestCase
         ]);
         $findings = $pass->analyze();
 
-        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_pair');
-        $this->assertCount(0, $companions);
+        $this->assertCount(0, $findings);
+    }
+
+    public function testCompanionDetectionGroupsIntoCluster(): void
+    {
+        // 6 classes all with ~1800 count should produce 1 cluster, not 15 pairs
+        $pass = new CompanionDetectionPass([
+            'App\\A' => ['count' => 1800, 'memory_usage' => 10000],
+            'App\\B' => ['count' => 1800, 'memory_usage' => 10000],
+            'App\\C' => ['count' => 1802, 'memory_usage' => 10000],
+            'App\\D' => ['count' => 1798, 'memory_usage' => 10000],
+            'App\\E' => ['count' => 1801, 'memory_usage' => 10000],
+            'App\\F' => ['count' => 1799, 'memory_usage' => 10000],
+        ]);
+        $findings = $pass->analyze();
+
+        // Should be exactly 1 companion_cluster, not 15 companion_pairs
+        $this->assertCount(1, $findings);
+        $this->assertSame('companion_cluster', $findings[0]->kind);
+        $this->assertStringContainsString('6 classes', $findings[0]->summary);
     }
 
     // ---- RetainedSizeConfidencePass ----
