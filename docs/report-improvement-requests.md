@@ -789,3 +789,9 @@ PDO 以外にも: curl handle, file handle, socket など、
 ただし reli のスナップショットからは persistent かどうかの判定は難しい
 (PDO の属性は C レベルの内部状態)。warning テキストで persistent の
 リスクに言及するのが現実的。
+
+↑ 訂正: persistent + cycle の真の問題は **GC 時にデストラクタがロールバックを発行する** こと。
+- 循環参照で GC 待ちの PDO が、GC cycle collection でデストラクタ実行
+- persistent connection のデストラクタがロールバックを発行
+- 同じ persistent connection を使っている別のコンテキストのトランザクションが巻き添え
+- GC のタイミングは予測不能 → いつロールバックされるか分からない
