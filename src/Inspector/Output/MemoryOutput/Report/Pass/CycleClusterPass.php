@@ -50,7 +50,11 @@ final class CycleClusterPass implements PassInterface
             foreach ($group as $profile) {
                 $total += $profile['total_size'];
             }
-            $groups_sorted[] = ['sig' => $sig, 'group' => $group, 'total' => $total];
+            $groups_sorted[] = [
+                'sig' => $sig,
+                'group' => $group,
+                'total' => $total,
+            ];
         }
         usort($groups_sorted, fn($a, $b) => $b['total'] <=> $a['total']);
 
@@ -59,6 +63,13 @@ final class CycleClusterPass implements PassInterface
             $group = $g['group'];
             $example = $group[0];
             $count = count($group);
+
+            // Build "Nx Class" composition string
+            $composition = $this->formatComposition($example['class_counts']);
+
+            // Object count vs total nodes
+            $object_count = array_sum($example['class_counts']);
+            $internal_count = $example['node_count'] - $object_count;
 
             // Micro-cycles (2 nodes)
             $is_micro = $example['node_count'] === 2;
@@ -72,11 +83,11 @@ final class CycleClusterPass implements PassInterface
                         '%s micro-cycle%s: %s (%.2f KB total)',
                         number_format($count),
                         $count > 1 ? 's' : '',
-                        $g['sig'],
+                        $composition,
                         $g['total'] / 1024,
                     ),
                     facts: [
-                        'pattern' => $g['sig'],
+                        'composition' => $composition,
                         'count' => $count,
                         'nodes_per_cycle' => $example['node_count'],
                         'total_size' => $g['total'],
@@ -88,33 +99,49 @@ final class CycleClusterPass implements PassInterface
                     impact_bytes: $g['total'],
                 );
             } else {
+                $node_desc = $internal_count > 0
+                    ? sprintf(
+                        '%d object%s + %d internal nodes per cycle',
+                        $object_count,
+                        $object_count > 1 ? 's' : '',
+                        $internal_count,
+                    )
+                    : sprintf(
+                        '%d object%s per cycle',
+                        $object_count,
+                        $object_count > 1 ? 's' : '',
+                    );
+
                 $findings[] = new Finding(
                     kind: 'cycle_cluster',
-                    severity: $g['total'] > 1024 * 100 ? FindingSeverity::Medium : FindingSeverity::Low,
+                    severity: $g['total'] > 1024 * 100
+                        ? FindingSeverity::Medium
+                        : FindingSeverity::Low,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%d identical cycle%s: %s (%d nodes each, %.2f KB total)',
+                        '%d identical cycle%s (%s, %.2f KB total)',
                         $count,
                         $count > 1 ? 's' : '',
-                        $g['sig'],
-                        $example['node_count'],
+                        $node_desc,
                         $g['total'] / 1024,
                     ),
                     facts: [
-                        'pattern' => $g['sig'],
+                        'composition' => $composition,
                         'count' => $count,
-                        'nodes_per_cycle' => $example['node_count'],
+                        'object_count_per_cycle' => $object_count,
+                        'internal_nodes_per_cycle' => $internal_count,
                         'size_per_cycle' => $example['total_size'],
                         'total_size' => $g['total'],
                         'ext_incoming' => $example['ext_in'],
                         'ext_outgoing' => $example['ext_out'],
                         'single_owner_likelihood' => $example['single_owner_likelihood'],
                     ],
-                    hypothesis: $example['single_owner_likelihood'] === 'high'
-                        ? 'Single entry point — breaking the owner reference likely frees this cycle'
-                        : ($count > 10
-                            ? "{$count} identical cycles — a structural pattern, not accidental"
-                            : 'Circular reference chain'),
+                    hypothesis: "Per cycle: {$composition}\n"
+                        . ($example['single_owner_likelihood'] === 'high'
+                            ? 'Single entry point — breaking the owner reference likely frees this cycle'
+                            : ($count > 10
+                                ? "{$count} identical cycles — a structural pattern, not accidental"
+                                : 'Circular reference chain')),
                     next_checks: [
                         'Identify the back-reference causing the cycle',
                         'Consider using WeakReference or explicit cleanup',
@@ -126,5 +153,18 @@ final class CycleClusterPass implements PassInterface
         }
 
         return $findings;
+    }
+
+    /**
+     * Format class_counts as "1x Message + 3x Attachment + 1x AttachmentCollection"
+     * @param array<string, int> $class_counts
+     */
+    private function formatComposition(array $class_counts): string
+    {
+        $parts = [];
+        foreach ($class_counts as $cls => $cnt) {
+            $parts[] = "{$cnt}x {$cls}";
+        }
+        return implode(' + ', $parts);
     }
 }
