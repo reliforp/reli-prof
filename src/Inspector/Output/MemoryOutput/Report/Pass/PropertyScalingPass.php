@@ -71,6 +71,7 @@ final class PropertyScalingPass implements PassInterface
                 e_prop.child_node_id,
                 count(*) as total_refs,
                 count(DISTINCT e_prop.child_node_id) as distinct_targets,
+                min(e_prop.child_node_id) as sample_child_id,
                 sum(CASE WHEN e_prop.is_tree = 1
                     THEN COALESCE(cnl_val.size, 0) ELSE 0
                 END) as tree_size
@@ -167,15 +168,20 @@ final class PropertyScalingPass implements PassInterface
                     'scaling' => $scaling,
                 ];
             } else {
+                $sample_id = (int)($row['sample_child_id'] ?? 0);
                 $shared[] = [
                     'property' => $prop_name,
                     'distinct_targets' => $distinct,
                     'total_refs' => $total_refs,
                     'size' => $size,
                     'scaling' => $scaling,
+                    'sample_child_id' => $sample_id,
                 ];
             }
         }
+
+        // Classify sharing reason for shared properties
+        $this->classifySharedReasons($shared);
 
         $short = $dominant_class;
         $size_label = $use_retained ? 'retained' : 'shallow';
@@ -210,10 +216,14 @@ final class PropertyScalingPass implements PassInterface
         }
         if ($shared !== []) {
             $shared_names = array_map(
-                fn($s) => $short . '::$' . $s['property'],
+                function ($s) use ($short): string {
+                    $reason = $s['share_reason'] ?? '';
+                    $suffix = $reason !== '' ? " ({$reason})" : '';
+                    return $short . '::$' . $s['property'] . $suffix;
+                },
                 array_slice($shared, 0, 10)
             );
-            $lines[] = 'SHARED (constant cost): '
+            $lines[] = 'SHARED: '
                 . implode(', ', $shared_names);
         }
 
@@ -248,7 +258,7 @@ final class PropertyScalingPass implements PassInterface
                     'size_mode' => $size_label,
                 ],
                 hypothesis: 'Per-instance properties scale linearly;'
-                    . ' shared properties use CoW.'
+                    . ' shared properties have constant cost.'
                     . "\n" . implode("\n", $lines),
                 next_checks: [
                     'Per-instance props with small values'
@@ -259,5 +269,66 @@ final class PropertyScalingPass implements PassInterface
                 impact_bytes: $per_instance_total,
             ),
         ];
+    }
+
+    /**
+     * Classify sharing reason for each shared property.
+     * @param list<array<string, mixed>> $shared
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    private function classifySharedReasons(array &$shared): void
+    {
+        if ($shared === []) {
+            return;
+        }
+
+        $child_ids = [];
+        foreach ($shared as $s) {
+            $child_ids[] = (int)$s['sample_child_id'];
+        }
+        $placeholders = implode(',', $child_ids);
+
+        // Get node type and location_type for shared targets
+        $info = [];
+        $rows = $this->db->query(
+            "SELECT cn.node_id, cn.type, cnl.location_type"
+            . " FROM context_nodes cn"
+            . " LEFT JOIN context_node_locations cnl"
+            . " ON cnl.node_id = cn.node_id"
+            . " AND cnl.run_id = cn.run_id"
+            . " WHERE cn.run_id = {$this->run_id}"
+            . " AND cn.node_id IN ({$placeholders})"
+        )->fetchAll(\PDO::FETCH_ASSOC);
+        foreach ($rows as $r) {
+            $info[(int)$r['node_id']] = [
+                'type' => (string)($r['type'] ?? ''),
+                'loc_type' => (string)($r['location_type'] ?? ''),
+            ];
+        }
+
+        foreach ($shared as &$s) {
+            $cid = (int)$s['sample_child_id'];
+            $node_info = $info[$cid] ?? null;
+
+            if ($node_info === null) {
+                $s['share_reason'] = 'shared';
+                continue;
+            }
+
+            $type = $node_info['type'];
+            $loc = $node_info['loc_type'];
+
+            if ($type === 'PhpReferenceContext') {
+                $s['share_reason'] = 'PHP reference';
+            } elseif (str_contains($loc, 'Object')) {
+                $s['share_reason'] = 'same instance';
+            } elseif (str_contains($loc, 'Array')) {
+                $s['share_reason'] = 'array, CoW';
+            } elseif (str_contains($loc, 'String')) {
+                $s['share_reason'] = 'interned string';
+            } else {
+                $s['share_reason'] = 'shared';
+            }
+        }
     }
 }
