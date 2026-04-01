@@ -16,15 +16,19 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 
+/**
+ * Class-qualified per-property memory analysis using GraphSubstrate.
+ *
+ * Walks the tree edges in-memory: for each node with a class_name,
+ * follows children -> object_properties -> property links -> value sizes.
+ * O(edges), no SQL JOINs needed.
+ */
 final class PerPropertyMemoryPass implements PassInterface
 {
-    private const STRUCTURAL_NAMES = [
-        'object_properties', 'array_elements', 'dynamic_properties',
-        'value', 'key', '#count', 'class_entry',
-    ];
-
     public function __construct(
+        private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
     ) {
@@ -32,68 +36,121 @@ final class PerPropertyMemoryPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
-     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     * @psalm-suppress MixedOperand, InvalidOperand
      */
     #[\Override]
     public function analyze(): array
     {
-        $structural_list = "'" . implode("','", self::STRUCTURAL_NAMES) . "'";
+        // Load link_names for edges we need
+        $link_names = $this->loadLinkNames();
 
-        $rows = $this->db->query("
-            SELECT
-                e.link_name,
-                count(*) as cnt,
-                sum(cnl.size) as total_size,
-                round(avg(cnl.size), 0) as avg_size
-            FROM context_edges e
-            JOIN context_node_locations cnl ON cnl.node_id = e.child_node_id
-                AND cnl.run_id = {$this->run_id}
-            WHERE e.run_id = {$this->run_id}
-                AND e.is_tree = 1
-                AND e.link_name NOT IN ({$structural_list})
-            GROUP BY e.link_name
-            HAVING count(*) > 100 AND sum(cnl.size) > 102400
-            ORDER BY sum(cnl.size) DESC
-            LIMIT 15
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        // For each object node (has class_name), find object_properties child,
+        // then aggregate property link → value size
+        /**
+         * @var array<string, array{
+         *     count: int, total: int, class: string, prop: string
+         * }> $stats keyed by "class::$prop"
+         */
+        $stats = [];
+
+        foreach ($this->substrate->node_classes as $node_id => $class_name) {
+            // Find the object_properties child
+            foreach ($this->substrate->children[$node_id] ?? [] as $child) {
+                $link = $link_names[$child] ?? null;
+                if ($link !== 'object_properties') {
+                    continue;
+                }
+                // child is ObjectPropertiesContext — iterate its children
+                foreach ($this->substrate->children[$child] ?? [] as $prop_child) {
+                    $prop_name = $link_names[$prop_child] ?? null;
+                    if ($prop_name === null) {
+                        continue;
+                    }
+                    $val_size = $this->substrate->node_sizes[$prop_child] ?? 0;
+                    $key = $class_name . '::$' . $prop_name;
+                    if (!isset($stats[$key])) {
+                        $stats[$key] = [
+                            'count' => 0,
+                            'total' => 0,
+                            'class' => $class_name,
+                            'prop' => $prop_name,
+                        ];
+                    }
+                    $stats[$key]['count']++;
+                    $stats[$key]['total'] += $val_size;
+                }
+                break;
+            }
+        }
+
+        // Sort by total descending, filter > 100KB
+        uasort($stats, fn($a, $b) => $b['total'] <=> $a['total']);
 
         $findings = [];
-        foreach ($rows as $row) {
-            $cnt = (int)$row['cnt'];
-            $total = (int)$row['total_size'];
-            $avg = (int)$row['avg_size'];
+        $i = 0;
+        foreach ($stats as $s) {
+            if ($s['total'] < 102400 || $i >= 15) {
+                break;
+            }
+            $short = preg_replace('/^.*\\\\/', '', $s['class'])
+                ?? $s['class'];
+            $avg = $s['count'] > 0
+                ? (int)($s['total'] / $s['count'])
+                : 0;
 
             $findings[] = new Finding(
                 kind: 'expensive_property',
-                severity: $total > 1024 * 1024 ? FindingSeverity::Medium : FindingSeverity::Low,
+                severity: $s['total'] > 1024 * 1024
+                    ? FindingSeverity::Medium
+                    : FindingSeverity::Low,
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
-                    '%s: %s occurrences x %dB = %.2f MB',
-                    $row['link_name'],
-                    number_format($cnt),
+                    '%s::$%s: %s occurrences x %dB = %.2f MB',
+                    $short,
+                    $s['prop'],
+                    number_format($s['count']),
                     $avg,
-                    $total / 1024 / 1024,
+                    $s['total'] / 1024 / 1024,
                 ),
                 facts: [
-                    'property_name' => $row['link_name'],
-                    'count' => $cnt,
-                    'total_size' => $total,
+                    'class_name' => $s['class'],
+                    'property_name' => $s['prop'],
+                    'count' => $s['count'],
+                    'total_size' => $s['total'],
                     'avg_size' => $avg,
                 ],
-                hypothesis: 'High-frequency property contributing significant memory',
+                hypothesis: 'High-frequency property contributing'
+                    . ' significant memory',
                 next_checks: [
                     'Check if values can be shared or lazily loaded',
-                    'Consider using a more compact representation',
+                    'Consider a more compact representation',
                 ],
-                impact_bytes: $total,
-                replay_query: "SELECT e.link_name, count(*), sum(cnl.size), avg(cnl.size)"
-                    . " FROM context_edges e JOIN context_node_locations cnl ON cnl.node_id = e.child_node_id"
-                    . " WHERE e.is_tree = 1 GROUP BY e.link_name HAVING count(*) > 100"
-                    . " ORDER BY sum(cnl.size) DESC LIMIT 15",
+                impact_bytes: $s['total'],
             );
+            $i++;
         }
 
         return $findings;
+    }
+
+    /**
+     * Load link_name for each child_node_id (tree edges only).
+     * @return array<int, string> child_node_id => link_name
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function loadLinkNames(): array
+    {
+        $rows = $this->db->query(
+            "SELECT child_node_id, link_name FROM context_edges"
+            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int)$r[0]] = (string)$r[1];
+        }
+        unset($rows);
+        return $map;
     }
 }

@@ -56,7 +56,6 @@ final class ReportGenerator
         // Phase 2: SQL-based passes (< 500K nodes)
         if ($node_count < 500000) {
             $findings = array_merge($findings, (new DynamicPropertiesPass($db, $run_id))->analyze());
-            $findings = array_merge($findings, (new PerPropertyMemoryPass($db, $run_id))->analyze());
             $findings = array_merge($findings, (new TopArraysPass($db, $run_id))->analyze());
             $findings = array_merge($findings, (new TopStringsPass($db, $run_id))->analyze());
             $findings = array_merge($findings, (new NonTreeEdgePass($db, $run_id))->analyze());
@@ -70,6 +69,7 @@ final class ReportGenerator
             $meta['scc_count'] = count($substrate->scc_profiles);
 
             $findings = array_merge($findings, (new CycleClusterPass($substrate))->analyze());
+            $findings = array_merge($findings, (new PerPropertyMemoryPass($substrate, $db, $run_id))->analyze());
             $findings = array_merge($findings, (new DrillDownPass($substrate, $db, $run_id))->analyze());
             $findings = array_merge($findings, (new ChokePointPass($substrate, $db, $run_id))->analyze());
             $findings = array_merge($findings, (new BlameAllocationPass($substrate, $db, $run_id))->analyze());

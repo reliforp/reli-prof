@@ -27,60 +27,79 @@ final class DynamicPropertiesPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, PossiblyInvalidArgument
-     * @psalm-suppress InvalidOperand
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand
+     * @psalm-suppress PossiblyInvalidArgument, InvalidOperand
      */
     #[\Override]
     public function analyze(): array
     {
+        // Find objects that have a 'dynamic_properties' child edge.
+        // The overhead is the dynamic properties table itself (child node).
+        // Group by the object's class_name.
         $rows = $this->db->query("
             SELECT
-                cnl.class_name,
+                cnl_obj.class_name,
                 count(*) as cnt,
-                sum(cnl.size) as total_size
+                sum(COALESCE(cnl_dp.size, 0)) as dp_size
             FROM context_edges e
-            JOIN context_node_locations cnl ON cnl.node_id = e.parent_node_id
-                AND cnl.run_id = {$this->run_id}
-                AND cnl.location_type = 'ZendObjectMemoryLocation'
+            JOIN context_node_locations cnl_obj
+                ON cnl_obj.node_id = e.parent_node_id
+                AND cnl_obj.run_id = {$this->run_id}
+                AND cnl_obj.location_type = 'ZendObjectMemoryLocation'
+            LEFT JOIN context_node_locations cnl_dp
+                ON cnl_dp.node_id = e.child_node_id
+                AND cnl_dp.run_id = {$this->run_id}
             WHERE e.run_id = {$this->run_id}
                 AND e.link_name = 'dynamic_properties'
-                AND cnl.class_name IS NOT NULL
-            GROUP BY cnl.class_name
+                AND e.is_tree = 1
+                AND cnl_obj.class_name IS NOT NULL
+            GROUP BY cnl_obj.class_name
             HAVING count(*) > 10
-            ORDER BY sum(cnl.size) DESC
+            ORDER BY sum(COALESCE(cnl_dp.size, 0)) DESC
             LIMIT 10
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
         $findings = [];
         foreach ($rows as $row) {
-            $short = preg_replace('/^.*\\\\/', '', $row['class_name']) ?? $row['class_name'];
-            $total = (int)$row['total_size'];
+            $short = preg_replace('/^.*\\\\/', '', $row['class_name'])
+                ?? $row['class_name'];
+            $dp_size = (int)$row['dp_size'];
             $cnt = (int)$row['cnt'];
 
             $findings[] = new Finding(
                 kind: 'dynamic_properties_overhead',
-                severity: $total > 1024 * 1024 ? FindingSeverity::Medium : FindingSeverity::Low,
+                severity: $dp_size > 1024 * 1024
+                    ? FindingSeverity::Medium
+                    : FindingSeverity::Low,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
                     '%s %s with dynamic properties = %.2f MB overhead',
                     number_format($cnt),
                     $short,
-                    $total / 1024 / 1024,
+                    $dp_size / 1024 / 1024,
                 ),
                 facts: [
                     'class_name' => $row['class_name'],
                     'count' => $cnt,
-                    'total_size' => $total,
+                    'dynamic_properties_size' => $dp_size,
                 ],
-                hypothesis: 'Dynamic property tables add overhead; declaring properties statically saves memory',
+                hypothesis: 'Dynamic property tables add per-object overhead;'
+                    . ' declaring properties statically saves memory',
                 next_checks: [
-                    'Declare these properties explicitly in the class definition',
+                    'Declare these properties explicitly in the class',
                 ],
-                impact_bytes: $total,
-                replay_query: "SELECT cnl.class_name, count(*) as cnt, sum(cnl.size) FROM context_edges e"
-                    . " JOIN context_node_locations cnl ON cnl.node_id = e.parent_node_id"
-                    . " WHERE e.link_name = 'dynamic_properties' AND cnl.class_name IS NOT NULL"
-                    . " GROUP BY cnl.class_name HAVING count(*) > 10 ORDER BY sum(cnl.size) DESC",
+                impact_bytes: $dp_size,
+                replay_query: "SELECT cnl_obj.class_name, count(*),"
+                    . " sum(cnl_dp.size) FROM context_edges e"
+                    . " JOIN context_node_locations cnl_obj"
+                    . " ON cnl_obj.node_id = e.parent_node_id"
+                    . " LEFT JOIN context_node_locations cnl_dp"
+                    . " ON cnl_dp.node_id = e.child_node_id"
+                    . " WHERE e.link_name = 'dynamic_properties'"
+                    . " AND e.is_tree = 1"
+                    . " GROUP BY cnl_obj.class_name"
+                    . " HAVING count(*) > 10"
+                    . " ORDER BY sum(cnl_dp.size) DESC",
             );
         }
 
