@@ -204,3 +204,32 @@ class_table -> ComposerAutoloader -> classMap (18.86 MB)
 class_table はフレームワークの固定コストなので、bottleneck_path を
 「call_frames 起点」「class_table 起点」の 2 本出すか、
 root branch ごとの drill-down を出すと親切。
+
+### 3d. パスを PHP 構文風に表示 [重要度: 高]
+
+現在:
+```
+call_frames -> <main>:28 -> local_variables -> messages -> array_elements -> 0 -> value -> object_properties -> structure -> object_properties -> raw
+```
+
+理想:
+```
+<main>:28::$messages[0]->structure->raw
+```
+
+**変換ルール** (context node type に基づく):
+
+| パス断片 | type | 変換 |
+|---|---|---|
+| `call_frames -> <main>:28 -> local_variables` | CallFrames/CallFrame/VariableTable | `<main>:28::` |
+| `-> messages` (VariableTable の子) | link_name | `$messages` |
+| `-> array_elements -> 0 -> value` | ArrayElements/Element/value | `[0]` |
+| `-> object_properties -> structure` | ObjectProperties の子 | `->structure` |
+| `-> object_properties -> raw` | ObjectProperties の子 | `->raw` |
+
+省略対象 (構造的な中間ノード):
+- `call_frames`, `local_variables`, `object_properties`, `array_elements`, `value`
+- これらは PHP 構文上意味を持たない reli の内部表現
+
+データは全て context_nodes.type から取得可能。
+bottleneck_path, large_string, large_array, choke_point の全パス表示に適用。
