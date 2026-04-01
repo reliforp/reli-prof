@@ -2,6 +2,8 @@
 
 The memory profiler supports outputting analysis results to a relational database instead of JSON. This is useful for analyzing large memory snapshots where the JSON output would be too large to handle with tools like `jq`, and enables powerful ad-hoc querying with SQL.
 
+> **Tip**: SQLite snapshots can also be used with `inspector:memory:report` to generate automatic analysis reports. See [memory-report.md](memory-report.md).
+
 Supported databases:
 - **SQLite** (`-f sqlite3`) — local file, no server needed
 - **MySQL** (`-f mysql`) — connect to an existing MySQL/MariaDB server

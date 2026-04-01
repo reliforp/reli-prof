@@ -7,6 +7,8 @@ reli inspector:memory -p <pid_of_target_process>
 
 You can use this mode to analyze the memory usage of the target process, for finding out memory bottlenecks or memory leaks.
 
+> **Tip**: For automatic analysis of memory snapshots (dominant classes, cycles, choke points, etc.), see [memory-report.md](memory-report.md). For saving snapshots to a database for SQL querying, see [memory-profiler-database.md](memory-profiler-database.md).
+
 For example, you can see statistics such as whether strings, arrays or objects are particularly dominant in a script's memory usage, or contextual information such as where certain local variables in a given call frame are referenced from elsewhere, and the actual values held by certain memory areas.
 
 The functionality of this mode is similar to [php-meminfo](https://github.com/BitOne/php-meminfo), but works in the [phpspy](https://github.com/adsr/phpspy)-ish way.
@@ -411,6 +413,23 @@ The example of the output is like below.
   }
 }
 ```
+
+### Automatic analysis instead of manual jq
+
+If you prefer actionable findings over manual `jq` exploration, use the automatic report feature. Save to SQLite and generate a report:
+
+```bash
+sudo ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
+./reli inspector:memory:report snapshot.db
+```
+
+Or generate directly:
+
+```bash
+sudo ./reli inspector:memory -p <pid> -f report
+```
+
+See [memory-report.md](memory-report.md) for full documentation on the report format, finding types, and JSON output for programmatic use.
 
 ## Capturing the memory_limit violation
 
