@@ -15,6 +15,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report;
 
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\PassInterface;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\BlameAllocationPass;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\CallStackPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\ChokePointPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\ClassRankingPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\CompanionDetectionPass;
@@ -61,6 +62,7 @@ final class ReportGenerator
 
         // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
         if ($full_analysis || $node_count < 500000) {
+            $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(
                 new PropertyScalingPass($db, $run_id, $class_objects)
