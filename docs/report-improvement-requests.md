@@ -96,8 +96,12 @@ link_name 1 段だけでは「誰が持っているか」分からない。
 [LOW] large_array: 0.09 MB, 2,010 elements — class_table -> interned_strings
 ```
 
-実装: `v_node_paths` ではなく 3-hop JOIN (既に他の Pass で使用実績あり)。
-CallFrameContext が途中にあれば 3a-1 の関数名解決も適用。
+実装: `--full-analysis` 時は graph substrate から root まで遡るフルパスを出す。
+パスの途中で class_name や function_name を持つノードがあれば解決して表示。
+graph なしの場合は 3-hop JOIN でフォールバック。
+
+`--full-analysis` のコストは Monolog (4.5M edges) でも 44 秒なので、
+フルパスを出すために graph load する価値は十分にある。
 
 現在:
 ```
