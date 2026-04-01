@@ -19,6 +19,8 @@ final class ResourceContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
+    public ?string $stream_type_label = null;
+
     public function __construct(
         public ZendResourceMemoryLocation $memory_location,
     ) {

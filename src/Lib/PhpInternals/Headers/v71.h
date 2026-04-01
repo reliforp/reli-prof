@@ -1193,3 +1193,61 @@ typedef struct _php_shutdown_function_entry {
 typedef struct _php_basic_globals {
 	HashTable *user_shutdown_function_names;
 } php_basic_globals;
+
+// main/php_streams.h
+typedef struct _php_stream_ops {
+	void *write;
+	void *read;
+	void *close;
+	void *flush;
+	const char *label;
+	void *seek;
+	void *cast;
+	void *stat;
+	void *set_option;
+} php_stream_ops;
+
+struct _php_stream {
+	const php_stream_ops *ops;
+	void *abstract;
+	void *readfilters_head;
+	void *readfilters_tail;
+	struct _php_stream *readfilters_stream;
+	void *writefilters_head;
+	void *writefilters_tail;
+	struct _php_stream *writefilters_stream;
+	void *wrapper;
+	void *wrapperthis;
+	zval wrapperdata;
+	uint16_t flags_bitfield;
+	char mode[16];
+	uint32_t flags;
+	zend_resource *res;
+	void *stdiocast;
+	char *orig_path;
+	zend_resource *ctx;
+	zend_off_t position;
+	unsigned char *readbuf;
+	size_t readbuflen;
+	zend_off_t readpos;
+	zend_off_t writepos;
+	size_t chunk_size;
+	struct _php_stream *enclosing_stream;
+};
+
+typedef struct _php_stream php_stream;
+
+// main/streams/memory.c
+typedef struct {
+	zend_string *data;
+	size_t fpos;
+	int mode;
+} php_stream_memory_data;
+
+typedef struct {
+	php_stream *innerstream;
+	size_t smax;
+	int mode;
+	zval meta;
+	char *tmpdir;
+} php_stream_temp_data;

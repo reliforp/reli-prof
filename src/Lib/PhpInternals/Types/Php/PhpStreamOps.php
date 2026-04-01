@@ -11,47 +11,35 @@
 
 declare(strict_types=1);
 
-namespace Reli\Lib\PhpInternals\Types\Zend;
+namespace Reli\Lib\PhpInternals\Types\Php;
 
+use FFI\PhpInternals\php_stream_ops;
 use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-/**
- * @psalm-consistent-constructor
- */
-final class ZendResource implements CDataDereferencable
+final class PhpStreamOps implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
-    public ZendRefcountedH $gc;
-    /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $type;
-    /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $ptr;
+    public int $label;
 
     /**
-     * @param CastedCData<\FFI\PhpInternals\zend_resource> $casted_cdata
-     * @param Pointer<ZendResource> $pointer
+     * @param CastedCData<php_stream_ops> $casted_cdata
+     * @param Pointer<PhpStreamOps> $pointer
      */
     public function __construct(
         private CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
-        unset($this->gc);
-        unset($this->type);
-        unset($this->ptr);
+        unset($this->label);
     }
 
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'gc' => $this->gc = new ZendRefcountedH(
-                $this->casted_cdata->casted->gc
-            ),
-            'type' => $this->type = $this->casted_cdata->casted->type,
-            'ptr' => $this->ptr = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->ptr
+            'label' => $this->label = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->label
             ),
         };
     }
@@ -59,17 +47,14 @@ final class ZendResource implements CDataDereferencable
     #[\Override]
     public static function getCTypeName(): string
     {
-        return 'zend_resource';
+        return 'php_stream_ops';
     }
 
     #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
-        /**
-         * @var CastedCData<\FFI\PhpInternals\zend_resource> $casted_cdata
-         * @var Pointer<self> $pointer
-         */
-        return new static($casted_cdata, $pointer);
+        /** @var CastedCData<php_stream_ops> $casted_cdata */
+        return new self($casted_cdata, $pointer);
     }
 
     #[\Override]

@@ -37,6 +37,11 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
 use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
 use Reli\Lib\PhpInternals\Types\Zend\ZendObjectsStore;
 use Reli\Lib\PhpInternals\Types\Zend\ZendReference;
+use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\PhpInternals\Types\Php\PhpStream;
+use Reli\Lib\PhpInternals\Types\Php\PhpStreamMemoryData;
+use Reli\Lib\PhpInternals\Types\Php\PhpStreamOps;
+use Reli\Lib\PhpInternals\Types\Php\PhpStreamTempData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendResource;
 use Reli\Lib\PhpInternals\Types\Zend\ZendString;
 use Reli\Lib\PhpInternals\Types\Zend\ZendWeakMap;
@@ -514,6 +519,7 @@ final class MemoryLocationsCollector
                 $zval->value->res,
                 $memory_locations,
                 $dereferencer,
+                $zend_type_reader,
                 $context_pools,
             );
         } elseif ($zval->isIndirect()) {
@@ -538,6 +544,7 @@ final class MemoryLocationsCollector
         Pointer $pointer,
         MemoryLocations $memory_locations,
         Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
         ContextPools $context_pools
     ): ResourceContext {
         if ($memory_locations->has($pointer->address)) {
@@ -552,10 +559,205 @@ final class MemoryLocationsCollector
         $resource = $dereferencer->deref($pointer);
         $memory_location = ZendResourceMemoryLocation::fromZendReference($resource);
         $memory_locations->add($memory_location);
-        return $context_pools
+        $resource_context = $context_pools
             ->resource_context_pool
             ->getContextForLocation($memory_location)
         ;
+        $this->tryCollectStreamData(
+            $resource,
+            $pointer,
+            $memory_locations,
+            $dereferencer,
+            $zend_type_reader,
+            $context_pools,
+            $resource_context,
+        );
+        return $resource_context;
+    }
+
+    private function tryCollectStreamData(
+        ZendResource $resource,
+        Pointer $resource_pointer,
+        MemoryLocations $memory_locations,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        ContextPools $context_pools,
+        ResourceContext $resource_context,
+    ): void {
+        $ptr_address = $resource->ptr;
+        if ($ptr_address === 0) {
+            return;
+        }
+
+        try {
+            $php_stream_pointer = new Pointer(
+                PhpStream::class,
+                $ptr_address,
+                $zend_type_reader->sizeOf('php_stream'),
+            );
+            $php_stream = $dereferencer->deref($php_stream_pointer);
+
+            // Validate: php_stream.res should point back to the zend_resource
+            if ($php_stream->res !== $resource_pointer->address) {
+                return;
+            }
+
+            // Read ops->label to determine stream type
+            $ops_address = $php_stream->ops;
+            if ($ops_address === 0) {
+                return;
+            }
+            $ops_pointer = new Pointer(
+                PhpStreamOps::class,
+                $ops_address,
+                $zend_type_reader->sizeOf('php_stream_ops'),
+            );
+            $ops = $dereferencer->deref($ops_pointer);
+
+            $label_address = $ops->label;
+            if ($label_address === 0) {
+                return;
+            }
+            $label_pointer = new Pointer(
+                RawString::class,
+                $label_address,
+                32,
+            );
+            $label = (string)$dereferencer->deref($label_pointer);
+
+            $resource_context->stream_type_label = $label;
+
+            // For MEMORY streams, collect the zend_string data buffer
+            if ($label === 'MEMORY') {
+                $this->collectMemoryStreamData(
+                    $php_stream,
+                    $memory_locations,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $context_pools,
+                    $resource_context,
+                );
+            } elseif ($label === 'TEMP') {
+                $this->collectTempStreamData(
+                    $php_stream,
+                    $memory_locations,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $context_pools,
+                    $resource_context,
+                );
+            }
+        } catch (\Throwable) {
+            // Reading stream data is best-effort; if the memory is
+            // unmapped or the layout doesn't match, just skip it.
+            return;
+        }
+    }
+
+    private function collectMemoryStreamData(
+        PhpStream $php_stream,
+        MemoryLocations $memory_locations,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        ContextPools $context_pools,
+        ResourceContext $resource_context,
+    ): void {
+        $abstract_address = $php_stream->abstract;
+        if ($abstract_address === 0) {
+            return;
+        }
+
+        $mem_data_pointer = new Pointer(
+            PhpStreamMemoryData::class,
+            $abstract_address,
+            $zend_type_reader->sizeOf('php_stream_memory_data'),
+        );
+        $mem_data = $dereferencer->deref($mem_data_pointer);
+
+        $data_address = $mem_data->data;
+        if ($data_address === 0) {
+            return;
+        }
+
+        $string_pointer = new Pointer(
+            ZendString::class,
+            $data_address,
+            $zend_type_reader->sizeOf('zend_string'),
+        );
+        $string_context = $this->collectStringPointer(
+            $string_pointer,
+            $memory_locations,
+            $dereferencer,
+            $context_pools,
+        );
+        $resource_context->add('stream_memory_data', $string_context);
+    }
+
+    private function collectTempStreamData(
+        PhpStream $php_stream,
+        MemoryLocations $memory_locations,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        ContextPools $context_pools,
+        ResourceContext $resource_context,
+    ): void {
+        $abstract_address = $php_stream->abstract;
+        if ($abstract_address === 0) {
+            return;
+        }
+
+        $temp_data_pointer = new Pointer(
+            PhpStreamTempData::class,
+            $abstract_address,
+            $zend_type_reader->sizeOf('php_stream_temp_data'),
+        );
+        $temp_data = $dereferencer->deref($temp_data_pointer);
+
+        $innerstream_address = $temp_data->innerstream;
+        if ($innerstream_address === 0) {
+            return;
+        }
+
+        // Read the inner stream to check if it's a MEMORY stream
+        $inner_pointer = new Pointer(
+            PhpStream::class,
+            $innerstream_address,
+            $zend_type_reader->sizeOf('php_stream'),
+        );
+        $inner_stream = $dereferencer->deref($inner_pointer);
+
+        $inner_ops_address = $inner_stream->ops;
+        if ($inner_ops_address === 0) {
+            return;
+        }
+        $inner_ops_pointer = new Pointer(
+            PhpStreamOps::class,
+            $inner_ops_address,
+            $zend_type_reader->sizeOf('php_stream_ops'),
+        );
+        $inner_ops = $dereferencer->deref($inner_ops_pointer);
+
+        $inner_label_address = $inner_ops->label;
+        if ($inner_label_address === 0) {
+            return;
+        }
+        $inner_label_pointer = new Pointer(
+            RawString::class,
+            $inner_label_address,
+            32,
+        );
+        $inner_label = (string)$dereferencer->deref($inner_label_pointer);
+
+        if ($inner_label === 'MEMORY') {
+            $this->collectMemoryStreamData(
+                $inner_stream,
+                $memory_locations,
+                $dereferencer,
+                $zend_type_reader,
+                $context_pools,
+                $resource_context,
+            );
+        }
     }
 
 
