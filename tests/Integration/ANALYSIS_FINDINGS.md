@@ -648,12 +648,13 @@ Object wrapping costs 4.7x more per element. reli confirms: 500K Tiny objects =
 
 ### 36. PHP Fibers — VM Stack Cost (17 KB/fiber)
 
-5,000 suspended Fibers → 90 MB. Per fiber: 18,455 bytes (17,197 from VM stack).
+2,000 suspended Fibers → 38 MB. Per fiber: ~18,800 bytes (mostly VM stack).
 
-**After 0.12.x Fiber support:** reli now creates `FiberContext` nodes with
-`call_frames` for each suspended Fiber. analyzed improved from 7% → 16%.
-The remaining gap is the Fiber VM stack memory itself (not yet counted in
-heap usage, though the call stack structure is now fully visible).
+**After 0.12.x Fiber VM stack fix (#555):** analyzed: **99.87%** ✅
+- `vm_stack_total`: 31.5 MB (2,000 Fiber VM stacks fully tracked)
+- `vm_stack_usage`: 782 KB (actual stack frame data in use)
+- `FiberContext` + `call_frames` for each Fiber in context tree
+- Evolution: 7% → 16% → **99.87%** across successive fixes
 
 ---
 
