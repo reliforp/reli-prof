@@ -167,6 +167,9 @@ database to decide which phases to run:
 
 This prevents out-of-memory errors when analyzing very large snapshots.
 
+The `--full-analysis` flag (passed as `$full_analysis = true` to
+`generateFromDb()`) bypasses these limits and forces all phases to run.
+
 ## File Layout
 
 ```

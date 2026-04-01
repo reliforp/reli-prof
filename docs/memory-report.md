@@ -134,6 +134,7 @@ Options:
   -o, --output=PATH           Output file path (default: stdout)
       --run-id=ID             Run ID to analyze [default: 1]
       --pretty-print          Pretty print JSON output (default: on)
+      --full-analysis         Run all passes regardless of snapshot size (may use significant memory)
 ```
 
 ### `inspector:memory` with report format
@@ -209,6 +210,14 @@ The report generator adapts its analysis depth based on snapshot size:
 | < 500K edges | Phase 3 (Passes 12-15) | Full graph: drill-down, choke points, blame allocation, retained size confidence |
 
 For very large snapshots (> 500K nodes), only the lightweight summary-based passes run, avoiding graph loading that would consume too much memory.
+
+To force all passes regardless of snapshot size, use `--full-analysis`:
+
+```bash
+./reli inspector:memory:report snapshot.db --full-analysis
+```
+
+This may use significant memory (e.g. ~300 MB for 1M edges, ~2 GB for 6M edges).
 
 ## Tips
 
