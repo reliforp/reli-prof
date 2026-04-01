@@ -46,28 +46,30 @@ final class CompanionDetectionPass implements PassInterface
 
         // Union-Find to group classes with similar counts
         $count = count($classes);
-        $parent = range(0, $count - 1);
+        /** @var array<int, int> */
+        $uf_parent = range(0, max($count - 1, 0));
 
-        $find = function (int $x) use (&$parent, &$find): int {
-            if ($parent[$x] !== $x) {
-                $parent[$x] = $find($parent[$x]);
+        /**
+         * @param array<int, int> $p
+         * @psalm-suppress MixedArrayOffset, MixedArrayTypeCoercion, MixedReturnStatement
+         */
+        $ufFind = static function (array &$p, int $x): int {
+            while ($p[$x] !== $x) {
+                $p[$x] = $p[$p[$x]];
+                $x = $p[$x];
             }
-            return $parent[$x];
-        };
-
-        $union = function (int $a, int $b) use (&$parent, &$find): void {
-            $ra = $find($a);
-            $rb = $find($b);
-            if ($ra !== $rb) {
-                $parent[$ra] = $rb;
-            }
+            return $x;
         };
 
         for ($i = 0; $i < $count; $i++) {
             for ($j = $i + 1; $j < $count; $j++) {
                 $diff = abs($classes[$i]['count'] - $classes[$j]['count']);
                 if ($diff < $classes[$i]['count'] * 0.05) {
-                    $union($i, $j);
+                    $ra = $ufFind($uf_parent, $i);
+                    $rb = $ufFind($uf_parent, $j);
+                    if ($ra !== $rb) {
+                        $uf_parent[$ra] = $rb;
+                    }
                 }
             }
         }
@@ -76,7 +78,7 @@ final class CompanionDetectionPass implements PassInterface
         /** @var array<int, list<int>> */
         $groups = [];
         for ($i = 0; $i < $count; $i++) {
-            $groups[$find($i)][] = $i;
+            $groups[$ufFind($uf_parent, $i)][] = $i;
         }
 
         $findings = [];
@@ -102,7 +104,7 @@ final class CompanionDetectionPass implements PassInterface
             $names = array_map(
                 fn($c) => sprintf(
                     '%s (%s)',
-                    preg_replace('/^.*\\\\/', '', $c['name']),
+                    preg_replace('/^.*\\\\/', '', $c['name']) ?? $c['name'],
                     number_format($c['count'])
                 ),
                 $group_classes
