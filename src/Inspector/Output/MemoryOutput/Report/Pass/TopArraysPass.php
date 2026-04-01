@@ -76,34 +76,70 @@ final class TopArraysPass implements PassInterface
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
         $labeler = new NodeLabeler($this->db, $this->run_id);
-        $findings = [];
+        $use_retained = $this->substrate !== null
+            && $this->substrate->subtree_sizes !== [];
+
+        // If substrate available, sort by retained size instead
+        $entries = [];
         foreach ($rows as $row) {
-            $total = (int)$row['total_size'];
-            if ($total < 10240) {
+            $table_size = (int)$row['total_size'];
+            $node_id = (int)$row['node_id'];
+            $retained = $use_retained
+                ? ($this->substrate->subtree_sizes[$node_id] ?? $table_size)
+                : $table_size;
+            $entries[] = [
+                'row' => $row,
+                'table_size' => $table_size,
+                'retained' => $retained,
+                'node_id' => $node_id,
+            ];
+        }
+        usort($entries, fn($a, $b) => $b['retained'] <=> $a['retained']);
+
+        $findings = [];
+        foreach (array_slice($entries, 0, 10) as $entry) {
+            $row = $entry['row'];
+            $table_size = $entry['table_size'];
+            $retained = $entry['retained'];
+            $node_id = $entry['node_id'];
+
+            if ($retained < 10240 && $table_size < 10240) {
                 continue;
             }
 
             $elements = (int)($row['element_count'] ?? 0);
-            $node_id = (int)$row['node_id'];
             $path = $this->substrate !== null
                 ? $this->buildFullPath($node_id, $labeler)
                 : $this->buildOwnerPath($row, $labeler);
 
+            if ($use_retained && $retained > $table_size) {
+                $summary = sprintf(
+                    '%.2f MB retained (table: %.2f KB), %s elements — %s',
+                    $retained / 1024 / 1024,
+                    $table_size / 1024,
+                    number_format($elements),
+                    $path ?: '(root)',
+                );
+            } else {
+                $summary = sprintf(
+                    '%.2f MB array, %s elements — %s',
+                    $table_size / 1024 / 1024,
+                    number_format($elements),
+                    $path ?: '(root)',
+                );
+            }
+
             $findings[] = new Finding(
                 kind: 'large_array',
-                severity: $total > 1024 * 1024
+                severity: $retained > 1024 * 1024
                     ? FindingSeverity::Medium
                     : FindingSeverity::Low,
                 confidence: FindingConfidence::High,
-                summary: sprintf(
-                    '%.2f MB array, %s elements — %s',
-                    $total / 1024 / 1024,
-                    number_format($elements),
-                    $path ?: '(root)',
-                ),
+                summary: $summary,
                 facts: [
-                    'node_id' => (int)$row['node_id'],
-                    'total_size' => $total,
+                    'node_id' => $node_id,
+                    'table_size' => $table_size,
+                    'retained_size' => $retained,
                     'element_count' => $elements,
                     'owner_path' => $path,
                 ],
@@ -113,11 +149,70 @@ final class TopArraysPass implements PassInterface
                     'Check if array size is bounded',
                     'Consider SplFixedArray for known-size collections',
                 ],
-                impact_bytes: $total,
-                evidence_node_ids: [(int)$row['node_id']],
+                impact_bytes: $retained,
+                evidence_node_ids: [$node_id],
                 replay_query: "SELECT * FROM v_arrays"
                     . " WHERE run_id = {$this->run_id}"
                     . " ORDER BY total_size DESC LIMIT 10",
+            );
+        }
+
+        // Sparse array detection: table_size >> element_count
+        // table_size (bytes) = nTableSize * 32 (sizeof Bucket)
+        $sparse_rows = $this->db->query("
+            SELECT
+                va.node_id,
+                va.table_size,
+                va.element_count,
+                va.table_size / 32 as capacity
+            FROM v_arrays va
+            WHERE va.run_id = {$this->run_id}
+                AND va.table_size >= 32768
+                AND va.element_count > 0
+                AND va.element_count * 4 < va.table_size / 32
+            ORDER BY va.table_size DESC
+            LIMIT 5
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        foreach ($sparse_rows as $sr) {
+            $s_node = (int)$sr['node_id'];
+            $s_table = (int)$sr['table_size'];
+            $s_count = (int)$sr['element_count'];
+            $s_capacity = (int)$sr['capacity'];
+            $utilization = $s_capacity > 0
+                ? $s_count / $s_capacity * 100.0
+                : 0;
+            $s_path = $this->substrate !== null
+                ? $this->buildFullPath($s_node, $labeler)
+                : '(use --full-analysis for path)';
+
+            $findings[] = new Finding(
+                kind: 'sparse_array',
+                severity: FindingSeverity::Medium,
+                confidence: FindingConfidence::Medium,
+                summary: sprintf(
+                    '%.2f KB table, %s/%s slots used (%.1f%%) — %s',
+                    $s_table / 1024,
+                    number_format($s_count),
+                    number_format($s_capacity),
+                    $utilization,
+                    $s_path,
+                ),
+                facts: [
+                    'node_id' => $s_node,
+                    'table_size' => $s_table,
+                    'element_count' => $s_count,
+                    'capacity' => $s_capacity,
+                    'utilization_pct' => round($utilization, 1),
+                ],
+                hypothesis: 'Array with many empty slots — likely after'
+                    . ' mass unset() without reallocation',
+                next_checks: [
+                    'Use array_values() to repack the array',
+                    'Or rebuild with only needed elements',
+                ],
+                impact_bytes: $s_table,
+                evidence_node_ids: [$s_node],
             );
         }
 
