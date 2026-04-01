@@ -24,6 +24,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\DynamicPropertiesPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\NonTreeEdgePass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\OverviewPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\PerPropertyMemoryPass;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\PropertyScalingPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\RetainedSizeConfidencePass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\StructuralDedupPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopArraysPass;
@@ -61,6 +62,9 @@ final class ReportGenerator
         // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
         if ($full_analysis || $node_count < 500000) {
             $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(
+                new PropertyScalingPass($db, $run_id, $class_objects)
+            ));
             $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));

@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 
 final class ChokePointPass implements PassInterface
 {
@@ -86,6 +87,8 @@ final class ChokePointPass implements PassInterface
         }
         unset($rows);
 
+        $labeler = new NodeLabeler($this->db, $this->run_id);
+
         $loc_stmt = $this->db->prepare(
             "SELECT class_name, location_type FROM context_node_locations"
             . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
@@ -124,7 +127,10 @@ final class ChokePointPass implements PassInterface
                     break;
                 }
                 [$parent, $link] = $parent_map[$cur];
-                $path_parts[] = $link;
+                $path_parts[] = $labeler->resolvePathLabel(
+                    (string)$link,
+                    $cur
+                );
                 if ($i === 0 && $label === '') {
                     $label = $link;
                 }
