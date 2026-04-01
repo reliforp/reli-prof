@@ -70,11 +70,23 @@ final class MemoryReportCommand extends Command
             'run all analysis passes (default: on; --no-full-analysis to limit for very large snapshots)',
             true,
         );
+        $this->addOption(
+            'memory-limit',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'set PHP memory_limit for analysis (e.g. 2G, 512M)',
+        );
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $memory_limit */
+        $memory_limit = $input->getOption('memory-limit');
+        if (is_string($memory_limit) && $memory_limit !== '') {
+            ini_set('memory_limit', $memory_limit);
+        }
+
         Log::info('start memory:report command');
 
         $db_file = (string)$input->getArgument('db-file');

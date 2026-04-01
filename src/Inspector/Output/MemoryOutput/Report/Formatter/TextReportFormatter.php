@@ -54,6 +54,11 @@ final class TextReportFormatter implements ReportFormatterInterface
         // Overview section
         if ($overview !== []) {
             $lines[] = '=== Overview ===';
+            /** @var string|null $captured_at */
+            $captured_at = $result->meta['captured_at'] ?? null;
+            if (is_string($captured_at) && $captured_at !== '') {
+                $lines[] = '  Captured: ' . $captured_at;
+            }
             foreach ($overview as $finding) {
                 if ($finding->kind === 'call_stack' && $finding->hypothesis !== '') {
                     $lines[] = '';

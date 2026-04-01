@@ -225,6 +225,12 @@ final class ReportGenerator
         );
         $meta['edge_count'] = (int)$stmt->fetchColumn();
 
+        // Capture timestamp
+        $stmt = $db->query(
+            "SELECT created_at FROM runs WHERE run_id = {$run_id}"
+        );
+        $meta['captured_at'] = $stmt->fetchColumn() ?: null;
+
         return $meta;
     }
 
