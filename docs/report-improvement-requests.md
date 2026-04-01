@@ -724,3 +724,16 @@ GROUP BY e.link_name, cnl_obj.class_name, cnl_target.class_name
 ```
 
 graph substrate でも: SCC 内ノード間の non-tree edge を見つけるだけ。
+
+↑ 補足: back-reference だけでなく、SCC への **entry point のパス** も必要。
+「どこにある循環か」が分からないと、コードのどこを見ればいいか分からない。
+
+```
+[MEDIUM] cycle_cluster: 200 identical cycles
+  Per cycle: 3× Attachment + 1× AttachmentCollection + 1× Message
+  Back-reference: Attachment::$oMessage → Message
+  Location: <main>:28::$messages[*]->attachments->items[*]
+```
+
+SCC の external incoming edge から root までのパスを PHP 構文で出す。
+graph substrate + ノードから root への遡りパスで実装可能。
