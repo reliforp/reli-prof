@@ -148,6 +148,30 @@ class MemoryOutputFactoryTest extends BaseTestCase
         $factory->create($settings);
     }
 
+    public function testCreateReportOutput(): void
+    {
+        $factory = new MemoryOutputFactory();
+        $settings = new MemoryProfilerSettings(
+            stop_process: false,
+            pretty_print: false,
+            output_format: 'report',
+        );
+        $output = $factory->create($settings);
+        $this->assertInstanceOf(ReportMemoryOutput::class, $output);
+    }
+
+    public function testCreateReportJsonOutput(): void
+    {
+        $factory = new MemoryOutputFactory();
+        $settings = new MemoryProfilerSettings(
+            stop_process: false,
+            pretty_print: true,
+            output_format: 'report-json',
+        );
+        $output = $factory->create($settings);
+        $this->assertInstanceOf(ReportMemoryOutput::class, $output);
+    }
+
     public function testCreateUnsupportedFormatThrows(): void
     {
         $factory = new MemoryOutputFactory();
