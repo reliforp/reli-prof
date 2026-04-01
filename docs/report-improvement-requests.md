@@ -772,9 +772,15 @@ SCC 内に PDO / PDOStatement が含まれる場合は severity を上げるか�
   Impact: connection pool exhaustion in long-running workers
 ```
 
-検出方法: SCC の class_composition に PDO / PDOStatement / Mysqli /
-その他リソース系クラスが含まれるかチェック。
-reli のデータで ZendResourceMemoryLocation + SCC 内の class_name で判定可能。
+検出方法: PDO 自体は他オブジェクトを参照しないので SCC のメンバーにはならない。
+PDO は SCC からの **外向き参照 (ext_outgoing) の先** にいる。
+```
+Service ↔ Repository (SCC) → Service::$pdo → PDO (downstream)
+```
+SCC が GC 回収 → Service 解放 → PDO refcount 減少 → PDO デストラクタ → ロールバック。
+
+SCC の ext_outgoing edge の先のクラスに PDO / PDOStatement / Mysqli が
+いるかチェック。SCC の class_composition ではなく downstream の class を見る。
 
 PDO 以外にも: curl handle, file handle, socket など、
 デストラクタで外部リソースを解放するクラスが循環に巻き込まれると同じ問題。
