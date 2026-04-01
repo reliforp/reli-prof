@@ -37,10 +37,14 @@ final class ReportGenerator
      *
      * @return ReportResult
      */
-    public function generateFromDb(\PDO $db, int $run_id = 1): ReportResult
-    {
+    public function generateFromDb(
+        \PDO $db,
+        int $run_id = 1,
+        bool $full_analysis = false,
+    ): ReportResult {
         $meta = $this->loadMeta($db, $run_id);
         $node_count = (int)($meta['node_count'] ?? 0);
+        $edge_count = (int)($meta['edge_count'] ?? 0);
 
         // Phase 1: Summary-based passes (always run)
         $summary = $this->loadSummary($db, $run_id);
@@ -53,8 +57,8 @@ final class ReportGenerator
         $findings = array_merge($findings, (new ClassRankingPass($class_objects))->analyze());
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
 
-        // Phase 2: SQL-based passes (< 500K nodes)
-        if ($node_count < 500000) {
+        // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
+        if ($full_analysis || $node_count < 500000) {
             $findings = array_merge($findings, (new DynamicPropertiesPass($db, $run_id))->analyze());
             $findings = array_merge($findings, (new TopArraysPass($db, $run_id))->analyze());
             $findings = array_merge($findings, (new TopStringsPass($db, $run_id))->analyze());
@@ -62,9 +66,8 @@ final class ReportGenerator
             $findings = array_merge($findings, (new StructuralDedupPass($db, $run_id))->analyze());
         }
 
-        // Phase 3: Graph-based passes (< 500K edges)
-        $edge_count = (int)($meta['edge_count'] ?? 0);
-        if ($edge_count > 0 && $edge_count < 500000) {
+        // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
+        if ($full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000)) {
             $substrate = GraphSubstrate::loadFromDb($db, $run_id);
             $meta['scc_count'] = count($substrate->scc_profiles);
 
