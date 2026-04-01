@@ -139,7 +139,7 @@ class ReportGeneratorTest extends BaseTestCase
         $this->buildDbWithLocations($locations);
         $result = $this->generateReport();
 
-        $companions = $this->findByKind($result, 'companion_pair');
+        $companions = $this->findByKind($result, 'companion_cluster');
         $this->assertNotEmpty($companions);
         $this->assertStringContainsString('ClassA', $companions[0]->summary);
         $this->assertStringContainsString('ClassB', $companions[0]->summary);

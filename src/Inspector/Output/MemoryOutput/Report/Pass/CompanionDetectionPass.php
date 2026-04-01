@@ -111,65 +111,44 @@ final class CompanionDetectionPass implements PassInterface
                 $group_classes
             );
 
-            if (count($members) === 2) {
-                $findings[] = new Finding(
-                    kind: 'companion_pair',
-                    severity: FindingSeverity::Medium,
-                    confidence: FindingConfidence::Medium,
-                    summary: sprintf(
-                        '%s always paired with %s',
-                        $names[0],
-                        $names[1],
-                    ),
-                    facts: [
-                        'classes' => array_map(
-                            fn($c) => [
-                                'name' => $c['name'],
-                                'count' => $c['count'],
-                            ],
-                            $group_classes
-                        ),
-                        'total_memory' => $total_memory,
-                    ],
-                    hypothesis: 'These classes are likely created together'
-                        . ' — one owns the other',
-                    next_checks: [
-                        'Check if one class references the other',
-                        'Reducing one will likely reduce the other',
-                    ],
-                    impact_bytes: $total_memory,
+            $summary = count($members) === 2
+                ? sprintf(
+                    '%s always paired with %s — %.2f MB',
+                    $names[0],
+                    $names[1],
+                    $total_memory / 1024 / 1024,
+                )
+                : sprintf(
+                    '%d classes x ~%s instances (%.2f MB): %s',
+                    count($members),
+                    number_format($group_classes[0]['count']),
+                    $total_memory / 1024 / 1024,
+                    implode(', ', $names),
                 );
-            } else {
-                $findings[] = new Finding(
-                    kind: 'companion_cluster',
-                    severity: FindingSeverity::Medium,
-                    confidence: FindingConfidence::Medium,
-                    summary: sprintf(
-                        '%d classes x ~%s instances (%.2f MB): %s',
-                        count($members),
-                        number_format($group_classes[0]['count']),
-                        $total_memory / 1024 / 1024,
-                        implode(', ', $names),
+
+            $findings[] = new Finding(
+                kind: 'companion_cluster',
+                severity: FindingSeverity::Medium,
+                confidence: FindingConfidence::Medium,
+                summary: $summary,
+                facts: [
+                    'classes' => array_map(
+                        fn($c) => [
+                            'name' => $c['name'],
+                            'count' => $c['count'],
+                        ],
+                        $group_classes
                     ),
-                    facts: [
-                        'classes' => array_map(
-                            fn($c) => [
-                                'name' => $c['name'],
-                                'count' => $c['count'],
-                            ],
-                            $group_classes
-                        ),
-                        'total_memory' => $total_memory,
-                    ],
-                    hypothesis: 'These classes are created together'
-                        . ' as a group — likely one per entity',
-                    next_checks: [
-                        'Find the common owner that creates all of them',
-                        'Reducing the owner count reduces all proportionally',
-                    ],
-                    impact_bytes: $total_memory,
-                );
-            }
+                    'total_memory' => $total_memory,
+                ],
+                hypothesis: 'These classes are created together'
+                    . ' — reducing one reduces the others',
+                next_checks: [
+                    'Find the common owner that creates all',
+                    'Reducing the owner count reduces all',
+                ],
+                impact_bytes: $total_memory,
+            );
         }
 
         return $findings;

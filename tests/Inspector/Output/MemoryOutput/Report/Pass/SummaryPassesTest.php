@@ -140,7 +140,7 @@ class SummaryPassesTest extends BaseTestCase
         ]);
         $findings = $pass->analyze();
 
-        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_pair');
+        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_cluster');
         $this->assertCount(1, $companions);
     }
 
@@ -152,7 +152,7 @@ class SummaryPassesTest extends BaseTestCase
         ]);
         $findings = $pass->analyze();
 
-        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_pair');
+        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_cluster');
         $this->assertCount(0, $companions);
     }
 
