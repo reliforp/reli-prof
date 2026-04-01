@@ -42,7 +42,7 @@ final class MemoryProfilerSettingsFromConsoleInput
             'output-format',
             'f',
             InputOption::VALUE_REQUIRED,
-            'output format (json, sqlite3, mysql, postgresql)',
+            'output format (json, sqlite3, mysql, postgresql, report, report-json)',
             'json',
         );
         $command->addOption(

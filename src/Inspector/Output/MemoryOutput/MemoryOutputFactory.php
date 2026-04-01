@@ -63,8 +63,14 @@ final class MemoryOutputFactory
                 ),
                 $region_boundaries,
             ),
+            'report' => ReportMemoryOutput::text($region_boundaries, $settings->output_path),
+            'report-json' => ReportMemoryOutput::json(
+                $settings->pretty_print,
+                $region_boundaries,
+                $settings->output_path,
+            ),
             default => throw new \RuntimeException(
-                "unsupported output format: {$settings->output_format} (supported: json, sqlite3, mysql, postgresql)"
+                "unsupported output format: {$settings->output_format} (supported: json, sqlite3, mysql, postgresql, report, report-json)"
             ),
         };
     }
