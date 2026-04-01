@@ -1111,6 +1111,12 @@ struct _zend_generator {
 	uint32_t gc_buffer_size;
 };
 
+/* zend_weakrefs.h */
+typedef struct _zend_weakref {
+	zend_object *referent;
+	zend_object std;
+} zend_weakref;
+
 // main/SAPI.h
 /*
    +----------------------------------------------------------------------+

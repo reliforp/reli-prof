@@ -39,6 +39,8 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendObjectsStore;
 use Reli\Lib\PhpInternals\Types\Zend\ZendReference;
 use Reli\Lib\PhpInternals\Types\Zend\ZendResource;
 use Reli\Lib\PhpInternals\Types\Zend\ZendString;
+use Reli\Lib\PhpInternals\Types\Zend\ZendWeakMap;
+use Reli\Lib\PhpInternals\Types\Zend\ZendWeakReference;
 use Reli\Lib\PhpInternals\Types\Zend\Zval;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
@@ -119,6 +121,8 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ScalarValueContex
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\TopReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\WeakMapContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\WeakReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -1026,6 +1030,10 @@ final class MemoryLocationsCollector
             $zend_type_reader,
         );
         $memory_locations->add($object_location);
+        $zend_object_address = $object->getPointer()->address;
+        if ($object_location->address !== $zend_object_address) {
+            $memory_locations->memory_locations[$zend_object_address] = $object_location;
+        }
         $memory_locations->add($object_handlers_memory_location);
 
         $object_context = $context_pools
@@ -1148,6 +1156,54 @@ final class MemoryLocationsCollector
                     $memory_limit_error_details,
                 );
                 $object_context->add('fiber', $fiber_context);
+            } catch (\Throwable) {
+            }
+        }
+
+        if (
+            $class_entry->getClassName($dereferencer) === 'WeakReference'
+            and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V74)
+        ) {
+            try {
+                $weak_reference_context = $this->collectWeakReference(
+                    $dereferencer->deref(
+                        ZendWeakReference::getPointerFromZendObjectPointer(
+                            $object->getPointer(),
+                            $zend_type_reader,
+                        ),
+                    ),
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                $object_context->add('weak_reference', $weak_reference_context);
+            } catch (\Throwable) {
+            }
+        }
+
+        if (
+            $class_entry->getClassName($dereferencer) === 'WeakMap'
+            and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V80)
+        ) {
+            try {
+                $weak_map_context = $this->collectWeakMap(
+                    $dereferencer->deref(
+                        ZendWeakMap::getPointerFromZendObjectPointer(
+                            $object->getPointer(),
+                            $zend_type_reader,
+                        ),
+                    ),
+                    $map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                $object_context->add('weak_map', $weak_map_context);
             } catch (\Throwable) {
             }
         }
@@ -1493,6 +1549,64 @@ final class MemoryLocationsCollector
                 continue;
             }
         }
+    }
+
+    public function collectWeakReference(
+        ZendWeakReference $zend_weak_reference,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): WeakReferenceContext {
+        $weak_reference_context = new WeakReferenceContext();
+
+        if ($zend_weak_reference->referent !== null) {
+            try {
+                $referent_context = $this->collectZendObjectPointer(
+                    $zend_weak_reference->referent,
+                    $map_ptr_base,
+                    $memory_locations,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+                $weak_reference_context->add('referent', $referent_context);
+            } catch (\Throwable) {
+            }
+        }
+
+        return $weak_reference_context;
+    }
+
+    public function collectWeakMap(
+        ZendWeakMap $zend_weak_map,
+        int $map_ptr_base,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ?MemoryLimitErrorDetails $memory_limit_error_details,
+    ): WeakMapContext {
+        $weak_map_context = new WeakMapContext();
+
+        try {
+            $array_context = $this->collectZendArray(
+                $zend_weak_map->ht,
+                $map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+            $weak_map_context->add('entries', $array_context);
+        } catch (\Throwable) {
+        }
+
+        return $weak_map_context;
     }
 
     public function collectFunctionTable(

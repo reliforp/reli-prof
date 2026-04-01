@@ -66,6 +66,18 @@ class zend_generator extends CData
     public zval $retval;
 }
 
+class zend_weakref extends CData
+{
+    public ?CPointer $referent;
+    public zend_object $std;
+}
+
+class zend_weakmap extends CData
+{
+    public zend_array $ht;
+    public zend_object $std;
+}
+
 class zend_constants extends CData
 {
     public ?CPointer $name;
