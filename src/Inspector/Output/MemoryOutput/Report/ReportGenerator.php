@@ -93,7 +93,7 @@ final class ReportGenerator
             $substrate = GraphSubstrate::loadFromDb($db, $run_id);
             $meta['scc_count'] = count($substrate->scc_profiles);
 
-            $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate)));
+            $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(
                 new PropertyScalingPass($db, $run_id, $class_objects, $substrate)
             ));
