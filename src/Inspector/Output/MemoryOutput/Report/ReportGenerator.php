@@ -65,14 +65,15 @@ final class ReportGenerator
         if ($full_analysis || $node_count < 500000) {
             $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
-            // PropertyScaling: deferred to Phase 3 if graph available (retained size)
+            // PropertyScaling, TopArrays, TopStrings: deferred to Phase 3
+            // if graph available (full path + retained size)
             if (!$run_phase3) {
                 $findings = array_merge($findings, $this->runPass(
                     new PropertyScalingPass($db, $run_id, $class_objects)
                 ));
+                $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
+                $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
             }
-            $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
         }
@@ -87,6 +88,8 @@ final class ReportGenerator
                 new PropertyScalingPass($db, $run_id, $class_objects, $substrate)
             ));
             $findings = array_merge($findings, $this->runPass(new PerPropertyMemoryPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
+            $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new ChokePointPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate, $db, $run_id)));

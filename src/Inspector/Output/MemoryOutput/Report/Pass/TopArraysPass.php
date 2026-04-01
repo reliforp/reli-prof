@@ -16,13 +16,21 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 
 final class TopArraysPass implements PassInterface
 {
+    /** @var array<int, array{0: int, 1: string}>|null */
+    private ?array $parentMapCache = null;
+    /** @var array<int, string>|null */
+    private ?array $nodeTypeCache = null;
+
     public function __construct(
         private \PDO $db,
         private int $run_id,
+        private ?GraphSubstrate $substrate = null,
     ) {
     }
 
@@ -76,7 +84,10 @@ final class TopArraysPass implements PassInterface
             }
 
             $elements = (int)($row['element_count'] ?? 0);
-            $path = $this->buildOwnerPath($row, $labeler);
+            $node_id = (int)$row['node_id'];
+            $path = $this->substrate !== null
+                ? $this->buildFullPath($node_id, $labeler)
+                : $this->buildOwnerPath($row, $labeler);
 
             $findings[] = new Finding(
                 kind: 'large_array',
@@ -114,6 +125,64 @@ final class TopArraysPass implements PassInterface
     }
 
     /**
+     * Walk from node to root via tree parent edges.
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function buildFullPath(int $node_id, NodeLabeler $labeler): string
+    {
+        assert($this->substrate !== null);
+
+        if ($this->parentMapCache === null) {
+            $this->parentMapCache = [];
+            $rows = $this->db->query(
+                "SELECT child_node_id, parent_node_id, link_name"
+                . " FROM context_edges WHERE is_tree = 1"
+                . " AND run_id = {$this->run_id}"
+            )->fetchAll(\PDO::FETCH_NUM);
+            foreach ($rows as $r) {
+                $this->parentMapCache[(int)$r[0]] = [(int)($r[1] ?? -1), (string)$r[2]];
+            }
+            unset($rows);
+
+            $this->nodeTypeCache = [];
+            $rows = $this->db->query(
+                "SELECT node_id, type FROM context_nodes"
+                . " WHERE run_id = {$this->run_id}"
+            )->fetchAll(\PDO::FETCH_NUM);
+            foreach ($rows as $r) {
+                $this->nodeTypeCache[(int)$r[0]] = (string)$r[1];
+            }
+            unset($rows);
+        }
+
+        $parts = [];
+        $types = [];
+        $cur = $node_id;
+        for ($i = 0; $i < 20; $i++) {
+            if (!isset($this->parentMapCache[$cur])) {
+                break;
+            }
+            [$parent, $link] = $this->parentMapCache[$cur];
+            $resolved = $labeler->resolvePathLabel($link, $cur);
+            array_unshift($parts, $resolved);
+            array_unshift($types, $this->nodeTypeCache[$cur] ?? '');
+            $cur = $parent;
+        }
+
+        return PathFormatter::toPhpSyntax($parts, $types);
+    }
+
+    private const STRUCTURAL_LINKS = [
+        'object_properties',
+        'array_elements',
+        'local_variables',
+        'symbol_table',
+        'dynamic_properties',
+        'value',
+        'call_frames',
+    ];
+
+    /**
      * @param array<string, mixed> $row
      * @psalm-suppress MixedArgument, MixedAssignment, RiskyTruthyFalsyComparison, InvalidArgument
      */
@@ -121,15 +190,15 @@ final class TopArraysPass implements PassInterface
         array $row,
         NodeLabeler $labeler,
     ): string {
-        $parts = [];
+        $raw_parts = [];
 
         if (($row['link3'] ?? null) !== null) {
-            $parts[] = (string)$row['link3'];
+            $raw_parts[] = (string)$row['link3'];
         }
 
         if (($row['link2'] ?? null) !== null) {
             $parent2_id = (int)($row['parent2_id'] ?? 0);
-            $parts[] = $labeler->resolvePathLabel(
+            $raw_parts[] = $labeler->resolvePathLabel(
                 (string)$row['link2'],
                 $parent2_id
             );
@@ -139,13 +208,19 @@ final class TopArraysPass implements PassInterface
         if ($parent_class) {
             $short = preg_replace('/^.*\\\\/', '', $parent_class)
                 ?? $parent_class;
-            $parts[] = $short;
+            $raw_parts[] = $short;
         }
 
         if (($row['link1'] ?? null) !== null) {
-            $parts[] = (string)$row['link1'];
+            $raw_parts[] = (string)$row['link1'];
         }
 
-        return implode(' -> ', $parts);
+        // Filter structural intermediaries and join with ->
+        $filtered = array_values(array_filter(
+            $raw_parts,
+            fn(string $p) => !in_array($p, self::STRUCTURAL_LINKS, true)
+        ));
+
+        return implode('->', $filtered);
     }
 }
