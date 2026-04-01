@@ -249,3 +249,26 @@ large_string は SQL 3-hop なので `structure -> object_properties -> raw` の
 
 `--full-analysis` 時は large_string/large_array もフルパス + PHP 構文変換すべき。
 あるいは 3-hop 結果に対しても `object_properties` → `->` の簡易変換を適用。
+
+### 2a-4. PropertyScalingPass: 完全修飾名 [重要度: 中]
+
+現在:
+```
+PER-INSTANCE:
+  $attributes: 10,000 copies x 599B
+  $casts: 10,000 copies x 376B
+SHARED: $hidden, $guarded, $fillable, ...
+```
+
+expensive_property が `Structure::$raw` のように完全修飾名を出しているのに、
+PropertyScalingPass は `$attributes` とクラス名なし。整合性がない。
+
+理想:
+```
+PER-INSTANCE:
+  User::$attributes: 10,000 copies x 599B (retained)
+  User::$casts: 10,000 copies x 376B (retained)
+SHARED: User::$hidden, User::$guarded, User::$fillable, ...
+```
+
+Pass 内で dominant_class 名を既に持っているので、プレフィックスに付けるだけ。
