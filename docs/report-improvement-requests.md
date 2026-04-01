@@ -272,3 +272,19 @@ SHARED: User::$hidden, User::$guarded, User::$fillable, ...
 ```
 
 Pass 内で dominant_class 名を既に持っているので、プレフィックスに付けるだけ。
+
+### 全般: クラス名は FQCN で統一 [重要度: 中]
+
+全ての finding でクラス名を出す場所を FQCN (完全修飾名) に統一。
+
+対象:
+- dominant_class: `User` → `App\Models\User`
+- companion_pair: `FormBuilder` → `Symfony\Component\Form\FormBuilder`
+- companion_cluster: `Message` → `Webklex\PHPIMAP\Message`
+- structural_duplicate: `Attribute` → `Webklex\PHPIMAP\Attribute`
+- property_scaling: `User::$attributes` → `App\Models\User::$attributes`
+- cycle_cluster: `Attachment:3, Message:1` → FQCN版
+
+`class_objects_summary` には FQCN が入っているのでデータは既にある。
+短縮表記にするかはユーザーの好みだが、まずは FQCN で出して、
+将来的に `--short-class-names` オプションで短縮を選べるようにするのが無難。
