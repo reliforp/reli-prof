@@ -460,3 +460,19 @@ After:  dedup_candidate: Attachment::$part (Part): 600 copies x 312B ALL SAME SI
 ```
 
 SQL で取得可能（検証済み）。shared_fanin と同じ JOIN パターン。
+
+### dedup_candidate に代表例を表示 [重要度: 低]
+
+実際に重複かどうかは中身を見ないと分からない。代表例を数件出すと判断材料になる。
+
+- 文字列なら `string_value` の先頭を数件表示
+- 配列/オブジェクトならサイズと子ノード数を数件表示
+
+```
+dedup_candidate: Attachment::$part (Part): 600 copies x 312B ALL SAME SIZE
+  Examples: Part{raw=210KB}, Part{raw=52KB}, Part{raw=52KB} — different content
+```
+
+ただし structural_duplicate pass が既に「同じ shape のオブジェクト群」を
+検出しているので、dedup_candidate と structural_duplicate の整理が先。
+両方出ると冗長な場合がある。
