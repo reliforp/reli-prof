@@ -449,3 +449,14 @@ source/target class は SQL で取得可能（検証済み）:
 
 実装: ObjectPropertiesContext の親 ObjectContext から source class、
 child_node_id の class_name から target class を取る。
+
+### dedup_candidate にクラス修飾 [重要度: 中]
+
+shared_fanin と同様、source/target class を付ける。
+
+```
+Before: dedup_candidate: part: 600 copies x 312B ALL SAME SIZE
+After:  dedup_candidate: Attachment::$part (Part): 600 copies x 312B ALL SAME SIZE
+```
+
+SQL で取得可能（検証済み）。shared_fanin と同じ JOIN パターン。
