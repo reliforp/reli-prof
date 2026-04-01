@@ -17,12 +17,16 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class CycleClusterPass implements PassInterface
 {
     public function __construct(
         private GraphSubstrate $substrate,
+        private \PDO $db,
+        private int $run_id,
     ) {
     }
 
@@ -58,6 +62,16 @@ final class CycleClusterPass implements PassInterface
         }
         usort($groups_sorted, fn($a, $b) => $b['total'] <=> $a['total']);
 
+        // Load link_names and node types for path resolution
+        $link_names = $this->loadLinkNames();
+        $labeler = new NodeLabeler($this->db, $this->run_id);
+
+        // Load node types for PathFormatter
+        $node_type_map = $this->loadNodeTypes();
+
+        // Load parent map for entry point path
+        $parent_map = $this->loadParentMap();
+
         $findings = [];
         foreach (array_slice($groups_sorted, 0, 10) as $g) {
             $group = $g['group'];
@@ -67,6 +81,23 @@ final class CycleClusterPass implements PassInterface
 
             $composition = $this->formatComposition(
                 $example['class_counts']
+            );
+
+            // Find back-reference (non-tree edge within SCC)
+            $back_ref = $this->findBackReference(
+                $example['nodes'],
+                $link_names,
+            );
+
+            // Compute retained size (shallow + downstream)
+            $retained = $this->computeRetained($example['nodes']);
+
+            // Find entry point path
+            $entry_path = $this->findEntryPath(
+                $example['nodes'],
+                $parent_map,
+                $node_type_map,
+                $labeler,
             );
 
             // Micro-cycles (2 nodes)
@@ -87,18 +118,22 @@ final class CycleClusterPass implements PassInterface
                         'count' => $count,
                         'class_count' => $class_count,
                         'total_size' => $g['total'],
+                        'back_reference' => $back_ref,
                     ],
                     hypothesis: 'Bidirectional references'
-                        . ' between two objects',
+                        . ' between two objects'
+                        . ($back_ref !== ''
+                            ? "\nBack-reference: {$back_ref}"
+                            : ''),
                     next_checks: [
                         'Check if back-reference can use WeakReference',
                     ],
-                    impact_bytes: $g['total'],
+                    impact_bytes: $retained * $count,
                 );
                 continue;
             }
 
-            // Large DI-container-like cycles (many classes, typically 1 instance)
+            // Large DI-container-like cycles
             if ($class_count > 15 && $count <= 2) {
                 $findings[] = new Finding(
                     kind: 'di_container_cycle',
@@ -129,6 +164,32 @@ final class CycleClusterPass implements PassInterface
             }
 
             // Normal cycle clusters
+            $hypothesis_parts = ["Per cycle: {$composition}"];
+            if ($back_ref !== '') {
+                $hypothesis_parts[] = "Back-reference: {$back_ref}";
+            }
+            if ($entry_path !== '') {
+                $hypothesis_parts[] = "Example: {$entry_path}";
+                if ($count > 1) {
+                    $more = $count - 1;
+                    $hypothesis_parts[] = "({$more} more with same pattern)";
+                }
+            }
+            if ($example['single_owner_likelihood'] === 'high') {
+                $hypothesis_parts[] = 'Single entry point — breaking'
+                    . ' the back-reference likely frees this cycle';
+            } elseif ($count > 10) {
+                $hypothesis_parts[] = "{$count} identical cycles"
+                    . ' — a structural pattern';
+            }
+
+            $retained_label = $retained > $example['total_size']
+                ? sprintf(
+                    ', %s retained',
+                    SizeFormatter::format($retained * $count)
+                )
+                : '';
+
             $findings[] = new Finding(
                 kind: 'cycle_cluster',
                 severity: $g['total'] > 1024 * 100
@@ -136,33 +197,35 @@ final class CycleClusterPass implements PassInterface
                     : FindingSeverity::Low,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
-                    '%d identical cycle%s (%d classes, %s total)',
+                    '%d identical cycle%s (%d classes, %s shallow%s)',
                     $count,
                     $count > 1 ? 's' : '',
                     $class_count,
                     SizeFormatter::format($g['total']),
+                    $retained_label,
                 ),
                 facts: [
                     'composition' => $composition,
                     'count' => $count,
                     'class_count' => $class_count,
                     'total_size' => $g['total'],
+                    'retained_size' => $retained * $count,
+                    'back_reference' => $back_ref,
+                    'entry_path' => $entry_path,
                     'ext_incoming' => $example['ext_in'],
                     'single_owner_likelihood' => $example['single_owner_likelihood'],
                 ],
-                hypothesis: "Per cycle: {$composition}\n"
-                    . ($example['single_owner_likelihood'] === 'high'
-                        ? 'Single entry point — breaking the owner'
-                        . ' reference likely frees this cycle'
-                        : ($count > 10
-                            ? "{$count} identical cycles"
-                            . ' — a structural pattern'
-                            : 'Circular reference chain')),
-                next_checks: [
-                    'Identify the back-reference causing the cycle',
-                    'Consider using WeakReference or explicit cleanup',
-                ],
-                impact_bytes: $g['total'],
+                hypothesis: implode("\n", $hypothesis_parts),
+                next_checks: $back_ref !== ''
+                    ? [
+                        "Break {$back_ref} to eliminate all {$count} cycles",
+                        'Consider using WeakReference or explicit cleanup',
+                    ]
+                    : [
+                        'Identify the back-reference causing the cycle',
+                        'Consider using WeakReference or explicit cleanup',
+                    ],
+                impact_bytes: $retained * $count,
                 evidence_node_ids: array_slice($example['nodes'], 0, 5),
             );
         }
@@ -171,8 +234,125 @@ final class CycleClusterPass implements PassInterface
     }
 
     /**
-     * Format class_counts as "1x Message + 3x Attachment".
-     * Truncates to top 5 if more than 5 classes.
+     * Find the non-tree edge within an SCC (the back-reference).
+     * @param list<int> $nodes
+     * @param array<int, string> $link_names
+     */
+    private function findBackReference(
+        array $nodes,
+        array $link_names,
+    ): string {
+        $scc_set = array_flip($nodes);
+
+        foreach ($nodes as $node) {
+            // Check all_children for edges that go to another SCC member
+            foreach ($this->substrate->all_children[$node] ?? [] as $child) {
+                if (!isset($scc_set[$child])) {
+                    continue;
+                }
+                // Is this a non-tree edge? (tree edge would be in $children)
+                $is_tree = in_array(
+                    $child,
+                    $this->substrate->children[$node] ?? [],
+                    true
+                );
+                if ($is_tree) {
+                    continue;
+                }
+
+                // Found a non-tree edge within SCC
+                $link = $link_names[$child] ?? '?';
+                $src_class = $this->substrate->node_classes[$node] ?? null;
+                $tgt_class = $this->substrate->node_classes[$child] ?? null;
+
+                if ($src_class !== null && $tgt_class !== null) {
+                    return "{$src_class}::\${$link} -> {$tgt_class}";
+                }
+                if ($src_class !== null) {
+                    return "{$src_class}::\${$link}";
+                }
+                return $link;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Compute retained size for an SCC: shallow + downstream.
+     * @param list<int> $nodes
+     */
+    private function computeRetained(array $nodes): int
+    {
+        $scc_set = array_flip($nodes);
+        $shallow_total = 0;
+        $downstream = 0;
+
+        foreach ($nodes as $node) {
+            $shallow_total += $this->substrate->node_sizes[$node] ?? 0;
+
+            // Add downstream retained from tree children outside SCC
+            foreach ($this->substrate->children[$node] ?? [] as $child) {
+                if (!isset($scc_set[$child])) {
+                    $downstream
+                        += $this->substrate->subtree_sizes[$child] ?? 0;
+                }
+            }
+        }
+
+        return $shallow_total + $downstream;
+    }
+
+    /**
+     * Find entry point path to an SCC member.
+     * @param list<int> $nodes
+     * @param array<int, array{0: int, 1: string}> $parent_map
+     * @param array<int, string> $node_type_map
+     */
+    private function findEntryPath(
+        array $nodes,
+        array $parent_map,
+        array $node_type_map,
+        NodeLabeler $labeler,
+    ): string {
+        $scc_set = array_flip($nodes);
+
+        // Find an SCC node that has an external parent (entry point)
+        $entry_node = null;
+        foreach ($nodes as $node) {
+            foreach ($this->substrate->all_parents[$node] ?? [] as $parent) {
+                if ($parent !== -1 && !isset($scc_set[$parent])) {
+                    $entry_node = $node;
+                    break 2;
+                }
+            }
+        }
+
+        if ($entry_node === null) {
+            return '';
+        }
+
+        // Walk up from entry_node to root
+        $parts = [];
+        $types = [];
+        $cur = $entry_node;
+        for ($i = 0; $i < 20; $i++) {
+            if (!isset($parent_map[$cur])) {
+                break;
+            }
+            [$parent, $link] = $parent_map[$cur];
+            $resolved = $labeler->resolvePathLabel($link, $cur);
+            array_unshift($parts, $resolved);
+            array_unshift($types, $node_type_map[$cur] ?? '');
+            $cur = $parent;
+        }
+
+        return $parts !== []
+            ? PathFormatter::toPhpSyntax($parts, $types)
+            : '';
+    }
+
+    /**
      * @param array<string, int> $class_counts
      */
     private function formatComposition(array $class_counts): string
@@ -189,5 +369,63 @@ final class CycleClusterPass implements PassInterface
             $i++;
         }
         return implode(' + ', $parts);
+    }
+
+    /**
+     * @return array<int, string>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function loadLinkNames(): array
+    {
+        $rows = $this->db->query(
+            "SELECT child_node_id, link_name FROM context_edges"
+            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int)$r[0]] = (string)$r[1];
+        }
+        unset($rows);
+        return $map;
+    }
+
+    /**
+     * @return array<int, string>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function loadNodeTypes(): array
+    {
+        $rows = $this->db->query(
+            "SELECT node_id, type FROM context_nodes"
+            . " WHERE run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int)$r[0]] = (string)$r[1];
+        }
+        unset($rows);
+        return $map;
+    }
+
+    /**
+     * @return array<int, array{0: int, 1: string}>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function loadParentMap(): array
+    {
+        $rows = $this->db->query(
+            "SELECT child_node_id, parent_node_id, link_name"
+            . " FROM context_edges WHERE is_tree = 1"
+            . " AND run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int)$r[0]] = [(int)($r[1] ?? -1), (string)$r[2]];
+        }
+        unset($rows);
+        return $map;
     }
 }
