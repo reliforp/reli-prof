@@ -389,14 +389,17 @@ reli が見ているのは「同じアドレスを参照している」事実の
 3. Interned string — PHP の文字列自動共有
 4. クラス定義のデフォルト値
 
-location type で正確に言い分けられる:
-- **配列** が shared → CoW ✅
-- **文字列** が shared → CoW ✅
-- **オブジェクト** が shared → 同じインスタンスの参照 (CoW ではない)
+location type と参照経由かどうかで区別できる:
+- **配列/文字列** が shared (ZendReference 経由でない) → CoW
+- **配列/文字列** が shared (ZendReference 経由) → PHP 参照 (`&`) で共有
+- **オブジェクト** が shared → 同じインスタンスへの参照
+
+context tree で `PhpReferenceContext` が間に挟まっているかどうかで判定可能。
 
 ```
 SHARED:
   User::$relations (array, CoW)
   User::$fillable (array, CoW)
   User::$config (object, same instance)
+  User::$sharedBuf (array, PHP reference)  ← & 経由
 ```
