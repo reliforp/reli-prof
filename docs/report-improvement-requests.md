@@ -61,7 +61,43 @@ CommonMark の DotAccessData (246K) が全 Node サブクラスの companion だ
 count ベースの companion 検出では捕まらない問題を解決。
 graph substrate 必要、規模が大きいので別 PR。
 
-### 3a. bottleneck_path のフレーム番号を関数名に [重要度: 高]
+### 3a. パス表示の改善 [重要度: 高]
+
+**3a-1. フレーム番号 → 関数名**
+
+現在:
+```
+call_frames -> 1 -> local_variables -> messages -> ...
+```
+
+フレーム番号 `1` では何の関数か分からない。CallFrameContext には
+`function_name` と `lineno` が attributes にあるので、表示時に
+解決すべき:
+
+```
+call_frames -> <main>:54 -> $messages -> ...
+```
+
+bottleneck_path と choke_point の両方で適用。
+
+**3a-2. large_string / large_array にオーナーパスを付ける**
+
+現在:
+```
+[MEDIUM] large_string: 205.88 KB string — raw: --boundary_...
+[LOW] large_array: 0.09 MB array, 2,010 elements — interned_strings
+```
+
+link_name 1 段だけでは「誰が持っているか」分からない。
+3-hop ancestor を付けるとアクショナブルになる:
+
+```
+[MEDIUM] large_string: 205.88 KB — messages[0] -> structure -> raw: --boundary_...
+[LOW] large_array: 0.09 MB, 2,010 elements — class_table -> interned_strings
+```
+
+実装: `v_node_paths` ではなく 3-hop JOIN (既に他の Pass で使用実績あり)。
+CallFrameContext が途中にあれば 3a-1 の関数名解決も適用。
 
 現在:
 ```
