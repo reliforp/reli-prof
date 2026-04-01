@@ -522,3 +522,20 @@ large_array: 0.15 MB, 10,000 elements (capacity: 16,384) — 61% utilization
 
 reli の ZendArray に全フィールドがあるので、context_node_attributes に
 `#nTableSize` と `#nNumOfElements` も出すか、large_array pass で直接使う。
+
+### sparse_array 検出 (新 finding type) [重要度: 中]
+
+`nTableSize` >> `nNumOfElements` の配列を検出。
+large_array とは別の問題 — サイズではなく使用効率が悪い。
+
+```
+[MEDIUM] sparse_array: 256 KB table, 5/16,384 slots used (0.03%) — <main>:42::$cache
+  Likely: large array after mass unset() without reallocation
+```
+
+ZendArray の `nTableSize` と `nNumOfElements` で判定:
+- `nNumOfElements / nTableSize < 0.25` かつ `nTableSize >= 1024` → sparse
+- テーブルサイズ × スロットサイズが無駄なメモリ量
+
+これは `array_values()` で再パッキングするか、新しい配列に
+移し替えることで解消できるアクショナブルな finding。
