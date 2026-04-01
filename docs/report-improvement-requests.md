@@ -738,3 +738,20 @@ graph substrate でも: SCC 内ノード間の non-tree edge を見つけるだ�
 
 SCC の external incoming edge から root までのパスを PHP 構文で出す。
 200 個全部ではなく代表 1 件 + 残数。
+
+### cycle_cluster に retained size [重要度: 中]
+
+現在の 170 KB は SCC 内オブジェクトの shallow size 合計のみ。
+サイクルのせいで保持されている downstream メモリ（Message の raw body 等）
+は含まれない。実際の影響は 170 KB より遥かに大きい可能性がある。
+
+SCC を super-node に潰した condensed DAG 上で subtree sum を取れば
+正確な retained size が出る。
+
+実装:
+1. SCC 内ノードの shallow sum → super-node の shallow (既にある)
+2. SCC → 外部 edge の先の subtree → downstream retained
+3. SCC retained = shallow + downstream
+
+condensed DAG は SCC profiles + SCC 間 edge で構築。
+post-order DFS で計算。SCC 0 個なら既存の subtree_sizes がそのまま使える。
