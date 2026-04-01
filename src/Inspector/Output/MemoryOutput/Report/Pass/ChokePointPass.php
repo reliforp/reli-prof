@@ -26,6 +26,7 @@ final class ChokePointPass implements PassInterface
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
+        private int $heap_usage = 0,
     ) {
     }
 
@@ -160,9 +161,17 @@ final class ChokePointPass implements PassInterface
 
             $n_children = count($this->substrate->children[$node] ?? []);
 
+            $heap = max($this->heap_usage, 1);
+            $pct = $subtree / $heap * 100.0;
+            $severity = match (true) {
+                $pct > 30.0 => FindingSeverity::High,
+                $pct > 10.0 => FindingSeverity::Medium,
+                default => FindingSeverity::Low,
+            };
+
             $findings[] = new Finding(
                 kind: 'choke_point',
-                severity: FindingSeverity::High,
+                severity: $severity,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
                     '%s (%dB shallow) holds %.2f MB via %d children — %s',

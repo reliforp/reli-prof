@@ -51,6 +51,15 @@ final class ReportGenerator
 
         // Phase 1: Summary-based passes (always run)
         $summary = $this->loadSummary($db, $run_id);
+        /** @var array<string, mixed> $flat_summary */
+        $flat_summary = [];
+        /** @psalm-suppress MixedAssignment */
+        foreach ($summary as $entry) {
+            foreach ($entry as $k => $v) {
+                $flat_summary[$k] = $v;
+            }
+        }
+        $heap_usage = (int)($flat_summary['zend_mm_heap_usage'] ?? 0);
         $location_types = $this->loadLocationTypes($db, $run_id);
         $class_objects = $this->loadClassObjects($db, $run_id);
 
@@ -91,7 +100,9 @@ final class ReportGenerator
             $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new ChokePointPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(
+                new ChokePointPass($substrate, $db, $run_id, $heap_usage)
+            ));
             $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
         }
