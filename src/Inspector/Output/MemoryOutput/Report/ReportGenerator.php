@@ -61,12 +61,16 @@ final class ReportGenerator
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
 
         // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
+        $run_phase3 = $full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000);
         if ($full_analysis || $node_count < 500000) {
             $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(
-                new PropertyScalingPass($db, $run_id, $class_objects)
-            ));
+            // PropertyScaling: deferred to Phase 3 if graph available (retained size)
+            if (!$run_phase3) {
+                $findings = array_merge($findings, $this->runPass(
+                    new PropertyScalingPass($db, $run_id, $class_objects)
+                ));
+            }
             $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
@@ -74,11 +78,14 @@ final class ReportGenerator
         }
 
         // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
-        if ($full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000)) {
+        if ($run_phase3) {
             $substrate = GraphSubstrate::loadFromDb($db, $run_id);
             $meta['scc_count'] = count($substrate->scc_profiles);
 
             $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate)));
+            $findings = array_merge($findings, $this->runPass(
+                new PropertyScalingPass($db, $run_id, $class_objects, $substrate)
+            ));
             $findings = array_merge($findings, $this->runPass(new PerPropertyMemoryPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new ChokePointPass($substrate, $db, $run_id)));

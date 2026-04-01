@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 
 final class PropertyScalingPass implements PassInterface
 {
@@ -26,18 +27,18 @@ final class PropertyScalingPass implements PassInterface
         private \PDO $db,
         private int $run_id,
         private array $class_objects_summary,
+        private ?GraphSubstrate $substrate = null,
     ) {
     }
 
     /**
      * @return list<Finding>
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
-     * @psalm-suppress MixedOperand, InvalidOperand
+     * @psalm-suppress MixedOperand, InvalidOperand, MixedArrayOffset
      */
     #[\Override]
     public function analyze(): array
     {
-        // Find dominant class (> 50% of object memory)
         $total_object_memory = 0;
         foreach ($this->class_objects_summary as $entry) {
             $total_object_memory += $entry['memory_usage'];
@@ -61,9 +62,13 @@ final class PropertyScalingPass implements PassInterface
             return [];
         }
 
+        $use_retained = $this->substrate !== null
+            && $this->substrate->subtree_sizes !== [];
+
         $rows = $this->db->query("
             SELECT
                 e_prop.link_name,
+                e_prop.child_node_id,
                 count(*) as total_refs,
                 count(DISTINCT e_prop.child_node_id) as distinct_targets,
                 sum(CASE WHEN e_prop.is_tree = 1
@@ -91,8 +96,35 @@ final class PropertyScalingPass implements PassInterface
             return [];
         }
 
+        // Collect child_node_ids per property for retained size lookup
+        $prop_children = [];
+        if ($use_retained) {
+            $child_rows = $this->db->query("
+                SELECT
+                    e_prop.link_name,
+                    e_prop.child_node_id
+                FROM context_node_locations cnl_obj
+                JOIN context_edges e_to_props
+                    ON e_to_props.parent_node_id = cnl_obj.node_id
+                    AND e_to_props.link_name = 'object_properties'
+                    AND e_to_props.run_id = {$this->run_id}
+                JOIN context_edges e_prop
+                    ON e_prop.parent_node_id = e_to_props.child_node_id
+                    AND e_prop.is_tree = 1
+                    AND e_prop.run_id = {$this->run_id}
+                WHERE cnl_obj.class_name = "
+                . $this->db->quote($dominant_class) . "
+                    AND cnl_obj.run_id = {$this->run_id}
+            ")->fetchAll(\PDO::FETCH_ASSOC);
+            foreach ($child_rows as $cr) {
+                $prop_children[$cr['link_name']][] = (int)$cr['child_node_id'];
+            }
+            unset($child_rows);
+        }
+
         $per_instance = [];
         $shared = [];
+        $scalar_count = 0;
 
         foreach ($rows as $row) {
             $distinct = (int)$row['distinct_targets'];
@@ -107,38 +139,74 @@ final class PropertyScalingPass implements PassInterface
                 $scaling = 'PARTIALLY SHARED';
             }
 
-            $entry = [
-                'property' => $row['link_name'],
-                'distinct_targets' => $distinct,
-                'total_refs' => $total_refs,
-                'tree_size' => $tree_size,
-                'scaling' => $scaling,
-            ];
+            // Compute retained size if available
+            $prop_name = $row['link_name'];
+            $retained_total = 0;
+            if ($use_retained && isset($prop_children[$prop_name])) {
+                foreach ($prop_children[$prop_name] as $cid) {
+                    $retained_total += $this->substrate->subtree_sizes[$cid] ?? 0;
+                }
+            }
 
-            if ($scaling === 'SHARED') {
-                $shared[] = $entry;
+            $size = $use_retained && $retained_total > 0
+                ? $retained_total
+                : $tree_size;
+
+            if ($scaling !== 'SHARED') {
+                // Skip size=0 PER-INSTANCE (scalar zval, already in object size)
+                if ($size === 0) {
+                    $scalar_count++;
+                    continue;
+                }
+                $per_instance[] = [
+                    'property' => $prop_name,
+                    'distinct_targets' => $distinct,
+                    'total_refs' => $total_refs,
+                    'size' => $size,
+                    'retained' => $use_retained,
+                    'scaling' => $scaling,
+                ];
             } else {
-                $per_instance[] = $entry;
+                $shared[] = [
+                    'property' => $prop_name,
+                    'distinct_targets' => $distinct,
+                    'total_refs' => $total_refs,
+                    'size' => $size,
+                    'scaling' => $scaling,
+                ];
             }
         }
 
         $short = preg_replace('/^.*\\\\/', '', $dominant_class)
             ?? $dominant_class;
+        $size_label = $use_retained ? 'retained' : 'shallow';
 
         $lines = [];
         if ($per_instance !== []) {
-            $lines[] = 'PER-INSTANCE (scales with count):';
-            foreach (array_slice($per_instance, 0, 5) as $p) {
+            $lines[] = "PER-INSTANCE ({$size_label}, scales with count):";
+            usort(
+                $per_instance,
+                fn($a, $b) => $b['size'] <=> $a['size']
+            );
+            foreach (array_slice($per_instance, 0, 8) as $p) {
+                $avg = $p['distinct_targets'] > 0
+                    ? (int)($p['size'] / $p['distinct_targets'])
+                    : 0;
                 $lines[] = sprintf(
                     '  $%s: %s copies x %dB = %.2f KB',
                     $p['property'],
                     number_format($p['distinct_targets']),
-                    $p['distinct_targets'] > 0
-                        ? (int)($p['tree_size'] / $p['distinct_targets'])
-                        : 0,
-                    $p['tree_size'] / 1024,
+                    $avg,
+                    $p['size'] / 1024,
                 );
             }
+        }
+        if ($scalar_count > 0) {
+            $lines[] = sprintf(
+                '(%d scalar properties per-instance,'
+                . ' included in object size)',
+                $scalar_count
+            );
         }
         if ($shared !== []) {
             $shared_names = array_map(
@@ -150,7 +218,7 @@ final class PropertyScalingPass implements PassInterface
         }
 
         $per_instance_total = array_sum(
-            array_column($per_instance, 'tree_size')
+            array_column($per_instance, 'size')
         );
 
         return [
@@ -159,13 +227,15 @@ final class PropertyScalingPass implements PassInterface
                 severity: FindingSeverity::Medium,
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
-                    '%s (%s instances): %d per-instance props (%.2f KB/instance), %d shared',
+                    '%s (%s instances): %d per-instance props'
+                    . ' (%.2f KB/instance %s), %d shared',
                     $short,
                     number_format($dominant_count),
                     count($per_instance),
                     $dominant_count > 0
                         ? $per_instance_total / $dominant_count / 1024
                         : 0,
+                    $size_label,
                     count($shared),
                 ),
                 facts: [
@@ -173,14 +243,18 @@ final class PropertyScalingPass implements PassInterface
                     'instance_count' => $dominant_count,
                     'per_instance_properties' => $per_instance,
                     'shared_properties' => $shared,
+                    'scalar_properties_count' => $scalar_count,
                     'per_instance_total_bytes' => $per_instance_total,
+                    'size_mode' => $size_label,
                 ],
                 hypothesis: 'Per-instance properties scale linearly;'
                     . ' shared properties use CoW.'
                     . "\n" . implode("\n", $lines),
                 next_checks: [
-                    'Per-instance properties with small values may benefit from lazy init',
-                    'Check if per-instance arrays can be replaced with defaults',
+                    'Per-instance props with small values'
+                    . ' may benefit from lazy init',
+                    'Check if per-instance arrays can be replaced'
+                    . ' with defaults',
                 ],
                 impact_bytes: $per_instance_total,
             ),
