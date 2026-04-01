@@ -431,3 +431,21 @@ Eloquent だと `dominant_class: User 98.2%` だけで終わる。
 PropertyScaling の SQL 79秒問題を graph 側に移せば全事例 1 分以内。
 デフォルトを full-analysis にして、巨大ターゲットのみ `--no-full-analysis`
 で opt-out する方が自然。
+
+### shared_fanin にクラス修飾パス [重要度: 中]
+
+現在:
+```
+[MEDIUM] shared_fanin: oMessage: 600 refs -> 200 targets (3.0 each)
+```
+
+クラス名がないと「何の oMessage?」が分からない。
+source/target class は SQL で取得可能（検証済み）:
+
+理想:
+```
+[MEDIUM] shared_fanin: Attachment::$oMessage → Message (600 refs → 200 targets)
+```
+
+実装: ObjectPropertiesContext の親 ObjectContext から source class、
+child_node_id の class_name から target class を取る。
