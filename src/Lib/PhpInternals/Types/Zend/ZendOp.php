@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
 use FFI\PhpInternals\zend_op;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\FieldReader;
@@ -101,13 +102,16 @@ final class ZendOp implements LazyDereferencable, CDataDereferencable
         };
     }
 
+    /** @psalm-suppress PropertyTypeCoercion -- CData from FFIHelper::cast is always valid */
     private function getFieldEager(string $field_name): mixed
     {
         assert($this->casted_cdata !== null);
         return match ($field_name) {
-            'op1' => $this->op1 = (int)(\FFI::cast('int', $this->casted_cdata->casted->op1)?->cdata ?? -1),
-            'op2' => $this->op2 = (int)(\FFI::cast('int', $this->casted_cdata->casted->op2)?->cdata ?? -1),
-            'result' => $this->result = (int)(\FFI::cast('int', $this->casted_cdata->casted->result)?->cdata ?? -1),
+            'op1' => $this->op1 = (int)(FFIHelper::cast('int', $this->casted_cdata->casted->op1)?->cdata ?? -1),
+            'op2' => $this->op2 = (int)(FFIHelper::cast('int', $this->casted_cdata->casted->op2)?->cdata ?? -1),
+            'result' => $this->result = (int)(
+                FFIHelper::cast('int', $this->casted_cdata->casted->result)?->cdata ?? -1
+            ),
             'op1_type' => $this->op1_type = $this->casted_cdata->casted->op1_type,
             'op2_type' => $this->op2_type = $this->casted_cdata->casted->op2_type,
             'result_type' => $this->result_type = $this->casted_cdata->casted->result_type,

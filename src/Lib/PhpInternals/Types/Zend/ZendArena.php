@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use Reli\Lib\FFI\Cast;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -47,10 +47,10 @@ final class ZendArena implements CDataDereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'ptr' => $this->ptr = Cast::castPointerToInt(
+            'ptr' => $this->ptr = FFIHelper::castPointerToInt(
                 $this->casted_cdata->casted->ptr
             ),
-            'end' => $this->end = Cast::castPointerToInt(
+            'end' => $this->end = FFIHelper::castPointerToInt(
                 $this->casted_cdata->casted->end
             ),
             'prev' => $this->prev = $this->casted_cdata->casted->prev !== null

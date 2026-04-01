@@ -15,6 +15,8 @@ namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
@@ -39,6 +41,8 @@ use Reli\Lib\Process\ProcessSpecifier;
 use Reli\TargetPhpVmProvider;
 
 #[Group('target-version')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class CallTraceReaderTest extends BaseTestCase
 {
     /** @var resource|null */

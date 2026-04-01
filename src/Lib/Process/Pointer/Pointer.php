@@ -16,6 +16,7 @@ namespace Reli\Lib\Process\Pointer;
 use FFI\CData;
 use FFI\CInteger;
 use FFI\CPointer;
+use Reli\Lib\FFI\FFIHelper;
 
 /** @template-covariant T of Dereferencable */
 final class Pointer
@@ -54,7 +55,7 @@ final class Pointer
         CData $c_pointer,
     ): self {
         /** @var CInteger $addr */
-        $addr = \FFI::cast('long', $c_pointer);
+        $addr = FFIHelper::cast('long', $c_pointer);
         $ctype = \FFI::typeof($c_pointer)->getPointerType();
         return new self(
             $type,

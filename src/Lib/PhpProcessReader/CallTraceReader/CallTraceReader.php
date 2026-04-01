@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\Opcodes\OpcodeFactory;
 use Reli\Lib\PhpInternals\Types\C\RawDouble;
 use Reli\Lib\PhpInternals\Types\C\RawInt64;
@@ -238,7 +239,7 @@ final class CallTraceReader
         // Read current_execute_data from the scatter-gather buffer
         $ced_cdata = $this->memory_reader->read($pid, $eg_address + $ced_offset, $ptr_size);
         /** @var \FFI\CInteger $cast */
-        $cast = \FFI::cast('long', $ced_cdata);
+        $cast = FFIHelper::cast('long', $ced_cdata);
         $ced_address = $cast->cdata;
         if ($ced_address === 0) {
             return null;

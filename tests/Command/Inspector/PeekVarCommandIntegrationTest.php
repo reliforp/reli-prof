@@ -15,12 +15,16 @@ namespace Reli\Command\Inspector;
 
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\TargetPhpVmProvider;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Tester\CommandTester;
 
 #[Group('target-version')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class PeekVarCommandIntegrationTest extends BaseTestCase
 {
     /** @var resource|null */

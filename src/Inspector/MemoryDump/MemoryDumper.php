@@ -27,6 +27,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
 use Reli\Lib\Process\ProcessSpecifier;
+use Reli\Lib\FFI\FFIHelper;
 
 /**
  * Core memory dump logic extracted from MemoryDumpCommand.
@@ -415,7 +416,7 @@ final class MemoryDumper
         }
 
         $bytes_needed = $num_pages * 8;
-        $buf = \FFI::new("char[{$bytes_needed}]");
+        $buf = FFIHelper::new("char[{$bytes_needed}]");
         if ($buf === null) {
             $libc->close($fd);
             return null;

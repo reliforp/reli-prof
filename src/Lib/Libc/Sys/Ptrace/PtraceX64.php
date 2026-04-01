@@ -17,6 +17,7 @@ use FFI\CData;
 use FFI\CInteger;
 use Reli\Lib\FFI\CannotAllocateBufferException;
 use Reli\Lib\FFI\CannotCastCDataException;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\Libc\Addressable;
 
 final class PtraceX64 implements Ptrace
@@ -98,18 +99,18 @@ final class PtraceX64 implements Ptrace
     ): int {
         if (is_null($addr) or is_int($addr)) {
             /** @var CInteger */
-            $addr_holder = \FFI::new('long')
+            $addr_holder = FFIHelper::new('long')
                 ?? throw new CannotAllocateBufferException('cannot allocate buffer');
             $addr_holder->cdata = (int)$addr;
-            $addr = \FFI::cast('void *', $addr_holder)
+            $addr = FFIHelper::cast('void *', $addr_holder)
                 ?? throw new CannotCastCDataException('cannot cast buffer');
         }
         if (is_null($data) or is_int($data)) {
             /** @var CInteger */
-            $data_holder = \FFI::new('long')
+            $data_holder = FFIHelper::new('long')
                 ?? throw new CannotAllocateBufferException('cannot allocate buffer');
             $data_holder->cdata = (int)$data;
-            $data = \FFI::cast('void *', $data_holder)
+            $data = FFIHelper::cast('void *', $data_holder)
                 ?? throw new CannotCastCDataException('cannot cast buffer');
         }
 

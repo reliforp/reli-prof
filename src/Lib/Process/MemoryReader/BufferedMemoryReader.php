@@ -16,6 +16,7 @@ namespace Reli\Lib\Process\MemoryReader;
 use FFI;
 use FFI\CData;
 use Reli\Lib\FFI\CannotAllocateBufferException;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\Libc\Errno\Errno;
 use Reli\Lib\Process\ProcessNotFoundException;
 
@@ -103,7 +104,7 @@ final class BufferedMemoryReader implements MemoryReaderInterface
         $this->buf0_pid = $pid;
         $this->buf0_address = $address;
         $this->buf0_size = $size;
-        $this->buf0_data = FFI::string($cdata, $size);
+        $this->buf0_data = \FFI::string($cdata, $size);
         $this->buf1_pid = null;
     }
 
@@ -172,7 +173,7 @@ final class BufferedMemoryReader implements MemoryReaderInterface
              */
             $local_iov = $this->sg_local_iovs[$i];
             /** @psalm-suppress PropertyTypeCoercion */
-            $local_iov->iov_base = FFI::addr($buf);
+            $local_iov->iov_base = \FFI::addr($buf);
             $local_iov->iov_len = $size;
 
             /**
@@ -183,7 +184,7 @@ final class BufferedMemoryReader implements MemoryReaderInterface
             $remote_iov = $this->sg_remote_iovs[$i];
             $remote_iov->iov_len = $size;
             /** @psalm-suppress PropertyTypeCoercion */
-            $remote_iov->iov_base = FFI::cast('void *', $this->sg_remote_bases[$i]);
+            $remote_iov->iov_base = FFIHelper::cast('void *', $this->sg_remote_bases[$i]);
         }
 
         /**
@@ -194,9 +195,9 @@ final class BufferedMemoryReader implements MemoryReaderInterface
          */
         $read = $this->ffi->process_vm_readv(
             $pid,
-            FFI::addr($this->sg_local_iovs[0]),
+            \FFI::addr($this->sg_local_iovs[0]),
             $count,
-            FFI::addr($this->sg_remote_iovs[0]),
+            \FFI::addr($this->sg_remote_iovs[0]),
             $count,
             0
         );
@@ -217,13 +218,13 @@ final class BufferedMemoryReader implements MemoryReaderInterface
         $this->buf0_pid = $pid;
         $this->buf0_address = $regions[0]['address'];
         $this->buf0_size = $regions[0]['size'];
-        $this->buf0_data = FFI::string($local_buffers[0], $regions[0]['size']);
+        $this->buf0_data = \FFI::string($local_buffers[0], $regions[0]['size']);
 
         if ($count > 1) {
             $this->buf1_pid = $pid;
             $this->buf1_address = $regions[1]['address'];
             $this->buf1_size = $regions[1]['size'];
-            $this->buf1_data = FFI::string($local_buffers[1], $regions[1]['size']);
+            $this->buf1_data = \FFI::string($local_buffers[1], $regions[1]['size']);
         } else {
             $this->buf1_pid = null;
         }
@@ -292,7 +293,7 @@ final class BufferedMemoryReader implements MemoryReaderInterface
             $offset = $remote_address - $this->buf1_address;
             $buffer = $this->ffi->new("unsigned char[{$size}]")
                 ?? throw new CannotAllocateBufferException('cannot allocate buffer');
-            FFI::memcpy($buffer, substr($this->buf1_data, $offset, $size), $size);
+            \FFI::memcpy($buffer, substr($this->buf1_data, $offset, $size), $size);
             /** @var \FFI\CArray<int> */
             return $buffer;
         }
@@ -305,7 +306,7 @@ final class BufferedMemoryReader implements MemoryReaderInterface
             $offset = $remote_address - $this->buf0_address;
             $buffer = $this->ffi->new("unsigned char[{$size}]")
                 ?? throw new CannotAllocateBufferException('cannot allocate buffer');
-            FFI::memcpy($buffer, substr($this->buf0_data, $offset, $size), $size);
+            \FFI::memcpy($buffer, substr($this->buf0_data, $offset, $size), $size);
             /** @var \FFI\CArray<int> */
             return $buffer;
         }

@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
@@ -48,6 +50,8 @@ use Reli\Lib\String\LineFetcher;
 use Reli\TargetPhpVmProvider;
 
 #[Group('frankenphp')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
 {
     /** @var resource|null */
@@ -245,21 +249,6 @@ class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
                 'At least one frame should have a symbol name resolved'
             );
 
-            // Log frame details for debugging
-            $frame_details = [];
-            foreach ($native_trace->frames as $i => $frame) {
-                $frame_details[] = sprintf(
-                    '#%d %s+0x%x (%s)',
-                    $i,
-                    $frame->symbolName ?? '??',
-                    $frame->offset,
-                    $frame->moduleName ?? '??',
-                );
-            }
-            fwrite(STDERR, "\n=== FrankenPHP Native Trace ===\n");
-            fwrite(STDERR, implode("\n", $frame_details) . "\n");
-            fwrite(STDERR, "=== End Native Trace ===\n\n");
-
             // Also get PHP trace and test merge
             $call_trace_reader = new CallTraceReader(
                 $memory_reader,
@@ -276,19 +265,6 @@ class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
             );
 
             if ($call_trace !== null) {
-                // Log PHP trace for debugging
-                $php_frames = [];
-                foreach ($call_trace->call_frames as $i => $frame) {
-                    $php_frames[] = sprintf(
-                        '#%d %s',
-                        $i,
-                        $frame->getFullyQualifiedFunctionName(),
-                    );
-                }
-                fwrite(STDERR, "\n=== FrankenPHP PHP Trace ===\n");
-                fwrite(STDERR, implode("\n", $php_frames) . "\n");
-                fwrite(STDERR, "=== End PHP Trace ===\n\n");
-
                 // Test merge
                 $merger = new TraceMerger();
                 $merged = $merger->merge($native_trace, $call_trace);
@@ -297,22 +273,6 @@ class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
                     count($merged->frames),
                     'Merged trace should have frames'
                 );
-
-                // Log merged trace
-                $merged_details = [];
-                foreach ($merged->frames as $i => $frame) {
-                    $merged_details[] = sprintf(
-                        '#%d [%s] %s',
-                        $i,
-                        $frame->isNative() ? 'native' : 'php',
-                        $frame->isNative()
-                            ? ($frame->nativeFrame->symbol_name ?? '??')
-                            : $frame->phpFrame->getFullyQualifiedFunctionName(),
-                    );
-                }
-                fwrite(STDERR, "\n=== FrankenPHP Merged Trace ===\n");
-                fwrite(STDERR, implode("\n", $merged_details) . "\n");
-                fwrite(STDERR, "=== End Merged Trace ===\n\n");
             }
         } finally {
             $process_stopper->resume($php_tid);

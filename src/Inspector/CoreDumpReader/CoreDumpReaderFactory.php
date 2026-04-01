@@ -38,6 +38,7 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\FFI\FFIHelper;
 
 use function dechex;
 use function DI\autowire;
@@ -180,7 +181,7 @@ final class CoreDumpReaderFactory
                     return null;
                 }
                 $this->libc_ffi->lseek($fd, $offset, 0); // SEEK_SET = 0
-                $buf = FFI::new("unsigned char[$size]");
+                $buf = FFIHelper::new("unsigned char[$size]");
                 if (is_null($buf)) {
                     $this->libc_ffi->close($fd);
                     return null;
@@ -191,7 +192,7 @@ final class CoreDumpReaderFactory
                 if ($read_len < $size) {
                     return null;
                 }
-                return FFI::string($buf, $size);
+                return \FFI::string($buf, $size);
             }
             #[\Override]
             public function read(int $pid, int $remote_address, int $size): CData
@@ -210,11 +211,11 @@ final class CoreDumpReaderFactory
                             if ($data === null) {
                                 continue;
                             }
-                            $cdata_buffer = FFI::new("unsigned char[$size]");
+                            $cdata_buffer = FFIHelper::new("unsigned char[$size]");
                             if (is_null($cdata_buffer)) {
                                 throw new \RuntimeException("failed to allocate memory");
                             }
-                            FFI::memcpy($cdata_buffer, $data, $size);
+                            \FFI::memcpy($cdata_buffer, $data, $size);
                             /** @var \FFI\CArray<int> */
                             return $cdata_buffer;
                         }
@@ -251,11 +252,11 @@ final class CoreDumpReaderFactory
                         "no coredump data and no file for memory area: " . $memory_area->begin
                     );
                 }
-                $cdata_buffer = FFI::new("unsigned char[$size]");
+                $cdata_buffer = FFIHelper::new("unsigned char[$size]");
                 if (is_null($cdata_buffer)) {
                     throw new \RuntimeException("failed to allocate memory");
                 }
-                FFI::memcpy($cdata_buffer, $data, $size);
+                \FFI::memcpy($cdata_buffer, $data, $size);
                 /** @var \FFI\CArray<int> */
                 return $cdata_buffer;
             }

@@ -177,10 +177,11 @@ final class ZendOpArray
             'last_var' => $this->cdata->last_var,
             'vars' => $this->vars = $this->cdata->vars !== null
                 ? PointerArray::createPointerToArray(
-                    Cast::toInt(FFI::cast('long', $this->cdata->vars)?->cdata),
+                    Cast::toInt(\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->vars)?->cdata),
                     $this->cdata->last_var,
                 )
                 : null
+
             ,
             'opcodes' => $this->opcodes = $this->cdata->opcodes !== null
                 ? Pointer::fromCData(
@@ -203,7 +204,7 @@ final class ZendOpArray
             'dynamic_func_defs' => $this->dynamic_func_defs = $this->cdata->dynamic_func_defs !== null
                 ? PointerArray::createPointerToArray(
                     Cast::toInt(
-                        FFI::cast('long', $this->cdata->dynamic_func_defs)?->cdata,
+                        \Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->dynamic_func_defs)?->cdata,
                     ),
                     $this->cdata->num_dynamic_func_defs,
                 )
@@ -268,9 +269,9 @@ final class ZendOpArray
     {
         $ctype = FFI::typeof($this->cdata);
         if (in_array('run_time_cache__ptr', $ctype->getStructFieldNames(), true)) {
-            return Cast::toInt(FFI::cast('long', $this->cdata->run_time_cache__ptr)?->cdata);
+            return Cast::toInt(\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache__ptr)?->cdata);
         } else {
-            return Cast::toInt(FFI::cast('long', $this->cdata->run_time_cache)?->cdata);
+            return Cast::toInt(\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache)?->cdata);
         }
     }
 
@@ -339,7 +340,7 @@ final class ZendOpArray
                 return 0;
             }
             return Cast::toInt(
-                FFI::cast('long', $ptr)?->cdata,
+                \Reli\Lib\FFI\FFIHelper::cast('long', $ptr)?->cdata,
             );
         } catch (\Throwable) {
             // Field doesn't exist in PHP < 7.4

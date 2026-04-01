@@ -16,6 +16,7 @@ namespace Reli\Lib\Process\MemoryReader;
 use FFI;
 use FFI\CData;
 use Reli\Lib\FFI\CannotAllocateBufferException;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\Libc\Errno\Errno;
 use Reli\Lib\Process\ProcessNotFoundException;
 
@@ -64,7 +65,7 @@ final class MemoryReader implements MemoryReaderInterface
          * @var FFI\Libc\iovec $this->local_iov
          * @psalm-suppress PropertyTypeCoercion
          */
-        $this->local_iov->iov_base = FFI::addr($buffer);
+        $this->local_iov->iov_base = \FFI::addr($buffer);
         $this->local_iov->iov_len = $size;
 
         /** @var FFI\Libc\iovec $this->remote_iov */
@@ -72,14 +73,14 @@ final class MemoryReader implements MemoryReaderInterface
         /** @var FFI\CInteger $this->remote_base */
         $this->remote_base->cdata = $remote_address;
         /** @psalm-suppress PropertyTypeCoercion */
-        $this->remote_iov->iov_base = FFI::cast('void *', $this->remote_base);
+        $this->remote_iov->iov_base = FFIHelper::cast('void *', $this->remote_base);
 
         /** @var FFI\Libc\process_vm_readv_ffi $this->ffi */
         $read = $this->ffi->process_vm_readv(
             $pid,
-            FFI::addr($this->local_iov),
+            \FFI::addr($this->local_iov),
             1,
-            FFI::addr($this->remote_iov),
+            \FFI::addr($this->remote_iov),
             1,
             0
         );
