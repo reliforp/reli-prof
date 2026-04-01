@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class BlameAllocationPass implements PassInterface
 {
@@ -150,12 +151,12 @@ final class BlameAllocationPass implements PassInterface
                     ? FindingConfidence::Low
                     : FindingConfidence::High,
                 summary: sprintf(
-                    '%s: %.2f MB (%.1f%%) — %.2f MB exclusive, %.2f MB shared',
+                    '%s: %s (%.1f%%) — %s exclusive, %s shared',
                     $b['name'],
-                    $b['total'] / 1024 / 1024,
+                    SizeFormatter::format($b['total']),
                     $pct,
-                    $b['exclusive'] / 1024 / 1024,
-                    $b['shared'] / 1024 / 1024,
+                    SizeFormatter::format($b['exclusive']),
+                    SizeFormatter::format($b['shared']),
                 ),
                 facts: [
                     'root_name' => $b['name'],

@@ -39,34 +39,47 @@ Example output:
 ======================================================================
 
 === Overview ===
-  Heap: 41.70 MB (99.5% analyzed), VM stack: 0.02 MB, Compiler arena: 0.01 MB
+  Captured: 2026-03-28T17:58:56Z
+  Heap: 153.76 MB (99.5% analyzed), VM stack: 256.00 KB, Compiler arena: 32.00 KB
+
+  Call Stack at capture:
+    #0 sleep()
+    #1 <main>:28
 
 === Findings ===
 
-  [HIGH] dominant_class: CrossReferenceEntryInUseObject: 100,203 instances, 95.3% of object memory (6.88 MB)
+  [HIGH] dominant_class: App\Models\User: 10,000 instances x 72 B = 98.2% of object memory (703.13 KB)
     Unbounded accumulation — likely a loop without limit
-    Next: Check if count scales with input size; Look for owner path to find the accumulating container
+    Next: Check if count scales with input size; Look for owner path
 
-  [HIGH] bottleneck_path: call_frames -> 1 -> local_variables -> $crossReferenceSections (41.50 MB)
+  [HIGH] bottleneck_path: <main>:28::$users->items (153.76 MB)
     Heaviest memory path — the primary chain of memory consumption
-    Next: Examine the leaf of this path for the actual data consuming memory
 
-  [MEDIUM] cycle_cluster: 201 identical cycles: Attachment:3, Message:1 (15 nodes each, 170.89 KB total)
+  [MEDIUM] property_scaling: App\Models\User (10,000 instances): 5 per-instance props (0.49 KB/instance retained), 12 shared
+    PER-INSTANCE (retained, scales with count):
+      App\Models\User::$attributes: 10,000 copies x 599 B = 5.86 MB
+      App\Models\User::$casts: 10,000 copies x 376 B = 3.67 MB
+    (14 scalar properties per-instance, included in object size)
+    SHARED: App\Models\User::$relations (array, CoW), App\Models\User::$fillable (array, CoW)
+
+  [MEDIUM] cycle_cluster: 201 identical cycles (3 classes, 170.31 KB total)
+    Per cycle: 1x Webklex\PHPIMAP\Message + 3x Webklex\PHPIMAP\Attachment + 1x Webklex\PHPIMAP\AttachmentCollection
     Single entry point — breaking the owner reference likely frees this cycle
-    Next: Identify the back-reference causing the cycle; Consider using WeakReference or explicit cleanup
 
-  [LOW] dedup_candidate: dispatcher: 1,801 copies x 88B ALL SAME SIZE = 154.77 KB wasted
-    Multiple copies of same-size objects via shared references; may be shareable
+  [MEDIUM] companion_cluster: FormBuilder (3,611, 1.74 MB) always paired with Closure (3,619, 1.19 MB) — 2.93 MB
+
+  [LOW] dedup_candidate: Attachment::$part (Part): 600 copies x 312 B = 182.81 KB
+    195/600 copies have identical content (32%). Example: "--boundary_mixed..."
 
 === Root Blame Allocation ===
 
-  Root Branch                Exclusive    Shared     Total   % Heap
+  Root Branch                Exclusive     Shared      Total   % Heap
   ----------------------------------------------------------------------
-  call_frames                  38.50M     1.20M    39.70M    95.2%
-  class_table                   1.80M     0.10M     1.90M     4.6%
+  call_frames                  38.50 MB    1.20 MB   39.70 MB   95.2%
+  class_table                   1.80 MB  100.00 KB    1.90 MB    4.6%
 
 === Additional Info ===
-  [retained_approximate] 201 cycles (3,015 nodes) — retained size is approximate; collapse to DAG for exact
+  [retained_approximate] 201 cycles (3,015 nodes) — retained size is approximate
 
 ======================================================================
 ```
@@ -89,19 +102,20 @@ Each finding includes machine-readable fields:
     "node_count": 137922,
     "edge_count": 200709,
     "php_version": "v84",
-    "heap_memory_analyzed_percentage": 99.52
+    "heap_memory_analyzed_percentage": 99.52,
+    "captured_at": "2026-03-28T17:58:56Z"
   },
   "findings": [
     {
       "kind": "dominant_class",
       "severity": "high",
       "confidence": "high",
-      "summary": "CrossReferenceEntryInUseObject: 100,203 instances, 95.3% of object memory (6.88 MB)",
+      "summary": "App\\Models\\User: 10,000 instances x 72 B = 98.2% of object memory (703.13 KB)",
       "facts": {
-        "class_name": "..\\CrossReferenceEntryInUseObject",
-        "count": 100203,
-        "memory_bytes": 7214612,
-        "percentage_of_object_memory": 95.3,
+        "class_name": "App\\Models\\User",
+        "count": 10000,
+        "memory_bytes": 720000,
+        "percentage_of_object_memory": 98.2,
         "avg_size": 72
       },
       "hypothesis": "Unbounded accumulation — likely a loop without limit",
@@ -109,8 +123,7 @@ Each finding includes machine-readable fields:
         "Check if count scales with input size",
         "Look for owner path to find the accumulating container"
       ],
-      "impact_bytes": 7214612,
-      "replay_query": "SELECT class_name, count, memory_usage FROM class_objects_summary ORDER BY memory_usage DESC LIMIT 1"
+      "impact_bytes": 720000
     }
   ]
 }
@@ -127,14 +140,15 @@ Usage:
   inspector:memory:report [options] <db-file>
 
 Arguments:
-  db-file                     Path to the SQLite database file
+  db-file                                Path to the SQLite database file
 
 Options:
-  -f, --output-format=FORMAT  Output format: report (text) or report-json [default: report]
-  -o, --output=PATH           Output file path (default: stdout)
-      --run-id=ID             Run ID to analyze [default: 1]
-      --pretty-print          Pretty print JSON output (default: on)
-      --full-analysis         Run all passes regardless of snapshot size (may use significant memory)
+  -f, --output-format=FORMAT             Output format: report (text) or report-json [default: report]
+  -o, --output=PATH                      Output file path (default: stdout)
+      --run-id=ID                        Run ID to analyze [default: 1]
+      --pretty-print|--no-pretty-print   Pretty print JSON output (default: on)
+      --full-analysis|--no-full-analysis Run all passes (default: on; --no-full-analysis for large snapshots)
+      --memory-limit=LIMIT               Set PHP memory_limit (e.g. 2G, 512M)
 ```
 
 ### `inspector:memory` with report format
@@ -149,48 +163,56 @@ sudo ./reli inspector:memory -p <pid> -f report -o report.txt  # to file
 
 ## Finding Types
 
-Each finding has a `kind`, `severity` (high/medium/low/info/warning), and `confidence` (high/medium/low).
+Findings are sorted by severity (HIGH first), then by `impact_bytes` descending within the same severity. Each finding has a `kind`, `severity`, `confidence`, and optional `impact_bytes`.
+
+All class names use fully qualified names (FQCN). Paths use PHP syntax: `<main>:28::$messages[0]->structure->raw`.
 
 ### High Severity
 
 | Kind | Description | Example |
 |---|---|---|
-| `dominant_class` | One class > 50% of object memory | "100,203 CrossReferenceEntryInUseObject = 95.3%" |
+| `dominant_class` | One class > 50% of object memory | "App\Models\User: 10,000 x 72 B = 98.2%" |
 | `dominant_type` | One memory type > 80% of heap | "ZendString accounts for 87% of heap" |
-| `bottleneck_path` | Heaviest memory path from root | "call_frames -> $users -> Collection -> items[] (16 MB)" |
-| `choke_point` | Small node retaining large subtree | "MarkdownParser (152B) holds 73 MB via closedBlockParsers" |
+| `bottleneck_path` | Heaviest memory path from root (PHP syntax) | "<main>:28::$users->items (153.76 MB)" |
+| `choke_point` | Small node retaining large subtree (> 30% heap) | "MarkdownParser (152 B) holds 73.00 MB" |
 
 ### Medium Severity
 
 | Kind | Description | Example |
 |---|---|---|
-| `dominant_type` | One memory type > 50% of heap | "ZendObject accounts for 66% of heap" |
-| `companion_pair` | Two classes with matching instance counts | "Cell (200,020) always paired with IgnoredErrors (200,020)" |
-| `companion_cluster` | N classes with matching instance counts | "6 classes with ~1,800 instances each: A, B, C, D, E, F" |
-| `dynamic_properties_overhead` | Classes with dynamic property tables (> 1 MB) | "93,315 DateTimeImmutable with dynamic props = 5.1 MB" |
-| `expensive_property` | Class-qualified property consuming memory (> 100 KB) | "Message::$raw: 200 occurrences x 210KB = 41 MB" |
-| `cycle_cluster` | Group of identical circular reference patterns | "201 identical Message <-> Attachment cycles" |
-| `shared_fanin` | Multiple references to shared objects | "oMessage: 603 refs -> 201 targets (3.0 each)" |
-| `structural_duplicate` | Objects with identical shape (class + size + properties) | "246K Data objects with NO properties = 13.4 MB" |
-| `empty_object` | Objects with no stored properties | "OrderedHashMap: 1,600 x 88B, no properties stored" |
-| `large_array` | Individual large arrays (> 1 MB) | "2.62 MB, 65K elements — Font -> uchrCache" |
-| `large_string` | Individual large strings (> 100 KB) | "210 KB — structure -> raw (email body)" |
+| `dominant_type` | One memory type 50-80% of heap | "ZendObject accounts for 66% of heap" |
+| `companion_cluster` | Classes with matching instance counts | "FormBuilder (3,611, 1.74 MB) always paired with Closure (3,619, 1.19 MB) — 2.93 MB" |
+| `property_scaling` | Per-instance vs shared property breakdown | "User: 5 per-instance (0.49 KB/instance), 12 shared" |
+| `ownership_pattern` | 1:1 parent-child class ownership | "DotAccessData (246K) owned 1:1 by 12 classes (100%)" |
+| `dynamic_properties_overhead` | Classes with dynamic property tables | "93,315 DateTimeImmutable = 4.98 MB" |
+| `expensive_property` | Class-qualified property > 1 MB | "Message::$raw: 200 x 210.00 KB = 41.02 MB" |
+| `cycle_cluster` | Group of identical circular references | "201 identical cycles (3 classes, 170.31 KB)" |
+| `choke_point` | Subtree 10-30% of heap | "Collection (72 B) holds 15.00 MB" |
+| `structural_duplicate` | Objects with identical shape | "246K Data x 56 B = 13.40 MB" |
+| `empty_object` | Objects with no stored properties | "OrderedHashMap: 1,600 x 88 B" |
+| `large_array` | Large arrays (retained size when available) | "15.30 MB retained (table: 160.00 KB), 10,000 elements" |
+| `large_string` | Large strings with owner path | "205.88 KB — <main>:67::$messages[0]->structure->raw" |
+| `sparse_array` | Arrays with low slot utilization | "256.00 KB table, 5/16,384 slots (0.03%)" |
 
 ### Low Severity
 
 | Kind | Description | Example |
 |---|---|---|
-| `micro_cycle` | Two-node circular references | "1,802 OptionsResolver <-> Closure micro-cycles" |
-| `dedup_candidate` | Same-size objects that may be shareable | "dispatcher: 1,801 copies x 88B = 155 KB wasted" |
+| `micro_cycle` | Two-node circular references | "1,802 micro-cycles: 1x OptionsResolver + 1x Closure" |
+| `choke_point` | Subtree > 1 MB but < 10% of heap | "classMap (1.51 MB)" |
+| `dedup_candidate` | Same-size shared objects with value comparison | "600 copies x 312 B — 32% identical" |
 
 ### Info
 
 | Kind | Description |
 |---|---|
 | `overview` | Heap total/usage, VM stack, compiler arena, analyzed percentage |
+| `call_stack` | Call stack at the time of snapshot capture |
 | `shared_singleton` | Many references to one target (normal singleton pattern) |
-| `root_blame` | Memory attributed to each root branch (call_frames, class_table, etc.) |
-| `retained_exact` | No cycles — retained size computation is exact |
+| `shared_fanin` | Multiple references to shared objects (supplementary) |
+| `di_container_cycle` | Large DI container cycle (structural cost, >15 classes) |
+| `root_blame` | Memory attributed to each root branch |
+| `retained_exact` | No cycles — retained size is exact |
 | `retained_approximate` | Cycles exist — retained size is approximate |
 
 ### Warning
@@ -201,28 +223,32 @@ Each finding has a `kind`, `severity` (high/medium/low/info/warning), and `confi
 
 ## Analysis Phases
 
-The report generator adapts its analysis depth based on snapshot size:
+By default, full analysis runs all phases (`--full-analysis` is on). Use `--no-full-analysis` to limit analysis for very large snapshots.
 
 | Snapshot size | Phases run | Strategy |
 |---|---|---|
-| Any size | Phase 1 (Passes 1-6) | Summary + SQL: overview, types, classes, companions, dynamic properties, per-property |
-| < 500K nodes | Phase 2 (Passes 7-11) | SQL-heavy: cycles (SCC), top arrays/strings, shared refs, structural dedup |
-| < 500K edges | Phase 3 (Passes 12-15) | Full graph: drill-down, choke points, blame allocation, retained size confidence |
+| Any size | Phase 1 | Summary: overview, call stack, types, classes, companions |
+| < 500K nodes | Phase 2 | SQL: dynamic properties, structural dedup |
+| < 500K edges | Phase 3 | Graph: SCC, drill-down, choke points, blame, property scaling, expensive property, ownership, top arrays/strings, non-tree edges, retained size |
 
-For very large snapshots (> 500K nodes), only the lightweight summary-based passes run, avoiding graph loading that would consume too much memory.
+When `--no-full-analysis` is set, Phase 2 skips at >= 500K nodes and Phase 3 skips at >= 500K edges.
 
-To force all passes regardless of snapshot size, use `--full-analysis`:
+Several passes are deferred from Phase 2 to Phase 3 when graph substrate is available, to benefit from retained sizes and full-path resolution:
+- PropertyScalingPass (retained per-property cost)
+- PerPropertyMemoryPass (class-qualified, O(edges) in-memory)
+- TopArraysPass / TopStringsPass (full PHP-syntax paths)
+- NonTreeEdgePass (retained size for dedup candidates)
 
-```bash
-./reli inspector:memory:report snapshot.db --full-analysis
-```
-
-This may use significant memory (e.g. ~300 MB for 1M edges, ~2 GB for 6M edges).
+Memory usage for graph load: ~300 MB for 1M edges, ~2 GB for 6M edges.
 
 ## Tips
 
 - **Start with the SQLite workflow**: Capture once, analyze many times. The `inspector:memory:report` command is fast on an existing database.
+- **Use `--memory-limit=2G`** for large snapshots instead of `php -d memory_limit=2G`.
 - **Use JSON for CI/automation**: The `report-json` format is designed for programmatic consumption — pipe it to `jq`, feed it to an LLM, or integrate into monitoring.
-- **Check `replay_query`**: Many findings include the SQL query that produced them. Run it directly on the SQLite database to explore further.
-- **Look at `impact_bytes`**: Findings are not all equal. Focus on findings with the largest `impact_bytes` for the biggest memory savings.
-- **Companion pairs**: When two classes have nearly identical instance counts, reducing one will likely reduce the other. Find the owner relationship to understand which one drives the allocation.
+- **Findings are sorted**: HIGH severity and largest impact appear first. Focus on the top findings.
+- **Check `impact_bytes`**: Findings are not all equal. Focus on findings with the largest `impact_bytes` for the biggest memory savings.
+- **Class names are FQCN**: All class names use fully qualified names for unambiguous identification.
+- **Paths use PHP syntax**: `<main>:28::$messages[0]->structure->raw` instead of raw context tree paths.
+- **Companion clusters**: When classes have matching counts, reducing one reduces the others. The `ownership_pattern` finding shows the actual parent-child relationship.
+- **Property scaling**: The `property_scaling` finding shows which properties scale with instance count (per-instance) vs which are shared (CoW). Per-instance properties with small values may benefit from lazy initialization.

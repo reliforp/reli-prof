@@ -120,7 +120,7 @@ class SummaryPassesTest extends BaseTestCase
         $this->assertStringContainsString('BigClass', $f->summary);
         $this->assertStringContainsString('10,000', $f->summary);
         // Per-entity cost: 5000000 / 10000 = 500
-        $this->assertStringContainsString('500B', $f->summary);
+        $this->assertStringContainsString('500 B', $f->summary);
         $this->assertSame(500, $f->facts['avg_size']);
     }
 
@@ -140,7 +140,7 @@ class SummaryPassesTest extends BaseTestCase
         ]);
         $findings = $pass->analyze();
 
-        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_pair');
+        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_cluster');
         $this->assertCount(1, $companions);
     }
 
@@ -152,7 +152,7 @@ class SummaryPassesTest extends BaseTestCase
         ]);
         $findings = $pass->analyze();
 
-        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_pair');
+        $companions = array_filter($findings, fn(Finding $f) => $f->kind === 'companion_cluster');
         $this->assertCount(0, $companions);
     }
 

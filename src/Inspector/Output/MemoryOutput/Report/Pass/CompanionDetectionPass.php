@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class CompanionDetectionPass implements PassInterface
 {
@@ -103,71 +104,52 @@ final class CompanionDetectionPass implements PassInterface
 
             $names = array_map(
                 fn($c) => sprintf(
-                    '%s (%s)',
+                    '%s (%s, %s)',
                     $c['name'],
-                    number_format($c['count'])
+                    number_format($c['count']),
+                    SizeFormatter::format($c['memory']),
                 ),
                 $group_classes
             );
 
-            if (count($members) === 2) {
-                $findings[] = new Finding(
-                    kind: 'companion_pair',
-                    severity: FindingSeverity::Medium,
-                    confidence: FindingConfidence::Medium,
-                    summary: sprintf(
-                        '%s always paired with %s',
-                        $names[0],
-                        $names[1],
-                    ),
-                    facts: [
-                        'classes' => array_map(
-                            fn($c) => [
-                                'name' => $c['name'],
-                                'count' => $c['count'],
-                            ],
-                            $group_classes
-                        ),
-                        'total_memory' => $total_memory,
-                    ],
-                    hypothesis: 'These classes are likely created together'
-                        . ' — one owns the other',
-                    next_checks: [
-                        'Check if one class references the other',
-                        'Reducing one will likely reduce the other',
-                    ],
-                    impact_bytes: $total_memory,
+            $summary = count($members) === 2
+                ? sprintf(
+                    '%s always paired with %s — %s',
+                    $names[0],
+                    $names[1],
+                    SizeFormatter::format($total_memory),
+                )
+                : sprintf(
+                    '%d classes x ~%s instances (%s): %s',
+                    count($members),
+                    number_format($group_classes[0]['count']),
+                    SizeFormatter::format($total_memory),
+                    implode(', ', $names),
                 );
-            } else {
-                $findings[] = new Finding(
-                    kind: 'companion_cluster',
-                    severity: FindingSeverity::Medium,
-                    confidence: FindingConfidence::Medium,
-                    summary: sprintf(
-                        '%d classes with ~%s instances each: %s',
-                        count($members),
-                        number_format($group_classes[0]['count']),
-                        implode(', ', $names),
+
+            $findings[] = new Finding(
+                kind: 'companion_cluster',
+                severity: FindingSeverity::Medium,
+                confidence: FindingConfidence::Medium,
+                summary: $summary,
+                facts: [
+                    'classes' => array_map(
+                        fn($c) => [
+                            'name' => $c['name'],
+                            'count' => $c['count'],
+                        ],
+                        $group_classes
                     ),
-                    facts: [
-                        'classes' => array_map(
-                            fn($c) => [
-                                'name' => $c['name'],
-                                'count' => $c['count'],
-                            ],
-                            $group_classes
-                        ),
-                        'total_memory' => $total_memory,
-                    ],
-                    hypothesis: 'These classes are created together'
-                        . ' as a group — likely one per entity',
-                    next_checks: [
-                        'Find the common owner that creates all of them',
-                        'Reducing the owner count reduces all proportionally',
-                    ],
-                    impact_bytes: $total_memory,
-                );
-            }
+                    'total_memory' => $total_memory,
+                ],
+                hypothesis: 'These classes are created together'
+                    . ' — reducing one reduces the others',
+                next_checks: [
+                    'Find the common owner that creates all',
+                    'Reducing the owner count reduces all',
+                ],
+                impact_bytes: $total_memory,
+            );
         }
 
         return $findings;

@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 /**
  * Class-qualified per-property memory analysis using GraphSubstrate.
@@ -103,12 +104,12 @@ final class PerPropertyMemoryPass implements PassInterface
                 severity: FindingSeverity::Medium,
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
-                    '%s::$%s: %s occurrences x %dB = %.2f MB',
+                    '%s::$%s: %s occurrences x %s = %s',
                     $short,
                     $s['prop'],
                     number_format($s['count']),
-                    $avg,
-                    $s['total'] / 1024 / 1024,
+                    SizeFormatter::format($avg),
+                    SizeFormatter::format($s['total']),
                 ),
                 facts: [
                     'class_name' => $s['class'],

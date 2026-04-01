@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class CycleClusterPass implements PassInterface
 {
@@ -75,11 +76,11 @@ final class CycleClusterPass implements PassInterface
                     severity: FindingSeverity::Low,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%s micro-cycle%s: %s (%.2f KB total)',
+                        '%s micro-cycle%s: %s (%s total)',
                         number_format($count),
                         $count > 1 ? 's' : '',
                         $composition,
-                        $g['total'] / 1024,
+                        SizeFormatter::format($g['total']),
                     ),
                     facts: [
                         'composition' => $composition,
@@ -104,11 +105,11 @@ final class CycleClusterPass implements PassInterface
                     severity: FindingSeverity::Info,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%d classes forming %d cycle%s (%.2f KB)',
+                        '%d classes forming %d cycle%s (%s)',
                         $class_count,
                         $count,
                         $count > 1 ? 's' : '',
-                        $g['total'] / 1024,
+                        SizeFormatter::format($g['total']),
                     ),
                     facts: [
                         'composition' => $composition,
@@ -135,11 +136,11 @@ final class CycleClusterPass implements PassInterface
                     : FindingSeverity::Low,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
-                    '%d identical cycle%s (%d classes, %.2f KB total)',
+                    '%d identical cycle%s (%d classes, %s total)',
                     $count,
                     $count > 1 ? 's' : '',
                     $class_count,
-                    $g['total'] / 1024,
+                    SizeFormatter::format($g['total']),
                 ),
                 facts: [
                     'composition' => $composition,

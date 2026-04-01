@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class DynamicPropertiesPass implements PassInterface
 {
@@ -72,10 +73,10 @@ final class DynamicPropertiesPass implements PassInterface
                     : FindingSeverity::Low,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
-                    '%s %s with dynamic properties = %.2f MB overhead',
+                    '%s %s with dynamic properties = %s overhead',
                     number_format($cnt),
                     $short,
-                    $dp_size / 1024 / 1024,
+                    SizeFormatter::format($dp_size),
                 ),
                 facts: [
                     'class_name' => $row['class_name'],

@@ -83,8 +83,8 @@ final class ReportGenerator
                 ));
                 $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
+                $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
             }
-            $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
         }
 
@@ -101,6 +101,7 @@ final class ReportGenerator
             $findings = array_merge($findings, $this->runPass(new OwnershipPatternPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
+            $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(
                 new ChokePointPass($substrate, $db, $run_id, $heap_usage)
@@ -110,6 +111,7 @@ final class ReportGenerator
         }
 
         $findings = $this->deduplicateFindings($findings);
+        $this->sortFindings($findings);
 
         return new ReportResult($meta, $findings);
     }
@@ -156,6 +158,29 @@ final class ReportGenerator
     }
 
     /**
+     * Sort findings by severity (high first), then impact_bytes descending.
+     * @param list<Finding> $findings
+     */
+    private function sortFindings(array &$findings): void
+    {
+        $order = [
+            'high' => 0,
+            'warning' => 1,
+            'medium' => 2,
+            'low' => 3,
+            'info' => 4,
+        ];
+        usort($findings, function (Finding $a, Finding $b) use ($order): int {
+            $sa = $order[$a->severity->value] ?? 5;
+            $sb = $order[$b->severity->value] ?? 5;
+            if ($sa !== $sb) {
+                return $sa <=> $sb;
+            }
+            return $b->impact_bytes <=> $a->impact_bytes;
+        });
+    }
+
+    /**
      * Run a pass safely, returning its findings or empty on error.
      * @return list<Finding>
      */
@@ -199,6 +224,12 @@ final class ReportGenerator
             "SELECT count(*) FROM context_edges WHERE run_id = {$run_id}"
         );
         $meta['edge_count'] = (int)$stmt->fetchColumn();
+
+        // Capture timestamp
+        $stmt = $db->query(
+            "SELECT created_at FROM runs WHERE run_id = {$run_id}"
+        );
+        $meta['captured_at'] = $stmt->fetchColumn() ?: null;
 
         return $meta;
     }

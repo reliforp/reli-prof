@@ -19,6 +19,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TopArraysPass implements PassInterface
 {
@@ -114,16 +115,16 @@ final class TopArraysPass implements PassInterface
 
             if ($use_retained && $retained > $table_size) {
                 $summary = sprintf(
-                    '%.2f MB retained (table: %.2f KB), %s elements — %s',
-                    $retained / 1024 / 1024,
-                    $table_size / 1024,
+                    '%s retained (table: %s), %s elements — %s',
+                    SizeFormatter::format($retained),
+                    SizeFormatter::format($table_size),
                     number_format($elements),
                     $path ?: '(root)',
                 );
             } else {
                 $summary = sprintf(
-                    '%.2f MB array, %s elements — %s',
-                    $table_size / 1024 / 1024,
+                    '%s array, %s elements — %s',
+                    SizeFormatter::format($table_size),
                     number_format($elements),
                     $path ?: '(root)',
                 );
@@ -191,8 +192,8 @@ final class TopArraysPass implements PassInterface
                 severity: FindingSeverity::Medium,
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
-                    '%.2f KB table, %s/%s slots used (%.1f%%) — %s',
-                    $s_table / 1024,
+                    '%s table, %s/%s slots used (%.1f%%) — %s',
+                    SizeFormatter::format($s_table),
                     number_format($s_count),
                     number_format($s_capacity),
                     $utilization,

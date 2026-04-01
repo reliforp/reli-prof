@@ -19,6 +19,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TopStringsPass implements PassInterface
 {
@@ -100,8 +101,8 @@ final class TopStringsPass implements PassInterface
                     : FindingSeverity::Low,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
-                    '%.2f KB — %s%s',
-                    $size / 1024,
+                    '%s — %s%s',
+                    SizeFormatter::format($size),
                     $path ? "{$path}: " : '',
                     $preview ?: '(binary)',
                 ),

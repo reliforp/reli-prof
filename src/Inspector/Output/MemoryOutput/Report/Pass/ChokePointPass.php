@@ -19,6 +19,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class ChokePointPass implements PassInterface
 {
@@ -174,10 +175,10 @@ final class ChokePointPass implements PassInterface
                 severity: $severity,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
-                    '%s (%dB shallow) holds %.2f MB via %d children — %s',
+                    '%s (%s shallow) holds %s via %d children — %s',
                     $label,
-                    $shallow,
-                    $subtree / 1024 / 1024,
+                    SizeFormatter::format($shallow),
+                    SizeFormatter::format($subtree),
                     $n_children,
                     $path,
                 ),

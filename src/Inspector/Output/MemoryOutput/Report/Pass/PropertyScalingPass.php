@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class PropertyScalingPass implements PassInterface
 {
@@ -108,12 +109,12 @@ final class PropertyScalingPass implements PassInterface
                     ? (int)($p['size'] / $p['distinct_targets'])
                     : 0;
                 $lines[] = sprintf(
-                    '  %s::$%s: %s copies x %dB = %.2f KB',
+                    '  %s::$%s: %s copies x %s = %s',
                     $short,
                     $p['property'],
                     number_format($p['distinct_targets']),
-                    $avg,
-                    $p['size'] / 1024,
+                    SizeFormatter::format($avg),
+                    SizeFormatter::format($p['size']),
                 );
             }
         }
@@ -148,13 +149,15 @@ final class PropertyScalingPass implements PassInterface
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
                     '%s (%s instances): %d per-instance props'
-                    . ' (%.2f KB/instance %s), %d shared',
+                    . ' (%s/instance %s), %d shared',
                     $short,
                     number_format($dominant_count),
                     count($per_instance),
-                    $dominant_count > 0
-                        ? $per_instance_total / $dominant_count / 1024
-                        : 0,
+                    SizeFormatter::format(
+                        $dominant_count > 0
+                            ? (int)($per_instance_total / $dominant_count)
+                            : 0
+                    ),
                     $size_label,
                     count($shared),
                 ),

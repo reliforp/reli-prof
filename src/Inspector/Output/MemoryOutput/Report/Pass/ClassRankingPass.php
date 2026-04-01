@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class ClassRankingPass implements PassInterface
 {
@@ -59,12 +60,12 @@ final class ClassRankingPass implements PassInterface
                     severity: FindingSeverity::High,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%s: %s instances x %dB = %.1f%% of object memory (%.2f MB)',
+                        '%s: %s instances x %s = %.1f%% of object memory (%s)',
                         $short,
                         number_format($entry['count']),
-                        $avg_size,
+                        SizeFormatter::format($avg_size),
                         $pct,
-                        $entry['memory_usage'] / 1024 / 1024,
+                        SizeFormatter::format($entry['memory_usage']),
                     ),
                     facts: [
                         'class_name' => $class_name,
