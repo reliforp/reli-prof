@@ -671,3 +671,16 @@ cluster に統合して、size=2 のときは pair 風の表示にすれば十�
 [MEDIUM] companion_cluster: FormBuilder (3,611) ↔ Closure (3,619) — 2.93 MB
 [MEDIUM] companion_cluster: 6 classes × ~1,806 instances (3.84 MB): ...
 ```
+
+### reli 自身の memory_limit を CLI オプションで指定 [重要度: 中]
+
+現在は `php -d memory_limit=2G reli ...` と書く必要がある。
+Docker 経由だと entrypoint の都合で `-d` を渡しにくい。
+
+```
+# 理想
+reli inspector:memory:report foo.sqlite3 --memory-limit=2G
+```
+
+実装: `ini_set('memory_limit', $value)` をコマンド実行の冒頭で呼ぶだけ。
+全コマンド共通のオプションとして追加するか、report/analyze 系のみに追加。
