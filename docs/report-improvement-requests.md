@@ -618,3 +618,22 @@ companion_cluster も:
 [MEDIUM] companion_cluster: 6 classes × ~1,806 instances (total: 3.84 MB):
   OptionsResolver (578 KB), Form (521 KB), EventDispatcher (156 KB), ...
 ```
+
+### Findings を severity + impact 順にソート [重要度: 中]
+
+現在は Pass 実行順で並ぶ。容量が大きい問題が埋もれることがある。
+
+**対応案**: severity 優先、同一 severity 内で impact_bytes 降順:
+```
+[HIGH]   bottleneck_path: ...$messages (153.76 MB)
+[HIGH]   choke_point: ...$messages (153.73 MB)
+[HIGH]   dominant_type: ZendString 96.9% (150.65 MB)
+[MEDIUM] expensive_property: Structure::$raw (40.21 MB)
+[MEDIUM] large_array: $messages (153.74 MB retained)
+[MEDIUM] cycle_cluster: 200 cycles (170 KB)
+[MEDIUM] companion_cluster: 4 classes (no direct size)
+[LOW]    ...
+```
+
+impact_bytes がない finding (companion_pair, cycle_cluster 等) は
+severity 内の末尾に配置。
