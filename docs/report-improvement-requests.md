@@ -573,3 +573,27 @@ Eloquent で classMap (1.51 MB) や DI instances (1.01 MB) が HIGH になるが
 
 現在のクラス修飾は `ObjectPropertiesContext` 起点のみ有効で、
 `ArrayElementContext` の key/value は未修飾。
+
+### ZendArrayMemoryLocation (56B) の dedup/expensive が無意味 [重要度: 高]
+
+配列ヘッダ (ZendArrayMemoryLocation) は常に 56B。
+
+dedup_candidate:
+```
+User::$appends: 10,000 copies x 56B SAME SIZE
+User::$changes: 10,000 copies x 56B SAME SIZE
+```
+全部 56B なので「ALL SAME SIZE」は当然。空配列もデータ入りも 56B。無意味。
+
+expensive_property:
+```
+User::$attributes: 10,000 occurrences x 56B = 0.53 MB
+```
+56B は配列ヘッダだけで中身のコストが見えない。
+
+**対応案**:
+1. dedup_candidate: ZendArrayMemoryLocation (56B) をスキップするか、
+   テーブルサイズ (ZendArrayTableMemoryLocation) で比較する
+2. expensive_property: retained ベースで配列の中身含みのコストを出す
+   (PropertyScalingPass は既に retained で出しているので、こちらも合わせる)
+3. あるいは配列ヘッダ + テーブル + 中身を合算した「配列全体サイズ」で比較
