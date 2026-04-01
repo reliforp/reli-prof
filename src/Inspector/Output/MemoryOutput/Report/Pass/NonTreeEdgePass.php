@@ -43,7 +43,11 @@ final class NonTreeEdgePass implements PassInterface
             FROM context_edges e
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
-                AND e.link_name NOT IN ('object_properties', 'array_elements', 'dynamic_properties')
+                AND e.link_name NOT IN (
+                    'object_properties', 'array_elements',
+                    'dynamic_properties', 'object_handlers',
+                    'name', 'key', 'value', 'class_entry'
+                )
             GROUP BY e.link_name
             HAVING count(*) > 10
             ORDER BY count(*) DESC
@@ -52,6 +56,10 @@ final class NonTreeEdgePass implements PassInterface
 
         $findings = [];
         foreach ($rows as $row) {
+            // Skip numeric indices (array element sharing, not meaningful)
+            if (ctype_digit($row['link_name'])) {
+                continue;
+            }
             $ref_count = (int)$row['ref_count'];
             $target_count = (int)$row['target_count'];
             $avg_refs = (float)$row['avg_refs'];
@@ -112,6 +120,11 @@ final class NonTreeEdgePass implements PassInterface
                 AND cnl.run_id = {$this->run_id}
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
+                AND e.link_name NOT IN (
+                    'object_handlers', 'object_properties',
+                    'array_elements', 'dynamic_properties',
+                    'class_entry'
+                )
             GROUP BY e.link_name, cnl.size
             HAVING count(*) > 50 AND count(*) * cnl.size > 10240
             ORDER BY count(*) * cnl.size DESC
