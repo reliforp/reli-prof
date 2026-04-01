@@ -350,3 +350,30 @@ PHP 構文変換も同じ。`--full-analysis` 時のみで OK。
    ```
    アクショナブルでないことが多いが、Worker で毎リクエスト Application を
    再生成するケースや、テスト setUp ごとの再生成では意味のある情報になる。
+
+### shared_singleton の表示改善 [重要度: 中]
+
+現在:
+```
+[shared_singleton] withCount: 10,000 refs -> 1 target [singleton, normal]
+[shared_singleton] relations: 10,000 refs -> 1 target [singleton, normal]
+```
+
+問題:
+- クラス名がない（どのクラスの `$withCount`?）
+- 「10,000 refs → 1 target」は non-tree edge 分析の生データで意味が伝わりにくい
+- 「[singleton, normal]」の意味が不明
+- PropertyScalingPass の SHARED リストと情報が重複する
+
+対応案:
+1. PropertyScalingPass が出るケースでは shared_singleton を抑制
+   （SHARED リストで既にカバーされているため）
+2. PropertyScalingPass が出ないケースでは、より読みやすい形で出す:
+   ```
+   [INFO] shared_property: User::$withCount — shared by 10,000 instances (normal CoW)
+   ```
+3. あるいは Additional Info セクション自体を見直し、
+   「正常な共有パターン」として 1 行サマリーにまとめる:
+   ```
+   Normal sharing: 12 properties shared across 10,000 User instances via CoW
+   ```
