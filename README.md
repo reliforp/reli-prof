@@ -17,6 +17,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 - Investigating the cause of a bug or performance failure
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
 - [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md)
+- [Automatic memory analysis report](docs/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
 - [Condition-based monitoring](docs/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
 - [Variable inspection](docs/peek-var-command.md): read PHP variable values from a running process without modifying it
 
@@ -760,6 +761,23 @@ $ cat 2183131.memory_dump.json | jq 'path(..|objects|select(."#reference_node_id
 The refcount of the object recorded in the memory location is 6 in this example. Calling methods via `$obj->call()` adds refcount by 1, but `$this->call()` doesn't add refcount. References from objects_store don't add refcount too. So all 6 references are analyzed here.
 
 See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md) for more info.
+
+### Automatic analysis report
+
+Instead of manually querying with `jq`, you can generate an automatic analysis report. First save to SQLite, then run the report:
+
+```bash
+$ sudo php ./reli i:m -p <pid> -f sqlite3 -o snapshot.db
+$ php ./reli inspector:memory:report snapshot.db
+```
+
+Or generate the report directly:
+
+```bash
+$ sudo php ./reli i:m -p <pid> -f report
+```
+
+The report identifies dominant classes, circular references, choke points, deduplication candidates, and more — with severity, hypothesis, and next steps for each finding. See [docs/memory-report.md](docs/memory-report.md) for details.
 
 ## Binary analysis cache
 Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.
