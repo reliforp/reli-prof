@@ -755,3 +755,26 @@ SCC を super-node に潰した condensed DAG 上で subtree sum を取れば
 
 condensed DAG は SCC profiles + SCC 間 edge で構築。
 post-order DFS で計算。SCC 0 個なら既存の subtree_sizes がそのまま使える。
+
+### PDO を巻き込む循環参照の特別検知 [重要度: 中]
+
+PDO の循環参照はメモリ問題より **リソースリーク** が深刻。
+PDO はデストラクタでコネクションを閉じるが、循環参照で GC 待ちになると
+コネクションが閉じられない。長寿命 worker で DB コネクション枯渇の原因。
+
+SCC 内に PDO / PDOStatement が含まれる場合は severity を上げるか、
+別の finding type (`resource_leak_risk`) として報告すべき:
+
+```
+[HIGH] resource_leak_risk: PDO connection in cycle
+  SCC contains: PDO, Repository, Service (circular reference)
+  Risk: DB connection not closed until GC cycle collection
+  Impact: connection pool exhaustion in long-running workers
+```
+
+検出方法: SCC の class_composition に PDO / PDOStatement / Mysqli /
+その他リソース系クラスが含まれるかチェック。
+reli のデータで ZendResourceMemoryLocation + SCC 内の class_name で判定可能。
+
+PDO 以外にも: curl handle, file handle, socket など、
+デストラクタで外部リソースを解放するクラスが循環に巻き込まれると同じ問題。
