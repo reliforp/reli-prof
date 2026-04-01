@@ -288,3 +288,18 @@ Pass 内で dominant_class 名を既に持っているので、プレフィッ�
 `class_objects_summary` には FQCN が入っているのでデータは既にある。
 短縮表記にするかはユーザーの好みだが、まずは FQCN で出して、
 将来的に `--short-class-names` オプションで短縮を選べるようにするのが無難。
+
+### choke_point にパス表示 [重要度: 高]
+
+現在:
+```
+[HIGH] choke_point: ZendArrayTableMemoryLocation (3208B shallow) holds 153.73 MB via 200 children
+```
+
+どこにあるか分からない。bottleneck_path と同じ PHP 構文パスを付ける:
+```
+[HIGH] choke_point: <main>:28::$messages (3208B shallow) holds 153.73 MB via 200 children
+```
+
+graph substrate から root まで遡るパスは bottleneck_path と同じコードで出せる。
+PHP 構文変換も同じ。`--full-analysis` 時のみで OK。
