@@ -539,3 +539,20 @@ ZendArray の `nTableSize` と `nNumOfElements` で判定:
 
 これは `array_values()` で再パッキングするか、新しい配列に
 移し替えることで解消できるアクショナブルな finding。
+
+### choke_point の severity がすべて HIGH [重要度: 中]
+
+現在は subtree > 1 MB の choke_point が全部 `severity: High`。
+
+Eloquent で classMap (1.51 MB) や DI instances (1.01 MB) が HIGH になるが、
+これらはフレームワークの固定コストで HIGH は大げさ。
+
+**対応案**: subtree サイズに応じて段階的に:
+- subtree > ヒープの 30% → HIGH
+- subtree > ヒープの 10% → MEDIUM
+- subtree > 1 MB → LOW
+
+あるいはヒープの割合ではなく、絶対値:
+- > 50 MB → HIGH
+- > 10 MB → MEDIUM
+- > 1 MB → LOW
