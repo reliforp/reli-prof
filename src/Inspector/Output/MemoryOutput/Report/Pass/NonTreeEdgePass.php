@@ -29,6 +29,7 @@ final class NonTreeEdgePass implements PassInterface
      * @return list<Finding>
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
      * @psalm-suppress PossiblyInvalidArgument, InvalidArgument, RiskyTruthyFalsyComparison
+     * @psalm-suppress MixedArgumentTypeCoercion
      */
     #[\Override]
     public function analyze(): array
@@ -188,10 +189,53 @@ final class NonTreeEdgePass implements PassInterface
                 $dedup_label .= " ({$dedup_tgt})";
             }
 
+            // Check actual duplication for representative examples
+            $examples = $this->getDedupExamples(
+                $row['link_name'],
+                $size,
+            );
+
+            $hypothesis = 'Multiple copies of same-size objects'
+                . ' via shared references; may be shareable';
+            $confidence = FindingConfidence::Low;
+
+            if ($examples['type'] === 'string') {
+                if ($examples['identical_count'] > 0) {
+                    $pct = $cnt > 0
+                        ? $examples['identical_count'] / $cnt * 100.0
+                        : 0;
+                    $hypothesis = sprintf(
+                        '%d/%d copies have identical content (%.0f%%).'
+                        . ' Example: "%s"',
+                        $examples['identical_count'],
+                        $cnt,
+                        $pct,
+                        $examples['sample_value'],
+                    );
+                    $confidence = $pct > 50.0
+                        ? FindingConfidence::High
+                        : FindingConfidence::Medium;
+                } else {
+                    $hypothesis = sprintf(
+                        'Same size but different content.'
+                        . ' Examples: "%s", "%s"',
+                        $examples['samples'][0] ?? '?',
+                        $examples['samples'][1] ?? '?',
+                    );
+                }
+            } elseif ($examples['type'] === 'object') {
+                $hypothesis .= sprintf(
+                    '. Examples: %s',
+                    implode(', ', array_slice($examples['samples'], 0, 3)),
+                );
+            }
+
             $findings[] = new Finding(
                 kind: 'dedup_candidate',
-                severity: $total > 102400 ? FindingSeverity::Low : FindingSeverity::Info,
-                confidence: FindingConfidence::Low,
+                severity: $total > 102400
+                    ? FindingSeverity::Low
+                    : FindingSeverity::Info,
+                confidence: $confidence,
                 summary: sprintf(
                     '%s: %s copies x %dB SAME SIZE = %.2f KB',
                     $dedup_label,
@@ -206,12 +250,101 @@ final class NonTreeEdgePass implements PassInterface
                     'count' => $cnt,
                     'each_size' => $size,
                     'total_waste' => $total,
+                    'examples' => $examples,
                 ],
-                hypothesis: 'Multiple copies of same-size objects via shared references; may be shareable',
+                hypothesis: $hypothesis,
                 impact_bytes: $total,
             );
         }
 
         return $findings;
+    }
+
+    /**
+     * Get representative examples for a dedup candidate group.
+     * For strings: check if values are actually identical.
+     * For objects: show class + property count.
+     *
+     * @return array<string, mixed>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    private function getDedupExamples(
+        string $link_name,
+        int $size,
+    ): array {
+        // Check if targets are strings with string_value
+        $str_rows = $this->db->query("
+            SELECT
+                cnl.string_value,
+                count(*) as cnt
+            FROM context_edges e
+            JOIN context_node_locations cnl
+                ON cnl.node_id = e.child_node_id
+                AND cnl.run_id = {$this->run_id}
+            WHERE e.run_id = {$this->run_id}
+                AND e.is_tree = 0
+                AND e.link_name = " . $this->db->quote($link_name) . "
+                AND cnl.size = {$size}
+                AND cnl.string_value IS NOT NULL
+            GROUP BY cnl.string_value
+            ORDER BY count(*) DESC
+            LIMIT 5
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        if ($str_rows !== []) {
+            $top = $str_rows[0];
+            $top_count = (int)$top['cnt'];
+            $top_value = $top['string_value'] ?? '';
+            if (strlen($top_value) > 60) {
+                $top_value = substr($top_value, 0, 57) . '...';
+            }
+            $samples = array_map(
+                function ($r) {
+                    $v = $r['string_value'] ?? '';
+                    return strlen($v) > 40
+                        ? substr($v, 0, 37) . '...'
+                        : $v;
+                },
+                $str_rows
+            );
+            return [
+                'type' => 'string',
+                'identical_count' => $top_count > 1 ? $top_count : 0,
+                'sample_value' => $top_value,
+                'samples' => $samples,
+                'distinct_values' => count($str_rows),
+            ];
+        }
+
+        // For non-string targets, show class/size samples
+        $obj_rows = $this->db->query("
+            SELECT
+                cnl.class_name,
+                cnl.location_type,
+                cnl.size
+            FROM context_edges e
+            JOIN context_node_locations cnl
+                ON cnl.node_id = e.child_node_id
+                AND cnl.run_id = {$this->run_id}
+            WHERE e.run_id = {$this->run_id}
+                AND e.is_tree = 0
+                AND e.link_name = " . $this->db->quote($link_name) . "
+                AND cnl.size = {$size}
+            LIMIT 3
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        $samples = [];
+        foreach ($obj_rows as $r) {
+            $label = $r['class_name']
+                ?? $r['location_type']
+                ?? 'unknown';
+            $samples[] = "{$label} ({$r['size']}B)";
+        }
+
+        return [
+            'type' => 'object',
+            'samples' => $samples,
+            'identical_count' => 0,
+        ];
     }
 }
