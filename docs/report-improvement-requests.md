@@ -637,3 +637,18 @@ companion_cluster も:
 
 impact_bytes がない finding (companion_pair, cycle_cluster 等) は
 severity 内の末尾に配置。
+
+### shared_fanin の位置づけ見直し [重要度: 中]
+
+shared_fanin は「1 つのプロパティが複数ターゲットを指し、各ターゲットが
+複数箇所から参照される」パターンを報告するが、ユーザーにとって：
+
+- 循環参照なら → cycle_cluster が既に報告している（重複）
+- 正常な共有なら → shared_singleton で報告（重複）
+- 中間的なら → 「だからどうすべき？」が不明（アクションなし）
+
+**対応案**:
+1. cycle_cluster で検出された link_name は shared_fanin から除外
+2. 残りは severity を LOW に下げるか Additional Info に移す
+3. あるいは shared_fanin を「cycle の証拠」「共有の証拠」に分類して
+   他の finding の補足情報として統合する
