@@ -309,23 +309,34 @@ PHP 構文変換も同じ。`--full-analysis` 時のみで OK。
 現在:
 ```
 [MEDIUM] cycle_cluster: 200 identical cycles: Attachment:3, AttachmentCollection:1, Message:1 (15 nodes each, 170.31 KB total)
+[LOW] cycle_cluster: 1 identical cycle: Closure:113, Route:4, ... (869 nodes each, 74.23 KB total)
 ```
 
 問題:
 - `Attachment:3` の `:3` がクラス名の一部に見える
-- `15 nodes each` は内部ノード含みで、オブジェクト数 (5) と合わない
+- `15 nodes each` / `869 nodes each` は internal nodes 含みで混乱する
+  (「1252 objects + 5245 internal nodes」とか言われても閉口する)
 - どの参照が循環を形成しているか分からない
+- Laravel の巨大 cycle (Closure:113, Route:4, ..., Application:1) は
+  クラス列挙が長すぎて読めない
 
 理想:
 ```
 [MEDIUM] cycle_cluster: 200 identical cycles
   Per cycle: 1× Message + 3× Attachment + 1× AttachmentCollection
   Circular path: Message->attachments[*]->oMessage → Message
-  Total: 170.31 KB (5 objects + 10 internal nodes per cycle)
+  Total: 170.31 KB
+```
+
+大きい cycle (Laravel DI コンテナ等) は:
+```
+[LOW] cycle_cluster: 1 cycle (54 classes, 74.23 KB)
+  Main classes: 113× Closure, 4× Route, 1× Application, ...
+  Circular path: Application->... → Application
 ```
 
 改善ポイント:
 1. `クラス名:個数` → `個数× クラス名` (誤読防止)
-2. ノード数はオブジェクト数と内部ノード数を分けて表示
-3. 循環を形成している参照パス（SCC の entry/exit edge の link_name）を表示
-   → SCC の external incoming edge の link_name が循環の back-reference を示す
+2. internal nodes の数は表示しない (ユーザーに意味がない)
+3. 循環を形成している参照パス (back-reference の link_name) を表示
+4. クラスが多い cycle は top 3-5 に省略して class 数だけ出す
