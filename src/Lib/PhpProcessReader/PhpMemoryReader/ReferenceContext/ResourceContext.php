@@ -31,4 +31,14 @@ final class ResourceContext implements ReferenceContext
     {
         return [$this->memory_location];
     }
+
+    #[\Override]
+    public function getContexts(): iterable
+    {
+        $contexts = [];
+        if ($this->stream_type_label !== null) {
+            $contexts['stream_type_label'] = $this->stream_type_label;
+        }
+        return $contexts;
+    }
 }

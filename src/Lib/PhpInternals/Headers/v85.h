@@ -167,7 +167,7 @@ struct _zend_resource {
 	zend_refcounted_h gc;
 	zend_long         handle; // TODO: may be removed ???
 	int               type;
-	void             *ptr;
+	uintptr_t         ptr;
 };
 
 typedef struct {
@@ -1611,34 +1611,34 @@ typedef struct _php_basic_globals {
 
 // main/php_streams.h
 typedef struct _php_stream_ops {
-	void *write;
-	void *read;
-	void *close;
-	void *flush;
+	uintptr_t write;
+	uintptr_t read;
+	uintptr_t close;
+	uintptr_t flush;
 	const char *label;
-	void *seek;
-	void *cast;
-	void *stat;
-	void *set_option;
+	uintptr_t seek;
+	uintptr_t cast;
+	uintptr_t stat;
+	uintptr_t set_option;
 } php_stream_ops;
 
 struct _php_stream {
 	const php_stream_ops *ops;
-	void *abstract;
-	void *readfilters_head;
-	void *readfilters_tail;
+	uintptr_t abstract;
+	uintptr_t readfilters_head;
+	uintptr_t readfilters_tail;
 	struct _php_stream *readfilters_stream;
-	void *writefilters_head;
-	void *writefilters_tail;
+	uintptr_t writefilters_head;
+	uintptr_t writefilters_tail;
 	struct _php_stream *writefilters_stream;
-	void *wrapper;
-	void *wrapperthis;
+	uintptr_t wrapper;
+	uintptr_t wrapperthis;
 	zval wrapperdata;
 	uint16_t flags_bitfield;
 	char mode[16];
 	uint32_t flags;
 	zend_resource *res;
-	void *stdiocast;
+	uintptr_t stdiocast;
 	char *orig_path;
 	zend_resource *ctx;
 	zend_off_t position;

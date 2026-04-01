@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -50,9 +49,7 @@ final class ZendResource implements CDataDereferencable
                 $this->casted_cdata->casted->gc
             ),
             'type' => $this->type = $this->casted_cdata->casted->type,
-            'ptr' => $this->ptr = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->ptr
-            ),
+            'ptr' => $this->ptr = $this->casted_cdata->casted->ptr,
         };
     }
 

@@ -2183,4 +2183,180 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             'Should find at least one WeakMap with tracked entries'
         );
     }
+
+    #[DataProvider('provideFromV80')]
+    public function testStreamResourceTracking(string $php_version, string $docker_image_name): void
+    {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            $memory_stream = fopen('php://memory', 'r+');
+            fwrite($memory_stream, str_repeat('M', 1024));
+            $temp_stream = fopen('php://temp', 'r+');
+            fwrite($temp_stream, str_repeat('T', 512));
+            $file_stream = fopen('php://stdout', 'w');
+            fputs($file_stream, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+
+        $context_analyzer = new ContextAnalyzer();
+        $sink = new ArrayContextTreeSink();
+        $context_analyzer->analyze(
+            $collected_memories->top_reference_context,
+            $sink,
+        );
+        $contexts_analyzed = $sink->getResult();
+
+        // Search for ResourceContext nodes with stream_type_label
+        $found_memory = false;
+        $found_temp = false;
+        $found_stdio = false;
+        $found_memory_data_link = false;
+        $findStreams = function (array $tree) use (
+            &$findStreams,
+            &$found_memory,
+            &$found_temp,
+            &$found_stdio,
+            &$found_memory_data_link,
+        ): void {
+            foreach ($tree as $key => $value) {
+                if (!is_array($value) || $key === '#locations') {
+                    continue;
+                }
+                $type = $value['#type'] ?? null;
+                $label = $value['stream_type_label'] ?? null;
+                if ($type === 'ResourceContext' && $label !== null) {
+                    if ($label === 'MEMORY') {
+                        $found_memory = true;
+                        if (isset($value['stream_memory_data'])) {
+                            $found_memory_data_link = true;
+                        }
+                    }
+                    if ($label === 'TEMP') {
+                        $found_temp = true;
+                        // TEMP with small data should also link memory data
+                        if (isset($value['stream_memory_data'])) {
+                            $found_memory_data_link = true;
+                        }
+                    }
+                    if ($label === 'STDIO') {
+                        $found_stdio = true;
+                    }
+                }
+                $findStreams($value);
+            }
+        };
+        $findStreams($contexts_analyzed);
+
+        $this->assertTrue($found_memory, 'Should find a php://memory stream (label=MEMORY)');
+        $this->assertTrue($found_temp, 'Should find a php://temp stream (label=TEMP)');
+        $this->assertTrue($found_stdio, 'Should find a STDIO stream');
+        $this->assertTrue(
+            $found_memory_data_link,
+            'Should find stream_memory_data link for MEMORY or TEMP stream'
+        );
+    }
 }

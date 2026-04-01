@@ -46,9 +46,7 @@ final class PhpStream implements CDataDereferencable
             'ops' => $this->ops = FFIHelper::castPointerToInt(
                 $this->casted_cdata->casted->ops
             ),
-            'abstract' => $this->abstract = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->abstract
-            ),
+            'abstract' => $this->abstract = $this->casted_cdata->casted->abstract,
             'res' => $this->res = FFIHelper::castPointerToInt(
                 $this->casted_cdata->casted->res
             ),

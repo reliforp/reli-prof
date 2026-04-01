@@ -647,9 +647,10 @@ final class MemoryLocationsCollector
                     $resource_context,
                 );
             }
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Reading stream data is best-effort; if the memory is
             // unmapped or the layout doesn't match, just skip it.
+            @file_put_contents('/tmp/reli-stream-debug.log', "stream probe failed: ptr=" . dechex($ptr_address) . " err=" . $e->getMessage() . "\n", FILE_APPEND);
             return;
         }
     }
@@ -684,7 +685,7 @@ final class MemoryLocationsCollector
             $data_address,
             $zend_type_reader->sizeOf('zend_string'),
         );
-        $string_context = $this->collectStringPointer(
+        $string_context = $this->collectZendStringPointer(
             $string_pointer,
             $memory_locations,
             $dereferencer,
