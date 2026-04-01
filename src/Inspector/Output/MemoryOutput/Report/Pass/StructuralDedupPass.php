@@ -1,0 +1,140 @@
+<?php
+
+/**
+ * This file is part of the reliforp/reli-prof package.
+ *
+ * (c) sji <sji@sj-i.dev>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+declare(strict_types=1);
+
+namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
+
+use Reli\Inspector\Output\MemoryOutput\Report\Finding;
+use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
+use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+
+final class StructuralDedupPass implements PassInterface
+{
+    public function __construct(
+        private \PDO $db,
+        private int $run_id,
+    ) {
+    }
+
+    /**
+     * @return list<Finding>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument
+     */
+    #[\Override]
+    public function analyze(): array
+    {
+        // Compute shape signatures: class + size + property list
+        $rows = $this->db->query("
+            SELECT
+                cnl.node_id,
+                cnl.class_name,
+                cnl.size,
+                group_concat(e_prop.link_name, '|') as property_names
+            FROM context_node_locations cnl
+            JOIN context_edges e_to_obj ON e_to_obj.parent_node_id = cnl.node_id
+                AND e_to_obj.link_name = 'object_properties' AND e_to_obj.is_tree = 1
+                AND e_to_obj.run_id = {$this->run_id}
+            LEFT JOIN context_edges e_prop ON e_prop.parent_node_id = e_to_obj.child_node_id
+                AND e_prop.is_tree = 1 AND e_prop.run_id = {$this->run_id}
+            WHERE cnl.location_type = 'ZendObjectMemoryLocation'
+                AND cnl.class_name IS NOT NULL
+                AND cnl.run_id = {$this->run_id}
+            GROUP BY cnl.node_id
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        $shape_groups = [];
+        foreach ($rows as $s) {
+            $props = $s['property_names'] ? explode('|', $s['property_names']) : [];
+            sort($props);
+            $prop_sig = implode(',', $props);
+            $hash = $s['class_name'] . '|' . $s['size'] . '|' . $prop_sig;
+
+            if (!isset($shape_groups[$hash])) {
+                $shape_groups[$hash] = [
+                    'class' => $s['class_name'],
+                    'size' => (int)$s['size'],
+                    'props' => $prop_sig,
+                    'count' => 0,
+                    'total_size' => 0,
+                    'example_id' => (int)$s['node_id'],
+                ];
+            }
+            $shape_groups[$hash]['count']++;
+            $shape_groups[$hash]['total_size'] += (int)$s['size'];
+        }
+        unset($rows);
+
+        $findings = [];
+
+        // Structural duplicates (>= 50 identical shapes)
+        $dedup_candidates = array_filter($shape_groups, fn($g) => $g['count'] >= 50);
+        usort($dedup_candidates, fn($a, $b) => $b['total_size'] <=> $a['total_size']);
+
+        foreach (array_slice($dedup_candidates, 0, 10) as $g) {
+            $short = preg_replace('/^.*\\\\/', '', $g['class']) ?? $g['class'];
+            $is_empty = $g['props'] === '';
+            $waste = ($g['count'] - 1) * $g['size'];
+
+            if ($is_empty) {
+                $findings[] = new Finding(
+                    kind: 'empty_object',
+                    severity: $g['total_size'] > 102400 ? FindingSeverity::Medium : FindingSeverity::Low,
+                    confidence: FindingConfidence::High,
+                    summary: sprintf(
+                        '%s: %s instances x %dB, no properties stored (%.2f KB)',
+                        $short,
+                        number_format($g['count']),
+                        $g['size'],
+                        $g['total_size'] / 1024,
+                    ),
+                    facts: [
+                        'class_name' => $g['class'],
+                        'count' => $g['count'],
+                        'each_size' => $g['size'],
+                        'total_size' => $g['total_size'],
+                    ],
+                    hypothesis: 'Objects with no stored properties — pure overhead, may be replaceable',
+                    impact_bytes: $waste,
+                    evidence_node_ids: [$g['example_id']],
+                );
+            } else {
+                $findings[] = new Finding(
+                    kind: 'structural_duplicate',
+                    severity: $waste > 102400 ? FindingSeverity::Medium : FindingSeverity::Low,
+                    confidence: FindingConfidence::Medium,
+                    summary: sprintf(
+                        '%s: %s identical shapes x %dB = %.2f KB (theoretical saving: %.2f KB)',
+                        $short,
+                        number_format($g['count']),
+                        $g['size'],
+                        $g['total_size'] / 1024,
+                        $waste / 1024,
+                    ),
+                    facts: [
+                        'class_name' => $g['class'],
+                        'count' => $g['count'],
+                        'each_size' => $g['size'],
+                        'total_size' => $g['total_size'],
+                        'theoretical_saving' => $waste,
+                        'properties' => $g['props'],
+                    ],
+                    hypothesis: 'Identical object shapes — candidates for flyweight/sharing optimization',
+                    impact_bytes: $waste,
+                    evidence_node_ids: [$g['example_id']],
+                );
+            }
+        }
+
+        return $findings;
+    }
+}
