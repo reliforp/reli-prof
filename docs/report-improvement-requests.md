@@ -156,3 +156,51 @@ class_table -> ComposerAutoloader -> classMap (18.86 MB)
 class_table はフレームワークの固定コストなので、bottleneck_path を
 「call_frames 起点」「class_table 起点」の 2 本出すか、
 root branch ごとの drill-down を出すと親切。
+
+## 追加確認済み（report branch 最新で対応完了）
+
+- ~~3a. Overview にコールスタック表示~~ ✅
+- ~~3b-1. bottleneck_path のフレーム名前解決~~ ✅
+- ~~3b-2. large_string/large_array にオーナーパス~~ ✅
+- ~~2a. PropertyScalingPass~~ ✅
+
+## 新規要望
+
+### 2a-2. PropertyScalingPass: retained ベースの per-property コスト [重要度: 高]
+
+現在の per-property コストは shallow size のみ (例: `$attributes: 56B`)。
+実際にはその先に配列テーブル + 文字列値がぶら下がっている。
+`--full-analysis` で `$subtree_sizes` が使えるなら retained size で表示すべき:
+
+```
+Before: $attributes: 10,000 copies x 56B = 546.88 KB
+After:  $attributes: 10,000 copies x ~500B (retained) = ~4.88 MB
+```
+
+### 2a-3. PropertyScalingPass: zval コストのみのプロパティを除外 [重要度: 中]
+
+`$wasRecentlyCreated: 10,000 copies x 0B` のような bool/int/float/null は
+追加の MemoryLocation を持たない（zval コストのみで、object の shallow size
+に properties_table スロットとして既に含まれている）。
+
+size = 0 の PER-INSTANCE プロパティは object サイズとの二重報告なので、
+PER-INSTANCE リストから除外するか、別扱いにすべき:
+
+```
+PER-INSTANCE (additional allocations):
+  $attributes: 10,000 copies x 56B = 546.88 KB
+  $casts:      10,000 copies x 56B = 546.88 KB
+(14 scalar properties also per-instance but included in object size)
+```
+
+### 3c. bottleneck_path を root branch ごとに [重要度: 低]
+
+Eloquent のレポートで bottleneck_path が:
+```
+class_table -> ComposerAutoloader -> classMap (18.86 MB)
+```
+を指すが、ユーザーの関心は call_frames 側の `$users` (16 MB) のほう。
+
+class_table はフレームワークの固定コストなので、bottleneck_path を
+「call_frames 起点」「class_table 起点」の 2 本出すか、
+root branch ごとの drill-down を出すと親切。
