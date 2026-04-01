@@ -168,6 +168,14 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             'CREATE INDEX IF NOT EXISTS idx_context_node_attributes_run_node'
             . ' ON context_node_attributes(run_id, node_id)'
         );
+        $db->exec(
+            'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_type'
+            . ' ON context_node_locations(run_id, location_type)'
+        );
+        $db->exec(
+            'CREATE INDEX IF NOT EXISTS idx_context_edges_run_link_parent_tree'
+            . ' ON context_edges(run_id, link_name, parent_node_id, is_tree)'
+        );
     }
 
     private function createViews(\PDO $db): void

@@ -34,7 +34,7 @@ final class PropertyScalingPass implements PassInterface
     /**
      * @return list<Finding>
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
-     * @psalm-suppress MixedOperand, InvalidOperand, MixedArrayOffset
+     * @psalm-suppress MixedOperand, InvalidOperand, MixedArrayOffset, PossiblyInvalidArgument
      */
     #[\Override]
     public function analyze(): array
@@ -62,125 +62,35 @@ final class PropertyScalingPass implements PassInterface
             return [];
         }
 
-        $use_retained = $this->substrate !== null
-            && $this->substrate->subtree_sizes !== [];
+        if ($this->substrate !== null) {
+            $props = $this->analyzeWithGraph($dominant_class);
+        } else {
+            $props = $this->analyzeWithSql($dominant_class);
+        }
 
-        $rows = $this->db->query("
-            SELECT
-                e_prop.link_name,
-                e_prop.child_node_id,
-                count(*) as total_refs,
-                count(DISTINCT e_prop.child_node_id) as distinct_targets,
-                min(e_prop.child_node_id) as sample_child_id,
-                sum(CASE WHEN e_prop.is_tree = 1
-                    THEN COALESCE(cnl_val.size, 0) ELSE 0
-                END) as tree_size
-            FROM context_node_locations cnl_obj
-            JOIN context_edges e_to_props
-                ON e_to_props.parent_node_id = cnl_obj.node_id
-                AND e_to_props.link_name = 'object_properties'
-                AND e_to_props.run_id = {$this->run_id}
-            JOIN context_edges e_prop
-                ON e_prop.parent_node_id = e_to_props.child_node_id
-                AND e_prop.run_id = {$this->run_id}
-            LEFT JOIN context_node_locations cnl_val
-                ON cnl_val.node_id = e_prop.child_node_id
-                AND cnl_val.run_id = {$this->run_id}
-            WHERE cnl_obj.class_name = "
-            . $this->db->quote($dominant_class) . "
-                AND cnl_obj.run_id = {$this->run_id}
-            GROUP BY e_prop.link_name
-            ORDER BY tree_size DESC
-        ")->fetchAll(\PDO::FETCH_ASSOC);
-
-        if ($rows === []) {
+        if ($props === []) {
             return [];
         }
 
-        // Collect child_node_ids per property for retained size lookup
-        $prop_children = [];
-        if ($use_retained) {
-            $child_rows = $this->db->query("
-                SELECT
-                    e_prop.link_name,
-                    e_prop.child_node_id
-                FROM context_node_locations cnl_obj
-                JOIN context_edges e_to_props
-                    ON e_to_props.parent_node_id = cnl_obj.node_id
-                    AND e_to_props.link_name = 'object_properties'
-                    AND e_to_props.run_id = {$this->run_id}
-                JOIN context_edges e_prop
-                    ON e_prop.parent_node_id = e_to_props.child_node_id
-                    AND e_prop.is_tree = 1
-                    AND e_prop.run_id = {$this->run_id}
-                WHERE cnl_obj.class_name = "
-                . $this->db->quote($dominant_class) . "
-                    AND cnl_obj.run_id = {$this->run_id}
-            ")->fetchAll(\PDO::FETCH_ASSOC);
-            foreach ($child_rows as $cr) {
-                $prop_children[$cr['link_name']][] = (int)$cr['child_node_id'];
-            }
-            unset($child_rows);
-        }
+        $use_retained = $this->substrate !== null
+            && $this->substrate->subtree_sizes !== [];
 
         $per_instance = [];
         $shared = [];
         $scalar_count = 0;
 
-        foreach ($rows as $row) {
-            $distinct = (int)$row['distinct_targets'];
-            $total_refs = (int)$row['total_refs'];
-            $tree_size = (int)$row['tree_size'];
-
-            if ($distinct === 1) {
-                $scaling = 'SHARED';
-            } elseif ($distinct >= $total_refs * 0.9) {
-                $scaling = 'PER-INSTANCE';
-            } else {
-                $scaling = 'PARTIALLY SHARED';
-            }
-
-            // Compute retained size if available
-            $prop_name = $row['link_name'];
-            $retained_total = 0;
-            if ($use_retained && isset($prop_children[$prop_name])) {
-                foreach ($prop_children[$prop_name] as $cid) {
-                    $retained_total += $this->substrate->subtree_sizes[$cid] ?? 0;
-                }
-            }
-
-            $size = $use_retained && $retained_total > 0
-                ? $retained_total
-                : $tree_size;
-
-            if ($scaling !== 'SHARED') {
-                // Skip size=0 PER-INSTANCE (scalar zval, already in object size)
-                if ($size === 0) {
+        foreach ($props as $p) {
+            if ($p['scaling'] !== 'SHARED') {
+                if ($p['size'] === 0) {
                     $scalar_count++;
                     continue;
                 }
-                $per_instance[] = [
-                    'property' => $prop_name,
-                    'distinct_targets' => $distinct,
-                    'total_refs' => $total_refs,
-                    'size' => $size,
-                    'retained' => $use_retained,
-                    'scaling' => $scaling,
-                ];
+                $per_instance[] = $p;
             } else {
-                $sample_id = (int)($row['sample_child_id'] ?? 0);
-                $shared[] = [
-                    'property' => $prop_name,
-                    'distinct_targets' => $distinct,
-                    'total_refs' => $total_refs,
-                    'size' => $size,
-                    'scaling' => $scaling,
-                    'sample_child_id' => $sample_id,
-                ];
+                $shared[] = $p;
             }
         }
 
-        // Classify sharing reason for shared properties
         $this->classifySharedReasons($shared);
 
         $short = $dominant_class;
@@ -272,6 +182,173 @@ final class PropertyScalingPass implements PassInterface
     }
 
     /**
+     * In-memory analysis using GraphSubstrate. O(nodes).
+     * @return list<array<string, mixed>>
+     * @psalm-suppress InvalidOperand
+     */
+    private function analyzeWithGraph(string $dominant_class): array
+    {
+        assert($this->substrate !== null);
+        $use_retained = $this->substrate->subtree_sizes !== [];
+
+        // Load link_names for all tree edges
+        $link_names = $this->loadLinkNames();
+
+        // For each object of dominant_class, walk children to find
+        // object_properties → property children
+        /** @var array<string, array{distinct: array<int, true>, total_refs: int, size: int}> */
+        $prop_stats = [];
+
+        foreach ($this->substrate->node_classes as $node_id => $cls) {
+            if ($cls !== $dominant_class) {
+                continue;
+            }
+            foreach ($this->substrate->children[$node_id] ?? [] as $child) {
+                if (($link_names[$child] ?? '') !== 'object_properties') {
+                    continue;
+                }
+                // child = ObjectPropertiesContext
+                foreach ($this->substrate->children[$child] ?? [] as $prop_child) {
+                    $prop_name = $link_names[$prop_child] ?? null;
+                    if ($prop_name === null) {
+                        continue;
+                    }
+                    if (!isset($prop_stats[$prop_name])) {
+                        $prop_stats[$prop_name] = [
+                            'distinct' => [],
+                            'total_refs' => 0,
+                            'size' => 0,
+                        ];
+                    }
+                    $prop_stats[$prop_name]['distinct'][$prop_child] = true;
+                    $prop_stats[$prop_name]['total_refs']++;
+                    // Use retained if available, else shallow
+                    if ($use_retained) {
+                        $prop_stats[$prop_name]['size']
+                            += $this->substrate->subtree_sizes[$prop_child] ?? 0;
+                    } else {
+                        $prop_stats[$prop_name]['size']
+                            += $this->substrate->node_sizes[$prop_child] ?? 0;
+                    }
+                }
+                break;
+            }
+        }
+
+        // Also count non-tree refs for scaling classification
+        // (check all_children for non-tree property edges)
+        // Not needed for graph — tree edges are sufficient for
+        // distinct_targets counting.
+
+        $results = [];
+        foreach ($prop_stats as $prop_name => $stat) {
+            $distinct = count($stat['distinct']);
+            $total_refs = $stat['total_refs'];
+
+            if ($distinct === 1) {
+                $scaling = 'SHARED';
+            } elseif ($distinct >= $total_refs * 0.9) {
+                $scaling = 'PER-INSTANCE';
+            } else {
+                $scaling = 'PARTIALLY SHARED';
+            }
+
+            // Get a sample child_id for shared reason classification
+            $sample_id = array_key_first($stat['distinct']) ?? 0;
+
+            $results[] = [
+                'property' => $prop_name,
+                'distinct_targets' => $distinct,
+                'total_refs' => $total_refs,
+                'size' => $stat['size'],
+                'scaling' => $scaling,
+                'sample_child_id' => $sample_id,
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * SQL-based analysis (Phase 2 fallback).
+     * @return list<array<string, mixed>>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, InvalidOperand
+     */
+    private function analyzeWithSql(string $dominant_class): array
+    {
+        $rows = $this->db->query("
+            SELECT
+                e_prop.link_name,
+                count(*) as total_refs,
+                count(DISTINCT e_prop.child_node_id) as distinct_targets,
+                min(e_prop.child_node_id) as sample_child_id,
+                sum(CASE WHEN e_prop.is_tree = 1
+                    THEN COALESCE(cnl_val.size, 0) ELSE 0
+                END) as tree_size
+            FROM context_node_locations cnl_obj
+            JOIN context_edges e_to_props
+                ON e_to_props.parent_node_id = cnl_obj.node_id
+                AND e_to_props.link_name = 'object_properties'
+                AND e_to_props.run_id = {$this->run_id}
+            JOIN context_edges e_prop
+                ON e_prop.parent_node_id = e_to_props.child_node_id
+                AND e_prop.run_id = {$this->run_id}
+            LEFT JOIN context_node_locations cnl_val
+                ON cnl_val.node_id = e_prop.child_node_id
+                AND cnl_val.run_id = {$this->run_id}
+            WHERE cnl_obj.class_name = "
+            . $this->db->quote($dominant_class) . "
+                AND cnl_obj.run_id = {$this->run_id}
+            GROUP BY e_prop.link_name
+            ORDER BY tree_size DESC
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        $results = [];
+        foreach ($rows as $row) {
+            $distinct = (int)$row['distinct_targets'];
+            $total_refs = (int)$row['total_refs'];
+
+            if ($distinct === 1) {
+                $scaling = 'SHARED';
+            } elseif ($distinct >= $total_refs * 0.9) {
+                $scaling = 'PER-INSTANCE';
+            } else {
+                $scaling = 'PARTIALLY SHARED';
+            }
+
+            $results[] = [
+                'property' => $row['link_name'],
+                'distinct_targets' => $distinct,
+                'total_refs' => $total_refs,
+                'size' => (int)$row['tree_size'],
+                'scaling' => $scaling,
+                'sample_child_id' => (int)$row['sample_child_id'],
+            ];
+        }
+        return $results;
+    }
+
+    /**
+     * Load link_name for each child_node_id (tree edges).
+     * @return array<int, string>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function loadLinkNames(): array
+    {
+        $rows = $this->db->query(
+            "SELECT child_node_id, link_name FROM context_edges"
+            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int)$r[0]] = (string)$r[1];
+        }
+        unset($rows);
+        return $map;
+    }
+
+    /**
      * Classify sharing reason for each shared property.
      * @param list<array<string, mixed>> $shared
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
@@ -288,7 +365,6 @@ final class PropertyScalingPass implements PassInterface
         }
         $placeholders = implode(',', $child_ids);
 
-        // Get node type and location_type for shared targets
         $info = [];
         $rows = $this->db->query(
             "SELECT cn.node_id, cn.type, cnl.location_type"
