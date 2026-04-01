@@ -778,3 +778,14 @@ reli のデータで ZendResourceMemoryLocation + SCC 内の class_name で判�
 
 PDO 以外にも: curl handle, file handle, socket など、
 デストラクタで外部リソースを解放するクラスが循環に巻き込まれると同じ問題。
+
+↑ persistent connection (PDO::ATTR_PERSISTENT) が最悪ケース:
+- GC がサイクル回収しても persistent connection は閉じられない
+- PDO オブジェクトだけ消え、コネクションは宙ぶらりん
+- 次のリクエストが前回のトランザクション途中のコネクションを掴む可能性
+- データ不整合やデッドロックの原因になりうる
+- severity CRITICAL にしてもよいレベル
+
+ただし reli のスナップショットからは persistent かどうかの判定は難しい
+(PDO の属性は C レベルの内部状態)。warning テキストで persistent の
+リスクに言及するのが現実的。
