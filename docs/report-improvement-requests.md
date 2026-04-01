@@ -504,3 +504,21 @@ dedup_candidate: Attachment::$part (Part): 600 copies x 312B ALL SAME SIZE
 
 一方の数字だけだと片方のケースを見逃す。
 severity は retained ベースで判定。
+
+### large_array の element_count は reli が辿った数 [重要度: 中]
+
+v_arrays の `element_count` は `#count` = reli が辿った要素数であり、
+PHP の `nNumOfElements` (論理的要素数) ではない。概ね一致するが厳密には異なる。
+
+ZendArray には 3 つの数がある:
+- `nNumOfElements`: 有効要素数 (PHP の count($arr))
+- `nNumUsed`: 使用スロット数 (unset で歯抜けのスロット含む)  
+- `nTableSize`: 確保済みバケット数 (2のべき乗)
+
+歯抜け配列の検出には `nTableSize` vs `nNumOfElements` の比率が有用:
+```
+large_array: 0.15 MB, 10,000 elements (capacity: 16,384) — 61% utilization
+```
+
+reli の ZendArray に全フィールドがあるので、context_node_attributes に
+`#nTableSize` と `#nNumOfElements` も出すか、large_array pass で直接使う。
