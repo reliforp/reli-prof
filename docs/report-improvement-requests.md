@@ -303,3 +303,29 @@ Pass 内で dominant_class 名を既に持っているので、プレフィッ�
 
 graph substrate から root まで遡るパスは bottleneck_path と同じコードで出せる。
 PHP 構文変換も同じ。`--full-analysis` 時のみで OK。
+
+### cycle_cluster の可読性 [重要度: 高]
+
+現在:
+```
+[MEDIUM] cycle_cluster: 200 identical cycles: Attachment:3, AttachmentCollection:1, Message:1 (15 nodes each, 170.31 KB total)
+```
+
+問題:
+- `Attachment:3` の `:3` がクラス名の一部に見える
+- `15 nodes each` は内部ノード含みで、オブジェクト数 (5) と合わない
+- どの参照が循環を形成しているか分からない
+
+理想:
+```
+[MEDIUM] cycle_cluster: 200 identical cycles
+  Per cycle: 1× Message + 3× Attachment + 1× AttachmentCollection
+  Circular path: Message->attachments[*]->oMessage → Message
+  Total: 170.31 KB (5 objects + 10 internal nodes per cycle)
+```
+
+改善ポイント:
+1. `クラス名:個数` → `個数× クラス名` (誤読防止)
+2. ノード数はオブジェクト数と内部ノード数を分けて表示
+3. 循環を形成している参照パス（SCC の entry/exit edge の link_name）を表示
+   → SCC の external incoming edge の link_name が循環の back-reference を示す
