@@ -421,3 +421,13 @@ TopStrings は 0.4 秒なので SQL のままで問題なし。
 - `(run_id, link_name, parent_node_id, is_tree)` — link_name ベースのクエリ用
 
 現在は辻斬りで手動追加した DB にのみ存在。reli が作る DB には入っていない。
+
+### デフォルト full-analysis [重要度: 高]
+
+full-analysis なしだと主要 finding (bottleneck_path, choke_point, SCC,
+PropertyScaling retained, PHP 構文パス) が出ず、レポートの価値が半減。
+Eloquent だと `dominant_class: User 98.2%` だけで終わる。
+
+PropertyScaling の SQL 79秒問題を graph 側に移せば全事例 1 分以内。
+デフォルトを full-analysis にして、巨大ターゲットのみ `--no-full-analysis`
+で opt-out する方が自然。
