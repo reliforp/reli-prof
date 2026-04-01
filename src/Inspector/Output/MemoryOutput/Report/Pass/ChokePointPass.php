@@ -68,6 +68,10 @@ final class ChokePointPass implements PassInterface
             "SELECT class_name, location_type FROM context_node_locations"
             . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
         );
+        $type_stmt = $this->db->prepare(
+            "SELECT type FROM context_nodes"
+            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
+        );
 
         $findings = [];
         foreach (array_slice($chokepoints, 0, 10) as [$node, $shallow, $subtree, $ratio]) {
@@ -75,9 +79,22 @@ final class ChokePointPass implements PassInterface
             $loc = $loc_stmt->fetch(\PDO::FETCH_ASSOC);
             $class = $loc['class_name'] ?? '';
             $loc_type = $loc['location_type'] ?? '';
-            $label = $class ? preg_replace('/^.*\\\\/', '', $class) : $loc_type;
 
-            // Walk up to build path
+            // Build a meaningful label: prefer class_name > location_type > node type > link_name
+            $label = '';
+            if ($class) {
+                $label = preg_replace('/^.*\\\\/', '', $class);
+            } elseif ($loc_type !== '') {
+                $label = $loc_type;
+            } else {
+                $type_stmt->execute([$node]);
+                $type_row = $type_stmt->fetch(\PDO::FETCH_NUM);
+                if ($type_row) {
+                    $label = $type_row[0];
+                }
+            }
+
+            // Walk up to build path, use link_name as fallback label
             $path_parts = [];
             $cur = $node;
             for ($i = 0; $i < 4; $i++) {
@@ -86,7 +103,13 @@ final class ChokePointPass implements PassInterface
                 }
                 [$parent, $link] = $parent_map[$cur];
                 $path_parts[] = $link;
+                if ($i === 0 && $label === '') {
+                    $label = $link;
+                }
                 $cur = $parent;
+            }
+            if ($label === '') {
+                $label = "(node #{$node})";
             }
             $path = $path_parts ? implode(' <- ', $path_parts) : '(root)';
 

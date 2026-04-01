@@ -36,57 +36,135 @@ final class CompanionDetectionPass implements PassInterface
         $classes = [];
         foreach ($this->class_objects_summary as $name => $entry) {
             if ($entry['count'] > 100) {
-                $classes[] = ['name' => $name, 'count' => $entry['count'], 'memory' => $entry['memory_usage']];
+                $classes[] = [
+                    'name' => $name,
+                    'count' => $entry['count'],
+                    'memory' => $entry['memory_usage'],
+                ];
             }
         }
 
-        $findings = [];
+        // Union-Find to group classes with similar counts
         $count = count($classes);
+        $parent = range(0, $count - 1);
+
+        $find = function (int $x) use (&$parent, &$find): int {
+            if ($parent[$x] !== $x) {
+                $parent[$x] = $find($parent[$x]);
+            }
+            return $parent[$x];
+        };
+
+        $union = function (int $a, int $b) use (&$parent, &$find): void {
+            $ra = $find($a);
+            $rb = $find($b);
+            if ($ra !== $rb) {
+                $parent[$ra] = $rb;
+            }
+        };
+
         for ($i = 0; $i < $count; $i++) {
             for ($j = $i + 1; $j < $count; $j++) {
-                $a = $classes[$i];
-                $b = $classes[$j];
-                $max_count = max($a['count'], $b['count']);
-                if ($max_count === 0) {
-                    continue;
+                $diff = abs($classes[$i]['count'] - $classes[$j]['count']);
+                if ($diff < $classes[$i]['count'] * 0.05) {
+                    $union($i, $j);
                 }
-                $diff = abs($a['count'] - $b['count']);
-                if ($diff < $a['count'] * 0.05) {
-                    $short_a = preg_replace('/^.*\\\\/', '', $a['name']) ?? $a['name'];
-                    $short_b = preg_replace('/^.*\\\\/', '', $b['name']) ?? $b['name'];
-                    $total_memory = $a['memory'] + $b['memory'];
+            }
+        }
 
-                    $findings[] = new Finding(
-                        kind: 'companion_pair',
-                        severity: FindingSeverity::Medium,
-                        confidence: FindingConfidence::Medium,
-                        summary: sprintf(
-                            '%s (%s) always paired with %s (%s)',
-                            $short_a,
-                            number_format($a['count']),
-                            $short_b,
-                            number_format($b['count']),
+        // Group by root
+        /** @var array<int, list<int>> */
+        $groups = [];
+        for ($i = 0; $i < $count; $i++) {
+            $groups[$find($i)][] = $i;
+        }
+
+        $findings = [];
+        foreach ($groups as $members) {
+            if (count($members) < 2) {
+                continue;
+            }
+
+            $group_classes = array_map(
+                fn(int $idx) => $classes[$idx],
+                $members
+            );
+            $total_memory = array_sum(
+                array_column($group_classes, 'memory')
+            );
+
+            // Sort by memory descending within group
+            usort(
+                $group_classes,
+                fn($a, $b) => $b['memory'] <=> $a['memory']
+            );
+
+            $names = array_map(
+                fn($c) => sprintf(
+                    '%s (%s)',
+                    preg_replace('/^.*\\\\/', '', $c['name']),
+                    number_format($c['count'])
+                ),
+                $group_classes
+            );
+
+            if (count($members) === 2) {
+                $findings[] = new Finding(
+                    kind: 'companion_pair',
+                    severity: FindingSeverity::Medium,
+                    confidence: FindingConfidence::Medium,
+                    summary: sprintf(
+                        '%s always paired with %s',
+                        $names[0],
+                        $names[1],
+                    ),
+                    facts: [
+                        'classes' => array_map(
+                            fn($c) => [
+                                'name' => $c['name'],
+                                'count' => $c['count'],
+                            ],
+                            $group_classes
                         ),
-                        facts: [
-                            'class_a' => $a['name'],
-                            'count_a' => $a['count'],
-                            'class_b' => $b['name'],
-                            'count_b' => $b['count'],
-                            'total_memory' => $total_memory,
-                        ],
-                        hypothesis: 'These classes are likely created together — one owns the other',
-                        next_checks: [
-                            'Check if one class references the other directly',
-                            'Reducing one will likely reduce the other proportionally',
-                        ],
-                        impact_bytes: $total_memory,
-                        replay_query: "SELECT a.class_name, a.count, b.class_name, b.count"
-                            . " FROM class_objects_summary a JOIN class_objects_summary b"
-                            . " ON a.run_id = b.run_id AND a.class_name < b.class_name"
-                            . " AND abs(a.count - b.count) < a.count * 0.05"
-                            . " WHERE a.count > 100 ORDER BY a.memory_usage + b.memory_usage DESC",
-                    );
-                }
+                        'total_memory' => $total_memory,
+                    ],
+                    hypothesis: 'These classes are likely created together'
+                        . ' — one owns the other',
+                    next_checks: [
+                        'Check if one class references the other',
+                        'Reducing one will likely reduce the other',
+                    ],
+                    impact_bytes: $total_memory,
+                );
+            } else {
+                $findings[] = new Finding(
+                    kind: 'companion_cluster',
+                    severity: FindingSeverity::Medium,
+                    confidence: FindingConfidence::Medium,
+                    summary: sprintf(
+                        '%d classes with ~%s instances each: %s',
+                        count($members),
+                        number_format($group_classes[0]['count']),
+                        implode(', ', $names),
+                    ),
+                    facts: [
+                        'classes' => array_map(
+                            fn($c) => [
+                                'name' => $c['name'],
+                                'count' => $c['count'],
+                            ],
+                            $group_classes
+                        ),
+                        'total_memory' => $total_memory,
+                    ],
+                    hypothesis: 'These classes are created together'
+                        . ' as a group — likely one per entity',
+                    next_checks: [
+                        'Find the common owner that creates all of them',
+                        'Reducing the owner count reduces all proportionally',
+                    ],
+                    impact_bytes: $total_memory,
+                );
             }
         }
 
