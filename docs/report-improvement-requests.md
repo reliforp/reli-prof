@@ -403,3 +403,21 @@ SHARED:
   User::$config (object, same instance)
   User::$sharedBuf (array, PHP reference)  ← & 経由
 ```
+
+### PropertyScalingPass の SQL が遅い [重要度: 高]
+
+Eloquent (1M edges) で PropertyScaling の SQL JOIN が **79 秒** かかる。
+3 段 JOIN (cnl_obj → e_to_props → e_prop) が重い。
+index 追加しても改善しない（JOIN 構造の問題）。
+
+**対応案**: `--full-analysis` で graph substrate がある場合、SQL ではなく
+PHP 側で計算する。graph load 済みなら各 object の children を辿るだけ。
+TopStrings は 0.4 秒なので SQL のままで問題なし。
+
+### reli 本体に追加すべき index [重要度: 中]
+
+`PdoMemoryOutput::createTables()` に以下を追加すべき:
+- `(run_id, location_type)` — TopStrings/TopArrays のフィルタ用
+- `(run_id, link_name, parent_node_id, is_tree)` — link_name ベースのクエリ用
+
+現在は辻斬りで手動追加した DB にのみ存在。reli が作る DB には入っていない。
