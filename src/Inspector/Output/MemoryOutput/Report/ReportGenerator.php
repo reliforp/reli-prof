@@ -80,7 +80,42 @@ final class ReportGenerator
             $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
         }
 
+        $findings = $this->deduplicateFindings($findings);
+
         return new ReportResult($meta, $findings);
+    }
+
+    /**
+     * Post-process findings to reduce redundancy.
+     * @param list<Finding> $findings
+     * @return list<Finding>
+     */
+    private function deduplicateFindings(array $findings): array
+    {
+        $has_cycles = false;
+        foreach ($findings as $f) {
+            if ($f->kind === 'cycle_cluster' || $f->kind === 'micro_cycle') {
+                $has_cycles = true;
+                break;
+            }
+        }
+
+        // If cycles are present, limit shared_fanin to top 3
+        // (many shared_fanin findings are cycle back-references)
+        if ($has_cycles) {
+            $fanin_count = 0;
+            $findings = array_values(array_filter(
+                $findings,
+                function (Finding $f) use (&$fanin_count): bool {
+                    if ($f->kind === 'shared_fanin') {
+                        return ++$fanin_count <= 3;
+                    }
+                    return true;
+                },
+            ));
+        }
+
+        return $findings;
     }
 
     /**

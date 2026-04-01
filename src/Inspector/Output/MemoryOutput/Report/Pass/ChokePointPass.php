@@ -53,6 +53,28 @@ final class ChokePointPass implements PassInterface
             return [];
         }
 
+        // Filter out chain redundancy: if a node's tree parent is also
+        // a choke_point candidate, suppress the parent (keep the deeper one).
+        // This avoids listing every node on the same bottleneck path.
+        $candidate_set = [];
+        foreach ($chokepoints as $cp) {
+            $candidate_set[$cp[0]] = true;
+        }
+        $filtered = [];
+        foreach ($chokepoints as $cp) {
+            $has_child_candidate = false;
+            foreach ($this->substrate->children[$cp[0]] ?? [] as $child) {
+                if (isset($candidate_set[$child])) {
+                    $has_child_candidate = true;
+                    break;
+                }
+            }
+            if (!$has_child_candidate) {
+                $filtered[] = $cp;
+            }
+        }
+        $chokepoints = $filtered;
+
         // Build parent map for path lookup
         $parent_map = [];
         $rows = $this->db->query(

@@ -84,13 +84,13 @@ final class PerPropertyMemoryPass implements PassInterface
             }
         }
 
-        // Sort by total descending, filter > 100KB
+        // Sort by total descending, filter > 1MB for actionable findings
         uasort($stats, fn($a, $b) => $b['total'] <=> $a['total']);
 
         $findings = [];
         $i = 0;
         foreach ($stats as $s) {
-            if ($s['total'] < 102400 || $i >= 15) {
+            if ($s['total'] < 1024 * 1024 || $i >= 10) {
                 break;
             }
             $short = preg_replace('/^.*\\\\/', '', $s['class'])
@@ -101,9 +101,7 @@ final class PerPropertyMemoryPass implements PassInterface
 
             $findings[] = new Finding(
                 kind: 'expensive_property',
-                severity: $s['total'] > 1024 * 1024
-                    ? FindingSeverity::Medium
-                    : FindingSeverity::Low,
+                severity: FindingSeverity::Medium,
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
                     '%s::$%s: %s occurrences x %dB = %.2f MB',
