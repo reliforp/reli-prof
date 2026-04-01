@@ -389,5 +389,14 @@ reli が見ているのは「同じアドレスを参照している」事実の
 3. Interned string — PHP の文字列自動共有
 4. クラス定義のデフォルト値
 
-「shared via CoW」→「shared (same value referenced)」に修正すべき。
-原因の推定はユーザーに委ねる。
+location type で正確に言い分けられる:
+- **配列** が shared → CoW ✅
+- **文字列** が shared → CoW ✅
+- **オブジェクト** が shared → 同じインスタンスの参照 (CoW ではない)
+
+```
+SHARED:
+  User::$relations (array, CoW)
+  User::$fillable (array, CoW)
+  User::$config (object, same instance)
+```
