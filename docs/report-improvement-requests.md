@@ -476,3 +476,25 @@ dedup_candidate: Attachment::$part (Part): 600 copies x 312B ALL SAME SIZE
 ただし structural_duplicate pass が既に「同じ shape のオブジェクト群」を
 検出しているので、dedup_candidate と structural_duplicate の整理が先。
 両方出ると冗長な場合がある。
+
+### large_array のサイズが配列テーブルのみ [重要度: 高]
+
+現在:
+```
+[LOW] large_array: 0.15 MB array, 10,000 elements — users -> items
+```
+
+0.15 MB は配列のハッシュテーブル部分 (header 56B + table 160KB) のみ。
+配列の中身 (10,000 User objects × ~1.6 KB = ~15 MB) は含まない。
+ユーザーから見ると「$users が 0.15 MB？嘘でしょ」となる。
+
+`--full-analysis` なら subtree_sizes から配列の retained size が取れるので、
+中身含みの retained サイズで表示すべき:
+
+```
+[HIGH] large_array: 15.3 MB (retained), 10,000 elements — <main>:54::$users->items
+  (array table: 0.15 MB + contained objects: ~15.1 MB)
+```
+
+配列テーブルのサイズだけだと severity が LOW になるが、
+retained で見ると HIGH になるケースが多い。
