@@ -147,18 +147,61 @@ final class NonTreeEdgePass implements PassInterface
                 cnl.class_name as target_class,
                 count(*) as cnt,
                 count(*) * cnl.size as total_waste,
-                (SELECT cnl_src.class_name
-                    FROM context_edges e_pp
-                    JOIN context_node_locations cnl_src
-                        ON cnl_src.node_id = e_pp.parent_node_id
-                        AND cnl_src.run_id = {$this->run_id}
-                        AND cnl_src.location_type
-                            = 'ZendObjectMemoryLocation'
-                    WHERE e_pp.child_node_id = e.parent_node_id
-                        AND e_pp.link_name = 'object_properties'
-                        AND e_pp.run_id = {$this->run_id}
+                COALESCE(
+                    (SELECT cnl_src.class_name
+                        FROM context_edges e_pp
+                        JOIN context_node_locations cnl_src
+                            ON cnl_src.node_id = e_pp.parent_node_id
+                            AND cnl_src.run_id = {$this->run_id}
+                            AND cnl_src.location_type
+                                = 'ZendObjectMemoryLocation'
+                        WHERE e_pp.child_node_id = e.parent_node_id
+                            AND e_pp.link_name = 'object_properties'
+                            AND e_pp.run_id = {$this->run_id}
+                        LIMIT 1
+                    ),
+                    (SELECT cnl_arr.class_name
+                        FROM context_edges e_elem
+                        JOIN context_edges e_elems
+                            ON e_elems.child_node_id
+                                = e_elem.parent_node_id
+                            AND e_elems.link_name = 'array_elements'
+                            AND e_elems.run_id = {$this->run_id}
+                        JOIN context_edges e_prop
+                            ON e_prop.child_node_id
+                                = e_elems.parent_node_id
+                            AND e_prop.run_id = {$this->run_id}
+                        JOIN context_edges e_op
+                            ON e_op.child_node_id
+                                = e_prop.parent_node_id
+                            AND e_op.link_name = 'object_properties'
+                            AND e_op.run_id = {$this->run_id}
+                        JOIN context_node_locations cnl_arr
+                            ON cnl_arr.node_id = e_op.parent_node_id
+                            AND cnl_arr.run_id = {$this->run_id}
+                            AND cnl_arr.location_type
+                                = 'ZendObjectMemoryLocation'
+                        WHERE e_elem.child_node_id
+                            = e.parent_node_id
+                            AND e_elem.run_id = {$this->run_id}
+                        LIMIT 1
+                    )
+                ) as source_class,
+                (SELECT e_prop2.link_name
+                    FROM context_edges e_elem2
+                    JOIN context_edges e_elems2
+                        ON e_elems2.child_node_id
+                            = e_elem2.parent_node_id
+                        AND e_elems2.link_name = 'array_elements'
+                        AND e_elems2.run_id = {$this->run_id}
+                    JOIN context_edges e_prop2
+                        ON e_prop2.child_node_id
+                            = e_elems2.parent_node_id
+                        AND e_prop2.run_id = {$this->run_id}
+                    WHERE e_elem2.child_node_id = e.parent_node_id
+                        AND e_elem2.run_id = {$this->run_id}
                     LIMIT 1
-                ) as source_class
+                ) as owner_prop
             FROM context_edges e
             JOIN context_node_locations cnl
                 ON cnl.node_id = e.child_node_id
@@ -182,9 +225,18 @@ final class NonTreeEdgePass implements PassInterface
             $total = (int)$row['total_waste'];
             $dedup_src = $row['source_class'] ?? null;
             $dedup_tgt = $row['target_class'] ?? null;
-            $dedup_label = $dedup_src
-                ? "{$dedup_src}::\${$row['link_name']}"
-                : $row['link_name'];
+            $owner_prop = $row['owner_prop'] ?? null;
+
+            // Build label: Class::$prop[link] or Class::$prop or link_name
+            if ($dedup_src && $owner_prop) {
+                // Array element path: Class::$prop[link_name]
+                $dedup_label = "{$dedup_src}::\${$owner_prop}"
+                    . "[{$row['link_name']}]";
+            } elseif ($dedup_src) {
+                $dedup_label = "{$dedup_src}::\${$row['link_name']}";
+            } else {
+                $dedup_label = $row['link_name'];
+            }
             if ($dedup_tgt) {
                 $dedup_label .= " ({$dedup_tgt})";
             }
