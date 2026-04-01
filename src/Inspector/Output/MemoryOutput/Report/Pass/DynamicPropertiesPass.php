@@ -61,8 +61,7 @@ final class DynamicPropertiesPass implements PassInterface
 
         $findings = [];
         foreach ($rows as $row) {
-            $short = preg_replace('/^.*\\\\/', '', $row['class_name'])
-                ?? $row['class_name'];
+            $short = $row['class_name'];
             $dp_size = (int)$row['dp_size'];
             $cnt = (int)$row['cnt'];
 

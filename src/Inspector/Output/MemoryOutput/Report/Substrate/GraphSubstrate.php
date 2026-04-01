@@ -234,8 +234,7 @@ final class GraphSubstrate
             arsort($class_counts);
             $signature_parts = [];
             foreach ($class_counts as $cls => $cnt) {
-                $short = preg_replace('/^.*\\\\/', '', $cls);
-                $signature_parts[] = "{$short}:{$cnt}";
+                $signature_parts[] = "{$cls}:{$cnt}";
             }
             $signature = implode(', ', $signature_parts);
 

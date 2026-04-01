@@ -93,8 +93,7 @@ final class PerPropertyMemoryPass implements PassInterface
             if ($s['total'] < 1024 * 1024 || $i >= 10) {
                 break;
             }
-            $short = preg_replace('/^.*\\\\/', '', $s['class'])
-                ?? $s['class'];
+            $short = $s['class'];
             $avg = $s['count'] > 0
                 ? (int)($s['total'] / $s['count'])
                 : 0;

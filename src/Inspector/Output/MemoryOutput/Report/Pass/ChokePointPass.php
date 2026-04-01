@@ -108,7 +108,7 @@ final class ChokePointPass implements PassInterface
             // Build a meaningful label: prefer class_name > location_type > node type > link_name
             $label = '';
             if ($class) {
-                $label = preg_replace('/^.*\\\\/', '', $class);
+                $label = $class;
             } elseif ($loc_type !== '') {
                 $label = $loc_type;
             } else {

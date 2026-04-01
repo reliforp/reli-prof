@@ -177,8 +177,7 @@ final class PropertyScalingPass implements PassInterface
             }
         }
 
-        $short = preg_replace('/^.*\\\\/', '', $dominant_class)
-            ?? $dominant_class;
+        $short = $dominant_class;
         $size_label = $use_retained ? 'retained' : 'shallow';
 
         $lines = [];
@@ -193,7 +192,8 @@ final class PropertyScalingPass implements PassInterface
                     ? (int)($p['size'] / $p['distinct_targets'])
                     : 0;
                 $lines[] = sprintf(
-                    '  $%s: %s copies x %dB = %.2f KB',
+                    '  %s::$%s: %s copies x %dB = %.2f KB',
+                    $short,
                     $p['property'],
                     number_format($p['distinct_targets']),
                     $avg,
@@ -210,7 +210,7 @@ final class PropertyScalingPass implements PassInterface
         }
         if ($shared !== []) {
             $shared_names = array_map(
-                fn($s) => '$' . $s['property'],
+                fn($s) => $short . '::$' . $s['property'],
                 array_slice($shared, 0, 10)
             );
             $lines[] = 'SHARED (constant cost): '

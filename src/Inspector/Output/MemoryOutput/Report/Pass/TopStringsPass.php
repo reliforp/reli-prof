@@ -180,7 +180,8 @@ final class TopStringsPass implements PassInterface
 
     /**
      * @param array<string, mixed> $row
-     * @psalm-suppress MixedArgument, MixedAssignment, RiskyTruthyFalsyComparison, InvalidArgument
+     * @psalm-suppress MixedArgument, MixedAssignment, RiskyTruthyFalsyComparison
+     * @psalm-suppress InvalidArgument, MixedArgumentTypeCoercion
      */
     private function buildOwnerPath(
         array $row,
@@ -202,9 +203,7 @@ final class TopStringsPass implements PassInterface
 
         $parent_class = $row['parent1_class'] ?? null;
         if ($parent_class) {
-            $short = preg_replace('/^.*\\\\/', '', $parent_class)
-                ?? $parent_class;
-            $raw_parts[] = $short;
+            $raw_parts[] = $parent_class;
         }
 
         if (($row['link1'] ?? null) !== null) {
