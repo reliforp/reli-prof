@@ -37,7 +37,7 @@ final class TextReportFormatter implements ReportFormatterInterface
         $info = [];
 
         foreach ($result->findings as $finding) {
-            if ($finding->kind === 'overview' || $finding->kind === 'coverage_gap') {
+            if (in_array($finding->kind, ['overview', 'coverage_gap', 'call_stack'], true)) {
                 $overview[] = $finding;
             } elseif (
                 in_array($finding->kind, ['root_blame', 'retained_exact', 'retained_approximate'], true)
@@ -54,7 +54,15 @@ final class TextReportFormatter implements ReportFormatterInterface
         if ($overview !== []) {
             $lines[] = '=== Overview ===';
             foreach ($overview as $finding) {
-                $lines[] = '  ' . $finding->summary;
+                if ($finding->kind === 'call_stack' && $finding->hypothesis !== '') {
+                    $lines[] = '';
+                    $lines[] = '  Call Stack at capture:';
+                    foreach (explode("\n", $finding->hypothesis) as $frame) {
+                        $lines[] = '    ' . $frame;
+                    }
+                } else {
+                    $lines[] = '  ' . $finding->summary;
+                }
             }
             $lines[] = '';
         }

@@ -15,6 +15,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report;
 
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\PassInterface;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\BlameAllocationPass;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\CallStackPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\ChokePointPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\ClassRankingPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\CompanionDetectionPass;
@@ -24,6 +25,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\DynamicPropertiesPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\NonTreeEdgePass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\OverviewPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\PerPropertyMemoryPass;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\PropertyScalingPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\RetainedSizeConfidencePass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\StructuralDedupPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopArraysPass;
@@ -49,6 +51,15 @@ final class ReportGenerator
 
         // Phase 1: Summary-based passes (always run)
         $summary = $this->loadSummary($db, $run_id);
+        /** @var array<string, mixed> $flat_summary */
+        $flat_summary = [];
+        /** @psalm-suppress MixedAssignment */
+        foreach ($summary as $entry) {
+            foreach ($entry as $k => $v) {
+                $flat_summary[$k] = $v;
+            }
+        }
+        $heap_usage = (int)($flat_summary['zend_mm_heap_usage'] ?? 0);
         $location_types = $this->loadLocationTypes($db, $run_id);
         $class_objects = $this->loadClassObjects($db, $run_id);
 
@@ -59,23 +70,39 @@ final class ReportGenerator
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
 
         // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
+        $run_phase3 = $full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000);
         if ($full_analysis || $node_count < 500000) {
+            $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
+            // PropertyScaling, TopArrays, TopStrings: deferred to Phase 3
+            // if graph available (full path + retained size)
+            if (!$run_phase3) {
+                $findings = array_merge($findings, $this->runPass(
+                    new PropertyScalingPass($db, $run_id, $class_objects)
+                ));
+                $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
+                $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
+            }
             $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
         }
 
         // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
-        if ($full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000)) {
+        if ($run_phase3) {
             $substrate = GraphSubstrate::loadFromDb($db, $run_id);
             $meta['scc_count'] = count($substrate->scc_profiles);
 
             $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate)));
+            $findings = array_merge($findings, $this->runPass(
+                new PropertyScalingPass($db, $run_id, $class_objects, $substrate)
+            ));
             $findings = array_merge($findings, $this->runPass(new PerPropertyMemoryPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
+            $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new ChokePointPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(
+                new ChokePointPass($substrate, $db, $run_id, $heap_usage)
+            ));
             $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
         }
@@ -93,27 +120,35 @@ final class ReportGenerator
     private function deduplicateFindings(array $findings): array
     {
         $has_cycles = false;
+        $has_property_scaling = false;
         foreach ($findings as $f) {
             if ($f->kind === 'cycle_cluster' || $f->kind === 'micro_cycle') {
                 $has_cycles = true;
-                break;
+            }
+            if ($f->kind === 'property_scaling') {
+                $has_property_scaling = true;
             }
         }
 
-        // If cycles are present, limit shared_fanin to top 3
-        // (many shared_fanin findings are cycle back-references)
-        if ($has_cycles) {
-            $fanin_count = 0;
-            $findings = array_values(array_filter(
-                $findings,
-                function (Finding $f) use (&$fanin_count): bool {
-                    if ($f->kind === 'shared_fanin') {
-                        return ++$fanin_count <= 3;
-                    }
-                    return true;
-                },
-            ));
-        }
+        $fanin_count = 0;
+        $findings = array_values(array_filter(
+            $findings,
+            function (Finding $f) use (
+                $has_cycles,
+                $has_property_scaling,
+                &$fanin_count,
+            ): bool {
+                // Limit shared_fanin when cycles exist
+                if ($has_cycles && $f->kind === 'shared_fanin') {
+                    return ++$fanin_count <= 3;
+                }
+                // Suppress shared_singleton when PropertyScaling covers it
+                if ($has_property_scaling && $f->kind === 'shared_singleton') {
+                    return false;
+                }
+                return true;
+            },
+        ));
 
         return $findings;
     }

@@ -17,6 +17,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 
 final class ChokePointPass implements PassInterface
 {
@@ -24,6 +26,7 @@ final class ChokePointPass implements PassInterface
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
+        private int $heap_usage = 0,
     ) {
     }
 
@@ -75,7 +78,7 @@ final class ChokePointPass implements PassInterface
         }
         $chokepoints = $filtered;
 
-        // Build parent map for path lookup
+        // Build parent map and node type map for path lookup
         $parent_map = [];
         $rows = $this->db->query(
             "SELECT child_node_id, parent_node_id, link_name FROM context_edges"
@@ -85,6 +88,19 @@ final class ChokePointPass implements PassInterface
             $parent_map[(int)$r[0]] = [(int)$r[1], $r[2]];
         }
         unset($rows);
+
+        /** @var array<int, string> */
+        $node_type_map = [];
+        $rows = $this->db->query(
+            "SELECT node_id, type FROM context_nodes"
+            . " WHERE run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+        foreach ($rows as $r) {
+            $node_type_map[(int)$r[0]] = (string)$r[1];
+        }
+        unset($rows);
+
+        $labeler = new NodeLabeler($this->db, $this->run_id);
 
         $loc_stmt = $this->db->prepare(
             "SELECT class_name, location_type FROM context_node_locations"
@@ -105,7 +121,7 @@ final class ChokePointPass implements PassInterface
             // Build a meaningful label: prefer class_name > location_type > node type > link_name
             $label = '';
             if ($class) {
-                $label = preg_replace('/^.*\\\\/', '', $class);
+                $label = $class;
             } elseif ($loc_type !== '') {
                 $label = $loc_type;
             } else {
@@ -116,37 +132,54 @@ final class ChokePointPass implements PassInterface
                 }
             }
 
-            // Walk up to build path, use link_name as fallback label
-            $path_parts = [];
+            // Walk up to root for full PHP-syntax path
+            $up_parts = [];
+            $up_types = [];
             $cur = $node;
-            for ($i = 0; $i < 4; $i++) {
+            for ($i = 0; $i < 20; $i++) {
                 if (!isset($parent_map[$cur])) {
                     break;
                 }
                 [$parent, $link] = $parent_map[$cur];
-                $path_parts[] = $link;
-                if ($i === 0 && $label === '') {
-                    $label = $link;
+                $resolved = $labeler->resolvePathLabel(
+                    (string)$link,
+                    $cur
+                );
+                array_unshift($up_parts, $resolved);
+                array_unshift($up_types, $node_type_map[$cur] ?? '');
+                if ($label === '') {
+                    $label = (string)$link;
                 }
                 $cur = $parent;
             }
             if ($label === '') {
                 $label = "(node #{$node})";
             }
-            $path = $path_parts ? implode(' <- ', $path_parts) : '(root)';
+            $path = $up_parts !== []
+                ? PathFormatter::toPhpSyntax($up_parts, $up_types)
+                : '(root)';
 
             $n_children = count($this->substrate->children[$node] ?? []);
 
+            $heap = max($this->heap_usage, 1);
+            $pct = $subtree / $heap * 100.0;
+            $severity = match (true) {
+                $pct > 30.0 => FindingSeverity::High,
+                $pct > 10.0 => FindingSeverity::Medium,
+                default => FindingSeverity::Low,
+            };
+
             $findings[] = new Finding(
                 kind: 'choke_point',
-                severity: FindingSeverity::High,
+                severity: $severity,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
-                    '%s (%dB shallow) holds %.2f MB via %d children',
+                    '%s (%dB shallow) holds %.2f MB via %d children — %s',
                     $label,
                     $shallow,
                     $subtree / 1024 / 1024,
                     $n_children,
+                    $path,
                 ),
                 facts: [
                     'node_id' => $node,

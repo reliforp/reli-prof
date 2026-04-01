@@ -66,8 +66,9 @@ final class MemoryReportCommand extends Command
         $this->addOption(
             'full-analysis',
             null,
-            InputOption::VALUE_NONE,
-            'run all analysis passes regardless of snapshot size (may use significant memory)',
+            InputOption::VALUE_NEGATABLE,
+            'run all analysis passes (default: on; --no-full-analysis to limit for very large snapshots)',
+            true,
         );
     }
 

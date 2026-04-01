@@ -17,6 +17,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 
 final class DrillDownPass implements PassInterface
 {
@@ -29,8 +31,8 @@ final class DrillDownPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, MixedArgumentTypeCoercion
-     * @psalm-suppress InvalidOperand
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     * @psalm-suppress MixedOperand, MixedArgumentTypeCoercion, InvalidOperand
      */
     #[\Override]
     public function analyze(): array
@@ -40,8 +42,14 @@ final class DrillDownPass implements PassInterface
             . " WHERE child_node_id = ? AND is_tree = 1"
             . " AND run_id = {$this->run_id} LIMIT 1"
         );
+        $type_stmt = $this->db->prepare(
+            "SELECT type FROM context_nodes"
+            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
+        );
+        $labeler = new NodeLabeler($this->db, $this->run_id);
 
         $path_parts = [];
+        $path_types = [];
         $path_sizes = [];
         $current_children = $this->substrate->roots;
 
@@ -60,9 +68,20 @@ final class DrillDownPass implements PassInterface
             $heaviest = $branches[0];
             $link_stmt->execute([$heaviest[0]]);
             $r = $link_stmt->fetch(\PDO::FETCH_NUM);
-            $name = $r ? $r[0] : '?';
+            /** @var string $raw_name */
+            $raw_name = $r ? $r[0] : '?';
+            $name = $labeler->resolvePathLabel(
+                $raw_name,
+                $heaviest[0]
+            );
+
+            $type_stmt->execute([$heaviest[0]]);
+            $type_row = $type_stmt->fetch(\PDO::FETCH_NUM);
+            /** @var string $node_type */
+            $node_type = $type_row ? $type_row[0] : '';
 
             $path_parts[] = $name;
+            $path_types[] = $node_type;
             $path_sizes[] = $heaviest[1];
 
             $current_children = $this->substrate->children[$heaviest[0]] ?? [];
@@ -72,7 +91,7 @@ final class DrillDownPass implements PassInterface
             return [];
         }
 
-        $path_str = implode(' -> ', $path_parts);
+        $path_str = PathFormatter::toPhpSyntax($path_parts, $path_types);
         $total_size = $path_sizes[0] ?? 0;
 
         return [
@@ -90,9 +109,10 @@ final class DrillDownPass implements PassInterface
                     'sizes' => $path_sizes,
                     'depth' => count($path_parts),
                 ],
-                hypothesis: 'Heaviest memory path — the primary chain of memory consumption',
+                hypothesis: 'Heaviest memory path'
+                    . ' — the primary chain of memory consumption',
                 next_checks: [
-                    'Examine the leaf of this path for the actual data consuming memory',
+                    'Examine the leaf for the actual data consuming memory',
                     'Check if the accumulation can be bounded or streamed',
                 ],
                 impact_bytes: $total_size,

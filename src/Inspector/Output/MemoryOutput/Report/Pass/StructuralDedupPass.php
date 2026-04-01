@@ -81,7 +81,7 @@ final class StructuralDedupPass implements PassInterface
         usort($dedup_candidates, fn($a, $b) => $b['total_size'] <=> $a['total_size']);
 
         foreach (array_slice($dedup_candidates, 0, 10) as $g) {
-            $short = preg_replace('/^.*\\\\/', '', $g['class']) ?? $g['class'];
+            $short = $g['class'];
             $is_empty = $g['props'] === '';
             $waste = ($g['count'] - 1) * $g['size'];
 

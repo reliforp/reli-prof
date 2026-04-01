@@ -104,7 +104,7 @@ final class CompanionDetectionPass implements PassInterface
             $names = array_map(
                 fn($c) => sprintf(
                     '%s (%s)',
-                    preg_replace('/^.*\\\\/', '', $c['name']) ?? $c['name'],
+                    $c['name'],
                     number_format($c['count'])
                 ),
                 $group_classes

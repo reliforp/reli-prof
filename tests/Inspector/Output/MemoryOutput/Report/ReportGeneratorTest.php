@@ -180,7 +180,8 @@ class ReportGeneratorTest extends BaseTestCase
 
         $paths = $this->findByKind($result, 'bottleneck_path');
         $this->assertNotEmpty($paths);
-        $this->assertStringContainsString('call_frames', $paths[0]->summary);
+        // Path is PHP-syntax formatted; check for meaningful parts
+        $this->assertStringContainsString('container', $paths[0]->summary);
     }
 
     public function testChokePointDetected(): void

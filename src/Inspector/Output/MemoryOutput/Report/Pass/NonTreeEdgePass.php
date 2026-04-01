@@ -28,18 +28,40 @@ final class NonTreeEdgePass implements PassInterface
     /**
      * @return list<Finding>
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
-     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument
+     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument, RiskyTruthyFalsyComparison
      */
     #[\Override]
     public function analyze(): array
     {
-        // Classify shared references by link_name
+        // Classify shared references by link_name with class context
         $rows = $this->db->query("
             SELECT
                 e.link_name,
                 count(*) as ref_count,
                 count(DISTINCT e.child_node_id) as target_count,
-                round(count(*) * 1.0 / max(1, count(DISTINCT e.child_node_id)), 1) as avg_refs
+                round(
+                    count(*) * 1.0
+                    / max(1, count(DISTINCT e.child_node_id)),
+                    1
+                ) as avg_refs,
+                (SELECT cnl_src.class_name
+                    FROM context_edges e_pp
+                    JOIN context_node_locations cnl_src
+                        ON cnl_src.node_id = e_pp.parent_node_id
+                        AND cnl_src.run_id = {$this->run_id}
+                        AND cnl_src.location_type = 'ZendObjectMemoryLocation'
+                    WHERE e_pp.child_node_id = e.parent_node_id
+                        AND e_pp.link_name = 'object_properties'
+                        AND e_pp.run_id = {$this->run_id}
+                    LIMIT 1
+                ) as source_class,
+                (SELECT cnl_tgt.class_name
+                    FROM context_node_locations cnl_tgt
+                    WHERE cnl_tgt.node_id = e.child_node_id
+                        AND cnl_tgt.run_id = {$this->run_id}
+                        AND cnl_tgt.class_name IS NOT NULL
+                    LIMIT 1
+                ) as target_class
             FROM context_edges e
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
@@ -63,33 +85,41 @@ final class NonTreeEdgePass implements PassInterface
             $ref_count = (int)$row['ref_count'];
             $target_count = (int)$row['target_count'];
             $avg_refs = (float)$row['avg_refs'];
+            $src = $row['source_class'] ?? null;
+            $tgt = $row['target_class'] ?? null;
+            $qualified = $src
+                ? "{$src}::\${$row['link_name']}"
+                : $row['link_name'];
+            $target_label = $tgt ? " ({$tgt})" : '';
 
             if ($target_count === 1 && $ref_count > 50) {
-                // Singleton pattern: many refs to one target
                 $findings[] = new Finding(
                     kind: 'shared_singleton',
                     severity: FindingSeverity::Info,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%s: %s refs -> 1 target [singleton, normal]',
-                        $row['link_name'],
+                        '%s%s: %s refs -> 1 target [singleton]',
+                        $qualified,
+                        $target_label,
                         number_format($ref_count),
                     ),
                     facts: [
                         'link_name' => $row['link_name'],
+                        'source_class' => $src,
+                        'target_class' => $tgt,
                         'ref_count' => $ref_count,
                         'target_count' => $target_count,
                     ],
                 );
             } elseif ($target_count > 1 && $avg_refs > 2.0) {
-                // Fan-in: multiple refs to multiple targets
                 $findings[] = new Finding(
                     kind: 'shared_fanin',
                     severity: FindingSeverity::Medium,
                     confidence: FindingConfidence::Medium,
                     summary: sprintf(
-                        '%s: %s refs -> %s targets (%.1f each)',
-                        $row['link_name'],
+                        '%s -> %s (%s refs -> %s targets, %.1f each)',
+                        $qualified,
+                        $tgt ?? '?',
                         number_format($ref_count),
                         number_format($target_count),
                         $avg_refs,
@@ -113,10 +143,24 @@ final class NonTreeEdgePass implements PassInterface
             SELECT
                 e.link_name,
                 cnl.size,
+                cnl.class_name as target_class,
                 count(*) as cnt,
-                count(*) * cnl.size as total_waste
+                count(*) * cnl.size as total_waste,
+                (SELECT cnl_src.class_name
+                    FROM context_edges e_pp
+                    JOIN context_node_locations cnl_src
+                        ON cnl_src.node_id = e_pp.parent_node_id
+                        AND cnl_src.run_id = {$this->run_id}
+                        AND cnl_src.location_type
+                            = 'ZendObjectMemoryLocation'
+                    WHERE e_pp.child_node_id = e.parent_node_id
+                        AND e_pp.link_name = 'object_properties'
+                        AND e_pp.run_id = {$this->run_id}
+                    LIMIT 1
+                ) as source_class
             FROM context_edges e
-            JOIN context_node_locations cnl ON cnl.node_id = e.child_node_id
+            JOIN context_node_locations cnl
+                ON cnl.node_id = e.child_node_id
                 AND cnl.run_id = {$this->run_id}
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
@@ -135,20 +179,30 @@ final class NonTreeEdgePass implements PassInterface
             $cnt = (int)$row['cnt'];
             $size = (int)$row['size'];
             $total = (int)$row['total_waste'];
+            $dedup_src = $row['source_class'] ?? null;
+            $dedup_tgt = $row['target_class'] ?? null;
+            $dedup_label = $dedup_src
+                ? "{$dedup_src}::\${$row['link_name']}"
+                : $row['link_name'];
+            if ($dedup_tgt) {
+                $dedup_label .= " ({$dedup_tgt})";
+            }
 
             $findings[] = new Finding(
                 kind: 'dedup_candidate',
                 severity: $total > 102400 ? FindingSeverity::Low : FindingSeverity::Info,
                 confidence: FindingConfidence::Low,
                 summary: sprintf(
-                    '%s: %s copies x %dB ALL SAME SIZE = %.2f KB wasted',
-                    $row['link_name'],
+                    '%s: %s copies x %dB SAME SIZE = %.2f KB',
+                    $dedup_label,
                     number_format($cnt),
                     $size,
                     $total / 1024,
                 ),
                 facts: [
                     'link_name' => $row['link_name'],
+                    'source_class' => $dedup_src,
+                    'target_class' => $dedup_tgt,
                     'count' => $cnt,
                     'each_size' => $size,
                     'total_waste' => $total,

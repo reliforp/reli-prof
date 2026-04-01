@@ -49,7 +49,7 @@ final class ClassRankingPass implements PassInterface
         foreach ($this->class_objects_summary as $class_name => $entry) {
             $pct = $entry['memory_usage'] / $total_object_memory * 100.0;
             if ($pct > 50.0) {
-                $short = preg_replace('/^.*\\\\/', '', $class_name) ?? $class_name;
+                $short = $class_name;
                 $avg_size = $entry['count'] > 0
                     ? (int)($entry['memory_usage'] / $entry['count'])
                     : 0;
