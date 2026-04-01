@@ -652,3 +652,7 @@ shared_fanin は「1 つのプロパティが複数ターゲットを指し、�
 2. 残りは severity を LOW に下げるか Additional Info に移す
 3. あるいは shared_fanin を「cycle の証拠」「共有の証拠」に分類して
    他の finding の補足情報として統合する
+
+↑ の補足: shared_fanin は循環参照の証拠ではなく「多対一の参照」の事実。
+info に格下げして Additional Info セクションに移すのが妥当。
+retained size や blame allocation の補足データとしての意味はある。
