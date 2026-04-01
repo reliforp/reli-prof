@@ -29,7 +29,8 @@ final class ChokePointPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, MixedArgumentTypeCoercion, InvalidOperand, PossiblyInvalidArgument, RiskyTruthyFalsyComparison
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, MixedArgumentTypeCoercion
+     * @psalm-suppress InvalidOperand, PossiblyInvalidArgument, RiskyTruthyFalsyComparison
      */
     #[\Override]
     public function analyze(): array

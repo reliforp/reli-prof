@@ -27,7 +27,8 @@ final class TypeBreakdownPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand, PossiblyInvalidArgument, InvalidArgument
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument
      */
     #[\Override]
     public function analyze(): array
@@ -74,7 +75,8 @@ final class TypeBreakdownPass implements PassInterface
                         'Look for unbounded accumulation patterns',
                     ],
                     impact_bytes: $entry['memory_usage'],
-                    replay_query: "SELECT type, count, memory_usage FROM location_types_summary ORDER BY memory_usage DESC",
+                    replay_query: "SELECT type, count, memory_usage"
+                        . " FROM location_types_summary ORDER BY memory_usage DESC",
                 );
             }
         }

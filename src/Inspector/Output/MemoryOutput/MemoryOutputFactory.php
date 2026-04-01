@@ -70,7 +70,8 @@ final class MemoryOutputFactory
                 $settings->output_path,
             ),
             default => throw new \RuntimeException(
-                "unsupported output format: {$settings->output_format} (supported: json, sqlite3, mysql, postgresql, report, report-json)"
+                "unsupported output format: {$settings->output_format}"
+                . " (supported: json, sqlite3, mysql, postgresql, report, report-json)"
             ),
         };
     }

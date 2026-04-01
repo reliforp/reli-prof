@@ -27,7 +27,8 @@ final class ClassRankingPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand, PossiblyInvalidArgument, InvalidArgument
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument
      */
     #[\Override]
     public function analyze(): array
@@ -74,7 +75,8 @@ final class ClassRankingPass implements PassInterface
                         'Look for owner path to find the accumulating container',
                     ],
                     impact_bytes: $entry['memory_usage'],
-                    replay_query: "SELECT class_name, count, memory_usage FROM class_objects_summary ORDER BY memory_usage DESC LIMIT 1",
+                    replay_query: "SELECT class_name, count, memory_usage"
+                        . " FROM class_objects_summary ORDER BY memory_usage DESC LIMIT 1",
                 );
             }
         }

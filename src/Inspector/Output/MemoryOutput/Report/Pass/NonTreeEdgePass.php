@@ -27,7 +27,8 @@ final class NonTreeEdgePass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand, PossiblyInvalidArgument, InvalidArgument
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument
      */
     #[\Override]
     public function analyze(): array

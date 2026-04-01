@@ -97,7 +97,11 @@ class ReportGeneratorTest extends BaseTestCase
         $locations = [];
         for ($i = 0; $i < 100; $i++) {
             $locations[] = new ZendObjectMemoryLocation(
-                0x1000 + $i * 0x100, 256, 1, 7, 'App\\DominantClass'
+                0x1000 + $i * 0x100,
+                256,
+                1,
+                7,
+                'App\\DominantClass'
             );
         }
         $locations[] = new ZendObjectMemoryLocation(0x9000, 64, 1, 7, 'App\\MinorClass');
@@ -117,10 +121,18 @@ class ReportGeneratorTest extends BaseTestCase
         // 150 of ClassA and 150 of ClassB (within 5%)
         for ($i = 0; $i < 150; $i++) {
             $locations[] = new ZendObjectMemoryLocation(
-                0x1000 + $i * 0x100, 64, 1, 7, 'App\\ClassA'
+                0x1000 + $i * 0x100,
+                64,
+                1,
+                7,
+                'App\\ClassA'
             );
             $locations[] = new ZendObjectMemoryLocation(
-                0x50000 + $i * 0x100, 64, 1, 7, 'App\\ClassB'
+                0x50000 + $i * 0x100,
+                64,
+                1,
+                7,
+                'App\\ClassB'
             );
         }
 

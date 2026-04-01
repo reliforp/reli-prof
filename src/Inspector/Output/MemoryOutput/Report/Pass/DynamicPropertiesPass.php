@@ -27,7 +27,8 @@ final class DynamicPropertiesPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, PossiblyInvalidArgument, InvalidOperand
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, PossiblyInvalidArgument
+     * @psalm-suppress InvalidOperand
      */
     #[\Override]
     public function analyze(): array

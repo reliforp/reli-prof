@@ -39,7 +39,9 @@ final class TextReportFormatter implements ReportFormatterInterface
         foreach ($result->findings as $finding) {
             if ($finding->kind === 'overview' || $finding->kind === 'coverage_gap') {
                 $overview[] = $finding;
-            } elseif ($finding->kind === 'root_blame' || $finding->kind === 'retained_exact' || $finding->kind === 'retained_approximate') {
+            } elseif (
+                in_array($finding->kind, ['root_blame', 'retained_exact', 'retained_approximate'], true)
+            ) {
                 $info[] = $finding;
             } elseif ($finding->severity === FindingSeverity::Info) {
                 $info[] = $finding;

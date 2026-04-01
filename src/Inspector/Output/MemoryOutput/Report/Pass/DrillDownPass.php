@@ -29,13 +29,16 @@ final class DrillDownPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, MixedArgumentTypeCoercion, InvalidOperand
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, MixedArgumentTypeCoercion
+     * @psalm-suppress InvalidOperand
      */
     #[\Override]
     public function analyze(): array
     {
         $link_stmt = $this->db->prepare(
-            "SELECT link_name FROM context_edges WHERE child_node_id = ? AND is_tree = 1 AND run_id = {$this->run_id} LIMIT 1"
+            "SELECT link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
         );
 
         $path_parts = [];

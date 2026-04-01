@@ -29,7 +29,8 @@ final class BlameAllocationPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand, RedundantCastGivenDocblockType
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress RedundantCastGivenDocblockType
      */
     #[\Override]
     public function analyze(): array

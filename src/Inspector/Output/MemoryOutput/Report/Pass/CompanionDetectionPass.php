@@ -27,7 +27,8 @@ final class CompanionDetectionPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand, TypeDoesNotContainType
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress TypeDoesNotContainType
      */
     #[\Override]
     public function analyze(): array

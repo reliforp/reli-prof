@@ -64,7 +64,10 @@ final class OverviewPass implements PassInterface
                 'compiler_arena_total' => $compiler_arena,
                 'analyzed_percentage' => $analyzed_pct,
             ],
-            replay_query: "SELECT key, value FROM summary WHERE key IN ('zend_mm_heap_total', 'zend_mm_heap_usage', 'vm_stack_total', 'compiler_arena_total', 'heap_memory_analyzed_percentage')",
+            replay_query: "SELECT key, value FROM summary WHERE key IN"
+                . " ('zend_mm_heap_total', 'zend_mm_heap_usage',"
+                . " 'vm_stack_total', 'compiler_arena_total',"
+                . " 'heap_memory_analyzed_percentage')",
         );
 
         if ($analyzed_pct > 0 && $analyzed_pct < 95.0) {

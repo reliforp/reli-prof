@@ -116,7 +116,8 @@ final class ReportGenerator
 
     /**
      * @return array<int, array<string, mixed>>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, MixedReturnTypeCoercion, TypeDoesNotContainType, InvalidArgument, MixedArrayOffset
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand
+     * @psalm-suppress MixedReturnTypeCoercion, TypeDoesNotContainType, InvalidArgument, MixedArrayOffset
      */
     private function loadSummary(\PDO $db, int $run_id): array
     {
