@@ -684,3 +684,15 @@ reli inspector:memory:report foo.sqlite3 --memory-limit=2G
 
 実装: `ini_set('memory_limit', $value)` をコマンド実行の冒頭で呼ぶだけ。
 全コマンド共通のオプションとして追加するか、report/analyze 系のみに追加。
+
+### Overview にキャプチャ日時 [重要度: 低]
+
+`runs` テーブルにタイムスタンプが既にある。Overview に表示:
+
+```
+=== Overview ===
+  Captured: 2026-03-28T17:58:56Z
+  Heap: 38.47 MB (97.7% analyzed), ...
+```
+
+dump → analyze の流れや watch の自動 dump で「いつのスナップショットか」が分かる。
