@@ -656,3 +656,18 @@ shared_fanin は「1 つのプロパティが複数ターゲットを指し、�
 ↑ の補足: shared_fanin は循環参照の証拠ではなく「多対一の参照」の事実。
 info に格下げして Additional Info セクションに移すのが妥当。
 retained size や blame allocation の補足データとしての意味はある。
+
+### companion_pair は companion_cluster に統合可能 [重要度: 低]
+
+companion_pair は companion_cluster の size=2 の特殊ケース。
+companion_cluster があれば pair を別 finding type にする意味がない。
+
+Symfony Forms:
+- companion_pair: FormBuilder (3,611) ↔ Closure (3,619)
+- companion_cluster: 6 classes × ~1,806
+
+cluster に統合して、size=2 のときは pair 風の表示にすれば十分:
+```
+[MEDIUM] companion_cluster: FormBuilder (3,611) ↔ Closure (3,619) — 2.93 MB
+[MEDIUM] companion_cluster: 6 classes × ~1,806 instances (3.84 MB): ...
+```
