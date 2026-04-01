@@ -491,10 +491,16 @@ dedup_candidate: Attachment::$part (Part): 600 copies x 312B ALL SAME SIZE
 `--full-analysis` なら subtree_sizes から配列の retained size が取れるので、
 中身含みの retained サイズで表示すべき:
 
+テーブルサイズと retained の **両方** を出すべき:
+
 ```
-[HIGH] large_array: 15.3 MB (retained), 10,000 elements — <main>:54::$users->items
-  (array table: 0.15 MB + contained objects: ~15.1 MB)
+[HIGH] large_array: 15.3 MB retained (table: 160 KB), 10,000 elements — <main>:54::$users->items
 ```
 
-配列テーブルのサイズだけだと severity が LOW になるが、
-retained で見ると HIGH になるケースが多い。
+両方出す理由 — ケースが異なるため:
+- テーブル大 + 中身大: `$users->items` (table 160KB, retained 15MB)
+- テーブル大 + 中身スカスカ: 歯抜け配列（大量 unset 後、テーブル未縮小）
+- テーブル小 + 中身巨大: 少数要素だが各要素が huge object
+
+一方の数字だけだと片方のケースを見逃す。
+severity は retained ベースで判定。
