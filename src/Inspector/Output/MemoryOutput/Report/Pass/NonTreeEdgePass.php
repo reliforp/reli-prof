@@ -16,12 +16,14 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 
 final class NonTreeEdgePass implements PassInterface
 {
     public function __construct(
         private \PDO $db,
         private int $run_id,
+        private ?GraphSubstrate $substrate = null,
     ) {
     }
 
@@ -220,14 +222,30 @@ final class NonTreeEdgePass implements PassInterface
             LIMIT 10
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
+        $use_retained = $this->substrate !== null
+            && $this->substrate->subtree_sizes !== [];
+
         foreach ($dedup_rows as $row) {
             $cnt = (int)$row['cnt'];
-            $size = (int)$row['size'];
+            $shallow_size = (int)$row['size'];
             $total = (int)$row['total_waste'];
 
             // Skip array headers (always 56B) — "SAME SIZE" is meaningless
             if (($row['location_type'] ?? '') === 'ZendArrayMemoryLocation') {
                 continue;
+            }
+
+            // Use retained size when substrate available
+            $size = $shallow_size;
+            if ($use_retained) {
+                $retained = $this->getRetainedForDedup(
+                    (string)$row['link_name'],
+                    $shallow_size,
+                );
+                if ($retained > $shallow_size) {
+                    $size = $retained;
+                    $total = $cnt * $retained;
+                }
             }
 
             $dedup_src = $row['source_class'] ?? null;
@@ -251,7 +269,7 @@ final class NonTreeEdgePass implements PassInterface
             // Check actual duplication for representative examples
             $examples = $this->getDedupExamples(
                 $row['link_name'],
-                $size,
+                $shallow_size,
             );
 
             $hypothesis = 'Multiple copies of same-size objects'
@@ -296,10 +314,11 @@ final class NonTreeEdgePass implements PassInterface
                     : FindingSeverity::Info,
                 confidence: $confidence,
                 summary: sprintf(
-                    '%s: %s copies x %dB SAME SIZE = %.2f KB',
+                    '%s: %s copies x %dB%s = %.2f KB',
                     $dedup_label,
                     number_format($cnt),
                     $size,
+                    $size > $shallow_size ? ' retained' : '',
                     $total / 1024,
                 ),
                 facts: [
@@ -317,6 +336,47 @@ final class NonTreeEdgePass implements PassInterface
         }
 
         return $findings;
+    }
+
+    /**
+     * Get average retained size for a dedup candidate group.
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function getRetainedForDedup(
+        string $link_name,
+        int $shallow_size,
+    ): int {
+        assert($this->substrate !== null);
+
+        // Sample up to 20 child_node_ids from this group
+        $rows = $this->db->query("
+            SELECT e.child_node_id
+            FROM context_edges e
+            JOIN context_node_locations cnl
+                ON cnl.node_id = e.child_node_id
+                AND cnl.run_id = {$this->run_id}
+                AND cnl.size = {$shallow_size}
+            WHERE e.run_id = {$this->run_id}
+                AND e.is_tree = 0
+                AND e.link_name = " . $this->db->quote($link_name) . "
+            LIMIT 20
+        ")->fetchAll(\PDO::FETCH_COLUMN);
+
+        if ($rows === []) {
+            return $shallow_size;
+        }
+
+        $total = 0;
+        $count = 0;
+        foreach ($rows as $nid) {
+            $retained = $this->substrate->subtree_sizes[(int)$nid] ?? 0;
+            if ($retained > 0) {
+                $total += $retained;
+                $count++;
+            }
+        }
+
+        return $count > 0 ? (int)($total / $count) : $shallow_size;
     }
 
     /**
