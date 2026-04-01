@@ -597,3 +597,24 @@ User::$attributes: 10,000 occurrences x 56B = 0.53 MB
 2. expensive_property: retained ベースで配列の中身含みのコストを出す
    (PropertyScalingPass は既に retained で出しているので、こちらも合わせる)
 3. あるいは配列ヘッダ + テーブル + 中身を合算した「配列全体サイズ」で比較
+
+### companion_pair / companion_cluster に容量情報 [重要度: 中]
+
+現在:
+```
+[MEDIUM] companion_pair: FormBuilder (3,611) always paired with Closure (3,619)
+```
+
+メモリコストがないので「どれだけ重要か」が分からない。
+`class_objects_summary.memory_usage` から取得可能:
+
+```
+[MEDIUM] companion_pair: FormBuilder (3,611, 1.74 MB) always paired with Closure (3,619, 1.19 MB)
+  Combined: 2.93 MB
+```
+
+companion_cluster も:
+```
+[MEDIUM] companion_cluster: 6 classes × ~1,806 instances (total: 3.84 MB):
+  OptionsResolver (578 KB), Form (521 KB), EventDispatcher (156 KB), ...
+```
