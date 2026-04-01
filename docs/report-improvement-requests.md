@@ -556,3 +556,20 @@ Eloquent で classMap (1.51 MB) や DI instances (1.01 MB) が HIGH になるが
 - > 50 MB → HIGH
 - > 10 MB → MEDIUM
 - > 1 MB → LOW
+
+### dedup_candidate の array key/value にオーナーパス [重要度: 中]
+
+現在:
+```
+[LOW] dedup_candidate: key: 20,099 copies x 41B SAME SIZE — 99% identical, "email_verified_at"
+```
+
+「何の配列のキー？」が分からない。`$attributes` のキーなのか `$casts` のキーなのか。
+`ArrayElementContext` 経由の dedup_candidate にはオーナー配列のパスが欲しい：
+
+```
+[LOW] dedup_candidate: User::$attributes[key]: 20,099 copies x 41B — 99% identical, "email_verified_at"
+```
+
+現在のクラス修飾は `ObjectPropertiesContext` 起点のみ有効で、
+`ArrayElementContext` の key/value は未修飾。
