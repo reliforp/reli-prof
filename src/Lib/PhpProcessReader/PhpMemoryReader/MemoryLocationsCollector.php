@@ -1460,20 +1460,25 @@ final class MemoryLocationsCollector
             return;
         }
 
-        // The C stack region starts with a guard page (PROT_NONE, typically 4KB).
-        // Reading it via process_vm_readv would fail, so skip it.
-        $guard_page_size = 4096;
-        $stack_start = $fiber_stack->pointer + $guard_page_size;
-        $usable_size = $fiber_stack->size - $guard_page_size;
+        // In php-src, zend_fiber_stack_allocate() sets:
+        //   stack->pointer = mmap_base + guard_pages (already past the guard page)
+        //   stack->size    = usable stack size (excludes guard pages)
+        // So pointer/size describe the usable region directly — no adjustment needed.
+        //
+        // The C stack grows downward (high→low on x86-64), so the saved
+        // zend_fiber_vm_state local variable is near the top (high address end).
+        // Scan from the top of the stack to maximise the chance of finding it.
+        $usable_size = $fiber_stack->size;
         if ($usable_size <= 0) {
             return;
         }
 
         $scan_size = min($usable_size, 256 * 1024);
+        $scan_start = $fiber_stack->pointer + $usable_size - $scan_size;
 
         $c_stack_pointer = new Pointer(
             PointerArray::class,
-            $stack_start,
+            $scan_start,
             $scan_size,
         );
         $c_stack = $dereferencer->deref($c_stack_pointer);

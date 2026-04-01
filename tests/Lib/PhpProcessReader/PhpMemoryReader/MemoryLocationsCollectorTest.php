@@ -1865,6 +1865,18 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $region_analyzed->summary->zend_mm_heap_usage,
             'analyzed_percentage must not exceed 100%'
         );
+
+        // analyzed_percentage should not be extremely low — with 100 fibers
+        // having deep call stacks, the fiber VM stacks represent a significant
+        // portion of heap usage. If the C stack scanning fails to find them,
+        // analyzed_percentage drops well below 50%.
+        $analyzed_percentage = (float)$region_analyzed->summary->zend_mm_heap_usage
+            / (float)$collected_memories->memory_get_usage_size * 100.0;
+        $this->assertGreaterThan(
+            50.0,
+            $analyzed_percentage,
+            'analyzed_percentage should not be extremely low (fiber VM stacks should be found)'
+        );
     }
 
     public static function provideFromV74()
