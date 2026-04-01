@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Formatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TextReportFormatter implements ReportFormatterInterface
 {
@@ -115,11 +116,11 @@ final class TextReportFormatter implements ReportFormatterInterface
                 /** @var float $pct */
                 $pct = $facts['percentage'] ?? 0;
                 $lines[] = sprintf(
-                    '  %-25s %9.2fM %9.2fM %9.2fM %7.1f%%',
+                    '  %-25s %10s %10s %10s %7.1f%%',
                     $root_name,
-                    $exclusive / 1024 / 1024,
-                    $shared / 1024 / 1024,
-                    $total / 1024 / 1024,
+                    SizeFormatter::format($exclusive),
+                    SizeFormatter::format($shared),
+                    SizeFormatter::format($total),
                     $pct,
                 );
             }

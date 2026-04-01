@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class OverviewPass implements PassInterface
 {
@@ -51,11 +52,11 @@ final class OverviewPass implements PassInterface
             severity: FindingSeverity::Info,
             confidence: FindingConfidence::High,
             summary: sprintf(
-                'Heap: %.2f MB (%.1f%% analyzed), VM stack: %.2f MB, Compiler arena: %.2f MB',
-                $heap_usage / 1024 / 1024,
+                'Heap: %s (%.1f%% analyzed), VM stack: %s, Compiler arena: %s',
+                SizeFormatter::format($heap_usage),
                 $analyzed_pct,
-                $vm_stack / 1024 / 1024,
-                $compiler_arena / 1024 / 1024,
+                SizeFormatter::format($vm_stack),
+                SizeFormatter::format($compiler_arena),
             ),
             facts: [
                 'heap_total' => $heap_total,
@@ -77,9 +78,9 @@ final class OverviewPass implements PassInterface
                 severity: FindingSeverity::Warning,
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
-                    'Only %.1f%% of heap analyzed — %.2f MB unaccounted',
+                    'Only %.1f%% of heap analyzed — %s unaccounted',
                     $analyzed_pct,
-                    $gap_bytes / 1024 / 1024,
+                    SizeFormatter::format($gap_bytes),
                 ),
                 facts: [
                     'analyzed_percentage' => $analyzed_pct,

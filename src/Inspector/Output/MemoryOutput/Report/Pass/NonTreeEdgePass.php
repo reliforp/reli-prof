@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class NonTreeEdgePass implements PassInterface
 {
@@ -314,12 +315,12 @@ final class NonTreeEdgePass implements PassInterface
                     : FindingSeverity::Info,
                 confidence: $confidence,
                 summary: sprintf(
-                    '%s: %s copies x %dB%s = %.2f KB',
+                    '%s: %s copies x %s%s = %s',
                     $dedup_label,
                     number_format($cnt),
-                    $size,
+                    SizeFormatter::format($size),
                     $size > $shallow_size ? ' retained' : '',
-                    $total / 1024,
+                    SizeFormatter::format($total),
                 ),
                 facts: [
                     'link_name' => $row['link_name'],

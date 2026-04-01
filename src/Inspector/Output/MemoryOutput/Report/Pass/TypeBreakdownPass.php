@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TypeBreakdownPass implements PassInterface
 {
@@ -57,11 +58,11 @@ final class TypeBreakdownPass implements PassInterface
                     severity: $pct > 80.0 ? FindingSeverity::High : FindingSeverity::Medium,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%s accounts for %.1f%% of heap (%s, %.2f MB)',
+                        '%s accounts for %.1f%% of heap (%s, %s)',
                         $short_type,
                         $pct,
                         number_format($entry['count']),
-                        $entry['memory_usage'] / 1024 / 1024,
+                        SizeFormatter::format($entry['memory_usage']),
                     ),
                     facts: [
                         'type' => $type,

@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class CompanionDetectionPass implements PassInterface
 {
@@ -103,26 +104,26 @@ final class CompanionDetectionPass implements PassInterface
 
             $names = array_map(
                 fn($c) => sprintf(
-                    '%s (%s, %.2f MB)',
+                    '%s (%s, %s)',
                     $c['name'],
                     number_format($c['count']),
-                    $c['memory'] / 1024 / 1024,
+                    SizeFormatter::format($c['memory']),
                 ),
                 $group_classes
             );
 
             $summary = count($members) === 2
                 ? sprintf(
-                    '%s always paired with %s — %.2f MB',
+                    '%s always paired with %s — %s',
                     $names[0],
                     $names[1],
-                    $total_memory / 1024 / 1024,
+                    SizeFormatter::format($total_memory),
                 )
                 : sprintf(
-                    '%d classes x ~%s instances (%.2f MB): %s',
+                    '%d classes x ~%s instances (%s): %s',
                     count($members),
                     number_format($group_classes[0]['count']),
-                    $total_memory / 1024 / 1024,
+                    SizeFormatter::format($total_memory),
                     implode(', ', $names),
                 );
 

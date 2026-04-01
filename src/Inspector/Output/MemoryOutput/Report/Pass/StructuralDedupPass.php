@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class StructuralDedupPass implements PassInterface
 {
@@ -91,11 +92,11 @@ final class StructuralDedupPass implements PassInterface
                     severity: $g['total_size'] > 102400 ? FindingSeverity::Medium : FindingSeverity::Low,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%s: %s instances x %dB, no properties stored (%.2f KB)',
+                        '%s: %s instances x %s, no properties stored (%s)',
                         $short,
                         number_format($g['count']),
-                        $g['size'],
-                        $g['total_size'] / 1024,
+                        SizeFormatter::format($g['size']),
+                        SizeFormatter::format($g['total_size']),
                     ),
                     facts: [
                         'class_name' => $g['class'],
@@ -113,12 +114,12 @@ final class StructuralDedupPass implements PassInterface
                     severity: $waste > 102400 ? FindingSeverity::Medium : FindingSeverity::Low,
                     confidence: FindingConfidence::Medium,
                     summary: sprintf(
-                        '%s: %s identical shapes x %dB = %.2f KB (theoretical saving: %.2f KB)',
+                        '%s: %s identical shapes x %s = %s (theoretical saving: %s)',
                         $short,
                         number_format($g['count']),
-                        $g['size'],
-                        $g['total_size'] / 1024,
-                        $waste / 1024,
+                        SizeFormatter::format($g['size']),
+                        SizeFormatter::format($g['total_size']),
+                        SizeFormatter::format($waste),
                     ),
                     facts: [
                         'class_name' => $g['class'],

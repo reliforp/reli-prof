@@ -19,6 +19,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class DrillDownPass implements PassInterface
 {
@@ -100,9 +101,9 @@ final class DrillDownPass implements PassInterface
                 severity: FindingSeverity::High,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
-                    '%s (%.2f MB)',
+                    '%s (%s)',
                     $path_str,
-                    $total_size / 1024 / 1024,
+                    SizeFormatter::format($total_size),
                 ),
                 facts: [
                     'path' => $path_parts,

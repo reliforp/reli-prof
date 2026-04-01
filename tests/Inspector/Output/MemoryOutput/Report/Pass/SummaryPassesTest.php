@@ -120,7 +120,7 @@ class SummaryPassesTest extends BaseTestCase
         $this->assertStringContainsString('BigClass', $f->summary);
         $this->assertStringContainsString('10,000', $f->summary);
         // Per-entity cost: 5000000 / 10000 = 500
-        $this->assertStringContainsString('500B', $f->summary);
+        $this->assertStringContainsString('500 B', $f->summary);
         $this->assertSame(500, $f->facts['avg_size']);
     }
 
