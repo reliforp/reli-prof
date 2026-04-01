@@ -674,12 +674,10 @@ overhead double-counting and Generator object size calculation.
 10K entries → 8 MB (629 bytes/entry). After releasing 5K keys:
 - WeakMap correctly drops to 5,000 entries
 - reli sees 5,000 Key + 5,000 Value objects ✅
-- analyzed: 69.8% — WeakMap's internal hash table is the 30% gap
-- WeakMap object itself: 40 bytes
-
-reli correctly walks through WeakMap entries and shows only live (non-GCed)
-key-value pairs. The internal `zend_weakmap` hash table is not yet tracked
-as a named allocation.
+- **analyzed: 84.66%** (was 69.8% before #550 WeakMap support)
+- WeakMap object: 0.09 KB (correct size including pre-std fields)
+- ArrayTable 613 KB now visible — WeakMap internal entry table tracked
+- Remaining ~15% gap from WeakMap reference tracking overhead
 
 ---
 
