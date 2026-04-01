@@ -24,6 +24,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\DrillDownPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\DynamicPropertiesPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\NonTreeEdgePass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\OverviewPass;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\OwnershipPatternPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\PerPropertyMemoryPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\PropertyScalingPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\RetainedSizeConfidencePass;
@@ -97,6 +98,7 @@ final class ReportGenerator
                 new PropertyScalingPass($db, $run_id, $class_objects, $substrate)
             ));
             $findings = array_merge($findings, $this->runPass(new PerPropertyMemoryPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(new OwnershipPatternPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
