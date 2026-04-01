@@ -729,11 +729,12 @@ graph substrate でも: SCC 内ノード間の non-tree edge を見つけるだ�
 「どこにある循環か」が分からないと、コードのどこを見ればいいか分からない。
 
 ```
-[MEDIUM] cycle_cluster: 200 identical cycles
+[MEDIUM] cycle_cluster: 200 identical circular references
   Per cycle: 3× Attachment + 1× AttachmentCollection + 1× Message
   Back-reference: Attachment::$oMessage → Message
-  Location: <main>:28::$messages[*]->attachments->items[*]
+  Example: <main>:28::$messages[0]->attachments->items[0]
+  (199 more with same pattern)
 ```
 
 SCC の external incoming edge から root までのパスを PHP 構文で出す。
-graph substrate + ノードから root への遡りパスで実装可能。
+200 個全部ではなく代表 1 件 + 残数。
