@@ -27,7 +27,8 @@ final class CycleClusterPass implements PassInterface
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     * @psalm-suppress MixedOperand, InvalidOperand
      * @psalm-suppress PossiblyInvalidArgument, InvalidArgument
      */
     #[\Override]
@@ -37,13 +38,11 @@ final class CycleClusterPass implements PassInterface
             return [];
         }
 
-        // Group by signature
         $pattern_groups = [];
         foreach ($this->substrate->scc_profiles as $profile) {
             $pattern_groups[$profile['signature']][] = $profile;
         }
 
-        // Sort by total memory impact
         $groups_sorted = [];
         foreach ($pattern_groups as $sig => $group) {
             $total = 0;
@@ -63,18 +62,14 @@ final class CycleClusterPass implements PassInterface
             $group = $g['group'];
             $example = $group[0];
             $count = count($group);
+            $class_count = count($example['class_counts']);
 
-            // Build "Nx Class" composition string
-            $composition = $this->formatComposition($example['class_counts']);
-
-            // Object count vs total nodes
-            $object_count = array_sum($example['class_counts']);
-            $internal_count = $example['node_count'] - $object_count;
+            $composition = $this->formatComposition(
+                $example['class_counts']
+            );
 
             // Micro-cycles (2 nodes)
-            $is_micro = $example['node_count'] === 2;
-
-            if ($is_micro) {
+            if ($example['node_count'] === 2) {
                 $findings[] = new Finding(
                     kind: 'micro_cycle',
                     severity: FindingSeverity::Low,
@@ -89,81 +84,108 @@ final class CycleClusterPass implements PassInterface
                     facts: [
                         'composition' => $composition,
                         'count' => $count,
-                        'nodes_per_cycle' => $example['node_count'],
+                        'class_count' => $class_count,
                         'total_size' => $g['total'],
                     ],
-                    hypothesis: 'Bidirectional references between two objects',
+                    hypothesis: 'Bidirectional references'
+                        . ' between two objects',
                     next_checks: [
-                        'Check if back-reference can be replaced with WeakReference',
+                        'Check if back-reference can use WeakReference',
                     ],
                     impact_bytes: $g['total'],
                 );
-            } else {
-                $node_desc = $internal_count > 0
-                    ? sprintf(
-                        '%d object%s + %d internal nodes per cycle',
-                        $object_count,
-                        $object_count > 1 ? 's' : '',
-                        $internal_count,
-                    )
-                    : sprintf(
-                        '%d object%s per cycle',
-                        $object_count,
-                        $object_count > 1 ? 's' : '',
-                    );
+                continue;
+            }
 
+            // Large DI-container-like cycles (many classes, typically 1 instance)
+            if ($class_count > 15 && $count <= 2) {
                 $findings[] = new Finding(
-                    kind: 'cycle_cluster',
-                    severity: $g['total'] > 1024 * 100
-                        ? FindingSeverity::Medium
-                        : FindingSeverity::Low,
+                    kind: 'di_container_cycle',
+                    severity: FindingSeverity::Info,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
-                        '%d identical cycle%s (%s, %.2f KB total)',
+                        '%d classes forming %d cycle%s (%.2f KB)',
+                        $class_count,
                         $count,
                         $count > 1 ? 's' : '',
-                        $node_desc,
                         $g['total'] / 1024,
                     ),
                     facts: [
                         'composition' => $composition,
                         'count' => $count,
-                        'object_count_per_cycle' => $object_count,
-                        'internal_nodes_per_cycle' => $internal_count,
-                        'size_per_cycle' => $example['total_size'],
+                        'class_count' => $class_count,
                         'total_size' => $g['total'],
-                        'ext_incoming' => $example['ext_in'],
-                        'ext_outgoing' => $example['ext_out'],
-                        'single_owner_likelihood' => $example['single_owner_likelihood'],
                     ],
-                    hypothesis: "Per cycle: {$composition}\n"
-                        . ($example['single_owner_likelihood'] === 'high'
-                            ? 'Single entry point — breaking the owner reference likely frees this cycle'
-                            : ($count > 10
-                                ? "{$count} identical cycles — a structural pattern, not accidental"
-                                : 'Circular reference chain')),
+                    hypothesis: 'Structural cost of DI container.'
+                        . "\nTop classes: {$composition}",
                     next_checks: [
-                        'Identify the back-reference causing the cycle',
-                        'Consider using WeakReference or explicit cleanup',
+                        'Reducing container instances'
+                        . ' (workers/tests) reduces this',
                     ],
                     impact_bytes: $g['total'],
-                    evidence_node_ids: array_slice($example['nodes'], 0, 5),
                 );
+                continue;
             }
+
+            // Normal cycle clusters
+            $findings[] = new Finding(
+                kind: 'cycle_cluster',
+                severity: $g['total'] > 1024 * 100
+                    ? FindingSeverity::Medium
+                    : FindingSeverity::Low,
+                confidence: FindingConfidence::High,
+                summary: sprintf(
+                    '%d identical cycle%s (%d classes, %.2f KB total)',
+                    $count,
+                    $count > 1 ? 's' : '',
+                    $class_count,
+                    $g['total'] / 1024,
+                ),
+                facts: [
+                    'composition' => $composition,
+                    'count' => $count,
+                    'class_count' => $class_count,
+                    'total_size' => $g['total'],
+                    'ext_incoming' => $example['ext_in'],
+                    'single_owner_likelihood' => $example['single_owner_likelihood'],
+                ],
+                hypothesis: "Per cycle: {$composition}\n"
+                    . ($example['single_owner_likelihood'] === 'high'
+                        ? 'Single entry point — breaking the owner'
+                        . ' reference likely frees this cycle'
+                        : ($count > 10
+                            ? "{$count} identical cycles"
+                            . ' — a structural pattern'
+                            : 'Circular reference chain')),
+                next_checks: [
+                    'Identify the back-reference causing the cycle',
+                    'Consider using WeakReference or explicit cleanup',
+                ],
+                impact_bytes: $g['total'],
+                evidence_node_ids: array_slice($example['nodes'], 0, 5),
+            );
         }
 
         return $findings;
     }
 
     /**
-     * Format class_counts as "1x Message + 3x Attachment + 1x AttachmentCollection"
+     * Format class_counts as "1x Message + 3x Attachment".
+     * Truncates to top 5 if more than 5 classes.
      * @param array<string, int> $class_counts
      */
     private function formatComposition(array $class_counts): string
     {
         $parts = [];
+        $i = 0;
         foreach ($class_counts as $cls => $cnt) {
+            if ($i >= 5) {
+                $remaining = count($class_counts) - 5;
+                $parts[] = "... +{$remaining} more";
+                break;
+            }
             $parts[] = "{$cnt}x {$cls}";
+            $i++;
         }
         return implode(' + ', $parts);
     }

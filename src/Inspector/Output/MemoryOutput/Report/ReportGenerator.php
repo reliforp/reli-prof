@@ -109,27 +109,35 @@ final class ReportGenerator
     private function deduplicateFindings(array $findings): array
     {
         $has_cycles = false;
+        $has_property_scaling = false;
         foreach ($findings as $f) {
             if ($f->kind === 'cycle_cluster' || $f->kind === 'micro_cycle') {
                 $has_cycles = true;
-                break;
+            }
+            if ($f->kind === 'property_scaling') {
+                $has_property_scaling = true;
             }
         }
 
-        // If cycles are present, limit shared_fanin to top 3
-        // (many shared_fanin findings are cycle back-references)
-        if ($has_cycles) {
-            $fanin_count = 0;
-            $findings = array_values(array_filter(
-                $findings,
-                function (Finding $f) use (&$fanin_count): bool {
-                    if ($f->kind === 'shared_fanin') {
-                        return ++$fanin_count <= 3;
-                    }
-                    return true;
-                },
-            ));
-        }
+        $fanin_count = 0;
+        $findings = array_values(array_filter(
+            $findings,
+            function (Finding $f) use (
+                $has_cycles,
+                $has_property_scaling,
+                &$fanin_count,
+            ): bool {
+                // Limit shared_fanin when cycles exist
+                if ($has_cycles && $f->kind === 'shared_fanin') {
+                    return ++$fanin_count <= 3;
+                }
+                // Suppress shared_singleton when PropertyScaling covers it
+                if ($has_property_scaling && $f->kind === 'shared_singleton') {
+                    return false;
+                }
+                return true;
+            },
+        ));
 
         return $findings;
     }
