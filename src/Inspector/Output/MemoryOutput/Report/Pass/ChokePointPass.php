@@ -18,6 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 
 final class ChokePointPass implements PassInterface
 {
@@ -76,7 +77,7 @@ final class ChokePointPass implements PassInterface
         }
         $chokepoints = $filtered;
 
-        // Build parent map for path lookup
+        // Build parent map and node type map for path lookup
         $parent_map = [];
         $rows = $this->db->query(
             "SELECT child_node_id, parent_node_id, link_name FROM context_edges"
@@ -84,6 +85,17 @@ final class ChokePointPass implements PassInterface
         )->fetchAll(\PDO::FETCH_NUM);
         foreach ($rows as $r) {
             $parent_map[(int)$r[0]] = [(int)$r[1], $r[2]];
+        }
+        unset($rows);
+
+        /** @var array<int, string> */
+        $node_type_map = [];
+        $rows = $this->db->query(
+            "SELECT node_id, type FROM context_nodes"
+            . " WHERE run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+        foreach ($rows as $r) {
+            $node_type_map[(int)$r[0]] = (string)$r[1];
         }
         unset($rows);
 
@@ -119,27 +131,32 @@ final class ChokePointPass implements PassInterface
                 }
             }
 
-            // Walk up to build path, use link_name as fallback label
-            $path_parts = [];
+            // Walk up to root for full PHP-syntax path
+            $up_parts = [];
+            $up_types = [];
             $cur = $node;
-            for ($i = 0; $i < 4; $i++) {
+            for ($i = 0; $i < 20; $i++) {
                 if (!isset($parent_map[$cur])) {
                     break;
                 }
                 [$parent, $link] = $parent_map[$cur];
-                $path_parts[] = $labeler->resolvePathLabel(
+                $resolved = $labeler->resolvePathLabel(
                     (string)$link,
                     $cur
                 );
-                if ($i === 0 && $label === '') {
-                    $label = $link;
+                array_unshift($up_parts, $resolved);
+                array_unshift($up_types, $node_type_map[$cur] ?? '');
+                if ($label === '') {
+                    $label = (string)$link;
                 }
                 $cur = $parent;
             }
             if ($label === '') {
                 $label = "(node #{$node})";
             }
-            $path = $path_parts ? implode(' <- ', $path_parts) : '(root)';
+            $path = $up_parts !== []
+                ? PathFormatter::toPhpSyntax($up_parts, $up_types)
+                : '(root)';
 
             $n_children = count($this->substrate->children[$node] ?? []);
 
@@ -148,11 +165,12 @@ final class ChokePointPass implements PassInterface
                 severity: FindingSeverity::High,
                 confidence: FindingConfidence::High,
                 summary: sprintf(
-                    '%s (%dB shallow) holds %.2f MB via %d children',
+                    '%s (%dB shallow) holds %.2f MB via %d children — %s',
                     $label,
                     $shallow,
                     $subtree / 1024 / 1024,
                     $n_children,
+                    $path,
                 ),
                 facts: [
                     'node_id' => $node,
