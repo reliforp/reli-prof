@@ -377,3 +377,17 @@ PHP 構文変換も同じ。`--full-analysis` 時のみで OK。
    ```
    Normal sharing: 12 properties shared across 10,000 User instances via CoW
    ```
+
+### "CoW" の表記を修正 [重要度: 中]
+
+PropertyScalingPass の SHARED が "CoW sharing" と表記しているが、
+reli が見ているのは「同じアドレスを参照している」事実のみ。
+
+実際の共有理由は複数あり得る:
+1. CoW (Copy-on-Write) — 空配列リテラルの共有
+2. 同じインスタンスの代入 — シングルトン注入
+3. Interned string — PHP の文字列自動共有
+4. クラス定義のデフォルト値
+
+「shared via CoW」→「shared (same value referenced)」に修正すべき。
+原因の推定はユーザーに委ねる。
