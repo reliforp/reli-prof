@@ -1644,6 +1644,16 @@ final class MemoryLocationsCollector
             $object_context->add('object_properties', $object_properties_context);
         }
 
+        // When defer is active (shallow collection for objects_store),
+        // skip dynamic properties, closures, generators, and fibers.
+        // These can trigger deep recursive expansion. They will be
+        // collected when the object is reached from another phase, or
+        // via deferred edge resolution.
+        if ($this->defer_unseen_objects) {
+            $this->defer_unseen_objects = $saved_defer;
+            return $object_context;
+        }
+
         if (
             !is_null($object->properties)
             and !is_null($object->ce)
