@@ -93,6 +93,26 @@ global_variables → call_frames.
 **OOM at Zval.php:49 during `collectObjectsStore()`.**
 RSS: ~18 MB/s growth, OOM at 570s.
 
+## Round 4: objects_store First (commit `f0f5388`)
+
+Collection order: included_files → interned_strings → **objects_store** →
+function_table → class_table → global_variables → global_constants →
+global_callbacks → modules → call_frames.
+
+Same as Round 2 but with objects_store moved before global_variables.
+
+| Phase | Heap | RSS | seen | sentinels |
+|---|---|---|---|---|
+| after_interned_strings | 21 MB | 62 MB | 9,305 | 9,279 |
+| **after_objects_store** | **NEVER REACHED** | | | |
+
+**OOM at MemoryDumpReaderFactory.php:84 during `collectObjectsStore()`.**
+RSS: ~19 MB/s growth, OOM at ~530s.
+
+Same result as Round 3 — objects_store itself OOMs regardless of inner-loop
+streaming, because `collectZendObject` → `collectZval` recursively follows
+cross-object references.
+
 ## Key Finding
 
 **Whichever phase first walks the full object graph blows up.**
@@ -102,6 +122,7 @@ RSS: ~18 MB/s growth, OOM at 570s.
 | v3 (original order) | call_frames | call_frames | ~540s |
 | v4a (reorder + inner-loop) | global_variables | global_variables | ~420s |
 | v4b (reorder only) | objects_store | objects_store | ~570s |
+| v5 (objects_store first) | objects_store | objects_store | ~530s |
 
 The reli self-dump has millions of objects interconnected through the running
 reli-prof process's object graph. **Any phase that first touches this graph**
