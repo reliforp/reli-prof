@@ -34,69 +34,75 @@ final class StructuralDedupPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        // Step 1: Find classes with >= 50 instances (cheap aggregate).
-        // Only these can possibly produce findings, so we skip the
-        // expensive property-signature query for rare classes.
-        $frequent = $this->db->query("
-            SELECT class_name, COUNT(*) as cnt, SUM(size) as total_size
+        // Step 1: Group by (class_name, size) to get instance counts.
+        // This is a cheap aggregate on context_node_locations alone —
+        // no edge JOINs. Only groups with >= 50 instances can produce
+        // findings, so we discard the rest immediately.
+        $groups = $this->db->query("
+            SELECT
+                class_name,
+                size,
+                COUNT(*) as cnt,
+                SUM(size) as total_size,
+                MIN(node_id) as example_id
             FROM context_node_locations
             WHERE location_type = 'ZendObjectMemoryLocation'
                 AND class_name IS NOT NULL
                 AND run_id = {$this->run_id}
-            GROUP BY class_name
+            GROUP BY class_name, size
             HAVING cnt >= 50
             ORDER BY total_size DESC
             LIMIT 50
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
-        if ($frequent === []) {
+        if ($groups === []) {
             return [];
         }
 
-        // Step 2: Build shape signatures only for frequent classes.
-        $class_list = implode(', ', array_map(
-            fn($r) => $this->db->quote((string)$r['class_name']),
-            $frequent,
-        ));
-        $rows = $this->db->query("
-            SELECT
-                cnl.node_id,
-                cnl.class_name,
-                cnl.size,
-                group_concat(e_prop.link_name, '|') as property_names
-            FROM context_node_locations cnl
-            JOIN context_edges e_to_obj ON e_to_obj.parent_node_id = cnl.node_id
-                AND e_to_obj.link_name = 'object_properties' AND e_to_obj.is_tree = 1
-                AND e_to_obj.run_id = {$this->run_id}
-            LEFT JOIN context_edges e_prop ON e_prop.parent_node_id = e_to_obj.child_node_id
-                AND e_prop.is_tree = 1 AND e_prop.run_id = {$this->run_id}
-            WHERE cnl.location_type = 'ZendObjectMemoryLocation'
-                AND cnl.class_name IN ({$class_list})
-                AND cnl.run_id = {$this->run_id}
-            GROUP BY cnl.node_id
-        ")->fetchAll(\PDO::FETCH_ASSOC);
-
+        // Step 2: For each (class, size) group, sample ONE instance to
+        // get its property signature. Same-class same-size objects have
+        // identical declared properties; only dynamic properties differ,
+        // and those are rare. This avoids running the expensive 2-JOIN
+        // group_concat over every single instance.
         $shape_groups = [];
-        foreach ($rows as $s) {
-            $props = $s['property_names'] ? explode('|', $s['property_names']) : [];
+        foreach ($groups as $g) {
+            $example_id = (int)$g['example_id'];
+            $prop_row = $this->db->query("
+                SELECT group_concat(e_prop.link_name, '|') as property_names
+                FROM context_edges e_to_obj
+                LEFT JOIN context_edges e_prop
+                    ON e_prop.parent_node_id = e_to_obj.child_node_id
+                    AND e_prop.is_tree = 1
+                    AND e_prop.run_id = {$this->run_id}
+                WHERE e_to_obj.parent_node_id = {$example_id}
+                    AND e_to_obj.link_name = 'object_properties'
+                    AND e_to_obj.is_tree = 1
+                    AND e_to_obj.run_id = {$this->run_id}
+            ")->fetch(\PDO::FETCH_ASSOC);
+
+            $raw = ($prop_row !== false && $prop_row['property_names'])
+                ? $prop_row['property_names']
+                : '';
+            $props = $raw !== '' ? explode('|', $raw) : [];
             sort($props);
             $prop_sig = implode(',', $props);
-            $hash = $s['class_name'] . '|' . $s['size'] . '|' . $prop_sig;
 
+            $hash = $g['class_name'] . '|' . $g['size'] . '|' . $prop_sig;
             if (!isset($shape_groups[$hash])) {
                 $shape_groups[$hash] = [
-                    'class' => $s['class_name'],
-                    'size' => (int)$s['size'],
+                    'class' => (string)$g['class_name'],
+                    'size' => (int)$g['size'],
                     'props' => $prop_sig,
                     'count' => 0,
                     'total_size' => 0,
-                    'example_id' => (int)$s['node_id'],
+                    'example_id' => $example_id,
                 ];
             }
-            $shape_groups[$hash]['count']++;
-            $shape_groups[$hash]['total_size'] += (int)$s['size'];
+            // Multiple (class, size) groups with the same signature
+            // can be merged (shouldn't happen, but be safe).
+            $shape_groups[$hash]['count'] += (int)$g['cnt'];
+            $shape_groups[$hash]['total_size'] += (int)$g['total_size'];
         }
-        unset($rows);
 
         $findings = [];
 
