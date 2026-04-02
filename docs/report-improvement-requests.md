@@ -795,3 +795,20 @@ persistent connection (`PDO::ATTR_PERSISTENT`) の場合は特に危険:
 reli のスナップショットからは persistent かどうかの判定は難しい
 (PDO の属性は C レベルの内部状態)。SCC に PDO がいることを検知したら
 warning テキストで persistent のリスクに言及するのが現実的。
+
+### impact_bytes を右端に統一表示 [重要度: 中]
+
+今は finding テキストの中にサイズが埋まっていて流し見で比較しにくい。
+右端に impact を揃えると一目で「どれが大きい」が分かる:
+
+```
+[HIGH]   bottleneck_path: <main>::$messages[0]->structure->parts  153.76 MB
+[HIGH]   dominant_type: ZendString 96.9% of heap                  150.65 MB
+[HIGH]   choke_point: $messages (3 KB shallow, 200 children)      153.73 MB
+[MEDIUM] expensive_property: Structure::$raw (200 × 211 KB)        40.21 MB
+[MEDIUM] cycle_cluster: 200 × Attachment↔Message                    0.17 MB
+[MEDIUM] companion_cluster: 4 classes × ~200 instances                  —
+```
+
+impact がない finding (companion 等) は `—` で揃える。
+severity + impact 降順ソートと組み合わせると最も効果的。
