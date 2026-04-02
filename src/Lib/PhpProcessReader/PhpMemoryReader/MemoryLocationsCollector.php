@@ -153,6 +153,13 @@ final class MemoryLocationsCollector
     private ?\WeakMap $streaming_memo = null;
     private ?ContextPools $streaming_context_pools = null;
 
+    /**
+     * When true, collectZendObjectPointer skips deep recursion for unseen
+     * objects, deferring them to the objects_store bucket loop. This prevents
+     * deep object graph traversal from within a single bucket.
+     */
+    private bool $defer_unseen_objects = false;
+
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
@@ -1031,7 +1038,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): ObjectContext|SentinelContext {
+    ): ObjectContext|SentinelContext|null {
         if ($memory_locations->has($pointer->address)) {
             $sentinel = $context_pools->getSentinel($pointer->address);
             if ($sentinel !== null) {
@@ -1041,6 +1048,11 @@ final class MemoryLocationsCollector
             if ($cached !== null) {
                 return $cached;
             }
+        } elseif ($this->defer_unseen_objects) {
+            // During objects_store collection: don't recurse into unseen
+            // objects via property traversal. The object will be collected
+            // when its objects_store bucket is reached.
+            return null;
         }
         $obj = $dereferencer->deref($pointer);
         return $this->collectZendObject(
@@ -2011,7 +2023,9 @@ final class MemoryLocationsCollector
                     $context_pools,
                     $memory_limit_error_details,
                 );
-                $weak_reference_context->add('referent', $referent_context);
+                if ($referent_context !== null) {
+                    $weak_reference_context->add('referent', $referent_context);
+                }
             } catch (\Throwable) {
             }
         }
@@ -2772,6 +2786,15 @@ final class MemoryLocationsCollector
             $zend_type_reader,
         );
 
+        // Defer unseen object traversal during objects_store collection.
+        // Property references to other objects return null instead of
+        // recursing. Those objects will be collected when their own
+        // bucket is reached, keeping memory bounded per-object.
+        $was_deferring = $this->defer_unseen_objects;
+        if ($this->streaming_sink !== null) {
+            $this->defer_unseen_objects = true;
+        }
+
         foreach ($bucket_iterator as $key => $bucket) {
             if ($key === 0) {
                 continue;
@@ -2794,6 +2817,9 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
+            if ($objects_store_bucket_context === null) {
+                continue;
+            }
             if ($parent_node_id !== null) {
                 $objects_store_bucket_context = $this->emitChildIfStreaming(
                     (string)$key,
@@ -2804,6 +2830,7 @@ final class MemoryLocationsCollector
             }
             $objects_store_context->add((string)$key, $objects_store_bucket_context);
         }
+        $this->defer_unseen_objects = $was_deferring;
         return $objects_store_context;
     }
 
