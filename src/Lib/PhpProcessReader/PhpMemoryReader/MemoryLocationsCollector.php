@@ -146,11 +146,79 @@ final class MemoryLocationsCollector
     private ?MemoryLocations $fiber_vm_stack_memory_locations = null;
     private ?MemoryLocations $chunk_memory_locations = null;
 
+    /** Set during streaming collection for sub-tree level emit+release */
+    private ?ContextTreeSink $streaming_sink = null;
+    private ?ContextAnalyzer $streaming_analyzer = null;
+    /** @var \WeakMap<ReferenceContext, int>|null */
+    private ?\WeakMap $streaming_memo = null;
+    private ?ContextPools $streaming_context_pools = null;
+
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private PhpZendMemoryManagerChunkFinder $chunk_finder,
     ) {
+    }
+
+    /**
+     * In streaming mode, register a parent node in the analyzer's memo
+     * and emit it to the sink, so that children can be emitted as
+     * sub-nodes during collection. Returns the assigned node_id, or
+     * null if not in streaming mode.
+     */
+    private function registerParentIfStreaming(
+        ReferenceContext $parent,
+    ): ?int {
+        if (
+            $this->streaming_sink === null
+            || $this->streaming_analyzer === null
+            || $this->streaming_memo === null
+        ) {
+            return null;
+        }
+        $existing = $this->streaming_memo[$parent] ?? null;
+        if ($existing !== null) {
+            return $existing;
+        }
+        $node_id = $this->streaming_analyzer->assignNodeId($parent, $this->streaming_memo);
+        return $node_id;
+    }
+
+    /**
+     * In streaming mode, emit a child context that was just collected,
+     * and return a SentinelContext so the parent holds only node_id.
+     * In non-streaming mode, return the child as-is for normal tree building.
+     */
+    private function emitChildIfStreaming(
+        string $link_name,
+        ReferenceContext $child,
+        int $parent_node_id,
+    ): ReferenceContext {
+        if (
+            $this->streaming_sink === null
+            || $this->streaming_analyzer === null
+            || $this->streaming_memo === null
+        ) {
+            return $child;
+        }
+        // Already a sentinel — no need to emit again
+        if ($child instanceof SentinelContext) {
+            return $child;
+        }
+        // Emit the child subtree to DB
+        $this->streaming_analyzer->analyzeSingleLink(
+            $link_name,
+            $child,
+            $this->streaming_sink,
+            $parent_node_id,
+            $this->streaming_memo,
+        );
+        // Look up the node_id that was assigned
+        $node_id = $this->streaming_memo[$child] ?? null;
+        if ($node_id !== null) {
+            return new SentinelContext($node_id);
+        }
+        return $child;
     }
 
     /**
@@ -300,9 +368,17 @@ final class MemoryLocationsCollector
 
         // In streaming mode, set up the analyzer and memo early so we can
         // emit each branch right after collection and release it.
+        // Also set instance properties so collect* methods can emit sub-trees.
         $analyzer = $sink !== null ? new ContextAnalyzer() : null;
         /** @var \WeakMap<ReferenceContext, int>|null $memo */
         $memo = $sink !== null ? new \WeakMap() : null;
+
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $this->streaming_sink = $sink;
+            $this->streaming_analyzer = $analyzer;
+            $this->streaming_memo = $memo;
+            $this->streaming_context_pools = $context_pools;
+        }
 
         $included_files_context = $this->collectIncludedFiles(
             $eg->included_files,
@@ -484,6 +560,12 @@ final class MemoryLocationsCollector
             unset($call_frames_context);
 
             $context_pools->clear();
+
+            // Clear streaming state
+            $this->streaming_sink = null;
+            $this->streaming_analyzer = null;
+            $this->streaming_memo = null;
+            $this->streaming_context_pools = null;
 
             return new CollectedMemories(
                 $chunk_memory_locations,
@@ -1006,6 +1088,7 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): CallFramesContext {
         $call_frames_context = new CallFramesContext();
+        $parent_node_id = $this->registerParentIfStreaming($call_frames_context);
         if (is_null($eg->current_execute_data)) {
             return $call_frames_context;
         }
@@ -1020,6 +1103,13 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
+            if ($parent_node_id !== null) {
+                $call_frame_context = $this->emitChildIfStreaming(
+                    (string)$key,
+                    $call_frame_context,
+                    $parent_node_id,
+                );
+            }
             $call_frames_context->add((string)$key, $call_frame_context);
         }
         return $call_frames_context;
@@ -1939,6 +2029,7 @@ final class MemoryLocationsCollector
             $array_header_location,
             $array_table_location,
         );
+        $parent_node_id = $this->registerParentIfStreaming($defined_functions_context);
 
         foreach ($array->getItemIterator($dereferencer) as $function_name => $zval) {
             assert(is_string($function_name));
@@ -1952,6 +2043,13 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
+            if ($parent_node_id !== null) {
+                $function_context = $this->emitChildIfStreaming(
+                    $function_name,
+                    $function_context,
+                    $parent_node_id,
+                );
+            }
             $defined_functions_context->add($function_name, $function_context);
         }
         return $defined_functions_context;
@@ -2283,6 +2381,7 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): DefinedClassesContext {
         $defined_classes_context = new DefinedClassesContext();
+        $parent_node_id = $this->registerParentIfStreaming($defined_classes_context);
         foreach ($array->getItemIterator($dereferencer) as $class_name => $zval) {
             assert(!is_null($zval->value->ce));
             $class_definition_context = $this->collectClassDefinitionPointer(
@@ -2295,6 +2394,13 @@ final class MemoryLocationsCollector
                 $memory_limit_error_details,
             );
             if (!is_null($class_definition_context)) {
+                if ($parent_node_id !== null) {
+                    $class_definition_context = $this->emitChildIfStreaming(
+                        (string)$class_name,
+                        $class_definition_context,
+                        $parent_node_id,
+                    );
+                }
                 $defined_classes_context->add((string)$class_name, $class_definition_context);
             }
         }
@@ -2616,6 +2722,7 @@ final class MemoryLocationsCollector
         );
         $objects_store_context = new ObjectsStoreContext($objects_store_memory_location);
         $memory_locations->add($objects_store_memory_location);
+        $parent_node_id = $this->registerParentIfStreaming($objects_store_context);
 
         assert($objects_store->object_buckets instanceof Pointer);
         $buckets = $dereferencer->deref($objects_store->object_buckets);
@@ -2646,6 +2753,13 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
+            if ($parent_node_id !== null) {
+                $objects_store_bucket_context = $this->emitChildIfStreaming(
+                    (string)$key,
+                    $objects_store_bucket_context,
+                    $parent_node_id,
+                );
+            }
             $objects_store_context->add((string)$key, $objects_store_bucket_context);
         }
         return $objects_store_context;
