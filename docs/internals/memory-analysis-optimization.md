@@ -148,13 +148,103 @@ is a real cost.
 profiled. If peak memory is still problematic, this is the next lever, but the
 complexity cost is non-trivial.
 
+### 8. DB-backed streaming collection (highest impact on peak, architectural change)
+
+The current design builds the entire ReferenceContext tree in memory during
+collection, then serializes it (e.g., to JSON) during analysis. Peak memory
+occurs at the end of collection when the full tree is held in memory.
+
+#### Key insight: contexts are opaque on pool cache hit
+
+When a ContextPool returns a cached context (address already seen), the
+collector does NOT read any properties from it. It only:
+1. Returns it to the caller
+2. Caller attaches it to a parent via `add()`
+
+This means during collection, a cached context is used purely as an identity
+token ("same node"). No data is extracted from it. All population (via `add()`
+and property assignment) happens exclusively on the fresh path.
+
+This makes it possible to replace the in-memory context with a database record
+ID — the collector only needs to know "this address was already seen, here's
+its ID" to record the edge.
+
+#### Why DB enables what JSON cannot
+
+The collector traverses via DFS. With JSON output, the entire tree must be
+held in memory until the final `json_encode`. With a database:
+
+```
+visit node → INSERT into DB → recurse into children → return → discard node
+```
+
+Memory held at any point is proportional to the **depth** of the DFS stack,
+not the total number of nodes. Sibling subtrees that have already been written
+to the DB can be GC'd immediately.
+
+```
+        Root
+       / | \
+      A   B   C      ← while traversing B, A is already in DB and GC'd
+     /\   |
+    D  E  F          ← while traversing F, D and E are GC'd
+```
+
+For a typical PHP process, tree depth is O(tens~hundreds) while total node
+count is O(tens of thousands). This changes peak memory from O(n) to O(depth).
+
+#### Proposed architecture
+
+```
+Collection phase:
+  ContextPool  →  seen_set: array<int, int>  (address → node_id)
+  ReferenceContext tree  →  DB tables: nodes + edges
+  MemoryLocations  →  DB table: memory_locations
+
+  On fresh path:
+    Create Context → extract data → INSERT node → record in seen_set → discard
+  On cache hit:
+    Lookup node_id from seen_set → INSERT edge only → skip traversal
+
+Analysis phase:
+  Query DB instead of traversing in-memory tree
+```
+
+#### Trade-offs
+
+- **Pro**: Peak memory drops from O(total nodes) to O(tree depth). This is
+  the only approach that fundamentally changes the scaling characteristic.
+- **Pro**: Enables arbitrarily large target processes without OOM.
+- **Con**: Full architectural change — collector signatures change from
+  returning `ReferenceContext` to returning `int` (node_id), `add()` becomes
+  edge INSERT, analysis switches from tree traversal to DB queries.
+- **Con**: Write performance — thousands of INSERTs need batching/transactions.
+  SQLite with WAL mode and prepared statements should be adequate.
+- **Con**: Two output paths if JSON output is still needed (DB → JSON export).
+
+#### Relationship to other optimizations
+
+This approach subsumes optimizations 5 (pool disposal) and 7 (wrapper
+elimination) — both become irrelevant when contexts are not retained in memory.
+Optimizations 1-2 (property inlining, MemoryLocation consolidation) are still
+useful if applied to the transient Context objects before DB serialization, as
+they reduce per-node processing overhead, though they no longer affect peak
+memory.
+
 ## Priority
 
+**Incremental path** (preserves current architecture):
 Optimizations 1 and 2 are the strongest candidates: they reduce peak memory,
 apply uniformly regardless of target process composition, and are mechanically
 straightforward to implement. They also preserve the existing interface and
 tree structure.
 
-Optimization 5 is useful as a follow-up for reducing post-peak memory during
-analysis. Optimization 7 is the nuclear option — high impact but trades code
-clarity for memory savings.
+**Architectural path** (if incremental is insufficient):
+Optimization 8 (DB-backed streaming) is the fundamental solution — it changes
+peak memory scaling from O(nodes) to O(depth). However, it requires
+rearchitecting the collector and analysis phases. Consider after measuring
+the effect of optimizations 1-2.
+
+Optimization 5 is a middle ground for post-peak reduction within the current
+architecture. Optimization 7 reduces node count but at the cost of code
+clarity.
