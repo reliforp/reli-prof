@@ -30,4 +30,9 @@ final class PhpReferenceContextPool
         $this->contexts[$memory_location->address] = $context;
         return $context;
     }
+
+    public function clear(): void
+    {
+        $this->contexts = [];
+    }
 }

@@ -21,9 +21,7 @@ use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConso
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
@@ -141,23 +139,10 @@ final class MemoryCommand extends Command
             ]
         ];
 
-        $is_db = in_array($memory_profiler_settings->output_format, ['sqlite3', 'mysql', 'postgresql'], true);
-
-        // For DB formats: type/class summaries are computed from DB via GROUP BY.
-        // For JSON: compute them in-memory as before.
+        // All output formats now go through a SQLite intermediate,
+        // so type/class summaries are always computed from DB via GROUP BY.
         $location_types_summary = null;
         $class_objects_summary = null;
-        if (!$is_db) {
-            $location_type_analyzer = new LocationTypeAnalyzer();
-            $location_types_summary = $location_type_analyzer->analyze(
-                $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
-            )->per_type_usage;
-
-            $object_class_analyzer = new ObjectClassAnalyzer();
-            $class_objects_summary = $object_class_analyzer->analyze(
-                $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
-            )->per_class_usage;
-        }
 
         // Region boundaries are small (a few entries each) — keep for PdoContextTreeSink.
         // Everything else can be released before the tree walk.

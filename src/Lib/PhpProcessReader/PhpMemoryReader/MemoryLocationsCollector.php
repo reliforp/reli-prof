@@ -435,6 +435,9 @@ final class MemoryLocationsCollector
             $modules_context,
         );
 
+        // Release pool references so ContextAnalyzer's releaseLinks() can trigger GC
+        $context_pools->clear();
+
         return new CollectedMemories(
             $chunk_memory_locations,
             $huge_memory_locations,
