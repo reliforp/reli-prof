@@ -256,9 +256,9 @@ public static function loadFromDb(PDO $db, int $run_id): self {
 200 万 edges 以下なら PHP 配列で十分 (< 1 GB)。
 200 万超なら FFI CSR に自動切り替え。
 
-## 期待される効果
+## 期待される効果 (理論値)
 
-| シナリオ | 現在 | FFI CSR 後 |
+| シナリオ | 現在 | FFI CSR 全面適用後 |
 |---|---|---|
 | Monolog (4.5M edges) | 2.1 GB, 44s | ~60 MB, ~30s |
 | PHP-Parser (6.1M edges) | 2.2 GB, 30s | ~70 MB, ~20s |
@@ -266,3 +266,70 @@ public static function loadFromDb(PDO $db, int $run_id): self {
 | PHPStan 4GB target (~80M edges 推定) | ~30 GB OOM | ~700 MB, 数分 |
 
 reli のドッグフーディングと、大規模ターゲットの解析が可能になる。
+
+## Phase 1 実測結果 (adjacency list のみ CSR 化)
+
+`$children` (tree edges) と `$all_children` (all edges) を FFI CSR 化。
+`--ffi-csr` / `--no-ffi-csr` で切り替え。
+
+| データセット | edges | PHP 配列 RSS | FFI CSR RSS | 削減 | 時間 (PHP→CSR) |
+|---|---|---|---|---|---|
+| Eloquent | 1M | 904 MB | 661 MB | -27% | — |
+| Monolog | 4.5M | 3,798 MB | 2,425 MB | -36% | 1m44s → 1m03s |
+| PHP-Parser | 6.1M | 6,056 MB (OOM) | 4,736 MB | — | OOM → 成功 |
+
+PHP-Parser は PHP 配列で 6GB OOM だったのが FFI CSR で解決。
+
+削減が理論値 (73x) ほどではない理由:
+**adjacency list 以外の PHP 配列がまだ大量に残っている。**
+
+## Phase 2: さらに FFI 化すべきデータ
+
+### 即座に FFI 化可能 (int 配列)
+
+| データ | 現在 | FFI 化後 | 型 |
+|---|---|---|---|
+| `$node_sizes` | PHP 連想配列 (node_id → size) | `FFI::new("int64_t[N]")` | int64 |
+| `$subtree_sizes` | PHP 連想配列 (node_id → size) | `FFI::new("int64_t[N]")` | int64 |
+| `$node_to_scc` | PHP 連想配列 (node_id → scc_id) | `FFI::new("int32_t[N]")` | int32 |
+
+Monolog (3M nodes) での推定削減:
+- `$node_sizes`: PHP 配列 ~300 MB → FFI int64 ~24 MB
+- `$subtree_sizes`: PHP 配列 ~300 MB → FFI int64 ~24 MB
+- `$node_to_scc`: PHP 配列 ~200 MB → FFI int32 ~12 MB
+- **追加削減: ~760 MB**
+
+### CSR 化可能 (隣接リスト)
+
+| データ | 現在 | 用途 |
+|---|---|---|
+| `$all_parents` | PHP 配列 (child → [parent, ...]) | SCC 計算、blame allocation |
+
+`$all_parents` は reverse adjacency で、forward の `$all_children` と同じ CSR 形式にできる。
+
+### FFI 化が難しいもの
+
+| データ | 理由 |
+|---|---|
+| `$node_classes` (node_id → class_name) | 文字列。FFI に直接入れられない |
+| `$scc_profiles` | 構造体の配列。PHP 配列が自然 |
+| `$roots` | 小さい (数個)。変える意味なし |
+| node_id マッピング (node_id ↔ CSR index) | PHP 連想配列が必要。ただし node_id が連番なら不要 |
+
+`$node_classes` は辞書テーブル (class_name → int ID) + FFI int 配列で間接化できるが、
+コードの複雑さが増す。class_name は report pass でしか使わないので、
+必要なときに SQLite から引く方が現実的。
+
+### node_id マッピングの最適化
+
+SQLite の node_id が連番であれば CSR index = node_id となりマッピング不要。
+`ContextAnalyzer` が連番の node_id を振っているなら、PHP 連想配列のマッピングを
+丸ごと省ける。歯抜けがある場合は compact mapping が必要。
+
+## Phase 2 実装後の推定効果
+
+| データセット | Phase 1 RSS | Phase 2 推定 RSS | 削減 |
+|---|---|---|---|
+| Monolog (4.5M edges, 3M nodes) | 2,425 MB | ~1,600 MB | -34% |
+| PHP-Parser (6.1M edges) | 4,736 MB | ~3,200 MB | -32% |
+| reli-on-reli (~50M edges) | (未測定) | ~5-6 GB | (解析可能に？) |
