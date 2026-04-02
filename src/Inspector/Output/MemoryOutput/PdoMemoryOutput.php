@@ -404,7 +404,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         /** @psalm-suppress MixedAssignment */
         while ($row = $rows->fetch(\PDO::FETCH_ASSOC)) {
             /** @psalm-suppress MixedArrayAccess */
-            $insert->execute([$run_id, $row['parent_node_id'], $row['child_node_id'], $row['link_name'], $row['is_tree']]);
+            $insert->execute([
+                $run_id, $row['parent_node_id'], $row['child_node_id'],
+                $row['link_name'], $row['is_tree'],
+            ]);
         }
 
         // Copy context_node_locations

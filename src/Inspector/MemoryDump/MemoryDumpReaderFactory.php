@@ -53,7 +53,12 @@ final class MemoryDumpReaderFactory
         $path_resolver = new MappedPathResolver($path_mapping);
         $region_index = $parsed['region_index'];
 
-        $memory_reader = new class ($file_path, $region_index, $process_memory_map, $path_resolver) implements MemoryReaderInterface {
+        $memory_reader = new class (
+            $file_path,
+            $region_index,
+            $process_memory_map,
+            $path_resolver,
+        ) implements MemoryReaderInterface {
             /**
              * @param list<array{address: int, size: int, file_offset: int}> $region_index
              */
