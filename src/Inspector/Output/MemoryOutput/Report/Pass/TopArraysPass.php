@@ -43,7 +43,115 @@ final class TopArraysPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        // 3-hop ancestor: gp_link -> parent_link -> owner -> array
+        if ($this->substrate !== null) {
+            return $this->analyzeWithGraph();
+        }
+        return $this->analyzeWithSql();
+    }
+
+    /**
+     * In-memory analysis using GraphSubstrate.
+     * @return list<Finding>
+     * @psalm-suppress MixedArrayAccess
+     */
+    private function analyzeWithGraph(): array
+    {
+        assert($this->substrate !== null);
+        $link_names = $this->loadLinkNames();
+        $labeler = new NodeLabeler($this->db, $this->run_id);
+        $use_retained = $this->substrate->hasSubtreeSizes();
+
+        $arrays = [];
+        foreach ($this->substrate->iterateNodeSizes() as $node => $shallow) {
+            foreach ($this->substrate->getChildren($node) as $child) {
+                if (($link_names[$child] ?? '') === 'array_elements') {
+                    $retained = $use_retained
+                        ? $this->substrate->getSubtreeSize($node)
+                        : $shallow;
+                    $elem_count = count(
+                        $this->substrate->getChildren($child)
+                    );
+                    $arrays[] = [
+                        'node_id' => $node,
+                        'shallow' => $shallow,
+                        'retained' => $retained ?: $shallow,
+                        'element_count' => $elem_count,
+                    ];
+                    break;
+                }
+            }
+        }
+
+        usort($arrays, fn($a, $b) => $b['retained'] <=> $a['retained']);
+
+        $findings = [];
+        foreach (array_slice($arrays, 0, 10) as $arr) {
+            $retained = $arr['retained'];
+            $shallow = $arr['shallow'];
+            $node_id = $arr['node_id'];
+
+            if ($retained < 10240 && $shallow < 10240) {
+                continue;
+            }
+
+            $elements = $arr['element_count'];
+            $path = $this->buildFullPath($node_id, $labeler);
+
+            if ($use_retained && $retained > $shallow) {
+                $summary = sprintf(
+                    '%s retained (table: %s), %s elements — %s',
+                    SizeFormatter::format($retained),
+                    SizeFormatter::format($shallow),
+                    number_format($elements),
+                    $path ?: '(root)',
+                );
+            } else {
+                $summary = sprintf(
+                    '%s array, %s elements — %s',
+                    SizeFormatter::format($shallow),
+                    number_format($elements),
+                    $path ?: '(root)',
+                );
+            }
+
+            $findings[] = new Finding(
+                kind: 'large_array',
+                severity: $retained > 1024 * 1024
+                    ? FindingSeverity::Medium
+                    : FindingSeverity::Low,
+                confidence: FindingConfidence::High,
+                summary: $summary,
+                facts: [
+                    'node_id' => $node_id,
+                    'table_size' => $shallow,
+                    'retained_size' => $retained,
+                    'element_count' => $elements,
+                    'owner_path' => $path,
+                ],
+                hypothesis: 'Large array allocation;'
+                    . ' may be a cache, buffer, or accumulator',
+                next_checks: [
+                    'Check if array size is bounded',
+                    'Consider SplFixedArray for known-size collections',
+                ],
+                impact_bytes: $retained,
+                evidence_node_ids: [$node_id],
+            );
+        }
+
+        return $findings;
+    }
+
+    /**
+     * SQL-based analysis (fallback when no substrate).
+     * @return list<Finding>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     * @psalm-suppress InvalidOperand
+     */
+    private function analyzeWithSql(): array
+    {
+        $labeler = new NodeLabeler($this->db, $this->run_id);
+
         $rows = $this->db->query("
             SELECT
                 va.node_id,
@@ -76,71 +184,32 @@ final class TopArraysPass implements PassInterface
             LIMIT 10
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
-        $labeler = new NodeLabeler($this->db, $this->run_id);
-        $use_retained = $this->substrate !== null
-            && $this->substrate->hasSubtreeSizes();
-
-        // If substrate available, sort by retained size instead
-        $entries = [];
-        foreach ($rows as $row) {
-            $table_size = (int)$row['total_size'];
-            $node_id = (int)$row['node_id'];
-            $retained = $use_retained
-                ? ($this->substrate->getSubtreeSize($node_id) ?: $table_size)
-                : $table_size;
-            $entries[] = [
-                'row' => $row,
-                'table_size' => $table_size,
-                'retained' => $retained,
-                'node_id' => $node_id,
-            ];
-        }
-        usort($entries, fn($a, $b) => $b['retained'] <=> $a['retained']);
-
         $findings = [];
-        foreach (array_slice($entries, 0, 10) as $entry) {
-            $row = $entry['row'];
-            $table_size = $entry['table_size'];
-            $retained = $entry['retained'];
-            $node_id = $entry['node_id'];
-
-            if ($retained < 10240 && $table_size < 10240) {
+        foreach ($rows as $row) {
+            $total = (int)$row['total_size'];
+            if ($total < 10240) {
                 continue;
             }
 
             $elements = (int)($row['element_count'] ?? 0);
-            $path = $this->substrate !== null
-                ? $this->buildFullPath($node_id, $labeler)
-                : $this->buildOwnerPath($row, $labeler);
-
-            if ($use_retained && $retained > $table_size) {
-                $summary = sprintf(
-                    '%s retained (table: %s), %s elements — %s',
-                    SizeFormatter::format($retained),
-                    SizeFormatter::format($table_size),
-                    number_format($elements),
-                    $path ?: '(root)',
-                );
-            } else {
-                $summary = sprintf(
-                    '%s array, %s elements — %s',
-                    SizeFormatter::format($table_size),
-                    number_format($elements),
-                    $path ?: '(root)',
-                );
-            }
+            $path = $this->buildOwnerPath($row, $labeler);
 
             $findings[] = new Finding(
                 kind: 'large_array',
-                severity: $retained > 1024 * 1024
+                severity: $total > 1024 * 1024
                     ? FindingSeverity::Medium
                     : FindingSeverity::Low,
                 confidence: FindingConfidence::High,
-                summary: $summary,
+                summary: sprintf(
+                    '%s array, %s elements — %s',
+                    SizeFormatter::format($total),
+                    number_format($elements),
+                    $path ?: '(root)',
+                ),
                 facts: [
-                    'node_id' => $node_id,
-                    'table_size' => $table_size,
-                    'retained_size' => $retained,
+                    'node_id' => (int)$row['node_id'],
+                    'table_size' => $total,
+                    'retained_size' => $total,
                     'element_count' => $elements,
                     'owner_path' => $path,
                 ],
@@ -150,16 +219,12 @@ final class TopArraysPass implements PassInterface
                     'Check if array size is bounded',
                     'Consider SplFixedArray for known-size collections',
                 ],
-                impact_bytes: $retained,
-                evidence_node_ids: [$node_id],
-                replay_query: "SELECT * FROM v_arrays"
-                    . " WHERE run_id = {$this->run_id}"
-                    . " ORDER BY total_size DESC LIMIT 10",
+                impact_bytes: $total,
+                evidence_node_ids: [(int)$row['node_id']],
             );
         }
 
-        // Sparse array detection: table_size >> element_count
-        // table_size (bytes) = nTableSize * 32 (sizeof Bucket)
+        // Sparse array detection
         $sparse_rows = $this->db->query("
             SELECT
                 va.node_id,
@@ -183,21 +248,17 @@ final class TopArraysPass implements PassInterface
             $utilization = $s_capacity > 0
                 ? $s_count / $s_capacity * 100.0
                 : 0;
-            $s_path = $this->substrate !== null
-                ? $this->buildFullPath($s_node, $labeler)
-                : '(use --full-analysis for path)';
 
             $findings[] = new Finding(
                 kind: 'sparse_array',
                 severity: FindingSeverity::Medium,
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
-                    '%s table, %s/%s slots used (%.1f%%) — %s',
+                    '%s table, %s/%s slots used (%.1f%%)',
                     SizeFormatter::format($s_table),
                     number_format($s_count),
                     number_format($s_capacity),
                     $utilization,
-                    $s_path,
                 ),
                 facts: [
                     'node_id' => $s_node,
@@ -221,11 +282,32 @@ final class TopArraysPass implements PassInterface
     }
 
     /**
+     * @return array<int, string>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function loadLinkNames(): array
+    {
+        $rows = $this->db->query(
+            "SELECT child_node_id, link_name FROM context_edges"
+            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int)$r[0]] = (string)$r[1];
+        }
+        unset($rows);
+        return $map;
+    }
+
+    /**
      * Walk from node to root via tree parent edges.
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function buildFullPath(int $node_id, NodeLabeler $labeler): string
-    {
+    private function buildFullPath(
+        int $node_id,
+        NodeLabeler $labeler,
+    ): string {
         assert($this->substrate !== null);
 
         if ($this->parentMapCache === null) {
@@ -236,7 +318,8 @@ final class TopArraysPass implements PassInterface
                 . " AND run_id = {$this->run_id}"
             )->fetchAll(\PDO::FETCH_NUM);
             foreach ($rows as $r) {
-                $this->parentMapCache[(int)$r[0]] = [(int)($r[1] ?? -1), (string)$r[2]];
+                $this->parentMapCache[(int)$r[0]]
+                    = [(int)($r[1] ?? -1), (string)$r[2]];
             }
             unset($rows);
 
@@ -310,7 +393,6 @@ final class TopArraysPass implements PassInterface
             $raw_parts[] = (string)$row['link1'];
         }
 
-        // Filter structural intermediaries and join with ->
         $filtered = array_values(array_filter(
             $raw_parts,
             fn(string $p) => !in_array($p, self::STRUCTURAL_LINKS, true)
