@@ -434,25 +434,10 @@ final class MemoryLocationsCollector
         $class_table = $dereferencer->deref($eg->class_table);
         $zend_constants = $dereferencer->deref($eg->zend_constants);
 
-        $global_variables_context = $this->collectGlobalVariables(
-            $eg->symbol_table,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
-            $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
-            unset($global_variables_context);
-            $context_pools->convertToSentinels($memo);
-        }
-
-        // Collect objects_store, function_table, and class_table BEFORE
-        // call_frames. This populates the sentinel map with all objects,
-        // arrays, and strings. When call_frames is collected later,
-        // collectZval hits sentinels for most data, avoiding deep
+        // Collect objects_store, function_table, and class_table first.
+        // This populates the sentinel map with all objects, arrays, and
+        // strings. When global_variables and call_frames are collected
+        // later, collectZval hits sentinels for most data, avoiding deep
         // recursive expansion of the entire object graph.
         $objects_store_context = $this->collectObjectsStore(
             $eg->objects_store,
@@ -496,6 +481,21 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('class_table', $defined_classes_context, $sink, null, $memo);
             unset($defined_classes_context);
+            $context_pools->convertToSentinels($memo);
+        }
+
+        $global_variables_context = $this->collectGlobalVariables(
+            $eg->symbol_table,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
+            unset($global_variables_context);
             $context_pools->convertToSentinels($memo);
         }
 
