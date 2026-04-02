@@ -119,6 +119,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                 while ($this->loop_condition->shouldContinue()) {
                     $now = microtime(true);
                     $call_trace = null;
+                    $rss_bytes = null;
 
                     // Read process state. Skip poll on failure
                     // (target may be between requests).
@@ -152,7 +153,6 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                                 );
                         }
 
-                        $rss_bytes = null;
                         if ($needs_rss) {
                             $rss_bytes = $this->rss_reader->read($descriptor->pid);
                         }
