@@ -303,3 +303,28 @@ the effect of optimizations 1-2.
 Optimization 5 is a middle ground for post-peak reduction within the current
 architecture. Optimization 7 reduces node count but at the cost of code
 clarity.
+
+### 9. MemoryLocations lightweight mode (medium impact, moderate cost)
+
+`MemoryLocations::$memory_locations` holds `array<int => MemoryLocation>` with
+full MemoryLocation subclass objects throughout the entire collection. For a
+5.6 GB target, this can hold hundreds of thousands of entries. The heaviest are
+`ZendStringMemoryLocation` objects, each carrying the full `$value` string.
+
+In streaming mode, all location data has already been emitted to the DB. The
+only remaining use of `MemoryLocations` is:
+1. `has($address)` — deduplication check (needs only address existence)
+2. `get($address)` — `instanceof` type checks on cache-hit paths
+
+**Option A**: After emitting a MemoryLocation to DB, null out heavy properties
+(e.g., `ZendStringMemoryLocation::$value = ''`). Preserves `instanceof` checks
+while freeing the largest data. Requires making `$value` non-readonly or adding
+a `release()` method.
+
+**Option B**: Replace MemoryLocation objects with `address → class-string` map.
+Eliminates object overhead entirely but requires changing all `instanceof`
+checks in the collector to string comparisons.
+
+**Option C**: Increase pool flush frequency so that `getSentinel()` handles
+most cache hits, reducing the number of `get()` calls that need full objects.
+The remaining `get()` calls (within a single iteration) are few and short-lived.
