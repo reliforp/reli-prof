@@ -135,6 +135,7 @@ use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\Process\Pointer\CachingDereferencer;
 use Reli\Lib\Process\Pointer\RemoteProcessDereferencer;
 use Reli\Lib\Process\ProcessSpecifier;
 
@@ -284,13 +285,15 @@ final class MemoryLocationsCollector
      */
     private function getDereferencer(int $pid, string $php_version): Dereferencer
     {
-        return new RemoteProcessDereferencer(
-            $this->memory_reader,
-            new ProcessSpecifier($pid),
-            new ZendCastedTypeProvider(
-                $this->getTypeReader($php_version),
+        return new CachingDereferencer(
+            new RemoteProcessDereferencer(
+                $this->memory_reader,
+                new ProcessSpecifier($pid),
+                new ZendCastedTypeProvider(
+                    $this->getTypeReader($php_version),
+                ),
+                new VersionedPointedTypeResolver($php_version)
             ),
-            new VersionedPointedTypeResolver($php_version)
         );
     }
 
