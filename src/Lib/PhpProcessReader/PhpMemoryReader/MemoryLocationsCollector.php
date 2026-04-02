@@ -997,7 +997,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): PhpReferenceContext|SentinelContext {
+    ): PhpReferenceContext|SentinelContext|null {
         if ($memory_locations->has($pointer->address)) {
             $sentinel = $context_pools->getSentinel($pointer->address);
             if ($sentinel !== null) {
@@ -1007,6 +1007,15 @@ final class MemoryLocationsCollector
             if ($cached !== null) {
                 return $cached;
             }
+        } elseif ($this->defer_unseen_objects) {
+            if ($this->current_streaming_parent_node_id !== null) {
+                $this->deferred_object_edges[] = [
+                    $this->current_streaming_parent_node_id,
+                    $pointer->address,
+                    $this->current_streaming_link_name ?? 'deferred_reference',
+                ];
+            }
+            return null;
         }
         $php_reference = $dereferencer->deref($pointer);
         $memory_location = ZendReferenceMemoryLocation::fromZendReference($php_reference);
@@ -1039,7 +1048,7 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): ArrayHeaderContext|SentinelContext {
+    ): ArrayHeaderContext|SentinelContext|null {
         if ($memory_locations->has($pointer->address)) {
             $sentinel = $context_pools->getSentinel($pointer->address);
             if ($sentinel !== null) {
@@ -1049,6 +1058,17 @@ final class MemoryLocationsCollector
             if ($cached !== null) {
                 return $cached;
             }
+        } elseif ($this->defer_unseen_objects) {
+            // During shallow collection: don't recurse into unseen arrays.
+            // Record a deferred edge if we have a parent context.
+            if ($this->current_streaming_parent_node_id !== null) {
+                $this->deferred_object_edges[] = [
+                    $this->current_streaming_parent_node_id,
+                    $pointer->address,
+                    $this->current_streaming_link_name ?? 'deferred_array',
+                ];
+            }
+            return null;
         }
         $array = $dereferencer->deref($pointer);
         return $this->collectZendArray(
@@ -1374,7 +1394,9 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
-            $call_frame_context->add('symbol_table', $symbol_table_context);
+            if ($symbol_table_context !== null) {
+                $call_frame_context->add('symbol_table', $symbol_table_context);
+            }
         }
         if ($execute_data->hasExtraNamedParams() and !is_null($execute_data->extra_named_params)) {
             $extra_named_params_context = $this->collectZendArrayPointer(
@@ -1386,7 +1408,9 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
-            $call_frame_context->add('extra_named_params', $extra_named_params_context);
+            if ($extra_named_params_context !== null) {
+                $call_frame_context->add('extra_named_params', $extra_named_params_context);
+            }
         }
         return $call_frame_context;
     }
