@@ -310,7 +310,9 @@ final class MemoryLocationsCollector
             $zend_type_reader->sizeOf('zend_mm_chunk'),
         );
 
-        $memory_locations = new MemoryLocations();
+        $memory_locations = $sink !== null
+            ? MemoryLocations::createLightweight()
+            : new MemoryLocations();
         $chunk_memory_locations = new MemoryLocations();
         $this->chunk_memory_locations = $chunk_memory_locations;
 
@@ -731,12 +733,11 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            $memory_location = $memory_locations->get($pointer->address);
-            if ($memory_location instanceof ZendResourceMemoryLocation) {
-                return $context_pools
-                    ->resource_context_pool
-                    ->getContextForLocation($memory_location)
-                ;
+            if ($memory_locations->getClass($pointer->address) === ZendResourceMemoryLocation::class) {
+                $cached = $context_pools->resource_context_pool->getContextByAddress($pointer->address);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
         $resource = $dereferencer->deref($pointer);
@@ -959,12 +960,11 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            $memory_location = $memory_locations->get($pointer->address);
-            if ($memory_location instanceof ZendReferenceMemoryLocation) {
-                return $context_pools
-                    ->php_reference_context_pool
-                    ->getContextForLocation($memory_location)
-                ;
+            if ($memory_locations->getClass($pointer->address) === ZendReferenceMemoryLocation::class) {
+                $cached = $context_pools->php_reference_context_pool->getContextByAddress($pointer->address);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
         $php_reference = $dereferencer->deref($pointer);
@@ -1004,12 +1004,11 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            $memory_location = $memory_locations->get($pointer->address);
-            if ($memory_location instanceof ZendArrayMemoryLocation) {
-                return $context_pools
-                    ->array_context_pool
-                    ->getContextForLocation($memory_location)
-                ;
+            if ($memory_locations->getClass($pointer->address) === ZendArrayMemoryLocation::class) {
+                $cached = $context_pools->array_context_pool->getContextByAddress($pointer->address);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
         $array = $dereferencer->deref($pointer);
@@ -1039,15 +1038,12 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            $memory_location = $memory_locations->get($pointer->address);
-            if ($memory_location instanceof ZendArrayTableOverheadMemoryLocation) {
-                unset($memory_location);
-            } else {
-                assert($memory_location instanceof ZendObjectMemoryLocation);
-                return $context_pools
-                    ->object_context_pool
-                    ->getContextForLocation($memory_location)
-                    ;
+            $location_class = $memory_locations->getClass($pointer->address);
+            if ($location_class !== ZendArrayTableOverheadMemoryLocation::class) {
+                $cached = $context_pools->object_context_pool->getContextByAddress($pointer->address);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
         $obj = $dereferencer->deref($pointer);
@@ -1074,22 +1070,20 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            $memory_location = $memory_locations->get($pointer->address);
-            if ($memory_location instanceof ZendArrayTableOverheadMemoryLocation) {
-                $memory_location = null;
-            } else {
-                assert($memory_location instanceof ZendStringMemoryLocation);
+            $location_class = $memory_locations->getClass($pointer->address);
+            if ($location_class !== ZendArrayTableOverheadMemoryLocation::class) {
+                $cached = $context_pools->string_context_pool->getContextByAddress($pointer->address);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
-        if (!isset($memory_location)) {
-            $str = $dereferencer->deref($pointer);
-            $memory_location = ZendStringMemoryLocation::fromZendString(
-                $str,
-                $dereferencer,
-            );
-            $memory_locations->add($memory_location);
-        }
-        assert($memory_location instanceof ZendStringMemoryLocation);
+        $str = $dereferencer->deref($pointer);
+        $memory_location = ZendStringMemoryLocation::fromZendString(
+            $str,
+            $dereferencer,
+        );
+        $memory_locations->add($memory_location);
         return $context_pools
             ->string_context_pool
             ->getContextForLocation($memory_location)
@@ -2090,12 +2084,11 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            $memory_location = $memory_locations->get($pointer->address);
-            if ($memory_location instanceof ZendOpArrayHeaderMemoryLocation) {
-                return $context_pools
-                    ->user_function_definition_context_pool
-                    ->getContextForLocation($memory_location)
-                ;
+            if ($memory_locations->getClass($pointer->address) === ZendOpArrayHeaderMemoryLocation::class) {
+                $cached = $context_pools->user_function_definition_context_pool->getContextByAddress($pointer->address);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
         $func = $dereferencer->deref($pointer);

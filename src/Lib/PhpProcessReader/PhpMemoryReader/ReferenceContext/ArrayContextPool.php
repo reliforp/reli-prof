@@ -31,6 +31,11 @@ final class ArrayContextPool
         return $context;
     }
 
+    public function getContextByAddress(int $address): ?ArrayHeaderContext
+    {
+        return $this->contexts[$address] ?? null;
+    }
+
     public function clear(): void
     {
         $this->contexts = [];

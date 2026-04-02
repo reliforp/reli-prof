@@ -31,6 +31,11 @@ final class ResourceContextPool
         return $context;
     }
 
+    public function getContextByAddress(int $address): ?ResourceContext
+    {
+        return $this->contexts[$address] ?? null;
+    }
+
     public function clear(): void
     {
         $this->contexts = [];
