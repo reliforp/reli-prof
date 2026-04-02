@@ -23,11 +23,6 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TopArraysPass implements PassInterface
 {
-    /** @var array<int, array{0: int, 1: string}>|null */
-    private ?array $parentMapCache = null;
-    /** @var array<int, string>|null */
-    private ?array $nodeTypeCache = null;
-
     public function __construct(
         private \PDO $db,
         private int $run_id,
@@ -43,21 +38,31 @@ final class TopArraysPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        // 3-hop ancestor: gp_link -> parent_link -> owner -> array
+        // First pick the 10 largest arrays, THEN resolve ancestors.
+        // Doing ancestor LEFT JOINs over the full v_arrays view caused
+        // the query to hang on large heaps because SQLite had to build
+        // and sort the entire joined result set before applying LIMIT.
         $rows = $this->db->query("
+            WITH top AS (
+                SELECT va.node_id, va.total_size, va.element_count
+                FROM v_arrays va
+                WHERE va.run_id = {$this->run_id}
+                ORDER BY va.total_size DESC
+                LIMIT 10
+            )
             SELECT
-                va.node_id,
-                va.total_size,
-                va.element_count,
+                top.node_id,
+                top.total_size,
+                top.element_count,
                 e1.link_name as link1,
                 e1.parent_node_id as parent1_id,
                 cnl_p1.class_name as parent1_class,
                 e2.link_name as link2,
                 e2.parent_node_id as parent2_id,
                 e3.link_name as link3
-            FROM v_arrays va
+            FROM top
             LEFT JOIN context_edges e1
-                ON e1.child_node_id = va.node_id
+                ON e1.child_node_id = top.node_id
                 AND e1.is_tree = 1
                 AND e1.run_id = {$this->run_id}
             LEFT JOIN context_node_locations cnl_p1
@@ -71,9 +76,6 @@ final class TopArraysPass implements PassInterface
                 ON e3.child_node_id = e2.parent_node_id
                 AND e3.is_tree = 1
                 AND e3.run_id = {$this->run_id}
-            WHERE va.run_id = {$this->run_id}
-            ORDER BY va.total_size DESC
-            LIMIT 10
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
         $labeler = new NodeLabeler($this->db, $this->run_id);
@@ -222,47 +224,46 @@ final class TopArraysPass implements PassInterface
 
     /**
      * Walk from node to root via tree parent edges.
+     *
+     * Uses a recursive CTE limited to 20 hops instead of loading the
+     * entire edge set into PHP memory, which caused hangs on large heaps.
+     *
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function buildFullPath(int $node_id, NodeLabeler $labeler): string
     {
         assert($this->substrate !== null);
 
-        if ($this->parentMapCache === null) {
-            $this->parentMapCache = [];
-            $rows = $this->db->query(
-                "SELECT child_node_id, parent_node_id, link_name"
-                . " FROM context_edges WHERE is_tree = 1"
-                . " AND run_id = {$this->run_id}"
-            )->fetchAll(\PDO::FETCH_NUM);
-            foreach ($rows as $r) {
-                $this->parentMapCache[(int)$r[0]] = [(int)($r[1] ?? -1), (string)$r[2]];
-            }
-            unset($rows);
-
-            $this->nodeTypeCache = [];
-            $rows = $this->db->query(
-                "SELECT node_id, type FROM context_nodes"
-                . " WHERE run_id = {$this->run_id}"
-            )->fetchAll(\PDO::FETCH_NUM);
-            foreach ($rows as $r) {
-                $this->nodeTypeCache[(int)$r[0]] = (string)$r[1];
-            }
-            unset($rows);
-        }
+        $stmt = $this->db->query("
+            WITH RECURSIVE ancestors(depth, node_id, parent_id, link_name) AS (
+                SELECT 0, child_node_id, parent_node_id, link_name
+                FROM context_edges
+                WHERE child_node_id = {$node_id}
+                    AND is_tree = 1
+                    AND run_id = {$this->run_id}
+                UNION ALL
+                SELECT a.depth + 1, e.child_node_id, e.parent_node_id, e.link_name
+                FROM ancestors a
+                JOIN context_edges e
+                    ON e.child_node_id = a.parent_id
+                    AND e.is_tree = 1
+                    AND e.run_id = {$this->run_id}
+                WHERE a.depth < 20
+            )
+            SELECT a.node_id, a.link_name, cn.type
+            FROM ancestors a
+            LEFT JOIN context_nodes cn
+                ON cn.node_id = a.node_id
+                AND cn.run_id = {$this->run_id}
+            ORDER BY a.depth DESC
+        ");
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
         $parts = [];
         $types = [];
-        $cur = $node_id;
-        for ($i = 0; $i < 20; $i++) {
-            if (!isset($this->parentMapCache[$cur])) {
-                break;
-            }
-            [$parent, $link] = $this->parentMapCache[$cur];
-            $resolved = $labeler->resolvePathLabel($link, $cur);
-            array_unshift($parts, $resolved);
-            array_unshift($types, $this->nodeTypeCache[$cur] ?? '');
-            $cur = $parent;
+        foreach ($rows as $r) {
+            $parts[] = $labeler->resolvePathLabel((string)$r['link_name'], (int)$r['node_id']);
+            $types[] = (string)($r['type'] ?? '');
         }
 
         return PathFormatter::toPhpSyntax($parts, $types);
