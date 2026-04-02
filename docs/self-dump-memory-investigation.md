@@ -128,6 +128,7 @@ cross-object references.
 | v8 (defer arrays+refs) | objects_store (#11) | objects_store | ~510s |
 | v9 (skip dyn props etc) | objects_store | objects_store | ~540s |
 | v10 (CachingDereferencer) | objects_store | objects_store | ~190s (127MB dump) |
+| **v11 (defer bypass fix)** | **COMPLETED** | **none** | **~2700s, RSS 1.2 GB** |
 
 The reli self-dump has millions of objects interconnected through the running
 reli-prof process's object graph. **Any phase that first touches this graph**
@@ -412,6 +413,41 @@ if ($memory_locations->has($pointer->address)) {
 ```
 
 Or more simply: check `defer_unseen_objects` first, before the `has()` check.
+
+## Round 10: SELF-DUMP ANALYSIS COMPLETED (commit `e79ade9`)
+
+The defer bypass fix resolved the root cause. **5.6 GB self-dump analyzed
+successfully for the first time.**
+
+### RSS Progression
+
+| Time | RSS | SQLite DB |
+|---|---|---|
+| 0-120s | 50-270 MB | growing |
+| 120-600s | 270-470 MB | growing |
+| 600-1800s | 470-750 MB | growing |
+| 1800-2400s | 750-1230 MB | 10-11 GB |
+| 2400-2640s | 1230-5970 MB | 11-13 GB (deferred edge resolution) |
+| **~2700s** | **done** | **13 GB** |
+
+Peak RSS: ~6 GB during deferred edge resolution phase.
+Steady-state RSS: ~1.2 GB during main collection.
+
+### Comparison
+
+| Version | Result | Peak RSS | Time |
+|---|---|---|---|
+| v3 baseline | OOM | 10+ GB | 540s |
+| v10 (CachingDereferencer) | OOM | 10+ GB | 190s |
+| **v11 (defer bypass fix)** | **SUCCESS** | **~6 GB** | **~2700s** |
+
+### Remaining issues
+
+1. **Deferred edge resolution spike**: RSS jumps from 1.2 GB to 6 GB at the end
+   when resolving deferred edges. The `defer_unseen_objects = false` full
+   collection of orphaned targets triggers recursive expansion again.
+2. **13 GB SQLite output**: Very large DB makes report generation challenging.
+3. **45 min total time**: Slow due to lazy dump loading (fseek/fread per access).
 
 ## Smaller Dump Experiment
 
