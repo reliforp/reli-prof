@@ -283,18 +283,20 @@ final class MemoryLocationsCollector
     /**
      * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      */
-    private function getDereferencer(int $pid, string $php_version): Dereferencer
+    private function getDereferencer(int $pid, string $php_version, bool $enable_cache = false): Dereferencer
     {
-        return new CachingDereferencer(
-            new RemoteProcessDereferencer(
-                $this->memory_reader,
-                new ProcessSpecifier($pid),
-                new ZendCastedTypeProvider(
-                    $this->getTypeReader($php_version),
-                ),
-                new VersionedPointedTypeResolver($php_version)
+        $inner = new RemoteProcessDereferencer(
+            $this->memory_reader,
+            new ProcessSpecifier($pid),
+            new ZendCastedTypeProvider(
+                $this->getTypeReader($php_version),
             ),
+            new VersionedPointedTypeResolver($php_version)
         );
+        if ($enable_cache) {
+            return new CachingDereferencer($inner);
+        }
+        return $inner;
     }
 
     /** @param TargetPhpSettings<VersionDecided> $target_php_settings */
@@ -328,7 +330,7 @@ final class MemoryLocationsCollector
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
-        $dereferencer = $this->getDereferencer($pid, $php_version);
+        $dereferencer = $this->getDereferencer($pid, $php_version, enable_cache: $sink !== null);
         $zend_type_reader = $this->zend_type_reader_creator->create($php_version);
 
         $main_chunk_header_pointer = new Pointer(
