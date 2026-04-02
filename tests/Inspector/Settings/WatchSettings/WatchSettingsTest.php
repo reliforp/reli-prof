@@ -33,6 +33,7 @@ class WatchSettingsTest extends TestCase
             memory_usage_bytes: 256 * 1024 * 1024,
             memory_growth_rate: '10M/min',
             memory_peak_watch: true,
+            rss_usage_bytes: null,
             watch_function: 'sleep',
             trace_depth_limit: 200,
             watch_var: ['global::x:gt:0'],

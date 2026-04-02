@@ -28,6 +28,8 @@ final class WatchContext
         public readonly float $timestamp,
         public readonly ?self $previous,
         public readonly array $variable_values = [],
+        /** RSS (Resident Set Size) in bytes, read from /proc/[pid]/statm */
+        public readonly ?int $rss_bytes = null,
         /** Daemon mode: EG address from WatchTriggerMessage */
         public readonly int $daemon_eg_address = 0,
         /** Daemon mode: CG address from WatchTriggerMessage */

@@ -47,6 +47,12 @@ final class WatchSettingsFromConsoleInput
                 'trigger when memory peak is updated',
             )
             ->addOption(
+                'rss-usage',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'trigger when RSS (Resident Set Size) exceeds this limit (e.g., 512M)',
+            )
+            ->addOption(
                 'watch-function',
                 null,
                 InputOption::VALUE_REQUIRED,
@@ -175,6 +181,9 @@ final class WatchSettingsFromConsoleInput
         $memory_usage_str = NullableCast::toString($input->getOption('memory-usage'));
         $memory_usage_bytes = $memory_usage_str !== null ? HeapStats::parseSize($memory_usage_str) : null;
 
+        $rss_usage_str = NullableCast::toString($input->getOption('rss-usage'));
+        $rss_usage_bytes = $rss_usage_str !== null ? HeapStats::parseSize($rss_usage_str) : null;
+
         $memory_growth_rate = NullableCast::toString($input->getOption('memory-growth-rate'));
         if ($memory_growth_rate !== null) {
             // Validate the format early
@@ -230,6 +239,7 @@ final class WatchSettingsFromConsoleInput
             memory_usage_bytes: $memory_usage_bytes,
             memory_growth_rate: $memory_growth_rate,
             memory_peak_watch: (bool)$input->getOption('memory-peak-watch'),
+            rss_usage_bytes: $rss_usage_bytes,
             watch_function: NullableCast::toString($input->getOption('watch-function')),
             trace_depth_limit: $trace_depth_limit,
             watch_var: array_values(array_filter(

@@ -175,6 +175,7 @@ class WatchPipelineTest extends TestCase
             memory_usage_bytes: 1024,
             memory_growth_rate: null,
             memory_peak_watch: true,
+            rss_usage_bytes: null,
             watch_function: null,
             trace_depth_limit: null,
             watch_var: [],

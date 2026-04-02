@@ -26,6 +26,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'memory-usage' => null,
             'memory-growth-rate' => null,
             'memory-peak-watch' => false,
+            'rss-usage' => null,
             'watch-function' => null,
             'trace-depth-limit' => null,
             'watch-var' => [],
