@@ -247,8 +247,11 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
 
         // Compare subtree sizes for all nodes
         foreach ($php->iterateSubtreeSizes() as $nid => $size) {
-            $this->assertSame($size, $ffi->getSubtreeSize($nid),
-                "Subtree size mismatch for node {$nid}");
+            $this->assertSame(
+                $size,
+                $ffi->getSubtreeSize($nid),
+                "Subtree size mismatch for node {$nid}"
+            );
         }
 
         // Compare SCC profiles count
