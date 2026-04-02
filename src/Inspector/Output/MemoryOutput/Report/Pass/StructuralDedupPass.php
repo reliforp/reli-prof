@@ -34,7 +34,30 @@ final class StructuralDedupPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        // Compute shape signatures: class + size + property list
+        // Step 1: Find classes with >= 50 instances (cheap aggregate).
+        // Only these can possibly produce findings, so we skip the
+        // expensive property-signature query for rare classes.
+        $frequent = $this->db->query("
+            SELECT class_name, COUNT(*) as cnt, SUM(size) as total_size
+            FROM context_node_locations
+            WHERE location_type = 'ZendObjectMemoryLocation'
+                AND class_name IS NOT NULL
+                AND run_id = {$this->run_id}
+            GROUP BY class_name
+            HAVING cnt >= 50
+            ORDER BY total_size DESC
+            LIMIT 50
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        if ($frequent === []) {
+            return [];
+        }
+
+        // Step 2: Build shape signatures only for frequent classes.
+        $class_list = implode(', ', array_map(
+            fn($r) => $this->db->quote((string)$r['class_name']),
+            $frequent,
+        ));
         $rows = $this->db->query("
             SELECT
                 cnl.node_id,
@@ -48,7 +71,7 @@ final class StructuralDedupPass implements PassInterface
             LEFT JOIN context_edges e_prop ON e_prop.parent_node_id = e_to_obj.child_node_id
                 AND e_prop.is_tree = 1 AND e_prop.run_id = {$this->run_id}
             WHERE cnl.location_type = 'ZendObjectMemoryLocation'
-                AND cnl.class_name IS NOT NULL
+                AND cnl.class_name IN ({$class_list})
                 AND cnl.run_id = {$this->run_id}
             GROUP BY cnl.node_id
         ")->fetchAll(\PDO::FETCH_ASSOC);
