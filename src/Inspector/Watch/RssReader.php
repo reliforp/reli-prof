@@ -31,12 +31,19 @@ final class RssReader
 
     public function __construct()
     {
-        $page_size = \posix_sysconf(\POSIX_SC_PAGESIZE);
-        /** @psalm-suppress TypeDoesNotContainType posix_sysconf can return -1 on error */
-        if ($page_size <= 0) {
-            $page_size = 4096;
+        $this->page_size = self::detectPageSize();
+    }
+
+    private static function detectPageSize(): int
+    {
+        if (\function_exists('posix_sysconf') && \defined('POSIX_SC_PAGESIZE')) {
+            /** @var int $page_size */
+            $page_size = \posix_sysconf(\POSIX_SC_PAGESIZE);
+            if ($page_size > 0) {
+                return $page_size;
+            }
         }
-        $this->page_size = $page_size;
+        return 4096;
     }
 
     /**
