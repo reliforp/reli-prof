@@ -121,9 +121,40 @@ string keys).
 finite set of integers. Not applicable to `ArrayElementsContext` where keys
 are arbitrary runtime values.
 
+### 7. Eliminate wrapper contexts for array elements / scalar values (high impact, high cost)
+
+`ArrayElementContext` is an empty wrapper (no properties, no MemoryLocation)
+created per array element, and `ScalarValueContext` is created per scalar zval.
+For a 10,000-element integer array, this produces 20,000 Context objects.
+
+**Possible approaches**:
+- Remove `ArrayElementContext` and attach value contexts directly to
+  `ArrayElementsContext`.
+- Store scalar values as plain PHP values in a native array instead of wrapping
+  them in `ScalarValueContext`.
+- For associative keys, store key StringContexts in a separate structure.
+
+**Effect**: Could eliminate the majority of Context objects for scalar-heavy
+data (config arrays, DB result sets). Scalar arrays would drop from
+`O(2n)` contexts to near zero.
+
+**Trade-off**: Breaks the uniform "everything is a ReferenceContext tree"
+design. Analysis/traversal code would need special cases for scalar storage,
+reducing code clarity. The clean tree structure is a significant
+maintainability asset — adding type-specific branching throughout the analyzer
+is a real cost.
+
+**Verdict**: Deferred. Consider only after optimizations 1-2 are applied and
+profiled. If peak memory is still problematic, this is the next lever, but the
+complexity cost is non-trivial.
+
 ## Priority
 
 Optimizations 1 and 2 are the strongest candidates: they reduce peak memory,
 apply uniformly regardless of target process composition, and are mechanically
-straightforward to implement. Optimization 5 is useful as a follow-up for
-reducing post-peak memory during analysis.
+straightforward to implement. They also preserve the existing interface and
+tree structure.
+
+Optimization 5 is useful as a follow-up for reducing post-peak memory during
+analysis. Optimization 7 is the nuclear option — high impact but trades code
+clarity for memory savings.
