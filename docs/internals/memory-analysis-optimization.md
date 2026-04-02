@@ -193,22 +193,58 @@ to the DB can be GC'd immediately.
 For a typical PHP process, tree depth is O(tens~hundreds) while total node
 count is O(tens of thousands). This changes peak memory from O(n) to O(depth).
 
-#### Proposed architecture
+#### What stays in PHP vs what goes to DB
+
+The collector needs fast address lookups during DFS to avoid re-traversal.
+Currently this is done via `$memory_locations->has($address)` and
+`$pool->getContextForLocation()`, both backed by PHP arrays of objects.
+
+On a pool cache hit, the returned Context is never read — it is only passed
+to a parent's `add()` as an opaque reference. Therefore the PHP side only
+needs to know *whether* an address was seen and *which node_id* it maps to.
+The actual Context data (type, properties, children) is only needed during
+the fresh path and can be written to the DB immediately.
 
 ```
-Collection phase:
-  ContextPool  →  seen_set: array<int, int>  (address → node_id)
-  ReferenceContext tree  →  DB tables: nodes + edges
-  MemoryLocations  →  DB table: memory_locations
+PHP side (kept in memory during collection):
+  array<int, int>  address → node_id     (~16 bytes per entry)
 
-  On fresh path:
-    Create Context → extract data → INSERT node → record in seen_set → discard
-  On cache hit:
-    Lookup node_id from seen_set → INSERT edge only → skip traversal
+DB side (streamed out):
+  nodes table:  id, type, address, size, refcount, value, ...
+  edges table:  parent_id, child_id, link_name
+```
+
+This replaces:
+- ContextPool arrays of Context objects → `array<int, int>` seen set
+- Full ReferenceContext tree → DB edges
+- MemoryLocations collection → DB node attributes
+
+#### Proposed collection flow
+
+```
+On fresh path:
+  Create Context → extract fields → INSERT node → seen[address] = node_id
+  → recurse into children → discard Context object after return
+On cache hit:
+  node_id = seen[address] → INSERT edge only → skip traversal
+```
+
+#### In-memory SQLite as default, file-backed as fallback
+
+Even in-memory SQLite stores data more compactly than PHP objects (~130-220
+bytes/node vs ~360 bytes/node) because it eliminates PHP object headers
+(~56 bytes each) and array bucket overhead. If memory is still tight, the
+same code can switch to file-backed SQLite by changing the connection string.
+
+```
+                    In-memory SQLite     File-backed SQLite
+Memory usage        ~40-60% of current   O(depth) only
+I/O cost            None                 Moderate (SSD: light)
+Code difference     None                 Connection string only
+```
 
 Analysis phase:
   Query DB instead of traversing in-memory tree
-```
 
 #### Trade-offs
 
