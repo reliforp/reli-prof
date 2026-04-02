@@ -46,6 +46,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'status-interval' => null,
             'quiet-watch' => false,
             'include-binary' => false,
+            'memory-limit' => null,
         ];
         $merged = array_merge($defaults, $overrides);
         $input = Mockery::mock(InputInterface::class);
