@@ -284,7 +284,7 @@ reli inspector:watch --target-regex="php-fpm" \
   --log-file=/var/log/reli-watch.log
 ```
 
-Each discovered process gets its own worker that independently reads heap stats, evaluates triggers, and applies cooldown. Only trigger events are sent back to the controller.
+Each discovered process gets its own worker that independently reads heap stats, evaluates triggers, and applies cooldown. Only trigger events are sent back to the controller. The `--memory-limit` option is propagated to each worker process.
 
 Global `--max-triggers` (or `--oneshot`) is a single counter across all workers.
 
@@ -323,6 +323,7 @@ Global `--max-triggers` (or `--oneshot`) is a single counter across all workers.
 | `--max-dump-size` | `1G` | Cumulative dump file size limit |
 | `--max-triggers` | `0` | Total trigger limit (0=unlimited) |
 | `--oneshot` | — | Alias for --max-triggers |
+| `--memory-limit` | — | Set PHP memory_limit (e.g. 2G, 512M) |
 | `--quiet-watch` | off | Suppress terminal status output |
 | `-S, --stop-process` | off | Stop target with ptrace during reads |
 | `-T, --threads` | `8` | Worker count (daemon mode) |

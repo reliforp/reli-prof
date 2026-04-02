@@ -173,6 +173,12 @@ final class WatchSettingsFromConsoleInput
                 InputOption::VALUE_NONE,
                 'suppress terminal status output',
             )
+            ->addOption(
+                'memory-limit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'set PHP memory_limit for analysis (e.g. 2G, 512M)',
+            )
         ;
     }
 
@@ -257,6 +263,7 @@ final class WatchSettingsFromConsoleInput
             ),
             memory_output_format: NullableCast::toString($input->getOption('memory-output-format')),
             include_binary: (bool)$input->getOption('include-binary'),
+            memory_limit: NullableCast::toString($input->getOption('memory-limit')),
         );
     }
 

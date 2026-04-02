@@ -58,6 +58,9 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         Log::debug('watch worker: settings received');
 
         $watch_settings = $settings_message->watch_settings;
+        if ($watch_settings->memory_limit !== null) {
+            ini_set('memory_limit', $watch_settings->memory_limit);
+        }
         $get_trace_settings = $settings_message->get_trace_settings;
 
         // Build triggers from settings

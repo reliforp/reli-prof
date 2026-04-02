@@ -126,6 +126,9 @@ final class WatchCommand extends Command
         }
 
         $watch_settings = $this->watch_settings_from_console_input->createSettings($input);
+        if ($watch_settings->memory_limit !== null) {
+            ini_set('memory_limit', $watch_settings->memory_limit);
+        }
         $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);
         $output_settings = $this->output_settings_from_console_input->createSettings($input);
 
