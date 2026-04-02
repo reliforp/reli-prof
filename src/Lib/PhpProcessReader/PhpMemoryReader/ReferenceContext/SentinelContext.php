@@ -23,7 +23,7 @@ use Reli\Lib\Process\MemoryLocation;
 final class SentinelContext implements ReferenceContext
 {
     public function __construct(
-        public readonly int $node_id,
+        public int $node_id,
     ) {
     }
 
