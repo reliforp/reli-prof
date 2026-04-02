@@ -220,7 +220,26 @@ Analysis phase:
   edge INSERT, analysis switches from tree traversal to DB queries.
 - **Con**: Write performance — thousands of INSERTs need batching/transactions.
   SQLite with WAL mode and prepared statements should be adequate.
-- **Con**: Two output paths if JSON output is still needed (DB → JSON export).
+- **Con**: Additional step for JSON output, though this is straightforward
+  (see below).
+
+#### JSON output compatibility
+
+JSON output can be reconstructed from the DB by walking the tree via DFS
+and streaming with `fwrite`, without loading the full tree into memory:
+
+```
+DB → DFS walk → fwrite() per node → JSON file (streaming, O(depth) memory)
+```
+
+This replaces the current `json_encode($full_tree)` approach. Both collection
+and JSON export become streaming, so peak memory stays O(depth) throughout
+the entire pipeline:
+
+```
+Process memory → [collect, stream to DB] → DB → [stream to JSON] → file
+                   O(depth) memory              O(depth) memory
+```
 
 #### Relationship to other optimizations
 
