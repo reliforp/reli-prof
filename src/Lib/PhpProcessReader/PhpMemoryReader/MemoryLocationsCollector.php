@@ -160,6 +160,28 @@ final class MemoryLocationsCollector
      */
     private bool $defer_unseen_objects = false;
 
+    /**
+     * Edges deferred during objects_store collection. Each entry records
+     * a property reference to an object that was not yet collected.
+     * After all objects are collected, these are resolved via the sentinel
+     * map and emitted as reference edges.
+     *
+     * @var list<array{int, int, string}> [parent_node_id, child_address, link_name]
+     */
+    private array $deferred_object_edges = [];
+
+    /**
+     * The node_id of the innermost streaming parent that is currently
+     * being populated. Used by defer logic to record edges.
+     */
+    private ?int $current_streaming_parent_node_id = null;
+
+    /**
+     * The link name under which the current child is being collected.
+     * Used by defer logic to record the correct edge name.
+     */
+    private ?string $current_streaming_link_name = null;
+
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
@@ -459,6 +481,17 @@ final class MemoryLocationsCollector
             $analyzer->analyzeSingleLink('objects_store', $objects_store_context, $sink, null, $memo);
             unset($objects_store_context);
             $context_pools->convertToSentinels($memo);
+
+            // Emit deferred edges: property references to objects that
+            // were skipped during objects_store (defer_unseen_objects mode).
+            // Now all objects have sentinels, so we can resolve addresses.
+            foreach ($this->deferred_object_edges as [$parent_node_id, $child_address, $link_name]) {
+                $child_sentinel = $context_pools->getSentinel($child_address);
+                if ($child_sentinel !== null) {
+                    $sink->emitReference($child_sentinel->node_id, $parent_node_id, $link_name);
+                }
+            }
+            $this->deferred_object_edges = [];
         }
 
         $defined_functions_context = $this->collectFunctionTable(
@@ -1050,8 +1083,15 @@ final class MemoryLocationsCollector
             }
         } elseif ($this->defer_unseen_objects) {
             // During objects_store collection: don't recurse into unseen
-            // objects via property traversal. The object will be collected
-            // when its objects_store bucket is reached.
+            // objects via property traversal. Record the edge so it can
+            // be emitted after all objects are collected.
+            if ($this->current_streaming_parent_node_id !== null) {
+                $this->deferred_object_edges[] = [
+                    $this->current_streaming_parent_node_id,
+                    $pointer->address,
+                    $this->current_streaming_link_name ?? 'deferred_object',
+                ];
+            }
             return null;
         }
         $obj = $dereferencer->deref($pointer);
@@ -1488,12 +1528,17 @@ final class MemoryLocationsCollector
         $properties_exists = false;
         $object_properties_context = new ObjectPropertiesContext();
         $properties_parent_node_id = $this->registerParentIfStreaming($object_properties_context);
+        $saved_parent_node_id = $this->current_streaming_parent_node_id;
+        if ($properties_parent_node_id !== null) {
+            $this->current_streaming_parent_node_id = $properties_parent_node_id;
+        }
         $properties_iterator = $object->getPropertiesIterator(
             $dereferencer,
             $zend_type_reader,
         );
         foreach ($properties_iterator as $name => $property) {
             assert(is_string($name));
+            $this->current_streaming_link_name = $name;
             $property_context = $this->collectZval(
                 $property,
                 $map_ptr_base,
@@ -1516,6 +1561,7 @@ final class MemoryLocationsCollector
                 $properties_exists = true;
             }
         }
+        $this->current_streaming_parent_node_id = $saved_parent_node_id;
         if ($properties_exists) {
             $object_context->add('object_properties', $object_properties_context);
         }
