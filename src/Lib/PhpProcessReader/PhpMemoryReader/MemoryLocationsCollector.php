@@ -733,11 +733,9 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            if ($memory_locations->getClass($pointer->address) === ZendResourceMemoryLocation::class) {
-                $cached = $context_pools->resource_context_pool->getContextByAddress($pointer->address);
-                if ($cached !== null) {
-                    return $cached;
-                }
+            $cached = $context_pools->resource_context_pool->getContextByAddress($pointer->address);
+            if ($cached !== null) {
+                return $cached;
             }
         }
         $resource = $dereferencer->deref($pointer);
@@ -960,11 +958,9 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            if ($memory_locations->getClass($pointer->address) === ZendReferenceMemoryLocation::class) {
-                $cached = $context_pools->php_reference_context_pool->getContextByAddress($pointer->address);
-                if ($cached !== null) {
-                    return $cached;
-                }
+            $cached = $context_pools->php_reference_context_pool->getContextByAddress($pointer->address);
+            if ($cached !== null) {
+                return $cached;
             }
         }
         $php_reference = $dereferencer->deref($pointer);
@@ -1004,11 +1000,9 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            if ($memory_locations->getClass($pointer->address) === ZendArrayMemoryLocation::class) {
-                $cached = $context_pools->array_context_pool->getContextByAddress($pointer->address);
-                if ($cached !== null) {
-                    return $cached;
-                }
+            $cached = $context_pools->array_context_pool->getContextByAddress($pointer->address);
+            if ($cached !== null) {
+                return $cached;
             }
         }
         $array = $dereferencer->deref($pointer);
@@ -1038,12 +1032,9 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            $location_class = $memory_locations->getClass($pointer->address);
-            if ($location_class !== ZendArrayTableOverheadMemoryLocation::class) {
-                $cached = $context_pools->object_context_pool->getContextByAddress($pointer->address);
-                if ($cached !== null) {
-                    return $cached;
-                }
+            $cached = $context_pools->object_context_pool->getContextByAddress($pointer->address);
+            if ($cached !== null) {
+                return $cached;
             }
         }
         $obj = $dereferencer->deref($pointer);
@@ -1070,12 +1061,9 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            $location_class = $memory_locations->getClass($pointer->address);
-            if ($location_class !== ZendArrayTableOverheadMemoryLocation::class) {
-                $cached = $context_pools->string_context_pool->getContextByAddress($pointer->address);
-                if ($cached !== null) {
-                    return $cached;
-                }
+            $cached = $context_pools->string_context_pool->getContextByAddress($pointer->address);
+            if ($cached !== null) {
+                return $cached;
             }
         }
         $str = $dereferencer->deref($pointer);
@@ -2084,11 +2072,9 @@ final class MemoryLocationsCollector
             if ($sentinel !== null) {
                 return $sentinel;
             }
-            if ($memory_locations->getClass($pointer->address) === ZendOpArrayHeaderMemoryLocation::class) {
-                $cached = $context_pools->user_function_definition_context_pool->getContextByAddress($pointer->address);
-                if ($cached !== null) {
-                    return $cached;
-                }
+            $cached = $context_pools->user_function_definition_context_pool->getContextByAddress($pointer->address);
+            if ($cached !== null) {
+                return $cached;
             }
         }
         $func = $dereferencer->deref($pointer);
