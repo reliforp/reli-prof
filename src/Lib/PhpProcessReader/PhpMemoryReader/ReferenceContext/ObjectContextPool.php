@@ -48,6 +48,11 @@ final class ObjectContextPool
         return $context;
     }
 
+    public function getContextByAddress(int $address): ?ObjectContext
+    {
+        return $this->contexts[$address] ?? null;
+    }
+
     public function clear(): void
     {
         $this->contexts = [];

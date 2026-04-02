@@ -31,6 +31,11 @@ final class PhpReferenceContextPool
         return $context;
     }
 
+    public function getContextByAddress(int $address): ?PhpReferenceContext
+    {
+        return $this->contexts[$address] ?? null;
+    }
+
     public function clear(): void
     {
         $this->contexts = [];

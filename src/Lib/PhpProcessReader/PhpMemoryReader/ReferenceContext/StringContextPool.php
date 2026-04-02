@@ -31,6 +31,11 @@ final class StringContextPool
         return $context;
     }
 
+    public function getContextByAddress(int $address): ?StringContext
+    {
+        return $this->contexts[$address] ?? null;
+    }
+
     public function clear(): void
     {
         $this->contexts = [];
