@@ -45,7 +45,7 @@ final class BlameAllocationPass implements PassInterface
             . " AND is_tree = 1 AND parent_node_id IS NULL AND run_id = {$this->run_id} LIMIT 1"
         );
 
-        foreach ($this->substrate->roots as $root) {
+        foreach ($this->substrate->getRoots() as $root) {
             $link_stmt->execute([$root]);
             /** @var array{0: string}|false $r */
             $r = $link_stmt->fetch(\PDO::FETCH_NUM);
@@ -56,7 +56,7 @@ final class BlameAllocationPass implements PassInterface
             $node_root_owner[$root] = $root;
             while ($qi < count($queue)) {
                 $node = $queue[$qi++];
-                foreach ($this->substrate->children[$node] ?? [] as $child) {
+                foreach ($this->substrate->getChildren($node) as $child) {
                     if (!isset($node_root_owner[$child])) {
                         $node_root_owner[$child] = $root;
                         $queue[] = $child;
@@ -67,17 +67,17 @@ final class BlameAllocationPass implements PassInterface
 
         // Compute incoming count per node
         $incoming_count = [];
-        foreach ($this->substrate->all_parents as $child => $parents) {
+        foreach ($this->substrate->iterateAllParents() as $child => $parents) {
             $incoming_count[$child] = count($parents);
         }
 
         // Compute blame
         $blame = [];
-        foreach ($this->substrate->roots as $root) {
+        foreach ($this->substrate->getRoots() as $root) {
             $blame[$root] = ['exclusive' => 0, 'shared' => 0, 'nodes' => 0];
         }
 
-        foreach ($this->substrate->node_sizes as $node => $size) {
+        foreach ($this->substrate->iterateNodeSizes() as $node => $size) {
             if ($size === 0) {
                 continue;
             }
@@ -93,7 +93,7 @@ final class BlameAllocationPass implements PassInterface
                 $blame[$owner]['nodes']++;
             } else {
                 $owner_shares = [];
-                foreach ($this->substrate->all_parents[$node] ?? [] as $parent) {
+                foreach ($this->substrate->getAllParents($node) as $parent) {
                     if ($parent === -1) {
                         continue;
                     }
@@ -134,7 +134,7 @@ final class BlameAllocationPass implements PassInterface
         }
         usort($blame_sorted, fn($a, $b) => $b['total'] <=> $a['total']);
 
-        $total_heap = array_sum($this->substrate->node_sizes);
+        $total_heap = $this->substrate->getNodeSizesSum();
         $total_exclusive = 0;
         $total_shared = 0.0;
 

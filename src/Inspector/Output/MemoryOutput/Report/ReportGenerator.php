@@ -42,10 +42,14 @@ final class ReportGenerator
      *
      * @return ReportResult
      */
+    /**
+     * @param bool|null $ffi_csr true=force on, false=force off, null=auto
+     */
     public function generateFromDb(
         \PDO $db,
         int $run_id = 1,
         bool $full_analysis = false,
+        ?bool $ffi_csr = null,
     ): ReportResult {
         $meta = $this->loadMeta($db, $run_id);
         $node_count = (int)($meta['node_count'] ?? 0);
@@ -91,8 +95,8 @@ final class ReportGenerator
 
         // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
         if ($run_phase3) {
-            $substrate = GraphSubstrate::loadFromDb($db, $run_id);
-            $meta['scc_count'] = count($substrate->scc_profiles);
+            $substrate = GraphSubstrate::createFromDb($db, $run_id, $ffi_csr);
+            $meta['scc_count'] = count($substrate->getSccProfiles());
 
             $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(

@@ -43,7 +43,7 @@ final class GcPendingPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        if ($this->substrate->scc_profiles === []) {
+        if ($this->substrate->getSccProfiles() === []) {
             return [];
         }
 
@@ -51,13 +51,13 @@ final class GcPendingPass implements PassInterface
         $root_link_names = $this->loadRootLinkNames();
         $node_root_owner = [];
 
-        foreach ($this->substrate->roots as $root) {
+        foreach ($this->substrate->getRoots() as $root) {
             $queue = [$root];
             $qi = 0;
             $node_root_owner[$root] = $root;
             while ($qi < count($queue)) {
                 $node = $queue[$qi++];
-                foreach ($this->substrate->children[$node] ?? [] as $child) {
+                foreach ($this->substrate->getChildren($node) as $child) {
                     if (!isset($node_root_owner[$child])) {
                         $node_root_owner[$child] = $root;
                         $queue[] = $child;
@@ -68,7 +68,7 @@ final class GcPendingPass implements PassInterface
 
         // Find the objects_store root
         $objects_store_root = null;
-        foreach ($this->substrate->roots as $root) {
+        foreach ($this->substrate->getRoots() as $root) {
             if (($root_link_names[$root] ?? '') === 'objects_store') {
                 $objects_store_root = $root;
                 break;
@@ -81,12 +81,12 @@ final class GcPendingPass implements PassInterface
 
         // Collect SCC members owned by objects_store
         $gc_candidates = [];
-        foreach ($this->substrate->node_to_scc as $node => $scc_id) {
+        foreach ($this->substrate->iterateNodeToScc() as $node => $scc_id) {
             $owner = $node_root_owner[$node] ?? null;
             if ($owner !== $objects_store_root) {
                 continue;
             }
-            $cls = $this->substrate->node_classes[$node] ?? null;
+            $cls = $this->substrate->getNodeClass($node);
             if ($cls === null) {
                 continue;
             }
@@ -95,7 +95,7 @@ final class GcPendingPass implements PassInterface
             }
             $gc_candidates[$cls]['count']++;
             $gc_candidates[$cls]['size']
-                += $this->substrate->node_sizes[$node] ?? 0;
+                += $this->substrate->getNodeSize($node);
         }
 
         if ($gc_candidates === []) {

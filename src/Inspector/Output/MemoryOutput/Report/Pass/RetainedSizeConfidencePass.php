@@ -29,7 +29,8 @@ final class RetainedSizeConfidencePass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        $scc_count = count($this->substrate->scc_profiles);
+        $scc_profiles = $this->substrate->getSccProfiles();
+        $scc_count = count($scc_profiles);
 
         if ($scc_count === 0) {
             return [
@@ -45,7 +46,7 @@ final class RetainedSizeConfidencePass implements PassInterface
         }
 
         $total_scc_nodes = 0;
-        foreach ($this->substrate->scc_profiles as $profile) {
+        foreach ($scc_profiles as $profile) {
             $total_scc_nodes += $profile['node_count'];
         }
 

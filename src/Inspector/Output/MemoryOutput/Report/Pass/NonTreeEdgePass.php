@@ -224,7 +224,7 @@ final class NonTreeEdgePass implements PassInterface
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
         $use_retained = $this->substrate !== null
-            && $this->substrate->subtree_sizes !== [];
+            && $this->substrate->hasSubtreeSizes();
 
         foreach ($dedup_rows as $row) {
             $cnt = (int)$row['cnt'];
@@ -370,7 +370,7 @@ final class NonTreeEdgePass implements PassInterface
         $total = 0;
         $count = 0;
         foreach ($rows as $nid) {
-            $retained = $this->substrate->subtree_sizes[(int)$nid] ?? 0;
+            $retained = $this->substrate->getSubtreeSize((int)$nid);
             if ($retained > 0) {
                 $total += $retained;
                 $count++;
