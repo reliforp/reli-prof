@@ -353,6 +353,66 @@ for what could be represented as 10 templates.
 3. **Two-pass**: objects_store first pass collects only addresses/sizes.
    Second pass (or later phases) fills in the property edges.
 
+## ROOT CAUSE FOUND: defer bypassed when has()=true but no sentinel
+
+### Evidence: reli tracing reli
+
+Used `inspector:trace` on the analyzing process. Call stack shows **20+ deep
+recursion** of `collectZval → collectZendObject → collectZendObjectPointer →
+collectZval → ...` during objects_store processing. **defer is not working.**
+
+### The bug
+
+In `collectZendObjectPointer` (and similarly `collectZendArrayPointer`,
+`collectPhpReferencePointer`):
+
+```php
+if ($memory_locations->has($pointer->address)) {
+    $sentinel = $context_pools->getSentinel($pointer->address);
+    if ($sentinel !== null) { return $sentinel; }        // ← sentinel hit
+    $cached = $context_pools->..._pool->getContextByAddress($pointer->address);
+    if ($cached !== null) { return $cached; }            // ← pool hit
+    // FALLS THROUGH — has()=true but no sentinel and no pool cache!
+} elseif ($this->defer_unseen_objects) {
+    return null;  // ← NEVER REACHED when has()=true
+}
+$obj = $dereferencer->deref($pointer);  // ← full recursive collection!
+```
+
+**When `has()=true` but sentinel and pool cache are both empty**, the code
+falls through the if-block and proceeds to full collection, completely
+bypassing the `defer_unseen_objects` check.
+
+### How this happens
+
+1. Object A's `collectZendObject` calls `$memory_locations->add($location)` →
+   address is now in `has()` set
+2. Object A's property points to Object B (deferred → null)
+3. Object B's bucket is processed later, `$memory_locations->add($locationB)` →
+   address B is in `has()` set
+4. Object B's property points to Object A (or C which was already `add()`ed)
+5. `collectZendObjectPointer(A)`: `has()=true` → no sentinel (pool was flushed
+   after A's bucket) → no pool cache (cleared) → **falls through to full collect**
+6. Deep recursion through the entire object graph
+
+### Fix
+
+Change the logic so defer check is also applied when `has()=true`:
+
+```php
+if ($memory_locations->has($pointer->address)) {
+    $sentinel = $context_pools->getSentinel($pointer->address);
+    if ($sentinel !== null) { return $sentinel; }
+    $cached = ...->getContextByAddress($pointer->address);
+    if ($cached !== null) { return $cached; }
+    // Already seen but not sentinel-ized — if deferring, still defer
+    if ($this->defer_unseen_objects) { return null; }
+}
+// ... rest
+```
+
+Or more simply: check `defer_unseen_objects` first, before the `has()` check.
+
 ## Smaller Dump Experiment
 
 Tested with dumps taken at different stages of reli-prof execution:
