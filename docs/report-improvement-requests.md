@@ -821,3 +821,24 @@ finding ごとに計算方法が異なる近似値であることが伝わる。
 
 impact がない finding は `—` で統一。
 severity + impact 降順ソートと組み合わせると最も効果的。
+
+### GC 待ちゴミの検出 (gc_pending_garbage) [重要度: 高]
+
+objects_store からのみ到達可能で、call_frames / global_variables / class_table
+からは辿れないオブジェクト群 = **ユーザーコードから到達不能だが循環参照で
+refcount > 0 のため GC cycle collector 待ちのゴミ**。
+
+これは「今まさにリークしているメモリ」。`gc_collect_cycles()` で回収されるが、
+それまでヒープを圧迫。長寿命 worker では蓄積し続ける。
+
+```
+[HIGH] gc_pending_garbage: 500 objects (2.3 MB) reachable only from objects_store
+  Classes: 200× Message, 300× Attachment
+  These objects are unreachable from user code but alive due to circular references.
+  gc_collect_cycles() would reclaim them.
+```
+
+検出: graph substrate の blame allocation で objects_store exclusive が大きい
+ノードのうち、SCC に属するものを抽出。
+
+objects_store のみから到達 + SCC 内 = 「循環参照で生き残っている到達不能ゴミ」。
