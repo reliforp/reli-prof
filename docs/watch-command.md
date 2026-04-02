@@ -60,6 +60,17 @@ reli inspector:watch -p <pid> --memory-peak-watch
 
 Note: with exponential backoff cooldown, frequent peak updates are naturally throttled.
 
+### RSS Usage (`--rss-usage=<size>`)
+
+Fires when the process's RSS (Resident Set Size) exceeds the threshold. Unlike `--memory-usage` which monitors PHP's internal heap, this monitors the actual physical memory used by the process as reported by the OS (`/proc/[pid]/statm`).
+
+```bash
+reli inspector:watch -p <pid> --rss-usage=512M
+reli inspector:watch -p <pid> --rss-usage=1G
+```
+
+This is useful for detecting memory usage that occurs outside the Zend heap (e.g., FFI allocations, shared memory, memory-mapped files, or native extensions).
+
 ### Function Detection (`--watch-function=<name>`)
 
 Fires when the specified function appears in the call stack. Requires the **fully qualified function name** (exact match).
@@ -296,6 +307,7 @@ Global `--max-triggers` (or `--oneshot`) is a single counter across all workers.
 | `--memory-usage` | — | Trigger on heap usage threshold |
 | `--memory-growth-rate` | — | Trigger on memory growth rate |
 | `--memory-peak-watch` | off | Trigger on peak memory update |
+| `--rss-usage` | — | Trigger on RSS (Resident Set Size) threshold |
 | `--watch-function` | — | Trigger on function in call stack |
 | `--trace-depth-limit` | — | Trigger on call stack depth |
 | `--watch-var` | — | Trigger on variable value condition (repeatable) |

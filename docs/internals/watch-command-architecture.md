@@ -22,6 +22,7 @@ WatchCommand::execute()
   ├── PhpGlobalsFinder → EG, SG, CG addresses
   └── LoopBuilder middleware chain:
        ├── HeapStatsReader::read()              (always, Tier 1)
+       ├── RssReader::read()                    (if RssUsageTrigger)
        ├── CallTraceReader::readCallTrace()     (if Tier 2 trigger)
        ├── HeapStatsReader::hasException()      (if ExceptionDetectionTrigger)
        ├── VariableReader::readVariables()      (if VariableValueTrigger)
@@ -56,7 +57,7 @@ WatchCommand::executeDaemonMode()
 
 | Tier | What's Read | Cost | Triggers |
 |------|-------------|------|----------|
-| 1 | ZendMmHeap stats only | < 1ms | MemoryLimit, GrowthRate, PeakWatch |
+| 1 | ZendMmHeap stats only | < 1ms | MemoryLimit, GrowthRate, PeakWatch, RssUsage |
 | 2 | + Call trace | ~ms | FunctionDetection, TraceDepth |
 | 3 | + EG exception, variables | ~10ms | ExceptionDetection, VariableValue |
 
