@@ -51,6 +51,7 @@ final class WatchSettings
         public ?string $log_file,
         public ?string $memory_output_format,
         public bool $include_binary = false,
+        public ?string $memory_limit = null,
     ) {
     }
 }
