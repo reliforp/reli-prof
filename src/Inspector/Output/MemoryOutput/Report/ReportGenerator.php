@@ -91,8 +91,8 @@ final class ReportGenerator
 
         // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
         if ($run_phase3) {
-            $substrate = GraphSubstrate::loadFromDb($db, $run_id);
-            $meta['scc_count'] = count($substrate->scc_profiles);
+            $substrate = GraphSubstrate::createFromDb($db, $run_id);
+            $meta['scc_count'] = count($substrate->getSccProfiles());
 
             $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(

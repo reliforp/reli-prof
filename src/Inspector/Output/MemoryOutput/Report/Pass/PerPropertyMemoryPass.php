@@ -55,20 +55,20 @@ final class PerPropertyMemoryPass implements PassInterface
          */
         $stats = [];
 
-        foreach ($this->substrate->node_classes as $node_id => $class_name) {
+        foreach ($this->substrate->iterateNodeClasses() as $node_id => $class_name) {
             // Find the object_properties child
-            foreach ($this->substrate->children[$node_id] ?? [] as $child) {
+            foreach ($this->substrate->getChildren($node_id) as $child) {
                 $link = $link_names[$child] ?? null;
                 if ($link !== 'object_properties') {
                     continue;
                 }
                 // child is ObjectPropertiesContext — iterate its children
-                foreach ($this->substrate->children[$child] ?? [] as $prop_child) {
+                foreach ($this->substrate->getChildren($child) as $prop_child) {
                     $prop_name = $link_names[$prop_child] ?? null;
                     if ($prop_name === null) {
                         continue;
                     }
-                    $val_size = $this->substrate->node_sizes[$prop_child] ?? 0;
+                    $val_size = $this->substrate->getNodeSize($prop_child);
                     $key = $class_name . '::$' . $prop_name;
                     if (!isset($stats[$key])) {
                         $stats[$key] = [

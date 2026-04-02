@@ -52,7 +52,7 @@ final class DrillDownPass implements PassInterface
         $path_parts = [];
         $path_types = [];
         $path_sizes = [];
-        $current_children = $this->substrate->roots;
+        $current_children = $this->substrate->getRoots();
 
         for ($depth = 0; $depth < 12; $depth++) {
             if (empty($current_children)) {
@@ -61,7 +61,7 @@ final class DrillDownPass implements PassInterface
 
             $branches = [];
             foreach ($current_children as $child_id) {
-                $size = $this->substrate->subtree_sizes[$child_id] ?? 0;
+                $size = $this->substrate->getSubtreeSize($child_id);
                 $branches[] = [$child_id, $size];
             }
             usort($branches, fn($a, $b) => $b[1] <=> $a[1]);
@@ -85,7 +85,7 @@ final class DrillDownPass implements PassInterface
             $path_types[] = $node_type;
             $path_sizes[] = $heaviest[1];
 
-            $current_children = $this->substrate->children[$heaviest[0]] ?? [];
+            $current_children = $this->substrate->getChildren($heaviest[0]);
         }
 
         if ($path_parts === []) {

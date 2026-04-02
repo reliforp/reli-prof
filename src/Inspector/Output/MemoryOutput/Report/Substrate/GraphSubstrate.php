@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
-final class GraphSubstrate
+class GraphSubstrate
 {
     /** @var array<int, int> node_id => shallow size */
     public array $node_sizes = [];
@@ -56,9 +56,11 @@ final class GraphSubstrate
 
     public int $edge_count = 0;
 
-    public static function loadFromDb(\PDO $db, int $run_id): self
+    private const FFI_CSR_THRESHOLD = 2_000_000;
+
+    public static function loadFromDb(\PDO $db, int $run_id): static
     {
-        $substrate = new self();
+        $substrate = new static();
         $substrate->loadNodeSizes($db, $run_id);
         $substrate->loadEdges($db, $run_id);
         $substrate->computeSubtreeSizes();
@@ -66,8 +68,132 @@ final class GraphSubstrate
         return $substrate;
     }
 
+    /**
+     * Factory method that automatically selects the best implementation.
+     *
+     * For graphs with > 2M edges, uses FFI CSR to reduce memory by ~50-100x.
+     * For smaller graphs, uses PHP arrays (faster for small datasets).
+     */
+    public static function createFromDb(\PDO $db, int $run_id): self
+    {
+        $edge_count = (int)$db->query(
+            "SELECT count(*) FROM context_edges WHERE run_id = {$run_id}"
+        )->fetchColumn();
+
+        if ($edge_count > self::FFI_CSR_THRESHOLD && extension_loaded('ffi')) {
+            return FfiCsrGraphSubstrate::loadFromDb($db, $run_id);
+        }
+        return self::loadFromDb($db, $run_id);
+    }
+
+    // ---- Accessor methods ----
+    // These can be overridden by subclasses (e.g. FfiCsrGraphSubstrate)
+    // to provide alternative storage backends.
+
+    /** @return list<int> */
+    public function getChildren(int $nodeId): array
+    {
+        return $this->children[$nodeId] ?? [];
+    }
+
+    /** @return list<int> */
+    public function getAllChildren(int $nodeId): array
+    {
+        return $this->all_children[$nodeId] ?? [];
+    }
+
+    /** @return list<int> */
+    public function getAllParents(int $nodeId): array
+    {
+        return $this->all_parents[$nodeId] ?? [];
+    }
+
+    public function getNodeSize(int $nodeId): int
+    {
+        return $this->node_sizes[$nodeId] ?? 0;
+    }
+
+    public function getSubtreeSize(int $nodeId): int
+    {
+        return $this->subtree_sizes[$nodeId] ?? 0;
+    }
+
+    public function getNodeClass(int $nodeId): ?string
+    {
+        return $this->node_classes[$nodeId] ?? null;
+    }
+
+    /** @return list<int> */
+    public function getRoots(): array
+    {
+        return $this->roots;
+    }
+
+    /**
+     * @return list<array{
+     *     id: int,
+     *     nodes: list<int>,
+     *     node_count: int,
+     *     total_size: int,
+     *     ext_in: int,
+     *     ext_out: int,
+     *     class_counts: array<string, int>,
+     *     signature: string,
+     *     single_owner_likelihood: string,
+     * }>
+     */
+    public function getSccProfiles(): array
+    {
+        return $this->scc_profiles;
+    }
+
+    public function getEdgeCount(): int
+    {
+        return $this->edge_count;
+    }
+
+    public function hasSubtreeSizes(): bool
+    {
+        return $this->subtree_sizes !== [];
+    }
+
+    public function getNodeSizesSum(): int
+    {
+        return array_sum($this->node_sizes);
+    }
+
+    /** @return iterable<int, int> node_id => size */
+    public function iterateNodeSizes(): iterable
+    {
+        return $this->node_sizes;
+    }
+
+    /** @return iterable<int, int> node_id => subtree_size */
+    public function iterateSubtreeSizes(): iterable
+    {
+        return $this->subtree_sizes;
+    }
+
+    /** @return iterable<int, list<int>> child_id => [parent_id, ...] */
+    public function iterateAllParents(): iterable
+    {
+        return $this->all_parents;
+    }
+
+    /** @return iterable<int, string> node_id => class_name */
+    public function iterateNodeClasses(): iterable
+    {
+        return $this->node_classes;
+    }
+
+    /** @return iterable<int, int> node_id => scc_id */
+    public function iterateNodeToScc(): iterable
+    {
+        return $this->node_to_scc;
+    }
+
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
-    private function loadNodeSizes(\PDO $db, int $run_id): void
+    protected function loadNodeSizes(\PDO $db, int $run_id): void
     {
         $rows = $db->query(
             "SELECT node_id, sum(size) as s, group_concat(DISTINCT class_name) as cls"
@@ -85,7 +211,7 @@ final class GraphSubstrate
     }
 
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument */
-    private function loadEdges(\PDO $db, int $run_id): void
+    protected function loadEdges(\PDO $db, int $run_id): void
     {
         $rows = $db->query(
             "SELECT parent_node_id, child_node_id, is_tree"
@@ -112,7 +238,7 @@ final class GraphSubstrate
         unset($rows);
     }
 
-    private function computeSubtreeSizes(): void
+    protected function computeSubtreeSizes(): void
     {
         $stack = [];
         foreach ($this->roots as $root) {
@@ -139,7 +265,7 @@ final class GraphSubstrate
     }
 
     /** @psalm-suppress PossiblyNullArrayOffset, MixedArgument, UnsupportedReferenceUsage */
-    private function computeScc(): void
+    protected function computeScc(): void
     {
         $index_counter = 0;
         $stack = [];

@@ -78,7 +78,7 @@ final class TopArraysPass implements PassInterface
 
         $labeler = new NodeLabeler($this->db, $this->run_id);
         $use_retained = $this->substrate !== null
-            && $this->substrate->subtree_sizes !== [];
+            && $this->substrate->hasSubtreeSizes();
 
         // If substrate available, sort by retained size instead
         $entries = [];
@@ -86,7 +86,7 @@ final class TopArraysPass implements PassInterface
             $table_size = (int)$row['total_size'];
             $node_id = (int)$row['node_id'];
             $retained = $use_retained
-                ? ($this->substrate->subtree_sizes[$node_id] ?? $table_size)
+                ? ($this->substrate->getSubtreeSize($node_id) ?: $table_size)
                 : $table_size;
             $entries[] = [
                 'row' => $row,
