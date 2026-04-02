@@ -18,6 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\Process\MemoryLocation;
 
@@ -310,6 +311,7 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
         $context->allows('getLocations')->andReturns($locations);
         $context->allows('getContexts')->andReturns($attributes);
         $context->allows('releaseLinks');
+        $context->allows('getLinkStrength')->andReturns(EdgeStrength::Strong);
         return $context;
     }
 }

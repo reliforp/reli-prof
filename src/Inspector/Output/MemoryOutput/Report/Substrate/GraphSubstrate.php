@@ -27,6 +27,12 @@ class GraphSubstrate
     /** @var array<int, list<int>> child_id => [parent_id, ...] (all edges) */
     public array $all_parents = [];
 
+    /** @var array<int, list<int>> parent_id => [child_id, ...] (strong tree edges only) */
+    public array $strong_children = [];
+
+    /** @var array<int, list<int>> parent_id => [child_id, ...] (strong edges including non-tree) */
+    public array $strong_all_children = [];
+
     /** @var list<int> root node IDs (parent_node_id IS NULL) */
     public array $roots = [];
 
@@ -108,9 +114,21 @@ class GraphSubstrate
     }
 
     /** @return list<int> */
+    public function getStrongChildren(int $nodeId): array
+    {
+        return $this->strong_children[$nodeId] ?? [];
+    }
+
+    /** @return list<int> */
     public function getAllChildren(int $nodeId): array
     {
         return $this->all_children[$nodeId] ?? [];
+    }
+
+    /** @return list<int> */
+    public function getStrongAllChildren(int $nodeId): array
+    {
+        return $this->strong_all_children[$nodeId] ?? [];
     }
 
     /** @return list<int> */
@@ -225,7 +243,7 @@ class GraphSubstrate
     protected function loadEdges(\PDO $db, int $run_id): void
     {
         $rows = $db->query(
-            "SELECT parent_node_id, child_node_id, is_tree"
+            "SELECT parent_node_id, child_node_id, is_tree, strength"
             . " FROM context_edges WHERE run_id = {$run_id}"
         )->fetchAll(\PDO::FETCH_NUM);
 
@@ -233,15 +251,23 @@ class GraphSubstrate
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
+            $strength = (string)($r[3] ?? 'strong');
+            $is_strong = $strength === 'strong';
 
             if ($is_tree) {
                 $this->children[$parent][] = $child;
+                if ($is_strong) {
+                    $this->strong_children[$parent][] = $child;
+                }
                 if ($parent === -1) {
                     $this->roots[] = $child;
                 }
             }
             if ($parent !== -1) {
                 $this->all_children[$parent][] = $child;
+                if ($is_strong) {
+                    $this->strong_all_children[$parent][] = $child;
+                }
             }
             $this->all_parents[$child][] = $parent;
         }
@@ -260,13 +286,13 @@ class GraphSubstrate
             [$node, $processed] = array_pop($stack);
             if ($processed) {
                 $size = $this->node_sizes[$node] ?? 0;
-                foreach ($this->children[$node] ?? [] as $child) {
+                foreach ($this->strong_children[$node] ?? [] as $child) {
                     $size += $this->subtree_sizes[$child] ?? 0;
                 }
                 $this->subtree_sizes[$node] = $size;
             } else {
                 $stack[] = [$node, true];
-                foreach ($this->children[$node] ?? [] as $child) {
+                foreach ($this->strong_children[$node] ?? [] as $child) {
                     if (!isset($this->subtree_sizes[$child])) {
                         $stack[] = [$child, false];
                     }
@@ -297,7 +323,7 @@ class GraphSubstrate
 
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
-                $node_children = $this->all_children[$node] ?? [];
+                $node_children = $this->strong_all_children[$node] ?? [];
 
                 $found_unvisited = false;
                 $count = count($node_children);

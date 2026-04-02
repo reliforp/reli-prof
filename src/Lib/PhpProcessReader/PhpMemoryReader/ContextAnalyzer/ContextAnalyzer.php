@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\SentinelContext;
 use WeakMap;
@@ -38,7 +39,8 @@ final class ContextAnalyzer
         foreach ($reference_context->getLinks() as $link_name => $linked_context) {
             /** @psalm-suppress RedundantCastGivenDocblockType -- int keys occur at runtime */
             $link_name = (string)$link_name;
-            $this->analyzeContext($linked_context, $link_name, $parent_node_id, $sink, $memo);
+            $edge_strength = $reference_context->getLinkStrength($link_name);
+            $this->analyzeContext($linked_context, $link_name, $parent_node_id, $sink, $memo, $edge_strength);
         }
 
         if ($sink->allowsRelease()) {
@@ -100,18 +102,19 @@ final class ContextAnalyzer
         ?int $parent_node_id,
         ContextTreeSink $sink,
         WeakMap $memo,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
         // SentinelContext: already emitted to DB in a previous branch,
         // just record the reference edge.
         if ($linked_context instanceof SentinelContext) {
-            $sink->emitReference($linked_context->node_id, $parent_node_id, $link_name);
+            $sink->emitReference($linked_context->node_id, $parent_node_id, $link_name, $edge_strength);
             return;
         }
 
         $existing_node_id = $memo[$linked_context] ?? null;
         if ($existing_node_id !== null && $existing_node_id >= 0) {
             // Fully emitted — just add a reference edge
-            $sink->emitReference($existing_node_id, $parent_node_id, $link_name);
+            $sink->emitReference($existing_node_id, $parent_node_id, $link_name, $edge_strength);
             return;
         }
 
@@ -136,6 +139,7 @@ final class ContextAnalyzer
             $linked_context->getName(),
             $linked_context->getLocations(),
             $contexts,
+            $edge_strength,
         );
 
         $this->analyze($linked_context, $sink, $current_node_id, $memo);

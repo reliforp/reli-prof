@@ -19,6 +19,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayHeaderContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayMemoryLocation;
@@ -89,6 +90,7 @@ class StreamingJsonFromDbExporterTest extends BaseTestCase
         $root->allows('getLocations')->andReturn([]);
         $root->allows('getContexts')->andReturn([]);
         $root->allows('releaseLinks');
+        $root->allows('getLinkStrength')->andReturns(EdgeStrength::Strong);
 
         $wrapper = \Mockery::mock(ReferenceContext::class);
         $wrapper->allows('getName')->andReturn('Wrapper');
@@ -96,6 +98,7 @@ class StreamingJsonFromDbExporterTest extends BaseTestCase
         $wrapper->allows('getLocations')->andReturn([]);
         $wrapper->allows('getContexts')->andReturn([]);
         $wrapper->allows('releaseLinks');
+        $wrapper->allows('getLinkStrength')->andReturns(EdgeStrength::Strong);
 
         $result = new MemoryAnalysisResult([['test' => 1]], $wrapper);
         $pdo_output->output($result);
@@ -154,6 +157,7 @@ class StreamingJsonFromDbExporterTest extends BaseTestCase
         $context->allows('getLocations')->andReturn([]);
         $context->allows('getContexts')->andReturn([]);
         $context->allows('releaseLinks');
+        $context->allows('getLinkStrength')->andReturns(EdgeStrength::Strong);
         return $context;
     }
 }

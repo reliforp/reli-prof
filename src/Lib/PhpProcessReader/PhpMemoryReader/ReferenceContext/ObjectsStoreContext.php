@@ -37,4 +37,10 @@ final class ObjectsStoreContext implements ReferenceContext
             '#count' => count($this->referencing_contexts),
         ];
     }
+
+    #[\Override]
+    public function getLinkStrength(string $link_name): EdgeStrength
+    {
+        return EdgeStrength::Weak;
+    }
 }

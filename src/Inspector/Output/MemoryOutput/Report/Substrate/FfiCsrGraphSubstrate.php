@@ -97,6 +97,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
     /** @return list<int> */
     #[\Override]
+    public function getStrongChildren(int $nodeId): array
+    {
+        return $this->strong_children[$nodeId] ?? [];
+    }
+
+    /** @return list<int> */
+    #[\Override]
     public function getAllChildren(int $nodeId): array
     {
         $idx = $this->nodeIdToIndex($nodeId);
@@ -104,6 +111,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             return [];
         }
         return $this->csrSlice($this->allOffsets, $this->allEdges, $idx);
+    }
+
+    /** @return list<int> */
+    #[\Override]
+    public function getStrongAllChildren(int $nodeId): array
+    {
+        return $this->strong_all_children[$nodeId] ?? [];
     }
 
     /** @return list<int> */
@@ -379,7 +393,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private function loadEdgesFfi(\PDO $db, int $run_id): void
     {
         $rows = $db->query(
-            "SELECT parent_node_id, child_node_id, is_tree"
+            "SELECT parent_node_id, child_node_id, is_tree, strength"
             . " FROM context_edges WHERE run_id = {$run_id}"
         )->fetchAll(\PDO::FETCH_NUM);
 
@@ -397,6 +411,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
+            $strength = (string)($r[3] ?? 'strong');
+            $is_strong = $strength === 'strong';
 
             $parentIdx = $this->nodeIdToIndex($parent);
             $childIdx = $this->nodeIdToIndex($child);
@@ -404,6 +420,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             if ($is_tree) {
                 $treeDegree[$parentIdx] = $treeDegree[$parentIdx] + 1;
                 $treeEdgeCount++;
+                if ($is_strong) {
+                    $this->strong_children[$parent][] = $child;
+                }
                 if ($parent === -1) {
                     $this->roots[] = $child;
                 }
@@ -411,6 +430,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             if ($parent !== -1) {
                 $allDegree[$parentIdx] = $allDegree[$parentIdx] + 1;
                 $allEdgeCount++;
+                if ($is_strong) {
+                    $this->strong_all_children[$parent][] = $child;
+                }
             }
             $revDegree[$childIdx] = $revDegree[$childIdx] + 1;
         }

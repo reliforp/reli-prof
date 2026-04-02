@@ -63,4 +63,10 @@ final class SentinelContext implements ReferenceContext
     public function releaseLinks(): void
     {
     }
+
+    #[\Override]
+    public function getLinkStrength(string $link_name): EdgeStrength
+    {
+        return EdgeStrength::Strong;
+    }
 }

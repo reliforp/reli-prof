@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\Process\MemoryLocation;
 
 final class ArrayContextTreeSink implements ContextTreeSink
@@ -35,10 +36,12 @@ final class ArrayContextTreeSink implements ContextTreeSink
         string $type,
         iterable $locations,
         array $attributes,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
         $node = [
             '#node_id' => $node_id,
             '#type' => $type,
+            '#edge_strength' => $edge_strength->value,
         ];
 
         if ($locations instanceof \Traversable) {
@@ -69,8 +72,12 @@ final class ArrayContextTreeSink implements ContextTreeSink
         int $reference_node_id,
         ?int $parent_node_id,
         string $link_name,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
-        $ref = ['#reference_node_id' => $reference_node_id];
+        $ref = [
+            '#reference_node_id' => $reference_node_id,
+            '#edge_strength' => $edge_strength->value,
+        ];
 
         if ($parent_node_id === null) {
             $this->root[$link_name] = $ref;

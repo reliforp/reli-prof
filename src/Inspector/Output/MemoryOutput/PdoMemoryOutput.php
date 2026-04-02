@@ -173,15 +173,16 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             )
         ');
 
-        $db->exec('
+        $db->exec("
             CREATE TABLE IF NOT EXISTS context_edges (
                 run_id INTEGER NOT NULL,
                 parent_node_id INTEGER,
                 child_node_id INTEGER NOT NULL,
                 link_name TEXT NOT NULL,
-                is_tree INTEGER NOT NULL
+                is_tree INTEGER NOT NULL,
+                strength TEXT NOT NULL DEFAULT 'strong'
             )
-        ');
+        ");
 
         $db->exec("
             CREATE TABLE IF NOT EXISTS context_node_locations (
@@ -239,6 +240,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $db->exec(
             'CREATE INDEX IF NOT EXISTS idx_context_edges_run_link_parent_tree'
             . ' ON context_edges(run_id, link_name, parent_node_id, is_tree)'
+        );
+        $db->exec(
+            'CREATE INDEX IF NOT EXISTS idx_context_edges_run_strength'
+            . ' ON context_edges(run_id, strength)'
         );
     }
 
@@ -394,19 +399,20 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
         // Copy context_edges
         $rows = $source->prepare(
-            'SELECT parent_node_id, child_node_id, link_name, is_tree FROM context_edges WHERE run_id = ?'
+            'SELECT parent_node_id, child_node_id, link_name, is_tree, strength'
+            . ' FROM context_edges WHERE run_id = ?'
         );
         $rows->execute([$source_run_id]);
         $insert = $target->prepare(
-            'INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree)'
-            . ' VALUES (?, ?, ?, ?, ?)'
+            'INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
+            . ' VALUES (?, ?, ?, ?, ?, ?)'
         );
         /** @psalm-suppress MixedAssignment */
         while ($row = $rows->fetch(\PDO::FETCH_ASSOC)) {
             /** @psalm-suppress MixedArrayAccess */
             $insert->execute([
                 $run_id, $row['parent_node_id'], $row['child_node_id'],
-                $row['link_name'], $row['is_tree'],
+                $row['link_name'], $row['is_tree'], $row['strength'] ?? 'strong',
             ]);
         }
 
