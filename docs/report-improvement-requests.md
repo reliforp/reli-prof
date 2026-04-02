@@ -832,9 +832,11 @@ objects_store からのみ到達可能なオブジェクトは GC cycle collecto
 である可能性がある。ただし以下の偽陽性リスクがあるため、確定的な表現は避ける:
 
 - reli が追跡していない経路（未対応の拡張内部参照など）から保持されている場合
-- GC は対象数の閾値 (10,000 potential cycles) で自動トリガされるため、
-  少量なら自動回収されて問題にならない
-- 単発で容量が大きいが数が少ないケースは GC 閾値に達しにくい
+- GC cycle collector は定期実行ではなく、potential cycle buffer が
+  10,000 に達したときに走る。循環参照が少数で refcount 減少イベントが
+  少なければ閾値に達せず GC が長時間走らない。
+  「数は少ないが 1 個あたり大きい」循環参照は GC をトリガしないまま
+  大量のメモリをリークしうる。
 
 ```
 [MEDIUM] gc_pending_candidate: 500 objects (2.3 MB) reachable only via objects_store
