@@ -128,6 +128,8 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\TopReferenceConte
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\WeakMapContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\WeakReferenceContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -203,6 +205,7 @@ final class MemoryLocationsCollector
         int $cg_address,
         ?MemoryLimitErrorDetails $memory_limit_error_details = null,
         ?int $bg_address = null,
+        ?ContextTreeSink $sink = null,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -419,6 +422,47 @@ final class MemoryLocationsCollector
                 $zend_type_reader,
                 $memory_locations,
                 $context_pools,
+            );
+        }
+
+        if ($sink !== null) {
+            // Streaming mode: emit each branch to the sink immediately,
+            // then release it. Shared contexts (via pools) are tracked
+            // by the memo WeakMap across all branches, ensuring proper
+            // reference deduplication.
+            $analyzer = new ContextAnalyzer();
+            /** @var \WeakMap<ReferenceContext, int> $memo */
+            $memo = new \WeakMap();
+
+            /** @var array<string, ReferenceContext> $branches */
+            $branches = [
+                'call_frames' => $call_frames_context,
+                'global_variables' => $global_variables_context,
+                'function_table' => $defined_functions_context,
+                'class_table' => $defined_classes_context,
+                'global_constants' => $global_constants_context,
+                'included_files' => $included_files_context,
+                'interned_strings' => $interned_strings_context,
+                'global_callbacks' => $global_callbacks_context,
+                'modules' => $modules_context,
+                'objects_store' => $objects_store_context,
+            ];
+            foreach ($branches as $link_name => $branch_context) {
+                $analyzer->analyzeSingleLink($link_name, $branch_context, $sink, null, $memo);
+            }
+
+            $context_pools->clear();
+
+            return new CollectedMemories(
+                $chunk_memory_locations,
+                $huge_memory_locations,
+                $vm_stack_memory_locations,
+                $compiler_arena_memory_locations,
+                $cached_chunks_size,
+                $memory_locations,
+                null,
+                $memory_get_usage_size,
+                $memory_get_usage_real_size,
             );
         }
 

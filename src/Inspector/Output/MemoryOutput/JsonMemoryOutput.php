@@ -28,6 +28,12 @@ final class JsonMemoryOutput implements MemoryOutputInterface
     #[\Override]
     public function output(MemoryAnalysisResult $result): void
     {
+        if ($result->pre_populated_db !== null && $result->pre_populated_run_id !== null) {
+            // Tree was already streamed to DB during collection
+            $this->streamJsonFromDb($result->pre_populated_db, $result->pre_populated_run_id);
+            return;
+        }
+
         // Write context tree to a temporary SQLite DB, releasing contexts
         // during the walk so they can be GC'd immediately.
         $tmp_base = tempnam(sys_get_temp_dir(), 'reli_json_');
@@ -78,6 +84,32 @@ final class JsonMemoryOutput implements MemoryOutputInterface
             if (file_exists($tmp_path)) {
                 @unlink($tmp_path);
             }
+        }
+    }
+
+    private function streamJsonFromDb(\PDO $db, int $run_id): void
+    {
+        $summary = $this->loadSummary($db, $run_id);
+        $location_types_summary = $this->loadLocationTypesSummary($db, $run_id);
+        $class_objects_summary = $this->loadClassObjectsSummary($db, $run_id);
+        $exporter = new StreamingJsonFromDbExporter($db, $run_id, $this->pretty_print);
+
+        if ($this->output_path !== null) {
+            $fp = fopen($this->output_path, 'w');
+            if ($fp === false) {
+                throw new \RuntimeException("Cannot open output file: {$this->output_path}");
+            }
+            try {
+                $exporter->export($summary, $location_types_summary, $class_objects_summary, $fp);
+            } finally {
+                fclose($fp);
+            }
+        } else {
+            $fp = fopen('php://stdout', 'w');
+            if ($fp === false) {
+                throw new \RuntimeException('Cannot open stdout');
+            }
+            $exporter->export($summary, $location_types_summary, $class_objects_summary, $fp);
         }
     }
 

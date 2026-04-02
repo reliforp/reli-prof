@@ -37,35 +37,68 @@ final class ContextAnalyzer
         foreach ($reference_context->getLinks() as $link_name => $linked_context) {
             /** @psalm-suppress RedundantCastGivenDocblockType -- int keys occur at runtime */
             $link_name = (string)$link_name;
-            $existing_node_id = $memo[$linked_context] ?? null;
-            if ($existing_node_id !== null) {
-                $sink->emitReference($existing_node_id, $parent_node_id, $link_name);
-                continue;
-            }
-
-            $current_node_id = $this->node_id++;
-            $memo[$linked_context] = $current_node_id;
-
-            $contexts = $linked_context->getContexts();
-            if (!is_array($contexts)) {
-                $contexts = iterator_to_array($contexts);
-            }
-            /** @var array<string, mixed> $contexts */
-
-            $sink->emitNode(
-                $current_node_id,
-                $parent_node_id,
-                $link_name,
-                $linked_context->getName(),
-                $linked_context->getLocations(),
-                $contexts,
-            );
-
-            $this->analyze($linked_context, $sink, $current_node_id, $memo);
+            $this->analyzeContext($linked_context, $link_name, $parent_node_id, $sink, $memo);
         }
 
         if ($sink->allowsRelease()) {
             $reference_context->releaseLinks();
         }
+    }
+
+    /**
+     * Emit a single named context and its subtree to the sink.
+     * Useful for streaming branches independently while sharing memo across them.
+     *
+     * @param WeakMap<ReferenceContext, int> $memo
+     */
+    public function analyzeSingleLink(
+        string $link_name,
+        ReferenceContext $context,
+        ContextTreeSink $sink,
+        ?int $parent_node_id = null,
+        ?WeakMap $memo = null,
+    ): void {
+        if ($memo === null) {
+            /** @var WeakMap<ReferenceContext, int> $memo */
+            $memo = new WeakMap();
+        }
+        $this->analyzeContext($context, $link_name, $parent_node_id, $sink, $memo);
+    }
+
+    /**
+     * @param WeakMap<ReferenceContext, int> $memo
+     */
+    private function analyzeContext(
+        ReferenceContext $linked_context,
+        string $link_name,
+        ?int $parent_node_id,
+        ContextTreeSink $sink,
+        WeakMap $memo,
+    ): void {
+        $existing_node_id = $memo[$linked_context] ?? null;
+        if ($existing_node_id !== null) {
+            $sink->emitReference($existing_node_id, $parent_node_id, $link_name);
+            return;
+        }
+
+        $current_node_id = $this->node_id++;
+        $memo[$linked_context] = $current_node_id;
+
+        $contexts = $linked_context->getContexts();
+        if (!is_array($contexts)) {
+            $contexts = iterator_to_array($contexts);
+        }
+        /** @var array<string, mixed> $contexts */
+
+        $sink->emitNode(
+            $current_node_id,
+            $parent_node_id,
+            $link_name,
+            $linked_context->getName(),
+            $linked_context->getLocations(),
+            $contexts,
+        );
+
+        $this->analyze($linked_context, $sink, $current_node_id, $memo);
     }
 }

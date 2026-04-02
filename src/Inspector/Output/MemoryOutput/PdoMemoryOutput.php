@@ -39,10 +39,12 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $run_id = $this->insertRun($db);
             $this->insertSummary($db, $run_id, $result->summary);
 
-            $sink = new PdoContextTreeSink($db, $this->driver, $run_id, $this->region_boundaries);
-            $analyzer = new ContextAnalyzer();
-            $analyzer->analyze($result->context, $sink);
-            $sink->flush();
+            if ($result->context !== null) {
+                $sink = new PdoContextTreeSink($db, $this->driver, $run_id, $this->region_boundaries);
+                $analyzer = new ContextAnalyzer();
+                $analyzer->analyze($result->context, $sink);
+                $sink->flush();
+            }
 
             $this->insertLocationTypesSummaryFromDb($db, $run_id);
             $this->insertClassObjectsSummaryFromDb($db, $run_id);
@@ -53,6 +55,42 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             throw $e;
         }
 
+        $this->driver->afterBulkInsert($db);
+        $this->createIndexes($db);
+        $this->createViews($db);
+    }
+
+    /**
+     * Create sink for streaming context tree directly during collection.
+     * The returned sink, run_id, and PDO connection can be passed to
+     * MemoryLocationsCollector::collectAll() for interleaved emission.
+     *
+     * @return array{PdoContextTreeSink, int, \PDO}
+     */
+    public function createStreamingSink(): array
+    {
+        $db = $this->driver->createConnection();
+        $this->driver->tuneForBulkInsert($db);
+        $this->createTables($db);
+        $db->beginTransaction();
+        $run_id = $this->insertRun($db);
+
+        $sink = new PdoContextTreeSink($db, $this->driver, $run_id, $this->region_boundaries);
+        return [$sink, $run_id, $db];
+    }
+
+    /**
+     * Finalize a streaming session started by createStreamingSink().
+     *
+     * @param array<int, array<string, mixed>> $summary
+     */
+    public function finalizeStreaming(\PDO $db, int $run_id, PdoContextTreeSink $sink, array $summary): void
+    {
+        $sink->flush();
+        $this->insertSummary($db, $run_id, $summary);
+        $this->insertLocationTypesSummaryFromDb($db, $run_id);
+        $this->insertClassObjectsSummaryFromDb($db, $run_id);
+        $db->commit();
         $this->driver->afterBulkInsert($db);
         $this->createIndexes($db);
         $this->createViews($db);
