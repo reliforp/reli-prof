@@ -91,8 +91,8 @@ final class TextReportFormatter implements ReportFormatterInterface
                     . ' impacted'
                     : "\u{2014}";
                 $lines[] = sprintf(
-                    '  [%-7s] %s',
-                    $tag,
+                    '  %-10s %s',
+                    "[{$tag}]",
                     $impact,
                 );
                 $lines[] = "    {$finding->kind}: {$finding->summary}";
