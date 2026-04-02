@@ -15,8 +15,6 @@ namespace Reli\Command\Inspector;
 
 use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
 use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
-use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
-use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
@@ -101,23 +99,15 @@ final class MemoryCommand extends Command
             defer($scope_guard, fn () => $this->process_stopper->resume($process_specifier->pid));
         }
 
-        // Set up streaming sink: context tree is emitted to a temp SQLite
-        // during collection, releasing each branch immediately after emission.
+        // Set up streaming sink: for DB formats (sqlite3, mysql, postgresql)
+        // write directly to the output DB; for others use a temp SQLite.
         $output_factory = new MemoryOutputFactory();
-        $region_boundaries = null;
 
-        $tmp_base = tempnam(sys_get_temp_dir(), 'reli_stream_');
-        if ($tmp_base === false) {
-            throw new \RuntimeException('Failed to create temporary file');
-        }
-        $tmp_path = $tmp_base . '.sqlite3';
-        @unlink($tmp_base);
+        [$pdo_output, $sink, $run_id, $db, $temp_path] = $output_factory->createStreamingSink(
+            $memory_profiler_settings,
+        );
 
         try {
-            $sqlite_driver = new SqliteDriver($tmp_path);
-            $pdo_output = new PdoMemoryOutput($sqlite_driver, null);
-            [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
-
             $collected_memories = $this->memory_locations_collector->collectAll(
                 $process_specifier,
                 $target_php_settings_version_decided,
@@ -171,23 +161,27 @@ final class MemoryCommand extends Command
             // Finalize the streaming DB (summary, indexes, views)
             $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
 
-            $result = new MemoryAnalysisResult(
-                $summary,
-                null,
-                null,
-                null,
-                $db,
-                $run_id,
-            );
+            // For DB formats the data is already in the output DB; done.
+            // For JSON/report, stream from the temp SQLite DB.
+            if ($temp_path !== null) {
+                $result = new MemoryAnalysisResult(
+                    $summary,
+                    null,
+                    null,
+                    null,
+                    $db,
+                    $run_id,
+                );
 
-            $memory_output = $output_factory->create(
-                $memory_profiler_settings,
-                $region_boundaries,
-            );
-            $memory_output->output($result);
+                $memory_output = $output_factory->create(
+                    $memory_profiler_settings,
+                    $region_boundaries,
+                );
+                $memory_output->output($result);
+            }
         } finally {
-            if (file_exists($tmp_path)) {
-                @unlink($tmp_path);
+            if ($temp_path !== null && file_exists($temp_path)) {
+                @unlink($temp_path);
             }
         }
 

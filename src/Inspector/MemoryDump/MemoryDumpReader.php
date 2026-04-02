@@ -15,8 +15,6 @@ namespace Reli\Inspector\MemoryDump;
 
 use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
 use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
-use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
-use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -47,18 +45,12 @@ final class MemoryDumpReader
         /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
         $target_php_settings = new TargetPhpSettings(php_version: $this->php_version);
 
-        $tmp_base = tempnam(sys_get_temp_dir(), 'reli_stream_');
-        if ($tmp_base === false) {
-            throw new \RuntimeException('Failed to create temporary file');
-        }
-        $tmp_path = $tmp_base . '.sqlite3';
-        @unlink($tmp_base);
+        $output_factory = new MemoryOutputFactory();
+        [$pdo_output, $sink, $run_id, $db, $temp_path] = $output_factory->createStreamingSink(
+            $memory_profiler_settings,
+        );
 
         try {
-            $sqlite_driver = new SqliteDriver($tmp_path);
-            $pdo_output = new PdoMemoryOutput($sqlite_driver, null);
-            [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
-
             $collected_memories = $this->memory_locations_collector->collectAll(
                 $process_specifier,
                 $target_php_settings,
@@ -111,24 +103,25 @@ final class MemoryDumpReader
 
             $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
 
-            $result = new MemoryAnalysisResult(
-                $summary,
-                null,
-                null,
-                null,
-                $db,
-                $run_id,
-            );
+            if ($temp_path !== null) {
+                $result = new MemoryAnalysisResult(
+                    $summary,
+                    null,
+                    null,
+                    null,
+                    $db,
+                    $run_id,
+                );
 
-            $output_factory = new MemoryOutputFactory();
-            $memory_output = $output_factory->create(
-                $memory_profiler_settings,
-                $region_boundaries,
-            );
-            $memory_output->output($result);
+                $memory_output = $output_factory->create(
+                    $memory_profiler_settings,
+                    $region_boundaries,
+                );
+                $memory_output->output($result);
+            }
         } finally {
-            if (file_exists($tmp_path)) {
-                @unlink($tmp_path);
+            if ($temp_path !== null && file_exists($temp_path)) {
+                @unlink($temp_path);
             }
         }
     }
