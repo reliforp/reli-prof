@@ -89,8 +89,8 @@ final class ReportGenerator
                 $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
+                $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
             }
-            $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
         }
 
         // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
@@ -107,6 +107,7 @@ final class ReportGenerator
             $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id, $substrate)));
+            $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(
                 new ChokePointPass($substrate, $db, $run_id, $heap_usage)
