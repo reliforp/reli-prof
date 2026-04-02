@@ -296,18 +296,53 @@ The difference (~10 GB) is FFI CData allocated by the dump reader's
 `fread` → `FFI::memcpy` → return CData path. These CData buffers are
 not counted by `memory_get_usage` but contribute to RSS.
 
-DI\Container likely has a huge `$resolvedEntries` or `$definitionSource`
-property. When `getPropertiesIterator` encounters this property, the
-`collectZval` is called, finds it's an array, calls
-`collectZendArrayPointer` which returns null (deferred). **But the
-problem may be earlier: `getPropertiesIterator` itself deref-ing the
-property table entries**, or the DI\Container object being misread and
-having a corrupt `nNumUsed` causing millions of iterations.
+## Deep Dive: Per-Property Profiling (127 MB dump, `4efa0ce`)
 
-### Next steps
-1. Check if `getPropertiesIterator` loops correctly for DI\Container
-2. Verify the dump reader's FFI CData buffers are being freed
-3. Consider using `php_version`-aware property count limits
+Added per-property logging inside `collectZendObject`. Results:
+
+### The DI\Container was a red herring
+
+Objects #15 was DI\Container, but the real issue is **94,126 objects with
+`resolvedEntries` as first property** — likely DI service definition or
+resolved entry objects, all the same class.
+
+### Memory grows at ~32 KB per object
+
+| Progress | Heap | RSS |
+|---|---|---|
+| Start (obj #1-14) | 16 MB | 55 MB |
+| ~10K objects | ~350 MB | ~340 MB |
+| ~50K objects | ~1.7 GB | ~1.6 GB |
+| ~94K objects | 2.95 GB | 2.83 GB |
+
+**~32 KB per object.** This is NOT the FFI-only leak originally suspected.
+Heap IS growing, meaning PHP objects accumulate.
+
+### Root cause: repeated deref of same class_entry
+
+Each object's `getPropertiesIterator` calls `$dereferencer->deref($this->ce)`
+to get the class entry. For 94K objects of the same class, this dereferences
+the **same address** 94K times, creating 94K separate FFI CData buffers +
+ZendClassEntry PHP objects + properties_info ZendArray + Bucket deref chains.
+
+The deref is not cached. Same address → same data → 94K copies.
+
+**Fix: cache deref results by address.** A simple `address → CData` cache
+in the dereferencer would eliminate 99%+ of redundant reads for objects of
+the same class. For 94K objects with ~10 unique classes, this reduces
+class_entry derefs from 94K to ~10.
+
+Additionally, each object's `properties_table` is also deref'd individually
+(same size/structure for same class), creating 94K FFI CData allocations
+for what could be represented as 10 templates.
+
+### Additional findings
+
+- Defer IS working: array/object/reference properties return null correctly
+- Each object's property loop runs only 3 iterations (small objects)
+- The per-object overhead comes from: ZendObject deref + ZendClassEntry deref
+  + ZvalArray (properties_table) deref + MemoryLocation creation + pool entries
+- 94K × ~32 KB = ~3 GB. With 192K total objects, full run would use ~6 GB+
 
 1. **Defer arrays** the same way objects are deferred (shallow objects_store
    should only record the object's own memory, not its property values)
