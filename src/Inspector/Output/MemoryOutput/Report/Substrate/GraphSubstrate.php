@@ -74,14 +74,24 @@ class GraphSubstrate
      *
      * For graphs with > 2M edges, uses FFI CSR to reduce memory by ~50-100x.
      * For smaller graphs, uses PHP arrays (faster for small datasets).
+     *
+     * @param bool|null $forceFfiCsr true=force on, false=force off, null=auto
      */
-    public static function createFromDb(\PDO $db, int $run_id): self
+    public static function createFromDb(\PDO $db, int $run_id, ?bool $forceFfiCsr = null): self
     {
-        $edge_count = (int)$db->query(
-            "SELECT count(*) FROM context_edges WHERE run_id = {$run_id}"
-        )->fetchColumn();
+        if ($forceFfiCsr === false) {
+            return self::loadFromDb($db, $run_id);
+        }
 
-        if ($edge_count > self::FFI_CSR_THRESHOLD && extension_loaded('ffi')) {
+        $useFfi = $forceFfiCsr === true;
+        if (!$useFfi) {
+            $edge_count = (int)$db->query(
+                "SELECT count(*) FROM context_edges WHERE run_id = {$run_id}"
+            )->fetchColumn();
+            $useFfi = $edge_count > self::FFI_CSR_THRESHOLD;
+        }
+
+        if ($useFfi && extension_loaded('ffi')) {
             return FfiCsrGraphSubstrate::loadFromDb($db, $run_id);
         }
         return self::loadFromDb($db, $run_id);
