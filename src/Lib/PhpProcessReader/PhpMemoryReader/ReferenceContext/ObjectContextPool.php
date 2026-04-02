@@ -47,4 +47,10 @@ final class ObjectContextPool
         $this->handlers_contexts[$memory_location->address] = $context;
         return $context;
     }
+
+    public function clear(): void
+    {
+        $this->contexts = [];
+        $this->handlers_contexts = [];
+    }
 }

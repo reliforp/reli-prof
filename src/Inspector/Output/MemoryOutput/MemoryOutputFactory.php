@@ -26,7 +26,7 @@ final class MemoryOutputFactory
         ?RegionBoundaries $region_boundaries = null,
     ): MemoryOutputInterface {
         return match ($settings->output_format) {
-            'json' => new JsonMemoryOutput($settings->pretty_print, $settings->output_path),
+            'json' => new JsonMemoryOutput($settings->pretty_print, $settings->output_path, $region_boundaries),
             'sqlite3' => new PdoMemoryOutput(
                 new SqliteDriver(
                     $settings->output_path ?? throw new \RuntimeException(

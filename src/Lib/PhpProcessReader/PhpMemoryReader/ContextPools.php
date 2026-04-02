@@ -43,4 +43,14 @@ final class ContextPools
             new UserFunctionDefinitionContextPool(),
         );
     }
+
+    public function clear(): void
+    {
+        $this->string_context_pool->clear();
+        $this->array_context_pool->clear();
+        $this->object_context_pool->clear();
+        $this->php_reference_context_pool->clear();
+        $this->resource_context_pool->clear();
+        $this->user_function_definition_context_pool->clear();
+    }
 }
