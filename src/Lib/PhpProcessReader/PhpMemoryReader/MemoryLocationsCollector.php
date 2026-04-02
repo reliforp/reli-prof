@@ -161,6 +161,24 @@ final class MemoryLocationsCollector
     }
 
     /**
+     * In streaming mode, convert current pool entries to sentinels
+     * and clear the pools. This releases the heavy Context objects
+     * that were created during the current iteration, keeping only
+     * the address→node_id map for cross-reference deduplication.
+     */
+    private function flushPoolsIfStreaming(): void
+    {
+        if (
+            $this->streaming_memo === null
+            || $this->streaming_context_pools === null
+        ) {
+            return;
+        }
+        $this->streaming_context_pools->convertToSentinels($this->streaming_memo);
+        $this->streaming_context_pools->clear();
+    }
+
+    /**
      * In streaming mode, register a parent node in the analyzer's memo
      * and emit it to the sink, so that children can be emitted as
      * sub-nodes during collection. Returns the assigned node_id, or
@@ -1109,6 +1127,7 @@ final class MemoryLocationsCollector
                     $call_frame_context,
                     $parent_node_id,
                 );
+                $this->flushPoolsIfStreaming();
             }
             $call_frames_context->add((string)$key, $call_frame_context);
         }
@@ -2049,6 +2068,7 @@ final class MemoryLocationsCollector
                     $function_context,
                     $parent_node_id,
                 );
+                $this->flushPoolsIfStreaming();
             }
             $defined_functions_context->add($function_name, $function_context);
         }
@@ -2400,6 +2420,7 @@ final class MemoryLocationsCollector
                         $class_definition_context,
                         $parent_node_id,
                     );
+                    $this->flushPoolsIfStreaming();
                 }
                 $defined_classes_context->add((string)$class_name, $class_definition_context);
             }
@@ -2759,6 +2780,7 @@ final class MemoryLocationsCollector
                     $objects_store_bucket_context,
                     $parent_node_id,
                 );
+                $this->flushPoolsIfStreaming();
             }
             $objects_store_context->add((string)$key, $objects_store_bucket_context);
         }
