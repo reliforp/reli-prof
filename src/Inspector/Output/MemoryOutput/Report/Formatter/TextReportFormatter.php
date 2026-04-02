@@ -90,11 +90,7 @@ final class TextReportFormatter implements ReportFormatterInterface
                     ? SizeFormatter::format($finding->impact_bytes)
                     . ' impacted'
                     : "\u{2014}";
-                $lines[] = sprintf(
-                    '  %-10s %s',
-                    "[{$tag}]",
-                    $impact,
-                );
+                $lines[] = "  [{$tag}] {$impact}";
                 $lines[] = "    {$finding->kind}: {$finding->summary}";
 
                 if ($finding->hypothesis !== '') {

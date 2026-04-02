@@ -48,16 +48,16 @@ Example output:
 
 === Findings ===
 
-  [HIGH]     703.13 KB impacted
+  [HIGH]  703.13 KB impacted
     dominant_class: App\Models\User: 10,000 instances x 72 B = 98.2% of object memory (703.13 KB)
     Unbounded accumulation — likely a loop without limit
     Next: Check if count scales with input size; Look for owner path
 
-  [HIGH]     153.76 MB impacted
+  [HIGH]  153.76 MB impacted
     bottleneck_path: <main>:28::$users->items (153.76 MB)
     Heaviest memory path — the primary chain of memory consumption
 
-  [MEDIUM]   9.53 MB impacted
+  [MEDIUM]  9.53 MB impacted
     property_scaling: App\Models\User (10,000 instances): 5 per-instance props (0.49 KB/instance retained), 12 shared
     PER-INSTANCE (retained, scales with count):
       App\Models\User::$attributes: 10,000 copies x 599 B = 5.86 MB
@@ -65,7 +65,7 @@ Example output:
     (14 scalar properties per-instance, included in object size)
     SHARED: App\Models\User::$relations (array, CoW), App\Models\User::$fillable (array, CoW)
 
-  [MEDIUM]   42.50 MB impacted
+  [MEDIUM]  42.50 MB impacted
     cycle_cluster: 200 identical cycles (3 classes, 170.31 KB shallow, 42.50 MB retained)
     Per cycle: 1x Webklex\PHPIMAP\Message + 3x Webklex\PHPIMAP\Attachment + 1x Webklex\PHPIMAP\AttachmentCollection
     Back-reference: Webklex\PHPIMAP\Attachment::$oMessage -> Webklex\PHPIMAP\Message
@@ -74,10 +74,10 @@ Example output:
     Single entry point — breaking the back-reference likely frees this cycle
     Next: Break Webklex\PHPIMAP\Attachment::$oMessage -> Webklex\PHPIMAP\Message to eliminate all 200 cycles
 
-  [MEDIUM]   —
+  [MEDIUM]  —
     companion_cluster: FormBuilder (3,611, 1.74 MB) always paired with Closure (3,619, 1.19 MB) — 2.93 MB
 
-  [LOW]      182.81 KB impacted
+  [LOW]  182.81 KB impacted
     dedup_candidate: Attachment::$part (Part): 600 copies x 312 B = 182.81 KB
     195/600 copies have identical content (32%). Example: "--boundary_mixed..."
 
@@ -176,11 +176,11 @@ sudo ./reli inspector:memory -p <pid> -f report -o report.txt  # to file
 Findings are sorted by severity (HIGH first), then by `impact_bytes` descending within the same severity. Each finding shows its impact on the first line for easy visual scanning:
 
 ```
-  [HIGH]     153.76 MB impacted
+  [HIGH]  153.76 MB impacted
     bottleneck_path: <main>::$messages[0]->structure->parts
-  [MEDIUM]   40.21 MB impacted
+  [MEDIUM]  40.21 MB impacted
     expensive_property: Structure::$raw (200 x 211.00 KB)
-  [MEDIUM]   —
+  [MEDIUM]  —
     companion_cluster: 4 classes x ~200 instances
 ```
 
