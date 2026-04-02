@@ -123,10 +123,39 @@ cross-object references.
 | v4a (reorder + inner-loop) | global_variables | global_variables | ~420s |
 | v4b (reorder only) | objects_store | objects_store | ~570s |
 | v5 (objects_store first) | objects_store | objects_store | ~530s |
+| v6 (shallow objects_store) | class_table | class_table | ~480s |
 
 The reli self-dump has millions of objects interconnected through the running
 reli-prof process's object graph. **Any phase that first touches this graph**
 recursively expands it via `collectZval()`, creating millions of Context objects.
+
+## Round 5: Shallow objects_store (commit `fce528f`)
+
+New optimization: `defer_unseen_objects` flag during objects_store collection.
+When a property references an unseen object, skip recursion and record a
+deferred edge. After all objects collected, resolve deferred edges via sentinels.
+
+| Phase | Heap | RSS | seen | sentinels |
+|---|---|---|---|---|
+| after_interned_strings | 21 MB | 62 MB | 9,305 | 9,279 |
+| **after_objects_store** | **21 MB** | **62 MB** | **9,306** | **9,279** |
+| after_function_table | 21 MB | 63 MB | 13,062 | 12,010 |
+| after_class_table | 28 MB | 81 MB | 64,580 | 51,411 |
+| **after_global_variables** | **NEVER REACHED** → OOM | | | |
+
+**objects_store passes (+0 MB heap, +1 seen).** But only 1 new address seen.
+
+### Bug: top-level bucket objects are also deferred
+
+`collectObjectsStore` calls `collectZendObjectPointer` for each bucket.
+But `defer_unseen_objects` causes ALL unseen objects to return null —
+including the bucket's own top-level objects, not just property references.
+
+The fix: defer should only apply to property-level cross-references
+(inside `collectZendObject` → `collectZval` → `collectZendObjectPointer`),
+not at the `collectObjectsStore` bucket level. Either:
+- Set `defer_unseen_objects = true` only inside `collectZendObject` (not around the bucket loop)
+- Or have `collectObjectsStore` call `collectZendObject` directly (bypassing the pointer check)
 
 Inner-loop streaming helps for breadth (emitting each array element / object
 property individually), but **a single `collectZval()` call for one variable
