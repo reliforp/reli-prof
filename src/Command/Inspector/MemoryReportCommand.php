@@ -76,6 +76,12 @@ final class MemoryReportCommand extends Command
             InputOption::VALUE_REQUIRED,
             'set PHP memory_limit for analysis (e.g. 2G, 512M)',
         );
+        $this->addOption(
+            'ffi-csr',
+            null,
+            InputOption::VALUE_NEGATABLE,
+            'force FFI CSR graph substrate (default: auto; --ffi-csr to force on, --no-ffi-csr to force off)',
+        );
     }
 
     #[\Override]
@@ -108,9 +114,11 @@ final class MemoryReportCommand extends Command
         $db->exec('PRAGMA mmap_size = 268435456');
 
         $full_analysis = (bool)$input->getOption('full-analysis');
+        /** @var bool|null $ffi_csr */
+        $ffi_csr = $input->getOption('ffi-csr');
 
         $generator = new ReportGenerator();
-        $result = $generator->generateFromDb($db, $run_id, $full_analysis);
+        $result = $generator->generateFromDb($db, $run_id, $full_analysis, $ffi_csr);
 
         $formatter = match ($format) {
             'report' => new TextReportFormatter(),
