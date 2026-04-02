@@ -449,8 +449,13 @@ final class MemoryLocationsCollector
             $context_pools->convertToSentinels($memo);
         }
 
-        $call_frames_context = $this->collectCallFrames(
-            $eg,
+        // Collect objects_store, function_table, and class_table BEFORE
+        // call_frames. This populates the sentinel map with all objects,
+        // arrays, and strings. When call_frames is collected later,
+        // collectZval hits sentinels for most data, avoiding deep
+        // recursive expansion of the entire object graph.
+        $objects_store_context = $this->collectObjectsStore(
+            $eg->objects_store,
             $cg->map_ptr_base,
             $dereferencer,
             $zend_type_reader,
@@ -458,7 +463,11 @@ final class MemoryLocationsCollector
             $context_pools,
             $memory_limit_error_details,
         );
-        // call_frames emission is deferred — memory_limit_error may replace it below
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('objects_store', $objects_store_context, $sink, null, $memo);
+            unset($objects_store_context);
+            $context_pools->convertToSentinels($memo);
+        }
 
         $defined_functions_context = $this->collectFunctionTable(
             $function_table,
@@ -545,8 +554,8 @@ final class MemoryLocationsCollector
             $context_pools->convertToSentinels($memo);
         }
 
-        $objects_store_context = $this->collectObjectsStore(
-            $eg->objects_store,
+        $call_frames_context = $this->collectCallFrames(
+            $eg,
             $cg->map_ptr_base,
             $dereferencer,
             $zend_type_reader,
@@ -554,11 +563,7 @@ final class MemoryLocationsCollector
             $context_pools,
             $memory_limit_error_details,
         );
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
-            $analyzer->analyzeSingleLink('objects_store', $objects_store_context, $sink, null, $memo);
-            unset($objects_store_context);
-            $context_pools->convertToSentinels($memo);
-        }
+        // call_frames emission is deferred — memory_limit_error may replace it below
 
         if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
             $call_frames_context = $this->collectRealCallStackOnMemoryLimitViolation(
