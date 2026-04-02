@@ -57,6 +57,12 @@ psql reli_memory -c "SELECT * FROM location_types_summary ORDER BY memory_usage 
 | `--db-user` | (required) | Database user |
 | `--db-password` | (empty) | Database password |
 
+### PHP memory limit
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--memory-limit` | — | Set PHP memory_limit for analysis (e.g. 2G, 512M) |
+
 All other options of `inspector:memory` work the same regardless of output format.
 
 ## Database Schema
