@@ -22,10 +22,10 @@ use Reli\Lib\FFI\FFIHelper;
  * graph edges and per-node numeric data. This reduces memory usage
  * by ~50-100x for large graphs (e.g. 6M edges: ~60 MB vs ~2.2 GB).
  *
- * CSR format:
- *   offsets[node_count + 1]: each node's child list start position
- *   edges[edge_count]:       flat array of child node IDs
- *   Node N's children = edges[offsets[N] .. offsets[N+1])
+ * Phase 2 optimizations:
+ * - indexToNode: FFI int32 array instead of PHP array (~300 MB → ~12 MB)
+ * - nodeToIndex: direct-indexed FFI int32 array if node_ids are compact
+ * - node_classes: class dictionary + FFI int16 per-node IDs (~300 MB → ~6 MB)
  *
  * @psalm-suppress InaccessibleMethod, InvalidCast, PossiblyNullOperand, InvalidOperand, MissingConstructor
  */
@@ -36,12 +36,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     // CSR for tree children
     private \FFI\CData $treeOffsets;
     private \FFI\CData $treeEdges;
-    private int $treeEdgeCount = 0;
 
     // CSR for all children (tree + non-tree, for SCC)
     private \FFI\CData $allOffsets;
     private \FFI\CData $allEdges;
-    private int $allEdgeCount = 0;
 
     // Reverse CSR for all parents
     private \FFI\CData $revOffsets;
@@ -52,11 +50,24 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private \FFI\CData $ffiSubtreeSizes;
     private \FFI\CData $ffiNodeToScc;
 
-    /** @var array<int, int> node_id => CSR index */
-    private array $nodeToIndex = [];
+    // Node ID mapping (FFI-backed)
+    private \FFI\CData $indexToNodeFfi;  // int32_t[nodeCount]: CSR index → node_id
 
-    /** @var array<int, int> CSR index => node_id */
-    private array $indexToNode = [];
+    // Direct-indexed nodeToIndex: nodeToIndexDirect[node_id + 1] = CSR index
+    // (offset by 1 to handle -1 sentinel at slot 0)
+    // If node_ids are too sparse, falls back to PHP array.
+    private ?\FFI\CData $nodeToIndexDirect = null;
+    private int $directIndexOffset = 1; // node_id + offset → array index
+    private int $directIndexSize = 0;   // size of nodeToIndexDirect array
+    /** @var array<int, int>|null fallback PHP mapping when direct indexing is not feasible */
+    private ?array $nodeToIndexPhp = null;
+
+    // Class dictionary: small PHP array of unique class names + FFI int16 per node
+    /** @var list<string> class_id → class_name */
+    private array $classDict = [];
+    /** @var array<string, int> class_name → class_id */
+    private array $classDictReverse = [];
+    private \FFI\CData $nodeClassIds; // int16_t[nodeCount], -1 = no class
 
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
@@ -77,8 +88,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getChildren(int $nodeId): array
     {
-        $idx = $this->nodeToIndex[$nodeId] ?? null;
-        if ($idx === null) {
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
             return [];
         }
         return $this->csrSlice($this->treeOffsets, $this->treeEdges, $idx);
@@ -88,8 +99,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getAllChildren(int $nodeId): array
     {
-        $idx = $this->nodeToIndex[$nodeId] ?? null;
-        if ($idx === null) {
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
             return [];
         }
         return $this->csrSlice($this->allOffsets, $this->allEdges, $idx);
@@ -99,8 +110,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getAllParents(int $nodeId): array
     {
-        $idx = $this->nodeToIndex[$nodeId] ?? null;
-        if ($idx === null) {
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
             return [];
         }
         return $this->csrSlice($this->revOffsets, $this->revEdges, $idx);
@@ -109,8 +120,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getNodeSize(int $nodeId): int
     {
-        $idx = $this->nodeToIndex[$nodeId] ?? null;
-        if ($idx === null) {
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
             return 0;
         }
         return (int)$this->ffiNodeSizes[$idx];
@@ -119,11 +130,25 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getSubtreeSize(int $nodeId): int
     {
-        $idx = $this->nodeToIndex[$nodeId] ?? null;
-        if ($idx === null) {
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
             return 0;
         }
         return (int)$this->ffiSubtreeSizes[$idx];
+    }
+
+    #[\Override]
+    public function getNodeClass(int $nodeId): ?string
+    {
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return null;
+        }
+        $classId = (int)$this->nodeClassIds[$idx];
+        if ($classId < 0) {
+            return null;
+        }
+        return $this->classDict[$classId] ?? null;
     }
 
     #[\Override]
@@ -143,7 +168,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     public function iterateNodeSizes(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
-            yield $this->indexToNode[$i] => (int)$this->ffiNodeSizes[$i];
+            yield (int)$this->indexToNodeFfi[$i] => (int)$this->ffiNodeSizes[$i];
         }
     }
 
@@ -154,7 +179,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         for ($i = 0; $i < $this->nodeCount; $i++) {
             $size = (int)$this->ffiSubtreeSizes[$i];
             if ($size > 0) {
-                yield $this->indexToNode[$i] => $size;
+                yield (int)$this->indexToNodeFfi[$i] => $size;
             }
         }
     }
@@ -171,7 +196,19 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 for ($j = $start; $j < $end; $j++) {
                     $parents[] = (int)$this->revEdges[$j];
                 }
-                yield $this->indexToNode[$i] => $parents;
+                yield (int)$this->indexToNodeFfi[$i] => $parents;
+            }
+        }
+    }
+
+    /** @return iterable<int, string> node_id => class_name */
+    #[\Override]
+    public function iterateNodeClasses(): iterable
+    {
+        for ($i = 0; $i < $this->nodeCount; $i++) {
+            $classId = (int)$this->nodeClassIds[$i];
+            if ($classId >= 0) {
+                yield (int)$this->indexToNodeFfi[$i] => $this->classDict[$classId];
             }
         }
     }
@@ -183,12 +220,35 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         for ($i = 0; $i < $this->nodeCount; $i++) {
             $scc_id = (int)$this->ffiNodeToScc[$i];
             if ($scc_id >= 0) {
-                yield $this->indexToNode[$i] => $scc_id;
+                yield (int)$this->indexToNodeFfi[$i] => $scc_id;
             }
         }
     }
 
     // ---- Private implementation ----
+
+    /**
+     * Convert node_id to CSR index. Returns -1 if not found.
+     */
+    private function nodeIdToIndex(int $nodeId): int
+    {
+        if ($this->nodeToIndexDirect !== null) {
+            $slot = $nodeId + $this->directIndexOffset;
+            if ($slot < 0 || $slot >= $this->directIndexSize) {
+                return -1;
+            }
+            return (int)$this->nodeToIndexDirect[$slot];
+        }
+        return $this->nodeToIndexPhp[$nodeId] ?? -1;
+    }
+
+    /**
+     * Convert CSR index to node_id.
+     */
+    private function indexToNodeId(int $idx): int
+    {
+        return (int)$this->indexToNodeFfi[$idx];
+    }
 
     /**
      * Extract a CSR slice as a PHP array of original node IDs.
@@ -203,7 +263,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         $result = [];
         for ($i = $start; $i < $end; $i++) {
-            $result[] = $this->indexToNode[(int)$edges[$i]];
+            $result[] = (int)$this->indexToNodeFfi[(int)$edges[$i]];
         }
         return $result;
     }
@@ -224,7 +284,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             . " WHERE run_id = {$run_id}"
         )->fetchAll(\PDO::FETCH_COLUMN);
 
-        // Build node_id set
+        // Build sorted node_id list
         $all_node_ids = [];
         foreach ($rows as $r) {
             $all_node_ids[(int)$r[0]] = true;
@@ -236,35 +296,80 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $all_node_ids[-1] = true;
         unset($edge_node_rows);
 
-        // Build mapping
+        // Build mapping: assign CSR indices
+        $this->nodeCount = count($all_node_ids);
+        $this->indexToNodeFfi = FFIHelper::new("int32_t[{$this->nodeCount}]");
+
         $idx = 0;
+        $minNodeId = PHP_INT_MAX;
+        $maxNodeId = PHP_INT_MIN;
         foreach ($all_node_ids as $node_id => $_) {
-            $this->nodeToIndex[$node_id] = $idx;
-            $this->indexToNode[$idx] = $node_id;
+            $this->indexToNodeFfi[$idx] = $node_id;
+            if ($node_id < $minNodeId) {
+                $minNodeId = $node_id;
+            }
+            if ($node_id > $maxNodeId) {
+                $maxNodeId = $node_id;
+            }
             $idx++;
         }
-        $this->nodeCount = $idx;
 
-        // Allocate FFI arrays
+        // Decide nodeToIndex strategy: direct indexing vs PHP fallback
+        // Direct indexing: array[node_id + offset] = csr_index
+        // Feasible if range is compact (< 4x node count, < 100M entries)
+        $range = $maxNodeId - $minNodeId + 1;
+        if ($range > 0 && $range < $this->nodeCount * 4 && $range < 100_000_000) {
+            $this->directIndexOffset = -$minNodeId; // node_id + offset → 0-based slot
+            $directSize = $range;
+            $this->directIndexSize = $directSize;
+            $this->nodeToIndexDirect = FFIHelper::new("int32_t[{$directSize}]");
+            // Initialize all to -1
+            for ($i = 0; $i < $directSize; $i++) {
+                $this->nodeToIndexDirect[$i] = -1;
+            }
+            // Fill
+            for ($i = 0; $i < $this->nodeCount; $i++) {
+                $nid = (int)$this->indexToNodeFfi[$i];
+                $slot = $nid + $this->directIndexOffset;
+                $this->nodeToIndexDirect[$slot] = $i;
+            }
+        } else {
+            // Fallback: PHP associative array
+            $this->nodeToIndexPhp = [];
+            for ($i = 0; $i < $this->nodeCount; $i++) {
+                $this->nodeToIndexPhp[(int)$this->indexToNodeFfi[$i]] = $i;
+            }
+        }
+        unset($all_node_ids);
+
+        // Allocate per-node FFI arrays
         $this->ffiNodeSizes = FFIHelper::new("int64_t[{$this->nodeCount}]");
         $this->ffiSubtreeSizes = FFIHelper::new("int64_t[{$this->nodeCount}]");
         $this->ffiNodeToScc = FFIHelper::new("int32_t[{$this->nodeCount}]");
+        $this->nodeClassIds = FFIHelper::new("int16_t[{$this->nodeCount}]");
 
-        // Initialize node_to_scc to -1 (no SCC)
+        // Initialize
         for ($i = 0; $i < $this->nodeCount; $i++) {
             $this->ffiNodeToScc[$i] = -1;
+            $this->nodeClassIds[$i] = -1;
         }
 
-        // Fill node sizes and classes
+        // Fill node sizes and class dictionary
         $this->nodeSizesSum = 0;
         foreach ($rows as $r) {
             $node_id = (int)$r[0];
             $size = (int)$r[1];
-            $csrIdx = $this->nodeToIndex[$node_id];
+            $csrIdx = $this->nodeIdToIndex($node_id);
             $this->ffiNodeSizes[$csrIdx] = $size;
             $this->nodeSizesSum += $size;
             if ($r[2] !== null) {
-                $this->node_classes[$node_id] = $r[2];
+                $className = (string)$r[2];
+                if (!isset($this->classDictReverse[$className])) {
+                    $classId = count($this->classDict);
+                    $this->classDict[] = $className;
+                    $this->classDictReverse[$className] = $classId;
+                }
+                $this->nodeClassIds[$csrIdx] = $this->classDictReverse[$className];
             }
         }
         unset($rows);
@@ -293,8 +398,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
 
-            $parentIdx = $this->nodeToIndex[$parent];
-            $childIdx = $this->nodeToIndex[$child];
+            $parentIdx = $this->nodeIdToIndex($parent);
+            $childIdx = $this->nodeIdToIndex($child);
 
             if ($is_tree) {
                 $treeDegree[$parentIdx] = $treeDegree[$parentIdx] + 1;
@@ -310,9 +415,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $revDegree[$childIdx] = $revDegree[$childIdx] + 1;
         }
 
-        $this->treeEdgeCount = $treeEdgeCount;
-        $this->allEdgeCount = $allEdgeCount;
-        $revEdgeCount = count($rows); // every edge has a child
+        $revEdgeCount = count($rows);
 
         // Step 2: Build offsets via prefix sum
         $this->treeOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
@@ -354,8 +457,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
 
-            $parentIdx = $this->nodeToIndex[$parent];
-            $childIdx = $this->nodeToIndex[$child];
+            $parentIdx = $this->nodeIdToIndex($parent);
+            $childIdx = $this->nodeIdToIndex($child);
 
             if ($is_tree) {
                 $pos = (int)$treePos[$parentIdx];
@@ -380,12 +483,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /** @psalm-suppress UnsupportedReferenceUsage */
     private function computeSubtreeSizesFfi(): void
     {
-        // Use a visited array to track which nodes have been computed
         $visited = [];
 
         $stack = [];
         foreach ($this->roots as $root) {
-            $stack[] = [$this->nodeToIndex[$root], false];
+            $stack[] = [$this->nodeIdToIndex($root), false];
         }
 
         while ($stack) {
@@ -426,7 +528,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         for ($v = 0; $v < $this->nodeCount; $v++) {
             // Skip the -1 sentinel node
-            if ($this->indexToNode[$v] === -1) {
+            if ((int)$this->indexToNodeFfi[$v] === -1) {
                 continue;
             }
             if (isset($index[$v])) {
@@ -476,7 +578,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                     if ($call_stack) {
                         $parent_frame = &$call_stack[count($call_stack) - 1];
-                        $lowlink[$parent_frame[0]] = min($lowlink[$parent_frame[0]], $lowlink[$node]);
+                        $lowlink[$parent_frame[0]] = min(
+                            $lowlink[$parent_frame[0]],
+                            $lowlink[$node]
+                        );
                     }
                 }
             }
@@ -486,7 +591,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         foreach ($sccs as $scc_id => $scc_indices) {
             $scc_nodes = [];
             foreach ($scc_indices as $idx) {
-                $scc_nodes[] = $this->indexToNode[$idx];
+                $scc_nodes[] = $this->indexToNodeId($idx);
             }
 
             $scc_set = array_flip($scc_indices);
@@ -494,11 +599,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $class_counts = [];
 
             foreach ($scc_indices as $idx) {
-                $node_id = $this->indexToNode[$idx];
+                $node_id = $this->indexToNodeId($idx);
                 $this->ffiNodeToScc[$idx] = $scc_id;
                 $total_size += (int)$this->ffiNodeSizes[$idx];
-                $cls = $this->node_classes[$node_id] ?? null;
-                if ($cls !== null) {
+                $classId = (int)$this->nodeClassIds[$idx];
+                if ($classId >= 0) {
+                    $cls = $this->classDict[$classId];
                     $class_counts[$cls] = ($class_counts[$cls] ?? 0) + 1;
                 }
             }
@@ -514,7 +620,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     if ($parentNodeId === -1) {
                         continue;
                     }
-                    $parentIdx = $this->nodeToIndex[$parentNodeId];
+                    $parentIdx = $this->nodeIdToIndex($parentNodeId);
                     if (!isset($scc_set[$parentIdx])) {
                         $ext_in++;
                     }
@@ -546,7 +652,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 'ext_out' => $ext_out,
                 'class_counts' => $class_counts,
                 'signature' => $signature,
-                'single_owner_likelihood' => $ext_in <= 2 ? 'high' : ($ext_in <= 10 ? 'medium' : 'low'),
+                'single_owner_likelihood' => $ext_in <= 2
+                    ? 'high'
+                    : ($ext_in <= 10 ? 'medium' : 'low'),
             ];
         }
     }
