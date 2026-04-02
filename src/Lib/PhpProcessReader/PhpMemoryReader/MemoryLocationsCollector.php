@@ -123,6 +123,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ResourceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\RuntimeCacheContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ScalarValueContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\SentinelContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\TopReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContext;
@@ -312,6 +313,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('included_files', $included_files_context, $sink, null, $memo);
             unset($included_files_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         $interned_strings_context = $this->collectInternedStrings(
@@ -325,6 +327,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('interned_strings', $interned_strings_context, $sink, null, $memo);
             unset($interned_strings_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         assert(!is_null($eg->function_table));
@@ -347,6 +350,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
             unset($global_variables_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         $call_frames_context = $this->collectCallFrames(
@@ -372,6 +376,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('function_table', $defined_functions_context, $sink, null, $memo);
             unset($defined_functions_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         $defined_classes_context = $this->collectClassTable(
@@ -386,6 +391,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('class_table', $defined_classes_context, $sink, null, $memo);
             unset($defined_classes_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         $global_constants_context = $this->collectGlobalConstants(
@@ -400,6 +406,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('global_constants', $global_constants_context, $sink, null, $memo);
             unset($global_constants_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         try {
@@ -419,6 +426,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('global_callbacks', $global_callbacks_context, $sink, null, $memo);
             unset($global_callbacks_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         try {
@@ -438,6 +446,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('modules', $modules_context, $sink, null, $memo);
             unset($modules_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         $objects_store_context = $this->collectObjectsStore(
@@ -452,6 +461,7 @@ final class MemoryLocationsCollector
         if ($sink !== null && $analyzer !== null && $memo !== null) {
             $analyzer->analyzeSingleLink('objects_store', $objects_store_context, $sink, null, $memo);
             unset($objects_store_context);
+            $context_pools->convertToSentinels($memo);
         }
 
         if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
@@ -615,8 +625,12 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools
-    ): ResourceContext {
+    ): ResourceContext|SentinelContext {
         if ($memory_locations->has($pointer->address)) {
+            $sentinel = $context_pools->getSentinel($pointer->address);
+            if ($sentinel !== null) {
+                return $sentinel;
+            }
             $memory_location = $memory_locations->get($pointer->address);
             if ($memory_location instanceof ZendResourceMemoryLocation) {
                 return $context_pools
@@ -839,8 +853,12 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): PhpReferenceContext {
+    ): PhpReferenceContext|SentinelContext {
         if ($memory_locations->has($pointer->address)) {
+            $sentinel = $context_pools->getSentinel($pointer->address);
+            if ($sentinel !== null) {
+                return $sentinel;
+            }
             $memory_location = $memory_locations->get($pointer->address);
             if ($memory_location instanceof ZendReferenceMemoryLocation) {
                 return $context_pools
@@ -880,8 +898,12 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): ArrayHeaderContext {
+    ): ArrayHeaderContext|SentinelContext {
         if ($memory_locations->has($pointer->address)) {
+            $sentinel = $context_pools->getSentinel($pointer->address);
+            if ($sentinel !== null) {
+                return $sentinel;
+            }
             $memory_location = $memory_locations->get($pointer->address);
             if ($memory_location instanceof ZendArrayMemoryLocation) {
                 return $context_pools
@@ -911,8 +933,12 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): ObjectContext {
+    ): ObjectContext|SentinelContext {
         if ($memory_locations->has($pointer->address)) {
+            $sentinel = $context_pools->getSentinel($pointer->address);
+            if ($sentinel !== null) {
+                return $sentinel;
+            }
             $memory_location = $memory_locations->get($pointer->address);
             if ($memory_location instanceof ZendArrayTableOverheadMemoryLocation) {
                 unset($memory_location);
@@ -942,8 +968,12 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         Dereferencer $dereferencer,
         ContextPools $context_pools
-    ): StringContext {
+    ): StringContext|SentinelContext {
         if ($memory_locations->has($pointer->address)) {
+            $sentinel = $context_pools->getSentinel($pointer->address);
+            if ($sentinel !== null) {
+                return $sentinel;
+            }
             $memory_location = $memory_locations->get($pointer->address);
             if ($memory_location instanceof ZendArrayTableOverheadMemoryLocation) {
                 $memory_location = null;
@@ -1936,8 +1966,12 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): FunctionDefinitionContext {
+    ): FunctionDefinitionContext|SentinelContext {
         if ($memory_locations->has($pointer->address)) {
+            $sentinel = $context_pools->getSentinel($pointer->address);
+            if ($sentinel !== null) {
+                return $sentinel;
+            }
             $memory_location = $memory_locations->get($pointer->address);
             if ($memory_location instanceof ZendOpArrayHeaderMemoryLocation) {
                 return $context_pools

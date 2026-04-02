@@ -53,4 +53,17 @@ final class ObjectContextPool
         $this->contexts = [];
         $this->handlers_contexts = [];
     }
+
+    /** @return \Generator<int, ObjectContext|ObjectHandlersContext> */
+    public function drainWithAddresses(): \Generator
+    {
+        foreach ($this->contexts as $address => $context) {
+            yield $address => $context;
+        }
+        $this->contexts = [];
+        foreach ($this->handlers_contexts as $address => $context) {
+            yield $address => $context;
+        }
+        $this->handlers_contexts = [];
+    }
 }
