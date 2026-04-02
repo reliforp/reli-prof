@@ -18,6 +18,7 @@ use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
+use Reli\Inspector\Watch\Trigger\RssUsageTrigger;
 use Reli\Inspector\Watch\Trigger\TraceDepthTrigger;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
@@ -45,6 +46,11 @@ final class TriggerFactory
         }
         if ($settings->memory_peak_watch) {
             $triggers[] = new MemoryPeakTrigger();
+        }
+        if ($settings->rss_usage_bytes !== null) {
+            $triggers[] = new RssUsageTrigger(
+                $settings->rss_usage_bytes,
+            );
         }
 
         // Tier 2 triggers

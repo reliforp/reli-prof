@@ -39,6 +39,7 @@ final class WatchSettings
         public ?int $memory_usage_bytes,
         public ?string $memory_growth_rate,
         public bool $memory_peak_watch,
+        public ?int $rss_usage_bytes,
         public ?string $watch_function,
         public ?int $trace_depth_limit,
         /** @var list<string> Variable watch expressions (scope::name:op:value) */

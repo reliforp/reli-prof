@@ -42,9 +42,11 @@ use Reli\Inspector\Watch\CooldownManager;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
+use Reli\Inspector\Watch\RssReader;
 use Reli\Inspector\Watch\TriggerFactory;
 use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\VariableSpec;
+use Reli\Inspector\Watch\Trigger\RssUsageTrigger;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Inspector\Watch\TriggerEvent;
@@ -73,6 +75,7 @@ final class WatchCommand extends Command
         private PhpGlobalsFinder $php_globals_finder,
         private PhpVersionDetector $php_version_detector,
         private HeapStatsReader $heap_stats_reader,
+        private RssReader $rss_reader,
         private VariableReader $variable_reader,
         private CallTraceReader $call_trace_reader,
         private TriggerFactory $trigger_factory,
@@ -176,11 +179,15 @@ final class WatchCommand extends Command
 
         // Check what each trigger needs
         $needs_call_trace = false;
+        $needs_rss = false;
         /** @var list<VariableSpec> $var_specs */
         $var_specs = [];
         foreach ($triggers as $trigger) {
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
+            }
+            if ($trigger instanceof RssUsageTrigger) {
+                $needs_rss = true;
             }
             if ($trigger instanceof VariableValueTrigger) {
                 $var_specs[] = new VariableSpec(
@@ -264,6 +271,7 @@ final class WatchCommand extends Command
                 $depth,
                 $stop_process,
                 $needs_call_trace,
+                $needs_rss,
                 $var_specs,
                 $triggers,
                 $actions,
@@ -335,6 +343,11 @@ final class WatchCommand extends Command
                                 $cg_address,
                             );
                     }
+
+                    $rss_bytes = null;
+                    if ($needs_rss) {
+                        $rss_bytes = $this->rss_reader->read($process_specifier->pid);
+                    }
                 } catch (\Throwable) {
                     // Target may be between requests or temporarily
                     // unreadable. Skip this poll, try next cycle.
@@ -349,6 +362,7 @@ final class WatchCommand extends Command
                     timestamp: $now,
                     previous: $previous_context,
                     variable_values: $variable_values,
+                    rss_bytes: $rss_bytes,
                 );
 
                 // Evaluate triggers — collect all fired events in this poll

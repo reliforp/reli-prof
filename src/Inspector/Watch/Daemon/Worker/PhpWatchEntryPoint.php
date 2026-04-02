@@ -19,12 +19,14 @@ use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
+use Reli\Inspector\Watch\RssReader;
 use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\VariableSpec;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryPeakTrigger;
+use Reli\Inspector\Watch\Trigger\RssUsageTrigger;
 use Reli\Inspector\Watch\Trigger\TraceDepthTrigger;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
@@ -41,6 +43,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
 {
     public function __construct(
         private HeapStatsReader $heap_stats_reader,
+        private RssReader $rss_reader,
         private CallTraceReader $call_trace_reader,
         private VariableReader $variable_reader,
         private PhpWatchWorkerProtocolInterface $protocol,
@@ -60,11 +63,15 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         // Build triggers from settings
         $triggers = $this->buildTriggers($watch_settings);
         $needs_call_trace = false;
+        $needs_rss = false;
         /** @var list<VariableSpec> $var_specs */
         $var_specs = [];
         foreach ($triggers as $trigger) {
             if ($trigger->requiresCallTrace()) {
                 $needs_call_trace = true;
+            }
+            if ($trigger instanceof RssUsageTrigger) {
+                $needs_rss = true;
             }
             if ($trigger instanceof VariableValueTrigger) {
                 $var_specs[] = new VariableSpec(
@@ -144,6 +151,11 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                                     $descriptor->eg_address,
                                 );
                         }
+
+                        $rss_bytes = null;
+                        if ($needs_rss) {
+                            $rss_bytes = $this->rss_reader->read($descriptor->pid);
+                        }
                     } catch (\Throwable) {
                         $consecutive_failures++;
                         if ($consecutive_failures >= $max_consecutive_failures) {
@@ -169,6 +181,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         timestamp: $now,
                         previous: $previous_context,
                         variable_values: $variable_values,
+                        rss_bytes: $rss_bytes,
                     );
 
                     // Evaluate triggers (with cooldown/rate limiting in worker)
@@ -224,6 +237,9 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         }
         if ($settings->memory_peak_watch) {
             $triggers[] = new MemoryPeakTrigger();
+        }
+        if ($settings->rss_usage_bytes !== null) {
+            $triggers[] = new RssUsageTrigger($settings->rss_usage_bytes);
         }
         if ($settings->watch_function !== null) {
             $triggers[] = new FunctionDetectionTrigger($settings->watch_function);
