@@ -468,110 +468,114 @@ final class MemoryLocationsCollector
         $class_table = $dereferencer->deref($eg->class_table);
         $zend_constants = $dereferencer->deref($eg->zend_constants);
 
-        // Collect objects_store, function_table, and class_table first.
-        // This populates the sentinel map with all objects, arrays, and
-        // strings. When global_variables and call_frames are collected
-        // later, collectZval hits sentinels for most data, avoiding deep
-        // recursive expansion of the entire object graph.
-        $objects_store_context = $this->collectObjectsStore(
-            $eg->objects_store,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
         if ($sink !== null && $analyzer !== null && $memo !== null) {
+            // Streaming mode: collect objects_store, function_table, and
+            // class_table BEFORE global_variables and call_frames. This
+            // populates the sentinel map so later phases hit sentinels
+            // instead of recursively expanding the object graph.
+            $objects_store_context = $this->collectObjectsStore(
+                $eg->objects_store,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
             $analyzer->analyzeSingleLink('objects_store', $objects_store_context, $sink, null, $memo);
             unset($objects_store_context);
             $context_pools->convertToSentinels($memo);
-            // Deferred edges are resolved later, after all phases complete.
-        }
 
-        $defined_functions_context = $this->collectFunctionTable(
-            $function_table,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $defined_functions_context = $this->collectFunctionTable(
+                $function_table,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
             $analyzer->analyzeSingleLink('function_table', $defined_functions_context, $sink, null, $memo);
             unset($defined_functions_context);
             $context_pools->convertToSentinels($memo);
-        }
 
-        $defined_classes_context = $this->collectClassTable(
-            $class_table,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $defined_classes_context = $this->collectClassTable(
+                $class_table,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
             $analyzer->analyzeSingleLink('class_table', $defined_classes_context, $sink, null, $memo);
             unset($defined_classes_context);
             $context_pools->convertToSentinels($memo);
-        }
 
-        $global_variables_context = $this->collectGlobalVariables(
-            $eg->symbol_table,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $global_variables_context = $this->collectGlobalVariables(
+                $eg->symbol_table,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
             $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
             unset($global_variables_context);
             $context_pools->convertToSentinels($memo);
-        }
 
-        $global_constants_context = $this->collectGlobalConstants(
-            $zend_constants,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $global_constants_context = $this->collectGlobalConstants(
+                $zend_constants,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
             $analyzer->analyzeSingleLink('global_constants', $global_constants_context, $sink, null, $memo);
             unset($global_constants_context);
             $context_pools->convertToSentinels($memo);
-        }
 
-        try {
-            $global_callbacks_context = $this->collectGlobalCallbacks(
-                $eg,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-        } catch (\Throwable $e) {
-            Log::info('failed to collect global callbacks', ['error' => $e->getMessage()]);
-            $global_callbacks_context = new GlobalCallbacksContext();
-        }
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            try {
+                $global_callbacks_context = $this->collectGlobalCallbacks(
+                    $eg,
+                    $cg->map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+            } catch (\Throwable $e) {
+                Log::info('failed to collect global callbacks', ['error' => $e->getMessage()]);
+                $global_callbacks_context = new GlobalCallbacksContext();
+            }
             $analyzer->analyzeSingleLink('global_callbacks', $global_callbacks_context, $sink, null, $memo);
             unset($global_callbacks_context);
             $context_pools->convertToSentinels($memo);
-        }
 
-        try {
-            $modules_context = $this->collectModules(
-                $bg_address,
+            try {
+                $modules_context = $this->collectModules(
+                    $bg_address,
+                    $cg->map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $memory_limit_error_details,
+                );
+            } catch (\Throwable $e) {
+                Log::info('failed to collect modules', ['error' => $e->getMessage()]);
+                $modules_context = new ModulesContext();
+            }
+            $analyzer->analyzeSingleLink('modules', $modules_context, $sink, null, $memo);
+            unset($modules_context);
+            $context_pools->convertToSentinels($memo);
+
+            $call_frames_context = $this->collectCallFrames(
+                $eg,
                 $cg->map_ptr_base,
                 $dereferencer,
                 $zend_type_reader,
@@ -579,43 +583,21 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
-        } catch (\Throwable $e) {
-            Log::info('failed to collect modules', ['error' => $e->getMessage()]);
-            $modules_context = new ModulesContext();
-        }
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
-            $analyzer->analyzeSingleLink('modules', $modules_context, $sink, null, $memo);
-            unset($modules_context);
-            $context_pools->convertToSentinels($memo);
-        }
 
-        $call_frames_context = $this->collectCallFrames(
-            $eg,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-        // call_frames emission is deferred — memory_limit_error may replace it below
+            if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
+                $call_frames_context = $this->collectRealCallStackOnMemoryLimitViolation(
+                    $this->memory_limit_error_function_context,
+                    $memory_limit_error_details->max_challenge_depth,
+                    $call_frames_context,
+                    $eg,
+                    $cg->map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                );
+            }
 
-        if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
-            $call_frames_context = $this->collectRealCallStackOnMemoryLimitViolation(
-                $this->memory_limit_error_function_context,
-                $memory_limit_error_details->max_challenge_depth,
-                $call_frames_context,
-                $eg,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-            );
-        }
-
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
-            // Emit the deferred call_frames branch (may have been replaced above)
             $analyzer->analyzeSingleLink('call_frames', $call_frames_context, $sink, null, $memo);
             unset($call_frames_context);
             $context_pools->convertToSentinels($memo);
@@ -689,6 +671,112 @@ final class MemoryLocationsCollector
                 null,
                 $memory_get_usage_size,
                 $memory_get_usage_real_size,
+            );
+        }
+
+        // Non-streaming path: original collection order (0.12.x compatible).
+        // call_frames → function_table → class_table → ... → objects_store
+        $global_variables_context = $this->collectGlobalVariables(
+            $eg->symbol_table,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+
+        $call_frames_context = $this->collectCallFrames(
+            $eg,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+
+        $defined_functions_context = $this->collectFunctionTable(
+            $function_table,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+
+        $defined_classes_context = $this->collectClassTable(
+            $class_table,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+
+        $global_constants_context = $this->collectGlobalConstants(
+            $zend_constants,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+
+        try {
+            $global_callbacks_context = $this->collectGlobalCallbacks(
+                $eg,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+        } catch (\Throwable $e) {
+            Log::info('failed to collect global callbacks', ['error' => $e->getMessage()]);
+            $global_callbacks_context = new GlobalCallbacksContext();
+        }
+
+        try {
+            $modules_context = $this->collectModules(
+                $bg_address,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+        } catch (\Throwable $e) {
+            Log::info('failed to collect modules', ['error' => $e->getMessage()]);
+            $modules_context = new ModulesContext();
+        }
+
+        $objects_store_context = $this->collectObjectsStore(
+            $eg->objects_store,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+
+        if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
+            $call_frames_context = $this->collectRealCallStackOnMemoryLimitViolation(
+                $this->memory_limit_error_function_context,
+                $memory_limit_error_details->max_challenge_depth,
+                $call_frames_context,
+                $eg,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
             );
         }
 
