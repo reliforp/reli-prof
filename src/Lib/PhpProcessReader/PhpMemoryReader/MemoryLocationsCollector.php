@@ -1263,12 +1263,22 @@ final class MemoryLocationsCollector
                 $memory_limit_error_details,
             );
             if (!is_null($this_context)) {
+                $call_frame_parent_node_id = $this->registerParentIfStreaming($call_frame_context);
+                if ($call_frame_parent_node_id !== null) {
+                    $this_context = $this->emitChildIfStreaming(
+                        'this',
+                        $this_context,
+                        $call_frame_parent_node_id,
+                    );
+                    $this->flushPoolsIfStreaming();
+                }
                 $call_frame_context->add('this', $this_context);
             }
         }
 
         $has_local_variables = false;
         $variable_table_context = new CallFrameVariableTableContext();
+        $variable_table_parent_node_id = $this->registerParentIfStreaming($variable_table_context);
         $local_variables_iterator = $execute_data->getVariables($dereferencer, $zend_type_reader);
         foreach ($local_variables_iterator as $name => $value) {
             $local_variable_context = $this->collectZval(
@@ -1281,6 +1291,14 @@ final class MemoryLocationsCollector
                 $memory_limit_error_details,
             );
             if (!is_null($local_variable_context)) {
+                if ($variable_table_parent_node_id !== null) {
+                    $local_variable_context = $this->emitChildIfStreaming(
+                        $name,
+                        $local_variable_context,
+                        $variable_table_parent_node_id,
+                    );
+                    $this->flushPoolsIfStreaming();
+                }
                 $variable_table_context->add($name, $local_variable_context);
                 $has_local_variables = true;
             }
@@ -1368,6 +1386,7 @@ final class MemoryLocationsCollector
 
         $array_context = new ArrayElementsContext($array_table_location);
         $overhead_context = new ArrayPossibleOverheadContext($array_table_overhead_location);
+        $array_elements_parent_node_id = $this->registerParentIfStreaming($array_context);
 
         foreach ($array->getItemIteratorWithZendStringKeyIfAssoc($dereferencer) as $key => $zval) {
             $element_context = new ArrayElementContext();
@@ -1384,7 +1403,6 @@ final class MemoryLocationsCollector
             } else {
                 $key_string = (string)$key;
             }
-            $array_context->add($key_string, $element_context);
             $value_context = $this->collectZval(
                 $zval,
                 $map_ptr_base,
@@ -1397,6 +1415,15 @@ final class MemoryLocationsCollector
             if (!is_null($value_context)) {
                 $element_context->add('value', $value_context);
             }
+            if ($array_elements_parent_node_id !== null) {
+                $element_context = $this->emitChildIfStreaming(
+                    $key_string,
+                    $element_context,
+                    $array_elements_parent_node_id,
+                );
+                $this->flushPoolsIfStreaming();
+            }
+            $array_context->add($key_string, $element_context);
         }
         $array_header_context->add('possible_unused_area', $overhead_context);
         $array_header_context->add('array_elements', $array_context);
@@ -1443,6 +1470,7 @@ final class MemoryLocationsCollector
 
         $properties_exists = false;
         $object_properties_context = new ObjectPropertiesContext();
+        $properties_parent_node_id = $this->registerParentIfStreaming($object_properties_context);
         $properties_iterator = $object->getPropertiesIterator(
             $dereferencer,
             $zend_type_reader,
@@ -1459,6 +1487,14 @@ final class MemoryLocationsCollector
                 $memory_limit_error_details,
             );
             if (!is_null($property_context)) {
+                if ($properties_parent_node_id !== null) {
+                    $property_context = $this->emitChildIfStreaming(
+                        $name,
+                        $property_context,
+                        $properties_parent_node_id,
+                    );
+                    $this->flushPoolsIfStreaming();
+                }
                 $object_properties_context->add($name, $property_context);
                 $properties_exists = true;
             }
