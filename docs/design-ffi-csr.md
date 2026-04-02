@@ -349,3 +349,40 @@ FFI CSR データ自体は ~60 MB 程度。残り ~2,200 MB は:
 
 これ以上の削減には、fetchAll を streaming に変えるか、
 pass の一時データをより効率的に管理する必要がある。
+
+## Dump Reader のメモリ最適化 (analyze コマンド)
+
+### 問題
+
+`MemoryDumpReaderFactory` が dump ファイルの全 region データを
+PHP 文字列として `$regions[]` 配列に読み込む (L220: `fread($fp, $size)`)。
+5.6 GB ダンプ → 5.6 GB の PHP 文字列が蓄積 → OOM。
+
+### 改善案: ファイルオフセットベースの遅延読み込み
+
+region データを PHP 文字列に読む代わりに、ファイル内のオフセットと
+サイズだけ記録。`process_vm_readv` の代わりに `fseek + fread` で
+必要なアドレス範囲を都度読む。
+
+```php
+// 今
+$regions[] = [
+    'address' => $address,
+    'size' => $size,
+    'data' => fread($fp, $size),  // 全部メモリに載る
+];
+
+// 改善後
+$regions[] = [
+    'address' => $address,
+    'size' => $size,
+    'file_offset' => ftell($fp),  // オフセットだけ記録
+];
+fseek($fp, $size, SEEK_CUR);     // データはスキップ
+```
+
+読み取り時は MemoryReader インターフェースの実装で
+ファイルからオンデマンドに読む。
+
+メモリ: 5.6 GB → region メタデータのみ (~数 MB)。
+速度: ランダムアクセスになるので若干遅くなるが、SSD なら問題ない。
