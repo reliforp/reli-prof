@@ -24,8 +24,10 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefin
 
 final class ContextPools
 {
-    /** @var array<int, SentinelContext> address → sentinel for cross-branch dedup */
+    /** @var array<int, int> address → node_id for cross-branch dedup */
     private array $sentinels = [];
+
+    private SentinelContext $shared_sentinel;
 
     public function __construct(
         public StringContextPool $string_context_pool,
@@ -35,16 +37,22 @@ final class ContextPools
         public ResourceContextPool $resource_context_pool,
         public UserFunctionDefinitionContextPool $user_function_definition_context_pool,
     ) {
+        $this->shared_sentinel = new SentinelContext(0);
     }
 
     /**
-     * Check if a sentinel exists for the given address (streaming mode).
-     * Returns the sentinel if the address was already emitted to DB in
-     * a previous branch, or null if not.
+     * Check if the given address was already emitted to DB in a previous branch.
+     * Returns a shared SentinelContext with the node_id set, or null.
+     * The returned object is reused across calls — do not store it.
      */
     public function getSentinel(int $address): ?SentinelContext
     {
-        return $this->sentinels[$address] ?? null;
+        $node_id = $this->sentinels[$address] ?? null;
+        if ($node_id === null) {
+            return null;
+        }
+        $this->shared_sentinel->node_id = $node_id;
+        return $this->shared_sentinel;
     }
 
     public static function createDefault(): self
@@ -96,7 +104,7 @@ final class ContextPools
         foreach ($entries as $address => $context) {
             $node_id = $memo[$context] ?? null;
             if ($node_id !== null) {
-                $this->sentinels[$address] = new SentinelContext($node_id);
+                $this->sentinels[$address] = $node_id;
             }
         }
     }
