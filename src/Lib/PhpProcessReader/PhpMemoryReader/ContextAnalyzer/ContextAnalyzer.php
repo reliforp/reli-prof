@@ -47,6 +47,26 @@ final class ContextAnalyzer
     }
 
     /**
+     * Pre-assign a node_id to a context and register it in the memo,
+     * without emitting it yet. Used by the collector to register parent
+     * nodes before their children are collected and emitted.
+     *
+     * @param WeakMap<ReferenceContext, int> $memo
+     */
+    public function assignNodeId(
+        ReferenceContext $context,
+        WeakMap $memo,
+    ): int {
+        $existing = $memo[$context] ?? null;
+        if ($existing !== null) {
+            return $existing;
+        }
+        $node_id = $this->node_id++;
+        $memo[$context] = $node_id;
+        return $node_id;
+    }
+
+    /**
      * Emit a single named context and its subtree to the sink.
      * Useful for streaming branches independently while sharing memo across them.
      *
