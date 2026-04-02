@@ -74,7 +74,7 @@ final class PropertyScalingPass implements PassInterface
         }
 
         $use_retained = $this->substrate !== null
-            && $this->substrate->subtree_sizes !== [];
+            && $this->substrate->hasSubtreeSizes();
 
         $per_instance = [];
         $shared = [];
@@ -192,7 +192,7 @@ final class PropertyScalingPass implements PassInterface
     private function analyzeWithGraph(string $dominant_class): array
     {
         assert($this->substrate !== null);
-        $use_retained = $this->substrate->subtree_sizes !== [];
+        $use_retained = $this->substrate->hasSubtreeSizes();
 
         // Load link_names for all tree edges
         $link_names = $this->loadLinkNames();
@@ -202,16 +202,16 @@ final class PropertyScalingPass implements PassInterface
         /** @var array<string, array{distinct: array<int, true>, total_refs: int, size: int}> */
         $prop_stats = [];
 
-        foreach ($this->substrate->node_classes as $node_id => $cls) {
+        foreach ($this->substrate->iterateNodeClasses() as $node_id => $cls) {
             if ($cls !== $dominant_class) {
                 continue;
             }
-            foreach ($this->substrate->children[$node_id] ?? [] as $child) {
+            foreach ($this->substrate->getChildren($node_id) as $child) {
                 if (($link_names[$child] ?? '') !== 'object_properties') {
                     continue;
                 }
                 // child = ObjectPropertiesContext
-                foreach ($this->substrate->children[$child] ?? [] as $prop_child) {
+                foreach ($this->substrate->getChildren($child) as $prop_child) {
                     $prop_name = $link_names[$prop_child] ?? null;
                     if ($prop_name === null) {
                         continue;
@@ -228,10 +228,10 @@ final class PropertyScalingPass implements PassInterface
                     // Use retained if available, else shallow
                     if ($use_retained) {
                         $prop_stats[$prop_name]['size']
-                            += $this->substrate->subtree_sizes[$prop_child] ?? 0;
+                            += $this->substrate->getSubtreeSize($prop_child);
                     } else {
                         $prop_stats[$prop_name]['size']
-                            += $this->substrate->node_sizes[$prop_child] ?? 0;
+                            += $this->substrate->getNodeSize($prop_child);
                     }
                 }
                 break;

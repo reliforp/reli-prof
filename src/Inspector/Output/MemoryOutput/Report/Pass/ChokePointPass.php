@@ -40,8 +40,8 @@ final class ChokePointPass implements PassInterface
     public function analyze(): array
     {
         $chokepoints = [];
-        foreach ($this->substrate->subtree_sizes as $node => $subtree) {
-            $shallow = $this->substrate->node_sizes[$node] ?? 0;
+        foreach ($this->substrate->iterateSubtreeSizes() as $node => $subtree) {
+            $shallow = $this->substrate->getNodeSize($node);
             if ($subtree < 1024 * 1024) {
                 continue;
             }
@@ -67,7 +67,7 @@ final class ChokePointPass implements PassInterface
         $filtered = [];
         foreach ($chokepoints as $cp) {
             $has_child_candidate = false;
-            foreach ($this->substrate->children[$cp[0]] ?? [] as $child) {
+            foreach ($this->substrate->getChildren($cp[0]) as $child) {
                 if (isset($candidate_set[$child])) {
                     $has_child_candidate = true;
                     break;
@@ -160,7 +160,7 @@ final class ChokePointPass implements PassInterface
                 ? PathFormatter::toPhpSyntax($up_parts, $up_types)
                 : '(root)';
 
-            $n_children = count($this->substrate->children[$node] ?? []);
+            $n_children = count($this->substrate->getChildren($node));
 
             $heap = max($this->heap_usage, 1);
             $pct = $subtree / $heap * 100.0;

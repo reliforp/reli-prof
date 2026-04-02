@@ -49,7 +49,7 @@ final class OwnershipPatternPass implements PassInterface
         // Build class instance counts
         /** @var array<string, int> */
         $class_counts = [];
-        foreach ($this->substrate->node_classes as $cls) {
+        foreach ($this->substrate->iterateNodeClasses() as $cls) {
             $class_counts[$cls] = ($class_counts[$cls] ?? 0) + 1;
         }
 
@@ -58,24 +58,22 @@ final class OwnershipPatternPass implements PassInterface
         /** @var array<string, array<string, int>> */
         $ownership = [];
 
-        foreach ($this->substrate->node_classes as $node_id => $owner_class) {
-            foreach ($this->substrate->children[$node_id] ?? [] as $child) {
+        foreach ($this->substrate->iterateNodeClasses() as $node_id => $owner_class) {
+            foreach ($this->substrate->getChildren($node_id) as $child) {
                 if (($link_names[$child] ?? '') !== 'object_properties') {
                     continue;
                 }
                 // child = ObjectPropertiesContext, iterate its children
-                foreach ($this->substrate->children[$child] ?? [] as $prop_child) {
+                foreach ($this->substrate->getChildren($child) as $prop_child) {
                     // prop_child may be the property value node
-                    $owned_class = $this->substrate->node_classes[$prop_child]
-                        ?? null;
+                    $owned_class = $this->substrate->getNodeClass($prop_child);
                     if ($owned_class !== null && $owned_class !== $owner_class) {
                         $ownership[$owner_class][$owned_class]
                             = ($ownership[$owner_class][$owned_class] ?? 0) + 1;
                     }
                     // Also check one level deeper (property → value → object)
-                    foreach ($this->substrate->children[$prop_child] ?? [] as $grandchild) {
-                        $gc_class = $this->substrate->node_classes[$grandchild]
-                            ?? null;
+                    foreach ($this->substrate->getChildren($prop_child) as $grandchild) {
+                        $gc_class = $this->substrate->getNodeClass($grandchild);
                         if ($gc_class !== null && $gc_class !== $owner_class) {
                             $ownership[$owner_class][$gc_class]
                                 = ($ownership[$owner_class][$gc_class] ?? 0) + 1;
@@ -196,9 +194,9 @@ final class OwnershipPatternPass implements PassInterface
     {
         $total = 0;
         $count = 0;
-        foreach ($this->substrate->node_classes as $nid => $cls) {
+        foreach ($this->substrate->iterateNodeClasses() as $nid => $cls) {
             if ($cls === $class_name) {
-                $total += $this->substrate->node_sizes[$nid] ?? 0;
+                $total += $this->substrate->getNodeSize($nid);
                 $count++;
                 if ($count >= 10) {
                     break; // sample
@@ -218,23 +216,23 @@ final class OwnershipPatternPass implements PassInterface
         array $link_names,
     ): string {
         // Sample: find one owner instance and check which property points to owned
-        foreach ($this->substrate->node_classes as $node_id => $cls) {
+        foreach ($this->substrate->iterateNodeClasses() as $node_id => $cls) {
             if ($cls !== $owner_class) {
                 continue;
             }
-            foreach ($this->substrate->children[$node_id] ?? [] as $child) {
+            foreach ($this->substrate->getChildren($node_id) as $child) {
                 if (($link_names[$child] ?? '') !== 'object_properties') {
                     continue;
                 }
-                foreach ($this->substrate->children[$child] ?? [] as $prop_child) {
+                foreach ($this->substrate->getChildren($child) as $prop_child) {
                     $prop_name = $link_names[$prop_child] ?? '';
                     // Direct child
-                    if (($this->substrate->node_classes[$prop_child] ?? null) === $owned_class) {
+                    if ($this->substrate->getNodeClass($prop_child) === $owned_class) {
                         return $prop_name;
                     }
                     // One level deeper
-                    foreach ($this->substrate->children[$prop_child] ?? [] as $gc) {
-                        if (($this->substrate->node_classes[$gc] ?? null) === $owned_class) {
+                    foreach ($this->substrate->getChildren($prop_child) as $gc) {
+                        if ($this->substrate->getNodeClass($gc) === $owned_class) {
                             return $prop_name;
                         }
                     }

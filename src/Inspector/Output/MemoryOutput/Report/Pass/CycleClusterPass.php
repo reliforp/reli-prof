@@ -39,12 +39,12 @@ final class CycleClusterPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        if ($this->substrate->scc_profiles === []) {
+        if ($this->substrate->getSccProfiles() === []) {
             return [];
         }
 
         $pattern_groups = [];
-        foreach ($this->substrate->scc_profiles as $profile) {
+        foreach ($this->substrate->getSccProfiles() as $profile) {
             $pattern_groups[$profile['signature']][] = $profile;
         }
 
@@ -251,12 +251,12 @@ final class CycleClusterPass implements PassInterface
         $findings = [];
         $seen_risks = [];
 
-        foreach ($this->substrate->scc_profiles as $profile) {
+        foreach ($this->substrate->getSccProfiles() as $profile) {
             $scc_set = array_flip($profile['nodes']);
 
             // Check ext_outgoing: children of SCC nodes that are outside SCC
             foreach ($profile['nodes'] as $node) {
-                foreach ($this->substrate->children[$node] ?? [] as $child) {
+                foreach ($this->substrate->getChildren($node) as $child) {
                     if (isset($scc_set[$child])) {
                         continue;
                     }
@@ -300,7 +300,7 @@ final class CycleClusterPass implements PassInterface
             }
             $visited[$node] = true;
 
-            $cls = $this->substrate->node_classes[$node] ?? null;
+            $cls = $this->substrate->getNodeClass($node);
             if ($cls !== null) {
                 foreach ($resource_classes as $rc) {
                     if ($cls === $rc || str_ends_with($cls, "\\{$rc}")) {
@@ -352,7 +352,7 @@ final class CycleClusterPass implements PassInterface
             }
 
             // Continue BFS
-            foreach ($this->substrate->children[$node] ?? [] as $child) {
+            foreach ($this->substrate->getChildren($node) as $child) {
                 if (!isset($visited[$child])) {
                     $queue[] = $child;
                 }
@@ -373,14 +373,14 @@ final class CycleClusterPass implements PassInterface
 
         foreach ($nodes as $node) {
             // Check all_children for edges that go to another SCC member
-            foreach ($this->substrate->all_children[$node] ?? [] as $child) {
+            foreach ($this->substrate->getAllChildren($node) as $child) {
                 if (!isset($scc_set[$child])) {
                     continue;
                 }
                 // Is this a non-tree edge? (tree edge would be in $children)
                 $is_tree = in_array(
                     $child,
-                    $this->substrate->children[$node] ?? [],
+                    $this->substrate->getChildren($node),
                     true
                 );
                 if ($is_tree) {
@@ -389,8 +389,8 @@ final class CycleClusterPass implements PassInterface
 
                 // Found a non-tree edge within SCC
                 $link = $link_names[$child] ?? '?';
-                $src_class = $this->substrate->node_classes[$node] ?? null;
-                $tgt_class = $this->substrate->node_classes[$child] ?? null;
+                $src_class = $this->substrate->getNodeClass($node);
+                $tgt_class = $this->substrate->getNodeClass($child);
 
                 if ($src_class !== null && $tgt_class !== null) {
                     return "{$src_class}::\${$link} -> {$tgt_class}";
@@ -416,13 +416,13 @@ final class CycleClusterPass implements PassInterface
         $downstream = 0;
 
         foreach ($nodes as $node) {
-            $shallow_total += $this->substrate->node_sizes[$node] ?? 0;
+            $shallow_total += $this->substrate->getNodeSize($node);
 
             // Add downstream retained from tree children outside SCC
-            foreach ($this->substrate->children[$node] ?? [] as $child) {
+            foreach ($this->substrate->getChildren($node) as $child) {
                 if (!isset($scc_set[$child])) {
                     $downstream
-                        += $this->substrate->subtree_sizes[$child] ?? 0;
+                        += $this->substrate->getSubtreeSize($child);
                 }
             }
         }
@@ -447,7 +447,7 @@ final class CycleClusterPass implements PassInterface
         // Find an SCC node that has an external parent (entry point)
         $entry_node = null;
         foreach ($nodes as $node) {
-            foreach ($this->substrate->all_parents[$node] ?? [] as $parent) {
+            foreach ($this->substrate->getAllParents($node) as $parent) {
                 if ($parent !== -1 && !isset($scc_set[$parent])) {
                     $entry_node = $node;
                     break 2;
