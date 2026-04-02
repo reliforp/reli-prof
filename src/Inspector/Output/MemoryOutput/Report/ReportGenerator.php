@@ -22,6 +22,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\CompanionDetectionPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\CycleClusterPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\DrillDownPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\DynamicPropertiesPass;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\GcPendingPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\NonTreeEdgePass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\OverviewPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\OwnershipPatternPass;
@@ -108,6 +109,7 @@ final class ReportGenerator
             ));
             $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
+            $findings = array_merge($findings, $this->runPass(new GcPendingPass($substrate, $db, $run_id)));
         }
 
         $findings = $this->deduplicateFindings($findings);
