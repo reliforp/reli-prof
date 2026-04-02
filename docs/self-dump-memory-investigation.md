@@ -268,6 +268,47 @@ Need to check if `collectZval` → `isIndirect` path follows through without
 defer, or if there are other non-deferred paths.
 
 Options:
+## Round 8b: Per-Object Profiling (127 MB early dump, `4efa0ce`)
+
+Used 127 MB reli-prof early-stage dump (192,772 objects in objects_store).
+Same class/function tables as full dump but far fewer objects.
+
+Per-object logging inside objects_store:
+
+| obj# | class | heap | RSS |
+|---|---|---|---|
+| 1 | Composer\Autoload\ClassLoader | 16 MB | 55 MB |
+| 2 | Symfony\Console\Application | 16 MB | 55 MB |
+| ... | (various DI/Symfony) | 16 MB | 55 MB |
+| 14 | DI\Proxy\NativeProxyFactory | 16 MB | 55 MB |
+| **15** | **DI\Container** | **16 MB** | **55 MB** |
+| 16 | **NEVER REACHED** → OOM | | 10 GB |
+
+**DI\Container (obj #15) is the killer.** Processing this single object
+takes 170+ seconds and grows RSS from 55 MB to 10+ GB while **PHP heap
+stays at 16 MB**. This means the memory growth is entirely in FFI
+CData buffers, not PHP objects.
+
+### Key insight: FFI memory leak, not PHP heap
+
+`memory_get_usage(true)` = 16 MB constant. RSS = 10+ GB.
+The difference (~10 GB) is FFI CData allocated by the dump reader's
+`fread` → `FFI::memcpy` → return CData path. These CData buffers are
+not counted by `memory_get_usage` but contribute to RSS.
+
+DI\Container likely has a huge `$resolvedEntries` or `$definitionSource`
+property. When `getPropertiesIterator` encounters this property, the
+`collectZval` is called, finds it's an array, calls
+`collectZendArrayPointer` which returns null (deferred). **But the
+problem may be earlier: `getPropertiesIterator` itself deref-ing the
+property table entries**, or the DI\Container object being misread and
+having a corrupt `nNumUsed` causing millions of iterations.
+
+### Next steps
+1. Check if `getPropertiesIterator` loops correctly for DI\Container
+2. Verify the dump reader's FFI CData buffers are being freed
+3. Consider using `php_version`-aware property count limits
+
 1. **Defer arrays** the same way objects are deferred (shallow objects_store
    should only record the object's own memory, not its property values)
 2. **Don't collect property values at all** during objects_store — just record
