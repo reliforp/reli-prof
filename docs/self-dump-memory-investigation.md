@@ -126,6 +126,7 @@ cross-object references.
 | v6 (shallow objects_store, bug) | class_table | class_table | ~480s |
 | v7 (fixed defer scope) | objects_store | objects_store | ~1380s |
 | v8 (defer arrays+refs) | objects_store (#11) | objects_store | ~510s |
+| v9 (skip dyn props etc) | objects_store | objects_store | ~540s |
 
 The reli self-dump has millions of objects interconnected through the running
 reli-prof process's object graph. **Any phase that first touches this graph**
@@ -234,6 +235,37 @@ must go through the pointer-level functions that have defer guards:
 
 Or simpler: when `defer_unseen_objects` is true, skip dynamic_properties,
 closure, generator, and fiber collection entirely (defer all sub-collections).
+
+## Round 8: Skip dynamic props/closure/generator/fiber (commit `4efa0ce`)
+
+When `defer_unseen_objects` is true, `collectZendObject` now returns early
+after the declared properties loop, skipping dynamic_properties, closure,
+generator, fiber, weak reference/map.
+
+| Phase | Heap | RSS |
+|---|---|---|
+| before_objects_store | 21 MB | 62 MB |
+| **after_objects_store** | **NEVER REACHED** → OOM | |
+
+**Still OOMs in objects_store at `ZendArray.php:223`.** RSS ~20 MB/s, ~540s.
+
+The declared properties loop itself is still causing the issue. Even with
+all property VALUES deferred (arrays/objects/references return null), the
+properties iterator (`getPropertiesIterator`) walks the ZendArray of
+property slots. For objects with many declared properties, this creates
+MemoryLocation objects for each property's string key and the property
+table itself.
+
+More likely: there is still a code path within the declared properties
+loop that doesn't hit the defer guard. The `collectZval` for a property
+value calls `collectZendStringPointer` for string values (strings are NOT
+deferred), creating StringContext + ZendStringMemoryLocation. With millions
+of string properties across 910 objects, this accumulates.
+
+However 910 objects × thousands of string properties should not reach 10 GB.
+The more likely explanation: **some property value type is not being deferred**.
+Need to check if `collectZval` → `isIndirect` path follows through without
+defer, or if there are other non-deferred paths.
 
 Options:
 1. **Defer arrays** the same way objects are deferred (shallow objects_store
