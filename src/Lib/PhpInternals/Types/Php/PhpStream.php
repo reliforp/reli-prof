@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Php;
 
+use FFI\CData;
+use FFI\PhpInternals\php_stream;
 use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
@@ -28,7 +30,7 @@ final class PhpStream implements CDataDereferencable
     public int $res;
 
     /**
-     * @param CastedCData<\FFI\PhpInternals\php_stream> $casted_cdata
+     * @param CastedCData<php_stream> $casted_cdata
      * @param Pointer<PhpStream> $pointer
      */
     public function __construct(
@@ -62,7 +64,10 @@ final class PhpStream implements CDataDereferencable
     #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
-        /** @var CastedCData<\FFI\PhpInternals\php_stream> $casted_cdata */
+        /**
+         * @var CastedCData<php_stream> $casted_cdata
+         * @var Pointer<self> $pointer
+         */
         return new self($casted_cdata, $pointer);
     }
 

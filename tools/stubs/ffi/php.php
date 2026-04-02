@@ -329,6 +329,31 @@ class zend_resource extends CData
     public zend_refcounted_h $gc;
     public int $handle;
     public int $type;
+    public int $ptr;
+}
+
+class php_stream_ops extends CData
+{
+    public ?CPointer $label;
+}
+
+class php_stream extends CData
+{
+    public ?CPointer $ops;
+    public int $abstract;
+    public ?CPointer $res;
+}
+
+class php_stream_memory_data extends CData
+{
+    public ?CPointer $data;
+    public int $fpos;
+}
+
+class php_stream_temp_data extends CData
+{
+    public ?CPointer $innerstream;
+    public int $smax;
 }
 class zend_type extends CData
 {

@@ -647,10 +647,9 @@ final class MemoryLocationsCollector
                     $resource_context,
                 );
             }
-        } catch (\Throwable $e) {
+        } catch (\Throwable) {
             // Reading stream data is best-effort; if the memory is
             // unmapped or the layout doesn't match, just skip it.
-            @file_put_contents('/tmp/reli-stream-debug.log', "stream probe failed: ptr=" . dechex($ptr_address) . " err=" . $e->getMessage() . "\n", FILE_APPEND);
             return;
         }
     }

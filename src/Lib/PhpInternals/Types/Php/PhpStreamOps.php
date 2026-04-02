@@ -53,7 +53,10 @@ final class PhpStreamOps implements CDataDereferencable
     #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
-        /** @var CastedCData<php_stream_ops> $casted_cdata */
+        /**
+         * @var CastedCData<php_stream_ops> $casted_cdata
+         * @var Pointer<self> $pointer
+         */
         return new self($casted_cdata, $pointer);
     }
 
