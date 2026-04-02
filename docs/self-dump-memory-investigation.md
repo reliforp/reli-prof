@@ -6,35 +6,32 @@ This document records the instrumented measurement results.
 ## Setup
 
 - Dump file: 5.6 GB reli self-dump (`/tmp/reli_self.dump`)
-- Branch: `claude/optimize-memory-analysis-GchbQ` (commit `716445c`)
 - PHP memory_limit: 10 GB
 - Output format: sqlite3 (streaming mode with sink)
-- Optimizations active: lazy dump loading, streaming emission, sentinel contexts, lightweight MemoryLocations (address-only seen set), pool flush after sub-tree emission
 
-## Instrumentation
+## Round 1: Baseline (commit `716445c`)
 
-Added `memory_get_usage(true)`, `memory_get_usage(false)`, and `/proc/self/status` VmRSS logging at each phase boundary in `collectAll()`.
+Optimizations active: lazy dump loading, streaming emission, sentinel contexts,
+lightweight MemoryLocations (address-only seen set), pool flush after sub-tree emission.
 
-Also tracked `$seen` count (lightweight MemoryLocations), `memory_locations` count, and sentinel count (ContextPools).
+Collection order: included_files → interned_strings → global_variables →
+call_frames → function_table → class_table → global_constants → global_callbacks →
+modules → objects_store.
 
-## Results
+### Phase-by-Phase Memory
 
-### Phase-by-Phase Memory (collectAll)
+| Phase | Heap | RSS | seen | sentinels |
+|---|---|---|---|---|
+| start | 10 MB | 49 MB | - | - |
+| after_setup_chunks_vm | 19 MB | 56 MB | - | - |
+| after_included_files | 19 MB | 57 MB | 303 | 280 |
+| after_interned_strings | 31 MB | 69 MB | 9,305 | 8,657 |
+| after_global_variables | 31 MB | 71 MB | 11,082 | 10,104 |
+| **after_call_frames** | **NEVER REACHED** | | | |
 
-| Phase | Heap | Used | RSS | seen | sentinels |
-|---|---|---|---|---|---|
-| start | 10 MB | 10 MB | 49 MB | - | - |
-| after_setup_chunks_vm | 19 MB | 17 MB | 56 MB | - | - |
-| after_included_files | 19 MB | 17 MB | 57 MB | 303 | 280 |
-| after_interned_strings | 31 MB | 21 MB | 69 MB | 9,305 | 8,657 |
-| after_global_variables | 31 MB | 22 MB | 71 MB | 11,082 | 10,104 |
-| **after_call_frames** | **NEVER REACHED** | | | | |
-
-OOM at Zval.php:49 during `collectCallFrames()`.
+**OOM at Zval.php:49 during `collectCallFrames()`.**
 
 ### RSS Progression During call_frames
-
-Monitored via `/proc/PID/status` VmRSS while call_frames was collecting:
 
 | Time (from start) | RSS |
 |---|---|
@@ -42,64 +39,127 @@ Monitored via `/proc/PID/status` VmRSS while call_frames was collecting:
 | ~90s | ~3,022 MB |
 | ~210s | ~5,333 MB |
 | ~330s | ~7,020 MB |
-| ~420s | ~8,323 MB |
 | ~480s | ~9,279 MB |
-| ~540s | 10,737 MB → **OOM** (Allowed memory size exhausted) |
+| ~540s | 10,737 MB → **OOM** |
 
-Growth rate: ~18 MB/s sustained over 8+ minutes.
-
-### Fatal Error
-
-```
-PHP Fatal error: Allowed memory size of 10737418240 bytes exhausted
-  (tried to allocate 20480 bytes) in
-  .../src/Lib/PhpInternals/Types/Zend/Zval.php on line 49
-```
-
-## Analysis
-
-### Why call_frames is the bottleneck
-
-1. **Deferred emission**: call_frames emission is deferred to after objects_store (to handle memory_limit_error replacement). This means the entire call_frames context tree stays in memory until the end.
-
-2. **Recursive object graph**: Each call frame's `collectCallFrame()` calls `collectZval()` recursively, which follows object properties, array elements, etc. In the reli self-dump, the call stack variables reference the **entire** running reli-prof object graph (the dump reader, memory locations, context pools, etc.).
-
-3. **Sub-tree emission works but not enough**: The streaming mode does emit each frame as a sub-tree and converts it to a SentinelContext. However, the recursive `collectZval` chain within a single frame creates many intermediate Context objects and MemoryLocation entries before the frame can be emitted.
-
-4. **$seen array growth**: The lightweight MemoryLocations uses `array<int, true>` which at millions of entries (~64 bytes/entry in PHP HashTable) consumes hundreds of MB. After interned_strings there are ~9K entries, after global_variables ~11K. During call_frames this grows to millions as the entire object graph is traversed.
-
-### No other phase comes close
-
-| Phase | Memory delta (heap) | Notes |
-|---|---|---|
-| setup_chunks_vm | +9 MB | Chunk iteration |
-| included_files | +0 MB | 303 entries, negligible |
-| interned_strings | +12 MB | 9K strings |
-| global_variables | +0 MB | Small symbol table |
-| call_frames | **+9,700+ MB → OOM** | The entire problem |
-| function_table | not reached | |
-| class_table | not reached | |
-| objects_store | not reached | |
-
+Growth rate: ~18 MB/s sustained.
 call_frames accounts for **99.3%+** of memory consumption.
 
-### Objects not yet reached
+## Round 2: Reorder + Inner-Loop Streaming (commit `a129ea1`)
 
-Notably, `objects_store` and `class_table` — which for a normal target would be significant — are never even reached. The call_frames phase alone exhausts 10 GB.
+New optimizations:
+- Inner-loop streaming (`0260fae`): each array element, object property,
+  and call frame variable emitted individually as sub-tree
+- Collection reorder (`a129ea1`): objects_store, function_table, class_table
+  moved before call_frames (but global_variables stays before objects_store)
+
+Collection order: included_files → interned_strings → **global_variables** →
+objects_store → function_table → class_table → global_constants → global_callbacks →
+modules → call_frames.
+
+### Phase-by-Phase Memory
+
+| Phase | Heap | RSS | seen | sentinels |
+|---|---|---|---|---|
+| start | 10 MB | 49 MB | - | - |
+| before_global_variables | 21 MB | 62 MB | 9,305 | 9,279 |
+| **after_global_variables** | **NEVER REACHED** | | | |
+
+**OOM at MemoryDumpReaderFactory.php:84 during `collectGlobalVariables()`.**
+
+### RSS Progression During global_variables
+
+| Time (from start) | RSS |
+|---|---|
+| ~30s | 748 MB |
+| ~120s | 2,945 MB |
+| ~240s | 5,758 MB |
+| ~360s | 8,381 MB |
+| ~420s | 9,701 MB → OOM |
+
+Growth rate: ~22 MB/s sustained.
+
+## Round 3: Reorder Only, No Inner-Loop (manual test)
+
+Collection order: included_files → interned_strings → **objects_store** →
+function_table → class_table → global_constants → global_callbacks → modules →
+global_variables → call_frames.
+
+| Phase | Heap | RSS |
+|---|---|---|
+| after_interned_strings | 31 MB | 70 MB |
+| **after_objects_store** | **NEVER REACHED** | |
+
+**OOM at Zval.php:49 during `collectObjectsStore()`.**
+RSS: ~18 MB/s growth, OOM at 570s.
+
+## Key Finding
+
+**Whichever phase first walks the full object graph blows up.**
+
+| Scenario | First big phase | OOM phase | Time to OOM |
+|---|---|---|---|
+| v3 (original order) | call_frames | call_frames | ~540s |
+| v4a (reorder + inner-loop) | global_variables | global_variables | ~420s |
+| v4b (reorder only) | objects_store | objects_store | ~570s |
+
+The reli self-dump has millions of objects interconnected through the running
+reli-prof process's object graph. **Any phase that first touches this graph**
+recursively expands it via `collectZval()`, creating millions of Context objects.
+
+Inner-loop streaming helps for breadth (emitting each array element / object
+property individually), but **a single `collectZval()` call for one variable
+that references a massive object** still recursively builds the entire subtree
+before the element can be emitted.
+
+## Root Cause: Recursive collectZval Expansion
+
+```
+$GLOBALS['container'] →
+  collectZval($container) →
+    collectZendObject(Container) →
+      property 'services' →
+        collectZval($services) →
+          collectZendArray([1000 services]) →
+            element[0] →
+              collectZval(Service0) →
+                collectZendObject(Service0) →
+                  property 'dependency' → ... (millions of objects deep)
+```
+
+Even with inner-loop streaming at each level, the recursive call stack keeps
+all intermediate Context objects alive until the deepest leaf returns.
+The PHP call stack holds references to all ancestor frames' local variables.
 
 ## Potential Solutions
 
-### 1. Don't defer call_frames emission
-If call_frames were emitted immediately (like other phases), the memory_limit_error replacement logic would need an alternative approach. The deferred emission forces the entire call_frames tree to stay in memory.
+### 1. Iterative (stack-based) collection instead of recursive
+Replace recursive `collectZval()` with an explicit stack/queue. Emit sub-trees
+breadth-first or in bounded batches. This decouples memory lifetime from
+PHP call stack depth.
 
-### 2. Finer-grained sub-tree emission within frames
-Currently, each call frame is emitted as a sub-tree. But a single frame can reference millions of objects through its local variables. Breaking down variable-level emission (each local variable as a sub-tree) would bound memory per-variable instead of per-frame.
+### 2. Objects_store first + sentinel-aware collectZval
+Move objects_store before everything else, AND make `collectObjectsStore` use
+the iterative approach (since objects_store is flat: just iterate all buckets).
+Each object is collected in isolation, emitted, sentinel-ized. Then all
+subsequent phases (global_variables, call_frames) only hit sentinels.
 
-### 3. Limit recursion depth during collection
-For self-analysis scenarios, the object graph reachable from the call stack is the dump reader itself. A depth limit or "already in objects_store" cutoff could prevent the recursive traversal from walking the entire graph.
+The key insight: `collectObjectsStore` iterates a flat bucket array — it
+doesn't need recursion. Each object can be collected independently with
+inner-loop streaming on its properties. The problem is that `collectZendObject`
+calls `collectZval` on each property, which recursively follows references
+to OTHER objects — but those other objects are also in objects_store and
+should be collected when their bucket is reached.
 
-### 4. Two-pass collection for call_frames
-First pass: record addresses only (no Context objects). Second pass: collect and emit in chunks. This would separate the "what exists" question from the "build context tree" question.
+If `collectObjectsStore` processed objects WITHOUT following cross-object
+references (just recording the object's own properties as addresses/sentinels),
+each object would be O(properties) instead of O(reachable graph).
 
-### 5. Process call_frames after objects_store
-If objects_store were collected first, most objects would already be in the sentinel map. call_frames collection would then get sentinel hits for most objects, avoiding the recursive expansion. This would require restructuring the memory_limit_error handling.
+### 3. Depth limit on recursive traversal
+Stop recursion at a configurable depth. Deeper objects get a placeholder
+context. This trades accuracy for bounded memory.
+
+### 4. Two-phase collection
+Phase 1: Walk the entire graph, record only addresses (no Context objects).
+Phase 2: For each address, create Context and emit immediately.
+This separates traversal from Context construction.
