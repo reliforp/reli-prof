@@ -58,6 +58,7 @@ class GraphSubstrate
 
     private const FFI_CSR_THRESHOLD = 2_000_000;
 
+    /** @psalm-suppress UnsafeInstantiation */
     public static function loadFromDb(\PDO $db, int $run_id): static
     {
         $substrate = new static();
