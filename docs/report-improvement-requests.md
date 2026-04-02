@@ -828,17 +828,26 @@ objects_store からのみ到達可能で、call_frames / global_variables / cla
 からは辿れないオブジェクト群 = **ユーザーコードから到達不能だが循環参照で
 refcount > 0 のため GC cycle collector 待ちのゴミ**。
 
-これは「今まさにリークしているメモリ」。`gc_collect_cycles()` で回収されるが、
-それまでヒープを圧迫。長寿命 worker では蓄積し続ける。
+objects_store からのみ到達可能なオブジェクトは GC cycle collector の回収対象
+である可能性がある。ただし以下の偽陽性リスクがあるため、確定的な表現は避ける:
+
+- reli が追跡していない経路（未対応の拡張内部参照など）から保持されている場合
+- GC は対象数の閾値 (10,000 potential cycles) で自動トリガされるため、
+  少量なら自動回収されて問題にならない
+- 単発で容量が大きいが数が少ないケースは GC 閾値に達しにくい
 
 ```
-[HIGH] gc_pending_garbage: 500 objects (2.3 MB) reachable only from objects_store
+[MEDIUM] gc_pending_candidate: 500 objects (2.3 MB) reachable only via objects_store
   Classes: 200× Message, 300× Attachment
-  These objects are unreachable from user code but alive due to circular references.
-  gc_collect_cycles() would reclaim them.
+  These MAY be unreachable from user code and awaiting GC cycle collection.
+  Note: reli may not track all reference paths; false positive possible.
+  If this grows over time across snapshots, it likely indicates a leak.
 ```
+
+severity は MEDIUM（確実ではないため）。複数スナップショットで増加している
+場合に HIGH に昇格。
 
 検出: graph substrate の blame allocation で objects_store exclusive が大きい
 ノードのうち、SCC に属するものを抽出。
 
-objects_store のみから到達 + SCC 内 = 「循環参照で生き残っている到達不能ゴミ」。
+objects_store のみから到達 + SCC 内 = 「循環参照で生き残っている到達不能ゴミ」の候補。
