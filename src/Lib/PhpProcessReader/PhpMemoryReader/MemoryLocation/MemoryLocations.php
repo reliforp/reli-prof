@@ -19,12 +19,30 @@ final class MemoryLocations
 {
     /** @param array<MemoryLocation> $memory_locations */
     public function __construct(
-        public array $memory_locations = []
+        public array $memory_locations = [],
+        private bool $lightweight = false,
     ) {
     }
 
+    /**
+     * Create a lightweight instance that stores only a set of seen
+     * addresses instead of full MemoryLocation objects.
+     * For streaming mode where location data has already been emitted to the DB.
+     */
+    public static function createLightweight(): self
+    {
+        return new self(lightweight: true);
+    }
+
+    /** @var array<int, true> seen addresses for lightweight mode */
+    private array $seen = [];
+
     public function add(MemoryLocation $memory_location): void
     {
+        if ($this->lightweight) {
+            $this->seen[$memory_location->address] = true;
+            return;
+        }
         if ($this->has($memory_location->address)) {
             $recorded_memory_location = $this->get($memory_location->address);
             if ($recorded_memory_location instanceof ZendArrayTableOverheadMemoryLocation) {
@@ -44,6 +62,9 @@ final class MemoryLocations
 
     public function has(int $address): bool
     {
+        if ($this->lightweight) {
+            return isset($this->seen[$address]);
+        }
         return isset($this->memory_locations[$address]);
     }
 

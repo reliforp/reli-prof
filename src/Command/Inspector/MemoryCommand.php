@@ -21,9 +21,7 @@ use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConso
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
@@ -112,90 +110,91 @@ final class MemoryCommand extends Command
             defer($scope_guard, fn () => $this->process_stopper->resume($process_specifier->pid));
         }
 
-        $collected_memories = $this->memory_locations_collector->collectAll(
-            $process_specifier,
-            $target_php_settings_version_decided,
-            $eg_address,
-            $cg_address,
-            $memory_profiler_settings->memory_exhaustion_error_details,
-            $bg_address,
-        );
-
-        $region_analyzer = new RegionAnalyzer(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-
-        $analyzed_regions = $region_analyzer->analyze(
-            $collected_memories->memory_locations,
-        );
-
-        $summary = [
-            $analyzed_regions->summary->toArray()
-            + [
-                'memory_get_usage' => $collected_memories->memory_get_usage_size,
-                'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
-                'cached_chunks_size' => $collected_memories->cached_chunks_size,
-            ]
-            + [
-                'heap_memory_analyzed_percentage' =>
-                    (float)$analyzed_regions->summary->zend_mm_heap_usage
-                    /
-                    (float)$collected_memories->memory_get_usage_size * 100.0
-                ,
-            ]
-            + [
-                'php_version' => $target_php_settings_version_decided->php_version,
-                'analyzer' => ReliProfiler::toolSignature(),
-            ]
-        ];
-
-        $is_db = in_array($memory_profiler_settings->output_format, ['sqlite3', 'mysql', 'postgresql'], true);
-
-        // For DB formats: type/class summaries are computed from DB via GROUP BY.
-        // For JSON: compute them in-memory as before.
-        $location_types_summary = null;
-        $class_objects_summary = null;
-        if (!$is_db) {
-            $location_type_analyzer = new LocationTypeAnalyzer();
-            $location_types_summary = $location_type_analyzer->analyze(
-                $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
-            )->per_type_usage;
-
-            $object_class_analyzer = new ObjectClassAnalyzer();
-            $class_objects_summary = $object_class_analyzer->analyze(
-                $analyzed_regions->regional_memory_locations->locations_in_zend_mm_heap,
-            )->per_class_usage;
-        }
-
-        // Region boundaries are small (a few entries each) — keep for PdoContextTreeSink.
-        // Everything else can be released before the tree walk.
-        $region_boundaries = new RegionBoundaries(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-        $top_reference_context = $collected_memories->top_reference_context;
-
-        // Release the large flat location lists before the tree walk
-        unset($collected_memories, $analyzed_regions, $region_analyzer);
-
-        $result = new MemoryAnalysisResult(
-            $summary,
-            $top_reference_context,
-            $location_types_summary,
-            $class_objects_summary,
-        );
-
+        // Set up streaming sink: for DB formats (sqlite3, mysql, postgresql)
+        // write directly to the output DB; for others use a temp SQLite.
         $output_factory = new MemoryOutputFactory();
-        $memory_output = $output_factory->create(
+
+        [$pdo_output, $sink, $run_id, $db, $temp_path] = $output_factory->createStreamingSink(
             $memory_profiler_settings,
-            $region_boundaries,
         );
-        $memory_output->output($result);
+
+        try {
+            $collected_memories = $this->memory_locations_collector->collectAll(
+                $process_specifier,
+                $target_php_settings_version_decided,
+                $eg_address,
+                $cg_address,
+                $memory_profiler_settings->memory_exhaustion_error_details,
+                $bg_address,
+                $sink,
+            );
+
+            $region_analyzer = new RegionAnalyzer(
+                $collected_memories->chunk_memory_locations,
+                $collected_memories->huge_memory_locations,
+                $collected_memories->vm_stack_memory_locations,
+                $collected_memories->compiler_arena_memory_locations,
+            );
+
+            $analyzed_regions = $region_analyzer->analyze(
+                $collected_memories->memory_locations,
+            );
+
+            $summary = [
+                $analyzed_regions->summary->toArray()
+                + [
+                    'memory_get_usage' => $collected_memories->memory_get_usage_size,
+                    'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
+                    'cached_chunks_size' => $collected_memories->cached_chunks_size,
+                ]
+                + [
+                    'heap_memory_analyzed_percentage' =>
+                        (float)$analyzed_regions->summary->zend_mm_heap_usage
+                        /
+                        (float)$collected_memories->memory_get_usage_size * 100.0
+                    ,
+                ]
+                + [
+                    'php_version' => $target_php_settings_version_decided->php_version,
+                    'analyzer' => ReliProfiler::toolSignature(),
+                ]
+            ];
+
+            $region_boundaries = new RegionBoundaries(
+                $collected_memories->chunk_memory_locations,
+                $collected_memories->huge_memory_locations,
+                $collected_memories->vm_stack_memory_locations,
+                $collected_memories->compiler_arena_memory_locations,
+            );
+
+            unset($collected_memories, $analyzed_regions, $region_analyzer);
+
+            // Finalize the streaming DB (summary, indexes, views)
+            $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
+
+            // For DB formats the data is already in the output DB; done.
+            // For JSON/report, stream from the temp SQLite DB.
+            if ($temp_path !== null) {
+                $result = new MemoryAnalysisResult(
+                    $summary,
+                    null,
+                    null,
+                    null,
+                    $db,
+                    $run_id,
+                );
+
+                $memory_output = $output_factory->create(
+                    $memory_profiler_settings,
+                    $region_boundaries,
+                );
+                $memory_output->output($result);
+            }
+        } finally {
+            if ($temp_path !== null && file_exists($temp_path)) {
+                @unlink($temp_path);
+            }
+        }
 
         Log::info('end memory command');
         return 0;

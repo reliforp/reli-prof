@@ -51,14 +51,20 @@ final class MemoryDumpReaderFactory
 
         $process_memory_map = new ProcessMemoryMap($parsed['memory_areas']);
         $path_resolver = new MappedPathResolver($path_mapping);
-        $regions = $parsed['regions'];
+        $region_index = $parsed['region_index'];
 
-        $memory_reader = new class ($regions, $process_memory_map, $path_resolver) implements MemoryReaderInterface {
+        $memory_reader = new class (
+            $file_path,
+            $region_index,
+            $process_memory_map,
+            $path_resolver,
+        ) implements MemoryReaderInterface {
             /**
-             * @param array<array{address: int, size: int, data: string}> $regions
+             * @param list<array{address: int, size: int, file_offset: int}> $region_index
              */
             public function __construct(
-                private array $regions,
+                private string $file_path,
+                private array $region_index,
                 private ProcessMemoryMap $process_memory_map,
                 private MappedPathResolver $path_resolver,
             ) {
@@ -67,12 +73,28 @@ final class MemoryDumpReaderFactory
             #[\Override]
             public function read(int $pid, int $remote_address, int $size): CData
             {
-                foreach ($this->regions as $region) {
+                foreach ($this->region_index as $region) {
                     $region_start = $region['address'];
                     $region_end = $region_start + $region['size'];
                     if ($remote_address >= $region_start && ($remote_address + $size) <= $region_end) {
-                        $offset = $remote_address - $region_start;
-                        $data = substr($region['data'], $offset, $size);
+                        $offset_in_region = $remote_address - $region_start;
+                        $file_offset = $region['file_offset'] + $offset_in_region;
+
+                        $fp = fopen($this->file_path, 'rb');
+                        if ($fp === false) {
+                            throw new \RuntimeException("failed to open dump file: {$this->file_path}");
+                        }
+                        try {
+                            fseek($fp, $file_offset);
+                            $data = fread($fp, $size);
+                        } finally {
+                            fclose($fp);
+                        }
+                        if ($data === false || strlen($data) !== $size) {
+                            throw new \RuntimeException(
+                                "failed to read {$size} bytes at file offset {$file_offset}"
+                            );
+                        }
                         $cdata_buffer = FFIHelper::new("unsigned char[$size]");
                         if (is_null($cdata_buffer)) {
                             throw new \RuntimeException("failed to allocate memory");
@@ -153,6 +175,9 @@ final class MemoryDumpReaderFactory
     }
 
     /**
+     * Parse the dump file header and memory map, building an index of
+     * region offsets without loading region data into memory.
+     *
      * @param resource $fp
      * @return array{
      *     pid: int,
@@ -160,7 +185,7 @@ final class MemoryDumpReaderFactory
      *     eg_address: int,
      *     cg_address: int,
      *     memory_areas: ProcessMemoryArea[],
-     *     regions: array<array{address: int, size: int, data: string}>,
+     *     region_index: list<array{address: int, size: int, file_offset: int}>,
      * }
      */
     private function parse($fp): array
@@ -212,20 +237,22 @@ final class MemoryDumpReaderFactory
             );
         }
 
-        // Memory regions
-        $regions = [];
+        // Build region index: record file offsets without reading data
+        $region_index = [];
         for ($i = 0; $i < $region_count; $i++) {
             $address = $this->readInt64($fp);
             $size = $this->readInt64($fp);
-            $data = fread($fp, $size);
-            if ($data === false || strlen($data) !== $size) {
-                throw new \RuntimeException("failed to read memory region data at address 0x" . dechex($address));
+            $data_offset = ftell($fp);
+            if ($data_offset === false) {
+                throw new \RuntimeException("failed to get file position");
             }
-            $regions[] = [
+            $region_index[] = [
                 'address' => $address,
                 'size' => $size,
-                'data' => $data,
+                'file_offset' => $data_offset,
             ];
+            // Skip past the data without reading it
+            fseek($fp, $size, SEEK_CUR);
         }
 
         return [
@@ -234,7 +261,7 @@ final class MemoryDumpReaderFactory
             'eg_address' => $eg_address,
             'cg_address' => $cg_address,
             'memory_areas' => $memory_areas,
-            'regions' => $regions,
+            'region_index' => $region_index,
         ];
     }
 

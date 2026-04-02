@@ -47,4 +47,28 @@ final class ObjectContextPool
         $this->handlers_contexts[$memory_location->address] = $context;
         return $context;
     }
+
+    public function getContextByAddress(int $address): ?ObjectContext
+    {
+        return $this->contexts[$address] ?? null;
+    }
+
+    public function clear(): void
+    {
+        $this->contexts = [];
+        $this->handlers_contexts = [];
+    }
+
+    /** @return \Generator<int, ObjectContext|ObjectHandlersContext> */
+    public function drainWithAddresses(): \Generator
+    {
+        foreach ($this->contexts as $address => $context) {
+            yield $address => $context;
+        }
+        $this->contexts = [];
+        foreach ($this->handlers_contexts as $address => $context) {
+            yield $address => $context;
+        }
+        $this->handlers_contexts = [];
+    }
 }

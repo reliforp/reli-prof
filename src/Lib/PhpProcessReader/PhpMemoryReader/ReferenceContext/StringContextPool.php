@@ -30,4 +30,26 @@ final class StringContextPool
         $this->contexts[$memory_location->address] = $context;
         return $context;
     }
+
+    public function getContextByAddress(int $address): ?StringContext
+    {
+        return $this->contexts[$address] ?? null;
+    }
+
+    public function clear(): void
+    {
+        $this->contexts = [];
+    }
+
+    /**
+     * Yield all entries as address => context, then clear the pool.
+     * @return \Generator<int, StringContext>
+     */
+    public function drainWithAddresses(): \Generator
+    {
+        foreach ($this->contexts as $address => $context) {
+            yield $address => $context;
+        }
+        $this->contexts = [];
+    }
 }

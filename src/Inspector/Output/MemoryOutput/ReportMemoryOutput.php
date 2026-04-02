@@ -32,6 +32,18 @@ final class ReportMemoryOutput implements MemoryOutputInterface
     #[\Override]
     public function output(MemoryAnalysisResult $result): void
     {
+        if ($result->pre_populated_db !== null && $result->pre_populated_run_id !== null) {
+            $generator = new ReportGenerator();
+            $report = $generator->generateFromDb($result->pre_populated_db, $result->pre_populated_run_id);
+            $formatted = $this->formatter->format($report);
+            if ($this->output_path !== null) {
+                file_put_contents($this->output_path, $formatted);
+            } else {
+                echo $formatted;
+            }
+            return;
+        }
+
         // Write to a temporary SQLite file first
         $tmp_base = tempnam(sys_get_temp_dir(), 'reli_report_');
         if ($tmp_base === false) {
