@@ -123,7 +123,8 @@ cross-object references.
 | v4a (reorder + inner-loop) | global_variables | global_variables | ~420s |
 | v4b (reorder only) | objects_store | objects_store | ~570s |
 | v5 (objects_store first) | objects_store | objects_store | ~530s |
-| v6 (shallow objects_store) | class_table | class_table | ~480s |
+| v6 (shallow objects_store, bug) | class_table | class_table | ~480s |
+| v7 (fixed defer scope) | objects_store | objects_store | ~1380s |
 
 The reli self-dump has millions of objects interconnected through the running
 reli-prof process's object graph. **Any phase that first touches this graph**
@@ -157,10 +158,46 @@ not at the `collectObjectsStore` bucket level. Either:
 - Set `defer_unseen_objects = true` only inside `collectZendObject` (not around the bucket loop)
 - Or have `collectObjectsStore` call `collectZendObject` directly (bypassing the pointer check)
 
-Inner-loop streaming helps for breadth (emitting each array element / object
-property individually), but **a single `collectZval()` call for one variable
-that references a massive object** still recursively builds the entire subtree
-before the element can be emitted.
+## Round 6: Fixed defer scope (commit `bd816b6`)
+
+Defer flag now set inside `collectZendObject` (not `collectObjectsStore`),
+so bucket top-level objects are collected but property→object refs are deferred.
+
+| Phase | Heap | RSS | Result |
+|---|---|---|---|
+| after_interned_strings | 21 MB | 62 MB | seen=9,305 sent=9,279 def=0 |
+| **after_objects_store** | **NEVER REACHED** → OOM | | |
+
+**OOM at `ZendArrayMemoryLocation.php:25` during objects_store.** ~10 GB.
+
+RSS progression: ~4.7 GB at 12min → ~8.2 GB at 15min → ~9.9 GB at 22min → OOM.
+Slower growth than v3 (~5 MB/s vs 18 MB/s) but still OOMs.
+
+### Root cause: arrays are not deferred
+
+`defer_unseen_objects` only skips object→object references. But:
+- Object property → **array** → (collected fully, including all elements)
+- Array element → **object** → deferred (good)
+- Array element → **array** → collected fully (bad)
+
+A single object with a large `array` property triggers full array collection.
+reli-prof objects like `MemoryLocations` hold `$memory_locations` (millions
+of entries) and `ContextPools` hold arrays with thousands of objects.
+
+The array collection creates MemoryLocation + Context objects for every element,
+even though the element objects themselves are deferred. At millions of array
+entries, the MemoryLocation objects alone exhaust memory.
+
+### Needed: defer arrays too, or skip property values entirely
+
+Options:
+1. **Defer arrays** the same way objects are deferred (shallow objects_store
+   should only record the object's own memory, not its property values)
+2. **Don't collect property values at all** during objects_store — just record
+   the object header + property table as MemoryLocations, skip collectZval
+   entirely for property values. Property→value edges are deferred.
+3. **Two-pass**: objects_store first pass collects only addresses/sizes.
+   Second pass (or later phases) fills in the property edges.
 
 ## Root Cause: Recursive collectZval Expansion
 
