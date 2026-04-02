@@ -26,6 +26,8 @@ use Reli\Lib\FFI\FFIHelper;
  *   offsets[node_count + 1]: each node's child list start position
  *   edges[edge_count]:       flat array of child node IDs
  *   Node N's children = edges[offsets[N] .. offsets[N+1])
+ *
+ * @psalm-suppress InaccessibleMethod, InvalidCast, PossiblyNullOperand, InvalidOperand, MissingConstructor
  */
 final class FfiCsrGraphSubstrate extends GraphSubstrate
 {
@@ -60,6 +62,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private int $nodeSizesSum = 0;
 
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
+    #[\Override]
     public static function loadFromDb(\PDO $db, int $run_id): static
     {
         $substrate = new self();
@@ -71,6 +74,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     /** @return list<int> */
+    #[\Override]
     public function getChildren(int $nodeId): array
     {
         $idx = $this->nodeToIndex[$nodeId] ?? null;
@@ -81,6 +85,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     /** @return list<int> */
+    #[\Override]
     public function getAllChildren(int $nodeId): array
     {
         $idx = $this->nodeToIndex[$nodeId] ?? null;
@@ -91,6 +96,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     /** @return list<int> */
+    #[\Override]
     public function getAllParents(int $nodeId): array
     {
         $idx = $this->nodeToIndex[$nodeId] ?? null;
@@ -100,6 +106,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         return $this->csrSlice($this->revOffsets, $this->revEdges, $idx);
     }
 
+    #[\Override]
     public function getNodeSize(int $nodeId): int
     {
         $idx = $this->nodeToIndex[$nodeId] ?? null;
@@ -109,6 +116,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         return (int)$this->ffiNodeSizes[$idx];
     }
 
+    #[\Override]
     public function getSubtreeSize(int $nodeId): int
     {
         $idx = $this->nodeToIndex[$nodeId] ?? null;
@@ -118,17 +126,20 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         return (int)$this->ffiSubtreeSizes[$idx];
     }
 
+    #[\Override]
     public function hasSubtreeSizes(): bool
     {
         return $this->subtreeSizesComputed;
     }
 
+    #[\Override]
     public function getNodeSizesSum(): int
     {
         return $this->nodeSizesSum;
     }
 
     /** @return iterable<int, int> node_id => size */
+    #[\Override]
     public function iterateNodeSizes(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
@@ -137,6 +148,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     /** @return iterable<int, int> node_id => subtree_size */
+    #[\Override]
     public function iterateSubtreeSizes(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
@@ -148,6 +160,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     /** @return iterable<int, list<int>> child_id => [parent_id, ...] */
+    #[\Override]
     public function iterateAllParents(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
@@ -164,6 +177,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     /** @return iterable<int, int> node_id => scc_id */
+    #[\Override]
     public function iterateNodeToScc(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
@@ -194,7 +208,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         return $result;
     }
 
-    /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument */
+    /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     private function loadNodeSizesFfi(\PDO $db, int $run_id): void
     {
         $rows = $db->query(
@@ -363,6 +377,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         unset($rows, $treeDegree, $allDegree, $revDegree, $treePos, $allPos, $revPos);
     }
 
+    /** @psalm-suppress UnsupportedReferenceUsage */
     private function computeSubtreeSizesFfi(): void
     {
         // Use a visited array to track which nodes have been computed
@@ -399,6 +414,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $this->subtreeSizesComputed = true;
     }
 
+    /** @psalm-suppress UnsupportedReferenceUsage, MixedArgument */
     private function computeSccFfi(): void
     {
         $index_counter = 0;
