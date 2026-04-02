@@ -230,7 +230,134 @@ final class CycleClusterPass implements PassInterface
             );
         }
 
+        // Check for resource-holding classes downstream of SCCs
+        $resource_findings = $this->detectResourceLeakRisks();
+        $findings = array_merge($findings, $resource_findings);
+
         return $findings;
+    }
+
+    /**
+     * Detect PDO/PDOStatement/Mysqli downstream of SCCs.
+     * @return list<Finding>
+     */
+    private function detectResourceLeakRisks(): array
+    {
+        $resource_classes = [
+            'PDO', 'PDOStatement',
+            'Mysqli', 'mysqli', 'mysqli_stmt', 'mysqli_result',
+        ];
+
+        $findings = [];
+        $seen_risks = [];
+
+        foreach ($this->substrate->scc_profiles as $profile) {
+            $scc_set = array_flip($profile['nodes']);
+
+            // Check ext_outgoing: children of SCC nodes that are outside SCC
+            foreach ($profile['nodes'] as $node) {
+                foreach ($this->substrate->children[$node] ?? [] as $child) {
+                    if (isset($scc_set[$child])) {
+                        continue;
+                    }
+                    $this->checkDownstreamForResources(
+                        $child,
+                        $resource_classes,
+                        $profile,
+                        $seen_risks,
+                        $findings,
+                    );
+                }
+            }
+        }
+
+        return $findings;
+    }
+
+    /**
+     * Walk downstream from a node looking for resource-holding classes.
+     * @param list<string> $resource_classes
+     * @param array<string, mixed> $profile
+     * @param array<string, true> $seen_risks
+     * @param list<Finding> $findings
+     * @psalm-suppress MixedArgument, MixedArrayAccess
+     */
+    private function checkDownstreamForResources(
+        int $start_node,
+        array $resource_classes,
+        array $profile,
+        array &$seen_risks,
+        array &$findings,
+    ): void {
+        // BFS limited depth
+        $queue = [$start_node];
+        $qi = 0;
+        $visited = [];
+        while ($qi < count($queue) && $qi < 50) {
+            $node = $queue[$qi++];
+            if (isset($visited[$node])) {
+                continue;
+            }
+            $visited[$node] = true;
+
+            $cls = $this->substrate->node_classes[$node] ?? null;
+            if ($cls !== null) {
+                foreach ($resource_classes as $rc) {
+                    if ($cls === $rc || str_ends_with($cls, "\\{$rc}")) {
+                        $key = $cls . ':' . (string)$profile['signature'];
+                        if (isset($seen_risks[$key])) {
+                            continue;
+                        }
+                        $seen_risks[$key] = true;
+
+                        /** @var array<string, int> $cc */
+                        $cc = $profile['class_counts'];
+                        $scc_classes = implode(
+                            ', ',
+                            array_keys($cc)
+                        );
+
+                        $findings[] = new Finding(
+                            kind: 'resource_leak_risk',
+                            severity: FindingSeverity::High,
+                            confidence: FindingConfidence::Medium,
+                            summary: sprintf(
+                                '%s held by cycle (%s)',
+                                $cls,
+                                $scc_classes,
+                            ),
+                            facts: [
+                                'resource_class' => $cls,
+                                'scc_classes' => $scc_classes,
+                                'scc_signature' => $profile['signature'],
+                            ],
+                            hypothesis: sprintf(
+                                'Circular reference prevents timely'
+                                . " destruction of %s.\n"
+                                . 'Connection/resource not released'
+                                . " until GC cycle collection.\n"
+                                . 'With persistent connections, GC'
+                                . ' may trigger unexpected rollback.',
+                                $cls
+                            ),
+                            next_checks: [
+                                'Break the circular reference to ensure'
+                                . ' deterministic resource cleanup',
+                                'Especially dangerous in long-running'
+                                . ' workers (connection pool exhaustion)',
+                            ],
+                        );
+                    }
+                }
+            }
+
+            // Continue BFS
+            foreach ($this->substrate->children[$node] ?? [] as $child) {
+                if (!isset($visited[$child])) {
+                    $queue[] = $child;
+                }
+            }
+        }
     }
 
     /**

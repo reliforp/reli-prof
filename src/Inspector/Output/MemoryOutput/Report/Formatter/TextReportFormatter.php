@@ -86,14 +86,26 @@ final class TextReportFormatter implements ReportFormatterInterface
 
             foreach ($actionable as $finding) {
                 $tag = strtoupper($finding->severity->value);
-                $lines[] = "  [{$tag}] {$finding->kind}: {$finding->summary}";
+                $impact = $finding->impact_bytes > 0
+                    ? SizeFormatter::format($finding->impact_bytes)
+                    . ' impacted'
+                    : "\u{2014}";
+                $lines[] = sprintf(
+                    '  [%-7s] %s',
+                    $tag,
+                    $impact,
+                );
+                $lines[] = "    {$finding->kind}: {$finding->summary}";
 
                 if ($finding->hypothesis !== '') {
-                    $lines[] = "    {$finding->hypothesis}";
+                    foreach (explode("\n", $finding->hypothesis) as $h) {
+                        $lines[] = "    {$h}";
+                    }
                 }
 
                 if ($finding->next_checks !== []) {
-                    $lines[] = '    Next: ' . implode('; ', $finding->next_checks);
+                    $lines[] = '    Next: '
+                        . implode('; ', $finding->next_checks);
                 }
 
                 $lines[] = '';

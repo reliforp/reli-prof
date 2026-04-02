@@ -63,8 +63,8 @@ class TextReportFormatterTest extends BaseTestCase
         $output = $formatter->format($result);
 
         $this->assertStringContainsString('=== Findings ===', $output);
-        $this->assertStringContainsString('[HIGH] dominant_class', $output);
-        $this->assertStringContainsString('Foo: 10,000 instances', $output);
+        $this->assertStringContainsString('[HIGH', $output);
+        $this->assertStringContainsString('dominant_class: Foo: 10,000 instances', $output);
         $this->assertStringContainsString('Unbounded accumulation', $output);
         $this->assertStringContainsString('Next: Check loop; Check container', $output);
     }
@@ -88,8 +88,8 @@ class TextReportFormatterTest extends BaseTestCase
         $formatter = new TextReportFormatter();
         $output = $formatter->format($result);
 
-        $high_pos = strpos($output, '[HIGH]');
-        $low_pos = strpos($output, '[LOW]');
+        $high_pos = strpos($output, '[HIGH');
+        $low_pos = strpos($output, '[LOW');
         $this->assertNotFalse($high_pos);
         $this->assertNotFalse($low_pos);
         $this->assertLessThan($low_pos, $high_pos);
