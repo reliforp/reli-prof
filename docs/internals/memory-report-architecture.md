@@ -190,7 +190,7 @@ In-memory graph traversal using GraphSubstrate.
 
 | Pass | Source | Emits |
 |---|---|---|
-| CycleClusterPass | SCC profiles + all_children + DB | `cycle_cluster` (back-ref, entry path, retained), `micro_cycle`, `di_container_cycle` |
+| CycleClusterPass | SCC profiles + all_children + DB | `cycle_cluster` (back-ref, entry path, retained), `micro_cycle`, `di_container_cycle`, `resource_leak_risk` |
 | PropertyScalingPass | substrate + SQL | `property_scaling` (retained) |
 | PerPropertyMemoryPass | substrate + link_names | `expensive_property` (class-qualified) |
 | OwnershipPatternPass | substrate + link_names | `ownership_pattern` |
@@ -326,6 +326,7 @@ src/Command/Inspector/
 | `cycle_cluster` | medium/low | CycleClusterPass | php-imap (201x), Symfony Forms (1,802x) |
 | `micro_cycle` | low | CycleClusterPass | Symfony Forms (OptionsResolver ↔ Closure) |
 | `di_container_cycle` | info | CycleClusterPass | Laravel (54 classes, 74 KB) |
+| `resource_leak_risk` | high | CycleClusterPass | PDO/Mysqli downstream of SCC |
 | `bottleneck_path` | high | DrillDownPass | PHP-Parser (89 MB), CommonMark (71 MB) |
 | `choke_point` | high/medium/low | ChokePointPass | Eloquent (Collection → 15 MB) |
 | `root_blame` | info | BlameAllocationPass | Eloquent (class_table 48%, call_frames 35%) |

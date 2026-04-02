@@ -48,21 +48,25 @@ Example output:
 
 === Findings ===
 
-  [HIGH] dominant_class: App\Models\User: 10,000 instances x 72 B = 98.2% of object memory (703.13 KB)
+  [HIGH   ] 703.13 KB impacted
+    dominant_class: App\Models\User: 10,000 instances x 72 B = 98.2% of object memory (703.13 KB)
     Unbounded accumulation — likely a loop without limit
     Next: Check if count scales with input size; Look for owner path
 
-  [HIGH] bottleneck_path: <main>:28::$users->items (153.76 MB)
+  [HIGH   ] 153.76 MB impacted
+    bottleneck_path: <main>:28::$users->items (153.76 MB)
     Heaviest memory path — the primary chain of memory consumption
 
-  [MEDIUM] property_scaling: App\Models\User (10,000 instances): 5 per-instance props (0.49 KB/instance retained), 12 shared
+  [MEDIUM ] 9.53 MB impacted
+    property_scaling: App\Models\User (10,000 instances): 5 per-instance props (0.49 KB/instance retained), 12 shared
     PER-INSTANCE (retained, scales with count):
       App\Models\User::$attributes: 10,000 copies x 599 B = 5.86 MB
       App\Models\User::$casts: 10,000 copies x 376 B = 3.67 MB
     (14 scalar properties per-instance, included in object size)
     SHARED: App\Models\User::$relations (array, CoW), App\Models\User::$fillable (array, CoW)
 
-  [MEDIUM] cycle_cluster: 200 identical cycles (3 classes, 170.31 KB shallow, 42.50 MB retained)
+  [MEDIUM ] 42.50 MB impacted
+    cycle_cluster: 200 identical cycles (3 classes, 170.31 KB shallow, 42.50 MB retained)
     Per cycle: 1x Webklex\PHPIMAP\Message + 3x Webklex\PHPIMAP\Attachment + 1x Webklex\PHPIMAP\AttachmentCollection
     Back-reference: Webklex\PHPIMAP\Attachment::$oMessage -> Webklex\PHPIMAP\Message
     Example: <main>:28::$messages[0]->attachments->items[0]
@@ -70,9 +74,11 @@ Example output:
     Single entry point — breaking the back-reference likely frees this cycle
     Next: Break Webklex\PHPIMAP\Attachment::$oMessage -> Webklex\PHPIMAP\Message to eliminate all 200 cycles
 
-  [MEDIUM] companion_cluster: FormBuilder (3,611, 1.74 MB) always paired with Closure (3,619, 1.19 MB) — 2.93 MB
+  [MEDIUM ] —
+    companion_cluster: FormBuilder (3,611, 1.74 MB) always paired with Closure (3,619, 1.19 MB) — 2.93 MB
 
-  [LOW] dedup_candidate: Attachment::$part (Part): 600 copies x 312 B = 182.81 KB
+  [LOW    ] 182.81 KB impacted
+    dedup_candidate: Attachment::$part (Part): 600 copies x 312 B = 182.81 KB
     195/600 copies have identical content (32%). Example: "--boundary_mixed..."
 
 === Root Blame Allocation ===
@@ -167,7 +173,16 @@ sudo ./reli inspector:memory -p <pid> -f report -o report.txt  # to file
 
 ## Finding Types
 
-Findings are sorted by severity (HIGH first), then by `impact_bytes` descending within the same severity. Each finding has a `kind`, `severity`, `confidence`, and optional `impact_bytes`.
+Findings are sorted by severity (HIGH first), then by `impact_bytes` descending within the same severity. Each finding shows its impact on the first line for easy visual scanning:
+
+```
+  [HIGH   ] 153.76 MB impacted
+    bottleneck_path: <main>::$messages[0]->structure->parts
+  [MEDIUM ] 40.21 MB impacted
+    expensive_property: Structure::$raw (200 x 211.00 KB)
+  [MEDIUM ] —
+    companion_cluster: 4 classes x ~200 instances
+```
 
 All class names use fully qualified names (FQCN). Paths use PHP syntax: `<main>:28::$messages[0]->structure->raw`.
 
@@ -179,6 +194,7 @@ All class names use fully qualified names (FQCN). Paths use PHP syntax: `<main>:
 | `dominant_type` | One memory type > 80% of heap | "ZendString accounts for 87% of heap" |
 | `bottleneck_path` | Heaviest memory path from root (PHP syntax) | "<main>:28::$users->items (153.76 MB)" |
 | `choke_point` | Small node retaining large subtree (> 30% heap) | "MarkdownParser (152 B) holds 73.00 MB" |
+| `resource_leak_risk` | PDO/Mysqli held by circular reference | "PDO held by cycle (Repository, Service)" |
 
 ### Medium Severity
 
