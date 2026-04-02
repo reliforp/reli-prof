@@ -127,6 +127,7 @@ cross-object references.
 | v7 (fixed defer scope) | objects_store | objects_store | ~1380s |
 | v8 (defer arrays+refs) | objects_store (#11) | objects_store | ~510s |
 | v9 (skip dyn props etc) | objects_store | objects_store | ~540s |
+| v10 (CachingDereferencer) | objects_store | objects_store | ~190s (127MB dump) |
 
 The reli self-dump has millions of objects interconnected through the running
 reli-prof process's object graph. **Any phase that first touches this graph**
