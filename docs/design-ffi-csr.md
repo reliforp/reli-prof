@@ -326,10 +326,26 @@ SQLite の node_id が連番であれば CSR index = node_id となりマッピ�
 `ContextAnalyzer` が連番の node_id を振っているなら、PHP 連想配列のマッピングを
 丸ごと省ける。歯抜けがある場合は compact mapping が必要。
 
-## Phase 2 実装後の推定効果
+## Phase 2 実測結果 (node_id mapping + node_classes 最適化)
 
-| データセット | Phase 1 RSS | Phase 2 推定 RSS | 削減 |
-|---|---|---|---|
-| Monolog (4.5M edges, 3M nodes) | 2,425 MB | ~1,600 MB | -34% |
-| PHP-Parser (6.1M edges) | 4,736 MB | ~3,200 MB | -32% |
-| reli-on-reli (~50M edges) | (未測定) | ~5-6 GB | (解析可能に？) |
+Phase 1 で既に node_sizes / subtree_sizes / node_to_scc も FFI 化済み。
+Phase 2 は node_id マッピングと node_classes の最適化。
+
+| データセット | PHP 配列 | Phase 1 | Phase 2 | 総削減率 |
+|---|---|---|---|---|
+| Eloquent (1M edges) | 904 MB | 661 MB | 631 MB | -30% |
+| Monolog (4.5M edges) | 3,798 MB | 2,425 MB | 2,274 MB | -40% |
+| PHP-Parser (6.1M edges) | OOM (6 GB) | 4,736 MB | 4,398 MB | OOM→成功 |
+
+Phase 2 の追加削減は控えめ（Monolog -151 MB, PHP-Parser -338 MB）。
+
+### 残りメモリの内訳推定 (Monolog 2,274 MB)
+
+FFI CSR データ自体は ~60 MB 程度。残り ~2,200 MB は:
+- SQLite PDO 内部バッファ (fetchAll のデータ)
+- SCC profiles / pass 結果の PHP 構造体
+- PHP ランタイムオーバーヘッド
+- pass ごとの一時的 PHP 配列
+
+これ以上の削減には、fetchAll を streaming に変えるか、
+pass の一時データをより効率的に管理する必要がある。
