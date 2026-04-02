@@ -297,12 +297,22 @@ final class MemoryLocationsCollector
 
         $context_pools = ContextPools::createDefault();
 
+        // In streaming mode, set up the analyzer and memo early so we can
+        // emit each branch right after collection and release it.
+        $analyzer = $sink !== null ? new ContextAnalyzer() : null;
+        /** @var \WeakMap<ReferenceContext, int>|null $memo */
+        $memo = $sink !== null ? new \WeakMap() : null;
+
         $included_files_context = $this->collectIncludedFiles(
             $eg->included_files,
             $dereferencer,
             $memory_locations,
             $context_pools,
         );
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('included_files', $included_files_context, $sink, null, $memo);
+            unset($included_files_context);
+        }
 
         $interned_strings_context = $this->collectInternedStrings(
             $cg->interned_strings,
@@ -312,6 +322,10 @@ final class MemoryLocationsCollector
             $memory_locations,
             $context_pools,
         );
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('interned_strings', $interned_strings_context, $sink, null, $memo);
+            unset($interned_strings_context);
+        }
 
         assert(!is_null($eg->function_table));
         assert(!is_null($eg->class_table));
@@ -330,6 +344,10 @@ final class MemoryLocationsCollector
             $context_pools,
             $memory_limit_error_details,
         );
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
+            unset($global_variables_context);
+        }
 
         $call_frames_context = $this->collectCallFrames(
             $eg,
@@ -340,6 +358,7 @@ final class MemoryLocationsCollector
             $context_pools,
             $memory_limit_error_details,
         );
+        // call_frames emission is deferred — memory_limit_error may replace it below
 
         $defined_functions_context = $this->collectFunctionTable(
             $function_table,
@@ -350,6 +369,10 @@ final class MemoryLocationsCollector
             $context_pools,
             $memory_limit_error_details,
         );
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('function_table', $defined_functions_context, $sink, null, $memo);
+            unset($defined_functions_context);
+        }
 
         $defined_classes_context = $this->collectClassTable(
             $class_table,
@@ -360,6 +383,10 @@ final class MemoryLocationsCollector
             $context_pools,
             $memory_limit_error_details,
         );
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('class_table', $defined_classes_context, $sink, null, $memo);
+            unset($defined_classes_context);
+        }
 
         $global_constants_context = $this->collectGlobalConstants(
             $zend_constants,
@@ -370,6 +397,10 @@ final class MemoryLocationsCollector
             $context_pools,
             $memory_limit_error_details,
         );
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('global_constants', $global_constants_context, $sink, null, $memo);
+            unset($global_constants_context);
+        }
 
         try {
             $global_callbacks_context = $this->collectGlobalCallbacks(
@@ -384,6 +415,10 @@ final class MemoryLocationsCollector
         } catch (\Throwable $e) {
             Log::info('failed to collect global callbacks', ['error' => $e->getMessage()]);
             $global_callbacks_context = new GlobalCallbacksContext();
+        }
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('global_callbacks', $global_callbacks_context, $sink, null, $memo);
+            unset($global_callbacks_context);
         }
 
         try {
@@ -400,6 +435,10 @@ final class MemoryLocationsCollector
             Log::info('failed to collect modules', ['error' => $e->getMessage()]);
             $modules_context = new ModulesContext();
         }
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('modules', $modules_context, $sink, null, $memo);
+            unset($modules_context);
+        }
 
         $objects_store_context = $this->collectObjectsStore(
             $eg->objects_store,
@@ -410,6 +449,10 @@ final class MemoryLocationsCollector
             $context_pools,
             $memory_limit_error_details,
         );
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            $analyzer->analyzeSingleLink('objects_store', $objects_store_context, $sink, null, $memo);
+            unset($objects_store_context);
+        }
 
         if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
             $call_frames_context = $this->collectRealCallStackOnMemoryLimitViolation(
@@ -425,31 +468,10 @@ final class MemoryLocationsCollector
             );
         }
 
-        if ($sink !== null) {
-            // Streaming mode: emit each branch to the sink immediately,
-            // then release it. Shared contexts (via pools) are tracked
-            // by the memo WeakMap across all branches, ensuring proper
-            // reference deduplication.
-            $analyzer = new ContextAnalyzer();
-            /** @var \WeakMap<ReferenceContext, int> $memo */
-            $memo = new \WeakMap();
-
-            /** @var array<string, ReferenceContext> $branches */
-            $branches = [
-                'call_frames' => $call_frames_context,
-                'global_variables' => $global_variables_context,
-                'function_table' => $defined_functions_context,
-                'class_table' => $defined_classes_context,
-                'global_constants' => $global_constants_context,
-                'included_files' => $included_files_context,
-                'interned_strings' => $interned_strings_context,
-                'global_callbacks' => $global_callbacks_context,
-                'modules' => $modules_context,
-                'objects_store' => $objects_store_context,
-            ];
-            foreach ($branches as $link_name => $branch_context) {
-                $analyzer->analyzeSingleLink($link_name, $branch_context, $sink, null, $memo);
-            }
+        if ($sink !== null && $analyzer !== null && $memo !== null) {
+            // Emit the deferred call_frames branch (may have been replaced above)
+            $analyzer->analyzeSingleLink('call_frames', $call_frames_context, $sink, null, $memo);
+            unset($call_frames_context);
 
             $context_pools->clear();
 
