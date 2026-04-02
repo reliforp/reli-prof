@@ -803,18 +803,21 @@ severity + impact を 1 行目の左端に置き、詳細を 2 行目にする�
 パスの長さに関係なく impact の位置が常に安定する:
 
 ```
-  [HIGH] 153.76 MB
+  [HIGH] 153.76 MB impacted
     bottleneck_path: <main>::$messages[0]->structure->parts
 
-  [HIGH] 150.65 MB
+  [HIGH] 150.65 MB impacted
     dominant_type: ZendString 96.9% of heap
 
-  [MEDIUM] 40.21 MB
+  [MEDIUM] 40.21 MB impacted
     expensive_property: Structure::$raw (200 × 211 KB)
 
   [MEDIUM] —
     companion_cluster: 4 classes × ~200 instances
 ```
+
+「impacted」は retained でも shallow でもない曖昧さを正直に示す。
+finding ごとに計算方法が異なる近似値であることが伝わる。
 
 impact がない finding は `—` で統一。
 severity + impact 降順ソートと組み合わせると最も効果的。
