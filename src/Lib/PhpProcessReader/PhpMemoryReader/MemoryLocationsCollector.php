@@ -1052,6 +1052,17 @@ final class MemoryLocationsCollector
             if ($cached !== null) {
                 return $cached;
             }
+            if ($this->defer_unseen_objects) {
+                if ($this->current_streaming_parent_node_id !== null) {
+                    $this->deferred_object_edges[] = [
+                        $this->current_streaming_parent_node_id,
+                        $pointer->address,
+                        $this->current_streaming_link_name ?? 'deferred_reference',
+                        'reference',
+                    ];
+                }
+                return null;
+            }
         } elseif ($this->defer_unseen_objects) {
             if ($this->current_streaming_parent_node_id !== null) {
                 $this->deferred_object_edges[] = [
@@ -1104,6 +1115,17 @@ final class MemoryLocationsCollector
             if ($cached !== null) {
                 return $cached;
             }
+            if ($this->defer_unseen_objects) {
+                if ($this->current_streaming_parent_node_id !== null) {
+                    $this->deferred_object_edges[] = [
+                        $this->current_streaming_parent_node_id,
+                        $pointer->address,
+                        $this->current_streaming_link_name ?? 'deferred_array',
+                        'array',
+                    ];
+                }
+                return null;
+            }
         } elseif ($this->defer_unseen_objects) {
             // During shallow collection: don't recurse into unseen arrays.
             // Record a deferred edge if we have a parent context.
@@ -1147,6 +1169,17 @@ final class MemoryLocationsCollector
             $cached = $context_pools->object_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
                 return $cached;
+            }
+            if ($this->defer_unseen_objects) {
+                if ($this->current_streaming_parent_node_id !== null) {
+                    $this->deferred_object_edges[] = [
+                        $this->current_streaming_parent_node_id,
+                        $pointer->address,
+                        $this->current_streaming_link_name ?? 'deferred_object',
+                        'object',
+                    ];
+                }
+                return null;
             }
         } elseif ($this->defer_unseen_objects) {
             // During objects_store collection: don't recurse into unseen
