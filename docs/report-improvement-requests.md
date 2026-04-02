@@ -853,3 +853,25 @@ severity は MEDIUM（確実ではないため）。複数スナップショッ�
 ノードのうち、SCC に属するものを抽出。
 
 objects_store のみから到達 + SCC 内 = 「循環参照で生き残っている到達不能ゴミ」の候補。
+
+### Dump Reader のメモリ最適化 (analyze コマンド) [重要度: 高]
+
+`MemoryDumpReaderFactory` が dump ファイルの全 region データを
+PHP 文字列として `$regions[]` 配列に読み込む (L220: `fread($fp, $size)`)。
+5.6 GB ダンプ → 5.6 GB の PHP 文字列が蓄積 → OOM。
+
+改善案: region データを PHP 文字列に読む代わりに、ファイル内のオフセットと
+サイズだけ記録。`process_vm_readv` の代わりに `fseek + fread` で
+必要なアドレス範囲を都度読む。
+
+```php
+// 今
+$regions[] = ['address' => $address, 'size' => $size, 'data' => fread($fp, $size)];
+
+// 改善後
+$regions[] = ['address' => $address, 'size' => $size, 'file_offset' => ftell($fp)];
+fseek($fp, $size, SEEK_CUR);
+```
+
+メモリ: 5.6 GB → region メタデータのみ (~数 MB)。
+速度: ランダムアクセスになるが SSD なら問題ない。
