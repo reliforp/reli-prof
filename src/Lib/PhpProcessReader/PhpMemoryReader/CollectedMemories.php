@@ -25,7 +25,7 @@ final class CollectedMemories
         public MemoryLocations $compiler_arena_memory_locations,
         public int $cached_chunks_size,
         public MemoryLocations $memory_locations,
-        public TopReferenceContext $top_reference_context,
+        public ?TopReferenceContext $top_reference_context,
         public int $memory_get_usage_size,
         public int $memory_get_usage_real_size,
     ) {
