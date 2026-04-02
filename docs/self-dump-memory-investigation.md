@@ -276,6 +276,26 @@ Options:
 3. **Two-pass**: objects_store first pass collects only addresses/sizes.
    Second pass (or later phases) fills in the property edges.
 
+## Smaller Dump Experiment
+
+Tested with dumps taken at different stages of reli-prof execution:
+
+| Dump | Size | Target RSS | Analyze result |
+|---|---|---|---|
+| stdClass × 20K | 38 MB | 50 MB | **Success** (4.7s, <500 MB) |
+| reli early startup | 127 MB | 93 MB | OOM at 4 GB (85s) |
+| reli at 200 MB RSS | 373 MB | 206 MB | OOM at 10 GB (330s) |
+| reli full self-dump | 5.6 GB | 5.6 GB | OOM at 10 GB (540s) |
+
+**Dump size doesn't matter — reli-prof's class/function table complexity
+is the issue.** Even the 127 MB early-stage dump OOMs because reli-prof
+loads hundreds of Symfony/Psalm/PHPUnit classes at startup. The recursive
+expansion through class static properties, default values, and function
+static variables consumes all memory regardless of dump size.
+
+The 38 MB stdClass-only dump works because it has a trivially simple
+class/function table with almost no cross-references.
+
 ## Root Cause: Recursive collectZval Expansion
 
 ```
