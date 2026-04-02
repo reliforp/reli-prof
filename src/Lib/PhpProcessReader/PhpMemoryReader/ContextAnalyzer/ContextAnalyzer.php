@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\SentinelContext;
 use WeakMap;
 
 final class ContextAnalyzer
@@ -75,6 +76,13 @@ final class ContextAnalyzer
         ContextTreeSink $sink,
         WeakMap $memo,
     ): void {
+        // SentinelContext: already emitted to DB in a previous branch,
+        // just record the reference edge.
+        if ($linked_context instanceof SentinelContext) {
+            $sink->emitReference($linked_context->node_id, $parent_node_id, $link_name);
+            return;
+        }
+
         $existing_node_id = $memo[$linked_context] ?? null;
         if ($existing_node_id !== null) {
             $sink->emitReference($existing_node_id, $parent_node_id, $link_name);

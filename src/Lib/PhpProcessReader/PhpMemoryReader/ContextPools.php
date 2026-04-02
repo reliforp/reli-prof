@@ -16,12 +16,17 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\PhpReferenceContextPool;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ResourceContextPool;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\SentinelContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContextPool;
 
 final class ContextPools
 {
+    /** @var array<int, SentinelContext> address → sentinel for cross-branch dedup */
+    private array $sentinels = [];
+
     public function __construct(
         public StringContextPool $string_context_pool,
         public ArrayContextPool $array_context_pool,
@@ -30,6 +35,16 @@ final class ContextPools
         public ResourceContextPool $resource_context_pool,
         public UserFunctionDefinitionContextPool $user_function_definition_context_pool,
     ) {
+    }
+
+    /**
+     * Check if a sentinel exists for the given address (streaming mode).
+     * Returns the sentinel if the address was already emitted to DB in
+     * a previous branch, or null if not.
+     */
+    public function getSentinel(int $address): ?SentinelContext
+    {
+        return $this->sentinels[$address] ?? null;
     }
 
     public static function createDefault(): self
@@ -52,5 +67,37 @@ final class ContextPools
         $this->php_reference_context_pool->clear();
         $this->resource_context_pool->clear();
         $this->user_function_definition_context_pool->clear();
+    }
+
+    /**
+     * Convert all pooled contexts to lightweight sentinels and clear the pools.
+     * For each pooled Context that has a node_id in memo, record a
+     * SentinelContext(node_id) keyed by address. The heavy Context objects
+     * become eligible for GC, while subsequent cache hits return the sentinel.
+     *
+     * @param \WeakMap<ReferenceContext, int> $memo
+     */
+    public function convertToSentinels(\WeakMap $memo): void
+    {
+        $this->convertPoolToSentinels($this->string_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->array_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->object_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->php_reference_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->resource_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->user_function_definition_context_pool->drainWithAddresses(), $memo);
+    }
+
+    /**
+     * @param iterable<int, ReferenceContext> $entries address => context
+     * @param \WeakMap<ReferenceContext, int> $memo
+     */
+    private function convertPoolToSentinels(iterable $entries, \WeakMap $memo): void
+    {
+        foreach ($entries as $address => $context) {
+            $node_id = $memo[$context] ?? null;
+            if ($node_id !== null) {
+                $this->sentinels[$address] = new SentinelContext($node_id);
+            }
+        }
     }
 }

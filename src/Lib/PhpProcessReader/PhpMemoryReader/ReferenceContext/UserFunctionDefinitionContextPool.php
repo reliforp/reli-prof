@@ -36,4 +36,13 @@ final class UserFunctionDefinitionContextPool
     {
         $this->contexts = [];
     }
+
+    /** @return \Generator<int, UserFunctionDefinitionContext> */
+    public function drainWithAddresses(): \Generator
+    {
+        foreach ($this->contexts as $address => $context) {
+            yield $address => $context;
+        }
+        $this->contexts = [];
+    }
 }
