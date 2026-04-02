@@ -19,6 +19,8 @@ final class ResourceContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
+    public ?string $stream_type_label = null;
+
     public function __construct(
         public ZendResourceMemoryLocation $memory_location,
     ) {
@@ -28,5 +30,15 @@ final class ResourceContext implements ReferenceContext
     public function getLocations(): iterable
     {
         return [$this->memory_location];
+    }
+
+    #[\Override]
+    public function getContexts(): iterable
+    {
+        $contexts = [];
+        if ($this->stream_type_label !== null) {
+            $contexts['stream_type_label'] = $this->stream_type_label;
+        }
+        return $contexts;
     }
 }

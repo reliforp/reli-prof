@@ -166,7 +166,7 @@ struct _zend_resource {
 	zend_refcounted_h gc;
 	int               handle; // TODO: may be removed ???
 	int               type;
-	void             *ptr;
+	uintptr_t         ptr;
 };
 
 // zend_compile.h
@@ -1193,3 +1193,62 @@ typedef struct _php_shutdown_function_entry {
 typedef struct _php_basic_globals {
 	HashTable *user_shutdown_function_names;
 } php_basic_globals;
+
+// main/php_streams.h
+typedef struct _php_stream_ops {
+	uintptr_t write;
+	uintptr_t read;
+	uintptr_t close;
+	uintptr_t flush;
+	const char *label;
+	uintptr_t seek;
+	uintptr_t cast;
+	uintptr_t stat;
+	uintptr_t set_option;
+} php_stream_ops;
+
+struct _php_stream {
+	const php_stream_ops *ops;
+	uintptr_t abstract;
+	uintptr_t readfilters_head;
+	uintptr_t readfilters_tail;
+	struct _php_stream *readfilters_stream;
+	uintptr_t writefilters_head;
+	uintptr_t writefilters_tail;
+	struct _php_stream *writefilters_stream;
+	uintptr_t wrapper;
+	uintptr_t wrapperthis;
+	zval wrapperdata;
+	uint8_t flags_bitfield;
+	uint8_t fgetss_state;
+	char mode[16];
+	uint32_t flags;
+	zend_resource *res;
+	uintptr_t stdiocast;
+	char *orig_path;
+	zend_resource *ctx;
+	zend_off_t position;
+	unsigned char *readbuf;
+	size_t readbuflen;
+	zend_off_t readpos;
+	zend_off_t writepos;
+	size_t chunk_size;
+	struct _php_stream *enclosing_stream;
+};
+
+typedef struct _php_stream php_stream;
+
+// main/streams/memory.c
+typedef struct {
+	zend_string *data;
+	size_t fpos;
+	int mode;
+} php_stream_memory_data;
+
+typedef struct {
+	php_stream *innerstream;
+	size_t smax;
+	int mode;
+	zval meta;
+	char *tmpdir;
+} php_stream_temp_data;
