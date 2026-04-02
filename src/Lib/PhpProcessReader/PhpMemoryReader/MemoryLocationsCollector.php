@@ -1525,6 +1525,15 @@ final class MemoryLocationsCollector
         ;
         $object_context->add('object_handlers', $object_handlers_context);
 
+        // In streaming mode, enable defer for all nested object references
+        // within this object. This prevents deep recursion through the
+        // object graph — referenced objects will be collected later from
+        // their own objects_store bucket.
+        $saved_defer = $this->defer_unseen_objects;
+        if ($this->streaming_sink !== null) {
+            $this->defer_unseen_objects = true;
+        }
+
         $properties_exists = false;
         $object_properties_context = new ObjectPropertiesContext();
         $properties_parent_node_id = $this->registerParentIfStreaming($object_properties_context);
@@ -1699,6 +1708,7 @@ final class MemoryLocationsCollector
             }
         }
 
+        $this->defer_unseen_objects = $saved_defer;
         return $object_context;
     }
 
@@ -2832,15 +2842,6 @@ final class MemoryLocationsCollector
             $zend_type_reader,
         );
 
-        // Defer unseen object traversal during objects_store collection.
-        // Property references to other objects return null instead of
-        // recursing. Those objects will be collected when their own
-        // bucket is reached, keeping memory bounded per-object.
-        $was_deferring = $this->defer_unseen_objects;
-        if ($this->streaming_sink !== null) {
-            $this->defer_unseen_objects = true;
-        }
-
         foreach ($bucket_iterator as $key => $bucket) {
             if ($key === 0) {
                 continue;
@@ -2854,6 +2855,10 @@ final class MemoryLocationsCollector
             if ($key >= $objects_store->top) {
                 break;
             }
+            // Disable defer for the top-level bucket call so the object
+            // itself is collected. It will be re-enabled inside
+            // collectZendObject's property loop.
+            $this->defer_unseen_objects = false;
             $objects_store_bucket_context = $this->collectZendObjectPointer(
                 $bucket,
                 $map_ptr_base,
@@ -2876,7 +2881,7 @@ final class MemoryLocationsCollector
             }
             $objects_store_context->add((string)$key, $objects_store_bucket_context);
         }
-        $this->defer_unseen_objects = $was_deferring;
+        $this->defer_unseen_objects = false;
         return $objects_store_context;
     }
 
