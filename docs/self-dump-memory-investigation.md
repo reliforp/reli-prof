@@ -125,6 +125,7 @@ cross-object references.
 | v5 (objects_store first) | objects_store | objects_store | ~530s |
 | v6 (shallow objects_store, bug) | class_table | class_table | ~480s |
 | v7 (fixed defer scope) | objects_store | objects_store | ~1380s |
+| v8 (defer arrays+refs) | objects_store (#11) | objects_store | ~510s |
 
 The reli self-dump has millions of objects interconnected through the running
 reli-prof process's object graph. **Any phase that first touches this graph**
@@ -189,6 +190,50 @@ even though the element objects themselves are deferred. At millions of array
 entries, the MemoryLocation objects alone exhaust memory.
 
 ### Needed: defer arrays too, or skip property values entirely
+
+## Round 7: Array + reference defer (commit `b04c8db`)
+
+New: `collectZendArrayPointer` and `collectPhpReferencePointer` also check
+`defer_unseen_objects` and return null for unseen targets. Deferred edge
+resolution moved to after all phases.
+
+### Results
+
+| Phase | objects_store progress | Heap | RSS |
+|---|---|---|---|
+| after_interned_strings | - | 21 MB | 62 MB |
+| objects_store #10/910 | 10 done | 21 MB | 62 MB |
+| objects_store #20/910 | **NEVER** → OOM | | |
+
+**Only 910 objects total. First 10 collected in ~62 MB. Object #11 alone
+grows to 10+ GB → OOM at `FFIHelper.php:55`.**
+
+### Root cause: `collectZendArray` called directly, bypassing defer
+
+In `collectZendObject` (line 1674):
+```php
+$dynamic_properties_context = $this->collectZendArray(
+    $dereferencer->deref($object->properties), ...
+);
+```
+
+This calls `collectZendArray` **directly** (not via `collectZendArrayPointer`),
+so the defer check in `collectZendArrayPointer` is never reached. The
+dynamic_properties array is fully expanded with all its elements, which
+in turn call `collectZval` → recursion through the object graph.
+
+Similarly, `collectClosure`, `collectGenerator`, and `collectFiber` are
+called directly and can recursively expand without hitting defer guards.
+
+### Fix needed
+
+All collection calls inside `collectZendObject` that can trigger recursion
+must go through the pointer-level functions that have defer guards:
+- `collectZendArray` → should use `collectZendArrayPointer` (or add defer check)
+- `collectClosure` / `collectGenerator` / `collectFiber` → add defer guard
+
+Or simpler: when `defer_unseen_objects` is true, skip dynamic_properties,
+closure, generator, and fiber collection entirely (defer all sub-collections).
 
 Options:
 1. **Defer arrays** the same way objects are deferred (shallow objects_store
