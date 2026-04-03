@@ -58,6 +58,12 @@ final class SidecarSettingsFromConsoleInput
                 InputOption::VALUE_REQUIRED,
                 'set PHP memory_limit for the sidecar process (e.g., 2G)',
             )
+            ->addOption(
+                'tag',
+                't',
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'session-level tag applied to every snapshot (key=value)',
+            )
         ;
     }
 
@@ -68,12 +74,23 @@ final class SidecarSettingsFromConsoleInput
             ? HeapStats::parseSize($disk_limit_str)
             : 1073741824;
 
+        /** @var list<string> $tag_options */
+        $tag_options = $input->getOption('tag');
+        $tags = [];
+        foreach ($tag_options as $tag) {
+            $pos = strpos($tag, '=');
+            if ($pos !== false) {
+                $tags[substr($tag, 0, $pos)] = substr($tag, $pos + 1);
+            }
+        }
+
         return new SidecarSettings(
             socket_path: (string)$input->getOption('socket'),
             output_dir: (string)$input->getOption('output-dir'),
             disk_usage_limit_bytes: $disk_limit,
             include_binary: (bool)$input->getOption('include-binary'),
             memory_limit: NullableCast::toString($input->getOption('memory-limit')),
+            tags: $tags,
         );
     }
 }

@@ -31,6 +31,9 @@ use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
 final class SidecarDumpHandler
 {
+    /**
+     * @param array<string, string> $session_tags tags applied to every snapshot
+     */
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
         private PhpVersionDetector $php_version_detector,
@@ -42,6 +45,7 @@ final class SidecarDumpHandler
         private DiskUsageTracker $disk_tracker,
         private string $output_dir,
         private bool $include_binary,
+        private array $session_tags = [],
     ) {
     }
 
@@ -235,8 +239,10 @@ final class SidecarDumpHandler
         if ($request->label !== null) {
             $meta['label'] = $request->label;
         }
-        if (count($request->metadata) > 0) {
-            $meta['metadata'] = $request->metadata;
+        // Merge session tags with per-request metadata (request wins on conflict)
+        $merged_metadata = array_merge($this->session_tags, $request->metadata);
+        if (count($merged_metadata) > 0) {
+            $meta['metadata'] = $merged_metadata;
         }
         if ($request->error_file !== null) {
             $meta['memory_limit_error_file'] = $request->error_file;

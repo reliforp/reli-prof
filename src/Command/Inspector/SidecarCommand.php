@@ -100,6 +100,7 @@ final class SidecarCommand extends Command
             disk_tracker: $disk_tracker,
             output_dir: $settings->output_dir,
             include_binary: $settings->include_binary,
+            session_tags: $settings->tags,
         );
 
         $server = new SidecarServer($dump_handler);

@@ -32,9 +32,13 @@ final class SidecarClient
 
     private string $socket_path;
 
+    /**
+     * @param array<string, string> $default_metadata merged into every request (per-call metadata wins)
+     */
     public function __construct(
         ?string $socket_path = null,
         private int $timeout_seconds = 30,
+        private array $default_metadata = [],
     ) {
         $this->socket_path = $socket_path
             ?? ($_SERVER[self::ENV_SOCKET_PATH] ?? null)
@@ -69,8 +73,9 @@ final class SidecarClient
         if ($label !== null) {
             $payload['label'] = $label;
         }
-        if (count($metadata) > 0) {
-            $payload['metadata'] = $metadata;
+        $merged = array_merge($this->default_metadata, $metadata);
+        if (count($merged) > 0) {
+            $payload['metadata'] = $merged;
         }
 
         return $this->send($payload);
