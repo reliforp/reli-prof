@@ -154,6 +154,11 @@ The `is_tree` flag distinguishes the DFS spanning tree from back-references:
 - `is_tree = 1` edges form a tree where each node has exactly one parent — use these for canonical path queries
 - `is_tree = 0` edges represent additional references to already-visited nodes — these capture shared and circular references
 
+The `strength` column classifies the reference by its refcount behavior:
+- `strong` — normal references that increment the target's refcount (object properties, local variables, array elements)
+- `weak` — references that do not increment refcount (`objects_store` handle table entries)
+- `structural` — PHP VM internal structures that are not ownership references (`object_handlers`, `class_entry`)
+
 ```sql
 -- Find all places that reference node 42 in run 1
 SELECT parent_node_id, link_name, is_tree
