@@ -58,10 +58,10 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
         $this->memory_limit_backup = ini_get('memory_limit');
         ini_set('memory_limit', '1G');
 
-        // Check if MySQL image is available
-        exec('docker image inspect mysql:8.0 2>/dev/null', $output, $exit_code);
+        // Skip unless Docker is available
+        exec('docker ps 2>/dev/null', $output, $exit_code);
         if ($exit_code !== 0) {
-            $this->markTestSkipped('mysql:8.0 Docker image not available');
+            $this->markTestSkipped('Docker is not available');
         }
     }
 
@@ -86,25 +86,20 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
     public function testCollectPdoMysqlMysqlndBuffers(): void
     {
         $php_version = 'v84';
-        $docker_image_name = 'php:8.4-cli';
+        $docker_image_name = 'reli-test-php-mysql:8.4';
 
-        // Check PHP image has pdo_mysql; if not, build one with it
-        exec("docker run --rm $docker_image_name php -m 2>/dev/null", $modules);
-        if (!in_array('pdo_mysql', $modules, true)) {
-            // Build a derived image with pdo_mysql
-            $docker_image_name = 'reli-test-php-mysql:8.4';
-            exec(
-                "docker build -q -t $docker_image_name -f- /tmp <<'DEOF'\n"
-                . "FROM php:8.4-cli\nRUN docker-php-ext-install pdo_mysql > /dev/null 2>&1\n"
-                . "DEOF\n2>/dev/null",
-                $build_output,
-                $build_exit,
+        // Build PHP image with pdo_mysql (cached after first run)
+        exec(
+            "docker build -q -t $docker_image_name -f- /tmp <<'DEOF'\n"
+            . "FROM php:8.4-cli\nRUN docker-php-ext-install pdo_mysql > /dev/null 2>&1\n"
+            . "DEOF\n2>/dev/null",
+            $build_output,
+            $build_exit,
+        );
+        if ($build_exit !== 0) {
+            $this->markTestSkipped(
+                'Cannot build PHP image with pdo_mysql (docker pull may be needed)'
             );
-            if ($build_exit !== 0) {
-                $this->markTestSkipped(
-                    'Cannot build PHP image with pdo_mysql: ' . implode("\n", $build_output)
-                );
-            }
         }
 
         // Create Docker network
@@ -128,8 +123,10 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
             escapeshellarg($mysql_password),
         );
         $this->mysql_container_id = trim(shell_exec($cmd) ?? '');
-        if (empty($this->mysql_container_id)) {
-            $this->markTestSkipped('Cannot start MySQL container');
+        if (empty($this->mysql_container_id) || strlen($this->mysql_container_id) < 12) {
+            $this->markTestSkipped(
+                'Cannot start MySQL container (mysql:8.0 image may not be available)'
+            );
         }
 
         // Wait for MySQL to be ready (first start can take ~30s)
