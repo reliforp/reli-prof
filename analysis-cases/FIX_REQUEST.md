@@ -337,9 +337,18 @@ Compare with `bottleneck_path` which correctly shows `objects_store->1->statemen
 ### Suggested Fix
 
 1. **Filter out root containers** from choke_point candidates: `ObjectsStoreMemoryLocation`,
-   `GlobalVariablesContext`, and similar structural nodes should be excluded or ranked below
-   application-level choke points.
-2. **Improve path display** by collapsing or hiding internal navigation nodes
+   `GlobalVariablesContext`, `class_table`, `function_table`, and similar structural nodes
+   should be excluded or ranked below application-level choke points.
+   These are GC roots / index structures, not application-level "owners". Suggesting
+   to "release this object" is not actionable — users should release from the
+   actual owner (e.g., `$statementCache`), not from the runtime index.
+2. **Consider edge semantics:** objects_store holds references to all live objects as
+   an index, not as an ownership relation. choke_point assumes "cutting this reference
+   frees the subtree", but cutting from objects_store = destroying the object, which
+   should be done from the application-level owner. Edges from objects_store (and
+   similar runtime-internal roots) could be marked as "weak" or "structural" to
+   distinguish them from application-level ownership edges.
+3. **Improve path display** by collapsing or hiding internal navigation nodes
    (`included_files`, `IncludedFilesContext`) in human-readable output.
 
 ### Location
