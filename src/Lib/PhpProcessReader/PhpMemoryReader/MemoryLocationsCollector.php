@@ -184,6 +184,14 @@ final class MemoryLocationsCollector
     private array $deferred_object_edges = [];
 
     /**
+     * Closure objects collected shallowly during objects_store (defer mode).
+     * Their collectClosure() was skipped. Resolved after all phases complete.
+     *
+     * @var list<int> ZendObject pointer addresses
+     */
+    private array $deferred_closure_addresses = [];
+
+    /**
      * The node_id of the innermost streaming parent that is currently
      * being populated. Used by defer logic to record edges.
      */
@@ -665,6 +673,48 @@ final class MemoryLocationsCollector
                     $context_pools->convertToSentinels($memo);
                 }
             }
+
+            // Resolve deferred Closure objects: during objects_store with
+            // defer, collectClosure() was skipped. Now collect this_ptr/func
+            // and emit as children of the Closure's ObjectContext node.
+            foreach ($this->deferred_closure_addresses as $closure_address) {
+                $sentinel = $context_pools->getSentinel($closure_address);
+                if ($sentinel === null) {
+                    continue;
+                }
+                $closure_node_id = $sentinel->node_id;
+                $closure_pointer = ZendClosure::getPointerFromZendObjectPointer(
+                    new Pointer(
+                        ZendObject::class,
+                        $closure_address,
+                        $zend_type_reader->sizeOf('zend_object'),
+                    ),
+                    $zend_type_reader,
+                );
+                try {
+                    $zend_closure = $dereferencer->deref($closure_pointer);
+                    $closure_context = $this->collectClosure(
+                        $zend_closure,
+                        $cg->map_ptr_base,
+                        $dereferencer,
+                        $zend_type_reader,
+                        $memory_locations,
+                        $context_pools,
+                        $memory_limit_error_details,
+                    );
+                    $analyzer->analyzeSingleLink(
+                        'closure',
+                        $closure_context,
+                        $sink,
+                        $closure_node_id,
+                        $memo,
+                    );
+                    $context_pools->convertToSentinels($memo);
+                } catch (\Throwable) {
+                    // Skip closures that can't be dereferenced
+                }
+            }
+            $this->deferred_closure_addresses = [];
 
             $context_pools->clear();
 
@@ -2319,6 +2369,15 @@ final class MemoryLocationsCollector
         // collected when the object is reached from another phase, or
         // via deferred edge resolution.
         if ($this->defer_unseen_objects) {
+            // Record Closures for deferred collectClosure() so their
+            // this_ptr and func links are created during resolution.
+            assert(!is_null($object->ce));
+            if (
+                $dereferencer->deref($object->ce)->getClassName($dereferencer) === 'Closure'
+                and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
+            ) {
+                $this->deferred_closure_addresses[] = $object->getPointer()->address;
+            }
             $this->defer_unseen_objects = $saved_defer;
             return $object_context;
         }
