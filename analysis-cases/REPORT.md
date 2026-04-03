@@ -601,7 +601,7 @@ Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 | 6 | Logger accumulation | **7/10** | Dedup reveals stack trace bloat (20K copies of paths/methods) |
 | 7 | Event dispatcher leak | **8/10** | Bottleneck + structural duplicates identified |
 | 8 | ORM SQL logger | **7/10** | Dedup found 10K identical SQL strings |
-| 9 | PDO circular ref | **6/10** | Low coverage — PDO internals outside ZendMM |
+| 9 | PDO circular ref | **7/10** | PDO tracking added: 52.9% coverage, PDOStatement 4002 instances + query string dedup detected |
 | 10 | Normalizer chain | **9/10** | cycle_cluster detected: 15x DataTransformer + 1x ItemNormalizer, 3.53 MB retained |
 | 11 | Static session store | **8/10** | Clear accumulation pattern identified |
 | 12 | Unserialize bloat | **7/10** | 10K instances flagged, array type dominance shown |
@@ -609,7 +609,7 @@ Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 | 14 | Bootstrap static leak | **9/10** | static_properties path + Closure accumulation = precise |
 | 15 | Closure cycles | **8/10** | cycle_cluster detected: 4000x Closure + 2000x Widget + 1x EventEmitter (61.92 MB retained). DB 673MB |
 
-**Average score: 7.8 / 10**
+**Average score: 7.9 / 10**
 
 **Overall:** Across 15 diverse PHP memory issues, reli-prof demonstrated strong diagnostic
 capability without requiring any modification to target processes. It excels at:
