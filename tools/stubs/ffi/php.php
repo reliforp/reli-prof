@@ -355,6 +355,57 @@ class php_stream_temp_data extends CData
     public ?CPointer $innerstream;
     public int $smax;
 }
+
+class pdo_dbh_object_t extends CData
+{
+    public ?CPointer $inner;
+}
+
+class pdo_dbh_t extends CData
+{
+    public ?CPointer $driver_data;
+    public ?CPointer $data_source;
+    public int $data_source_len;
+}
+
+class pdo_stmt_t extends CData
+{
+    public ?CPointer $driver_data;
+    public int $column_count;
+    public ?CPointer $columns;
+    public ?CPointer $bound_params;
+    public ?CPointer $bound_columns;
+    public ?CPointer $query_string;
+}
+
+class pdo_column_data extends CData
+{
+    public ?CPointer $name;
+}
+
+class pdo_sqlite_db_handle extends CData
+{
+}
+
+class pdo_sqlite_stmt extends CData
+{
+}
+
+class pdo_pgsql_db_handle extends CData
+{
+}
+
+class pdo_pgsql_stmt extends CData
+{
+}
+
+class pdo_mysql_db_handle extends CData
+{
+}
+
+class pdo_mysql_stmt extends CData
+{
+}
 class zend_type extends CData
 {
     public int $ptr;

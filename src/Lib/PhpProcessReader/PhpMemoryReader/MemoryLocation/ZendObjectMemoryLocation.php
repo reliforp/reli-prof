@@ -61,6 +61,14 @@ final class ZendObjectMemoryLocation extends RefcountedMemoryLocation
             [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_weakmap', 'std');
             $address -= $std_offset;
             $size = $zend_object->getMemorySize($dereferencer) + $std_offset;
+        } elseif ($class_name === \PDO::class) {
+            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_object_t', 'std');
+            $address -= $std_offset;
+            $size = $zend_object->getMemorySize($dereferencer) + $std_offset;
+        } elseif ($class_name === \PDOStatement::class) {
+            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'std');
+            $address -= $std_offset;
+            $size = $zend_object->getMemorySize($dereferencer) + $std_offset;
         } else {
             $size = $zend_object->getMemorySize($dereferencer);
         }

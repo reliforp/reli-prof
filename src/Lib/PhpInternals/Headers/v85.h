@@ -1666,3 +1666,170 @@ typedef struct {
 	zval meta;
 	char *tmpdir;
 } php_stream_temp_data;
+
+// ext/pdo/php_pdo_driver.h
+typedef char pdo_error_type[6];
+
+typedef struct _pdo_dbh_t pdo_dbh_t;
+typedef struct _pdo_dbh_object_t pdo_dbh_object_t;
+typedef struct _pdo_stmt_t pdo_stmt_t;
+
+struct _pdo_dbh_t {
+	uintptr_t methods;
+	void *driver_data;
+	char *username;
+	char *password;
+	/* bool bitfields: is_persistent, auto_commit, is_closed, alloc_own_columns, in_txn, stringify */
+	/* 6 bool bitfields pack into 1 byte, then padding, then uint8_t fields */
+	uint8_t pdo_dbh_bool_flags;
+	uint8_t skip_param_evt;
+	uint8_t error_mode;
+	uint8_t oracle_nulls;
+	uint8_t native_case;
+	uint8_t desired_case;
+	uint8_t max_escaped_char_length;
+	/* padding to align data_source pointer */
+	const char *data_source;
+	size_t data_source_len;
+	pdo_error_type error_code;
+	uint16_t default_fetch_type;
+	const char *persistent_id;
+	size_t persistent_id_len;
+	uint32_t refcount;
+	HashTable *cls_methods[2];
+	uintptr_t driver;
+	zend_class_entry *def_stmt_ce;
+	zval def_stmt_ctor_args;
+	pdo_stmt_t *query_stmt;
+	zend_object *query_stmt_obj;
+};
+
+struct _pdo_dbh_object_t {
+	pdo_dbh_t *inner;
+	zend_object std;
+};
+
+struct pdo_column_data {
+	zend_string *name;
+	size_t maxlen;
+	zend_ulong precision;
+};
+typedef struct pdo_column_data pdo_column_data;
+
+struct _pdo_stmt_t {
+	uintptr_t methods;
+	void *driver_data;
+	pdo_error_type stmt_error_code;
+	uint16_t pdo_stmt_flags; /* executed:1, in_fetch:1, supports_placeholders:2, reserved:12 */
+	HashTable *bound_params;
+	HashTable *bound_param_map;
+	HashTable *bound_columns;
+	struct pdo_column_data *columns;
+	int32_t column_count;
+	int stmt_default_fetch_type;
+	union {
+		int column;
+		struct {
+			HashTable *ctor_args;
+			zend_class_entry *ce;
+		} cls;
+		struct {
+			zend_fcall_info_cache fcc;
+		} func;
+		zend_object *into;
+	} fetch;
+	zend_object *lazy_object_ref;
+	pdo_dbh_t *dbh;
+	zend_object *database_object_handle;
+	zend_long row_count;
+	zend_string *query_string;
+	zend_string *active_query_string;
+	const char *named_rewrite_template;
+	zend_object std;
+};
+
+// ext/pdo_sqlite/php_pdo_sqlite_int.h
+typedef struct {
+	const char *file;
+	int line;
+	unsigned int errcode;
+	char *errmsg;
+} pdo_sqlite_error_info;
+
+typedef struct {
+	uintptr_t db;
+	pdo_sqlite_error_info einfo;
+	uintptr_t funcs;
+	uintptr_t collations;
+} pdo_sqlite_db_handle;
+
+typedef struct {
+	uintptr_t H;
+	uintptr_t stmt;
+	uint32_t pdo_sqlite_stmt_flags;
+} pdo_sqlite_stmt;
+
+// ext/pdo_pgsql/php_pdo_pgsql_int.h
+typedef struct {
+	const char *file;
+	int line;
+	unsigned int errcode;
+	char *errmsg;
+} pdo_pgsql_error_info;
+
+typedef struct {
+	uintptr_t server; /* PGconn * */
+	uint32_t pdo_pgsql_flags; /* attached:1, _reserved:31 */
+	pdo_pgsql_error_info einfo;
+	uint32_t pgoid; /* Oid */
+	unsigned int stmt_counter;
+	bool emulate_prepares;
+	bool disable_prepares;
+	bool default_fetching_laziness;
+	HashTable *lob_streams;
+	uintptr_t notice_callback; /* zend_fcall_info_cache * */
+	uintptr_t running_stmt; /* pdo_pgsql_stmt * */
+} pdo_pgsql_db_handle;
+
+typedef struct {
+	uintptr_t H; /* pdo_pgsql_db_handle * */
+	uintptr_t result; /* PGresult * */
+	uintptr_t cols; /* pdo_pgsql_column * */
+	char *cursor_name;
+	char *stmt_name;
+	zend_string *query_pgsql;
+	uintptr_t param_values;
+	uintptr_t param_lengths;
+	uintptr_t param_formats;
+	uintptr_t param_types;
+	int current_row;
+	bool is_prepared;
+	bool is_unbuffered;
+	bool is_running_unbuffered;
+} pdo_pgsql_stmt;
+
+// ext/pdo_mysql/php_pdo_mysql_int.h
+typedef struct {
+	const char *file;
+	int line;
+	unsigned int errcode;
+	char *errmsg;
+} pdo_mysql_error_info;
+
+typedef struct {
+	uintptr_t server; /* MYSQL * */
+	uint32_t pdo_mysql_flags; /* assume_national..:1, attached:1, buffered:1, emulate_prepare:1, fetch_table_names:1, local_infile:1 */
+	pdo_mysql_error_info einfo;
+} pdo_mysql_db_handle;
+
+typedef struct {
+	uintptr_t H; /* pdo_mysql_db_handle * */
+	uintptr_t result; /* MYSQL_RES * */
+	uintptr_t fields; /* const MYSQL_FIELD * */
+	pdo_mysql_error_info einfo;
+	uintptr_t stmt; /* MYSQLND_STMT * */
+	int num_params;
+	uintptr_t params; /* PDO_MYSQL_PARAM_BIND * */
+	uintptr_t current_row; /* zval * */
+	uint32_t pdo_mysql_stmt_flags; /* max_length:1, done:1 */
+} pdo_mysql_stmt;
