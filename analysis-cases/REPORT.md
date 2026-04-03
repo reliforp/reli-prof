@@ -411,12 +411,19 @@ Closures capturing `$this` create cycles: Widget → EventEmitter → Closure �
 
 ```
 memory_get_usage(): 78 MB
+Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 ```
 
-**Score: N/A** — Analysis could not complete in reasonable time. The `-f report` produced
-empty Findings. The sqlite DB reached 2.2 GB before completion (for 78 MB of PHP memory),
-indicating the closure-captured context tree is explosively large. This represents a
-practical limit of the tool for deep closure-heavy object graphs.
+**Score: N/A** — Analysis DB grew to 7.4 GB for 78 MB of PHP memory. This is **not a
+reli-prof bug** but a consequence of the test case structure: `emit('update')` calls all
+registered listeners, so Widget 0's `$state` accumulates 2000 entries, Widget 1 gets
+1999, etc. — totaling ~2 million small `['tick' => N]` arrays. Each array generates
+3–4 context nodes (header, element, key, value), producing tens of millions of DB rows.
+
+This represents a practical scalability limit for cases with millions of small objects.
+The per-object overhead in the analysis DB (~4 rows × ~150 bytes = ~600 bytes per object)
+makes 2M objects → ~1.2 GB of DB rows, plus indexes. Potential optimization: compress
+repeated structures or cap context depth for scalar-dominated subtrees.
 
 ### Round 2 Summary
 
