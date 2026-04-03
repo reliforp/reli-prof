@@ -1833,7 +1833,6 @@ typedef struct {
 	uintptr_t current_row; /* zval * */
 	uint32_t pdo_mysql_stmt_flags; /* max_length:1, done:1 */
 } pdo_mysql_stmt;
-
 // ext/mysqlnd/mysqlnd_structs.h
 typedef struct st_mysqlnd_row_buffer {
 	void *ptr;
@@ -1857,15 +1856,15 @@ typedef struct st_mysqlnd_memory_pool {
 
 typedef struct {
 	uintptr_t conn;
-	int type; /* enum_mysqlnd_res_type */
+	int type;
 	unsigned int field_count;
-	uintptr_t row_data; /* zval * */
+	uintptr_t row_data;
 	bool free_row_data;
-	uintptr_t meta; /* MYSQLND_RES_METADATA * */
-	uintptr_t stored_data; /* MYSQLND_RES_BUFFERED * */
-	uintptr_t unbuf; /* MYSQLND_RES_UNBUFFERED * */
+	uintptr_t meta;
+	uintptr_t stored_data;
+	uintptr_t unbuf;
 	MYSQLND_MEMORY_POOL *memory_pool;
-	uintptr_t m[22]; /* mysqlnd_res method table (inlined) */
+	uintptr_t m[25]; /* mysqlnd_res method table */
 } MYSQLND_RES;
 
 typedef struct {
@@ -1877,7 +1876,7 @@ typedef struct {
 	unsigned int references;
 	MYSQLND_ERROR_INFO error_info;
 	unsigned int field_count;
-	uintptr_t stmt; /* MYSQLND_STMT_DATA * */
+	uintptr_t stmt;
 	uint64_t current_row;
 	uintptr_t unused1;
 	uintptr_t unused2;
