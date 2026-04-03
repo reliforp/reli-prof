@@ -41,6 +41,11 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
+use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
+use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
@@ -366,6 +371,208 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ['included_files']
                 ['#count']
         );
+    }
+
+    /**
+     * End-to-end streaming test: collectAll with PdoContextTreeSink,
+     * backfill regions, and verify the percentage is reasonable.
+     *
+     * This ensures that vm_stack / compiler_arena (which live inside
+     * zend_mm_heap chunks) are classified correctly, and the corrected
+     * summary produces a non-zero analysed percentage.
+     */
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testStreamingPercentageIsReasonable(string $php_version, string $docker_image_name): void
+    {
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            $arr = range(1, 1000);
+            $obj = new stdClass;
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+
+        // ---- set up streaming sink (in-memory SQLite) ----
+        $tmp_path = tempnam(sys_get_temp_dir(), 'reli_test_stream_') . '.sqlite3';
+        $driver = new SqliteDriver($tmp_path);
+        $pdo_output = new PdoMemoryOutput($driver);
+        [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
+
+        // ---- collect with streaming ----
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
+        );
+
+        // ---- build RegionBoundaries and backfill ----
+        $region_boundaries = new RegionBoundaries(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations,
+        );
+
+        $region_analyzer = new RegionAnalyzer(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations,
+        );
+        $analyzed_regions = $region_analyzer->analyze(
+            $collected_memories->memory_locations,
+        );
+
+        $sink->flush();
+        $region_boundaries->backfillRegions($db, $run_id);
+
+        // ---- verify region data in DB ----
+        $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
+
+        // There must be at least zend_mm_heap data (normal heap allocations)
+        $this->assertArrayHasKey('zend_mm_heap', $region_sums);
+        $this->assertGreaterThan(0, $region_sums['zend_mm_heap']);
+
+        // vm_stack should exist inside a chunk
+        $this->assertGreaterThan(
+            0,
+            $collected_memories->vm_stack_memory_locations->memory_locations !== []
+                ? count($collected_memories->vm_stack_memory_locations->memory_locations)
+                : 0,
+            'vm_stack regions should be collected'
+        );
+
+        // If there are vm_stack locations in the DB they must be classified
+        if (isset($region_sums['vm_stack'])) {
+            $this->assertGreaterThan(0, $region_sums['vm_stack']);
+        }
+
+        // ---- compute corrected summary and percentage ----
+        $summary_base = $analyzed_regions->summary->correctedToArray($region_sums);
+
+        $pct = (float)$summary_base['zend_mm_heap_usage']
+            / (float)$collected_memories->memory_get_usage_size * 100.0;
+
+        // The percentage must NOT be near-zero (the bug we're fixing).
+        // A real analysis of a simple script typically yields 60-100%.
+        $this->assertGreaterThan(
+            30.0,
+            $pct,
+            sprintf(
+                'heap_memory_analyzed_percentage too low: %.2f%% '
+                . '(heap_usage=%d, memory_get_usage=%d, region_sums=%s)',
+                $pct,
+                $summary_base['zend_mm_heap_usage'],
+                $collected_memories->memory_get_usage_size,
+                json_encode($region_sums),
+            )
+        );
+
+        // Also verify it doesn't exceed a sane upper bound (the DB SUM may
+        // slightly over-count due to overlapping locations that weren't
+        // filtered, plus the region totals for vm_stack/compiler_arena).
+        $this->assertLessThan(
+            200.0,
+            $pct,
+            'percentage should not wildly exceed 100%'
+        );
+
+        // ---- cleanup ----
+        $db = null;
+        @unlink($tmp_path);
     }
 
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
