@@ -482,7 +482,17 @@ This is likely the best balance of correctness, maintainability, and scope of ch
 flat int arrays. Typical apps would be a fraction of this. The collector's context
 objects during streaming are heavier, so this is not the bottleneck.
 
-**Optimization for `-f report` (one-shot) path:** When running collector → finalize →
+**Bug in current implementation:** `rebuildSpanningTree` sorts roots by priority
+(call_frames first, objects_store last) but pushes them all onto the stack in order.
+Since the DFS uses `array_pop` (LIFO), the **last pushed root (objects_store) is
+popped first**, defeating the priority sort. Additionally, all roots are marked
+visited immediately, so when call_frames DFS reaches an object later, it's already
+visited via objects_store.
+
+**Fix:** Either reverse the roots before pushing (`array_reverse($roots)`) so
+`array_pop` pops call_frames first, or use a FIFO queue. The root loop should also
+NOT mark all roots as visited upfront — only mark each root visited when it is
+actually popped from the stack.
 report in a single process, the TreeRebuilder's adjacency list can be passed directly
 to GraphSubstrate, skipping its `loadEdges()` SELECT. DB I/O reduced by one full scan.
 For the separate `memory:report` path (reading from a pre-existing DB), GraphSubstrate
