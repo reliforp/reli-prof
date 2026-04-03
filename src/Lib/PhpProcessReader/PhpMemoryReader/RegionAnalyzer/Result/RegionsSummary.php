@@ -104,7 +104,9 @@ final class RegionsSummary
         );
         $stmt->execute([$run_id]);
         $sums = [];
+        /** @psalm-suppress MixedAssignment */
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            /** @psalm-suppress MixedArrayAccess */
             $sums[(string)$row['region']] = (int)$row['total_size'];
         }
         return $sums;
