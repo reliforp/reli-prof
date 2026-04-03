@@ -35,6 +35,15 @@ final class PathFormatter
         'value',
         'object_handlers',
         'dynamic_properties',
+        'included_files',
+        'interned_strings',
+        'objects_store',
+        'function_table',
+        'class_table',
+        'global_variables',
+        'global_constants',
+        'global_callbacks',
+        'modules',
     ];
 
     /**
