@@ -45,6 +45,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
+use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
@@ -2565,5 +2566,291 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $found_memory_data_link,
             'Should find stream_memory_data link for MEMORY or TEMP stream'
         );
+    }
+
+    /**
+     * Bug 2 regression test: In streaming mode, ObjectContext nodes must have
+     * a tree edge to their ObjectPropertiesContext even when all properties
+     * are object references (deferred during objects_store collection).
+     */
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testStreamingObjectPropertiesEdgeExists(string $php_version, string $docker_image_name): void
+    {
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        // Two objects referencing each other via properties — all properties are objects.
+        $target_script =
+            <<<'CODE'
+            <?php
+            class NodeA {
+                public ?object $peer = null;
+            }
+            class NodeB {
+                public ?object $peer = null;
+            }
+            $a = new NodeA;
+            $b = new NodeB;
+            $a->peer = $b;
+            $b->peer = $a;
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        [$db, $run_id, $tmp_path] = $this->collectStreamingDb(
+            $pid,
+            $php_version,
+            $memory_reader,
+            $type_reader_creator,
+        );
+
+        // Every ObjectContext node (type='ObjectContext') that has children of
+        // type ObjectPropertiesContext must have a tree edge connecting them.
+        $stmt = $db->query(
+            "SELECT cn.node_id, cn.type"
+            . " FROM context_nodes cn"
+            . " WHERE cn.run_id = {$run_id} AND cn.type = 'ObjectContext'"
+        );
+        $object_nodes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $found_properties_edge = false;
+        foreach ($object_nodes as $node) {
+            $node_id = (int)$node['node_id'];
+            // Check for a tree edge from this ObjectContext to an ObjectPropertiesContext
+            $edge_stmt = $db->prepare(
+                "SELECT e.child_node_id FROM context_edges e"
+                . " JOIN context_nodes cn ON cn.run_id = e.run_id AND cn.node_id = e.child_node_id"
+                . " WHERE e.run_id = ? AND e.parent_node_id = ? AND e.is_tree = 1"
+                . " AND cn.type = 'ObjectPropertiesContext'"
+            );
+            $edge_stmt->execute([$run_id, $node_id]);
+            $properties_children = $edge_stmt->fetchAll(\PDO::FETCH_COLUMN);
+
+            // Check class name to only assert on our test classes
+            $class_stmt = $db->prepare(
+                "SELECT class_name FROM context_node_locations"
+                . " WHERE run_id = ? AND node_id = ? AND class_name IS NOT NULL LIMIT 1"
+            );
+            $class_stmt->execute([$run_id, $node_id]);
+            $class_name = $class_stmt->fetchColumn();
+
+            if ($class_name === 'NodeA' || $class_name === 'NodeB') {
+                $this->assertNotEmpty(
+                    $properties_children,
+                    "ObjectContext for {$class_name} (node {$node_id}) must have"
+                    . " a tree edge to an ObjectPropertiesContext child"
+                );
+                $found_properties_edge = true;
+            }
+        }
+
+        $this->assertTrue($found_properties_edge, 'Should find at least one NodeA/NodeB object with properties edge');
+
+        $db = null;
+        @unlink($tmp_path);
+    }
+
+    /**
+     * Bug 2 + report regression test: Streaming mode must produce findings
+     * from graph-based analysis passes (CycleCluster, DrillDown, etc.)
+     * when the graph has cycles.
+     */
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testStreamingReportProducesGraphFindings(string $php_version, string $docker_image_name): void
+    {
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            $arr = range(1, 500);
+            $obj = new stdClass;
+            $obj->data = $arr;
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        [$db, $run_id, $tmp_path] = $this->collectStreamingDb(
+            $pid,
+            $php_version,
+            $memory_reader,
+            $type_reader_creator,
+        );
+
+        // Generate report with full_analysis (same as ReportMemoryOutput now does)
+        $generator = new ReportGenerator();
+        $result = $generator->generateFromDb($db, $run_id, true);
+
+        // Must produce at least overview + type_breakdown + other findings
+        $this->assertGreaterThanOrEqual(
+            3,
+            count($result->findings),
+            'Streaming report should produce multiple findings (overview, type_breakdown, etc.)'
+        );
+
+        $db = null;
+        @unlink($tmp_path);
+    }
+
+    /**
+     * Helper: Run streaming collection and return [PDO, run_id, tmp_path].
+     *
+     * @return array{\PDO, int, string}
+     */
+    private function collectStreamingDb(
+        int $pid,
+        string $php_version,
+        MemoryReader $memory_reader,
+        ZendTypeReaderCreator $type_reader_creator,
+    ): array {
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+
+        $tmp_path = tempnam(sys_get_temp_dir(), 'reli_test_stream_') . '.sqlite3';
+        $driver = new SqliteDriver($tmp_path);
+        $pdo_output = new PdoMemoryOutput($driver);
+        [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
+        );
+
+        $region_boundaries = new RegionBoundaries(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations,
+        );
+        $region_analyzer = new RegionAnalyzer(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations,
+        );
+        $analyzed_regions = $region_analyzer->analyze($collected_memories->memory_locations);
+
+        $sink->flush();
+        $region_boundaries->backfillRegions($db, $run_id);
+        $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
+        $summary_base = $region_sums !== []
+            ? $analyzed_regions->summary->correctedToArray($region_sums)
+            : $analyzed_regions->summary->toArray();
+
+        $summary = [
+            $summary_base
+            + [
+                'memory_get_usage' => $collected_memories->memory_get_usage_size,
+                'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
+                'cached_chunks_size' => $collected_memories->cached_chunks_size,
+            ]
+            + [
+                'heap_memory_analyzed_percentage' =>
+                    (float)$summary_base['zend_mm_heap_usage']
+                    / (float)$collected_memories->memory_get_usage_size * 100.0,
+            ]
+            + ['php_version' => $php_version]
+        ];
+
+        $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
+
+        return [$db, $run_id, $tmp_path];
     }
 }

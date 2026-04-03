@@ -60,6 +60,20 @@ final class MemoryLocations
         $this->memory_locations[$memory_location->address] = $memory_location;
     }
 
+    /**
+     * Register an additional address as an alias for an existing location.
+     * In lightweight mode this records the address in the seen set;
+     * in normal mode it stores the full MemoryLocation under the alias.
+     */
+    public function addAlias(int $address, MemoryLocation $memory_location): void
+    {
+        if ($this->lightweight) {
+            $this->seen[$address] = true;
+            return;
+        }
+        $this->memory_locations[$address] = $memory_location;
+    }
+
     public function has(int $address): bool
     {
         if ($this->lightweight) {
