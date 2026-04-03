@@ -192,6 +192,22 @@ final class MemoryLocationsCollector
     private array $deferred_closure_addresses = [];
 
     /**
+     * Generator objects collected shallowly during objects_store (defer mode).
+     * Their collectGenerator() was skipped. Resolved after all phases complete.
+     *
+     * @var list<int> ZendObject pointer addresses
+     */
+    private array $deferred_generator_addresses = [];
+
+    /**
+     * Fiber objects collected shallowly during objects_store (defer mode).
+     * Their collectFiber() was skipped. Resolved after all phases complete.
+     *
+     * @var list<int> ZendObject pointer addresses
+     */
+    private array $deferred_fiber_addresses = [];
+
+    /**
      * The node_id of the innermost streaming parent that is currently
      * being populated. Used by defer logic to record edges.
      */
@@ -715,6 +731,82 @@ final class MemoryLocationsCollector
                 }
             }
             $this->deferred_closure_addresses = [];
+
+            // Resolve deferred Generator objects
+            foreach ($this->deferred_generator_addresses as $gen_address) {
+                $sentinel = $context_pools->getSentinel($gen_address);
+                if ($sentinel === null) {
+                    continue;
+                }
+                $gen_node_id = $sentinel->node_id;
+                try {
+                    $gen_pointer = ZendGenerator::getPointerFromZendObjectPointer(
+                        new Pointer(
+                            ZendObject::class,
+                            $gen_address,
+                            $zend_type_reader->sizeOf('zend_object'),
+                        ),
+                        $zend_type_reader,
+                    );
+                    $generator_context = $this->collectGenerator(
+                        $dereferencer->deref($gen_pointer),
+                        $cg->map_ptr_base,
+                        $dereferencer,
+                        $zend_type_reader,
+                        $memory_locations,
+                        $context_pools,
+                        $memory_limit_error_details,
+                    );
+                    $analyzer->analyzeSingleLink(
+                        'generator',
+                        $generator_context,
+                        $sink,
+                        $gen_node_id,
+                        $memo,
+                    );
+                    $context_pools->convertToSentinels($memo);
+                } catch (\Throwable) {
+                }
+            }
+            $this->deferred_generator_addresses = [];
+
+            // Resolve deferred Fiber objects
+            foreach ($this->deferred_fiber_addresses as $fiber_address) {
+                $sentinel = $context_pools->getSentinel($fiber_address);
+                if ($sentinel === null) {
+                    continue;
+                }
+                $fiber_node_id = $sentinel->node_id;
+                try {
+                    $fiber_pointer = ZendFiber::getPointerFromZendObjectPointer(
+                        new Pointer(
+                            ZendObject::class,
+                            $fiber_address,
+                            $zend_type_reader->sizeOf('zend_object'),
+                        ),
+                        $zend_type_reader,
+                    );
+                    $fiber_context = $this->collectFiber(
+                        $dereferencer->deref($fiber_pointer),
+                        $cg->map_ptr_base,
+                        $dereferencer,
+                        $zend_type_reader,
+                        $memory_locations,
+                        $context_pools,
+                        $memory_limit_error_details,
+                    );
+                    $analyzer->analyzeSingleLink(
+                        'fiber',
+                        $fiber_context,
+                        $sink,
+                        $fiber_node_id,
+                        $memo,
+                    );
+                    $context_pools->convertToSentinels($memo);
+                } catch (\Throwable) {
+                }
+            }
+            $this->deferred_fiber_addresses = [];
 
             $context_pools->clear();
 
@@ -2369,14 +2461,23 @@ final class MemoryLocationsCollector
         // collected when the object is reached from another phase, or
         // via deferred edge resolution.
         if ($this->defer_unseen_objects) {
-            // Record Closures for deferred collectClosure() so their
-            // this_ptr and func links are created during resolution.
+            // Record special objects for deferred collection so their
+            // internal links (this_ptr, func, call_frames, etc.) are
+            // created during resolution.
             assert(!is_null($object->ce));
+            $class_name = $dereferencer->deref($object->ce)->getClassName($dereferencer);
             if (
-                $dereferencer->deref($object->ce)->getClassName($dereferencer) === 'Closure'
+                $class_name === 'Closure'
                 and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
             ) {
                 $this->deferred_closure_addresses[] = $object->getPointer()->address;
+            } elseif ($class_name === 'Generator') {
+                $this->deferred_generator_addresses[] = $object->getPointer()->address;
+            } elseif (
+                $class_name === 'Fiber'
+                and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)
+            ) {
+                $this->deferred_fiber_addresses[] = $object->getPointer()->address;
             }
             $this->defer_unseen_objects = $saved_defer;
             return $object_context;
