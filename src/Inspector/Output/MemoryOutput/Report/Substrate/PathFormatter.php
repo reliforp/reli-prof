@@ -37,7 +37,6 @@ final class PathFormatter
         'dynamic_properties',
         'included_files',
         'interned_strings',
-        'objects_store',
         'function_table',
         'class_table',
         'global_variables',
