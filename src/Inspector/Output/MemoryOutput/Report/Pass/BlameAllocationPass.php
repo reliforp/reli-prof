@@ -77,10 +77,28 @@ final class BlameAllocationPass implements PassInterface
             $blame[$root] = ['exclusive' => 0, 'shared' => 0, 'nodes' => 0];
         }
 
+        // Track which canonicals have been blamed to avoid double-counting
+        $blamed_canonicals = [];
+
         foreach ($this->substrate->iterateNodeSizes() as $node => $size) {
             if ($size === 0) {
                 continue;
             }
+
+            // Skip non-canonical duplicates to avoid double-counting
+            $canon = $this->substrate->getCanonical($node);
+            if (isset($blamed_canonicals[$canon])) {
+                continue;
+            }
+            $blamed_canonicals[$canon] = true;
+
+            // Sum sizes across all nodes in the canonical group
+            $group = $this->substrate->getCanonicalGroup($node);
+            $group_size = 0;
+            foreach ($group as $gnode) {
+                $group_size += $this->substrate->getNodeSize($gnode);
+            }
+
             $owner = $node_root_owner[$node] ?? null;
             if ($owner === null) {
                 continue;
@@ -89,7 +107,7 @@ final class BlameAllocationPass implements PassInterface
             $in_count = $incoming_count[$node] ?? 1;
 
             if ($in_count <= 1) {
-                $blame[$owner]['exclusive'] += $size;
+                $blame[$owner]['exclusive'] += $group_size;
                 $blame[$owner]['nodes']++;
             } else {
                 $owner_shares = [];
@@ -104,10 +122,10 @@ final class BlameAllocationPass implements PassInterface
                 }
                 $total_shares = array_sum($owner_shares);
                 if ($total_shares === 0) {
-                    $blame[$owner]['exclusive'] += $size;
+                    $blame[$owner]['exclusive'] += $group_size;
                 } else {
                     foreach ($owner_shares as $share_owner => $share_count) {
-                        $fraction = $size * $share_count / $total_shares;
+                        $fraction = $group_size * $share_count / $total_shares;
                         if (!isset($blame[$share_owner])) {
                             $blame[$share_owner] = ['exclusive' => 0, 'shared' => 0, 'nodes' => 0];
                         }

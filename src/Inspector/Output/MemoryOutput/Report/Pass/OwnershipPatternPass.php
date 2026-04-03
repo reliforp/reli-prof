@@ -46,10 +46,13 @@ final class OwnershipPatternPass implements PassInterface
     {
         $link_names = $this->loadLinkNames();
 
-        // Build class instance counts
+        // Build class instance counts (canonical-or-unique only)
         /** @var array<string, int> */
         $class_counts = [];
-        foreach ($this->substrate->iterateNodeClasses() as $cls) {
+        foreach ($this->substrate->iterateNodeClasses() as $node_id => $cls) {
+            if (!$this->substrate->isCanonicalOrUnique($node_id)) {
+                continue;
+            }
             $class_counts[$cls] = ($class_counts[$cls] ?? 0) + 1;
         }
 
@@ -59,6 +62,10 @@ final class OwnershipPatternPass implements PassInterface
         $ownership = [];
 
         foreach ($this->substrate->iterateNodeClasses() as $node_id => $owner_class) {
+            // Skip non-canonical duplicates
+            if (!$this->substrate->isCanonicalOrUnique($node_id)) {
+                continue;
+            }
             foreach ($this->substrate->getChildren($node_id) as $child) {
                 if (($link_names[$child] ?? '') !== 'object_properties') {
                     continue;
@@ -195,7 +202,7 @@ final class OwnershipPatternPass implements PassInterface
         $total = 0;
         $count = 0;
         foreach ($this->substrate->iterateNodeClasses() as $nid => $cls) {
-            if ($cls === $class_name) {
+            if ($cls === $class_name && $this->substrate->isCanonicalOrUnique($nid)) {
                 $total += $this->substrate->getNodeSize($nid);
                 $count++;
                 if ($count >= 10) {

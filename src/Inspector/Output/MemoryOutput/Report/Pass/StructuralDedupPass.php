@@ -132,6 +132,11 @@ final class StructuralDedupPass implements PassInterface
         $shape_groups = [];
 
         foreach ($this->substrate->iterateNodeClasses() as $node_id => $class_name) {
+            // Skip non-canonical duplicates: same object from different
+            // collection phases should not count as separate instances
+            if (!$this->substrate->isCanonicalOrUnique($node_id)) {
+                continue;
+            }
             $size = $this->substrate->getNodeSize($node_id);
 
             // Find object_properties child, collect property names

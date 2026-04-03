@@ -368,6 +368,71 @@ class GraphSubstrateTest extends BaseTestCase
         $this->assertArrayHasKey('App\\Bar', $scc['class_counts']);
     }
 
+    // ---- Phase 2: Canonical helper methods ----
+
+    public function testIsCanonicalOrUniqueReturnsTrueForUniqueNodes(): void
+    {
+        $db = $this->createDirectDb();
+
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'ObjectContext'),
+            (1, 2, 'ObjectContext')
+        ");
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type) VALUES
+            (1, 1, 1000, 64, 'ZendObjectMemoryLocation'),
+            (1, 2, 2000, 64, 'ZendObjectMemoryLocation')
+        ");
+        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'root', 1, 'strong'),
+            (1, 1, 2, 'a', 1, 'strong')
+        ");
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        // No canonical mapping → all nodes are unique
+        $this->assertTrue($substrate->isCanonicalOrUnique(1));
+        $this->assertTrue($substrate->isCanonicalOrUnique(2));
+        $this->assertSame(1, $substrate->getCanonical(1));
+        $this->assertSame([1], $substrate->getCanonicalGroup(1));
+    }
+
+    public function testIsCanonicalOrUniqueWithDuplicates(): void
+    {
+        $db = $this->createDirectDb();
+
+        // Node 10 and 30 share the same address (canonical 10)
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id) VALUES
+            (1, 10, 'ObjectContext', 10),
+            (1, 20, 'ObjectContext', NULL),
+            (1, 30, 'ObjectContext', 10)
+        ");
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type) VALUES
+            (1, 10, 1000, 64, 'ZendObjectMemoryLocation'),
+            (1, 20, 2000, 64, 'ZendObjectMemoryLocation'),
+            (1, 30, 1000, 64, 'ZendObjectMemoryLocation')
+        ");
+        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 10, 'root', 1, 'strong'),
+            (1, 10, 20, 'a', 1, 'strong'),
+            (1, NULL, 30, 'root2', 1, 'strong')
+        ");
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        $this->assertTrue($substrate->isCanonicalOrUnique(10));   // canonical representative
+        $this->assertTrue($substrate->isCanonicalOrUnique(20));   // unique (no duplicates)
+        $this->assertFalse($substrate->isCanonicalOrUnique(30));  // duplicate of 10
+
+        $this->assertSame(10, $substrate->getCanonical(10));
+        $this->assertSame(10, $substrate->getCanonical(30));
+        $this->assertSame(20, $substrate->getCanonical(20));
+
+        $group = $substrate->getCanonicalGroup(30);
+        $this->assertCount(2, $group);
+        $this->assertContains(10, $group);
+        $this->assertContains(30, $group);
+    }
+
     // ---- Helpers ----
 
     /**

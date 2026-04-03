@@ -232,6 +232,37 @@ class GraphSubstrate
         return $this->node_to_scc;
     }
 
+    /**
+     * Whether this node is the canonical representative or has no duplicates.
+     */
+    public function isCanonicalOrUnique(int $nodeId): bool
+    {
+        if (!isset($this->canonical[$nodeId])) {
+            return true;
+        }
+        return $this->findCanonical($nodeId) === $nodeId;
+    }
+
+    /**
+     * Get the canonical node_id for a given node.
+     * Returns the node itself if it has no duplicates.
+     */
+    public function getCanonical(int $nodeId): int
+    {
+        return $this->findCanonical($nodeId);
+    }
+
+    /**
+     * Get all original node_ids that share the same canonical.
+     * Returns [$nodeId] if no duplicates.
+     * @return list<int>
+     */
+    public function getCanonicalGroup(int $nodeId): array
+    {
+        $canon = $this->findCanonical($nodeId);
+        return $this->canonicalToOriginals[$canon] ?? [$canon];
+    }
+
     protected function findCanonical(int $node): int
     {
         if (!isset($this->canonical[$node])) {

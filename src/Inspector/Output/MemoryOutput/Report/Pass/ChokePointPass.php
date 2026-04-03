@@ -41,6 +41,10 @@ final class ChokePointPass implements PassInterface
     {
         $chokepoints = [];
         foreach ($this->substrate->iterateSubtreeSizes() as $node => $subtree) {
+            // Skip non-canonical duplicates to avoid double-counting
+            if (!$this->substrate->isCanonicalOrUnique($node)) {
+                continue;
+            }
             $shallow = $this->substrate->getNodeSize($node);
             if ($subtree < 1024 * 1024) {
                 continue;
