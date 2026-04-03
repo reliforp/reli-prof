@@ -58,4 +58,28 @@ class MemoryLocationsLightweightTest extends BaseTestCase
         $locations->add(new MemoryLocation(0x1000, 64));
         $this->assertTrue($locations->has(0x1000));
     }
+
+    public function testAddAliasInLightweightMode(): void
+    {
+        $locations = MemoryLocations::createLightweight();
+        $location = new MemoryLocation(0x1000, 32);
+        $locations->add($location);
+        $locations->addAlias(0x1008, $location);
+
+        $this->assertTrue($locations->has(0x1000));
+        $this->assertTrue($locations->has(0x1008));
+        $this->assertFalse($locations->has(0x2000));
+    }
+
+    public function testAddAliasInNormalMode(): void
+    {
+        $locations = new MemoryLocations();
+        $location = new MemoryLocation(0x1000, 32);
+        $locations->add($location);
+        $locations->addAlias(0x1008, $location);
+
+        $this->assertTrue($locations->has(0x1000));
+        $this->assertTrue($locations->has(0x1008));
+        $this->assertSame($location, $locations->get(0x1008));
+    }
 }

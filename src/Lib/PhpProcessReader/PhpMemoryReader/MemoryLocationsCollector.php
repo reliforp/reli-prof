@@ -1709,7 +1709,7 @@ final class MemoryLocationsCollector
         $memory_locations->add($object_location);
         $zend_object_address = $object->getPointer()->address;
         if ($object_location->address !== $zend_object_address) {
-            $memory_locations->memory_locations[$zend_object_address] = $object_location;
+            $memory_locations->addAlias($zend_object_address, $object_location);
         }
         $memory_locations->add($object_handlers_memory_location);
 
@@ -1772,7 +1772,7 @@ final class MemoryLocationsCollector
             }
         }
         $this->current_streaming_parent_node_id = $saved_parent_node_id;
-        if ($properties_exists) {
+        if ($properties_exists || $properties_parent_node_id !== null) {
             $object_context->add('object_properties', $object_properties_context);
         }
 
@@ -1932,7 +1932,13 @@ final class MemoryLocationsCollector
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ClosureContext {
+        $closure_address = $zend_closure->getPointer()->address;
+        $cached = $context_pools->closure_context_pool->getContextForAddress($closure_address);
+        if ($cached !== null) {
+            return $cached;
+        }
         $closure_context = new ClosureContext();
+        $context_pools->closure_context_pool->register($closure_address, $closure_context);
         $closure_context->add(
             'func',
             $this->collectZendFunctionPointer(
