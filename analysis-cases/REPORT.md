@@ -10,27 +10,42 @@ GitHub 上の実際の PHP メモリ問題 5 件を収集し、各問題の再�
 reli-prof の `inspector:memory -f report` で解析を行った。
 ツールの有用性と発見された課題を以下に報告する。
 
-## analyzed_percentage 修正後の再テスト結果
+## analyzed_percentage ���正後の���テスト結果
 
-`claude/fix-memory-analysis-percentage-1bJz0` ブランチの修正（`backfillRegions` による
-region カラム後付け更新）を適用し、全5ケースを再テストした。
+`claude/fix-memory-analysis-percentage-1bJz0` ブランチの修正を 3 段階で適用・検証した。
 
-| Case | Before (%) | After (%) | 状態 |
-|------|-----------|----------|------|
-| 1: Worker leak | 0.0% | **80.7%** | 大幅改善 |
-| 2: Error duplication | 0.8% | **201.9%** | 改善 (100%超え要確認) |
-| 3: Chunk fragmentation | 2.0% | **99.9%** | ほぼ完璧 |
-| 4: number_format | 2.0% | **94.6%** | ほぼ完璧 |
-| 5: ORM hydration | 0.7% | **284.4%** | 改善 (100%超え要確認) |
+### 修正内容
+1. **backfillRegions**: collectAll() 後に RegionBoundaries を作成し、DB の region カラムをバッチ UPDATE
+2. **queryRegionSums の address 重複排除**: 同一オブジェクトが複数パスから到達可能な場合の二重カウント防止
+3. **カバリングインデックス** `(run_id, region, address, size)` 追加で重複排除クエリを高速化
 
-**修正は有効。** Case 3, 4 はほぼ 100% に到達。
+### 結果推移
 
-**残課題:**
-- Case 2, 5 で 100% を超過。共有参照の二重カウント or `memory_get_usage` との
-  計算基準差（ZendMM フリーリスト等）が原因の可能性。分子の `zend_mm_heap_usage`
-  (130MB) が分母の `memory_get_usage` (45MB) を大幅超過している。
-- Case 5 の `-f report` 直接出力は依然 Findings が空（sqlite経由は正常）。
-  これはパーセンテージ問題とは別のストリーミングモード制限。
+| Case | 初回 | backfill後 | dedup後 (最終) |
+|------|------|-----------|---------------|
+| 1: Worker leak | 0.0% | 80.7% | **87.8%** |
+| 2: Error duplication | 0.8% | 201.9% | **98.8%** |
+| 3: Chunk fragmentation | 2.0% | 99.9% | **99.5%** |
+| 4: number_format | 2.0% | 94.6% | **94.0%** |
+| 5: ORM hydration | 0.7% | 284.4% | **91.2%** |
+
+**100% 超えは全て解消。** 全ケースで妥当な値に収束。
+
+### 100% 超えの原因分析
+
+同一メモリアドレスが複数のコンテキストパス（例: `global_variables` 経由 + `objects_store` 経由）
+から到達可能で、各パスごとに `context_node_locations` に別行として記録される。
+`SUM(size)` がこれを全部合算するため膨らんでいた。
+
+Case 5 (ORM hydration) での検証:
+- 全行 SUM: 130 MB (284%) → address 重複排除後: 41.4 MB (**90.5%**)
+- 121万行中、ユニークアドレスは28万件（重複率 3.3x）
+
+カバリングインデックスにより重複排除クエリは現行より高速（121万行: 397ms → 205ms）。
+
+### 残課題
+- Case 5 の `-f report` 直接出力は依然 Findings が空（sqlite 経由は正常）。
+  ストリーミングモードの lightweight tracking による制限で、パーセンテージ問題とは別。
 - segfault は 6 回再試で再現せず。タイミング依存と判断。
 
 ---
