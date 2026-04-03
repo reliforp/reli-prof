@@ -1752,3 +1752,65 @@ typedef struct {
 	uintptr_t stmt; /* sqlite3_stmt * */
 	uint32_t pdo_sqlite_stmt_flags;
 } pdo_sqlite_stmt;
+
+// ext/pdo_pgsql/php_pdo_pgsql_int.h
+typedef struct {
+	const char *file;
+	int line;
+	unsigned int errcode;
+	char *errmsg;
+} pdo_pgsql_error_info;
+
+typedef struct {
+	uintptr_t server; /* PGconn * */
+	uint32_t pdo_pgsql_flags; /* attached:1, _reserved:31 */
+	pdo_pgsql_error_info einfo;
+	uint32_t pgoid; /* Oid */
+	unsigned int stmt_counter;
+	bool emulate_prepares;
+	bool disable_native_prepares;
+	bool disable_prepares;
+	HashTable *lob_streams;
+	uintptr_t notice_callback; /* zend_fcall_info_cache * */
+} pdo_pgsql_db_handle;
+
+typedef struct {
+	uintptr_t H; /* pdo_pgsql_db_handle * */
+	uintptr_t result; /* PGresult * */
+	uintptr_t cols; /* pdo_pgsql_column * */
+	char *cursor_name;
+	char *stmt_name;
+	zend_string *query_pgsql;
+	uintptr_t param_values;
+	uintptr_t param_lengths;
+	uintptr_t param_formats;
+	uintptr_t param_types;
+	int current_row;
+	bool is_prepared;
+} pdo_pgsql_stmt;
+
+// ext/pdo_mysql/php_pdo_mysql_int.h
+typedef struct {
+	const char *file;
+	int line;
+	unsigned int errcode;
+	char *errmsg;
+} pdo_mysql_error_info;
+
+typedef struct {
+	uintptr_t server; /* MYSQL * */
+	uint32_t pdo_mysql_flags; /* assume_national..:1, attached:1, buffered:1, emulate_prepare:1, fetch_table_names:1, local_infile:1 */
+	pdo_mysql_error_info einfo;
+} pdo_mysql_db_handle;
+
+typedef struct {
+	uintptr_t H; /* pdo_mysql_db_handle * */
+	uintptr_t result; /* MYSQL_RES * */
+	uintptr_t fields; /* const MYSQL_FIELD * */
+	pdo_mysql_error_info einfo;
+	uintptr_t stmt; /* MYSQLND_STMT * */
+	int num_params;
+	uintptr_t params; /* PDO_MYSQL_PARAM_BIND * */
+	uintptr_t current_row; /* zval * */
+	uint32_t pdo_mysql_stmt_flags; /* max_length:1, done:1 */
+} pdo_mysql_stmt;

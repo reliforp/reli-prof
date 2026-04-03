@@ -39,6 +39,10 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendObjectsStore;
 use Reli\Lib\PhpInternals\Types\Zend\ZendReference;
 use Reli\Lib\PhpInternals\Types\C\RawString;
 use Reli\Lib\PhpInternals\Types\Php\PdoColumnData;
+use Reli\Lib\PhpInternals\Types\Php\PdoMysqlDbHandle;
+use Reli\Lib\PhpInternals\Types\Php\PdoMysqlStmt;
+use Reli\Lib\PhpInternals\Types\Php\PdoPgsqlDbHandle;
+use Reli\Lib\PhpInternals\Types\Php\PdoPgsqlStmt;
 use Reli\Lib\PhpInternals\Types\Php\PdoSqliteDbHandle;
 use Reli\Lib\PhpInternals\Types\Php\PdoSqliteStmt;
 use Reli\Lib\PhpInternals\Types\Php\PhpStream;
@@ -1157,26 +1161,25 @@ final class MemoryLocationsCollector
 
         // Track pdo_dbh_t allocation
         $dbh_size = $zend_type_reader->sizeOf('pdo_dbh_t');
-
         $dbh_location = new PdoDbhMemoryLocation($inner_address, $dbh_size);
         $memory_locations->add($dbh_location);
+
+        // Detect driver from data_source (DSN prefix: "sqlite:", "pgsql:", "mysql:")
+        $driver_name = $this->detectPdoDriver(
+            $inner_address,
+            $dereferencer,
+            $zend_type_reader,
+        );
 
         // Read driver_data pointer from pdo_dbh_t via offset
         [$dd_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', 'driver_data');
         $dd_ptr = new Pointer(RawInt64::class, $inner_address + $dd_offset, 8);
-        $driver_data_address_raw = $dereferencer->deref($dd_ptr)->value;
+        $driver_data_address = $dereferencer->deref($dd_ptr)->value;
 
-        $dbh_location = new PdoDbhMemoryLocation(
-            $inner_address,
-            $zend_type_reader->sizeOf('pdo_dbh_t'),
-        );
-        $memory_locations->add($dbh_location);
-
-        // Collect driver_data (e.g. pdo_sqlite_db_handle)
-        if ($driver_data_address_raw !== 0) {
+        if ($driver_data_address !== 0) {
             $this->collectPdoDriverData(
-                $driver_data_address_raw,
-                $object_context,
+                $driver_name,
+                $driver_data_address,
                 $dereferencer,
                 $zend_type_reader,
                 $memory_locations,
@@ -1218,14 +1221,28 @@ final class MemoryLocationsCollector
             }
         }
 
+        // Detect driver via pdo_stmt_t.dbh -> pdo_dbh_t.data_source
+        [$dbh_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'dbh');
+        $dbh_ptr = new Pointer(RawInt64::class, $stmt_address + $dbh_offset, 8);
+        $dbh_address = $dereferencer->deref($dbh_ptr)->value;
+
+        $driver_name = '';
+        if ($dbh_address !== 0) {
+            $driver_name = $this->detectPdoDriver(
+                $dbh_address,
+                $dereferencer,
+                $zend_type_reader,
+            );
+        }
+
         // Read driver_data pointer
         [$dd_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'driver_data');
         $dd_ptr = new Pointer(RawInt64::class, $stmt_address + $dd_offset, 8);
         $driver_data_address = $dereferencer->deref($dd_ptr)->value;
         if ($driver_data_address !== 0) {
             $this->collectPdoStmtDriverData(
+                $driver_name,
                 $driver_data_address,
-                $object_context,
                 $dereferencer,
                 $zend_type_reader,
                 $memory_locations,
@@ -1273,52 +1290,84 @@ final class MemoryLocationsCollector
         }
     }
 
+    private function detectPdoDriver(
+        int $dbh_address,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): string {
+        try {
+            [$ds_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', 'data_source');
+            $ds_ptr = new Pointer(RawInt64::class, $dbh_address + $ds_offset, 8);
+            $ds_address = $dereferencer->deref($ds_ptr)->value;
+            if ($ds_address === 0) {
+                return '';
+            }
+            // Read first 16 bytes of data_source to detect driver prefix
+            $label_pointer = new Pointer(RawString::class, $ds_address, 16);
+            $dsn = (string)$dereferencer->deref($label_pointer);
+            if (str_starts_with($dsn, ':memory:') || str_starts_with($dsn, '/')) {
+                return 'sqlite';
+            }
+            $colon_pos = strpos($dsn, ':');
+            if ($colon_pos !== false) {
+                return substr($dsn, 0, $colon_pos);
+            }
+            return $dsn;
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    /** @var array<string, array{class-string, string}> driver -> [dbh_class, ctype] */
+    private const PDO_DRIVER_DBH_MAP = [
+        'sqlite' => [PdoSqliteDbHandle::class, 'pdo_sqlite_db_handle'],
+        'pgsql' => [PdoPgsqlDbHandle::class, 'pdo_pgsql_db_handle'],
+        'mysql' => [PdoMysqlDbHandle::class, 'pdo_mysql_db_handle'],
+    ];
+
+    /** @var array<string, array{class-string, string}> driver -> [stmt_class, ctype] */
+    private const PDO_DRIVER_STMT_MAP = [
+        'sqlite' => [PdoSqliteStmt::class, 'pdo_sqlite_stmt'],
+        'pgsql' => [PdoPgsqlStmt::class, 'pdo_pgsql_stmt'],
+        'mysql' => [PdoMysqlStmt::class, 'pdo_mysql_stmt'],
+    ];
+
     private function collectPdoDriverData(
+        string $driver_name,
         int $driver_data_address,
-        ObjectContext $object_context,
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
     ): void {
-        // Try to read as pdo_sqlite_db_handle (best-effort)
+        $map = self::PDO_DRIVER_DBH_MAP[$driver_name] ?? null;
+        if ($map === null) {
+            return;
+        }
+        [$class, $ctype] = $map;
         try {
-            $handle_pointer = new Pointer(
-                PdoSqliteDbHandle::class,
-                $driver_data_address,
-                $zend_type_reader->sizeOf('pdo_sqlite_db_handle'),
-            );
-            $dereferencer->deref($handle_pointer);
-
-            $driver_location = new PdoDriverDataMemoryLocation(
-                $driver_data_address,
-                $zend_type_reader->sizeOf('pdo_sqlite_db_handle'),
-            );
-            $memory_locations->add($driver_location);
+            $size = $zend_type_reader->sizeOf($ctype);
+            $dereferencer->deref(new Pointer($class, $driver_data_address, $size));
+            $memory_locations->add(new PdoDriverDataMemoryLocation($driver_data_address, $size));
         } catch (\Throwable) {
         }
     }
 
     private function collectPdoStmtDriverData(
+        string $driver_name,
         int $driver_data_address,
-        ObjectContext $object_context,
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         MemoryLocations $memory_locations,
     ): void {
-        // Try to read as pdo_sqlite_stmt (best-effort)
+        $map = self::PDO_DRIVER_STMT_MAP[$driver_name] ?? null;
+        if ($map === null) {
+            return;
+        }
+        [$class, $ctype] = $map;
         try {
-            $stmt_pointer = new Pointer(
-                PdoSqliteStmt::class,
-                $driver_data_address,
-                $zend_type_reader->sizeOf('pdo_sqlite_stmt'),
-            );
-            $dereferencer->deref($stmt_pointer);
-
-            $driver_location = new PdoDriverDataMemoryLocation(
-                $driver_data_address,
-                $zend_type_reader->sizeOf('pdo_sqlite_stmt'),
-            );
-            $memory_locations->add($driver_location);
+            $size = $zend_type_reader->sizeOf($ctype);
+            $dereferencer->deref(new Pointer($class, $driver_data_address, $size));
+            $memory_locations->add(new PdoDriverDataMemoryLocation($driver_data_address, $size));
         } catch (\Throwable) {
         }
     }

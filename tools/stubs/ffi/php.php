@@ -390,6 +390,22 @@ class pdo_sqlite_db_handle extends CData
 class pdo_sqlite_stmt extends CData
 {
 }
+
+class pdo_pgsql_db_handle extends CData
+{
+}
+
+class pdo_pgsql_stmt extends CData
+{
+}
+
+class pdo_mysql_db_handle extends CData
+{
+}
+
+class pdo_mysql_stmt extends CData
+{
+}
 class zend_type extends CData
 {
     public int $ptr;
