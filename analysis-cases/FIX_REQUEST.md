@@ -394,11 +394,30 @@ this context — it will almost never find an app-level alternative because thos
 are all `is_tree = 0`.
 
 **Possible approaches:**
-- Search non-tree edges too when looking for alternatives (quick fix)
-- Give objects_store edges a distinct `strength` (e.g., `index`) so they can be
-  deprioritized regardless of `is_tree`
-- Change traversal order to visit global_variables/call_frames first (bigger change,
-  but would make is_tree more meaningful)
+
+1. **Quick fix — search non-tree edges too:** Make `findAlternativeTreeParent`
+   accept `is_tree = 0` edges. Gets the right answer for Case 9 but doesn't
+   fix the underlying is_tree semantics.
+
+2. **Mark objects_store edges as `strength='index'`:** During objects_store shallow
+   phase, emit edges with a distinct strength (e.g., `index`) instead of `strong`.
+   The report side can then exclude `index` edges from tree-parent consideration
+   and prefer `strong` edges from global_variables/call_frames. This is a small
+   change to the collector and doesn't require reordering traversal.
+
+3. **Don't assign is_tree during shallow phase:** Objects_store emits nodes and
+   sentinel addresses but does NOT mark edges as tree edges. When global_variables
+   and call_frames later reach the same objects, those edges get is_tree=1.
+   Objects only reachable from objects_store get is_tree=1 as a fallback in a
+   final pass. Risk: sentinel-based dedup depends on objects being "emitted", and
+   the current design ties emitting to tree-edge assignment.
+
+4. **Reorder traversal** to visit global_variables/call_frames first. Would make
+   is_tree reflect app-level ownership naturally, but conflicts with the streaming
+   optimization that needs sentinel maps from objects_store before visiting
+   global_variables (to avoid deep recursion).
+
+Approach 2 seems most practical — minimal changes, no reordering, clear semantics.
 
 Evidence from Case 9:
 ```
