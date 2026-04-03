@@ -502,23 +502,25 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         /** @var array<int, true> $tree_rowids */
         $tree_rowids = [];
 
-        // Root edges are always tree edges
+        // Root edges are always tree edges. Push in reverse priority
+        // order so array_pop (LIFO) pops call_frames first.
         $stack = [];
-        foreach ($roots as [$rowid, $child]) {
+        foreach (array_reverse($roots) as [$rowid, $child]) {
             $tree_rowids[$rowid] = true;
-            if (!isset($visited[$child])) {
-                $visited[$child] = true;
-                $stack[] = $child;
-            }
+            $stack[] = $child;
         }
 
         while ($stack) {
             $node = array_pop($stack);
-            // Process non-objects_store edges first (preferred), then objects_store
-            foreach ([$adj, $adj_os] as $source) {
+            if (isset($visited[$node])) {
+                continue;
+            }
+            $visited[$node] = true;
+            // Push objects_store edges first (low priority), then non-objects_store.
+            // LIFO pops non-objects_store last-pushed = first-processed.
+            foreach ([$adj_os, $adj] as $source) {
                 foreach ($source[$node] ?? [] as [$rowid, $child]) {
                     if (!isset($visited[$child])) {
-                        $visited[$child] = true;
                         $tree_rowids[$rowid] = true;
                         $stack[] = $child;
                     }
