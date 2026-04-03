@@ -1390,23 +1390,22 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
     ): string {
         try {
-            [$ds_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', 'data_source');
-            $ds_ptr = new Pointer(RawInt64::class, $dbh_address + $ds_offset, 8);
-            $ds_address = $dereferencer->deref($ds_ptr)->value;
-            if ($ds_address === 0) {
+            // Read pdo_dbh_t.driver -> pdo_driver_t, then read driver_name
+            // pdo_driver_t: { const char *driver_name; size_t driver_name_len; ... }
+            [$drv_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', 'driver');
+            $drv_ptr = new Pointer(RawInt64::class, $dbh_address + $drv_offset, 8);
+            $driver_struct_address = $dereferencer->deref($drv_ptr)->value;
+            if ($driver_struct_address === 0) {
                 return '';
             }
-            // Read first 16 bytes of data_source to detect driver prefix
-            $label_pointer = new Pointer(RawString::class, $ds_address, 16);
-            $dsn = (string)$dereferencer->deref($label_pointer);
-            if (str_starts_with($dsn, ':memory:') || str_starts_with($dsn, '/')) {
-                return 'sqlite';
+            // driver_name is the first field of pdo_driver_t (a char* pointer)
+            $name_ptr_ptr = new Pointer(RawInt64::class, $driver_struct_address, 8);
+            $name_address = $dereferencer->deref($name_ptr_ptr)->value;
+            if ($name_address === 0) {
+                return '';
             }
-            $colon_pos = strpos($dsn, ':');
-            if ($colon_pos !== false) {
-                return substr($dsn, 0, $colon_pos);
-            }
-            return $dsn;
+            $name_pointer = new Pointer(RawString::class, $name_address, 16);
+            return (string)$dereferencer->deref($name_pointer);
         } catch (\Throwable) {
             return '';
         }

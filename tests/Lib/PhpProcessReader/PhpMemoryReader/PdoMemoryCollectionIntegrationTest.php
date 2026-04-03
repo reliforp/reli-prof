@@ -235,11 +235,39 @@ class PdoMemoryCollectionIntegrationTest extends BaseTestCase
             'pdo_dbh_t internal handle should be tracked',
         );
 
-        // Verify PdoDriverDataMemoryLocation is tracked (sqlite driver data)
+        // Verify PdoDriverDataMemoryLocation is tracked (sqlite driver data + columns array)
         $this->assertArrayHasKey(
             'PdoDriverDataMemoryLocation',
             $location_type_result->per_type_usage,
             'PDO driver data should be tracked',
+        );
+        // pdo_sqlite_db_handle + pdo_sqlite_stmt + columns array = at least 3
+        $this->assertGreaterThanOrEqual(
+            3,
+            $location_type_result->per_type_usage['PdoDriverDataMemoryLocation']['count'],
+            'Driver data should include sqlite handles and columns array',
+        );
+
+        // pdo_dbh_t.data_source string is also tracked as PdoDbhMemoryLocation
+        // (pdo_dbh_t itself + data_source string = at least 2)
+        $this->assertGreaterThanOrEqual(
+            2,
+            $location_type_result->per_type_usage['PdoDbhMemoryLocation']['count'],
+            'PdoDbhMemoryLocation should include pdo_dbh_t and DSN string',
+        );
+
+        // Verify ZendArrayMemoryLocation count increased due to bound_params tracking
+        $this->assertArrayHasKey(
+            'ZendArrayMemoryLocation',
+            $location_type_result->per_type_usage,
+        );
+        $array_count = $location_type_result->per_type_usage['ZendArrayMemoryLocation']['count'];
+        // The script creates bound_params via bindValue, so there should be
+        // at least the global symbol table + bound_params HashTable
+        $this->assertGreaterThanOrEqual(
+            2,
+            $array_count,
+            'Should track HashTables including PDO bound_params',
         );
 
         // Verify memory coverage is reasonable
