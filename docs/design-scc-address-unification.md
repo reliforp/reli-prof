@@ -164,9 +164,84 @@ set of node_ids per SCC.
 **Total: O(E log E) additional work, negligible compared to existing
 Tarjan O(V + E).** No performance concern.
 
+### What Changes in DB Schema
+
+Add `canonical_node_id` column to `context_nodes`:
+
+```sql
+ALTER TABLE context_nodes ADD COLUMN canonical_node_id INTEGER;
+CREATE INDEX idx_context_nodes_canonical ON context_nodes(run_id, canonical_node_id);
+```
+
+- `canonical_node_id` = the representative node_id for all nodes sharing
+  the same memory address. NULL for nodes with unique addresses.
+- Populated during `finalizeStreaming()` (or `loadFromDb()` for GraphSubstrate)
+  by a single pass over `context_node_locations`:
+
+```sql
+-- Find addresses that appear in multiple nodes
+WITH address_groups AS (
+    SELECT address, MIN(node_id) AS canonical
+    FROM context_node_locations
+    WHERE run_id = :run_id AND address IS NOT NULL
+    GROUP BY address
+    HAVING COUNT(DISTINCT node_id) > 1
+)
+UPDATE context_nodes SET canonical_node_id = (
+    SELECT ag.canonical FROM address_groups ag
+    JOIN context_node_locations cnl ON cnl.address = ag.address AND cnl.run_id = :run_id
+    WHERE cnl.node_id = context_nodes.node_id
+)
+WHERE run_id = :run_id;
+```
+
+Or more efficiently, compute in PHP and batch UPDATE:
+
+```php
+// 1. Load address → node_ids mapping
+$rows = $db->query("
+    SELECT address, GROUP_CONCAT(DISTINCT node_id) AS node_ids
+    FROM context_node_locations
+    WHERE run_id = {$run_id} AND address IS NOT NULL
+    GROUP BY address
+    HAVING COUNT(DISTINCT node_id) > 1
+")->fetchAll();
+
+// 2. Build canonical mapping
+$canonical = [];
+foreach ($rows as $row) {
+    $node_ids = array_map('intval', explode(',', $row['node_ids']));
+    $canon = min($node_ids);
+    foreach ($node_ids as $nid) {
+        $canonical[$nid] = $canon;
+    }
+}
+
+// 3. Batch UPDATE
+$stmt = $db->prepare("UPDATE context_nodes SET canonical_node_id = ? WHERE run_id = ? AND node_id = ?");
+foreach ($canonical as $nid => $canon) {
+    $stmt->execute([$canon, $run_id, $nid]);
+}
+```
+
+**This enables DB users to query cycles and aliases directly:**
+
+```sql
+-- Find all nodes representing the same object
+SELECT * FROM context_nodes
+WHERE canonical_node_id = 100 AND run_id = 1;
+
+-- Find cycle edges via canonical IDs
+SELECT e.*, cn.canonical_node_id AS parent_canonical, cn2.canonical_node_id AS child_canonical
+FROM context_edges e
+JOIN context_nodes cn ON cn.node_id = e.parent_node_id AND cn.run_id = e.run_id
+JOIN context_nodes cn2 ON cn2.node_id = e.child_node_id AND cn2.run_id = e.run_id
+WHERE e.run_id = 1
+AND COALESCE(cn.canonical_node_id, cn.node_id) != COALESCE(cn2.canonical_node_id, cn2.node_id);
+```
+
 ### What Does NOT Change
 
-- DB schema (no new columns or tables)
 - Edge emit logic in MemoryLocationsCollector or ContextAnalyzer
 - Non-SCC report passes (NonTreeEdgePass, PropertyScalingPass, etc.)
 - subtree_size computation (uses tree edges, not affected)
@@ -174,17 +249,22 @@ Tarjan O(V + E).** No performance concern.
 
 ### Files to Modify
 
-1. `src/Inspector/Output/MemoryOutput/Report/Substrate/GraphSubstrate.php`
+1. `src/Inspector/Output/MemoryOutput/PdoMemoryOutput.php`
+   - Add `canonical_node_id` column to `context_nodes` CREATE TABLE
+   - In `finalizeStreaming()`: compute and write canonical_node_id values
+
+2. `src/Inspector/Output/MemoryOutput/Report/Substrate/GraphSubstrate.php`
    - Add `$canonical` array and `findCanonical()`, `union()` methods
-   - Add `loadAddressMapping()` method (new SQL query)
+   - Add `loadAddressMapping()` method (load canonical_node_id from DB,
+     or compute from context_node_locations if not populated)
    - Add `buildSccAdjacency()` method
    - Modify `computeScc()` to use `$scc_adjacency`
    - Modify `buildSccProfiles()` to expand canonical→original nodes
 
-2. `src/Inspector/Output/MemoryOutput/Report/Substrate/FfiCsrGraphSubstrate.php`
+3. `src/Inspector/Output/MemoryOutput/Report/Substrate/FfiCsrGraphSubstrate.php`
    - Same changes for the FFI CSR variant's SCC computation
 
-3. `tests/Inspector/Output/MemoryOutput/Report/Substrate/GraphSubstrateTest.php`
+4. `tests/Inspector/Output/MemoryOutput/Report/Substrate/GraphSubstrateTest.php`
    - Add test cases for address unification:
      - Two nodes same address → unified in SCC
      - Cycle via unified nodes detected
