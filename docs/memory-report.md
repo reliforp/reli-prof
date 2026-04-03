@@ -249,7 +249,7 @@ By default, full analysis runs all phases (`--full-analysis` is on). Use `--no-f
 |---|---|---|
 | Any size | Phase 1 | Summary: overview, call stack, types, classes, companions |
 | < 500K nodes | Phase 2 | SQL: dynamic properties, structural dedup |
-| < 500K edges | Phase 3 | Graph: SCC, drill-down, choke points, blame, property scaling, expensive property, ownership, top arrays/strings, non-tree edges, retained size |
+| < 500K edges | Phase 3 | Graph: SCC, drill-down, choke points, blame, property scaling, expensive property, ownership, top arrays/strings, non-tree edges, retained size. SCC and retained size use only strong edges (weak/structural edges excluded) |
 
 When `--no-full-analysis` is set, Phase 2 skips at >= 500K nodes and Phase 3 skips at >= 500K edges.
 
