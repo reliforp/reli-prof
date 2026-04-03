@@ -19,6 +19,8 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Sidecar\SidecarDumpHandler;
 use Reli\Inspector\Sidecar\SidecarServer;
 use Reli\Inspector\Watch\DiskUsageTracker;
+use Reli\Inspector\Watch\HeapStatsReader;
+use Reli\Inspector\Watch\RssReader;
 use Reli\Lib\Directory\AppDirectory;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
@@ -37,6 +39,8 @@ final class SidecarCommand extends Command
         private PhpVersionDetector $php_version_detector,
         private MemoryDumper $memory_dumper,
         private CallTraceReader $call_trace_reader,
+        private HeapStatsReader $heap_stats_reader,
+        private RssReader $rss_reader,
         private ProcessStopper $process_stopper,
         private BinaryAnalysisCache $binary_analysis_cache,
         private SidecarSettingsFromConsoleInput $sidecar_settings_from_console_input,
@@ -90,6 +94,8 @@ final class SidecarCommand extends Command
             php_version_detector: $this->php_version_detector,
             memory_dumper: $this->memory_dumper,
             call_trace_reader: $this->call_trace_reader,
+            heap_stats_reader: $this->heap_stats_reader,
+            rss_reader: $this->rss_reader,
             process_stopper: $this->process_stopper,
             disk_tracker: $disk_tracker,
             output_dir: $settings->output_dir,

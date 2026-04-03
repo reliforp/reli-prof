@@ -18,6 +18,8 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Sidecar\Protocol\SidecarRequest;
 use Reli\Inspector\Sidecar\Protocol\SidecarResponse;
 use Reli\Inspector\Watch\DiskUsageTracker;
+use Reli\Inspector\Watch\HeapStatsReader;
+use Reli\Inspector\Watch\RssReader;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
@@ -34,6 +36,8 @@ final class SidecarDumpHandler
         private PhpVersionDetector $php_version_detector,
         private MemoryDumper $memory_dumper,
         private CallTraceReader $call_trace_reader,
+        private HeapStatsReader $heap_stats_reader,
+        private RssReader $rss_reader,
         private ProcessStopper $process_stopper,
         private DiskUsageTracker $disk_tracker,
         private string $output_dir,
@@ -89,6 +93,14 @@ final class SidecarDumpHandler
             $target_php_settings,
         );
 
+        // Collect lightweight heap stats and RSS before stopping
+        $heap_stats = $this->heap_stats_reader->read(
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+        );
+        $rss_bytes = $this->rss_reader->read($pid);
+
         $stopped = $this->process_stopper->stop($pid);
         try {
             $trace_strings = $this->readTrace(
@@ -120,7 +132,21 @@ final class SidecarDumpHandler
 
             $this->disk_tracker->recordFile($output_path);
 
-            $this->writeMetadata($request, $output_path, $trace_strings, $php_version);
+            $memory_stats = [
+                'memory_usage' => $heap_stats->size,
+                'memory_real_usage' => $heap_stats->real_size,
+                'memory_peak_usage' => $heap_stats->peak,
+                'memory_limit' => $heap_stats->limit,
+                'rss' => $rss_bytes,
+            ];
+
+            $this->writeMetadata(
+                $request,
+                $output_path,
+                $trace_strings,
+                $php_version,
+                $memory_stats,
+            );
 
             Log::info('sidecar dump saved', [
                 'path' => $result->output_path,
@@ -142,6 +168,7 @@ final class SidecarDumpHandler
                 bytes: $result->total_bytes,
                 trace: $trace_strings,
                 error_context: $error_context,
+                memory_stats: $memory_stats,
             );
         } finally {
             if ($stopped) {
@@ -187,12 +214,14 @@ final class SidecarDumpHandler
 
     /**
      * @param list<string> $trace
+     * @param array<string, int> $memory_stats
      */
     private function writeMetadata(
         SidecarRequest $request,
         string $dump_path,
         array $trace,
         string $php_version,
+        array $memory_stats,
     ): void {
         $meta_path = $dump_path . '.meta.json';
         $meta = [
@@ -200,6 +229,7 @@ final class SidecarDumpHandler
             'timestamp' => date('c'),
             'trigger' => 'sidecar_request',
             'php_version' => $php_version,
+            'memory_stats' => $memory_stats,
             'call_trace' => $trace,
         ];
         if ($request->label !== null) {

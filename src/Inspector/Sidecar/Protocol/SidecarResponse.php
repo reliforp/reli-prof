@@ -18,6 +18,7 @@ final class SidecarResponse
     /**
      * @param list<string> $trace
      * @param array<string, mixed>|null $error_context
+     * @param array<string, int>|null $memory_stats
      */
     public function __construct(
         public readonly string $status,
@@ -25,15 +26,22 @@ final class SidecarResponse
         public readonly ?int $bytes = null,
         public readonly array $trace = [],
         public readonly ?array $error_context = null,
+        public readonly ?array $memory_stats = null,
         public readonly ?string $message = null,
     ) {
     }
 
+    /**
+     * @param list<string> $trace
+     * @param array<string, mixed>|null $error_context
+     * @param array<string, int>|null $memory_stats
+     */
     public static function ok(
         string $path,
         int $bytes,
         array $trace = [],
         ?array $error_context = null,
+        ?array $memory_stats = null,
     ): self {
         return new self(
             status: 'ok',
@@ -41,6 +49,7 @@ final class SidecarResponse
             bytes: $bytes,
             trace: $trace,
             error_context: $error_context,
+            memory_stats: $memory_stats,
         );
     }
 
@@ -66,6 +75,9 @@ final class SidecarResponse
         }
         if ($this->error_context !== null) {
             $data['error_context'] = $this->error_context;
+        }
+        if ($this->memory_stats !== null) {
+            $data['memory_stats'] = $this->memory_stats;
         }
         if ($this->message !== null) {
             $data['message'] = $this->message;
