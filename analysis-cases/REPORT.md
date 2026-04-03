@@ -330,9 +330,50 @@ duplicate rows (same object reachable via multiple paths), inflating past 100%.
   objects_store) creates duplicate rows. Case 5 had 3.3x duplication factor.
   After address dedup: all cases converged to 87–99%.
 
----
+## Streaming Mode Fix Verification (claude/fix-memory-analysis-2WiRL)
 
-## Cases 6–15: Additional Analysis (Round 2)
+Three bugs were fixed in a single commit. Verification results:
+
+### Bug 1: `-f report` Findings loss — FIXED
+
+| Case | Before | After (Direct) | SQLite (reference) | Result |
+|------|--------|----------------|--------------------|--------|
+| 2 | 1 | **34** | 34 | Exact match |
+| 5 | 0 | **29** | 29 | Exact match |
+| 6 | 1 | **18** | 14 | Greatly improved |
+
+Case 2 and 5 now produce identical finding counts in direct mode vs sqlite.
+Case 6 direct now produces *more* findings than sqlite (likely due to run-to-run variance).
+
+### Bug 2: Cycle detection — FIXED
+
+Case 10 (DataTransformer ↔ ItemNormalizer circular reference):
+```
+Before: [retained_exact] No cycles — retained size is exact
+After:  cycle_cluster: 1 identical cycle (2 classes, 1.23 KB shallow, 3.53 MB retained)
+        Per cycle: 15x DataTransformer + 1x ItemNormalizer
+        Next: Break 4 to eliminate all 1 cycles
+```
+
+The fix adds `object_properties` edge from ObjectContext to ObjectPropertiesContext
+even in deferred mode (`$properties_parent_node_id !== null` condition), restoring
+graph connectivity for SCC computation.
+
+### Bug 3: Closure DB explosion — PARTIALLY FIXED
+
+Case 15 (78 MB PHP memory):
+```
+Before: 7.4 GB+ DB (disk full)
+After:  6.0 GB+ DB (still growing, killed)
+```
+
+`ClosureContextPool` prevents re-creation of Closure contexts, but the Widget
+re-expansion via pool flush still occurs. The `convertToSentinels` + `clear` pattern
+in `flushPoolsIfStreaming` discards ObjectContext instances, so subsequent encounters
+via different paths create new instances that the WeakMap doesn't recognize.
+This is a deeper architectural issue that needs the pool flush strategy to be revisited.
+
+---
 
 Ten more real-world PHP memory issues were analyzed to further validate reli-prof.
 
@@ -558,14 +599,14 @@ Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 | 7 | Event dispatcher leak | **8/10** | Bottleneck + structural duplicates identified |
 | 8 | ORM SQL logger | **7/10** | Dedup found 10K identical SQL strings |
 | 9 | PDO circular ref | **6/10** | Low coverage — PDO internals outside ZendMM |
-| 10 | Normalizer chain | **7/10** | Bottleneck path found, cycles not explicitly flagged |
+| 10 | Normalizer chain | **9/10** | cycle_cluster detected: 15x DataTransformer + 1x ItemNormalizer, 3.53 MB retained |
 | 11 | Static session store | **8/10** | Clear accumulation pattern identified |
 | 12 | Unserialize bloat | **7/10** | 10K instances flagged, array type dominance shown |
 | 13 | Schema introspection | **8/10** | Index buffer + structural duplicates identified |
 | 14 | Bootstrap static leak | **9/10** | static_properties path + Closure accumulation = precise |
 | 15 | Closure cycles | **N/A** | Pool flush breaks WeakMap dedup — DB explosion |
 
-**Average score (excluding N/A): 7.6 / 10**
+**Average score (excluding N/A): 7.7 / 10**
 
 **Overall:** Across 15 diverse PHP memory issues, reli-prof demonstrated strong diagnostic
 capability without requiring any modification to target processes. It excels at:

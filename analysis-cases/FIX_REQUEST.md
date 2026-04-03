@@ -1,5 +1,7 @@
 # Fix Request: Streaming Mode Issues Found During Memory Analysis Evaluation
 
+**Status:** Bugs 1 and 2 are FIXED by `claude/fix-memory-analysis-2WiRL`. Bug 3 is partially fixed.
+
 ## Context
 
 During evaluation of reli-prof's `inspector:memory` against 15 real-world PHP memory
