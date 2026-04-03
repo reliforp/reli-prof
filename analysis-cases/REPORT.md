@@ -275,6 +275,176 @@ duplicate rows (same object reachable via multiple paths), inflating past 100%.
 
 ---
 
+## Cases 6–15: Additional Analysis (Round 2)
+
+Ten more real-world PHP memory issues were analyzed to further validate reli-prof.
+
+### Case 6: Monolog Logger Accumulation — [php/php-src#20724](https://github.com/php/php-src/issues/20724)
+
+Monolog caches all log records; PHP 8.4 deprecation notices amplify this in batch processes.
+
+```
+memory_get_usage(): 26.23 MB | Heap: 23.80 MB (90.7%)
+[HIGH] dominant_class: DeprecationLogger: 5 instances (68.6% of objects)
+```
+
+**Score: 5/10** — Detected the dominant class but missed the real accumulator (`MonologHandler::$records`).
+The `-f report` stream only surfaced 1 finding for 26MB. sqlite path likely needed for details.
+
+### Case 7: Symfony Mailer Event Dispatcher Leak — [symfony/symfony#59702](https://github.com/symfony/symfony/issues/59702)
+
+Event dispatcher retains cloned message+envelope references, leaking per send().
+
+```
+memory_get_usage(): 7.94 MB | Heap: 7.14 MB (89.9%)
+[HIGH] bottleneck_path + choke_point (7.24 MB)
+[MEDIUM] large_array (4.16 MB), structural_duplicates for EmailMessage/Envelope/MessageEvent
+```
+
+**Score: 8/10** — Correctly identified the bottleneck path and structural duplicates.
+Event dispatcher's `dispatchedEvents` array clearly visible as the accumulator.
+
+### Case 8: Doctrine ORM Identity Map + SQL Logger — [doctrine/orm#8891](https://github.com/doctrine/orm/issues/8891)
+
+EntityManager.clear() resets identity map but leaves SQL logger untouched.
+
+```
+memory_get_usage(): 6.31 MB | Heap: 6.06 MB (96.1%)
+[LOW] dedup_candidate: "SELECT * FROM entities WHERE id = ?" 10,002 copies (576 KB)
+[LOW] dedup_candidate: "params" 10,004 copies, "time" 10,020 copies
+```
+
+**Score: 7/10** — Dedup detection found 10K identical SQL strings, directly pointing to
+the uncleaned SQL logger. Root Blame showed class_table 12.6% but no clear path to
+the logger accumulation in HIGH findings.
+
+### Case 9: PDO Circular Reference Leak — [doctrine/dbal#3047](https://github.com/doctrine/dbal/issues/3047)
+
+Extending PDO creates circular refs between connection and prepared statements.
+
+```
+memory_get_usage(): 3.87 MB | Heap: 1.45 MB (37.5%)
+[HIGH] bottleneck_path + choke_point (1.50 MB)
+[HIGH] dominant_class (218 KB)
+```
+
+**Score: 6/10** — Found the accumulation but only 37.5% coverage. PDO internal objects
+live outside ZendMM's regular heap, limiting reli-prof's visibility. The circular
+reference pattern itself was not explicitly flagged.
+
+### Case 10: API Platform Circular Normalizer Chain — [api-platform/core#5016](https://github.com/api-platform/core/discussions/5016)
+
+Circular dependency between ItemNormalizer and DataTransformers causes deep object graph.
+
+```
+memory_get_usage(): 4.18 MB | Heap: 3.95 MB (94.4%)
+[HIGH] bottleneck_path (1.43 MB), choke_point (1.43 MB)
+[HIGH] dominant_class (609 KB)
+```
+
+**Score: 7/10** — Identified the bottleneck path through the normalizer chain and
+dominant class accumulation. The circular dependency itself was not explicitly detected
+as a cycle but the memory impact was correctly attributed.
+
+### Case 11: PHP-FPM Static Session Accumulation — [php/php-src#13775](https://github.com/php/php-src/issues/13775)
+
+Static session store persists across simulated FPM requests, accumulating per-request data.
+
+```
+memory_get_usage(): 3.01 MB | Heap: 2.94 MB (97.8%)
+[HIGH] bottleneck_path (3.28 MB), choke_point (2.45 MB)
+[HIGH] dominant_class (688 B)
+[MEDIUM] large_array (2.55 MB)
+```
+
+**Score: 8/10** — Clearly identified the static accumulation pattern. Bottleneck path
+and choke point accurately pointed to the session store.
+
+### Case 12: Unserialize Cache Bloat — [ezyang/htmlpurifier#270](https://github.com/ezyang/htmlpurifier/issues/270)
+
+Repeated unserialize of cached definitions creates duplicate object trees.
+
+```
+memory_get_usage(): 326.54 MB | Heap: 322.50 MB (98.8%)
+[HIGH] dominant_class: CacheDefinition: 10,000 instances (unbounded accumulation)
+[MEDIUM] dominant_type: ZendArrayTable 52.6% of heap (169.94 MB)
+```
+
+**Score: 7/10** — Correctly flagged CacheDefinition accumulation (10K instances) and
+ZendArrayTable dominance. Could benefit from tracing the path from unserialize()
+to the accumulation.
+
+### Case 13: Schema Introspection Quadratic Growth — [doctrine/dbal#5588](https://github.com/doctrine/dbal/issues/5588)
+
+Schema manager's index buffer grows across table introspection calls without clearing.
+
+```
+memory_get_usage(): 4.37 MB | Heap: 3.97 MB (90.7%)
+[HIGH] bottleneck_path (4.77 MB), choke_point (1.98 MB)
+[MEDIUM] large_array (3.04 MB), structural_duplicate: Index (1015 KB)
+```
+
+**Score: 8/10** — Bottleneck path led directly to the index buffer. Structural duplicate
+detection for Index objects was particularly useful, identifying 3000 accumulated indexes.
+
+### Case 14: Laravel Bootstrap Static Accumulation — [laravel/framework#44214](https://github.com/laravel/framework/issues/44214)
+
+Static `$bootstrappers` array in Application class accumulates across test refreshes.
+
+```
+memory_get_usage(): 23.23 MB | Heap: 13.66 MB (58.8%)
+[HIGH] bottleneck_path: objects_store->8->bindings[Broadcasting_binding_0] (13.16 MB)
+[HIGH] dominant_class: Closure: 27,600 instances x 344 B = 9.05 MB (90.8% of objects)
+[MEDIUM] large_array: class_table->application->static_properties->bootstrappers (3.06 MB, 200 elements)
+[MEDIUM] structural_duplicate: ServiceProvider: 4,577 identical shapes
+[LOW]  dedup_candidate: ServiceProvider::$bindings[value] (Closure): 55,200 copies (18.11 MB)
+```
+
+**Score: 9/10** — Excellent. Directly identified `static_properties->bootstrappers` as the
+leak source (200 elements = 200 test iterations). Closure accumulation (27,600 instances)
+and ServiceProvider structural duplicates were also flagged. This would immediately
+point a developer to the static accumulation bug.
+
+### Case 15: Closure Circular Reference in Event System — [PHP bug #69639](https://bugs.php.net/bug.php?id=69639)
+
+Closures capturing `$this` create cycles: Widget → EventEmitter → Closure → Widget.
+
+```
+memory_get_usage(): 78 MB
+```
+
+**Score: N/A** — Analysis could not complete in reasonable time. The `-f report` produced
+empty Findings. The sqlite DB reached 2.2 GB before completion (for 78 MB of PHP memory),
+indicating the closure-captured context tree is explosively large. This represents a
+practical limit of the tool for deep closure-heavy object graphs.
+
+### Round 2 Summary
+
+| Case | Issue Type | Coverage | Score |
+|------|-----------|----------|-------|
+| 6 | Logger accumulation | 90.7% | 5/10 |
+| 7 | Event dispatcher leak | 89.9% | 8/10 |
+| 8 | ORM SQL logger | 96.1% | 7/10 |
+| 9 | PDO circular ref | 37.5% | 6/10 |
+| 10 | Normalizer chain | 94.4% | 7/10 |
+| 11 | Static session store | 97.8% | 8/10 |
+| 12 | Unserialize bloat | 98.8% | 7/10 |
+| 13 | Schema introspection | 90.7% | 8/10 |
+| 14 | Bootstrap static leak | 58.8% | 9/10 |
+| 15 | Closure cycles | — | N/A |
+
+**Key observations from Round 2:**
+- **Static property accumulation** (Cases 11, 14) is detected excellently via
+  `class_table->...->static_properties` paths
+- **Closure-heavy graphs** (Cases 14, 15) are challenging — Case 14 worked because
+  closures were one part of a broader pattern, but Case 15's pure closure cycles
+  caused the analysis DB to explode
+- **PDO internals** (Case 9) are partially opaque — only 37.5% coverage because PDO
+  allocates outside ZendMM's tracked heap
+- **Dedup detection** continues to excel — found 10K identical SQL strings in Case 8
+
+---
+
 ## Overall Assessment
 
 ### Strengths
@@ -295,21 +465,41 @@ duplicate rows (same object reachable via multiple paths), inflating past 100%.
 2. **Error handling** — unhelpful error on target process exit
 3. **No fragmentation detection** — does not flag ZendMM chunk fragmentation
 
-### Usefulness Score by Case
+### Usefulness Score (All 15 Cases)
 
 | Case | Issue Type | Score | Note |
 |------|-----------|-------|------|
-| 1 | Worker leak | **9/10** | Accurately identified bottleneck, duplicates, and call stack |
-| 2 | Error duplication | **7/10** | Detected class accumulation, somewhat lacking in detail |
-| 3 | Chunk fragmentation | **6/10** | Found strings and pin objects, but not fragmentation itself |
+| 1 | Worker leak | **9/10** | Bottleneck, duplicates, call stack all accurate |
+| 2 | Error duplication | **7/10** | Class accumulation detected, detail somewhat sparse |
+| 3 | Chunk fragmentation | **6/10** | Found strings and pin objects, not fragmentation itself |
 | 4 | Unbounded alloc | **7/10** | Pinpointed consumption locations and patterns |
-| 5 | ORM hydration | **9/10** | structural_duplicate/dedup/shared_fanin extremely useful (via sqlite) |
+| 5 | ORM hydration | **9/10** | structural_duplicate/dedup/shared_fanin excellent (sqlite) |
+| 6 | Logger accumulation | **5/10** | Detected class but missed real accumulator in stream mode |
+| 7 | Event dispatcher leak | **8/10** | Bottleneck + structural duplicates identified |
+| 8 | ORM SQL logger | **7/10** | Dedup found 10K identical SQL strings |
+| 9 | PDO circular ref | **6/10** | Low coverage — PDO internals outside ZendMM |
+| 10 | Normalizer chain | **7/10** | Bottleneck path found, cycles not explicitly flagged |
+| 11 | Static session store | **8/10** | Clear accumulation pattern identified |
+| 12 | Unserialize bloat | **7/10** | 10K instances flagged, array type dominance shown |
+| 13 | Schema introspection | **8/10** | Index buffer + structural duplicates identified |
+| 14 | Bootstrap static leak | **9/10** | static_properties path + Closure accumulation = precise |
+| 15 | Closure cycles | **N/A** | Analysis DB exploded (2.2 GB for 78 MB) — practical limit |
 
-**Overall:** reli-prof excels at analyzing accumulation-type memory leaks (Case 1) and
-ORM object bloat (Case 5). The ability to extract this level of detail from a running
-process without any modification is remarkably useful. Adding fragmentation detection
-and improving `-f report` for large cases would complete coverage of all common
-PHP memory issue patterns.
+**Average score (excluding N/A): 7.4 / 10**
+
+**Overall:** Across 15 diverse PHP memory issues, reli-prof demonstrated strong diagnostic
+capability without requiring any modification to target processes. It excels at:
+- **Accumulation-type leaks** (Cases 1, 7, 11, 13, 14) — bottleneck_path and choke_point
+  accurately trace the accumulator
+- **ORM/framework object bloat** (Cases 5, 8, 12) — structural_duplicate and dedup_candidate
+  identify redundancy patterns
+- **Static property leaks** (Cases 11, 14) — `class_table->...->static_properties` path
+  directly reveals the persistence mechanism
+
+Remaining challenges:
+- **Closure-heavy object graphs** (Case 15) — context tree explosion makes analysis impractical
+- **PDO/extension internals** (Case 9) — allocations outside ZendMM are partially opaque
+- **Streaming mode detail** (Cases 6, 15) — large cases need sqlite workaround
 
 ---
 
