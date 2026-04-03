@@ -280,7 +280,8 @@ class GraphSubstrateTest extends BaseTestCase
         // Insert edges: A->B (tree, strong) and B->A (non-tree, strong)
         // In objects_store phase: 100 -> 200
         // In call_frames phase: 600 -> 500
-        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
             (1, NULL, 100, 'objects_store', 1, 'strong'),
             (1, 100, 200, 'next', 1, 'strong'),
             (1, NULL, 500, 'call_frames', 1, 'strong'),
@@ -317,7 +318,8 @@ class GraphSubstrateTest extends BaseTestCase
         ");
 
         // Linear chain: 1 -> 2 -> 3 (no cycle)
-        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
             (1, NULL, 1, 'root', 1, 'strong'),
             (1, 1, 2, 'a', 1, 'strong'),
             (1, 2, 3, 'b', 1, 'strong')
@@ -350,7 +352,8 @@ class GraphSubstrateTest extends BaseTestCase
         ");
 
         // Cycle: 10 -> 20 (tree), 40 -> 30 (non-tree, creates cycle via unification)
-        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
             (1, NULL, 10, 'root', 1, 'strong'),
             (1, 10, 20, 'link', 1, 'strong'),
             (1, NULL, 30, 'root2', 1, 'strong'),
@@ -382,7 +385,8 @@ class GraphSubstrateTest extends BaseTestCase
             (1, 1, 1000, 64, 'ZendObjectMemoryLocation'),
             (1, 2, 2000, 64, 'ZendObjectMemoryLocation')
         ");
-        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
             (1, NULL, 1, 'root', 1, 'strong'),
             (1, 1, 2, 'a', 1, 'strong')
         ");
@@ -411,7 +415,8 @@ class GraphSubstrateTest extends BaseTestCase
             (1, 20, 2000, 64, 'ZendObjectMemoryLocation'),
             (1, 30, 1000, 64, 'ZendObjectMemoryLocation')
         ");
-        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
             (1, NULL, 10, 'root', 1, 'strong'),
             (1, 10, 20, 'a', 1, 'strong'),
             (1, NULL, 30, 'root2', 1, 'strong')
