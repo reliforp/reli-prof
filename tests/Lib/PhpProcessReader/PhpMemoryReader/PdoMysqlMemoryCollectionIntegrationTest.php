@@ -258,40 +258,63 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
         $memory_reader_for_finder = new MemoryReader();
         $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
-            $php_symbol_reader_creator, $integer_reader, $memory_reader_for_finder,
-            $binary_analysis_cache, $process_memory_map_creator, $binary_fingerprint_creator,
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
         $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
-            $php_symbol_reader_creator, $tsrm_globals_resolver, $memory_reader_for_finder,
-            $integer_reader, new Elf64Parser($integer_reader), new CatFileReader(),
-            ProcessMemoryMapCreator::create(), new ContainerAwarePathResolver(),
-            new ZendTypeReaderCreator(), $binary_analysis_cache, $binary_fingerprint_creator,
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
         );
         $php_globals_finder = new PhpGlobalsFinder(
-            $php_symbol_reader_creator, $integer_reader, $memory_reader_for_finder,
-            $tsrm_ls_cache_finder, $tsrm_globals_resolver,
-            $binary_analysis_cache, $process_memory_map_creator, $binary_fingerprint_creator,
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
         );
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(php_version: $php_version);
 
         $executor_globals_address = $php_globals_finder->findExecutorGlobals(
-            $process_specifier, $target_php_settings,
+            $process_specifier,
+            $target_php_settings,
         );
         $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
-            $process_specifier, $target_php_settings,
+            $process_specifier,
+            $target_php_settings,
         );
 
         $memory_locations_collector = new MemoryLocationsCollector(
-            $memory_reader, $type_reader_creator,
+            $memory_reader,
+            $type_reader_creator,
             new PhpZendMemoryManagerChunkFinder(
-                ProcessMemoryMapCreator::create(), $type_reader_creator, $php_globals_finder,
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder,
             ),
         );
         $collected_memories = $memory_locations_collector->collectAll(
-            $process_specifier, $target_php_settings,
-            $executor_globals_address, $compiler_globals_address,
+            $process_specifier,
+            $target_php_settings,
+            $executor_globals_address,
+            $compiler_globals_address,
         );
 
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
