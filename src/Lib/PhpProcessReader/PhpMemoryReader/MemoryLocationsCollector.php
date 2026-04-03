@@ -45,6 +45,8 @@ use Reli\Lib\PhpInternals\Types\Php\PdoPgsqlDbHandle;
 use Reli\Lib\PhpInternals\Types\Php\PdoPgsqlStmt;
 use Reli\Lib\PhpInternals\Types\Php\PdoSqliteDbHandle;
 use Reli\Lib\PhpInternals\Types\Php\PdoSqliteStmt;
+use Reli\Lib\PhpInternals\Types\Php\MysqlndRes;
+use Reli\Lib\PhpInternals\Types\Php\MysqlndResBuffered;
 use Reli\Lib\PhpInternals\Types\Php\PhpStream;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamMemoryData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamOps;
@@ -82,6 +84,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayBodyMemo
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendPropertyInfoMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendReferenceMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MysqlndMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PdoDbhMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PdoDriverDataMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendResourceMemoryLocation;
@@ -1369,6 +1372,177 @@ final class MemoryLocationsCollector
             $dereferencer->deref(new Pointer($class, $driver_data_address, $size));
             $memory_locations->add(new PdoDriverDataMemoryLocation($driver_data_address, $size));
         } catch (\Throwable) {
+            return;
+        }
+
+        // For MySQL (mysqlnd), follow the result pointer to track buffered result data
+        if ($driver_name === 'mysql') {
+            $this->collectMysqlndResultFromPdoMysqlStmt(
+                $driver_data_address,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+            );
+        }
+    }
+
+    private function collectMysqlndResultFromPdoMysqlStmt(
+        int $pdo_mysql_stmt_address,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+    ): void {
+        try {
+            // pdo_mysql_stmt.result is the 2nd pointer field (after H)
+            $result_ptr = new Pointer(
+                RawInt64::class,
+                $pdo_mysql_stmt_address + 8, // offset of result (after H pointer)
+                8,
+            );
+            $result_address = $dereferencer->deref($result_ptr)->value;
+            if ($result_address === 0) {
+                return;
+            }
+
+            $this->collectMysqlndResult(
+                $result_address,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+            );
+        } catch (\Throwable) {
+        }
+    }
+
+    private function collectMysqlndResult(
+        int $res_address,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+    ): void {
+        if ($memory_locations->has($res_address)) {
+            return;
+        }
+
+        $res_size = $zend_type_reader->sizeOf('MYSQLND_RES');
+        try {
+            $dereferencer->deref(new Pointer(MysqlndRes::class, $res_address, $res_size));
+        } catch (\Throwable) {
+            return;
+        }
+        $memory_locations->add(new MysqlndMemoryLocation($res_address, $res_size));
+
+        // Read stored_data pointer (MYSQLND_RES_BUFFERED *)
+        [$sd_offset] = $zend_type_reader->getOffsetAndSizeOfMember('MYSQLND_RES', 'stored_data');
+        $sd_ptr = new Pointer(RawInt64::class, $res_address + $sd_offset, 8);
+        $stored_data_address = $dereferencer->deref($sd_ptr)->value;
+
+        if ($stored_data_address !== 0) {
+            $this->collectMysqlndResBuffered(
+                $stored_data_address,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+            );
+        }
+
+        // Read memory_pool pointer
+        [$mp_offset] = $zend_type_reader->getOffsetAndSizeOfMember('MYSQLND_RES', 'memory_pool');
+        $mp_ptr = new Pointer(RawInt64::class, $res_address + $mp_offset, 8);
+        $mempool_address = $dereferencer->deref($mp_ptr)->value;
+
+        if ($mempool_address !== 0 && !$memory_locations->has($mempool_address)) {
+            $mp_size = $zend_type_reader->sizeOf('MYSQLND_MEMORY_POOL');
+            try {
+                $memory_locations->add(new MysqlndMemoryLocation($mempool_address, $mp_size));
+            } catch (\Throwable) {
+            }
+        }
+    }
+
+    private function collectMysqlndResBuffered(
+        int $buf_address,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+    ): void {
+        if ($memory_locations->has($buf_address)) {
+            return;
+        }
+
+        $buf_size = $zend_type_reader->sizeOf('MYSQLND_RES_BUFFERED');
+        try {
+            $dereferencer->deref(new Pointer(MysqlndResBuffered::class, $buf_address, $buf_size));
+        } catch (\Throwable) {
+            return;
+        }
+        $memory_locations->add(new MysqlndMemoryLocation($buf_address, $buf_size));
+
+        // Read row_buffers array pointer and row_count
+        [$rb_offset] = $zend_type_reader->getOffsetAndSizeOfMember('MYSQLND_RES_BUFFERED', 'row_buffers');
+        $rb_ptr = new Pointer(RawInt64::class, $buf_address + $rb_offset, 8);
+        $row_buffers_address = $dereferencer->deref($rb_ptr)->value;
+
+        [$rc_offset] = $zend_type_reader->getOffsetAndSizeOfMember('MYSQLND_RES_BUFFERED', 'row_count');
+        $rc_ptr = new Pointer(RawInt64::class, $buf_address + $rc_offset, 8);
+        $row_count = $dereferencer->deref($rc_ptr)->value;
+
+        // Track the row_buffers array (MYSQLND_ROW_BUFFER[row_count])
+        if ($row_buffers_address !== 0 && $row_count > 0 && $row_count < 1000000) {
+            $rb_element_size = $zend_type_reader->sizeOf('MYSQLND_ROW_BUFFER');
+            $total_size = (int)($row_count * $rb_element_size);
+            if (!$memory_locations->has($row_buffers_address)) {
+                $memory_locations->add(new MysqlndMemoryLocation($row_buffers_address, $total_size));
+            }
+        }
+
+        // Read result_set_memory_pool
+        [$rmp_offset] = $zend_type_reader->getOffsetAndSizeOfMember('MYSQLND_RES_BUFFERED', 'result_set_memory_pool');
+        $rmp_ptr = new Pointer(RawInt64::class, $buf_address + $rmp_offset, 8);
+        $rmp_address = $dereferencer->deref($rmp_ptr)->value;
+
+        if ($rmp_address !== 0 && !$memory_locations->has($rmp_address)) {
+            $mp_size = $zend_type_reader->sizeOf('MYSQLND_MEMORY_POOL');
+            $memory_locations->add(new MysqlndMemoryLocation($rmp_address, $mp_size));
+
+            // Follow arena pointer to track arena chunks
+            $arena_ptr = new Pointer(RawInt64::class, $rmp_address, 8);
+            $arena_address = $dereferencer->deref($arena_ptr)->value;
+            $this->collectZendArenaChain($arena_address, $memory_locations, $dereferencer);
+        }
+    }
+
+    private function collectZendArenaChain(
+        int $arena_address,
+        MemoryLocations $memory_locations,
+        Dereferencer $dereferencer,
+    ): void {
+        // zend_arena: { char *ptr; char *end; zend_arena *prev; }
+        // Walk the linked list of arena chunks
+        $visited = 0;
+        while ($arena_address !== 0 && $visited < 1000) {
+            if ($memory_locations->has($arena_address)) {
+                break;
+            }
+            try {
+                // Read end pointer to determine arena size: end - arena_address = total chunk size
+                $end_ptr = new Pointer(RawInt64::class, $arena_address + 8, 8);
+                $end_address = $dereferencer->deref($end_ptr)->value;
+
+                if ($end_address > $arena_address) {
+                    $chunk_size = $end_address - $arena_address;
+                    if ($chunk_size < 64 * 1024 * 1024) { // sanity: max 64MB per chunk
+                        $memory_locations->add(new MysqlndMemoryLocation($arena_address, (int)$chunk_size));
+                    }
+                }
+
+                // Read prev pointer
+                $prev_ptr = new Pointer(RawInt64::class, $arena_address + 16, 8);
+                $arena_address = $dereferencer->deref($prev_ptr)->value;
+                $visited++;
+            } catch (\Throwable) {
+                break;
+            }
         }
     }
 
