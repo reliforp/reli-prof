@@ -414,16 +414,28 @@ memory_get_usage(): 78 MB
 Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 ```
 
-**Score: N/A** — Analysis DB grew to 7.4 GB for 78 MB of PHP memory. This is **not a
-reli-prof bug** but a consequence of the test case structure: `emit('update')` calls all
-registered listeners, so Widget 0's `$state` accumulates 2000 entries, Widget 1 gets
-1999, etc. — totaling ~2 million small `['tick' => N]` arrays. Each array generates
-3–4 context nodes (header, element, key, value), producing tens of millions of DB rows.
+**Score: N/A** — Analysis DB grew to 7.4 GB for 78 MB of PHP memory.
 
-This represents a practical scalability limit for cases with millions of small objects.
-The per-object overhead in the analysis DB (~4 rows × ~150 bytes = ~600 bytes per object)
-makes 2M objects → ~1.2 GB of DB rows, plus indexes. Potential optimization: compress
-repeated structures or cap context depth for scalar-dominated subtrees.
+**Root cause (partial bug):** Two factors combine:
+
+1. **Pool flush breaks WeakMap dedup (bug):** In streaming mode,
+   `flushPoolsIfStreaming()` clears the ObjectContextPool after emitting each branch.
+   When a Closure's `this_ptr` later references the same Widget, a *new* ObjectContext
+   instance is created (pool was cleared). The WeakMap memo uses object identity (`===`),
+   so the new instance is not recognized as already visited → the Widget's entire subtree
+   is re-expanded. With 4000 closures referencing 2000 Widgets, the same Widget can be
+   expanded up to 4000 times.
+   - Location: `MemoryLocationsCollector.php:199-208` (`flushPoolsIfStreaming`)
+   - Missing: `ClosureContextPool` (Object/Array/String have pools, Closure does not)
+
+2. **Test case O(n²) state growth:** `emit('update')` calls all registered listeners,
+   so Widget.state accumulates ~2M entries total, contributing to the 78MB footprint.
+
+**Suggested fixes:**
+- Add `ClosureContextPool` for address-based closure deduplication
+- Preserve object identity across pool flushes (e.g., address-based memo instead of
+  WeakMap object identity, or convert to SentinelContext without clearing the pool)
+- Consider capping context depth for scalar-dominated subtrees
 
 ### Round 2 Summary
 
