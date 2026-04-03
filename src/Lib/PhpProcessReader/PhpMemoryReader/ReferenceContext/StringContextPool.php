@@ -52,4 +52,21 @@ final class StringContextPool
         }
         $this->contexts = [];
     }
+
+    /**
+     * @param \WeakMap<ReferenceContext, int> $memo
+     * @return \Generator<int, StringContext>
+     */
+    public function drainEmittedWithAddresses(\WeakMap $memo): \Generator
+    {
+        $remaining = [];
+        foreach ($this->contexts as $address => $context) {
+            if (isset($memo[$context])) {
+                yield $address => $context;
+            } else {
+                $remaining[$address] = $context;
+            }
+        }
+        $this->contexts = $remaining;
+    }
 }

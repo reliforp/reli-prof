@@ -49,4 +49,21 @@ final class PhpReferenceContextPool
         }
         $this->contexts = [];
     }
+
+    /**
+     * @param \WeakMap<ReferenceContext, int> $memo
+     * @return \Generator<int, PhpReferenceContext>
+     */
+    public function drainEmittedWithAddresses(\WeakMap $memo): \Generator
+    {
+        $remaining = [];
+        foreach ($this->contexts as $address => $context) {
+            if (isset($memo[$context])) {
+                yield $address => $context;
+            } else {
+                $remaining[$address] = $context;
+            }
+        }
+        $this->contexts = $remaining;
+    }
 }
