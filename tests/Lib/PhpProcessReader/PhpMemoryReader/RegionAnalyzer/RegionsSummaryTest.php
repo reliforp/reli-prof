@@ -122,6 +122,9 @@ class RegionsSummaryTest extends BaseTestCase
         $stmt->execute([1, 3, 0x3000, 500, 'ZendArrayMemoryLocation', 'zend_mm_huge']);
         $stmt->execute([1, 4, 0x4000, 50, 'ZendStringMemoryLocation', 'vm_stack']);
         $stmt->execute([1, 5, 0x5000, 25, 'ZendStringMemoryLocation', 'compiler_arena']);
+        // Same address reached via different context path — must be deduped
+        $stmt->execute([1, 8, 0x1000, 100, 'ZendStringMemoryLocation', 'zend_mm_heap']);
+        $stmt->execute([1, 9, 0x2000, 200, 'ZendObjectMemoryLocation', 'zend_mm_heap']);
         // Different run_id — should be excluded
         $stmt->execute([2, 6, 0x6000, 999, 'ZendStringMemoryLocation', 'zend_mm_heap']);
         // NULL region — should be excluded
@@ -129,6 +132,7 @@ class RegionsSummaryTest extends BaseTestCase
 
         $sums = RegionsSummary::queryRegionSums($db, 1);
 
+        // 0x1000 and 0x2000 appear twice but must be counted once each
         $this->assertSame(300, $sums['zend_mm_heap']);
         $this->assertSame(500, $sums['zend_mm_huge']);
         $this->assertSame(50, $sums['vm_stack']);

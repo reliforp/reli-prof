@@ -252,6 +252,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             'CREATE INDEX IF NOT EXISTS idx_context_nodes_canonical'
             . ' ON context_nodes(run_id, canonical_node_id)'
         );
+        $db->exec(
+            'CREATE INDEX IF NOT EXISTS idx_context_node_locations_region_addr_size'
+            . ' ON context_node_locations(run_id, region, address, size)'
+        );
     }
 
     private function createViews(\PDO $db): void
