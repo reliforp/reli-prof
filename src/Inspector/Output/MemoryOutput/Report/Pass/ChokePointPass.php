@@ -40,9 +40,26 @@ final class ChokePointPass implements PassInterface
     public function analyze(): array
     {
         $chokepoints = [];
+
+        // Collect ObjectsStoreMemoryLocation node IDs to exclude — objects_store
+        // is a trivial choke point (all objects live there) and not actionable.
+        $objects_store_nodes = [];
+        $os_rows = $this->db->query(
+            "SELECT DISTINCT node_id FROM context_node_locations"
+            . " WHERE run_id = {$this->run_id}"
+            . " AND location_type = 'ObjectsStoreMemoryLocation'"
+        )->fetchAll(\PDO::FETCH_COLUMN);
+        foreach ($os_rows as $nid) {
+            $objects_store_nodes[(int)$nid] = true;
+        }
+
         foreach ($this->substrate->iterateSubtreeSizes() as $node => $subtree) {
             // Skip non-canonical duplicates to avoid double-counting
             if (!$this->substrate->isCanonicalOrUnique($node)) {
+                continue;
+            }
+            // Skip objects_store — trivially holds all objects
+            if (isset($objects_store_nodes[$node])) {
                 continue;
             }
             $shallow = $this->substrate->getNodeSize($node);
