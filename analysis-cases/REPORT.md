@@ -607,9 +607,9 @@ Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 | 12 | Unserialize bloat | **7/10** | 10K instances flagged, array type dominance shown |
 | 13 | Schema introspection | **8/10** | Index buffer + structural duplicates identified |
 | 14 | Bootstrap static leak | **9/10** | static_properties path + Closure accumulation = precise |
-| 15 | Closure cycles | **7/10** | DB explosion fixed (7.4GB→663MB). Closures, Widget payload, dedup detected. Cycle not flagged (fan-in pattern) |
+| 15 | Closure cycles | **8/10** | cycle_cluster detected: 4000x Closure + 2000x Widget + 1x EventEmitter (61.92 MB retained). DB 673MB |
 
-**Average score: 7.7 / 10**
+**Average score: 7.8 / 10**
 
 **Overall:** Across 15 diverse PHP memory issues, reli-prof demonstrated strong diagnostic
 capability without requiring any modification to target processes. It excels at:
