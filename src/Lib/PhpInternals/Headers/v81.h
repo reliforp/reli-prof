@@ -1640,3 +1640,52 @@ typedef struct {
 	uintptr_t current_row; /* zval * */
 	uint32_t pdo_mysql_stmt_flags; /* max_length:1, done:1 */
 } pdo_mysql_stmt;
+// ext/mysqlnd/mysqlnd_structs.h
+typedef struct st_mysqlnd_row_buffer {
+	void *ptr;
+	size_t size;
+} MYSQLND_ROW_BUFFER;
+
+typedef struct st_mysqlnd_error_info {
+	char error[513]; /* MYSQLND_ERRMSG_SIZE + 1 */
+	char sqlstate[6]; /* MYSQLND_SQLSTATE_LENGTH + 1 */
+	unsigned int error_no;
+	zend_llist error_list;
+	bool persistent;
+	uintptr_t m; /* method table pointer */
+} MYSQLND_ERROR_INFO;
+
+typedef struct st_mysqlnd_memory_pool {
+	zend_arena *arena;
+	void *checkpoint;
+	uintptr_t get_chunk;
+} MYSQLND_MEMORY_POOL;
+
+typedef struct {
+	uintptr_t conn;
+	int type;
+	unsigned int field_count;
+	uintptr_t row_data;
+	bool free_row_data;
+	uintptr_t meta;
+	uintptr_t stored_data;
+	uintptr_t unbuf;
+	MYSQLND_MEMORY_POOL *memory_pool;
+	uintptr_t m[26]; /* mysqlnd_res method table */
+} MYSQLND_RES;
+
+typedef struct {
+	uintptr_t m[6]; /* mysqlnd_result_buffered method table */
+	MYSQLND_ROW_BUFFER *row_buffers;
+	uint64_t row_count;
+	size_t *lengths;
+	MYSQLND_MEMORY_POOL *result_set_memory_pool;
+	unsigned int references;
+	MYSQLND_ERROR_INFO error_info;
+	unsigned int field_count;
+	uintptr_t stmt;
+	uint64_t current_row;
+	uintptr_t unused1;
+	uintptr_t unused2;
+	uintptr_t unused3;
+} MYSQLND_RES_BUFFERED;
