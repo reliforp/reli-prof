@@ -478,9 +478,24 @@ Advantages over report-layer fix:
 
 This is likely the best balance of correctness, maintainability, and scope of change.
 
-**Performance note:** Case 15 (worst case) has 6.2M edges → adjacency list ~94 MB as
-flat int arrays. Typical apps would be a fraction of this. The collector's context
-objects during streaming are heavier, so this is not the bottleneck.
+**Performance — this is NOT optional:** The whole reason shallow reading exists is to
+handle large processes where memory is tight. `rebuildSpanningTree` loads all edges
+into PHP arrays, which for large cases (6.2M edges → ~94 MB) could push the profiler
+itself into OOM — defeating the purpose of shallow reading.
+
+**Required optimization:** Use FfiCsr's CSR format for the spanning tree DFS. CSR
+stores the same graph in a fraction of the memory (C arrays vs PHP arrays). Since
+GraphSubstrate already builds CSR from edges for SCC and retained-size computation,
+the rebuild should either:
+
+1. **Integrate into GraphSubstrate construction:** Run the priority-aware DFS during
+   `loadFromDb()` / `FfiCsrGraphSubstrate::loadFromDb()`, before building the
+   `children` / `strong_children` arrays. The DB's is_tree is then correct from
+   the start — no separate UPDATE pass needed.
+2. **Share the edge load:** Pass the loaded adjacency to GraphSubstrate instead of
+   re-reading from DB. Use FFI C arrays when available.
+
+Approach 1 is cleaner — single load, single DFS, correct is_tree from the start.
 
 **Bug in current implementation:** `rebuildSpanningTree` sorts roots by priority
 (call_frames first, objects_store last) but pushes them all onto the stack in order.
