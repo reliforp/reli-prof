@@ -203,10 +203,10 @@ final class MemoryLocationsCollector
     }
 
     /**
-     * In streaming mode, convert current pool entries to sentinels
-     * and clear the pools. This releases the heavy Context objects
-     * that were created during the current iteration, keeping only
-     * the address→node_id map for cross-reference deduplication.
+     * In streaming mode, convert emitted pool entries to sentinels.
+     * Only entries that have been emitted (present in memo) are drained;
+     * unemitted entries (e.g. the current object being constructed) are
+     * kept in the pool so they can be emitted later and get sentinels.
      */
     private function flushPoolsIfStreaming(): void
     {
@@ -217,7 +217,6 @@ final class MemoryLocationsCollector
             return;
         }
         $this->streaming_context_pools->convertToSentinels($this->streaming_memo);
-        $this->streaming_context_pools->clear();
     }
 
     /**
