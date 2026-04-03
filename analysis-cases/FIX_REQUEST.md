@@ -443,6 +443,23 @@ This is confined to ChokePointPass / PathFormatter, doesn't touch the collector 
 DB schema, and correctly handles the "prep phase vs real DFS" distinction at the
 layer where it matters (user-facing output).
 
+### Longer-term consideration: is_tree as a report-layer concern
+
+In streaming mode, `is_tree` no longer carries its intended semantics (DFS spanning
+tree). The DB has all edges; a correct spanning tree can be **reconstructed** at
+report time from the full graph, applying a policy like "prefer global_variables /
+call_frames over objects_store". This means:
+
+- **Collector:** emits all edges, `is_tree` is best-effort (or omitted entirely)
+- **Report (GraphSubstrate):** rebuilds the spanning tree from the full edge set,
+  with a DFS that deprioritizes objects_store. `is_tree` becomes a derived property,
+  not a stored one.
+
+This is a bigger refactor but would cleanly separate "what edges exist" (collector's
+job) from "which edges form a meaningful tree" (report's job). Current `is_tree`
+conflates both because the non-streaming code path could rely on DFS order. In
+streaming mode this assumption breaks.
+
 Evidence from Case 9:
 ```
 Tree parent:     ObjectsStoreContext(221) --[1]--> PDOConnectionWrapper(223)  is_tree=1
