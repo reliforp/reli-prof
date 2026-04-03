@@ -29,6 +29,8 @@ interface ReferenceContext
 
     public function getContexts(): iterable;
 
+    public function getLinkStrength(string $link_name): EdgeStrength;
+
     /** Release child references to allow GC of traversed subtrees */
     public function releaseLinks(): void;
 }

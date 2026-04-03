@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\Process\MemoryLocation;
 
@@ -27,7 +28,7 @@ final class PdoContextTreeSink implements ContextTreeSink
     private const EDGE_BATCH_SIZE = 200;
     private const LOCATION_COLUMNS = 10;
     private const ATTR_COLUMNS = 4;
-    private const EDGE_COLUMNS = 5;
+    private const EDGE_COLUMNS = 6;
 
     private \PDOStatement $node_stmt;
 
@@ -76,9 +77,10 @@ final class PdoContextTreeSink implements ContextTreeSink
         string $type,
         iterable $locations,
         array $attributes,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
         $this->node_stmt->execute([$this->run_id, $node_id, $type]);
-        $this->bufferEdge($parent_node_id, $node_id, $link_name, 1);
+        $this->bufferEdge($parent_node_id, $node_id, $link_name, 1, $edge_strength);
 
         foreach ($locations as $location) {
             $class = $location::class;
@@ -132,8 +134,9 @@ final class PdoContextTreeSink implements ContextTreeSink
         int $reference_node_id,
         ?int $parent_node_id,
         string $link_name,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
-        $this->bufferEdge($parent_node_id, $reference_node_id, $link_name, 0);
+        $this->bufferEdge($parent_node_id, $reference_node_id, $link_name, 0, $edge_strength);
     }
 
     public function flush(): void
@@ -188,13 +191,19 @@ final class PdoContextTreeSink implements ContextTreeSink
             );
     }
 
-    private function bufferEdge(?int $parent_node_id, int $child_node_id, string $link_name, int $is_tree): void
-    {
+    private function bufferEdge(
+        ?int $parent_node_id,
+        int $child_node_id,
+        string $link_name,
+        int $is_tree,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
+    ): void {
         $this->edge_buffer[] = $this->run_id;
         $this->edge_buffer[] = $parent_node_id;
         $this->edge_buffer[] = $child_node_id;
         $this->edge_buffer[] = $link_name;
         $this->edge_buffer[] = $is_tree;
+        $this->edge_buffer[] = $edge_strength->value;
         $this->edge_row_count++;
 
         if ($this->edge_row_count >= self::EDGE_BATCH_SIZE) {
@@ -215,8 +224,8 @@ final class PdoContextTreeSink implements ContextTreeSink
     {
         return $this->edge_batch_stmts[$row_count]
             ??= $this->db->prepare(
-                'INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree)'
-                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?,?)'))
+                'INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
+                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?,?,?)'))
             );
     }
 }

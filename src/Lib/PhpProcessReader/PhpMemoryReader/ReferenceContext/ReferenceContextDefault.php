@@ -48,6 +48,11 @@ trait ReferenceContextDefault
         return [];
     }
 
+    public function getLinkStrength(string $link_name): EdgeStrength
+    {
+        return EdgeStrength::Strong;
+    }
+
     public function releaseLinks(): void
     {
         $this->referencing_contexts = [];

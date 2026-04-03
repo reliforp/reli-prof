@@ -18,6 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\Process\MemoryLocation;
 
@@ -152,6 +153,102 @@ class GraphSubstrateTest extends BaseTestCase
         $this->assertContains('App\\MyClass', $substrate->node_classes);
     }
 
+    public function testWeakEdgeExcludedFromSubtreeSize(): void
+    {
+        $weak_child = $this->createMockContextWithStrength('weak_child', [], [
+            new ZendObjectMemoryLocation(0x3000, 500, 1, 7, 'App\\WeakChild'),
+        ]);
+        $strong_child = $this->createMockContextWithStrength('strong_child', [], [
+            new ZendObjectMemoryLocation(0x2000, 200, 1, 7, 'App\\StrongChild'),
+        ]);
+        $parent = $this->createMockContextWithStrength(
+            'parent',
+            ['strong_link' => $strong_child, 'weak_link' => $weak_child],
+            [new ZendObjectMemoryLocation(0x1000, 100, 1, 7, 'App\\Parent')],
+            ['weak_link' => EdgeStrength::Weak],
+        );
+        $top = $this->createMockContextWithStrength('top', ['root' => $parent], []);
+        $this->buildDb($top);
+
+        $db = $this->openDb();
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        // Parent subtree = 100 (self) + 200 (strong child) = 300
+        // Weak child (500) should NOT be included
+        $parent_node_id = null;
+        foreach ($substrate->node_sizes as $nid => $size) {
+            if ($size === 100) {
+                $parent_node_id = $nid;
+                break;
+            }
+        }
+        $this->assertNotNull($parent_node_id);
+        $this->assertSame(300, $substrate->subtree_sizes[$parent_node_id]);
+    }
+
+    public function testStructuralEdgeExcludedFromSubtreeSize(): void
+    {
+        $structural_child = $this->createMockContextWithStrength('handlers', [], [
+            new ZendObjectMemoryLocation(0x3000, 400, 1, 7, 'App\\Handlers'),
+        ]);
+        $parent = $this->createMockContextWithStrength(
+            'parent',
+            ['object_handlers' => $structural_child],
+            [new ZendObjectMemoryLocation(0x1000, 100, 1, 7, 'App\\Parent')],
+            ['object_handlers' => EdgeStrength::Structural],
+        );
+        $top = $this->createMockContextWithStrength('top', ['root' => $parent], []);
+        $this->buildDb($top);
+
+        $db = $this->openDb();
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        // Parent subtree = 100 (self only), structural child excluded
+        $parent_node_id = null;
+        foreach ($substrate->node_sizes as $nid => $size) {
+            if ($size === 100) {
+                $parent_node_id = $nid;
+                break;
+            }
+        }
+        $this->assertNotNull($parent_node_id);
+        $this->assertSame(100, $substrate->subtree_sizes[$parent_node_id]);
+    }
+
+    public function testWeakEdgeExcludedFromScc(): void
+    {
+        // Create a shared node referenced via both strong and weak edges.
+        // The weak back-reference should NOT form a cycle in SCC.
+        $shared = $this->createMockContextWithStrength('shared', [], [
+            new ZendObjectMemoryLocation(0x3000, 64, 1, 7, 'App\\Shared'),
+        ]);
+        $parent = $this->createMockContextWithStrength(
+            'parent',
+            ['child' => $shared],
+            [new ZendObjectMemoryLocation(0x1000, 64, 1, 7, 'App\\Parent')],
+        );
+        // objects_store references via weak edge
+        $store = $this->createMockContextWithStrength(
+            'store',
+            ['obj1' => $shared],
+            [new MemoryLocation(0x4000, 32)],
+            ['obj1' => EdgeStrength::Weak],
+        );
+        $top = $this->createMockContextWithStrength(
+            'top',
+            ['tree' => $parent, 'objects_store' => $store],
+            [],
+            ['objects_store' => EdgeStrength::Weak],
+        );
+        $this->buildDb($top);
+
+        $db = $this->openDb();
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        // No cycles should exist since the back-reference is weak
+        $this->assertEmpty($substrate->scc_profiles);
+    }
+
     // ---- Helpers ----
 
     private function openDb(): \PDO
@@ -185,6 +282,36 @@ class GraphSubstrateTest extends BaseTestCase
         $context->allows('getLocations')->andReturns($locations);
         $context->allows('getContexts')->andReturns($attributes);
         $context->allows('releaseLinks');
+        $context->allows('getLinkStrength')->andReturnUsing(
+            function (string $link_name) use ($links): EdgeStrength {
+                return EdgeStrength::Strong;
+            }
+        );
+        return $context;
+    }
+
+    /**
+     * @param array<string, ReferenceContext> $links
+     * @param list<MemoryLocation> $locations
+     * @param array<string, EdgeStrength> $link_strengths
+     */
+    private function createMockContextWithStrength(
+        string $name,
+        array $links,
+        array $locations,
+        array $link_strengths = [],
+    ): ReferenceContext {
+        $context = \Mockery::mock(ReferenceContext::class);
+        $context->allows('getName')->andReturns($name);
+        $context->allows('getLinks')->andReturns($links);
+        $context->allows('getLocations')->andReturns($locations);
+        $context->allows('getContexts')->andReturns([]);
+        $context->allows('releaseLinks');
+        $context->allows('getLinkStrength')->andReturnUsing(
+            function (string $link_name) use ($link_strengths): EdgeStrength {
+                return $link_strengths[$link_name] ?? EdgeStrength::Strong;
+            }
+        );
         return $context;
     }
 }

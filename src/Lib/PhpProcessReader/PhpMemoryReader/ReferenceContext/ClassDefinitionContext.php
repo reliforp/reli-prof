@@ -28,6 +28,15 @@ final class ClassDefinitionContext implements ReferenceContext
         return ['#is_internal' => $this->is_internal];
     }
 
+    #[\Override]
+    public function getLinkStrength(string $link_name): EdgeStrength
+    {
+        return match ($link_name) {
+            'class_entry' => EdgeStrength::Structural,
+            default => EdgeStrength::Strong,
+        };
+    }
+
     public function getMethods(): ?DefinedFunctionsContext
     {
         /** @var DefinedFunctionsContext|null */

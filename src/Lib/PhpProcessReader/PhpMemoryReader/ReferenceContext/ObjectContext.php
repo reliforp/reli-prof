@@ -29,4 +29,13 @@ final class ObjectContext implements ReferenceContext
     {
         return [$this->memory_location];
     }
+
+    #[\Override]
+    public function getLinkStrength(string $link_name): EdgeStrength
+    {
+        return match ($link_name) {
+            'object_handlers' => EdgeStrength::Structural,
+            default => EdgeStrength::Strong,
+        };
+    }
 }

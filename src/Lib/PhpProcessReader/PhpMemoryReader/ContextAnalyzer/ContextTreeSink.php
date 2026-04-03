@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\Process\MemoryLocation;
 
 interface ContextTreeSink
@@ -28,12 +29,14 @@ interface ContextTreeSink
         string $type,
         iterable $locations,
         array $attributes,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void;
 
     public function emitReference(
         int $reference_node_id,
         ?int $parent_node_id,
         string $link_name,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void;
 
     /** Whether traversed context nodes can release their child references for GC */

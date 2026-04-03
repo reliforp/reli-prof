@@ -69,11 +69,7 @@ final class NonTreeEdgePass implements PassInterface
             FROM context_edges e
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
-                AND e.link_name NOT IN (
-                    'object_properties', 'array_elements',
-                    'dynamic_properties', 'object_handlers',
-                    'name', 'key', 'value', 'class_entry'
-                )
+                AND e.strength = 'strong'
             GROUP BY e.link_name
             HAVING count(*) > 10
             ORDER BY count(*) DESC
@@ -212,11 +208,7 @@ final class NonTreeEdgePass implements PassInterface
                 AND cnl.run_id = {$this->run_id}
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
-                AND e.link_name NOT IN (
-                    'object_handlers', 'object_properties',
-                    'array_elements', 'dynamic_properties',
-                    'class_entry'
-                )
+                AND e.strength = 'strong'
             GROUP BY e.link_name, cnl.size
             HAVING count(*) > 50 AND count(*) * cnl.size > 10240
             ORDER BY count(*) * cnl.size DESC

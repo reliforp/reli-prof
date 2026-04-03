@@ -254,9 +254,9 @@ final class CycleClusterPass implements PassInterface
         foreach ($this->substrate->getSccProfiles() as $profile) {
             $scc_set = array_flip($profile['nodes']);
 
-            // Check ext_outgoing: children of SCC nodes that are outside SCC
+            // Check ext_outgoing: strong children of SCC nodes that are outside SCC
             foreach ($profile['nodes'] as $node) {
-                foreach ($this->substrate->getChildren($node) as $child) {
+                foreach ($this->substrate->getStrongChildren($node) as $child) {
                     if (isset($scc_set[$child])) {
                         continue;
                     }
@@ -351,8 +351,8 @@ final class CycleClusterPass implements PassInterface
                 }
             }
 
-            // Continue BFS
-            foreach ($this->substrate->getChildren($node) as $child) {
+            // Continue BFS via strong edges only
+            foreach ($this->substrate->getStrongChildren($node) as $child) {
                 if (!isset($visited[$child])) {
                     $queue[] = $child;
                 }
@@ -418,8 +418,9 @@ final class CycleClusterPass implements PassInterface
         foreach ($nodes as $node) {
             $shallow_total += $this->substrate->getNodeSize($node);
 
-            // Add downstream retained from tree children outside SCC
-            foreach ($this->substrate->getChildren($node) as $child) {
+
+            // Add downstream retained from strong tree children outside SCC
+            foreach ($this->substrate->getStrongChildren($node) as $child) {
                 if (!isset($scc_set[$child])) {
                     $downstream
                         += $this->substrate->getSubtreeSize($child);

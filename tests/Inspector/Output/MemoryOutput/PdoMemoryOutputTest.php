@@ -18,6 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\Process\MemoryLocation;
 
@@ -345,6 +346,7 @@ class PdoMemoryOutputTest extends BaseTestCase
         $badContext->allows('getLocations')->andReturns([]);
         $badContext->allows('getContexts')->andReturns([]);
         $badContext->allows('releaseLinks');
+        $badContext->allows('getLinkStrength')->andReturns(EdgeStrength::Strong);
 
         $result = new MemoryAnalysisResult([], $badContext);
         $output = new PdoMemoryOutput($driver);
@@ -380,6 +382,7 @@ class PdoMemoryOutputTest extends BaseTestCase
         $context->allows('getLocations')->andReturns($locations);
         $context->allows('getContexts')->andReturns($attributes);
         $context->allows('releaseLinks');
+        $context->allows('getLinkStrength')->andReturns(EdgeStrength::Strong);
         return $context;
     }
 
