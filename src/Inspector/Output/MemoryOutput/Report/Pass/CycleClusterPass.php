@@ -238,7 +238,13 @@ final class CycleClusterPass implements PassInterface
     }
 
     /**
-     * Detect PDO/PDOStatement/Mysqli downstream of SCCs.
+     * Detect PDO/PDOStatement/Mysqli downstream of SCCs that are GC candidates.
+     *
+     * Only reports when the SCC is reachable solely via objects_store (weak
+     * references). Cycles that are strongly rooted — such as those formed by
+     * DI containers in frameworks like Laravel — are excluded because the
+     * resource's lifetime is governed by the application, not the GC.
+     *
      * @return list<Finding>
      */
     private function detectResourceLeakRisks(): array
@@ -248,10 +254,21 @@ final class CycleClusterPass implements PassInterface
             'Mysqli', 'mysqli', 'mysqli_stmt', 'mysqli_result',
         ];
 
+        // Build root-ownership map (same approach as GcPendingPass)
+        $gc_only_scc_ids = $this->findGcOnlySccIds();
+        if ($gc_only_scc_ids === []) {
+            return [];
+        }
+
         $findings = [];
         $seen_risks = [];
 
         foreach ($this->substrate->getSccProfiles() as $profile) {
+            // Skip SCCs that are strongly rooted (not GC candidates)
+            if (!isset($gc_only_scc_ids[$profile['id']])) {
+                continue;
+            }
+
             $scc_set = array_flip($profile['nodes']);
 
             // Check ext_outgoing: strong children of SCC nodes that are outside SCC
@@ -272,6 +289,84 @@ final class CycleClusterPass implements PassInterface
         }
 
         return $findings;
+    }
+
+    /**
+     * Find SCC IDs where ALL member nodes are owned only by objects_store.
+     *
+     * @return array<int, true> scc_id => true
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function findGcOnlySccIds(): array
+    {
+        // BFS from roots via tree edges to determine root ownership
+        $root_link_names = $this->loadRootLinkNames();
+        $node_root_owner = [];
+
+        foreach ($this->substrate->getRoots() as $root) {
+            $queue = [$root];
+            $qi = 0;
+            $node_root_owner[$root] = $root;
+            while ($qi < count($queue)) {
+                $node = $queue[$qi++];
+                foreach ($this->substrate->getChildren($node) as $child) {
+                    if (!isset($node_root_owner[$child])) {
+                        $node_root_owner[$child] = $root;
+                        $queue[] = $child;
+                    }
+                }
+            }
+        }
+
+        // Find objects_store root
+        $objects_store_root = null;
+        foreach ($this->substrate->getRoots() as $root) {
+            if (($root_link_names[$root] ?? '') === 'objects_store') {
+                $objects_store_root = $root;
+                break;
+            }
+        }
+
+        if ($objects_store_root === null) {
+            return [];
+        }
+
+        // Collect SCCs where ALL members are owned by objects_store
+        $gc_only_scc_ids = [];
+        foreach ($this->substrate->getSccProfiles() as $profile) {
+            $all_gc = true;
+            foreach ($profile['nodes'] as $node) {
+                $owner = $node_root_owner[$node] ?? null;
+                if ($owner !== $objects_store_root) {
+                    $all_gc = false;
+                    break;
+                }
+            }
+            if ($all_gc) {
+                $gc_only_scc_ids[$profile['id']] = true;
+            }
+        }
+
+        return $gc_only_scc_ids;
+    }
+
+    /**
+     * @return array<int, string> root_node_id => link_name
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function loadRootLinkNames(): array
+    {
+        $rows = $this->db->query(
+            "SELECT child_node_id, link_name FROM context_edges"
+            . " WHERE parent_node_id IS NULL AND is_tree = 1"
+            . " AND run_id = {$this->run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int)$r[0]] = (string)$r[1];
+        }
+        return $map;
     }
 
     /**
