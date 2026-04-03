@@ -78,18 +78,21 @@ hundreds of thousands of times.
 ```
 memory_get_usage(): 38.43 MB | Heap: 37.98 MB (98.8% analyzed)
 
+[HIGH] bottleneck_path: objects_store->3->context[branch][subBranches][0] (65.42 MB)
 [HIGH] dominant_class: AnalysisError: 19,680 instances x 104 B (100% of objects)
        "Unbounded accumulation — likely a loop without limit"
+[MEDIUM] property_scaling: AnalysisError::$context: 9,840 copies x 6.50 KB = 62.44 MB
+[MEDIUM] choke_point + large_array: $scope[branches] subtree (4.13 MB)
 ```
 
 ### Evaluation
 
 | Aspect | Rating |
 |--------|--------|
-| Problem identification | **Good** — detected accumulation of 19,680 AnalysisError instances |
-| Root cause inference | **Good** — correctly flagged "Unbounded accumulation — likely a loop without limit" |
-| Remediation hints | **Good** — suggested checking if count scales with input size |
-| Detail level | **Lacking** — only one Finding; no breakdown of arrays/strings consuming the remaining memory |
+| Problem identification | **Excellent** — identified 19,680 AnalysisError instances + 65 MB bottleneck path |
+| Root cause inference | **Excellent** — "Unbounded accumulation" + property_scaling shows $context at 6.5 KB/instance |
+| Remediation hints | **Good** — per-instance property analysis suggests lazy init or default values |
+| Detail level | **Good** — 34 Findings covering bottleneck, class accumulation, property scaling, and arrays |
 
 ---
 
@@ -221,18 +224,32 @@ trace is displayed instead of a clear message like "Target process (PID: XXXX) h
 
 **Location:** `src/Lib/Process/MemoryMap/ProcessModuleMemoryMap.php:82`
 
-### Issue 2: `-f report` produces empty Findings for large cases
+### Issue 2: `-f report` produces fewer Findings than sqlite two-step
 
-For Case 5 (48MB, ~40K objects), `-f report` outputs only the Overview section with
-no Findings. The sqlite two-step (`-f sqlite3` → `memory:report`) produces detailed
-results for the same data.
+Systematic comparison across all 14 cases revealed significant gaps:
 
-The likely cause is that streaming mode uses `MemoryLocations::createLightweight()`
-which stores only addresses, discarding size information needed for report generation.
+| Case | memory_get_usage | `-f report` | sqlite | Delta |
+|------|-----------------|-------------|--------|-------|
+| 1 | 1.38 GB | 28 | 29 | +1 |
+| **2** | **38 MB** | **1** | **34** | **+33** |
+| 3 | 15 MB | 32 | 32 | 0 |
+| 4 | 15 MB | 19 | 19 | 0 |
+| **5** | **45 MB** | **0** | **29** | **+29** |
+| **6** | **26 MB** | **1** | **14** | **+13** |
+| 7 | 7 MB | 15 | 15 | 0 |
+| 8 | 6 MB | 7 | 7 | 0 |
+| 9 | 3 MB | 14 | 14 | 0 |
+| 10 | 4 MB | 11 | 11 | 0 |
+| 11 | 3 MB | 8 | 8 | 0 |
+| 12 | 326 MB | 2 | (too large) | ? |
+| 13 | 4 MB | 18 | 18 | 0 |
+| 14 | 23 MB | 19 | 19 | 0 |
 
-**Location:** `src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocation/MemoryLocations.php:32-44`
+Cases 2, 5, 6 lose nearly all Findings in direct mode. Cases under ~15 MB are generally
+unaffected. This appears to be a bug — `--full-analysis` is the default, so the direct
+path should produce the same results as the sqlite path.
 
-**Workaround:** Use sqlite two-step for large-scale analysis.
+**Workaround:** Use sqlite two-step for any case over ~20 MB.
 
 ### Issue 3: No direct fragmentation detection
 
@@ -286,10 +303,14 @@ Monolog caches all log records; PHP 8.4 deprecation notices amplify this in batc
 ```
 memory_get_usage(): 26.23 MB | Heap: 23.80 MB (90.7%)
 [HIGH] dominant_class: DeprecationLogger: 5 instances (68.6% of objects)
+[LOW]  dedup_candidate: file path 20,000 copies x 90 B = 1.72 MB (100% identical)
+[LOW]  dedup_candidate: "->" 35,000 copies, "logDeprecation" 20,000 copies
+[LOW]  dedup_candidate: "item_id" 20,000 copies, "line" 25,000 copies
 ```
 
-**Score: 5/10** — Detected the dominant class but missed the real accumulator (`MonologHandler::$records`).
-The `-f report` stream only surfaced 1 finding for 26MB. sqlite path likely needed for details.
+**Score: 7/10** — Dedup candidates reveal the stack trace structure within log records:
+file paths, method names, and keys repeated 10K-20K times. This directly points to
+`debug_backtrace()` output being stored per record as the memory amplifier.
 
 ### Case 7: Symfony Mailer Event Dispatcher Leak — [symfony/symfony#59702](https://github.com/symfony/symfony/issues/59702)
 
@@ -441,7 +462,7 @@ Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 
 | Case | Issue Type | Coverage | Score |
 |------|-----------|----------|-------|
-| 6 | Logger accumulation | 90.7% | 5/10 |
+| 6 | Logger accumulation | 90.7% | 7/10 |
 | 7 | Event dispatcher leak | 89.9% | 8/10 |
 | 8 | ORM SQL logger | 96.1% | 7/10 |
 | 9 | PDO circular ref | 37.5% | 6/10 |
@@ -489,11 +510,11 @@ Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 | Case | Issue Type | Score | Note |
 |------|-----------|-------|------|
 | 1 | Worker leak | **9/10** | Bottleneck, duplicates, call stack all accurate |
-| 2 | Error duplication | **7/10** | Class accumulation detected, detail somewhat sparse |
+| 2 | Error duplication | **9/10** | bottleneck_path + property_scaling (6.5 KB/instance) = precise |
 | 3 | Chunk fragmentation | **6/10** | Found strings and pin objects, not fragmentation itself |
 | 4 | Unbounded alloc | **7/10** | Pinpointed consumption locations and patterns |
-| 5 | ORM hydration | **9/10** | structural_duplicate/dedup/shared_fanin excellent (sqlite) |
-| 6 | Logger accumulation | **5/10** | Detected class but missed real accumulator in stream mode |
+| 5 | ORM hydration | **9/10** | structural_duplicate/dedup/shared_fanin excellent |
+| 6 | Logger accumulation | **7/10** | Dedup reveals stack trace bloat (20K copies of paths/methods) |
 | 7 | Event dispatcher leak | **8/10** | Bottleneck + structural duplicates identified |
 | 8 | ORM SQL logger | **7/10** | Dedup found 10K identical SQL strings |
 | 9 | PDO circular ref | **6/10** | Low coverage — PDO internals outside ZendMM |
@@ -502,9 +523,9 @@ Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 | 12 | Unserialize bloat | **7/10** | 10K instances flagged, array type dominance shown |
 | 13 | Schema introspection | **8/10** | Index buffer + structural duplicates identified |
 | 14 | Bootstrap static leak | **9/10** | static_properties path + Closure accumulation = precise |
-| 15 | Closure cycles | **N/A** | Analysis DB exploded (2.2 GB for 78 MB) — practical limit |
+| 15 | Closure cycles | **N/A** | Pool flush breaks WeakMap dedup — DB explosion |
 
-**Average score (excluding N/A): 7.4 / 10**
+**Average score (excluding N/A): 7.6 / 10**
 
 **Overall:** Across 15 diverse PHP memory issues, reli-prof demonstrated strong diagnostic
 capability without requiring any modification to target processes. It excels at:
