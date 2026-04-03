@@ -284,6 +284,108 @@ Create a test fixture with:
 Also verify with the real circular-reference test target (Node→Node cycle)
 that SCC is correctly detected in streaming mode.
 
+Also verify with the real circular-reference test target (Node→Node cycle)
+that SCC is correctly detected in streaming mode.
+
+### Phase 2: Report Pass Canonical Awareness
+
+SCC unification (Phase 1) fixes cycle detection, but 6 report passes
+still operate on raw node_ids without canonical awareness. In streaming
+mode, the same PHP object appears as multiple graph nodes (one per
+collection phase). Passes that traverse the tree or count nodes will
+double-count these duplicates.
+
+#### Affected passes and required changes
+
+**DrillDownPass** (bottleneck path):
+- `getChildren()` + `getSubtreeSize()` on raw node_ids
+- Fix: when selecting the heaviest child at each level, skip nodes whose
+  canonical_node_id matches an already-visited canonical. Or: at each
+  step, resolve children to canonical and pick the heaviest canonical
+  group's best representative (the one with the largest subtree).
+
+**BlameAllocationPass** (root blame allocation):
+- Blame is split across duplicate nodes for the same object
+- Fix: after computing per-node blame, aggregate by canonical_node_id.
+  Sum exclusive/shared across all nodes in the same canonical group.
+
+**PropertyScalingPass** (per-instance vs shared properties):
+- Graph traversal + SQL both use raw node_ids
+- Fix: in the SQL query, GROUP BY canonical_node_id (or COALESCE(
+  canonical_node_id, node_id)) instead of node_id when counting
+  property instances. In graph traversal, deduplicate children by
+  canonical before analyzing scaling patterns.
+
+**ChokePointPass** (choke point detection):
+- `iterateSubtreeSizes()` counts duplicate nodes separately
+- Fix: when iterating subtree sizes, skip non-canonical duplicates.
+  Only count nodes where node_id = canonical_node_id (or canonical
+  is NULL). Add `isCanonicalOrUnique(int $nodeId): bool` helper to
+  GraphSubstrate.
+
+**OwnershipPatternPass** (1:1, 1:N ownership):
+- `iterateNodeClasses()` inflates class counts with duplicates
+- Fix: filter to canonical-or-unique nodes when counting instances.
+  A class with 100 objects appearing as 200 nodes (2 phases each)
+  should still report 100 instances.
+
+**StructuralDedupPass** (flyweight candidates):
+- Same object at different node_ids creates duplicate shape groups
+- Fix: deduplicate by canonical when grouping shapes. Two nodes with
+  the same canonical are the same object, not a dedup candidate.
+
+#### Not affected (no changes needed)
+
+- **RetainedSizeConfidencePass**: reads SCC profiles only (canonical-aware)
+- **CompanionDetectionPass**: uses class_objects_summary (no graph traversal)
+- **CycleClusterPass**: already uses canonical-aware SCC data
+- **NonTreeEdgePass**: SQL with `strength = 'strong'` filter, edge-level
+  analysis not affected by node duplication
+- **CallStackPass**: reads call_frames tree edges only
+- **OverviewPass**: reads summary table only
+- **TopArraysPass** / **TopStringsPass**: SQL on context_node_locations,
+  no graph traversal
+- **ClassRankingPass**: SQL on context_node_locations, could use
+  canonical dedup but impact is minor (class_name counts)
+- **DynamicPropertiesPass**: SQL-only
+- **GcPendingPass**: SQL-only
+- **TypeBreakdownPass**: SQL on location_types_summary
+
+#### GraphSubstrate helper methods to add
+
+```php
+/**
+ * Whether this node is the canonical representative or has no duplicates.
+ */
+public function isCanonicalOrUnique(int $nodeId): bool
+{
+    if (!isset($this->canonical[$nodeId])) {
+        return true; // no duplicates
+    }
+    return $this->findCanonical($nodeId) === $nodeId;
+}
+
+/**
+ * Get the canonical node_id for a given node.
+ * Returns the node itself if it has no duplicates.
+ */
+public function getCanonical(int $nodeId): int
+{
+    return $this->findCanonical($nodeId);
+}
+
+/**
+ * Get all original node_ids that share the same canonical.
+ * Returns [$nodeId] if no duplicates.
+ * @return list<int>
+ */
+public function getCanonicalGroup(int $nodeId): array
+{
+    $canon = $this->findCanonical($nodeId);
+    return $this->canonicalToOriginals[$canon] ?? [$canon];
+}
+```
+
 ### Documentation Updates
 
 Update `docs/memory-profiler-database.md` to reflect all schema changes:
