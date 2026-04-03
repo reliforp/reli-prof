@@ -177,3 +177,73 @@ All reproduction scripts are in `analysis-cases/case*.php` on branch
 | Bug 1 | case2, case5, case6 | Finding count: `-f report` vs sqlite |
 | Bug 2 | case10 | `grep -i cycle` in report output |
 | Bug 3 | case15 | DB file size vs PHP memory_get_usage |
+
+---
+
+## Bug 4: Closure `this_ptr` not collected in streaming mode — cycle detection blind spot (HIGH)
+
+**Status:** Open. Discovered after Bugs 1-3 were fixed.
+
+### Symptom
+
+Case 15 (Widget ↔ EventEmitter ↔ Closure cycle) reports "No cycles" despite
+obvious circular references through Closure `$this` capture.
+
+4000 Closure ObjectContext nodes exist in the DB, but only 2 have `closure` link.
+Zero `this_ptr` edges from user Closures exist.
+
+### Root Cause
+
+`MemoryLocationsCollector.php:1778-1786`:
+```php
+// When defer is active (shallow collection for objects_store),
+// skip dynamic properties, closures, generators, and fibers.
+if ($this->defer_unseen_objects) {
+    $this->defer_unseen_objects = $saved_defer;
+    return $object_context;  // ← Skips collectClosure() entirely
+}
+```
+
+In streaming mode, `defer_unseen_objects` is true during objects_store traversal.
+This causes `collectClosure()` (which creates `this_ptr` and `func` links) to be
+skipped for all Closures collected from objects_store.
+
+The comment says "They will be collected when the object is reached from another phase,
+or via deferred edge resolution." But:
+- Deferred edge resolution only handles property references, not `collectClosure()`
+- Closures reached from `global_variables` or `call_frames` DO get full collection
+  (hence the 2 `closure` links — likely from class_table reflection entries)
+- The 4000 user Closures in EventEmitter.listeners are only reached from objects_store
+
+### Evidence
+
+```
+ObjectContext nodes with class=Closure: 4000
+Edges with link_name="closure": 2    ← should be 4000
+Edges with "this_ptr": 0             ← should be 4000
+```
+
+### Impact
+
+Any cycle involving Closure `$this` capture is invisible to SCC when Closures are
+collected from objects_store (the common case for application objects).
+
+### Suggested Fix
+
+After the defer early-return, schedule Closure-specific collection for later resolution,
+similar to how deferred property edges work. When deferred edges are resolved
+(line 607-634), also resolve pending Closure `this_ptr` / `func` links:
+
+```php
+if ($this->defer_unseen_objects) {
+    // Still record that this is a Closure needing collectClosure() later
+    if ($class_entry->getClassName($dereferencer) === 'Closure') {
+        $this->deferred_closure_nodes[] = [$object_context, $object->getPointer()];
+    }
+    $this->defer_unseen_objects = $saved_defer;
+    return $object_context;
+}
+```
+
+Then in the deferred resolution phase, iterate `$this->deferred_closure_nodes` and
+call `collectClosure()` + `$object_context->add('closure', ...)` for each.
