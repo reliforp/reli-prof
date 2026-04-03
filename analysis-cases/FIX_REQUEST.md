@@ -421,11 +421,24 @@ Approach 2 adds implementation-specific semantics to the DB schema, making it ha
 to understand for anyone querying the DB directly. `strength` should describe the
 reference relationship (strong/weak/structural), not traversal order.
 
-**Recommended: Approach 1 (quick fix).** Accept `is_tree` reflects traversal order
-and handle it in the report layer. `findAlternativeTreeParent` should search non-tree
-edges too, and walk up from the alternative parent using whatever edges are available
-(tree or non-tree). The DB schema stays clean, and the "prefer app-level path" policy
-is confined to the report display logic where it belongs.
+**Reconsidered: Approach 3 may be the most correct.** The objects_store shallow phase
+is conceptually a "warm-up" to populate the sentinel map — not part of the real DFS.
+If that's the intent, edges emitted during this phase should be `is_tree = 0` (all of
+them), because the "real" traversal hasn't started yet. When global_variables and
+call_frames later reach the same objects, those edges naturally get `is_tree = 1`.
+
+This is a small change: just force `is_tree = 0` for all edges emitted during the
+objects_store shallow phase. The sentinel mechanism is unaffected — it only needs the
+node to be emitted, not for the edge to be a tree edge. The DB stays clean, is_tree
+regains its intended meaning ("first arrival in the real DFS"), and report-side path
+logic works correctly without special-casing.
+
+Objects only reachable from objects_store (no app-level path) would have no tree edge,
+which is fine — they can still be displayed via non-tree edges, or a final pass can
+promote their objects_store edges to is_tree=1 as a fallback.
+
+Approach 1 (non-tree search in findAlternativeTreeParent) is also viable as a quick
+fix if the collector change is too risky.
 
 Evidence from Case 9:
 ```
