@@ -53,6 +53,7 @@ final class DrillDownPass implements PassInterface
         $path_types = [];
         $path_sizes = [];
         $current_children = $this->substrate->getRoots();
+        $visited_canonicals = [];
 
         for ($depth = 0; $depth < 12; $depth++) {
             if (empty($current_children)) {
@@ -61,12 +62,20 @@ final class DrillDownPass implements PassInterface
 
             $branches = [];
             foreach ($current_children as $child_id) {
+                $canon = $this->substrate->getCanonical($child_id);
+                if (isset($visited_canonicals[$canon])) {
+                    continue;
+                }
                 $size = $this->substrate->getSubtreeSize($child_id);
-                $branches[] = [$child_id, $size];
+                $branches[] = [$child_id, $size, $canon];
+            }
+            if (empty($branches)) {
+                break;
             }
             usort($branches, fn($a, $b) => $b[1] <=> $a[1]);
 
             $heaviest = $branches[0];
+            $visited_canonicals[$heaviest[2]] = true;
             $link_stmt->execute([$heaviest[0]]);
             $r = $link_stmt->fetch(\PDO::FETCH_NUM);
             /** @var string $raw_name */

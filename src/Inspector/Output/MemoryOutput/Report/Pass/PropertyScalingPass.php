@@ -206,16 +206,28 @@ final class PropertyScalingPass implements PassInterface
             if ($cls !== $dominant_class) {
                 continue;
             }
+            // Skip non-canonical duplicates to avoid double-counting instances
+            if (!$this->substrate->isCanonicalOrUnique($node_id)) {
+                continue;
+            }
             foreach ($this->substrate->getChildren($node_id) as $child) {
                 if (($link_names[$child] ?? '') !== 'object_properties') {
                     continue;
                 }
                 // child = ObjectPropertiesContext
+                // Deduplicate property children by canonical
+                $seen_prop_canonicals = [];
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
                     $prop_name = $link_names[$prop_child] ?? null;
                     if ($prop_name === null) {
                         continue;
                     }
+                    $prop_canon = $this->substrate->getCanonical($prop_child);
+                    if (isset($seen_prop_canonicals[$prop_canon])) {
+                        continue;
+                    }
+                    $seen_prop_canonicals[$prop_canon] = true;
+
                     if (!isset($prop_stats[$prop_name])) {
                         $prop_stats[$prop_name] = [
                             'distinct' => [],
@@ -223,7 +235,7 @@ final class PropertyScalingPass implements PassInterface
                             'size' => 0,
                         ];
                     }
-                    $prop_stats[$prop_name]['distinct'][$prop_child] = true;
+                    $prop_stats[$prop_name]['distinct'][$prop_canon] = true;
                     $prop_stats[$prop_name]['total_refs']++;
                     // Use retained if available, else shallow
                     if ($use_retained) {

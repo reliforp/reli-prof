@@ -79,6 +79,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate = new self();
         $substrate->loadNodeSizesFfi($db, $run_id);
         $substrate->loadEdgesFfi($db, $run_id);
+        $substrate->loadAddressMapping($db, $run_id);
+        $substrate->buildSccAdjacency();
         $substrate->computeSubtreeSizesFfi();
         $substrate->computeSccFfi();
         return $substrate;
@@ -541,6 +543,15 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /** @psalm-suppress UnsupportedReferenceUsage, MixedArgument */
     private function computeSccFfi(): void
     {
+        $use_unified = $this->scc_adjacency !== [];
+
+        // When using unified adjacency, run Tarjan on canonical node_ids
+        // (not CSR indices) since scc_adjacency uses node_ids.
+        if ($use_unified) {
+            $this->computeSccFfiUnified();
+            return;
+        }
+
         $index_counter = 0;
         $stack = [];
         $on_stack = [];
@@ -609,6 +620,132 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
         }
 
+        $this->buildSccProfilesFfi($sccs);
+    }
+
+    /**
+     * SCC computation using unified adjacency (canonical node_ids).
+     * Used when address unification is active.
+     *
+     * @psalm-suppress UnsupportedReferenceUsage, MixedArgument
+     */
+    private function computeSccFfiUnified(): void
+    {
+        // Collect canonical node_ids to visit
+        $canonical_nodes = [];
+        for ($v = 0; $v < $this->nodeCount; $v++) {
+            $nid = (int)$this->indexToNodeFfi[$v];
+            if ($nid === -1) {
+                continue;
+            }
+            $canon = $this->findCanonical($nid);
+            $canonical_nodes[$canon] = true;
+        }
+
+        $index_counter = 0;
+        $stack = [];
+        $on_stack = [];
+        $index = [];
+        $lowlink = [];
+        $sccs = [];
+
+        foreach ($canonical_nodes as $v => $_) {
+            if (isset($index[$v])) {
+                continue;
+            }
+
+            $call_stack = [[$v, 0]];
+            $index[$v] = $lowlink[$v] = $index_counter++;
+            $stack[] = $v;
+            $on_stack[$v] = true;
+
+            while ($call_stack) {
+                [$node, $ci] = array_pop($call_stack);
+                $node_children = $this->scc_adjacency[$node] ?? [];
+                $count = count($node_children);
+
+                $found_unvisited = false;
+                for ($i = $ci; $i < $count; $i++) {
+                    $w = $node_children[$i];
+                    if (!isset($index[$w])) {
+                        $call_stack[] = [$node, $i + 1];
+                        $index[$w] = $lowlink[$w] = $index_counter++;
+                        $stack[] = $w;
+                        $on_stack[$w] = true;
+                        $call_stack[] = [$w, 0];
+                        $found_unvisited = true;
+                        break;
+                    } elseif (isset($on_stack[$w])) {
+                        $lowlink[$node] = min($lowlink[$node], $index[$w]);
+                    }
+                }
+
+                if (!$found_unvisited) {
+                    if ($lowlink[$node] === $index[$node]) {
+                        /** @var list<int> $scc canonical node_ids */
+                        $scc = [];
+                        do {
+                            /** @var int $w */
+                            $w = array_pop($stack);
+                            unset($on_stack[$w]);
+                            $scc[] = $w;
+                        } while ($w !== $node);
+                        if (count($scc) > 1) {
+                            $sccs[] = $scc;
+                        }
+                    }
+                    if ($call_stack) {
+                        $parent_frame = &$call_stack[count($call_stack) - 1];
+                        $lowlink[$parent_frame[0]] = min(
+                            $lowlink[$parent_frame[0]],
+                            $lowlink[$node]
+                        );
+                    }
+                }
+            }
+        }
+
+        // Expand canonical nodes to all originals
+        foreach ($sccs as &$scc) {
+            $expanded = [];
+            foreach ($scc as $canonical) {
+                if (isset($this->canonicalToOriginals[$canonical])) {
+                    foreach ($this->canonicalToOriginals[$canonical] as $orig) {
+                        $expanded[] = $orig;
+                    }
+                } else {
+                    $expanded[] = $canonical;
+                }
+            }
+            $scc = array_values(array_unique($expanded));
+        }
+        unset($scc);
+
+        // Convert node_ids to CSR indices for profile building
+        $csr_sccs = [];
+        foreach ($sccs as $scc_nodes) {
+            $scc_indices = [];
+            foreach ($scc_nodes as $nid) {
+                $idx = $this->nodeIdToIndex($nid);
+                if ($idx >= 0) {
+                    $scc_indices[] = $idx;
+                }
+            }
+            if (count($scc_indices) > 1) {
+                $csr_sccs[] = $scc_indices;
+            }
+        }
+
+        $this->buildSccProfilesFfi($csr_sccs);
+    }
+
+    /**
+     * Build SCC profiles from CSR index-based SCCs.
+     *
+     * @param list<list<int>> $sccs Each SCC is a list of CSR indices
+     */
+    private function buildSccProfilesFfi(array $sccs): void
+    {
         // Build SCC profiles (convert CSR indices back to node IDs)
         foreach ($sccs as $scc_id => $scc_indices) {
             $scc_nodes = [];

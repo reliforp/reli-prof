@@ -249,7 +249,245 @@ class GraphSubstrateTest extends BaseTestCase
         $this->assertEmpty($substrate->scc_profiles);
     }
 
+    /**
+     * Test that two nodes sharing the same address are unified for SCC detection.
+     *
+     * Simulates streaming mode: object A appears as node 100 (objects_store phase)
+     * and node 500 (call_frames phase). Similarly for object B.
+     * Edge 100 -> 200 (A->B in objects_store) and 600 -> 500 (B->A in call_frames).
+     * Without unification: no cycle. With unification: cycle A->B->A.
+     */
+    public function testSccDetectsCycleViaAddressUnification(): void
+    {
+        $db = $this->createDirectDb();
+
+        // Insert nodes: A has two nodes (100, 500), B has two nodes (200, 600)
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id) VALUES
+            (1, 100, 'ObjectContext', 100),
+            (1, 200, 'ObjectContext', 200),
+            (1, 500, 'ObjectContext', 100),
+            (1, 600, 'ObjectContext', 200)
+        ");
+
+        // Insert locations with shared addresses
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 100, 1000, 64, 'ZendObjectMemoryLocation', 'App\\NodeA'),
+            (1, 200, 2000, 64, 'ZendObjectMemoryLocation', 'App\\NodeB'),
+            (1, 500, 1000, 64, 'ZendObjectMemoryLocation', 'App\\NodeA'),
+            (1, 600, 2000, 64, 'ZendObjectMemoryLocation', 'App\\NodeB')
+        ");
+
+        // Insert edges: A->B (tree, strong) and B->A (non-tree, strong)
+        // In objects_store phase: 100 -> 200
+        // In call_frames phase: 600 -> 500
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 100, 'objects_store', 1, 'strong'),
+            (1, 100, 200, 'next', 1, 'strong'),
+            (1, NULL, 500, 'call_frames', 1, 'strong'),
+            (1, 600, 500, 'next', 0, 'strong')
+        ");
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        // With address unification, a cycle should be detected: A(100,500) <-> B(200,600)
+        $this->assertNotEmpty($substrate->scc_profiles, 'SCC should detect cycle via address unification');
+        $scc = $substrate->scc_profiles[0];
+        // All 4 nodes should be in the SCC (expanded from canonical)
+        $this->assertCount(4, $scc['nodes']);
+        $this->assertEqualsCanonicalizing([100, 200, 500, 600], $scc['nodes']);
+    }
+
+    /**
+     * Test that nodes with different addresses are NOT unified.
+     */
+    public function testNoUnificationWhenAddressesDiffer(): void
+    {
+        $db = $this->createDirectDb();
+
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'ObjectContext'),
+            (1, 2, 'ObjectContext'),
+            (1, 3, 'ObjectContext')
+        ");
+
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type) VALUES
+            (1, 1, 1000, 64, 'ZendObjectMemoryLocation'),
+            (1, 2, 2000, 64, 'ZendObjectMemoryLocation'),
+            (1, 3, 3000, 64, 'ZendObjectMemoryLocation')
+        ");
+
+        // Linear chain: 1 -> 2 -> 3 (no cycle)
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'root', 1, 'strong'),
+            (1, 1, 2, 'a', 1, 'strong'),
+            (1, 2, 3, 'b', 1, 'strong')
+        ");
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        $this->assertEmpty($substrate->scc_profiles, 'No SCC should exist without shared addresses');
+    }
+
+    /**
+     * Test SCC profile generation with expanded node sets after unification.
+     */
+    public function testSccProfileWithUnifiedNodes(): void
+    {
+        $db = $this->createDirectDb();
+
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id) VALUES
+            (1, 10, 'ObjectContext', 10),
+            (1, 20, 'ObjectContext', 20),
+            (1, 30, 'ObjectContext', 10),
+            (1, 40, 'ObjectContext', 20)
+        ");
+
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 10, 100, 100, 'ZendObjectMemoryLocation', 'App\\Foo'),
+            (1, 20, 200, 200, 'ZendObjectMemoryLocation', 'App\\Bar'),
+            (1, 30, 100, 100, 'ZendObjectMemoryLocation', 'App\\Foo'),
+            (1, 40, 200, 200, 'ZendObjectMemoryLocation', 'App\\Bar')
+        ");
+
+        // Cycle: 10 -> 20 (tree), 40 -> 30 (non-tree, creates cycle via unification)
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 10, 'root', 1, 'strong'),
+            (1, 10, 20, 'link', 1, 'strong'),
+            (1, NULL, 30, 'root2', 1, 'strong'),
+            (1, 40, 30, 'back', 0, 'strong')
+        ");
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        $this->assertNotEmpty($substrate->scc_profiles);
+        $scc = $substrate->scc_profiles[0];
+        // total_size should include all 4 nodes
+        $this->assertSame(600, $scc['total_size']);
+        // class_counts should aggregate across unified nodes
+        $this->assertArrayHasKey('App\\Foo', $scc['class_counts']);
+        $this->assertArrayHasKey('App\\Bar', $scc['class_counts']);
+    }
+
+    // ---- Phase 2: Canonical helper methods ----
+
+    public function testIsCanonicalOrUniqueReturnsTrueForUniqueNodes(): void
+    {
+        $db = $this->createDirectDb();
+
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'ObjectContext'),
+            (1, 2, 'ObjectContext')
+        ");
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type) VALUES
+            (1, 1, 1000, 64, 'ZendObjectMemoryLocation'),
+            (1, 2, 2000, 64, 'ZendObjectMemoryLocation')
+        ");
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'root', 1, 'strong'),
+            (1, 1, 2, 'a', 1, 'strong')
+        ");
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        // No canonical mapping → all nodes are unique
+        $this->assertTrue($substrate->isCanonicalOrUnique(1));
+        $this->assertTrue($substrate->isCanonicalOrUnique(2));
+        $this->assertSame(1, $substrate->getCanonical(1));
+        $this->assertSame([1], $substrate->getCanonicalGroup(1));
+    }
+
+    public function testIsCanonicalOrUniqueWithDuplicates(): void
+    {
+        $db = $this->createDirectDb();
+
+        // Node 10 and 30 share the same address (canonical 10)
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id) VALUES
+            (1, 10, 'ObjectContext', 10),
+            (1, 20, 'ObjectContext', NULL),
+            (1, 30, 'ObjectContext', 10)
+        ");
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type) VALUES
+            (1, 10, 1000, 64, 'ZendObjectMemoryLocation'),
+            (1, 20, 2000, 64, 'ZendObjectMemoryLocation'),
+            (1, 30, 1000, 64, 'ZendObjectMemoryLocation')
+        ");
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 10, 'root', 1, 'strong'),
+            (1, 10, 20, 'a', 1, 'strong'),
+            (1, NULL, 30, 'root2', 1, 'strong')
+        ");
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+
+        $this->assertTrue($substrate->isCanonicalOrUnique(10));   // canonical representative
+        $this->assertTrue($substrate->isCanonicalOrUnique(20));   // unique (no duplicates)
+        $this->assertFalse($substrate->isCanonicalOrUnique(30));  // duplicate of 10
+
+        $this->assertSame(10, $substrate->getCanonical(10));
+        $this->assertSame(10, $substrate->getCanonical(30));
+        $this->assertSame(20, $substrate->getCanonical(20));
+
+        $group = $substrate->getCanonicalGroup(30);
+        $this->assertCount(2, $group);
+        $this->assertContains(10, $group);
+        $this->assertContains(30, $group);
+    }
+
     // ---- Helpers ----
+
+    /**
+     * Create a test DB with tables directly (without going through PdoMemoryOutput).
+     */
+    private function createDirectDb(): \PDO
+    {
+        $db = new \PDO('sqlite:' . $this->db_path);
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        $db->exec('CREATE TABLE IF NOT EXISTS runs (run_id INTEGER PRIMARY KEY, created_at TEXT NOT NULL)');
+        $db->exec("INSERT INTO runs (run_id, created_at) VALUES (1, '2024-01-01T00:00:00Z')");
+
+        $db->exec('
+            CREATE TABLE IF NOT EXISTS context_nodes (
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                canonical_node_id INTEGER,
+                PRIMARY KEY (run_id, node_id)
+            )
+        ');
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS context_edges (
+                run_id INTEGER NOT NULL,
+                parent_node_id INTEGER,
+                child_node_id INTEGER NOT NULL,
+                link_name TEXT NOT NULL,
+                is_tree INTEGER NOT NULL,
+                strength TEXT NOT NULL DEFAULT 'strong'
+            )
+        ");
+        $db->exec('
+            CREATE TABLE IF NOT EXISTS context_node_locations (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                address BIGINT,
+                size BIGINT,
+                location_type TEXT NOT NULL,
+                class_name TEXT,
+                string_value TEXT,
+                refcount BIGINT,
+                type_info BIGINT,
+                region TEXT
+            )
+        ');
+
+        return $db;
+    }
 
     private function openDb(): \PDO
     {

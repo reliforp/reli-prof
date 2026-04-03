@@ -74,6 +74,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
             $this->insertLocationTypesSummaryFromDb($db, $run_id);
             $this->insertClassObjectsSummaryFromDb($db, $run_id);
+            $this->computeCanonicalNodeIds($db, $run_id);
 
             $db->commit();
         } catch (\Throwable $e) {
@@ -116,6 +117,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $this->insertSummary($db, $run_id, $summary);
         $this->insertLocationTypesSummaryFromDb($db, $run_id);
         $this->insertClassObjectsSummaryFromDb($db, $run_id);
+        $this->computeCanonicalNodeIds($db, $run_id);
         $db->commit();
         $this->driver->afterBulkInsert($db);
         $this->createIndexes($db);
@@ -169,6 +171,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 run_id INTEGER NOT NULL,
                 node_id INTEGER NOT NULL,
                 type TEXT NOT NULL,
+                canonical_node_id INTEGER,
                 PRIMARY KEY (run_id, node_id)
             )
         ');
@@ -244,6 +247,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $db->exec(
             'CREATE INDEX IF NOT EXISTS idx_context_edges_run_strength'
             . ' ON context_edges(run_id, strength)'
+        );
+        $db->exec(
+            'CREATE INDEX IF NOT EXISTS idx_context_nodes_canonical'
+            . ' ON context_nodes(run_id, canonical_node_id)'
         );
     }
 
@@ -365,6 +372,43 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
+     * Compute canonical_node_id for nodes that share the same memory address.
+     *
+     * When the same PHP object is observed from multiple collection phases
+     * (e.g. objects_store and call_frames in streaming mode), each phase
+     * creates a separate graph node. This method groups those nodes by their
+     * memory address and assigns the smallest node_id in each group as the
+     * canonical representative.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    private function computeCanonicalNodeIds(\PDO $db, int $run_id): void
+    {
+        $rows = $db->query(
+            "SELECT address, GROUP_CONCAT(DISTINCT node_id) AS node_ids"
+            . " FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND address IS NOT NULL"
+            . " GROUP BY address"
+            . " HAVING COUNT(DISTINCT node_id) > 1"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        if (!$rows) {
+            return;
+        }
+
+        $stmt = $db->prepare(
+            "UPDATE context_nodes SET canonical_node_id = ? WHERE run_id = ? AND node_id = ?"
+        );
+        foreach ($rows as $r) {
+            $node_ids = array_map('intval', explode(',', (string)$r[1]));
+            $canon = min($node_ids);
+            foreach ($node_ids as $nid) {
+                $stmt->execute([$canon, $run_id, $nid]);
+            }
+        }
+    }
+
+    /**
      * Copy all data from a pre-populated (temp) SQLite DB to the target DB.
      */
     private function copyFromPrePopulatedDb(\PDO $source, int $source_run_id, \PDO $target): void
@@ -386,15 +430,21 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         }
 
         // Copy context_nodes
-        $rows = $source->prepare('SELECT node_id, type FROM context_nodes WHERE run_id = ?');
+        $rows = $source->prepare(
+            'SELECT node_id, type, canonical_node_id FROM context_nodes WHERE run_id = ?'
+        );
         $rows->execute([$source_run_id]);
         $insert = $target->prepare(
-            $this->driver->insertIgnoreSql('context_nodes', 'run_id, node_id, type', '?, ?, ?')
+            $this->driver->insertIgnoreSql(
+                'context_nodes',
+                'run_id, node_id, type, canonical_node_id',
+                '?, ?, ?, ?'
+            )
         );
         /** @psalm-suppress MixedAssignment */
         while ($row = $rows->fetch(\PDO::FETCH_ASSOC)) {
             /** @psalm-suppress MixedArrayAccess */
-            $insert->execute([$run_id, $row['node_id'], $row['type']]);
+            $insert->execute([$run_id, $row['node_id'], $row['type'], $row['canonical_node_id']]);
         }
 
         // Copy context_edges

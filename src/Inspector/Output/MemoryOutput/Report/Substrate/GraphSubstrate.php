@@ -62,6 +62,15 @@ class GraphSubstrate
 
     public int $edge_count = 0;
 
+    /** @var array<int, int> node_id => canonical node_id (Union-Find parent) */
+    protected array $canonical = [];
+
+    /** @var array<int, list<int>> canonical_node_id => [original_node_id, ...] */
+    protected array $canonicalToOriginals = [];
+
+    /** @var array<int, list<int>> canonical_parent => [canonical_child, ...] for SCC */
+    protected array $scc_adjacency = [];
+
     private const FFI_CSR_THRESHOLD = 2_000_000;
 
     /** @psalm-suppress UnsafeInstantiation */
@@ -70,6 +79,8 @@ class GraphSubstrate
         $substrate = new static();
         $substrate->loadNodeSizes($db, $run_id);
         $substrate->loadEdges($db, $run_id);
+        $substrate->loadAddressMapping($db, $run_id);
+        $substrate->buildSccAdjacency();
         $substrate->computeSubtreeSizes();
         $substrate->computeScc();
         return $substrate;
@@ -221,6 +232,125 @@ class GraphSubstrate
         return $this->node_to_scc;
     }
 
+    /**
+     * Whether this node is the canonical representative or has no duplicates.
+     */
+    public function isCanonicalOrUnique(int $nodeId): bool
+    {
+        if (!isset($this->canonical[$nodeId])) {
+            return true;
+        }
+        return $this->findCanonical($nodeId) === $nodeId;
+    }
+
+    /**
+     * Get the canonical node_id for a given node.
+     * Returns the node itself if it has no duplicates.
+     */
+    public function getCanonical(int $nodeId): int
+    {
+        return $this->findCanonical($nodeId);
+    }
+
+    /**
+     * Get all original node_ids that share the same canonical.
+     * Returns [$nodeId] if no duplicates.
+     * @return list<int>
+     */
+    public function getCanonicalGroup(int $nodeId): array
+    {
+        $canon = $this->findCanonical($nodeId);
+        return $this->canonicalToOriginals[$canon] ?? [$canon];
+    }
+
+    protected function findCanonical(int $node): int
+    {
+        if (!isset($this->canonical[$node])) {
+            return $node;
+        }
+        // Path compression
+        while ($this->canonical[$node] !== $node) {
+            $this->canonical[$node] = $this->canonical[$this->canonical[$node]] ?? $this->canonical[$node];
+            $node = $this->canonical[$node];
+        }
+        return $node;
+    }
+
+    protected function union(int $a, int $b): void
+    {
+        $ca = $this->findCanonical($a);
+        $cb = $this->findCanonical($b);
+        if ($ca !== $cb) {
+            // Use smaller node_id as canonical
+            if ($ca > $cb) {
+                [$ca, $cb] = [$cb, $ca];
+            }
+            $this->canonical[$cb] = $ca;
+            $this->canonical[$ca] = $ca;
+        }
+    }
+
+    /**
+     * Load canonical_node_id from DB and build Union-Find structure.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    protected function loadAddressMapping(\PDO $db, int $run_id): void
+    {
+        $rows = $db->query(
+            "SELECT node_id, canonical_node_id"
+            . " FROM context_nodes"
+            . " WHERE run_id = {$run_id} AND canonical_node_id IS NOT NULL"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        if (!$rows) {
+            return;
+        }
+
+        foreach ($rows as $r) {
+            $node_id = (int)$r[0];
+            $canon = (int)$r[1];
+            $this->canonical[$node_id] = $canon;
+            $this->canonical[$canon] = $canon;
+        }
+
+        // Build reverse mapping: canonical → [original_node_ids]
+        $this->canonicalToOriginals = [];
+        foreach ($this->canonical as $node => $parent) {
+            $canon = $this->findCanonical($node);
+            $this->canonicalToOriginals[$canon][] = $node;
+        }
+        // Deduplicate
+        foreach ($this->canonicalToOriginals as $canon => $nodes) {
+            $this->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
+        }
+    }
+
+    /**
+     * Build a unified adjacency list for SCC that maps through canonical IDs.
+     */
+    protected function buildSccAdjacency(): void
+    {
+        if ($this->canonical === []) {
+            // No unification needed, SCC uses strong_all_children directly
+            return;
+        }
+
+        foreach ($this->strong_all_children as $parent => $children) {
+            $cp = $this->findCanonical($parent);
+            foreach ($children as $child) {
+                $cc = $this->findCanonical($child);
+                if ($cp !== $cc) {
+                    $this->scc_adjacency[$cp][] = $cc;
+                }
+            }
+        }
+        // Deduplicate
+        foreach ($this->scc_adjacency as $node => $children) {
+            $this->scc_adjacency[$node] = array_values(array_unique($children));
+        }
+    }
+
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     protected function loadNodeSizes(\PDO $db, int $run_id): void
     {
@@ -304,6 +434,18 @@ class GraphSubstrate
     /** @psalm-suppress PossiblyNullArrayOffset, MixedArgument, UnsupportedReferenceUsage */
     protected function computeScc(): void
     {
+        $use_unified = $this->scc_adjacency !== [];
+
+        // When using unified adjacency, iterate over canonical nodes only
+        if ($use_unified) {
+            $nodes_to_visit = array_unique(array_map(
+                fn (int $n): int => $this->findCanonical($n),
+                array_keys($this->node_sizes)
+            ));
+        } else {
+            $nodes_to_visit = array_keys($this->node_sizes);
+        }
+
         $index_counter = 0;
         $stack = [];
         $on_stack = [];
@@ -311,7 +453,7 @@ class GraphSubstrate
         $lowlink = [];
         $sccs = [];
 
-        foreach (array_keys($this->node_sizes) as $v) {
+        foreach ($nodes_to_visit as $v) {
             if (isset($index[$v])) {
                 continue;
             }
@@ -323,7 +465,9 @@ class GraphSubstrate
 
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
-                $node_children = $this->strong_all_children[$node] ?? [];
+                $node_children = $use_unified
+                    ? ($this->scc_adjacency[$node] ?? [])
+                    : ($this->strong_all_children[$node] ?? []);
 
                 $found_unvisited = false;
                 $count = count($node_children);
@@ -362,6 +506,24 @@ class GraphSubstrate
                     }
                 }
             }
+        }
+
+        // When using unified adjacency, expand canonical nodes back to all originals
+        if ($use_unified) {
+            foreach ($sccs as &$scc) {
+                $expanded = [];
+                foreach ($scc as $canonical) {
+                    if (isset($this->canonicalToOriginals[$canonical])) {
+                        foreach ($this->canonicalToOriginals[$canonical] as $orig) {
+                            $expanded[] = $orig;
+                        }
+                    } else {
+                        $expanded[] = $canonical;
+                    }
+                }
+                $scc = array_values(array_unique($expanded));
+            }
+            unset($scc);
         }
 
         // Build SCC profiles
