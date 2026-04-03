@@ -97,10 +97,12 @@ final class RegionsSummary
     public static function queryRegionSums(\PDO $db, int $run_id): array
     {
         $stmt = $db->prepare(
-            'SELECT region, COALESCE(SUM(size), 0) AS total_size'
-            . ' FROM context_node_locations'
-            . ' WHERE run_id = ? AND region IS NOT NULL'
-            . ' GROUP BY region'
+            'SELECT region, COALESCE(SUM(size), 0) AS total_size FROM ('
+            . '  SELECT address, region, MAX(size) AS size'
+            . '  FROM context_node_locations'
+            . '  WHERE run_id = ? AND region IS NOT NULL'
+            . '  GROUP BY address, region'
+            . ') GROUP BY region'
         );
         $stmt->execute([$run_id]);
         $sums = [];
