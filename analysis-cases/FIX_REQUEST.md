@@ -383,11 +383,22 @@ PathFormatter or in the pass that generates the finding.
 path exists (object only reachable from objects_store), showing the objects_store
 path is better than showing nothing.
 
-**Current issue with the fix:** `findAlternativeTreeParent` only searches for
-tree edges (`is_tree = 1`) from alternative parents. But the alternative path
-from `global_variables` is typically a non-tree edge (`is_tree = 0`) because the
-object was first visited from objects_store (which got the tree edge). The method
-should also accept non-tree edges as alternative paths.
+**Deeper issue:** In streaming mode, objects_store is traversed first (shallow),
+so virtually all objects get their tree edge from objects_store. Edges from
+global_variables, call_frames, etc. arrive later and become non-tree edges.
+This means `is_tree` no longer reflects application-level ownership — it reflects
+**traversal order**, which is an implementation detail of the streaming optimization.
+
+`findAlternativeTreeParent` searching for `is_tree = 1` is fundamentally wrong in
+this context — it will almost never find an app-level alternative because those
+are all `is_tree = 0`.
+
+**Possible approaches:**
+- Search non-tree edges too when looking for alternatives (quick fix)
+- Give objects_store edges a distinct `strength` (e.g., `index`) so they can be
+  deprioritized regardless of `is_tree`
+- Change traversal order to visit global_variables/call_frames first (bigger change,
+  but would make is_tree more meaningful)
 
 Evidence from Case 9:
 ```
