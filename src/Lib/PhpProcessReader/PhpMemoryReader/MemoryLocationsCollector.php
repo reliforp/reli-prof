@@ -1188,6 +1188,56 @@ final class MemoryLocationsCollector
                 $memory_locations,
             );
         }
+
+        // Track data_source, username, password strings (pestrdup allocations)
+        $this->collectPdoDbhStrings(
+            $inner_address,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+        );
+    }
+
+    private function collectPdoDbhStrings(
+        int $dbh_address,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+    ): void {
+        // data_source: read address and length
+        try {
+            [$ds_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', 'data_source');
+            $ds_ptr = new Pointer(RawInt64::class, $dbh_address + $ds_offset, 8);
+            $ds_address = $dereferencer->deref($ds_ptr)->value;
+
+            [$dsl_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', 'data_source_len');
+            $dsl_ptr = new Pointer(RawInt64::class, $dbh_address + $dsl_offset, 8);
+            $ds_len = $dereferencer->deref($dsl_ptr)->value;
+
+            if ($ds_address !== 0 && $ds_len > 0 && $ds_len < 65536) {
+                $memory_locations->add(new PdoDbhMemoryLocation($ds_address, $ds_len + 1));
+            }
+        } catch (\Throwable) {
+        }
+
+        // username and password: read address, measure with RawString
+        foreach (['username', 'password'] as $field) {
+            try {
+                [$f_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', $field);
+                $f_ptr = new Pointer(RawInt64::class, $dbh_address + $f_offset, 8);
+                $f_address = $dereferencer->deref($f_ptr)->value;
+                if ($f_address !== 0 && !$memory_locations->has($f_address)) {
+                    // Read up to 256 bytes to find string length
+                    $raw_ptr = new Pointer(RawString::class, $f_address, 256);
+                    $str = (string)$dereferencer->deref($raw_ptr);
+                    $len = strlen($str);
+                    if ($len > 0) {
+                        $memory_locations->add(new PdoDbhMemoryLocation($f_address, $len + 1));
+                    }
+                }
+            } catch (\Throwable) {
+            }
+        }
     }
 
     private function collectPdoStmt(
@@ -1203,24 +1253,57 @@ final class MemoryLocationsCollector
         [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'std');
         $stmt_address = $object->getPointer()->address - $std_offset;
 
-        // Read query_string pointer (v81+: zend_string *)
+        // Read query_string and active_query_string (v81+: zend_string *)
         if (!$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)) {
-            [$qs_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'query_string');
-            $qs_ptr = new Pointer(RawInt64::class, $stmt_address + $qs_offset, 8);
-            $query_string_address = $dereferencer->deref($qs_ptr)->value;
-            if ($query_string_address !== 0) {
-                $string_pointer = new Pointer(
-                    ZendString::class,
-                    $query_string_address,
-                    $zend_type_reader->sizeOf('zend_string'),
-                );
-                $string_context = $this->collectZendStringPointer(
-                    $string_pointer,
-                    $memory_locations,
-                    $dereferencer,
-                    $context_pools,
-                );
-                $object_context->add('pdo_query_string', $string_context);
+            foreach (['query_string', 'active_query_string'] as $idx => $field) {
+                try {
+                    [$qs_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', $field);
+                    $qs_ptr = new Pointer(RawInt64::class, $stmt_address + $qs_offset, 8);
+                    $qs_address = $dereferencer->deref($qs_ptr)->value;
+                    if ($qs_address !== 0) {
+                        $string_pointer = new Pointer(
+                            ZendString::class,
+                            $qs_address,
+                            $zend_type_reader->sizeOf('zend_string'),
+                        );
+                        $string_context = $this->collectZendStringPointer(
+                            $string_pointer,
+                            $memory_locations,
+                            $dereferencer,
+                            $context_pools,
+                        );
+                        if ($idx === 0) {
+                            $object_context->add('pdo_query_string', $string_context);
+                        }
+                    }
+                } catch (\Throwable) {
+                }
+            }
+        }
+
+        // Track bound_params, bound_param_map, bound_columns HashTables
+        foreach (['bound_params', 'bound_param_map', 'bound_columns'] as $ht_field) {
+            try {
+                [$ht_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', $ht_field);
+                $ht_ptr = new Pointer(RawInt64::class, $stmt_address + $ht_offset, 8);
+                $ht_address = $dereferencer->deref($ht_ptr)->value;
+                if ($ht_address !== 0 && !$memory_locations->has($ht_address)) {
+                    $ht_pointer = new Pointer(
+                        ZendArray::class,
+                        $ht_address,
+                        $zend_type_reader->sizeOf('zend_array'),
+                    );
+                    $this->collectZendArray(
+                        $dereferencer->deref($ht_pointer),
+                        0,
+                        $dereferencer,
+                        $zend_type_reader,
+                        $memory_locations,
+                        $context_pools,
+                        null,
+                    );
+                }
+            } catch (\Throwable) {
             }
         }
 
@@ -1268,6 +1351,14 @@ final class MemoryLocationsCollector
 
         if ($columns_address !== 0 && $column_count > 0 && $column_count < 10000) {
             $column_data_size = $zend_type_reader->sizeOf('pdo_column_data');
+
+            // Track the columns array allocation: ecalloc(column_count, sizeof(pdo_column_data))
+            if (!$memory_locations->has($columns_address)) {
+                $memory_locations->add(
+                    new PdoDriverDataMemoryLocation($columns_address, (int)$column_count * $column_data_size)
+                );
+            }
+
             for ($i = 0; $i < $column_count; $i++) {
                 $col_pointer = new Pointer(
                     PdoColumnData::class,
