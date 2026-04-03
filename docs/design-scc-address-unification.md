@@ -283,3 +283,39 @@ Create a test fixture with:
 
 Also verify with the real circular-reference test target (Node→Node cycle)
 that SCC is correctly detected in streaming mode.
+
+### Documentation Updates
+
+Update `docs/memory-profiler-database.md` to reflect all schema changes:
+
+1. **`context_nodes` table**: add `canonical_node_id` column
+
+   | Column | Type | Description |
+   |--------|------|-------------|
+   | `canonical_node_id` | INTEGER | Representative node_id for nodes sharing the same memory address. NULL if this node's address is unique. When non-NULL, `canonical_node_id` groups nodes that represent the same PHP value observed from different collection phases (e.g. objects_store vs call_frames). |
+
+   Add a usage example:
+   ```sql
+   -- Find all graph nodes that represent the same PHP object
+   SELECT node_id, type FROM context_nodes
+   WHERE run_id = 1 AND canonical_node_id = 100;
+   ```
+
+2. **`context_edges` table**: add `strength` column
+   (this is from the edge strength branch, not yet documented)
+
+   | Column | Type | Description |
+   |--------|------|-------------|
+   | `strength` | TEXT | Reference strength: `strong` (default, increments refcount), `weak` (objects_store bucket, no refcount), `structural` (VM internals like object_handlers, class_entry) |
+
+   Add a usage example:
+   ```sql
+   -- Find strong non-tree edges (true shared references, excluding VM internals)
+   SELECT parent_node_id, child_node_id, link_name
+   FROM context_edges
+   WHERE run_id = 1 AND is_tree = 0 AND strength = 'strong';
+   ```
+
+3. **Indexes section**: add new indexes
+   - `idx_context_nodes_canonical` on `context_nodes(run_id, canonical_node_id)`
+   - `idx_context_edges_run_strength` on `context_edges(run_id, strength)`
