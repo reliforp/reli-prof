@@ -381,9 +381,21 @@ PathFormatter or in the pass that generates the finding.
 
 **Important:** Do NOT suppress `objects_store` paths entirely. If no alternative
 path exists (object only reachable from objects_store), showing the objects_store
-path is better than showing nothing. The current PathFormatter change that adds
-`objects_store` to the collapse list should be reverted — instead, objects_store
-paths should be used as a fallback when no application-level path is available.
+path is better than showing nothing.
+
+**Current issue with the fix:** `findAlternativeTreeParent` only searches for
+tree edges (`is_tree = 1`) from alternative parents. But the alternative path
+from `global_variables` is typically a non-tree edge (`is_tree = 0`) because the
+object was first visited from objects_store (which got the tree edge). The method
+should also accept non-tree edges as alternative paths.
+
+Evidence from Case 9:
+```
+Tree parent:     ObjectsStoreContext(221) --[1]--> PDOConnectionWrapper(223)  is_tree=1
+Alt parent:      ArrayElementContext(34037) --[value]--> 223                  is_tree=0  ← missed!
+Alt path to root: GlobalVariablesContext -> [array_elements] -> [conn] -> 223
+Desired display: global_variables[conn]->statementCache[0]
+```
 
 ### Location
 
