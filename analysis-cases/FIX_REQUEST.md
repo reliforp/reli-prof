@@ -379,6 +379,12 @@ the target object has an alternative parent via `all_parents` that is NOT in
 objects_store. If so, rebuild the path from that parent. This could be done in
 PathFormatter or in the pass that generates the finding.
 
+**Important:** Do NOT suppress `objects_store` paths entirely. If no alternative
+path exists (object only reachable from objects_store), showing the objects_store
+path is better than showing nothing. The current PathFormatter change that adds
+`objects_store` to the collapse list should be reverted — instead, objects_store
+paths should be used as a fallback when no application-level path is available.
+
 ### Location
 
 - `src/Inspector/Output/MemoryOutput/Report/Pass/` — whichever pass generates choke_point findings
