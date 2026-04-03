@@ -247,10 +247,12 @@ final class ChokePointPass implements PassInterface
     }
 
     /**
-     * Find an alternative tree-parent for a node that avoids objects_store.
+     * Find an alternative parent for a node that avoids objects_store.
      *
-     * Uses all_parents (including non-tree edges) to find a parent that is
-     * NOT in objects_store, then looks up the tree edge from that parent.
+     * In streaming mode, objects_store is traversed first so its edges
+     * get is_tree=1, while app-level edges (global_variables, call_frames)
+     * arrive later as is_tree=0. Therefore we search ALL edges, not just
+     * tree edges.
      *
      * @param array<int, true> $objects_store_nodes
      * @param array<int, array{int, string}> $parent_map tree parent_map
@@ -268,30 +270,17 @@ final class ChokePointPass implements PassInterface
             if (isset($objects_store_nodes[$alt_parent])) {
                 continue;
             }
-            // Found a non-objects_store parent; look up its tree-edge link_name
-            // by querying whether this alternative parent has a tree edge to $node
+            // Found a non-objects_store parent; look up any edge link_name
             $stmt = $this->db->prepare(
-                "SELECT link_name FROM context_edges"
-                . " WHERE run_id = {$this->run_id}"
-                . " AND parent_node_id = ? AND child_node_id = ?"
-                . " AND is_tree = 1 LIMIT 1"
-            );
-            $stmt->execute([$alt_parent, $node]);
-            $link = $stmt->fetchColumn();
-            if ($link !== false) {
-                return [$alt_parent, (string)$link];
-            }
-            // Non-tree edge — still use it with a generic link name
-            $stmt2 = $this->db->prepare(
                 "SELECT link_name FROM context_edges"
                 . " WHERE run_id = {$this->run_id}"
                 . " AND parent_node_id = ? AND child_node_id = ?"
                 . " LIMIT 1"
             );
-            $stmt2->execute([$alt_parent, $node]);
-            $link2 = $stmt2->fetchColumn();
-            if ($link2 !== false) {
-                return [$alt_parent, (string)$link2];
+            $stmt->execute([$alt_parent, $node]);
+            $link = $stmt->fetchColumn();
+            if ($link !== false) {
+                return [$alt_parent, (string)$link];
             }
         }
         return null;
