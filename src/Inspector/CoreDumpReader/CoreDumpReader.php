@@ -21,6 +21,7 @@ use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\ReliProfiler;
@@ -75,6 +76,13 @@ final class CoreDumpReader
                 $sink,
             );
 
+            $region_boundaries = new RegionBoundaries(
+                $collected_memories->chunk_memory_locations,
+                $collected_memories->huge_memory_locations,
+                $collected_memories->vm_stack_memory_locations,
+                $collected_memories->compiler_arena_memory_locations,
+            );
+
             $region_analyzer = new RegionAnalyzer(
                 $collected_memories->chunk_memory_locations,
                 $collected_memories->huge_memory_locations,
@@ -86,8 +94,15 @@ final class CoreDumpReader
                 $collected_memories->memory_locations,
             );
 
+            $sink->flush();
+            $region_boundaries->backfillRegions($db, $run_id);
+            $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
+            $summary_base = $region_sums !== []
+                ? $analyzed_regions->summary->correctedToArray($region_sums)
+                : $analyzed_regions->summary->toArray();
+
             $summary = [
-                $analyzed_regions->summary->toArray()
+                $summary_base
                 + [
                     'memory_get_usage' => $collected_memories->memory_get_usage_size,
                     'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
@@ -97,7 +112,7 @@ final class CoreDumpReader
                 ]
                 + [
                     'heap_memory_analyzed_percentage' =>
-                        (float)$analyzed_regions->summary->zend_mm_heap_usage
+                        (float)$summary_base['zend_mm_heap_usage']
                         /
                         (float)$collected_memories->memory_get_usage_size * 100.0
                     ,
@@ -107,13 +122,6 @@ final class CoreDumpReader
                     'analyzer' => ReliProfiler::toolSignature(),
                 ]
             ];
-
-            $region_boundaries = new RegionBoundaries(
-                $collected_memories->chunk_memory_locations,
-                $collected_memories->huge_memory_locations,
-                $collected_memories->vm_stack_memory_locations,
-                $collected_memories->compiler_arena_memory_locations,
-            );
 
             unset($collected_memories, $analyzed_regions, $region_analyzer);
 
