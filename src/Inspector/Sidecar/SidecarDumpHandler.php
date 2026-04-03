@@ -98,11 +98,15 @@ final class SidecarDumpHandler
                 $sg_address,
             );
 
+            $label_slug = $request->label !== null
+                ? '-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $request->label)
+                : '';
             $output_path = sprintf(
-                '%s/sidecar-%d-%s.dump',
+                '%s/sidecar-%d-%s%s.dump',
                 rtrim($this->output_dir, '/'),
                 $pid,
                 date('Ymd-His'),
+                $label_slug,
             );
 
             $result = $this->memory_dumper->dump(
@@ -198,6 +202,12 @@ final class SidecarDumpHandler
             'php_version' => $php_version,
             'call_trace' => $trace,
         ];
+        if ($request->label !== null) {
+            $meta['label'] = $request->label;
+        }
+        if (count($request->metadata) > 0) {
+            $meta['metadata'] = $request->metadata;
+        }
         if ($request->error_file !== null) {
             $meta['memory_limit_error_file'] = $request->error_file;
         }

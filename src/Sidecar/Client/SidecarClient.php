@@ -48,13 +48,65 @@ final class SidecarClient
      * @param int $pid target process ID
      * @param string|null $error_file file where the error occurred
      * @param int|null $error_line line where the error occurred
+     * @param string|null $label human-readable label for the snapshot
+     * @param array<string, string> $metadata arbitrary key-value pairs
      * @return SidecarClientResponse|null null on connection failure
      */
     public function requestDump(
         int $pid,
         ?string $error_file = null,
         ?int $error_line = null,
+        ?string $label = null,
+        array $metadata = [],
     ): ?SidecarClientResponse {
+        $payload = ['command' => 'dump', 'pid' => $pid];
+        if ($error_file !== null) {
+            $payload['file'] = $error_file;
+        }
+        if ($error_line !== null) {
+            $payload['line'] = $error_line;
+        }
+        if ($label !== null) {
+            $payload['label'] = $label;
+        }
+        if (count($metadata) > 0) {
+            $payload['metadata'] = $metadata;
+        }
+
+        return $this->send($payload);
+    }
+
+    /**
+     * Take a named snapshot of the current process.
+     *
+     * Convenience wrapper for CI / benchmarking scripts:
+     *   $client->snapshot('after-fixtures');
+     *   $client->snapshot('post-processing', ['commit' => 'abc123']);
+     *
+     * @param string $label human-readable label
+     * @param array<string, string> $metadata arbitrary key-value pairs (commit SHA, PHP version, etc.)
+     * @return SidecarClientResponse|null null on connection failure
+     */
+    public function snapshot(
+        string $label,
+        array $metadata = [],
+    ): ?SidecarClientResponse {
+        $pid = getmypid();
+        if ($pid === false) {
+            return null;
+        }
+        return $this->requestDump(
+            pid: $pid,
+            label: $label,
+            metadata: $metadata,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function send(array $payload): ?SidecarClientResponse
+    {
         $sock = @stream_socket_client(
             "unix://{$this->socket_path}",
             $errno,
@@ -67,14 +119,6 @@ final class SidecarClient
 
         try {
             stream_set_timeout($sock, $this->timeout_seconds);
-
-            $payload = ['command' => 'dump', 'pid' => $pid];
-            if ($error_file !== null) {
-                $payload['file'] = $error_file;
-            }
-            if ($error_line !== null) {
-                $payload['line'] = $error_line;
-            }
 
             $written = fwrite($sock, json_encode($payload) . "\n");
             if ($written === false) {

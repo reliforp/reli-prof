@@ -114,12 +114,17 @@ final class SidecarServer
                 return;
             }
 
+            $context_parts = [];
+            if ($request->label !== null) {
+                $context_parts[] = sprintf('label=%s', $request->label);
+            }
+            if ($request->error_file !== null) {
+                $context_parts[] = sprintf('file=%s line=%d', $request->error_file, $request->error_line ?? 0);
+            }
             $output->writeln(sprintf(
                 '<info>[sidecar] Dump request: PID=%d%s</info>',
                 $request->pid,
-                $request->error_file !== null
-                    ? sprintf(' file=%s line=%d', $request->error_file, $request->error_line ?? 0)
-                    : '',
+                count($context_parts) > 0 ? ' ' . implode(' ', $context_parts) : '',
             ));
 
             $response = $this->dump_handler->handle($request);
