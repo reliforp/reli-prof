@@ -34,12 +34,24 @@ final class ChokePointPass implements PassInterface
     /**
      * @return list<Finding>
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, MixedArgumentTypeCoercion
-     * @psalm-suppress InvalidOperand, PossiblyInvalidArgument, RiskyTruthyFalsyComparison
+     * @psalm-suppress InvalidOperand, PossiblyInvalidArgument, RiskyTruthyFalsyComparison, MixedArrayOffset
      */
     #[\Override]
     public function analyze(): array
     {
         $chokepoints = [];
+
+        // Identify objects_store node IDs — used to deprioritize, not exclude.
+        $objects_store_nodes = [];
+        $os_rows = $this->db->query(
+            "SELECT DISTINCT node_id FROM context_node_locations"
+            . " WHERE run_id = {$this->run_id}"
+            . " AND location_type = 'ObjectsStoreMemoryLocation'"
+        )->fetchAll(\PDO::FETCH_COLUMN);
+        foreach ($os_rows as $nid) {
+            $objects_store_nodes[(int)$nid] = true;
+        }
+
         foreach ($this->substrate->iterateSubtreeSizes() as $node => $subtree) {
             // Skip non-canonical duplicates to avoid double-counting
             if (!$this->substrate->isCanonicalOrUnique($node)) {
@@ -55,7 +67,16 @@ final class ChokePointPass implements PassInterface
                 $chokepoints[] = [$node, $shallow, $subtree, $ratio];
             }
         }
-        usort($chokepoints, fn($a, $b) => $b[2] <=> $a[2]);
+        // Sort by subtree size descending, but demote objects_store nodes
+        // to the end — they are trivially large and rarely actionable.
+        usort($chokepoints, function ($a, $b) use ($objects_store_nodes) {
+            $a_is_os = isset($objects_store_nodes[$a[0]]);
+            $b_is_os = isset($objects_store_nodes[$b[0]]);
+            if ($a_is_os !== $b_is_os) {
+                return $a_is_os ? 1 : -1;
+            }
+            return $b[2] <=> $a[2];
+        });
 
         if ($chokepoints === []) {
             return [];
@@ -137,7 +158,10 @@ final class ChokePointPass implements PassInterface
                 }
             }
 
-            // Walk up to root for full PHP-syntax path
+            // Walk up to root for full PHP-syntax path.
+            // If the path goes through objects_store, try to find an
+            // alternative application-level parent (global_variables,
+            // call_frames, etc.) that reaches the same object.
             $up_parts = [];
             $up_types = [];
             $cur = $node;
@@ -146,6 +170,20 @@ final class ChokePointPass implements PassInterface
                     break;
                 }
                 [$parent, $link] = $parent_map[$cur];
+
+                // If the parent is objects_store, try to find a better path
+                if (isset($objects_store_nodes[$parent])) {
+                    $alt = $this->findAlternativeTreeParent(
+                        $cur,
+                        $objects_store_nodes,
+                        $parent_map,
+                    );
+                    if ($alt !== null) {
+                        // Restart walk from the alternative parent
+                        [$parent, $link] = $alt;
+                    }
+                }
+
                 $resolved = $labeler->resolvePathLabel(
                     (string)$link,
                     $cur
@@ -206,5 +244,56 @@ final class ChokePointPass implements PassInterface
         }
 
         return $findings;
+    }
+
+    /**
+     * Find an alternative tree-parent for a node that avoids objects_store.
+     *
+     * Uses all_parents (including non-tree edges) to find a parent that is
+     * NOT in objects_store, then looks up the tree edge from that parent.
+     *
+     * @param array<int, true> $objects_store_nodes
+     * @param array<int, array{int, string}> $parent_map tree parent_map
+     * @return array{int, string}|null [parent_node_id, link_name] or null
+     */
+    private function findAlternativeTreeParent(
+        int $node,
+        array $objects_store_nodes,
+        array $parent_map,
+    ): ?array {
+        foreach ($this->substrate->getAllParents($node) as $alt_parent) {
+            if ($alt_parent < 0) {
+                continue;
+            }
+            if (isset($objects_store_nodes[$alt_parent])) {
+                continue;
+            }
+            // Found a non-objects_store parent; look up its tree-edge link_name
+            // by querying whether this alternative parent has a tree edge to $node
+            $stmt = $this->db->prepare(
+                "SELECT link_name FROM context_edges"
+                . " WHERE run_id = {$this->run_id}"
+                . " AND parent_node_id = ? AND child_node_id = ?"
+                . " AND is_tree = 1 LIMIT 1"
+            );
+            $stmt->execute([$alt_parent, $node]);
+            $link = $stmt->fetchColumn();
+            if ($link !== false) {
+                return [$alt_parent, (string)$link];
+            }
+            // Non-tree edge — still use it with a generic link name
+            $stmt2 = $this->db->prepare(
+                "SELECT link_name FROM context_edges"
+                . " WHERE run_id = {$this->run_id}"
+                . " AND parent_node_id = ? AND child_node_id = ?"
+                . " LIMIT 1"
+            );
+            $stmt2->execute([$alt_parent, $node]);
+            $link2 = $stmt2->fetchColumn();
+            if ($link2 !== false) {
+                return [$alt_parent, (string)$link2];
+            }
+        }
+        return null;
     }
 }
