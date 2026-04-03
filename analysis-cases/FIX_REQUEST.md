@@ -360,9 +360,24 @@ After:  1->statementCache[0]        ← "1" means nothing to the user
 Want:   PDOConnectionWrapper->statementCache[0]
 ```
 
-When `objects_store` is collapsed from the path, the child node (bucket ID) should be
-resolved to the object's class name. The bucket ID → class_name mapping is available
-in `context_node_locations` (the ObjectContext node has `class_name` set).
+Rather than just resolving to the class name (which raises "which instance?"), the
+ideal fix is to **prefer an alternative path** that reaches the same object through
+application-level variables. For Case 9:
+
+```
+Want:   global_variables[conn]->statementCache[0]
+Not:    PDOConnectionWrapper->statementCache[0]   ← which instance?
+Not:    1->statementCache[0]                       ← what is 1?
+```
+
+The same object is typically reachable via `global_variables`, `call_frames` local
+variables, or `class_table->...->static_properties`. These paths are meaningful to
+the developer. `objects_store` is a runtime index that duplicates all of them.
+
+**Approach:** When the bottleneck/choke path goes through `objects_store`, check if
+the target object has an alternative parent via `all_parents` that is NOT in
+objects_store. If so, rebuild the path from that parent. This could be done in
+PathFormatter or in the pass that generates the finding.
 
 ### Location
 
