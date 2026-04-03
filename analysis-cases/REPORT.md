@@ -162,20 +162,44 @@ memory_get_usage(): 15.71 MB | memory_get_usage(true): 18.00 MB
 
 ### reli-prof 解析結果
 
+**注意:** `-f report` 直接出力ではレポートがほぼ空だったが、
+`-f sqlite3 -o snapshot.db` → `inspector:memory:report snapshot.db` の
+2段階実行で詳細なレポートが得られた。
+
 ```
-memory_get_usage(): 45.82 MB | memory_get_usage(true): 48.00 MB
+memory_get_usage(): 45.81 MB | memory_get_usage(true): 48.00 MB
 Heap: 320.00 KB (0.7% analyzed)
+
+[HIGH] 85.57 MB — bottleneck_path: objects_store->10520->relations[tags][0]
+[HIGH] 85.57 MB — choke_point: ObjectsStoreMemoryLocation (512 KB) holds 85.57 MB via 41,978 children
+[HIGH] 30.91 MB — choke_point: global_variables[transactions] (62.51 KB) holds 30.91 MB via 4,000 children
+
+[MEDIUM] structural_duplicate: Tag: 13,978 identical shapes x 120 B = 1.60 MB
+[MEDIUM] structural_duplicate: Account: 8,000 identical shapes x 120 B = 937 KB
+[MEDIUM] structural_duplicate: Carbon: 8,000 identical shapes x 104 B = 812 KB
+[MEDIUM] structural_duplicate: Category: 4,000 identical shapes x 120 B = 468 KB
+[MEDIUM] structural_duplicate: Transaction: 3,999 identical shapes x 120 B = 468 KB
+
+[LOW] 24.14 MB — dedup_candidate: "translation_string" 602,668 copies x 42 B (100% identical)
+[LOW] 4.87 MB  — dedup_candidate: Transaction::$dateFormat 145,911 copies x 35 B (100% identical)
+
+Root Blame: objects_store 98.2%
+shared_fanin: dateFormat -> 2 targets (72,956 refs each)
+shared_fanin: relations -> 3 targets (43,301 refs each)
 ```
 
 ### 評価
 
 | 項目 | 評価 |
 |------|------|
-| 問題特定 | **不足** - Findings が Overview のみで詳細なし |
-| 有用性 | **低い** - 48MB のメモリのうち 320KB しか解析できていない |
+| 問題特定 | **優秀** - objects_store が 98.2% を占有と即座に特定 |
+| クラス分析 | **優秀** - Tag/Account/Carbon/Category の structural_duplicate を検出 |
+| 対策示唆 | **優秀** - flyweight/sharing パターンを提案、dateFormat の共有不足を指摘 |
+| dedup検出 | **優秀** - "translation_string" 60万コピーで24MB、dateFormat 14.5万コピーで4.8MB |
+| shared_fanin | **優秀** - dateFormat が2ターゲットに72,956参照という異常な集中を検出 |
 
-**課題:** このケースでは実質的にレポートが空で、ツールとしての価値がほぼない。
-大量のオブジェクトを含むケースで解析が機能しない可能性がある（後述）。
+**課題:** `-f report` 直接出力と sqlite 経由で結果が大きく異なる（後述 Issue 6）。
+sqlite 経由なら Firefly III の ORM 肥大化を正確に診断できる。
 
 ---
 
@@ -220,14 +244,20 @@ Case 5: memory_get_usage() = 45.82 MB  → Heap: 320 KB (0.7%)
 **ユーザーの指摘:** 表示上 "Heap: 320 KB" と表示されるが、これが
 「解析済み部分」なのか「未解析部分」なのか直感的にわかりにくい。
 
-### Issue 3: Case 5 でレポートが実質空
+### Issue 3: `-f report` 直接出力と sqlite 経由で結果が大きく異なる
 
-**現象:** 48MB のメモリを使用するプロセスで、Overview 以外の Findings が
-全く出力されない。
+**現象:** Case 5 (48MB, 4万オブジェクト) で:
+- `inspector:memory -f report` → Findings がほぼ空
+- `inspector:memory -f sqlite3 -o x.db` → `inspector:memory:report x.db` → 詳細なレポート
 
-**仮説:** 大量のオブジェクト(4,000 Transaction + 関連オブジェクト数万個)を
-含むケースで、解析のどこかがボトルネックになっているか、
-lightweight mode でのデータ損失が発生している可能性。
+**仮説:** `-f report` のストリーミングモードでは `MemoryLocations::createLightweight()`
+が使用され、アドレスのみが保存されてサイズ情報が失われる。
+sqlite 経由ではフルデータが保存されるため、解析が正常に機能する。
+
+**該当箇所:** `src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocation/MemoryLocations.php:32-44`
+
+**影響:** ユーザーが `-f report` を使うと大規模ケースで不完全な結果を得る。
+ドキュメントで sqlite 経由の推奨を明記するか、ストリーミングモードの改善が必要。
 
 ### Issue 4: 断片化(fragmentation)の直接検出機能がない
 
@@ -241,7 +271,21 @@ Fragmentation: 51.4% (reported: 15.56 MB, real: 32.00 MB)
   → Consider gc_mem_caches() after freeing large allocations
 ```
 
-### Issue 5: dedup_candidate の改善余地
+### Issue 5: Heap 解析率の表示が誤解を招く
+
+**現象:** "Heap: 320 KB (0.7% analyzed)" と表示されるが:
+- 320 KB が「解析済み」なのか「ヒープ合計」なのか不明瞭
+- 実態は VM stack(256KB) + Compiler arena(64KB) = 320KB で、ヒープ本体は 0
+- Findings では数十〜数百MB のデータを検出しているのに矛盾して見える
+
+**提案:** 表示を改善して内訳を明示：
+```
+Heap analysis: 85.57 MB found / 45.81 MB reported (memory_get_usage)
+  Chunks: X MB, Huge: Y MB, VM stack: 256 KB, Compiler arena: 64 KB
+  Coverage: XX% of reported heap accounted for
+```
+
+### Issue 6: dedup_candidate の改善余地
 
 **良い点:** Case 1 で 700 コピーの同一文字列を検出し、120.76 MB の節約可能性を提示。
 
@@ -278,7 +322,7 @@ Fragmentation: 51.4% (reported: 15.56 MB, real: 32.00 MB)
 | 2 | Error duplication | 6/10 | クラス蓄積は検出、詳細不足 |
 | 3 | Chunk fragmentation | 5/10 | 文字列は検出、断片化自体は未検出 |
 | 4 | Unbounded alloc | 7/10 | 消費箇所を特定、パターン可視化 |
-| 5 | ORM hydration | 2/10 | レポートほぼ空 |
+| 5 | ORM hydration | 8/10 (sqlite経由) / 2/10 (直接) | sqlite経由なら詳細に特定 |
 
 **総合:** reli-prof は特に Worker モードのメモリリーク（蓄積型）の解析に非常に強い。
 一方、大量オブジェクトの ORM ハイドレーションや ZendMM 内部の断片化問題には改善が必要。
