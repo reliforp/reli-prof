@@ -240,8 +240,18 @@ Node 261 (ItemNormalizer properties, disconnected):
   No edge from 262 to 261 exists in context_edges
 ```
 
-**Suggested fix:** Ensure deferred property resolution emits an edge from the object
-node to its properties node, maintaining graph connectivity for SCC computation.
+**Additional finding:** `canonical_node_id` (Union-Find for merging duplicate nodes of
+the same address) does NOT help here — ItemNormalizer appears only once, so no canonical
+is set. DataTransformer nodes have canonical IDs (re-encountered via multiple paths),
+but ItemNormalizer (262) has `canonical_node_id = NULL`.
+
+The disconnect is specifically between the ObjectContext (262) and the
+ObjectPropertiesContext (261) of the same object, which are emitted in separate phases
+with no edge or canonical link between them.
+
+**Suggested fix:** When deferred property resolution emits properties for an object,
+either: (a) emit an edge from the object node to its properties node, or (b) set
+`canonical_node_id` to link them for SCC unification.
 
 ---
 
