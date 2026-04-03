@@ -406,6 +406,14 @@ class pdo_mysql_db_handle extends CData
 class pdo_mysql_stmt extends CData
 {
 }
+
+class MYSQLND_RES extends CData
+{
+}
+
+class MYSQLND_RES_BUFFERED extends CData
+{
+}
 class zend_type extends CData
 {
     public int $ptr;
