@@ -455,10 +455,28 @@ call_frames over objects_store". This means:
   with a DFS that deprioritizes objects_store. `is_tree` becomes a derived property,
   not a stored one.
 
-This is a bigger refactor but would cleanly separate "what edges exist" (collector's
-job) from "which edges form a meaningful tree" (report's job). Current `is_tree`
-conflates both because the non-streaming code path could rely on DFS order. In
-streaming mode this assumption breaks.
+Alternatively, a **middle processing phase** between collector and report could
+rebuild is_tree in the DB:
+
+```
+collector → DB (all edges, is_tree = best-effort)
+    ↓
+middle phase: TreeRebuilder (runs in finalizeStreaming)
+  - Load all edges from DB
+  - Run DFS with objects_store deprioritized
+  - UPDATE is_tree for all edges
+    ↓
+report (unchanged — trusts is_tree as before)
+```
+
+Advantages over report-layer fix:
+- **Single point of correction** — fixes is_tree once, all passes benefit
+  (choke_point, retained size, SCC, bottleneck_path, etc.)
+- **No changes to report passes** — they keep trusting is_tree
+- **No changes to collector** — keeps streaming as-is
+- Runs once at finalization, cost is one DFS over the edge set in the DB
+
+This is likely the best balance of correctness, maintainability, and scope of change.
 
 Evidence from Case 9:
 ```
