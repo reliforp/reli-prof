@@ -136,6 +136,7 @@ Each node represents a unique context (object, array, string, etc.) in the memor
 | `run_id` | INTEGER (PK) | References `runs.run_id` |
 | `node_id` | INTEGER (PK) | Unique node identifier within this run (same as `#node_id` in JSON) |
 | `type` | TEXT | Context type (e.g. `ObjectContext`, `ArrayHeaderContext`) |
+| `canonical_node_id` | INTEGER | Representative node_id for nodes sharing the same memory address. NULL if this node's address is unique. When non-NULL, groups nodes that represent the same PHP value observed from different collection phases (e.g. objects_store vs call_frames in streaming mode). Used for SCC (cycle) detection across collection phases. |
 
 #### `context_edges`
 Edges represent parent-child relationships in the reference graph. A node may have multiple incoming edges (shared references).
@@ -147,6 +148,7 @@ Edges represent parent-child relationships in the reference graph. A node may ha
 | `child_node_id` | INTEGER | Child node (references `context_nodes.node_id`) |
 | `link_name` | TEXT | Name of the link (e.g. property name, variable name, array key) |
 | `is_tree` | INTEGER | `1` = DFS first-visit (spanning tree edge), `0` = back-reference (shared/circular) |
+| `strength` | TEXT | Reference strength: `strong` (default, increments refcount), `weak` (objects_store bucket, no refcount), `structural` (VM internals like object_handlers, class_entry) |
 
 The `is_tree` flag distinguishes the DFS spanning tree from back-references:
 - `is_tree = 1` edges form a tree where each node has exactly one parent — use these for canonical path queries
@@ -157,6 +159,15 @@ The `is_tree` flag distinguishes the DFS spanning tree from back-references:
 SELECT parent_node_id, link_name, is_tree
 FROM context_edges
 WHERE run_id = 1 AND child_node_id = 42;
+
+-- Find strong non-tree edges (true shared references, excluding VM internals)
+SELECT parent_node_id, child_node_id, link_name
+FROM context_edges
+WHERE run_id = 1 AND is_tree = 0 AND strength = 'strong';
+
+-- Find all graph nodes that represent the same PHP object
+SELECT node_id, type FROM context_nodes
+WHERE run_id = 1 AND canonical_node_id = 100;
 ```
 
 #### `context_node_locations`
@@ -196,6 +207,10 @@ The following indexes are created after bulk insertion for query performance:
 - `idx_context_node_locations_run_node` on `context_node_locations(run_id, node_id)` -- essential for joining locations to nodes
 - `idx_context_node_locations_run_class` on `context_node_locations(run_id, class_name)` -- speeds up class-based queries
 - `idx_context_node_attributes_run_node` on `context_node_attributes(run_id, node_id)` -- for attribute lookups
+- `idx_context_node_locations_run_type` on `context_node_locations(run_id, location_type)` -- type-based filtering
+- `idx_context_edges_run_link_parent_tree` on `context_edges(run_id, link_name, parent_node_id, is_tree)` -- link-based queries
+- `idx_context_edges_run_strength` on `context_edges(run_id, strength)` -- strength-based filtering
+- `idx_context_nodes_canonical` on `context_nodes(run_id, canonical_node_id)` -- canonical node lookups for SCC
 
 ### Views
 
