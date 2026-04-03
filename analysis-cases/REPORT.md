@@ -213,6 +213,36 @@ shared_fanin: relations -> 3 targets (43,301 refs each)
 | Dedup detection | **Excellent** — "translation_string" 600K copies = 24MB, dateFormat 146K copies = 4.8MB |
 | shared_fanin | **Excellent** — detected dateFormat with 72,956 refs to only 2 targets |
 
+### Issue 5: Cycle detection fails due to defer optimization breaking graph connectivity
+
+Circular references (Cases 9, 10) are not detected despite `CycleClusterPass` (SCC/Tarjan)
+being implemented. Investigation reveals the root cause:
+
+In streaming mode, `defer_unseen_objects` causes objects to be collected in phases:
+1. **Phase 1 (shallow):** objects_store emits ObjectContext (e.g., ItemNormalizer node 262)
+   with only `object_handlers`, no `object_properties`
+2. **Phase 2 (deferred):** Properties are resolved later and emitted as separate nodes
+   (e.g., node 261 with `transformers`, `normalizedCache`)
+3. **Missing edge:** No edge connects node 262 → node 261 in the DB
+
+Result: The object (262) and its properties (261) are **disconnected in the graph**.
+SCC cannot find cycles because the path DataTransformer → ItemNormalizer (262) →
+properties (261) → transformers → DataTransformer is broken at 262 → 261.
+
+Evidence from Case 10:
+```
+Node 262 (ItemNormalizer ObjectContext):
+  OUT: 262 → 263 (object_handlers) — only child
+  IN:  252 → 262 (normalizer, non-tree) × 3 DataTransformers
+
+Node 261 (ItemNormalizer properties, disconnected):
+  OUT: 261 → 40161 (transformers array) → ... → DataTransformer nodes
+  No edge from 262 to 261 exists in context_edges
+```
+
+**Suggested fix:** Ensure deferred property resolution emits an edge from the object
+node to its properties node, maintaining graph connectivity for SCC computation.
+
 ---
 
 ## Open Issues
