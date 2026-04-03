@@ -28,15 +28,17 @@ final class DiskUsageTracker
 
     private function scanExistingFiles(string $dir): void
     {
-        $pattern = rtrim($dir, '/') . '/watch-*.dump';
-        $files = glob($pattern);
-        if ($files === false) {
-            return;
-        }
-        foreach ($files as $file) {
-            $size = filesize($file);
-            if ($size !== false) {
-                $this->total_bytes += $size;
+        $dir = rtrim($dir, '/');
+        foreach (['watch-*.dump', 'sidecar-*.dump'] as $glob) {
+            $files = glob($dir . '/' . $glob);
+            if ($files === false) {
+                continue;
+            }
+            foreach ($files as $file) {
+                $size = filesize($file);
+                if ($size !== false) {
+                    $this->total_bytes += $size;
+                }
             }
         }
     }
