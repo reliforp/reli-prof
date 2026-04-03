@@ -34,7 +34,7 @@ final class ReportMemoryOutput implements MemoryOutputInterface
     {
         if ($result->pre_populated_db !== null && $result->pre_populated_run_id !== null) {
             $generator = new ReportGenerator();
-            $report = $generator->generateFromDb($result->pre_populated_db, $result->pre_populated_run_id);
+            $report = $generator->generateFromDb($result->pre_populated_db, $result->pre_populated_run_id, true);
             $formatted = $this->formatter->format($report);
             if ($this->output_path !== null) {
                 file_put_contents($this->output_path, $formatted);

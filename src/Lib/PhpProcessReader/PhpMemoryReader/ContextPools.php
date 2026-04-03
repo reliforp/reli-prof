@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayContextPool;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ClosureContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\PhpReferenceContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
@@ -36,6 +37,7 @@ final class ContextPools
         public PhpReferenceContextPool $php_reference_context_pool,
         public ResourceContextPool $resource_context_pool,
         public UserFunctionDefinitionContextPool $user_function_definition_context_pool,
+        public ClosureContextPool $closure_context_pool = new ClosureContextPool(),
     ) {
         $this->shared_sentinel = new SentinelContext(0);
     }
@@ -75,6 +77,7 @@ final class ContextPools
         $this->php_reference_context_pool->clear();
         $this->resource_context_pool->clear();
         $this->user_function_definition_context_pool->clear();
+        $this->closure_context_pool->clear();
     }
 
     /**
@@ -93,6 +96,7 @@ final class ContextPools
         $this->convertPoolToSentinels($this->php_reference_context_pool->drainWithAddresses(), $memo);
         $this->convertPoolToSentinels($this->resource_context_pool->drainWithAddresses(), $memo);
         $this->convertPoolToSentinels($this->user_function_definition_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->closure_context_pool->drainWithAddresses(), $memo);
     }
 
     /**
