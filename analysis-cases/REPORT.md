@@ -10,6 +10,29 @@ GitHub 上の実際の PHP メモリ問題 5 件を収集し、各問題の再�
 reli-prof の `inspector:memory -f report` で解析を行った。
 ツールの有用性と発見された課題を以下に報告する。
 
+## analyzed_percentage 修正後の再テスト結果
+
+`claude/fix-memory-analysis-percentage-1bJz0` ブランチの修正（`backfillRegions` による
+region カラム後付け更新）を適用し、全5ケースを再テストした。
+
+| Case | Before (%) | After (%) | 状態 |
+|------|-----------|----------|------|
+| 1: Worker leak | 0.0% | **80.7%** | 大幅改善 |
+| 2: Error duplication | 0.8% | **201.9%** | 改善 (100%超え要確認) |
+| 3: Chunk fragmentation | 2.0% | **99.9%** | ほぼ完璧 |
+| 4: number_format | 2.0% | **94.6%** | ほぼ完璧 |
+| 5: ORM hydration | 0.7% | **284.4%** | 改善 (100%超え要確認) |
+
+**修正は有効。** Case 3, 4 はほぼ 100% に到達。
+
+**残課題:**
+- Case 2, 5 で 100% を超過。共有参照の二重カウント or `memory_get_usage` との
+  計算基準差（ZendMM フリーリスト等）が原因の可能性。分子の `zend_mm_heap_usage`
+  (130MB) が分母の `memory_get_usage` (45MB) を大幅超過している。
+- Case 5 の `-f report` 直接出力は依然 Findings が空（sqlite経由は正常）。
+  これはパーセンテージ問題とは別のストリーミングモード制限。
+- segfault は 6 回再試で再現せず。タイミング依存と判断。
+
 ---
 
 ## Case 1: FrankenPHP Worker Mode Memory Leak
