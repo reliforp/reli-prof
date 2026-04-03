@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -38,7 +39,9 @@ use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\ProcessSpecifier;
+use Reli\TargetPhpVmProvider;
 
 #[Group('target-version')]
 #[Group('pdo_mysql')]
@@ -83,23 +86,44 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
         }
     }
 
-    public function testCollectPdoMysqlMysqlndBuffers(): void
-    {
-        $php_version = 'v84';
-        $docker_image_name = 'reli-test-php-mysql:8.4';
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testCollectPdoMysqlMysqlndBuffers(
+        string $php_version,
+        string $base_docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
 
-        // Build PHP image with pdo_mysql (cached after first run)
-        exec(
-            "docker build -q -t $docker_image_name -f- /tmp <<'DEOF'\n"
-            . "FROM php:8.4-cli\nRUN docker-php-ext-install pdo_mysql > /dev/null 2>&1\n"
-            . "DEOF\n2>/dev/null",
-            $build_output,
-            $build_exit,
-        );
-        if ($build_exit !== 0) {
-            $this->markTestSkipped(
-                'Cannot build PHP image with pdo_mysql (docker pull may be needed)'
+        // ZTS images don't have a pre-built pdo_mysql variant; skip for now
+        if (str_contains($base_docker_image_name, '-zts')) {
+            $this->markTestSkipped('pdo_mysql test not supported on ZTS images');
+        }
+
+        // Derive pdo_mysql image name: reli-test-php-mysql:7.4, reli-test-php-mysql:8.4, etc.
+        // The version tag is extracted from the base image (e.g. "php:8.4-cli" -> "8.4")
+        preg_match('/php:(\d+\.\d+)/', $base_docker_image_name, $m);
+        $php_minor = $m[1] ?? '';
+        if ($php_minor === '') {
+            $this->markTestSkipped("Cannot determine PHP minor version from $base_docker_image_name");
+        }
+        $docker_image_name = "reli-test-php-mysql:$php_minor";
+
+        // Check if the pre-built image exists; if not, build it on-the-fly
+        exec("docker image inspect $docker_image_name 2>/dev/null", $inspect_output, $inspect_exit);
+        if ($inspect_exit !== 0) {
+            exec(
+                "docker build -q -t $docker_image_name"
+                . " --build-arg PHP_VERSION=$php_minor"
+                . " -f Dockerfile-test-php-mysql . 2>/dev/null",
+                $build_output,
+                $build_exit,
             );
+            if ($build_exit !== 0) {
+                $this->markTestSkipped(
+                    "Cannot build PHP $php_minor image with pdo_mysql"
+                );
+            }
         }
 
         // Create Docker network

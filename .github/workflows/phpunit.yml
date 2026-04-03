@@ -108,9 +108,61 @@ jobs:
     outputs:
       image: ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
 
+  build-test-mysql-images:
+    name: Build PHP ${{ matrix.php_version }}+pdo_mysql
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        php_version: ["7.0", "7.1", "7.2", "7.3", "7.4", "8.0", "8.1", "8.2", "8.3", "8.4", "8.5"]
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/test-php-mysql
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute Dockerfile hash
+        id: hash
+        run: echo "tag=php${{ matrix.php_version }}-sha-$(sha256sum Dockerfile-test-php-mysql | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if image already exists
+        id: check
+        run: |
+          if docker manifest inspect "${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        if: steps.check.outputs.exists == 'false'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile-test-php-mysql
+          push: true
+          build-args: PHP_VERSION=${{ matrix.php_version }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
+            ${{ env.IMAGE }}:php${{ matrix.php_version }}
+          cache-from: type=gha,scope=test-php-mysql-${{ matrix.php_version }}
+          cache-to: type=gha,mode=max,scope=test-php-mysql-${{ matrix.php_version }}
+
   phpunit-target-version:
     name: phpunit (${{ matrix.name }})
-    needs: build-dev-image
+    needs: [build-dev-image, build-test-mysql-images]
     runs-on: ubuntu-latest
     permissions:
       packages: read
@@ -120,42 +172,61 @@ jobs:
         include:
           - name: "PHP 7.0"
             targets: "v70"
+            php_minor: "7.0"
           - name: "PHP 7.1"
             targets: "v71"
+            php_minor: "7.1"
           - name: "PHP 7.2"
             targets: "v72"
+            php_minor: "7.2"
           - name: "PHP 7.3"
             targets: "v73"
+            php_minor: "7.3"
           - name: "PHP 7.4"
             targets: "v74"
+            php_minor: "7.4"
           - name: "PHP 8.0"
             targets: "v80"
+            php_minor: "8.0"
           - name: "PHP 8.1"
             targets: "v81"
+            php_minor: "8.1"
           - name: "PHP 8.2"
             targets: "v82"
+            php_minor: "8.2"
           - name: "PHP 8.3"
             targets: "v83"
+            php_minor: "8.3"
           - name: "PHP 8.4"
             targets: "v84"
+            php_minor: "8.4"
           - name: "PHP 8.5"
             targets: "v85"
+            php_minor: "8.5"
           - name: "PHP 7.3 ZTS"
             targets: "v73_zts"
+            php_minor: "7.3"
           - name: "PHP 7.4 ZTS"
             targets: "v74_zts"
+            php_minor: "7.4"
           - name: "PHP 8.0 ZTS"
             targets: "v80_zts"
+            php_minor: "8.0"
           - name: "PHP 8.1 ZTS"
             targets: "v81_zts"
+            php_minor: "8.1"
           - name: "PHP 8.2 ZTS"
             targets: "v82_zts"
+            php_minor: "8.2"
           - name: "PHP 8.3 ZTS"
             targets: "v83_zts"
+            php_minor: "8.3"
           - name: "PHP 8.4 ZTS"
             targets: "v84_zts"
+            php_minor: "8.4"
           - name: "PHP 8.5 ZTS"
             targets: "v85_zts"
+            php_minor: "8.5"
     steps:
       - uses: actions/checkout@v6
 
@@ -171,6 +242,13 @@ jobs:
           docker pull ${{ needs.build-dev-image.outputs.image }}
           docker tag ${{ needs.build-dev-image.outputs.image }} reli-dev
 
+      - name: Pull PHP+pdo_mysql test image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/test-php-mysql
+        run: |
+          docker pull "$IMAGE:php${{ matrix.php_minor }}" || true
+          docker tag "$IMAGE:php${{ matrix.php_minor }}" "reli-test-php-mysql:${{ matrix.php_minor }}" 2>/dev/null || true
+
       - name: Restore target Docker image cache
         id: target-cache
         uses: actions/cache@v5
@@ -184,6 +262,9 @@ jobs:
 
       - name: Install dependencies
         run: docker run --rm -v ${{ github.workspace }}:/app -w /app reli-dev composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Pull MySQL image for pdo_mysql tests
+        run: docker pull mysql:8.0
 
       - name: Run target version tests
         env:
