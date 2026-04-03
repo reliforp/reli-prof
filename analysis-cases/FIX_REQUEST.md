@@ -336,12 +336,10 @@ Compare with `bottleneck_path` which correctly shows `objects_store->1->statemen
 
 ### Suggested Fix
 
-1. **Filter out root containers** from choke_point candidates: `ObjectsStoreMemoryLocation`,
-   `GlobalVariablesContext`, `class_table`, `function_table`, and similar structural nodes
-   should be excluded or ranked below application-level choke points.
-   These are GC roots / index structures, not application-level "owners". Suggesting
-   to "release this object" is not actionable — users should release from the
-   actual owner (e.g., `$statementCache`), not from the runtime index.
+1. **Filter out `objects_store`** from choke_point candidates. Unlike `class_table` or
+   `function_table` which PHP developers can relate to (static properties, autoloading),
+   `objects_store` is a PHP runtime internal that most developers don't know exists.
+   Reporting it as a choke_point is not actionable — it just says "objects exist".
 2. **Consider edge semantics:** objects_store holds references to all live objects as
    an index, not as an ownership relation. choke_point assumes "cutting this reference
    frees the subtree", but cutting from objects_store = destroying the object, which
