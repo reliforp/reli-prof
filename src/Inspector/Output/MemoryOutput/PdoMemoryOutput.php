@@ -118,6 +118,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $this->insertLocationTypesSummaryFromDb($db, $run_id);
         $this->insertClassObjectsSummaryFromDb($db, $run_id);
         $this->computeCanonicalNodeIds($db, $run_id);
+        $this->rebuildSpanningTree($db, $run_id);
         $db->commit();
         $this->driver->afterBulkInsert($db);
         $this->createIndexes($db);
@@ -410,6 +411,158 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 $stmt->execute([$canon, $run_id, $nid]);
             }
         }
+    }
+
+    /**
+     * Rebuild the spanning tree (is_tree flags) with a DFS that deprioritizes
+     * objects_store edges.
+     *
+     * In streaming mode, objects_store is traversed first so its edges get
+     * is_tree=1, while app-level edges (global_variables, call_frames) arrive
+     * later as is_tree=0.  This phase re-derives is_tree from the full edge
+     * set, preferring non-objects_store parents so that paths reflect
+     * application-level ownership rather than traversal order.
+     *
+     * @psalm-suppress MixedAssignment, MixedArrayAccess, MixedArgument, MixedArrayOffset
+     */
+    private function rebuildSpanningTree(\PDO $db, int $run_id): void
+    {
+        // Load all edges
+        $rows = $db->query(
+            "SELECT rowid, parent_node_id, child_node_id FROM context_edges"
+            . " WHERE run_id = {$run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+
+        if (!$rows) {
+            return;
+        }
+
+        // Identify objects_store nodes
+        $os_nodes = [];
+        $os_rows = $db->query(
+            "SELECT DISTINCT node_id FROM context_node_locations"
+            . " WHERE run_id = {$run_id}"
+            . " AND location_type = 'ObjectsStoreMemoryLocation'"
+        )->fetchAll(\PDO::FETCH_COLUMN);
+        foreach ($os_rows as $nid) {
+            $os_nodes[(int)$nid] = true;
+        }
+
+        if ($os_nodes === []) {
+            return; // No objects_store — nothing to reorder
+        }
+
+        // Build adjacency: parent → [(rowid, child), ...]
+        // Separate objects_store edges from others for priority sorting
+        /** @var array<int, list<array{int, int}>> $adj  parent → [(rowid, child)] */
+        $adj = [];
+        /** @var array<int, list<array{int, int}>> $adj_os  objects_store parent → [(rowid, child)] */
+        $adj_os = [];
+        $roots = []; // edges with NULL parent
+        foreach ($rows as $r) {
+            $rowid = (int)$r[0];
+            $parent = $r[1] === null ? -1 : (int)$r[1];
+            $child = (int)$r[2];
+            if ($parent === -1) {
+                $roots[] = [$rowid, $child];
+                continue;
+            }
+            if (isset($os_nodes[$parent])) {
+                $adj_os[$parent][] = [$rowid, $child];
+            } else {
+                $adj[$parent][] = [$rowid, $child];
+            }
+        }
+        unset($rows);
+
+        // Identify root link_names to sort roots: call_frames and
+        // global_variables first (most actionable paths), objects_store last.
+        $root_link_priority = [];
+        $link_rows = $db->query(
+            "SELECT child_node_id, link_name FROM context_edges"
+            . " WHERE run_id = {$run_id} AND parent_node_id IS NULL"
+        )->fetchAll(\PDO::FETCH_NUM);
+        foreach ($link_rows as $r) {
+            $root_link_priority[(int)$r[0]] = (string)$r[1];
+        }
+
+        // Sort roots: call_frames first, then global_variables, then others,
+        // then objects_store last. DFS visits earlier roots first, so their
+        // subtrees get is_tree=1 for the app-level paths.
+        usort($roots, function (array $a, array $b) use ($root_link_priority): int {
+            $la = $root_link_priority[$a[1]] ?? '';
+            $lb = $root_link_priority[$b[1]] ?? '';
+            return self::rootPriority($la) <=> self::rootPriority($lb);
+        });
+
+        // DFS: visit non-objects_store edges first, then objects_store edges.
+        // First edge to reach a node gets is_tree=1.
+        /** @var array<int, true> $visited */
+        $visited = [];
+        /** @var array<int, true> $tree_rowids */
+        $tree_rowids = [];
+
+        // Root edges are always tree edges. Push in reverse priority
+        // order so array_pop (LIFO) pops call_frames first.
+        $stack = [];
+        foreach (array_reverse($roots) as [$rowid, $child]) {
+            $tree_rowids[$rowid] = true;
+            $stack[] = $child;
+        }
+
+        while ($stack) {
+            $node = array_pop($stack);
+            if (isset($visited[$node])) {
+                continue;
+            }
+            $visited[$node] = true;
+            // Push objects_store edges first (low priority), then non-objects_store.
+            // LIFO pops non-objects_store last-pushed = first-processed.
+            foreach ([$adj_os, $adj] as $source) {
+                foreach ($source[$node] ?? [] as [$rowid, $child]) {
+                    if (!isset($visited[$child])) {
+                        $tree_rowids[$rowid] = true;
+                        $stack[] = $child;
+                    }
+                }
+            }
+        }
+
+        // Batch UPDATE: set is_tree based on DFS result
+        $db->exec(
+            "UPDATE context_edges SET is_tree = 0 WHERE run_id = {$run_id}"
+        );
+        if ($tree_rowids !== []) {
+            // Chunk the rowids to avoid overly long IN clauses
+            foreach (array_chunk(array_keys($tree_rowids), 500) as $chunk) {
+                $placeholders = implode(',', $chunk);
+                $db->exec(
+                    "UPDATE context_edges SET is_tree = 1"
+                    . " WHERE rowid IN ({$placeholders})"
+                );
+            }
+        }
+    }
+
+    /**
+     * Priority for root link_names in spanning tree DFS.
+     * Lower = visited first = gets is_tree=1 for reachable nodes.
+     */
+    private static function rootPriority(string $link_name): int
+    {
+        return match ($link_name) {
+            'call_frames' => 0,
+            'global_variables' => 1,
+            'global_callbacks' => 2,
+            'class_table' => 3,
+            'function_table' => 4,
+            'global_constants' => 5,
+            'modules' => 6,
+            'included_files' => 7,
+            'interned_strings' => 8,
+            'objects_store' => 9,
+            default => 5,
+        };
     }
 
     /**
