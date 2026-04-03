@@ -478,6 +478,16 @@ Advantages over report-layer fix:
 
 This is likely the best balance of correctness, maintainability, and scope of change.
 
+**Performance note:** Case 15 (worst case) has 6.2M edges → adjacency list ~94 MB as
+flat int arrays. Typical apps would be a fraction of this. The collector's context
+objects during streaming are heavier, so this is not the bottleneck.
+
+**Optimization for `-f report` (one-shot) path:** When running collector → finalize →
+report in a single process, the TreeRebuilder's adjacency list can be passed directly
+to GraphSubstrate, skipping its `loadEdges()` SELECT. DB I/O reduced by one full scan.
+For the separate `memory:report` path (reading from a pre-existing DB), GraphSubstrate
+loads edges from DB as before.
+
 Evidence from Case 9:
 ```
 Tree parent:     ObjectsStoreContext(221) --[1]--> PDOConnectionWrapper(223)  is_tree=1
