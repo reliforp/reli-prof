@@ -29,13 +29,90 @@ class SummaryPassesTest extends BaseTestCase
                 'vm_stack_total' => 65536,
                 'compiler_arena_total' => 32768,
                 'heap_memory_analyzed_percentage' => 99.0,
+                'memory_get_usage' => 8400000,
+                'memory_get_real_usage' => 10485760,
+                'memory_get_peak_usage' => 9000000,
+                'memory_limit' => 134217728,
+                'rss' => 20971520,
             ],
         ]);
         $findings = $pass->analyze();
 
         $overview = array_filter($findings, fn(Finding $f) => $f->kind === 'overview');
         $this->assertCount(1, $overview);
-        $this->assertStringContainsString('99.0%', array_values($overview)[0]->summary);
+        $f = array_values($overview)[0];
+        $this->assertStringContainsString('99.0%', $f->summary);
+        $this->assertStringContainsString('memory_get_usage()', $f->summary);
+        $this->assertStringContainsString('peak:', $f->summary);
+        $this->assertStringContainsString('memory_limit:', $f->summary);
+        $this->assertStringContainsString('RSS:', $f->summary);
+        $this->assertSame(8400000, $f->facts['memory_get_usage']);
+        $this->assertSame(10485760, $f->facts['memory_get_real_usage']);
+        $this->assertSame(9000000, $f->facts['memory_get_peak_usage']);
+        $this->assertSame(134217728, $f->facts['memory_limit']);
+        $this->assertSame(20971520, $f->facts['rss']);
+    }
+
+    public function testOverviewPassOmitsRssWhenUnavailable(): void
+    {
+        $pass = new OverviewPass([
+            [
+                'zend_mm_heap_total' => 10485760,
+                'zend_mm_heap_usage' => 8388608,
+                'vm_stack_total' => 65536,
+                'compiler_arena_total' => 32768,
+                'heap_memory_analyzed_percentage' => 99.0,
+                'memory_get_usage' => 8400000,
+                'memory_get_real_usage' => 10485760,
+            ],
+        ]);
+        $findings = $pass->analyze();
+
+        $overview = array_filter($findings, fn(Finding $f) => $f->kind === 'overview');
+        $f = array_values($overview)[0];
+        $this->assertStringNotContainsString('RSS:', $f->summary);
+        $this->assertArrayNotHasKey('rss', $f->facts);
+    }
+
+    public function testOverviewPassDetectsNearMemoryLimit(): void
+    {
+        $pass = new OverviewPass([
+            [
+                'zend_mm_heap_total' => 134217728,
+                'zend_mm_heap_usage' => 130000000,
+                'heap_memory_analyzed_percentage' => 99.0,
+                'memory_get_usage' => 130000000,
+                'memory_get_real_usage' => 134217728,
+                'memory_get_peak_usage' => 130000000,  // ~96.9% of limit
+                'memory_limit' => 134217728,
+            ],
+        ]);
+        $findings = $pass->analyze();
+
+        $near_limit = array_filter($findings, fn(Finding $f) => $f->kind === 'near_memory_limit');
+        $this->assertCount(1, $near_limit);
+        $f = array_values($near_limit)[0];
+        $this->assertSame('high', $f->severity->value);
+        $this->assertStringContainsString('headroom', $f->summary);
+    }
+
+    public function testOverviewPassNoNearLimitWhenPlentyOfHeadroom(): void
+    {
+        $pass = new OverviewPass([
+            [
+                'zend_mm_heap_total' => 10485760,
+                'zend_mm_heap_usage' => 8388608,
+                'heap_memory_analyzed_percentage' => 99.0,
+                'memory_get_usage' => 8400000,
+                'memory_get_real_usage' => 10485760,
+                'memory_get_peak_usage' => 9000000,  // ~6.7% of limit
+                'memory_limit' => 134217728,
+            ],
+        ]);
+        $findings = $pass->analyze();
+
+        $near_limit = array_filter($findings, fn(Finding $f) => $f->kind === 'near_memory_limit');
+        $this->assertCount(0, $near_limit);
     }
 
     public function testOverviewPassDetectsCoverageGap(): void

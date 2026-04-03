@@ -19,6 +19,7 @@ use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
+use Reli\Inspector\Watch\RssReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -72,13 +73,19 @@ final class MemoryDumpReader
                 $collected_memories->memory_locations,
             );
 
+            $rss_reader = new RssReader();
+            $rss_bytes = $rss_reader->read($this->pid);
+
             $summary = [
                 $analyzed_regions->summary->toArray()
                 + [
                     'memory_get_usage' => $collected_memories->memory_get_usage_size,
                     'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
+                    'memory_get_peak_usage' => $collected_memories->memory_get_peak_usage,
+                    'memory_limit' => $collected_memories->memory_limit,
                     'cached_chunks_size' => $collected_memories->cached_chunks_size,
                 ]
+                + ($rss_bytes !== null ? ['rss' => $rss_bytes] : [])
                 + [
                     'heap_memory_analyzed_percentage' =>
                         (float)$analyzed_regions->summary->zend_mm_heap_usage

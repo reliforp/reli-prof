@@ -369,6 +369,8 @@ final class MemoryLocationsCollector
 
         $memory_get_usage_size = $zend_mm_main_chunk->heap_slot->size;
         $memory_get_usage_real_size = $zend_mm_main_chunk->heap_slot->real_size;
+        $memory_get_peak_usage = $zend_mm_main_chunk->heap_slot->peak;
+        $memory_limit = $zend_mm_main_chunk->heap_slot->limit;
         $cached_chunks_size = $zend_mm_main_chunk->heap_slot->cached_chunks_count * ZendMmChunk::SIZE;
 
         $eg_pointer = new Pointer(
@@ -671,6 +673,8 @@ final class MemoryLocationsCollector
                 null,
                 $memory_get_usage_size,
                 $memory_get_usage_real_size,
+                $memory_get_peak_usage,
+                $memory_limit,
             );
         }
 
@@ -806,6 +810,8 @@ final class MemoryLocationsCollector
             $top_reference_context,
             $memory_get_usage_size,
             $memory_get_usage_real_size,
+            $memory_get_peak_usage,
+            $memory_limit,
         );
     }
 

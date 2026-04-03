@@ -149,6 +149,10 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         $this->assertSame($php_version, $summary['php_version']);
         $this->assertGreaterThan(0, $summary['memory_get_usage']);
         $this->assertGreaterThan(0, $summary['memory_get_real_usage']);
+        $this->assertArrayHasKey('memory_get_peak_usage', $summary);
+        $this->assertGreaterThan(0, $summary['memory_get_peak_usage']);
+        $this->assertArrayHasKey('memory_limit', $summary);
+        $this->assertGreaterThan(0, $summary['memory_limit']);
     }
 
     private function takeCoreDump(int $pid): string
