@@ -247,3 +247,60 @@ if ($this->defer_unseen_objects) {
 
 Then in the deferred resolution phase, iterate `$this->deferred_closure_nodes` and
 call `collectClosure()` + `$object_context->add('closure', ...)` for each.
+
+**Status update:** Closure case fixed by `claude/fix-memory-analysis-2WiRL` commit
+`848090af` using `deferred_closure_addresses` list. Verified: Case 15 now detects
+`cycle_cluster: 4000x Closure + 2000x Widget + 1x EventEmitter`.
+
+---
+
+## Bug 5: Generator and Fiber have the same defer-skip problem as Closure (LOW)
+
+**Status:** Open. Same root cause as Bug 4, affecting `collectGenerator()` and `collectFiber()`.
+
+### Root Cause
+
+The same `defer_unseen_objects` early-return at line 1833 that skipped `collectClosure()`
+also skips:
+
+- **`collectGenerator()`** (line 1887) — Generator's yield values, execution context,
+  and `$this` reference. If a Generator captures `$this` (e.g., `yield` inside a method),
+  the Generator → object back-reference is lost.
+- **`collectFiber()`** (line 1908) — Fiber's stack and execution context.
+  If a Fiber holds references back to its creator, the cycle is invisible.
+- **`dynamic_properties`** (line 1847) — `$object->properties` array for objects with
+  dynamic properties. Less impactful since typed properties are collected separately,
+  but objects using `__set()` or `stdClass`-like patterns could lose data.
+
+### Impact
+
+Cycles involving Generator `$this` capture or Fiber back-references are not detected
+by SCC when these objects are collected from objects_store (streaming mode).
+
+This is lower priority than Closure (Bug 4) because:
+- Generator cycles are less common in practice
+- Fiber usage is still relatively rare in PHP applications
+- Dynamic properties on typed classes are uncommon
+
+### Suggested Fix
+
+Same pattern as the Closure fix: record addresses during defer, resolve after all phases.
+
+```php
+if ($this->defer_unseen_objects) {
+    assert(!is_null($object->ce));
+    $className = $dereferencer->deref($object->ce)->getClassName($dereferencer);
+    if ($className === 'Closure' && !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)) {
+        $this->deferred_closure_addresses[] = $object->getPointer()->address;
+    } elseif ($className === 'Generator' && !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)) {
+        $this->deferred_generator_addresses[] = $object->getPointer()->address;
+    } elseif ($className === 'Fiber' && !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)) {
+        $this->deferred_fiber_addresses[] = $object->getPointer()->address;
+    }
+    $this->defer_unseen_objects = $saved_defer;
+    return $object_context;
+}
+```
+
+Then resolve each list in the deferred resolution phase, calling `collectGenerator()` /
+`collectFiber()` respectively.
