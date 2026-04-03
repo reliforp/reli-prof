@@ -349,7 +349,23 @@ Compare with `bottleneck_path` which correctly shows `objects_store->1->statemen
 3. **Improve path display** by collapsing or hiding internal navigation nodes
    (`included_files`, `IncludedFilesContext`) in human-readable output.
 
+### Remaining Issue: objects_store bucket ID shown as bare number
+
+After the fix, `objects_store` is excluded from choke_point and collapsed in paths.
+But this leaves the objects_store bucket ID (a bare number) as the path root:
+
+```
+Before: objects_store->1->statementCache[0]
+After:  1->statementCache[0]        ← "1" means nothing to the user
+Want:   PDOConnectionWrapper->statementCache[0]
+```
+
+When `objects_store` is collapsed from the path, the child node (bucket ID) should be
+resolved to the object's class name. The bucket ID → class_name mapping is available
+in `context_node_locations` (the ObjectContext node has `class_name` set).
+
 ### Location
 
 - `src/Inspector/Output/MemoryOutput/Report/Pass/` — whichever pass generates choke_point findings
-- Path formatting logic in the report generator
+- `src/Inspector/Output/MemoryOutput/Report/Substrate/PathFormatter.php` — path collapsing
+  and node labeling logic
