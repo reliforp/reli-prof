@@ -417,7 +417,15 @@ are all `is_tree = 0`.
    optimization that needs sentinel maps from objects_store before visiting
    global_variables (to avoid deep recursion).
 
-Approach 2 seems most practical — minimal changes, no reordering, clear semantics.
+Approach 2 adds implementation-specific semantics to the DB schema, making it harder
+to understand for anyone querying the DB directly. `strength` should describe the
+reference relationship (strong/weak/structural), not traversal order.
+
+**Recommended: Approach 1 (quick fix).** Accept `is_tree` reflects traversal order
+and handle it in the report layer. `findAlternativeTreeParent` should search non-tree
+edges too, and walk up from the alternative parent using whatever edges are available
+(tree or non-tree). The DB schema stays clean, and the "prefer app-level path" policy
+is confined to the report display logic where it belongs.
 
 Evidence from Case 9:
 ```
