@@ -51,6 +51,10 @@ final class ContextAnalyzer
      * without emitting it yet. Used by the collector to register parent
      * nodes before their children are collected and emitted.
      *
+     * The node_id is stored as negative in the memo to distinguish it
+     * from fully-emitted nodes. analyzeContext will detect this and
+     * emit the node properly.
+     *
      * @param WeakMap<ReferenceContext, int> $memo
      */
     public function assignNodeId(
@@ -59,10 +63,11 @@ final class ContextAnalyzer
     ): int {
         $existing = $memo[$context] ?? null;
         if ($existing !== null) {
-            return $existing;
+            return $existing < 0 ? -$existing - 1 : $existing;
         }
         $node_id = $this->node_id++;
-        $memo[$context] = $node_id;
+        // Store as negative-minus-1 to indicate "reserved but not emitted"
+        $memo[$context] = -$node_id - 1;
         return $node_id;
     }
 
@@ -104,12 +109,18 @@ final class ContextAnalyzer
         }
 
         $existing_node_id = $memo[$linked_context] ?? null;
-        if ($existing_node_id !== null) {
+        if ($existing_node_id !== null && $existing_node_id >= 0) {
+            // Fully emitted — just add a reference edge
             $sink->emitReference($existing_node_id, $parent_node_id, $link_name);
             return;
         }
 
-        $current_node_id = $this->node_id++;
+        if ($existing_node_id !== null && $existing_node_id < 0) {
+            // Reserved by assignNodeId but not yet emitted — use the reserved id
+            $current_node_id = -$existing_node_id - 1;
+        } else {
+            $current_node_id = $this->node_id++;
+        }
         $memo[$linked_context] = $current_node_id;
 
         $contexts = $linked_context->getContexts();
