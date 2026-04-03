@@ -304,3 +304,45 @@ if ($this->defer_unseen_objects) {
 
 Then resolve each list in the deferred resolution phase, calling `collectGenerator()` /
 `collectFiber()` respectively.
+
+---
+
+## Bug 6: choke_point reports objects_store itself as a finding (LOW)
+
+**Status:** Open.
+
+### Symptom
+
+`choke_point` finding reports `ObjectsStoreMemoryLocation` as a "small object retaining
+a large subtree", which is trivially true — all objects live in objects_store.
+
+Example from Case 9:
+```
+choke_point: ObjectsStoreMemoryLocation (16.00 KB shallow) holds 1.45 MB via 2001 children
+  — included_files->included_files->included_files->...->objects_store
+```
+
+The real choke point should be `PDOConnectionWrapper->statementCache` (which holds 2000
+PDOStatements), not the objects_store container itself.
+
+This appears across multiple cases (5, 9, 14, 15) whenever objects_store is the dominant
+memory consumer.
+
+### Additional Issue: `included_files` path noise
+
+The entry path for choke_point findings shows `included_files->included_files->...`
+chains (internal navigation nodes) rather than meaningful application-level paths.
+Compare with `bottleneck_path` which correctly shows `objects_store->1->statementCache[0]`.
+
+### Suggested Fix
+
+1. **Filter out root containers** from choke_point candidates: `ObjectsStoreMemoryLocation`,
+   `GlobalVariablesContext`, and similar structural nodes should be excluded or ranked below
+   application-level choke points.
+2. **Improve path display** by collapsing or hiding internal navigation nodes
+   (`included_files`, `IncludedFilesContext`) in human-readable output.
+
+### Location
+
+- `src/Inspector/Output/MemoryOutput/Report/Pass/` — whichever pass generates choke_point findings
+- Path formatting logic in the report generator
