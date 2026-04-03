@@ -42,4 +42,30 @@ final class RegionBoundaries
         }
         return 'outside';
     }
+
+    /**
+     * Back-fill the region column for rows that were inserted with NULL
+     * (because RegionBoundaries was not yet available during streaming).
+     */
+    public function backfillRegions(\PDO $db, int $run_id): void
+    {
+        $select = $db->prepare(
+            'SELECT id, address, size FROM context_node_locations'
+            . ' WHERE run_id = ? AND region IS NULL'
+        );
+        $select->execute([$run_id]);
+
+        $update = $db->prepare(
+            'UPDATE context_node_locations SET region = ? WHERE id = ?'
+        );
+
+        /** @psalm-suppress MixedAssignment */
+        while ($row = $select->fetch(\PDO::FETCH_ASSOC)) {
+            /** @psalm-suppress MixedArrayAccess */
+            $location = new MemoryLocation((int)$row['address'], (int)$row['size']);
+            $region = $this->classifyRegion($location);
+            /** @psalm-suppress MixedArrayAccess */
+            $update->execute([$region, $row['id']]);
+        }
+    }
 }

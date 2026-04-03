@@ -63,6 +63,13 @@ final class MemoryDumpReader
                 $sink,
             );
 
+            $region_boundaries = new RegionBoundaries(
+                $collected_memories->chunk_memory_locations,
+                $collected_memories->huge_memory_locations,
+                $collected_memories->vm_stack_memory_locations,
+                $collected_memories->compiler_arena_memory_locations,
+            );
+
             $region_analyzer = new RegionAnalyzer(
                 $collected_memories->chunk_memory_locations,
                 $collected_memories->huge_memory_locations,
@@ -78,6 +85,7 @@ final class MemoryDumpReader
             $rss_bytes = $rss_reader->read($this->pid);
 
             $sink->flush();
+            $region_boundaries->backfillRegions($db, $run_id);
             $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
             $summary_base = $region_sums !== []
                 ? $analyzed_regions->summary->correctedToArray($region_sums)
@@ -105,13 +113,6 @@ final class MemoryDumpReader
                     'analyzer' => ReliProfiler::toolSignature(),
                 ]
             ];
-
-            $region_boundaries = new RegionBoundaries(
-                $collected_memories->chunk_memory_locations,
-                $collected_memories->huge_memory_locations,
-                $collected_memories->vm_stack_memory_locations,
-                $collected_memories->compiler_arena_memory_locations,
-            );
 
             unset($collected_memories, $analyzed_regions, $region_analyzer);
 
