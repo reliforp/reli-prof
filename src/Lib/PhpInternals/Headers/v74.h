@@ -369,6 +369,16 @@ typedef struct _zend_fcall_info_cache {
 	zend_object *object;
 } zend_fcall_info_cache;
 
+typedef struct _zend_fcall_info {
+	size_t size;
+	zval function_name;
+	zval *retval;
+	zval *params;
+	zend_object *object;
+	zend_bool no_separation;
+	uint32_t param_count;
+} zend_fcall_info;
+
 // zend_modules.h
 struct _zend_module_entry {
 	unsigned short size;
@@ -1277,3 +1287,111 @@ typedef struct {
 	zval meta;
 	char *tmpdir;
 } php_stream_temp_data;
+
+// ext/pdo/php_pdo_driver.h
+typedef char pdo_error_type[6];
+
+typedef struct _pdo_dbh_t pdo_dbh_t;
+typedef struct _pdo_dbh_object_t pdo_dbh_object_t;
+typedef struct _pdo_stmt_t pdo_stmt_t;
+
+struct _pdo_dbh_t {
+	uintptr_t methods;
+	void *driver_data;
+	char *username;
+	char *password;
+	uint32_t pdo_dbh_flags;
+	const char *data_source;
+	size_t data_source_len;
+	pdo_error_type error_code;
+	int error_mode;
+	int native_case;
+	int desired_case;
+	const char *persistent_id;
+	size_t persistent_id_len;
+	unsigned int refcount;
+	HashTable *cls_methods[2];
+	uintptr_t driver;
+	zend_class_entry *def_stmt_ce;
+	zval def_stmt_ctor_args;
+	pdo_stmt_t *query_stmt;
+	zval query_stmt_zval;
+	int default_fetch_type;
+};
+
+struct _pdo_dbh_object_t {
+	pdo_dbh_t *inner;
+	zend_object std;
+};
+
+struct pdo_column_data {
+	zend_string *name;
+	size_t maxlen;
+	zend_ulong precision;
+	int param_type;
+};
+typedef struct pdo_column_data pdo_column_data;
+
+struct _pdo_stmt_t {
+	uintptr_t methods;
+	void *driver_data;
+	uint32_t pdo_stmt_flags;
+	int column_count;
+	struct pdo_column_data *columns;
+	zval database_object_handle;
+	pdo_dbh_t *dbh;
+	HashTable *bound_params;
+	HashTable *bound_param_map;
+	HashTable *bound_columns;
+	zend_long row_count;
+	char *query_string;
+	size_t query_stringlen;
+	char *active_query_string;
+	size_t active_query_stringlen;
+	pdo_error_type stmt_error_code;
+	zval lazy_object_ref;
+	zend_ulong stmt_refcount;
+	int stmt_default_fetch_type;
+	union {
+		int column;
+		struct {
+			zval ctor_args;
+			zend_fcall_info fci;
+			zend_fcall_info_cache fcc;
+			zval retval;
+			zend_class_entry *ce;
+		} cls;
+		struct {
+			zval fetch_args;
+			zend_fcall_info fci;
+			zend_fcall_info_cache fcc;
+			zval object;
+			zval function;
+			uintptr_t values;
+		} func;
+		zval into;
+	} fetch;
+	const char *named_rewrite_template;
+	zend_object std;
+};
+
+// ext/pdo_sqlite/php_pdo_sqlite_int.h
+typedef struct {
+	const char *file;
+	int line;
+	unsigned int errcode;
+	char *errmsg;
+} pdo_sqlite_error_info;
+
+typedef struct {
+	uintptr_t db;
+	pdo_sqlite_error_info einfo;
+	uintptr_t funcs;
+	uintptr_t collations;
+} pdo_sqlite_db_handle;
+
+typedef struct {
+	uintptr_t H;
+	uintptr_t stmt;
+	uint32_t pdo_sqlite_stmt_flags;
+} pdo_sqlite_stmt;

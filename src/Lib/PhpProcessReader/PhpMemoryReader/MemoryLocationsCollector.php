@@ -38,6 +38,9 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
 use Reli\Lib\PhpInternals\Types\Zend\ZendObjectsStore;
 use Reli\Lib\PhpInternals\Types\Zend\ZendReference;
 use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\PhpInternals\Types\Php\PdoColumnData;
+use Reli\Lib\PhpInternals\Types\Php\PdoSqliteDbHandle;
+use Reli\Lib\PhpInternals\Types\Php\PdoSqliteStmt;
 use Reli\Lib\PhpInternals\Types\Php\PhpStream;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamMemoryData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamOps;
@@ -75,6 +78,8 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayBodyMemo
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendPropertyInfoMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendReferenceMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PdoDbhMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PdoDriverDataMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendResourceMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArgInfoContext;
@@ -1129,6 +1134,195 @@ final class MemoryLocationsCollector
     }
 
 
+    private function collectPdoDbhObject(
+        ZendObject $object,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ObjectContext $object_context,
+    ): void {
+        // pdo_dbh_object_t: { pdo_dbh_t *inner; zend_object std; }
+        // The inner pointer is at the start of pdo_dbh_object_t, which is
+        // std_offset bytes before the zend_object address.
+        [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_object_t', 'std');
+        $inner_ptr_address = $object->getPointer()->address - $std_offset;
+
+        // Read the pdo_dbh_t pointer (8 bytes at inner_ptr_address)
+        $inner_ptr = new Pointer(RawInt64::class, $inner_ptr_address, 8);
+        $inner_address = $dereferencer->deref($inner_ptr)->value;
+        if ($inner_address === 0) {
+            return;
+        }
+
+        // Track pdo_dbh_t allocation
+        $dbh_size = $zend_type_reader->sizeOf('pdo_dbh_t');
+
+        $dbh_location = new PdoDbhMemoryLocation($inner_address, $dbh_size);
+        $memory_locations->add($dbh_location);
+
+        // Read driver_data pointer from pdo_dbh_t via offset
+        [$dd_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', 'driver_data');
+        $dd_ptr = new Pointer(RawInt64::class, $inner_address + $dd_offset, 8);
+        $driver_data_address_raw = $dereferencer->deref($dd_ptr)->value;
+
+        $dbh_location = new PdoDbhMemoryLocation(
+            $inner_address,
+            $zend_type_reader->sizeOf('pdo_dbh_t'),
+        );
+        $memory_locations->add($dbh_location);
+
+        // Collect driver_data (e.g. pdo_sqlite_db_handle)
+        if ($driver_data_address_raw !== 0) {
+            $this->collectPdoDriverData(
+                $driver_data_address_raw,
+                $object_context,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+            );
+        }
+    }
+
+    private function collectPdoStmt(
+        ZendObject $object,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+        ContextPools $context_pools,
+        ObjectContext $object_context,
+    ): void {
+        // pdo_stmt_t has zend_object std at the end; read individual fields
+        // by offset to avoid FFI issues with the embedded flexible array.
+        [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'std');
+        $stmt_address = $object->getPointer()->address - $std_offset;
+
+        // Read query_string pointer (v81+: zend_string *)
+        if (!$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)) {
+            [$qs_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'query_string');
+            $qs_ptr = new Pointer(RawInt64::class, $stmt_address + $qs_offset, 8);
+            $query_string_address = $dereferencer->deref($qs_ptr)->value;
+            if ($query_string_address !== 0) {
+                $string_pointer = new Pointer(
+                    ZendString::class,
+                    $query_string_address,
+                    $zend_type_reader->sizeOf('zend_string'),
+                );
+                $string_context = $this->collectZendStringPointer(
+                    $string_pointer,
+                    $memory_locations,
+                    $dereferencer,
+                    $context_pools,
+                );
+                $object_context->add('pdo_query_string', $string_context);
+            }
+        }
+
+        // Read driver_data pointer
+        [$dd_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'driver_data');
+        $dd_ptr = new Pointer(RawInt64::class, $stmt_address + $dd_offset, 8);
+        $driver_data_address = $dereferencer->deref($dd_ptr)->value;
+        if ($driver_data_address !== 0) {
+            $this->collectPdoStmtDriverData(
+                $driver_data_address,
+                $object_context,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+            );
+        }
+
+        // Read column_count and columns pointer for column name tracking
+        [$cc_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'column_count');
+        $cc_ptr = new Pointer(RawInt64::class, $stmt_address + $cc_offset, 4);
+        // Read 4-byte int as raw bytes
+        $cc_buf = $dereferencer->deref(new Pointer(RawInt64::class, $stmt_address + $cc_offset, 8));
+        $column_count = $cc_buf->value & 0xFFFFFFFF;
+        if ($column_count > 0x7FFFFFFF) {
+            $column_count = 0; // negative or invalid
+        }
+
+        [$cols_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'columns');
+        $cols_ptr = new Pointer(RawInt64::class, $stmt_address + $cols_offset, 8);
+        $columns_address = $dereferencer->deref($cols_ptr)->value;
+
+        if ($columns_address !== 0 && $column_count > 0 && $column_count < 10000) {
+            $column_data_size = $zend_type_reader->sizeOf('pdo_column_data');
+            for ($i = 0; $i < $column_count; $i++) {
+                $col_pointer = new Pointer(
+                    PdoColumnData::class,
+                    $columns_address + $i * $column_data_size,
+                    $column_data_size,
+                );
+                $col = $dereferencer->deref($col_pointer);
+                $name_address = $col->name;
+                if ($name_address !== 0) {
+                    $name_pointer = new Pointer(
+                        ZendString::class,
+                        $name_address,
+                        $zend_type_reader->sizeOf('zend_string'),
+                    );
+                    $this->collectZendStringPointer(
+                        $name_pointer,
+                        $memory_locations,
+                        $dereferencer,
+                        $context_pools,
+                    );
+                }
+            }
+        }
+    }
+
+    private function collectPdoDriverData(
+        int $driver_data_address,
+        ObjectContext $object_context,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+    ): void {
+        // Try to read as pdo_sqlite_db_handle (best-effort)
+        try {
+            $handle_pointer = new Pointer(
+                PdoSqliteDbHandle::class,
+                $driver_data_address,
+                $zend_type_reader->sizeOf('pdo_sqlite_db_handle'),
+            );
+            $dereferencer->deref($handle_pointer);
+
+            $driver_location = new PdoDriverDataMemoryLocation(
+                $driver_data_address,
+                $zend_type_reader->sizeOf('pdo_sqlite_db_handle'),
+            );
+            $memory_locations->add($driver_location);
+        } catch (\Throwable) {
+        }
+    }
+
+    private function collectPdoStmtDriverData(
+        int $driver_data_address,
+        ObjectContext $object_context,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        MemoryLocations $memory_locations,
+    ): void {
+        // Try to read as pdo_sqlite_stmt (best-effort)
+        try {
+            $stmt_pointer = new Pointer(
+                PdoSqliteStmt::class,
+                $driver_data_address,
+                $zend_type_reader->sizeOf('pdo_sqlite_stmt'),
+            );
+            $dereferencer->deref($stmt_pointer);
+
+            $driver_location = new PdoDriverDataMemoryLocation(
+                $driver_data_address,
+                $zend_type_reader->sizeOf('pdo_sqlite_stmt'),
+            );
+            $memory_locations->add($driver_location);
+        } catch (\Throwable) {
+        }
+    }
+
     /** @param Pointer<ZendReference> $pointer */
     public function collectPhpReferencePointer(
         Pointer $pointer,
@@ -1774,6 +1968,37 @@ final class MemoryLocationsCollector
         $this->current_streaming_parent_node_id = $saved_parent_node_id;
         if ($properties_exists) {
             $object_context->add('object_properties', $object_properties_context);
+        }
+
+        // PDO internal data collection follows extension-internal pointers
+        // (pdo_dbh_t, pdo_stmt_t), not object references, so it is safe
+        // even during deferred/shallow collection.
+        if ($object_location->class_name === \PDO::class) {
+            try {
+                $this->collectPdoDbhObject(
+                    $object,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $object_context,
+                );
+            } catch (\Throwable) {
+            }
+        }
+
+        if ($object_location->class_name === \PDOStatement::class) {
+            try {
+                $this->collectPdoStmt(
+                    $object,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                    $object_context,
+                );
+            } catch (\Throwable) {
+            }
         }
 
         // When defer is active (shallow collection for objects_store),
