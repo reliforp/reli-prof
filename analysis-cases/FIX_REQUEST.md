@@ -421,24 +421,27 @@ Approach 2 adds implementation-specific semantics to the DB schema, making it ha
 to understand for anyone querying the DB directly. `strength` should describe the
 reference relationship (strong/weak/structural), not traversal order.
 
-**Reconsidered: Approach 3 may be the most correct.** The objects_store shallow phase
-is conceptually a "warm-up" to populate the sentinel map — not part of the real DFS.
-If that's the intent, edges emitted during this phase should be `is_tree = 0` (all of
-them), because the "real" traversal hasn't started yet. When global_variables and
-call_frames later reach the same objects, those edges naturally get `is_tree = 1`.
+**Reconsidered again: Approach 3 has a deeper problem.** Even if objects_store edges
+are emitted as `is_tree = 0`, the subtree below each object (properties, arrays,
+strings) is **already emitted** during the shallow phase. When the "real" DFS from
+global_variables later hits a sentinel, it stops — it doesn't re-traverse the subtree.
+So only the top-level `$conn` edge can be promoted to `is_tree = 1`; everything below
+(`statementCache[0]`, etc.) keeps its objects_store-era `is_tree` assignment.
 
-This is a small change: just force `is_tree = 0` for all edges emitted during the
-objects_store shallow phase. The sentinel mechanism is unaffected — it only needs the
-node to be emitted, not for the edge to be a tree edge. The DB stays clean, is_tree
-regains its intended meaning ("first arrival in the real DFS"), and report-side path
-logic works correctly without special-casing.
+Fixing the entire subtree would require re-walking and UPDATE-ing all edges,
+essentially doing the DFS twice. This conflicts with the streaming design goal.
 
-Objects only reachable from objects_store (no app-level path) would have no tree edge,
-which is fine — they can still be displayed via non-tree edges, or a final pass can
-promote their objects_store edges to is_tree=1 as a fallback.
+**Final recommendation: Approach 1 (report-layer fix).** Accept that `is_tree` in
+streaming mode reflects traversal order (objects_store first), and handle path
+preference entirely in the report layer:
+- `findAlternativeTreeParent` should search ALL edges (not just `is_tree = 1`)
+- Walk up from the alternative parent using any available edges
+- Prefer parents that are NOT under objects_store
+- Fall back to objects_store path if no alternative exists
 
-Approach 1 (non-tree search in findAlternativeTreeParent) is also viable as a quick
-fix if the collector change is too risky.
+This is confined to ChokePointPass / PathFormatter, doesn't touch the collector or
+DB schema, and correctly handles the "prep phase vs real DFS" distinction at the
+layer where it matters (user-facing output).
 
 Evidence from Case 9:
 ```
