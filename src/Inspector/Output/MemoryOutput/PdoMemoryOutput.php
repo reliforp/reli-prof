@@ -118,6 +118,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $this->insertLocationTypesSummaryFromDb($db, $run_id);
         $this->insertClassObjectsSummaryFromDb($db, $run_id);
         $this->computeCanonicalNodeIds($db, $run_id);
+        $this->rebuildSpanningTree($db, $run_id);
         $db->commit();
         $this->driver->afterBulkInsert($db);
         $this->createIndexes($db);
@@ -410,6 +411,312 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 $stmt->execute([$canon, $run_id, $nid]);
             }
         }
+    }
+
+    /**
+     * Rebuild the spanning tree (is_tree flags) with a DFS that deprioritizes
+     * objects_store edges.
+     *
+     * In streaming mode, objects_store is traversed first so its edges get
+     * is_tree=1, while app-level edges (global_variables, call_frames) arrive
+     * later as is_tree=0.  This phase re-derives is_tree from the full edge
+     * set, preferring non-objects_store parents so that paths reflect
+     * application-level ownership rather than traversal order.
+     *
+     * When FFI is available, uses CSR (Compressed Sparse Row) C arrays for
+     * the DFS to keep memory at ~16 bytes/edge instead of ~200+ with PHP arrays.
+     *
+     * @psalm-suppress MixedAssignment, MixedArrayAccess, MixedArgument, MixedArrayOffset
+     */
+    private function rebuildSpanningTree(\PDO $db, int $run_id): void
+    {
+        $os_nodes = [];
+        $os_rows = $db->query(
+            "SELECT DISTINCT node_id FROM context_node_locations"
+            . " WHERE run_id = {$run_id}"
+            . " AND location_type = 'ObjectsStoreMemoryLocation'"
+        )->fetchAll(\PDO::FETCH_COLUMN);
+        foreach ($os_rows as $nid) {
+            $os_nodes[(int)$nid] = true;
+        }
+        if ($os_nodes === []) {
+            return;
+        }
+
+        $root_link_priority = [];
+        $link_rows = $db->query(
+            "SELECT child_node_id, link_name FROM context_edges"
+            . " WHERE run_id = {$run_id} AND parent_node_id IS NULL"
+        )->fetchAll(\PDO::FETCH_NUM);
+        foreach ($link_rows as $r) {
+            $root_link_priority[(int)$r[0]] = (string)$r[1];
+        }
+
+        if (extension_loaded('ffi')) {
+            $tree_rowids = $this->rebuildTreeDfsFfi($db, $run_id, $os_nodes, $root_link_priority);
+        } else {
+            $tree_rowids = $this->rebuildTreeDfsPhp($db, $run_id, $os_nodes, $root_link_priority);
+        }
+
+        // Batch UPDATE is_tree
+        $db->exec("UPDATE context_edges SET is_tree = 0 WHERE run_id = {$run_id}");
+        foreach (array_chunk(array_keys($tree_rowids), 500) as $chunk) {
+            $placeholders = implode(',', $chunk);
+            $db->exec(
+                "UPDATE context_edges SET is_tree = 1 WHERE rowid IN ({$placeholders})"
+            );
+        }
+    }
+
+    /**
+     * @param array<int, true> $os_nodes
+     * @param array<int, string> $root_link_priority
+     * @return array<int, true> rowid => true for tree edges
+     * @psalm-suppress MixedAssignment, MixedArrayAccess, MixedArgument, MixedArrayOffset
+     */
+    private function rebuildTreeDfsPhp(
+        \PDO $db,
+        int $run_id,
+        array $os_nodes,
+        array $root_link_priority,
+    ): array {
+        $rows = $db->query(
+            "SELECT rowid, parent_node_id, child_node_id FROM context_edges"
+            . " WHERE run_id = {$run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+        if (!$rows) {
+            return [];
+        }
+
+        /** @var array<int, list<array{int, int}>> */
+        $adj = [];
+        /** @var array<int, list<array{int, int}>> */
+        $adj_os = [];
+        $roots = [];
+        foreach ($rows as $r) {
+            $rowid = (int)$r[0];
+            $parent = $r[1] === null ? -1 : (int)$r[1];
+            $child = (int)$r[2];
+            if ($parent === -1) {
+                $roots[] = [$rowid, $child];
+            } elseif (isset($os_nodes[$parent])) {
+                $adj_os[$parent][] = [$rowid, $child];
+            } else {
+                $adj[$parent][] = [$rowid, $child];
+            }
+        }
+        unset($rows);
+
+        usort($roots, function (array $a, array $b) use ($root_link_priority): int {
+            return self::rootPriority($root_link_priority[$a[1]] ?? '')
+                <=> self::rootPriority($root_link_priority[$b[1]] ?? '');
+        });
+
+        /** @var array<int, true> */
+        $visited = [];
+        /** @var array<int, true> */
+        $tree_rowids = [];
+        $stack = [];
+        foreach (array_reverse($roots) as [$rowid, $child]) {
+            $tree_rowids[$rowid] = true;
+            $stack[] = $child;
+        }
+        while ($stack) {
+            $node = array_pop($stack);
+            if (isset($visited[$node])) {
+                continue;
+            }
+            $visited[$node] = true;
+            // Push OS first (low prio), then non-OS (LIFO → popped first)
+            foreach ([$adj_os, $adj] as $source) {
+                foreach ($source[$node] ?? [] as [$rowid, $child]) {
+                    if (!isset($visited[$child])) {
+                        $tree_rowids[$rowid] = true;
+                        $stack[] = $child;
+                    }
+                }
+            }
+        }
+        return $tree_rowids;
+    }
+
+    /**
+     * FFI CSR-based DFS for rebuildSpanningTree.
+     * Uses C int32 arrays for adjacency (~16 bytes/edge vs ~200+ PHP).
+     *
+     * @param array<int, true> $os_nodes
+     * @param array<int, string> $root_link_priority
+     * @return array<int, true> rowid => true for tree edges
+     * @psalm-suppress MixedAssignment, MixedArrayAccess, MixedArgument, MixedArrayOffset
+     * @psalm-suppress InaccessibleMethod, InvalidCast, PossiblyNullOperand, InvalidOperand
+     * @psalm-suppress PossiblyNullReference, PossiblyNullArrayAccess, RiskyTruthyFalsyComparison
+     */
+    private function rebuildTreeDfsFfi(
+        \PDO $db,
+        int $run_id,
+        array $os_nodes,
+        array $root_link_priority,
+    ): array {
+        $rows = $db->query(
+            "SELECT rowid, parent_node_id, child_node_id FROM context_edges"
+            . " WHERE run_id = {$run_id}"
+        )->fetchAll(\PDO::FETCH_NUM);
+        if (!$rows) {
+            return [];
+        }
+
+        // Build compact node index
+        /** @var array<int, int> */
+        $n2i = []; // node_id → index
+        $idx = 0;
+        foreach ($rows as $r) {
+            $p = $r[1] === null ? -1 : (int)$r[1];
+            $c = (int)$r[2];
+            if (!isset($n2i[$p])) {
+                $n2i[$p] = $idx++;
+            }
+            if (!isset($n2i[$c])) {
+                $n2i[$c] = $idx++;
+            }
+        }
+        $nc = $idx; // node count
+
+        // Count degrees per node for non-OS and OS adjacency
+        $roots = [];
+        $deg = array_fill(0, $nc, 0);
+        $deg_os = array_fill(0, $nc, 0);
+        $nr = 0;
+        $osc = 0;
+        foreach ($rows as $r) {
+            $p = $r[1] === null ? -1 : (int)$r[1];
+            $c = (int)$r[2];
+            $rowid = (int)$r[0];
+            if ($p === -1) {
+                $roots[] = [$rowid, $c];
+                continue;
+            }
+            $pi = $n2i[$p];
+            if (isset($os_nodes[$p])) {
+                $deg_os[$pi]++;
+                $osc++;
+            } else {
+                $deg[$pi]++;
+                $nr++;
+            }
+        }
+
+        // CSR prefix sums
+        $ffi = \FFI::cdef();
+        $off = $ffi->new("int32_t[" . ($nc + 1) . "]");
+        $off_os = $ffi->new("int32_t[" . ($nc + 1) . "]");
+        $off[0] = 0;
+        $off_os[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $off[$i + 1] = $off[$i] + $deg[$i];
+            $off_os[$i + 1] = $off_os[$i] + $deg_os[$i];
+        }
+
+        // Allocate edge + rowid arrays
+        $snr = max($nr, 1);
+        $sosc = max($osc, 1);
+        $edg = $ffi->new("int32_t[{$snr}]");
+        $rid = $ffi->new("int32_t[{$snr}]");
+        $edg_os = $ffi->new("int32_t[{$sosc}]");
+        $rid_os = $ffi->new("int32_t[{$sosc}]");
+
+        // Fill CSR
+        $pos = array_fill(0, $nc, 0);
+        $pos_os = array_fill(0, $nc, 0);
+        for ($i = 0; $i < $nc; $i++) {
+            $pos[$i] = (int)$off[$i];
+            $pos_os[$i] = (int)$off_os[$i];
+        }
+        foreach ($rows as $r) {
+            $p = $r[1] === null ? -1 : (int)$r[1];
+            if ($p === -1) {
+                continue;
+            }
+            $c = (int)$r[2];
+            $rowid = (int)$r[0];
+            $pi = $n2i[$p];
+            $ci = $n2i[$c];
+            if (isset($os_nodes[$p])) {
+                $j = $pos_os[$pi];
+                $edg_os[$j] = $ci;
+                $rid_os[$j] = $rowid;
+                $pos_os[$pi] = $j + 1;
+            } else {
+                $j = $pos[$pi];
+                $edg[$j] = $ci;
+                $rid[$j] = $rowid;
+                $pos[$pi] = $j + 1;
+            }
+        }
+        unset($rows, $pos, $pos_os, $deg, $deg_os);
+
+        // Sort roots by priority
+        usort($roots, function (array $a, array $b) use ($root_link_priority): int {
+            return self::rootPriority($root_link_priority[$a[1]] ?? '')
+                <=> self::rootPriority($root_link_priority[$b[1]] ?? '');
+        });
+
+        // DFS with FFI visited array
+        $vis = $ffi->new("int8_t[{$nc}]");
+        /** @var array<int, true> */
+        $tree_rowids = [];
+        $stack = [];
+        foreach (array_reverse($roots) as [$rowid, $child]) {
+            $tree_rowids[$rowid] = true;
+            $stack[] = $n2i[$child];
+        }
+        while ($stack) {
+            $ni = array_pop($stack);
+            if ($vis[$ni]) {
+                continue;
+            }
+            $vis[$ni] = 1;
+            // OS edges first (low prio in LIFO), then non-OS
+            $s = (int)$off_os[$ni];
+            $e = (int)$off_os[$ni + 1];
+            for ($i = $s; $i < $e; $i++) {
+                $ci = (int)$edg_os[$i];
+                if (!$vis[$ci]) {
+                    $tree_rowids[(int)$rid_os[$i]] = true;
+                    $stack[] = $ci;
+                }
+            }
+            $s = (int)$off[$ni];
+            $e = (int)$off[$ni + 1];
+            for ($i = $s; $i < $e; $i++) {
+                $ci = (int)$edg[$i];
+                if (!$vis[$ci]) {
+                    $tree_rowids[(int)$rid[$i]] = true;
+                    $stack[] = $ci;
+                }
+            }
+        }
+        return $tree_rowids;
+    }
+
+    /**
+     * Priority for root link_names in spanning tree DFS.
+     * Lower = visited first = gets is_tree=1 for reachable nodes.
+     */
+    private static function rootPriority(string $link_name): int
+    {
+        return match ($link_name) {
+            'call_frames' => 0,
+            'global_variables' => 1,
+            'global_callbacks' => 2,
+            'class_table' => 3,
+            'function_table' => 4,
+            'global_constants' => 5,
+            'modules' => 6,
+            'included_files' => 7,
+            'interned_strings' => 8,
+            'objects_store' => 9,
+            default => 5,
+        };
     }
 
     /**
