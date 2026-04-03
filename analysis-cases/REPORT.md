@@ -359,19 +359,22 @@ The fix adds `object_properties` edge from ObjectContext to ObjectPropertiesCont
 even in deferred mode (`$properties_parent_node_id !== null` condition), restoring
 graph connectivity for SCC computation.
 
-### Bug 3: Closure DB explosion — PARTIALLY FIXED
+### Bug 3: Closure DB explosion — FIXED
 
 Case 15 (78 MB PHP memory):
 ```
-Before: 7.4 GB+ DB (disk full)
-After:  6.0 GB+ DB (still growing, killed)
+Before:     7.4 GB+ DB (disk full, never completed)
+After v1:   6.0 GB+ (ClosureContextPool only, still growing)
+After v2:   663 MB (completed in 50s, 7 HIGH/MEDIUM findings)
 ```
 
-`ClosureContextPool` prevents re-creation of Closure contexts, but the Widget
-re-expansion via pool flush still occurs. The `convertToSentinels` + `clear` pattern
-in `flushPoolsIfStreaming` discards ObjectContext instances, so subsequent encounters
-via different paths create new instances that the WeakMap doesn't recognize.
-This is a deeper architectural issue that needs the pool flush strategy to be revisited.
+The second fix (`drainEmittedWithAddresses`) changed pool flush to only drain entries
+that have been emitted (exist in WeakMap memo). Unemitted entries stay in the pool,
+preserving object identity for subsequent encounters. This eliminated the re-expansion
+of Widget subtrees through closure `$this` references.
+
+Report now shows: `Widget::$largePayload` 2,000 x 8.05 KB = 15.73 MB (expensive_property),
+4,000 Closures (dominant_class), Widget::$emitter shared references (dedup_candidate).
 
 ---
 
@@ -604,9 +607,9 @@ Analysis DB: 7.4 GB (disk full at 2.2 GB on first attempt)
 | 12 | Unserialize bloat | **7/10** | 10K instances flagged, array type dominance shown |
 | 13 | Schema introspection | **8/10** | Index buffer + structural duplicates identified |
 | 14 | Bootstrap static leak | **9/10** | static_properties path + Closure accumulation = precise |
-| 15 | Closure cycles | **N/A** | Pool flush breaks WeakMap dedup — DB explosion |
+| 15 | Closure cycles | **7/10** | DB explosion fixed (7.4GB→663MB). Closures, Widget payload, dedup detected. Cycle not flagged (fan-in pattern) |
 
-**Average score (excluding N/A): 7.7 / 10**
+**Average score: 7.7 / 10**
 
 **Overall:** Across 15 diverse PHP memory issues, reli-prof demonstrated strong diagnostic
 capability without requiring any modification to target processes. It excels at:
