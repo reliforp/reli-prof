@@ -28,6 +28,8 @@ final class CollectedMemories
         public ?TopReferenceContext $top_reference_context,
         public int $memory_get_usage_size,
         public int $memory_get_usage_real_size,
+        public int $memory_get_peak_usage,
+        public int $memory_limit,
     ) {
     }
 }

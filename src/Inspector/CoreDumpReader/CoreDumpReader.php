@@ -91,6 +91,8 @@ final class CoreDumpReader
                 + [
                     'memory_get_usage' => $collected_memories->memory_get_usage_size,
                     'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
+                    'memory_get_peak_usage' => $collected_memories->memory_get_peak_usage,
+                    'memory_limit' => $collected_memories->memory_limit,
                     'cached_chunks_size' => $collected_memories->cached_chunks_size,
                 ]
                 + [
