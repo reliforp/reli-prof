@@ -643,6 +643,25 @@ NodeLabeler currently only resolves CallFrameContext. Extend it to handle:
 - `src/Inspector/Output/MemoryOutput/Report/Substrate/NodeLabeler.php`
 - `src/Inspector/Output/MemoryOutput/Report/Substrate/PathFormatter.php`
 
+### Additional Bug: `included_files` x19 chain is a loop caused by NULL parent
+
+The path `included_files -> included_files -> ... -> class_table` does NOT exist
+in the DB. The `included_files` edge exists exactly once (root → node 0).
+
+**Root cause:** ChokePointPass line 158-191 walks tree parents upward. When it
+reaches a root node (parent_node_id IS NULL), `(int)$pr[0]` casts NULL to 0.
+Node 0 is the `included_files` IncludedFilesContext. Its tree parent query returns
+the root edge (parent IS NULL) again → NULL → 0 → loop for 20 iterations.
+
+**Fix:** Break the loop when `parent_node_id` is NULL (root reached):
+```php
+if ($pr[0] === null) {
+    // Reached root — record the root link_name and stop
+    array_unshift($up_parts, (string)$pr[1]);
+    break;
+}
+```
+
 ### Status
 
 `$key` indirection removed (commit `416b1bd5`). Remaining issues:
