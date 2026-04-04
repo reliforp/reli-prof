@@ -507,8 +507,9 @@ streaming that fills CSR directly.
 push order is `[$adj_os, $adj]` so non-objects_store edges are preferred.
 
 **Verified working:** Cases 5, 9, 14 produce correct app-level paths. Case 15 (6.2M
-edges) OOMs at 2GB due to `strong_all_children` PHP array — this is a pre-existing
-GraphSubstrate limitation, not specific to the rebuild.
+edges) OOMs at 512MB due to `fetchAll` in `rebuildSpanningTree` and at 2GB due to
+`strong_all_children` PHP array in `FfiCsrGraphSubstrate`. These are pre-existing
+issues (default `memory_limit=-1` masked them), not regressions from the FFI CSR change.
 report in a single process, the TreeRebuilder's adjacency list can be passed directly
 to GraphSubstrate, skipping its `loadEdges()` SELECT. DB I/O reduced by one full scan.
 For the separate `memory:report` path (reading from a pre-existing DB), GraphSubstrate
