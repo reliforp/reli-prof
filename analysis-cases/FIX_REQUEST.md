@@ -642,3 +642,21 @@ NodeLabeler currently only resolves CallFrameContext. Extend it to handle:
 
 - `src/Inspector/Output/MemoryOutput/Report/Substrate/NodeLabeler.php`
 - `src/Inspector/Output/MemoryOutput/Report/Substrate/PathFormatter.php`
+
+### Status
+
+Current fix (commit `31475962`) did not resolve the issue. Case 9 and 15 still show:
+```
+<main>:40::[conn]->$key->statementCache[0]    ← want: $conn->statementCache[0]
+<main>:58::[widget]->$key->emitter->listeners  ← want: $widgets[N]->emitter->listeners
+```
+
+The `$key` is a link_name in context_edges — it comes from the ArrayElementContext
+which has children `key` (the array key) and `value` (the array value). The path
+walks through `value` to reach the object, but displays the `key` link_name as
+`$key`. The fix needs to:
+
+1. Detect when walking through ArrayElementContext
+2. Skip the key/value indirection
+3. Use the key's actual value as the array index: `[0]`, `[conn]`, etc.
+4. Prefix global variables with `$`: `[conn]` → `$conn`
