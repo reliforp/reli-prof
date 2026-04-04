@@ -682,20 +682,11 @@ Want:     Application::$bootstrappers[199]
 this is `class_table->Application->static_properties->bootstrappers` — i.e., a
 static property of the Application class.
 
-**Revised collapsing policy:**
+**Revised collapsing policy:** Only collapse `included_files` (always present,
+pure noise). Keep everything else — `class_table`, `function_table`,
+`global_constants`, `global_variables`, `objects_store`, `modules`, etc.
 
-| Node | Action | Result |
-|------|--------|--------|
-| `included_files` | collapse | (noise) |
-| `interned_strings` | collapse | (internal) |
-| `global_variables` | convert | `$varname` |
-| `class_table` | **convert** | `ClassName::` |
-| `function_table` | **convert** | `functionName()::` |
-| `global_constants` | **convert** | `CONSTANT_NAME` |
-| `objects_store` | collapse (fallback) | (internal index) |
-| `modules` | collapse | (internal) |
-| `global_callbacks` | collapse | (internal) |
-
-The key distinction: some nodes should be **collapsed** (removed from path) and
-some should be **converted** (replaced with PHP-syntax equivalent). The current
-implementation collapses everything indiscriminately.
+PHP allows identical names across classes, functions, and constants
+(`class app`, `function app`, `const app` can coexist), so the prefix
+is the only way to disambiguate. Collapsing loses information that
+users need.
