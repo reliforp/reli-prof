@@ -38,7 +38,7 @@ final class NonTreeEdgePass implements PassInterface
     public function analyze(): array
     {
         // Classify shared references by link_name with class context
-        $rows = $this->db->query("
+        $stmt = $this->db->query("
             SELECT
                 e.link_name,
                 count(*) as ref_count,
@@ -74,10 +74,10 @@ final class NonTreeEdgePass implements PassInterface
             HAVING count(*) > 10
             ORDER BY count(*) DESC
             LIMIT 20
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        ");
 
         $findings = [];
-        foreach ($rows as $row) {
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             // Skip numeric indices (array element sharing, not meaningful)
             if (ctype_digit($row['link_name'])) {
                 continue;
@@ -213,7 +213,7 @@ final class NonTreeEdgePass implements PassInterface
             HAVING count(*) > 50 AND count(*) * cnl.size > 10240
             ORDER BY count(*) * cnl.size DESC
             LIMIT 10
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        ");
 
         $use_retained = $this->substrate !== null
             && $this->substrate->hasSubtreeSizes();
@@ -342,7 +342,7 @@ final class NonTreeEdgePass implements PassInterface
         assert($this->substrate !== null);
 
         // Sample up to 20 child_node_ids from this group
-        $rows = $this->db->query("
+        $stmt = $this->db->query("
             SELECT e.child_node_id
             FROM context_edges e
             JOIN context_node_locations cnl
@@ -353,15 +353,11 @@ final class NonTreeEdgePass implements PassInterface
                 AND e.is_tree = 0
                 AND e.link_name = " . $this->db->quote($link_name) . "
             LIMIT 20
-        ")->fetchAll(\PDO::FETCH_COLUMN);
-
-        if ($rows === []) {
-            return $shallow_size;
-        }
+        ");
 
         $total = 0;
         $count = 0;
-        foreach ($rows as $nid) {
+        while (($nid = $stmt->fetchColumn()) !== false) {
             $retained = $this->substrate->getSubtreeSize((int)$nid);
             if ($retained > 0) {
                 $total += $retained;

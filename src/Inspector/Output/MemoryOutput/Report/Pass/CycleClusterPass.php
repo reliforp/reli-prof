@@ -356,14 +356,14 @@ final class CycleClusterPass implements PassInterface
      */
     private function loadRootLinkNames(): array
     {
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT child_node_id, link_name FROM context_edges"
             . " WHERE parent_node_id IS NULL AND is_tree = 1"
             . " AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
         $map = [];
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $map[(int)$r[0]] = (string)$r[1];
         }
         return $map;
@@ -600,16 +600,15 @@ final class CycleClusterPass implements PassInterface
      */
     private function loadLinkNames(): array
     {
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT child_node_id, link_name FROM context_edges"
             . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
         $map = [];
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $map[(int)$r[0]] = (string)$r[1];
         }
-        unset($rows);
         return $map;
     }
 
@@ -619,16 +618,15 @@ final class CycleClusterPass implements PassInterface
      */
     private function loadNodeTypes(): array
     {
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT node_id, type FROM context_nodes"
             . " WHERE run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
         $map = [];
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $map[(int)$r[0]] = (string)$r[1];
         }
-        unset($rows);
         return $map;
     }
 
@@ -638,17 +636,16 @@ final class CycleClusterPass implements PassInterface
      */
     private function loadParentMap(): array
     {
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT child_node_id, parent_node_id, link_name"
             . " FROM context_edges WHERE is_tree = 1"
             . " AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
         $map = [];
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $map[(int)$r[0]] = [(int)($r[1] ?? -1), (string)$r[2]];
         }
-        unset($rows);
         return $map;
     }
 }
