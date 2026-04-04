@@ -162,14 +162,14 @@ final class GcPendingPass implements PassInterface
      */
     private function loadRootLinkNames(): array
     {
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT child_node_id, link_name FROM context_edges"
             . " WHERE parent_node_id IS NULL AND is_tree = 1"
             . " AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
         $map = [];
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $map[(int)$r[0]] = (string)$r[1];
         }
         return $map;
