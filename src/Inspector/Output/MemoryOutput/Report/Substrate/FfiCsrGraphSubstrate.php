@@ -41,6 +41,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private \FFI\CData $allOffsets;
     private \FFI\CData $allEdges;
 
+    // CSR for strong all children (strong tree + non-tree, for SCC)
+    private \FFI\CData $strongAllOffsets;
+    private \FFI\CData $strongAllEdges;
+
     // Reverse CSR for all parents
     private \FFI\CData $revOffsets;
     private \FFI\CData $revEdges;
@@ -119,7 +123,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getStrongAllChildren(int $nodeId): array
     {
-        return $this->strong_all_children[$nodeId] ?? [];
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return [];
+        }
+        return $this->csrSlice($this->strongAllOffsets, $this->strongAllEdges, $idx);
     }
 
     /** @return list<int> */
@@ -404,10 +412,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // Step 1: Count degrees
         $treeDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
         $allDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
+        $strongAllDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
         $revDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
 
         $treeEdgeCount = 0;
         $allEdgeCount = 0;
+        $strongAllEdgeCount = 0;
 
         foreach ($rows as $r) {
             $parent = $r[0] === null ? -1 : (int)$r[0];
@@ -433,7 +443,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $allDegree[$parentIdx] = $allDegree[$parentIdx] + 1;
                 $allEdgeCount++;
                 if ($is_strong) {
-                    $this->strong_all_children[$parent][] = $child;
+                    $strongAllDegree[$parentIdx] = $strongAllDegree[$parentIdx] + 1;
+                    $strongAllEdgeCount++;
                 }
             }
             $revDegree[$childIdx] = $revDegree[$childIdx] + 1;
@@ -444,35 +455,42 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // Step 2: Build offsets via prefix sum
         $this->treeOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
         $this->allOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
+        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
         $this->revOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
 
         $this->treeOffsets[0] = 0;
         $this->allOffsets[0] = 0;
+        $this->strongAllOffsets[0] = 0;
         $this->revOffsets[0] = 0;
 
         for ($i = 0; $i < $this->nodeCount; $i++) {
             $this->treeOffsets[$i + 1] = $this->treeOffsets[$i] + $treeDegree[$i];
             $this->allOffsets[$i + 1] = $this->allOffsets[$i] + $allDegree[$i];
+            $this->strongAllOffsets[$i + 1] = $this->strongAllOffsets[$i] + $strongAllDegree[$i];
             $this->revOffsets[$i + 1] = $this->revOffsets[$i] + $revDegree[$i];
         }
 
         // Step 3: Allocate edge arrays
         $safeTreeCount = max($treeEdgeCount, 1);
         $safeAllCount = max($allEdgeCount, 1);
+        $safeStrongAllCount = max($strongAllEdgeCount, 1);
         $safeRevCount = max($revEdgeCount, 1);
 
         $this->treeEdges = FFIHelper::new("int32_t[{$safeTreeCount}]");
         $this->allEdges = FFIHelper::new("int32_t[{$safeAllCount}]");
+        $this->strongAllEdges = FFIHelper::new("int32_t[{$safeStrongAllCount}]");
         $this->revEdges = FFIHelper::new("int32_t[{$safeRevCount}]");
 
         // Step 4: Fill edges using write positions
         $treePos = FFIHelper::new("int32_t[{$this->nodeCount}]");
         $allPos = FFIHelper::new("int32_t[{$this->nodeCount}]");
+        $strongAllPos = FFIHelper::new("int32_t[{$this->nodeCount}]");
         $revPos = FFIHelper::new("int32_t[{$this->nodeCount}]");
 
         for ($i = 0; $i < $this->nodeCount; $i++) {
             $treePos[$i] = $this->treeOffsets[$i];
             $allPos[$i] = $this->allOffsets[$i];
+            $strongAllPos[$i] = $this->strongAllOffsets[$i];
             $revPos[$i] = $this->revOffsets[$i];
         }
 
@@ -480,6 +498,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
+            $strength = (string)($r[3] ?? 'strong');
+            $is_strong = $strength === 'strong';
 
             $parentIdx = $this->nodeIdToIndex($parent);
             $childIdx = $this->nodeIdToIndex($child);
@@ -493,15 +513,60 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $pos = (int)$allPos[$parentIdx];
                 $this->allEdges[$pos] = $childIdx;
                 $allPos[$parentIdx] = $pos + 1;
+                if ($is_strong) {
+                    $pos = (int)$strongAllPos[$parentIdx];
+                    $this->strongAllEdges[$pos] = $childIdx;
+                    $strongAllPos[$parentIdx] = $pos + 1;
+                }
             }
-            // Store original node_id for parents (not index) since
-            // all_parents includes -1 sentinel
             $pos = (int)$revPos[$childIdx];
             $this->revEdges[$pos] = $parent;
             $revPos[$childIdx] = $pos + 1;
         }
 
-        unset($rows, $treeDegree, $allDegree, $revDegree, $treePos, $allPos, $revPos);
+        unset(
+            $rows,
+            $treeDegree,
+            $allDegree,
+            $strongAllDegree,
+            $revDegree,
+            $treePos,
+            $allPos,
+            $strongAllPos,
+            $revPos,
+        );
+    }
+
+    /**
+     * Override: build SCC adjacency from strong_all CSR instead of PHP array.
+     */
+    #[\Override]
+    protected function buildSccAdjacency(): void
+    {
+        if ($this->canonical === []) {
+            return;
+        }
+
+        for ($i = 0; $i < $this->nodeCount; $i++) {
+            $parent = (int)$this->indexToNodeFfi[$i];
+            if ($parent === -1) {
+                continue;
+            }
+            $cp = $this->findCanonical($parent);
+            $start = (int)$this->strongAllOffsets[$i];
+            $end = (int)$this->strongAllOffsets[$i + 1];
+            for ($j = $start; $j < $end; $j++) {
+                $childIdx = (int)$this->strongAllEdges[$j];
+                $child = (int)$this->indexToNodeFfi[$childIdx];
+                $cc = $this->findCanonical($child);
+                if ($cp !== $cc) {
+                    $this->scc_adjacency[$cp][] = $cc;
+                }
+            }
+        }
+        foreach ($this->scc_adjacency as $node => $children) {
+            $this->scc_adjacency[$node] = array_values(array_unique($children));
+        }
     }
 
     /** @psalm-suppress UnsupportedReferenceUsage */
@@ -575,13 +640,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
-                $start = (int)$this->allOffsets[$node];
-                $end = (int)$this->allOffsets[$node + 1];
+                $start = (int)$this->strongAllOffsets[$node];
+                $end = (int)$this->strongAllOffsets[$node + 1];
                 $count = $end - $start;
 
                 $found_unvisited = false;
                 for ($i = $ci; $i < $count; $i++) {
-                    $w = (int)$this->allEdges[$start + $i];
+                    $w = (int)$this->strongAllEdges[$start + $i];
                     if (!isset($index[$w])) {
                         $call_stack[] = [$node, $i + 1];
                         $index[$w] = $lowlink[$w] = $index_counter++;
