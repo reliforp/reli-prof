@@ -504,9 +504,35 @@ Case 15 (6.2M edges). With unlimited memory, everything works correctly — path
 show app-level routes, cycles detected, "Break this_ptr" suggested.
 
 **Last remaining OOM:** `$this->scc_adjacency[$cp][] = $cc` builds a PHP array
-for SCC computation. For Case 15 this is the only blocker for bounded-memory
-operation. Could be replaced with another FFI CSR or by running Tarjan directly
-on the existing `strongAllEdges` CSR without materializing a separate adjacency.
+for SCC computation. Could be replaced with FFI CSR or by running Tarjan on
+the existing `strongAllEdges` CSR.
+
+**Status update:** `scc_adjacency` eliminated (inlined canonical resolution). But
+`CycleClusterPass::loadLinkNames()` (line 606) does `fetchAll` on all tree edges,
+which OOMs at 512M for Case 15. This is one of many `fetchAll` calls across the
+report passes. Full list of potentially dangerous `fetchAll` locations:
+
+```
+# context_edges queries (most dangerous for large edge counts):
+CycleClusterPass.php:606    loadLinkNames — all tree edges
+CycleClusterPass.php:625    loadNodeTypes
+CycleClusterPass.php:645    loadParentMap
+ChokePointPass.php:112,123  objects_store node lookup
+GraphSubstrate.php:360,378  loadEdges (non-FFI path)
+
+# context_node_locations queries (dangerous for large object counts):
+NonTreeEdgePass.php:77,216,404,446
+TopArraysPass.php:185,241,293,319,330
+PropertyScalingPass.php:319,356,392
+```
+
+For bounded-memory operation on Case 15-scale data (6M+ edges), these need either:
+- Cursor-based iteration where possible
+- LIMIT/pagination for report passes that only need top-N results
+- Lazy loading (only fetch when the pass actually runs)
+
+This is a broader architectural issue — the report layer was designed assuming
+the data fits in memory. For extreme cases, a streaming/pagination approach is needed.
 
 **LIFO bug:** Fixed — roots are reversed before push, visited is deferred to pop time,
 push order is `[$adj_os, $adj]` so non-objects_store edges are preferred.
