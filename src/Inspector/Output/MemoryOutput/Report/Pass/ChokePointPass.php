@@ -35,6 +35,7 @@ final class ChokePointPass implements PassInterface
      * @return list<Finding>
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, MixedArgumentTypeCoercion
      * @psalm-suppress InvalidOperand, PossiblyInvalidArgument, RiskyTruthyFalsyComparison, MixedArrayOffset
+     * @psalm-suppress RedundantCastGivenDocblockType
      */
     #[\Override]
     public function analyze(): array
@@ -104,25 +105,16 @@ final class ChokePointPass implements PassInterface
         }
         $chokepoints = $filtered;
 
-        // Build parent map and node type map for path lookup
-        $parent_map = [];
-        $stmt = $this->db->query(
-            "SELECT child_node_id, parent_node_id, link_name FROM context_edges"
-            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+        // On-demand path lookup (max ~20 rows per choke_point × 10 = 200 queries)
+        $parent_stmt = $this->db->prepare(
+            "SELECT parent_node_id, link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
         );
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $parent_map[(int)$r[0]] = [(int)$r[1], $r[2]];
-        }
-
-        /** @var array<int, string> */
-        $node_type_map = [];
-        $stmt = $this->db->query(
-            "SELECT node_id, type FROM context_nodes"
-            . " WHERE run_id = {$this->run_id}"
+        $ntype_stmt = $this->db->prepare(
+            "SELECT type FROM context_nodes"
+            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
         );
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $node_type_map[(int)$r[0]] = (string)$r[1];
-        }
 
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
@@ -164,20 +156,21 @@ final class ChokePointPass implements PassInterface
             $up_types = [];
             $cur = $node;
             for ($i = 0; $i < 20; $i++) {
-                if (!isset($parent_map[$cur])) {
+                $parent_stmt->execute([$cur]);
+                $pr = $parent_stmt->fetch(\PDO::FETCH_NUM);
+                if (!$pr) {
                     break;
                 }
-                [$parent, $link] = $parent_map[$cur];
+                $parent = (int)$pr[0];
+                $link = (string)$pr[1];
 
                 // If the parent is objects_store, try to find a better path
                 if (isset($objects_store_nodes[$parent])) {
                     $alt = $this->findAlternativeTreeParent(
                         $cur,
                         $objects_store_nodes,
-                        $parent_map,
                     );
                     if ($alt !== null) {
-                        // Restart walk from the alternative parent
                         [$parent, $link] = $alt;
                     }
                 }
@@ -187,7 +180,10 @@ final class ChokePointPass implements PassInterface
                     $cur
                 );
                 array_unshift($up_parts, $resolved);
-                array_unshift($up_types, $node_type_map[$cur] ?? '');
+
+                $ntype_stmt->execute([$cur]);
+                $nt = $ntype_stmt->fetchColumn();
+                array_unshift($up_types, $nt !== false ? (string)$nt : '');
                 if ($label === '') {
                     $label = (string)$link;
                 }
@@ -259,7 +255,6 @@ final class ChokePointPass implements PassInterface
     private function findAlternativeTreeParent(
         int $node,
         array $objects_store_nodes,
-        array $parent_map,
     ): ?array {
         foreach ($this->substrate->getAllParents($node) as $alt_parent) {
             if ($alt_parent < 0) {

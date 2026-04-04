@@ -194,8 +194,8 @@ final class PropertyScalingPass implements PassInterface
         assert($this->substrate !== null);
         $use_retained = $this->substrate->hasSubtreeSizes();
 
-        // Load link_names for all tree edges
-        $link_names = $this->loadLinkNames();
+        // On-demand link_name lookup (avoids loading all 2M+ edges)
+        $link_stmt = $this->createLinkNameStmt();
 
         // For each object of dominant_class, walk children to find
         // object_properties → property children
@@ -211,14 +211,14 @@ final class PropertyScalingPass implements PassInterface
                 continue;
             }
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($link_names[$child] ?? '') !== 'object_properties') {
+                if (($this->lookupLinkName($link_stmt, $child) ?? '') !== 'object_properties') {
                     continue;
                 }
                 // child = ObjectPropertiesContext
                 // Deduplicate property children by canonical
                 $seen_prop_canonicals = [];
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $link_names[$prop_child] ?? null;
+                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
                     if ($prop_name === null) {
                         continue;
                     }
@@ -348,18 +348,26 @@ final class PropertyScalingPass implements PassInterface
      * @return array<int, string>
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function loadLinkNames(): array
+    /**
+     * Create a prepared statement for on-demand link_name lookup.
+     */
+    private function createLinkNameStmt(): \PDOStatement
     {
-        $stmt = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+        return $this->db->prepare(
+            "SELECT link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
         );
+    }
 
-        $map = [];
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $map[(int)$r[0]] = (string)$r[1];
-        }
-        return $map;
+    /**
+     * @psalm-suppress MixedAssignment
+     */
+    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
+    {
+        $stmt->execute([$child_node_id]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? (string)$val : null;
     }
 
     /**
