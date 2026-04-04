@@ -557,19 +557,21 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         array $os_nodes,
         array $root_link_priority,
     ): array {
-        $rows = $db->query(
-            "SELECT rowid, parent_node_id, child_node_id FROM context_edges"
-            . " WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-        if (!$rows) {
-            return [];
-        }
+        $edge_query = "SELECT rowid, parent_node_id, child_node_id"
+            . " FROM context_edges WHERE run_id = {$run_id}";
 
-        // Build compact node index
+        // Pass 1 (cursor): build node index, count degrees, collect roots
         /** @var array<int, int> */
-        $n2i = []; // node_id → index
+        $n2i = [];
         $idx = 0;
-        foreach ($rows as $r) {
+        $roots = [];
+        $deg = [];
+        $deg_os = [];
+        $nr = 0;
+        $osc = 0;
+
+        $stmt = $db->query($edge_query);
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $p = $r[1] === null ? -1 : (int)$r[1];
             $c = (int)$r[2];
             if (!isset($n2i[$p])) {
@@ -578,31 +580,24 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             if (!isset($n2i[$c])) {
                 $n2i[$c] = $idx++;
             }
-        }
-        $nc = $idx; // node count
-
-        // Count degrees per node for non-OS and OS adjacency
-        $roots = [];
-        $deg = array_fill(0, $nc, 0);
-        $deg_os = array_fill(0, $nc, 0);
-        $nr = 0;
-        $osc = 0;
-        foreach ($rows as $r) {
-            $p = $r[1] === null ? -1 : (int)$r[1];
-            $c = (int)$r[2];
-            $rowid = (int)$r[0];
             if ($p === -1) {
-                $roots[] = [$rowid, $c];
+                $roots[] = [(int)$r[0], $c];
                 continue;
             }
             $pi = $n2i[$p];
             if (isset($os_nodes[$p])) {
-                $deg_os[$pi]++;
+                $deg_os[$pi] = ($deg_os[$pi] ?? 0) + 1;
                 $osc++;
             } else {
-                $deg[$pi]++;
+                $deg[$pi] = ($deg[$pi] ?? 0) + 1;
                 $nr++;
             }
+        }
+        $stmt->closeCursor();
+
+        $nc = $idx;
+        if ($nc === 0) {
+            return [];
         }
 
         // CSR prefix sums
@@ -612,9 +607,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $off[0] = 0;
         $off_os[0] = 0;
         for ($i = 0; $i < $nc; $i++) {
-            $off[$i + 1] = $off[$i] + $deg[$i];
-            $off_os[$i + 1] = $off_os[$i] + $deg_os[$i];
+            $off[$i + 1] = $off[$i] + ($deg[$i] ?? 0);
+            $off_os[$i + 1] = $off_os[$i] + ($deg_os[$i] ?? 0);
         }
+        unset($deg, $deg_os);
 
         // Allocate edge + rowid arrays
         $snr = max($nr, 1);
@@ -624,14 +620,17 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $edg_os = $ffi->new("int32_t[{$sosc}]");
         $rid_os = $ffi->new("int32_t[{$sosc}]");
 
-        // Fill CSR
-        $pos = array_fill(0, $nc, 0);
-        $pos_os = array_fill(0, $nc, 0);
+        // Write positions (FFI to avoid PHP array for large graphs)
+        $pos = $ffi->new("int32_t[{$nc}]");
+        $pos_os = $ffi->new("int32_t[{$nc}]");
         for ($i = 0; $i < $nc; $i++) {
-            $pos[$i] = (int)$off[$i];
-            $pos_os[$i] = (int)$off_os[$i];
+            $pos[$i] = $off[$i];
+            $pos_os[$i] = $off_os[$i];
         }
-        foreach ($rows as $r) {
+
+        // Pass 2 (cursor): fill CSR
+        $stmt = $db->query($edge_query);
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $p = $r[1] === null ? -1 : (int)$r[1];
             if ($p === -1) {
                 continue;
@@ -641,18 +640,19 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $pi = $n2i[$p];
             $ci = $n2i[$c];
             if (isset($os_nodes[$p])) {
-                $j = $pos_os[$pi];
+                $j = (int)$pos_os[$pi];
                 $edg_os[$j] = $ci;
                 $rid_os[$j] = $rowid;
                 $pos_os[$pi] = $j + 1;
             } else {
-                $j = $pos[$pi];
+                $j = (int)$pos[$pi];
                 $edg[$j] = $ci;
                 $rid[$j] = $rowid;
                 $pos[$pi] = $j + 1;
             }
         }
-        unset($rows, $pos, $pos_os, $deg, $deg_os);
+        $stmt->closeCursor();
+        unset($pos, $pos_os);
 
         // Sort roots by priority
         usort($roots, function (array $a, array $b) use ($root_link_priority): int {
