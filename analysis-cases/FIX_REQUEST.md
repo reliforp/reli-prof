@@ -497,17 +497,18 @@ the rebuild should either:
 
 Approach 1 is cleaner — single load, single DFS, correct is_tree from the start.
 
-**Bug in current implementation:** `rebuildSpanningTree` sorts roots by priority
-(call_frames first, objects_store last) but pushes them all onto the stack in order.
-Since the DFS uses `array_pop` (LIFO), the **last pushed root (objects_store) is
-popped first**, defeating the priority sort. Additionally, all roots are marked
-visited immediately, so when call_frames DFS reaches an object later, it's already
-visited via objects_store.
+**Status:** `rebuildSpanningTree` now uses FFI CSR for the DFS itself, but the
+edge loading still uses `fetchAll()` into a PHP array (OOM at ~6M edges / 512MB).
+Additionally, `FfiCsrGraphSubstrate::loadFromDb()` builds `strong_all_children` as
+a PHP array (OOM at 2GB for Case 15). The `fetchAll` should be replaced with cursor
+streaming that fills CSR directly.
 
-**Fix:** Either reverse the roots before pushing (`array_reverse($roots)`) so
-`array_pop` pops call_frames first, or use a FIFO queue. The root loop should also
-NOT mark all roots as visited upfront — only mark each root visited when it is
-actually popped from the stack.
+**LIFO bug:** Fixed — roots are reversed before push, visited is deferred to pop time,
+push order is `[$adj_os, $adj]` so non-objects_store edges are preferred.
+
+**Verified working:** Cases 5, 9, 14 produce correct app-level paths. Case 15 (6.2M
+edges) OOMs at 2GB due to `strong_all_children` PHP array — this is a pre-existing
+GraphSubstrate limitation, not specific to the rebuild.
 report in a single process, the TreeRebuilder's adjacency list can be passed directly
 to GraphSubstrate, skipping its `loadEdges()` SELECT. DB I/O reduced by one full scan.
 For the separate `memory:report` path (reading from a pre-existing DB), GraphSubstrate
