@@ -668,3 +668,34 @@ Want:     $widgets[N]->emitter->listeners['render']
 detection works, app-level paths found) but the output is hard to read. A PHP
 developer seeing `[conn]->$statementCache` won't immediately understand it means
 `$conn->statementCache`. This is the main barrier to practical usability.
+
+**Additional issue: top-level path collapsing is too aggressive.** PathFormatter
+collapses `class_table`, `function_table`, `global_constants` etc., losing the
+context of which root the path came from:
+
+```
+Current:  application->static_properties->bootstrappers[199]
+Want:     Application::$bootstrappers[199]
+```
+
+`application` (all lowercase) looks like a variable name. The user needs to know
+this is `class_table->Application->static_properties->bootstrappers` — i.e., a
+static property of the Application class.
+
+**Revised collapsing policy:**
+
+| Node | Action | Result |
+|------|--------|--------|
+| `included_files` | collapse | (noise) |
+| `interned_strings` | collapse | (internal) |
+| `global_variables` | convert | `$varname` |
+| `class_table` | **convert** | `ClassName::` |
+| `function_table` | **convert** | `functionName()::` |
+| `global_constants` | **convert** | `CONSTANT_NAME` |
+| `objects_store` | collapse (fallback) | (internal index) |
+| `modules` | collapse | (internal) |
+| `global_callbacks` | collapse | (internal) |
+
+The key distinction: some nodes should be **collapsed** (removed from path) and
+some should be **converted** (replaced with PHP-syntax equivalent). The current
+implementation collapses everything indiscriminately.
