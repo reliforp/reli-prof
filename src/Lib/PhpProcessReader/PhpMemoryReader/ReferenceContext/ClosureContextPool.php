@@ -13,27 +13,19 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
-
-final class StringContextPool
+final class ClosureContextPool
 {
-    /** @var array<int, StringContext> */
+    /** @var array<int, ClosureContext> */
     private array $contexts = [];
 
-    public function getContextForLocation(ZendStringMemoryLocation $memory_location): StringContext
-    {
-        if (isset($this->contexts[$memory_location->address])) {
-            return $this->contexts[$memory_location->address];
-        }
-
-        $context = new StringContext($memory_location);
-        $this->contexts[$memory_location->address] = $context;
-        return $context;
-    }
-
-    public function getContextByAddress(int $address): ?StringContext
+    public function getContextForAddress(int $address): ?ClosureContext
     {
         return $this->contexts[$address] ?? null;
+    }
+
+    public function register(int $address, ClosureContext $context): void
+    {
+        $this->contexts[$address] = $context;
     }
 
     public function clear(): void
@@ -41,10 +33,7 @@ final class StringContextPool
         $this->contexts = [];
     }
 
-    /**
-     * Yield all entries as address => context, then clear the pool.
-     * @return \Generator<int, StringContext>
-     */
+    /** @return \Generator<int, ClosureContext> */
     public function drainWithAddresses(): \Generator
     {
         foreach ($this->contexts as $address => $context) {
@@ -55,7 +44,7 @@ final class StringContextPool
 
     /**
      * @param \WeakMap<ReferenceContext, int> $memo
-     * @return \Generator<int, StringContext>
+     * @return \Generator<int, ClosureContext>
      */
     public function drainEmittedWithAddresses(\WeakMap $memo): \Generator
     {

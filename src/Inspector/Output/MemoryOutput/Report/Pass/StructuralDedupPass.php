@@ -126,7 +126,11 @@ final class StructuralDedupPass implements PassInterface
     {
         assert($this->substrate !== null);
 
-        $link_names = $this->loadLinkNames();
+        $link_stmt = $this->db->prepare(
+            "SELECT link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
+        );
 
         /** @var array<string, array{class: string, size: int, props: string, count: int, total_size: int, example_id: int}> */
         $shape_groups = [];
@@ -142,11 +146,11 @@ final class StructuralDedupPass implements PassInterface
             // Find object_properties child, collect property names
             $props = [];
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($link_names[$child] ?? '') !== 'object_properties') {
+                if (($this->lookupLinkName($link_stmt, $child)) !== 'object_properties') {
                     continue;
                 }
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $link_names[$prop_child] ?? null;
+                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
                     if ($prop_name !== null) {
                         $props[] = $prop_name;
                     }
@@ -237,18 +241,11 @@ final class StructuralDedupPass implements PassInterface
      * @return array<int, string>
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function loadLinkNames(): array
+    /** @psalm-suppress MixedAssignment */
+    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
     {
-        $rows = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-
-        $map = [];
-        foreach ($rows as $r) {
-            $map[(int)$r[0]] = (string)$r[1];
-        }
-        unset($rows);
-        return $map;
+        $stmt->execute([$child_node_id]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? (string)$val : null;
     }
 }

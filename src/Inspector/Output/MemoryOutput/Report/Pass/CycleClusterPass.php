@@ -62,15 +62,30 @@ final class CycleClusterPass implements PassInterface
         }
         usort($groups_sorted, fn($a, $b) => $b['total'] <=> $a['total']);
 
-        // Load link_names and node types for path resolution
-        $link_names = $this->loadLinkNames();
+        // Collect all SCC node IDs for targeted metadata loading
+        $scc_node_ids = [];
+        foreach ($groups_sorted as $g) {
+            foreach ($g['group'] as $profile) {
+                foreach ($profile['nodes'] as $nid) {
+                    $scc_node_ids[$nid] = true;
+                }
+            }
+        }
+
+        // Load link_names only for SCC nodes (not all 2M+ edges)
+        $link_names = $this->loadLinkNamesForNodes(array_keys($scc_node_ids));
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
-        // Load node types for PathFormatter
-        $node_type_map = $this->loadNodeTypes();
-
-        // Load parent map for entry point path
-        $parent_map = $this->loadParentMap();
+        // Prepared statements for on-demand path lookup (max ~20 rows per path)
+        $parent_stmt = $this->db->prepare(
+            "SELECT parent_node_id, link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
+        );
+        $type_stmt = $this->db->prepare(
+            "SELECT type FROM context_nodes"
+            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
+        );
 
         $findings = [];
         foreach (array_slice($groups_sorted, 0, 10) as $g) {
@@ -95,8 +110,8 @@ final class CycleClusterPass implements PassInterface
             // Find entry point path
             $entry_path = $this->findEntryPath(
                 $example['nodes'],
-                $parent_map,
-                $node_type_map,
+                $parent_stmt,
+                $type_stmt,
                 $labeler,
             );
 
@@ -356,14 +371,14 @@ final class CycleClusterPass implements PassInterface
      */
     private function loadRootLinkNames(): array
     {
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT child_node_id, link_name FROM context_edges"
             . " WHERE parent_node_id IS NULL AND is_tree = 1"
             . " AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
         $map = [];
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $map[(int)$r[0]] = (string)$r[1];
         }
         return $map;
@@ -532,15 +547,18 @@ final class CycleClusterPass implements PassInterface
      * @param array<int, array{0: int, 1: string}> $parent_map
      * @param array<int, string> $node_type_map
      */
+    /**
+     * @param list<int> $nodes
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
     private function findEntryPath(
         array $nodes,
-        array $parent_map,
-        array $node_type_map,
+        \PDOStatement $parent_stmt,
+        \PDOStatement $type_stmt,
         NodeLabeler $labeler,
     ): string {
         $scc_set = array_flip($nodes);
 
-        // Find an SCC node that has an external parent (entry point)
         $entry_node = null;
         foreach ($nodes as $node) {
             foreach ($this->substrate->getAllParents($node) as $parent) {
@@ -555,18 +573,29 @@ final class CycleClusterPass implements PassInterface
             return '';
         }
 
-        // Walk up from entry_node to root
+        // Walk up from entry_node to root using on-demand queries
         $parts = [];
         $types = [];
         $cur = $entry_node;
         for ($i = 0; $i < 20; $i++) {
-            if (!isset($parent_map[$cur])) {
+            $parent_stmt->execute([$cur]);
+            $row = $parent_stmt->fetch(\PDO::FETCH_NUM);
+            if (!$row) {
                 break;
             }
-            [$parent, $link] = $parent_map[$cur];
+            if ($row[0] === null) {
+                array_unshift($parts, (string)$row[1]);
+                array_unshift($types, '');
+                break;
+            }
+            $parent = (int)$row[0];
+            $link = (string)$row[1];
             $resolved = $labeler->resolvePathLabel($link, $cur);
             array_unshift($parts, $resolved);
-            array_unshift($types, $node_type_map[$cur] ?? '');
+
+            $type_stmt->execute([$cur]);
+            $type_row = $type_stmt->fetchColumn();
+            array_unshift($types, $type_row !== false ? (string)$type_row : '');
             $cur = $parent;
         }
 
@@ -598,57 +627,30 @@ final class CycleClusterPass implements PassInterface
      * @return array<int, string>
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function loadLinkNames(): array
-    {
-        $rows = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-
-        $map = [];
-        foreach ($rows as $r) {
-            $map[(int)$r[0]] = (string)$r[1];
-        }
-        unset($rows);
-        return $map;
-    }
-
     /**
+     * Load link_names only for the given node IDs.
+     *
+     * @param list<int> $node_ids
      * @return array<int, string>
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function loadNodeTypes(): array
+    private function loadLinkNamesForNodes(array $node_ids): array
     {
-        $rows = $this->db->query(
-            "SELECT node_id, type FROM context_nodes"
-            . " WHERE run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-
-        $map = [];
-        foreach ($rows as $r) {
-            $map[(int)$r[0]] = (string)$r[1];
+        if ($node_ids === []) {
+            return [];
         }
-        unset($rows);
-        return $map;
-    }
-
-    /**
-     * @return array<int, array{0: int, 1: string}>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
-     */
-    private function loadParentMap(): array
-    {
-        $rows = $this->db->query(
-            "SELECT child_node_id, parent_node_id, link_name"
-            . " FROM context_edges WHERE is_tree = 1"
-            . " AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-
         $map = [];
-        foreach ($rows as $r) {
-            $map[(int)$r[0]] = [(int)($r[1] ?? -1), (string)$r[2]];
+        foreach (array_chunk($node_ids, 500) as $chunk) {
+            $placeholders = implode(',', $chunk);
+            $stmt = $this->db->query(
+                "SELECT child_node_id, link_name FROM context_edges"
+                . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+                . " AND child_node_id IN ({$placeholders})"
+            );
+            while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+                $map[(int)$r[0]] = (string)$r[1];
+            }
         }
-        unset($rows);
         return $map;
     }
 }

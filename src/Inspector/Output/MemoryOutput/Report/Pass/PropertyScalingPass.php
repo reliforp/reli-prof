@@ -194,8 +194,8 @@ final class PropertyScalingPass implements PassInterface
         assert($this->substrate !== null);
         $use_retained = $this->substrate->hasSubtreeSizes();
 
-        // Load link_names for all tree edges
-        $link_names = $this->loadLinkNames();
+        // On-demand link_name lookup (avoids loading all 2M+ edges)
+        $link_stmt = $this->createLinkNameStmt();
 
         // For each object of dominant_class, walk children to find
         // object_properties → property children
@@ -211,14 +211,14 @@ final class PropertyScalingPass implements PassInterface
                 continue;
             }
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($link_names[$child] ?? '') !== 'object_properties') {
+                if (($this->lookupLinkName($link_stmt, $child) ?? '') !== 'object_properties') {
                     continue;
                 }
                 // child = ObjectPropertiesContext
                 // Deduplicate property children by canonical
                 $seen_prop_canonicals = [];
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $link_names[$prop_child] ?? null;
+                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
                     if ($prop_name === null) {
                         continue;
                     }
@@ -291,7 +291,7 @@ final class PropertyScalingPass implements PassInterface
      */
     private function analyzeWithSql(string $dominant_class): array
     {
-        $rows = $this->db->query("
+        $stmt = $this->db->query("
             SELECT
                 e_prop.link_name,
                 count(*) as total_refs,
@@ -316,10 +316,10 @@ final class PropertyScalingPass implements PassInterface
                 AND cnl_obj.run_id = {$this->run_id}
             GROUP BY e_prop.link_name
             ORDER BY tree_size DESC
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        ");
 
         $results = [];
-        foreach ($rows as $row) {
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $distinct = (int)$row['distinct_targets'];
             $total_refs = (int)$row['total_refs'];
 
@@ -348,19 +348,26 @@ final class PropertyScalingPass implements PassInterface
      * @return array<int, string>
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function loadLinkNames(): array
+    /**
+     * Create a prepared statement for on-demand link_name lookup.
+     */
+    private function createLinkNameStmt(): \PDOStatement
     {
-        $rows = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        return $this->db->prepare(
+            "SELECT link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
+        );
+    }
 
-        $map = [];
-        foreach ($rows as $r) {
-            $map[(int)$r[0]] = (string)$r[1];
-        }
-        unset($rows);
-        return $map;
+    /**
+     * @psalm-suppress MixedAssignment
+     */
+    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
+    {
+        $stmt->execute([$child_node_id]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? (string)$val : null;
     }
 
     /**
@@ -381,7 +388,7 @@ final class PropertyScalingPass implements PassInterface
         $placeholders = implode(',', $child_ids);
 
         $info = [];
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT cn.node_id, cn.type, cnl.location_type"
             . " FROM context_nodes cn"
             . " LEFT JOIN context_node_locations cnl"
@@ -389,8 +396,8 @@ final class PropertyScalingPass implements PassInterface
             . " AND cnl.run_id = cn.run_id"
             . " WHERE cn.run_id = {$this->run_id}"
             . " AND cn.node_id IN ({$placeholders})"
-        )->fetchAll(\PDO::FETCH_ASSOC);
-        foreach ($rows as $r) {
+        );
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $info[(int)$r['node_id']] = [
                 'type' => (string)($r['type'] ?? ''),
                 'loc_type' => (string)($r['location_type'] ?? ''),

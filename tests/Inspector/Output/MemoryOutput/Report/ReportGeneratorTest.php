@@ -274,6 +274,44 @@ class ReportGeneratorTest extends BaseTestCase
         $this->assertArrayHasKey('edge_count', $result->meta);
     }
 
+    public function testFullAnalysisRunsGraphPassesForLargeGraph(): void
+    {
+        // Build a graph with a cycle to verify CycleClusterPass runs
+        $nodeA = $this->createMockContext('objA', [], [
+            new ZendObjectMemoryLocation(0x1000, 256, 1, 7, 'App\\NodeA'),
+        ]);
+        $nodeB = $this->createMockContext('objB', [], [
+            new ZendObjectMemoryLocation(0x2000, 256, 1, 7, 'App\\NodeB'),
+        ]);
+        // Manually build a cyclic graph in the DB
+        $top = $this->createMockContext('top', ['root' => $nodeA], []);
+        $this->buildDbFromContext($top);
+
+        // Insert extra edges to create a cycle: A -> B -> A
+        $db = $this->openDb();
+        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)"
+            . " VALUES (1, 1, 3, 'child_b', 1, 'strong')");
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES (1, 3, 'objB')");
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type, region)"
+            . " VALUES (1, 3, 8192, 256, 'ZendObjectMemoryLocation', 'zend_mm_heap')");
+        $db->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)"
+            . " VALUES (1, 3, 1, 'back_ref', 0, 'strong')");
+
+        // With full_analysis=true, CycleClusterPass should detect the cycle
+        $generator = new ReportGenerator();
+        $result = $generator->generateFromDb($db, 1, true);
+
+        $cycles = $this->findByKind($result, 'cycle_cluster');
+        $micro = $this->findByKind($result, 'micro_cycle');
+        $retainedExact = $this->findByKind($result, 'retained_exact');
+
+        // Either cycle detection found cycles, or retained_exact says "exact"
+        // (confirming graph passes ran). The key assertion is that graph passes
+        // actually execute with full_analysis=true.
+        $graphPassRan = !empty($cycles) || !empty($micro) || !empty($retainedExact);
+        $this->assertTrue($graphPassRan, 'Graph-based passes should run with full_analysis=true');
+    }
+
     // ---- Helpers ----
 
     private function generateReport(): ReportResult

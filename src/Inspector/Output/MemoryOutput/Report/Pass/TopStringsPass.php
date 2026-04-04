@@ -23,10 +23,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TopStringsPass implements PassInterface
 {
-    /** @var array<int, array{0: int, 1: string}>|null */
-    private ?array $parentMapCache = null;
-    /** @var array<int, string>|null */
-    private ?array $nodeTypeCache = null;
+    private ?\PDOStatement $parentStmt = null;
+    private ?\PDOStatement $nodeTypeStmt = null;
 
     public function __construct(
         private \PDO $db,
@@ -128,41 +126,41 @@ final class TopStringsPass implements PassInterface
     {
         assert($this->substrate !== null);
 
-        // Build parent map with link_names (loaded once, cached in substrate wouldn't help here)
-        if ($this->parentMapCache === null) {
-            $this->parentMapCache = [];
-            $rows = $this->db->query(
-                "SELECT child_node_id, parent_node_id, link_name"
-                . " FROM context_edges WHERE is_tree = 1"
-                . " AND run_id = {$this->run_id}"
-            )->fetchAll(\PDO::FETCH_NUM);
-            foreach ($rows as $r) {
-                $this->parentMapCache[(int)$r[0]] = [(int)($r[1] ?? -1), (string)$r[2]];
-            }
-            unset($rows);
-
-            $this->nodeTypeCache = [];
-            $rows = $this->db->query(
-                "SELECT node_id, type FROM context_nodes"
-                . " WHERE run_id = {$this->run_id}"
-            )->fetchAll(\PDO::FETCH_NUM);
-            foreach ($rows as $r) {
-                $this->nodeTypeCache[(int)$r[0]] = (string)$r[1];
-            }
-            unset($rows);
+        if ($this->parentStmt === null) {
+            $this->parentStmt = $this->db->prepare(
+                "SELECT parent_node_id, link_name FROM context_edges"
+                . " WHERE child_node_id = ? AND is_tree = 1"
+                . " AND run_id = {$this->run_id} LIMIT 1"
+            );
+            $this->nodeTypeStmt = $this->db->prepare(
+                "SELECT type FROM context_nodes"
+                . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
+            );
         }
 
         $parts = [];
         $types = [];
         $cur = $node_id;
         for ($i = 0; $i < 20; $i++) {
-            if (!isset($this->parentMapCache[$cur])) {
+            $this->parentStmt->execute([$cur]);
+            $row = $this->parentStmt->fetch(\PDO::FETCH_NUM);
+            if (!$row) {
                 break;
             }
-            [$parent, $link] = $this->parentMapCache[$cur];
+            if ($row[0] === null) {
+                array_unshift($parts, (string)$row[1]);
+                array_unshift($types, '');
+                break;
+            }
+            $parent = (int)$row[0];
+            $link = (string)$row[1];
             $resolved = $labeler->resolvePathLabel($link, $cur);
             array_unshift($parts, $resolved);
-            array_unshift($types, $this->nodeTypeCache[$cur] ?? '');
+
+            assert($this->nodeTypeStmt !== null);
+            $this->nodeTypeStmt->execute([$cur]);
+            $nt = $this->nodeTypeStmt->fetchColumn();
+            array_unshift($types, $nt !== false ? (string)$nt : '');
             $cur = $parent;
         }
 

@@ -37,9 +37,17 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private \FFI\CData $treeOffsets;
     private \FFI\CData $treeEdges;
 
-    // CSR for all children (tree + non-tree, for SCC)
+    // CSR for strong tree children (tree + strong, for subtree sizes)
+    private \FFI\CData $strongTreeOffsets;
+    private \FFI\CData $strongTreeEdges;
+
+    // CSR for all children (tree + non-tree)
     private \FFI\CData $allOffsets;
     private \FFI\CData $allEdges;
+
+    // CSR for strong all children (strong tree + non-tree, for SCC)
+    private \FFI\CData $strongAllOffsets;
+    private \FFI\CData $strongAllEdges;
 
     // Reverse CSR for all parents
     private \FFI\CData $revOffsets;
@@ -101,7 +109,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getStrongChildren(int $nodeId): array
     {
-        return $this->strong_children[$nodeId] ?? [];
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return [];
+        }
+        return $this->csrSlice($this->strongTreeOffsets, $this->strongTreeEdges, $idx);
     }
 
     /** @return list<int> */
@@ -119,7 +131,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getStrongAllChildren(int $nodeId): array
     {
-        return $this->strong_all_children[$nodeId] ?? [];
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return [];
+        }
+        return $this->csrSlice($this->strongAllOffsets, $this->strongAllEdges, $idx);
     }
 
     /** @return list<int> */
@@ -131,6 +147,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             return [];
         }
         return $this->csrSlice($this->revOffsets, $this->revEdges, $idx);
+    }
+
+    #[\Override]
+    public function getIncomingCount(int $nodeId): int
+    {
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return 0;
+        }
+        return (int)$this->revOffsets[$idx + 1] - (int)$this->revOffsets[$idx];
     }
 
     #[\Override]
@@ -391,117 +417,157 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         unset($rows);
     }
 
-    /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument */
+    /**
+     * Load edges from DB into CSR arrays using cursor streaming.
+     * Two cursor passes avoid loading all edges into a PHP array.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
     private function loadEdgesFfi(\PDO $db, int $run_id): void
     {
-        $rows = $db->query(
-            "SELECT parent_node_id, child_node_id, is_tree, strength"
-            . " FROM context_edges WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        $nc = $this->nodeCount;
+        $edge_query = "SELECT parent_node_id, child_node_id, is_tree, strength"
+            . " FROM context_edges WHERE run_id = {$run_id}";
 
-        $this->edge_count = count($rows);
+        // Pass 1 (cursor): count degrees and collect roots
+        $treeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $allDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
+        $revDeg = FFIHelper::new("int32_t[{$nc}]");
 
-        // Step 1: Count degrees
-        $treeDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $allDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $revDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
+        $treeCount = 0;
+        $strongTreeCount = 0;
+        $allCount = 0;
+        $strongAllCount = 0;
+        $edgeCount = 0;
 
-        $treeEdgeCount = 0;
-        $allEdgeCount = 0;
-
-        foreach ($rows as $r) {
+        $stmt = $db->query($edge_query);
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $edgeCount++;
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
-            $strength = (string)($r[3] ?? 'strong');
-            $is_strong = $strength === 'strong';
+            $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
 
-            $parentIdx = $this->nodeIdToIndex($parent);
-            $childIdx = $this->nodeIdToIndex($child);
+            $pi = $this->nodeIdToIndex($parent);
+            $ci = $this->nodeIdToIndex($child);
 
             if ($is_tree) {
-                $treeDegree[$parentIdx] = $treeDegree[$parentIdx] + 1;
-                $treeEdgeCount++;
+                $treeDeg[$pi] = $treeDeg[$pi] + 1;
+                $treeCount++;
                 if ($is_strong) {
-                    $this->strong_children[$parent][] = $child;
+                    $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
+                    $strongTreeCount++;
                 }
                 if ($parent === -1) {
                     $this->roots[] = $child;
                 }
             }
             if ($parent !== -1) {
-                $allDegree[$parentIdx] = $allDegree[$parentIdx] + 1;
-                $allEdgeCount++;
+                $allDeg[$pi] = $allDeg[$pi] + 1;
+                $allCount++;
                 if ($is_strong) {
-                    $this->strong_all_children[$parent][] = $child;
+                    $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
+                    $strongAllCount++;
                 }
             }
-            $revDegree[$childIdx] = $revDegree[$childIdx] + 1;
+            $revDeg[$ci] = $revDeg[$ci] + 1;
         }
+        $stmt->closeCursor();
+        $this->edge_count = $edgeCount;
 
-        $revEdgeCount = count($rows);
-
-        // Step 2: Build offsets via prefix sum
-        $this->treeOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
-        $this->allOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
-        $this->revOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
+        // Build offsets via prefix sum
+        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
 
         $this->treeOffsets[0] = 0;
+        $this->strongTreeOffsets[0] = 0;
         $this->allOffsets[0] = 0;
+        $this->strongAllOffsets[0] = 0;
         $this->revOffsets[0] = 0;
 
-        for ($i = 0; $i < $this->nodeCount; $i++) {
-            $this->treeOffsets[$i + 1] = $this->treeOffsets[$i] + $treeDegree[$i];
-            $this->allOffsets[$i + 1] = $this->allOffsets[$i] + $allDegree[$i];
-            $this->revOffsets[$i + 1] = $this->revOffsets[$i] + $revDegree[$i];
+        for ($i = 0; $i < $nc; $i++) {
+            $this->treeOffsets[$i + 1] = $this->treeOffsets[$i] + $treeDeg[$i];
+            $this->strongTreeOffsets[$i + 1] = $this->strongTreeOffsets[$i] + $strongTreeDeg[$i];
+            $this->allOffsets[$i + 1] = $this->allOffsets[$i] + $allDeg[$i];
+            $this->strongAllOffsets[$i + 1] = $this->strongAllOffsets[$i] + $strongAllDeg[$i];
+            $this->revOffsets[$i + 1] = $this->revOffsets[$i] + $revDeg[$i];
+        }
+        unset($treeDeg, $strongTreeDeg, $allDeg, $strongAllDeg, $revDeg);
+
+        // Allocate edge arrays
+        $this->treeEdges = FFIHelper::new("int32_t[" . max($treeCount, 1) . "]");
+        $this->strongTreeEdges = FFIHelper::new("int32_t[" . max($strongTreeCount, 1) . "]");
+        $this->allEdges = FFIHelper::new("int32_t[" . max($allCount, 1) . "]");
+        $this->strongAllEdges = FFIHelper::new("int32_t[" . max($strongAllCount, 1) . "]");
+        $this->revEdges = FFIHelper::new("int32_t[" . max($edgeCount, 1) . "]");
+
+        // Write positions (FFI)
+        $treeP = FFIHelper::new("int32_t[{$nc}]");
+        $streeP = FFIHelper::new("int32_t[{$nc}]");
+        $allP = FFIHelper::new("int32_t[{$nc}]");
+        $sallP = FFIHelper::new("int32_t[{$nc}]");
+        $revP = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $treeP[$i] = $this->treeOffsets[$i];
+            $streeP[$i] = $this->strongTreeOffsets[$i];
+            $allP[$i] = $this->allOffsets[$i];
+            $sallP[$i] = $this->strongAllOffsets[$i];
+            $revP[$i] = $this->revOffsets[$i];
         }
 
-        // Step 3: Allocate edge arrays
-        $safeTreeCount = max($treeEdgeCount, 1);
-        $safeAllCount = max($allEdgeCount, 1);
-        $safeRevCount = max($revEdgeCount, 1);
-
-        $this->treeEdges = FFIHelper::new("int32_t[{$safeTreeCount}]");
-        $this->allEdges = FFIHelper::new("int32_t[{$safeAllCount}]");
-        $this->revEdges = FFIHelper::new("int32_t[{$safeRevCount}]");
-
-        // Step 4: Fill edges using write positions
-        $treePos = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $allPos = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $revPos = FFIHelper::new("int32_t[{$this->nodeCount}]");
-
-        for ($i = 0; $i < $this->nodeCount; $i++) {
-            $treePos[$i] = $this->treeOffsets[$i];
-            $allPos[$i] = $this->allOffsets[$i];
-            $revPos[$i] = $this->revOffsets[$i];
-        }
-
-        foreach ($rows as $r) {
+        // Pass 2 (cursor): fill CSR arrays
+        $stmt = $db->query($edge_query);
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
+            $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
 
-            $parentIdx = $this->nodeIdToIndex($parent);
-            $childIdx = $this->nodeIdToIndex($child);
+            $pi = $this->nodeIdToIndex($parent);
+            $ci = $this->nodeIdToIndex($child);
 
             if ($is_tree) {
-                $pos = (int)$treePos[$parentIdx];
-                $this->treeEdges[$pos] = $childIdx;
-                $treePos[$parentIdx] = $pos + 1;
+                $p = (int)$treeP[$pi];
+                $this->treeEdges[$p] = $ci;
+                $treeP[$pi] = $p + 1;
+                if ($is_strong) {
+                    $p = (int)$streeP[$pi];
+                    $this->strongTreeEdges[$p] = $ci;
+                    $streeP[$pi] = $p + 1;
+                }
             }
             if ($parent !== -1) {
-                $pos = (int)$allPos[$parentIdx];
-                $this->allEdges[$pos] = $childIdx;
-                $allPos[$parentIdx] = $pos + 1;
+                $p = (int)$allP[$pi];
+                $this->allEdges[$p] = $ci;
+                $allP[$pi] = $p + 1;
+                if ($is_strong) {
+                    $p = (int)$sallP[$pi];
+                    $this->strongAllEdges[$p] = $ci;
+                    $sallP[$pi] = $p + 1;
+                }
             }
-            // Store original node_id for parents (not index) since
-            // all_parents includes -1 sentinel
-            $pos = (int)$revPos[$childIdx];
-            $this->revEdges[$pos] = $parent;
-            $revPos[$childIdx] = $pos + 1;
+            $p = (int)$revP[$ci];
+            $this->revEdges[$p] = $parent;
+            $revP[$ci] = $p + 1;
         }
+        $stmt->closeCursor();
+        unset($treeP, $streeP, $allP, $sallP, $revP);
+    }
 
-        unset($rows, $treeDegree, $allDegree, $revDegree, $treePos, $allPos, $revPos);
+    /**
+     * Override: skip building scc_adjacency PHP array entirely.
+     * computeSccFfiUnified resolves canonical IDs inline during Tarjan.
+     */
+    #[\Override]
+    protected function buildSccAdjacency(): void
+    {
+        // Intentionally empty — canonical resolution is done inline
+        // in computeSccFfiUnified using the strongAll CSR directly.
     }
 
     /** @psalm-suppress UnsupportedReferenceUsage */
@@ -518,19 +584,19 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             [$idx, $processed] = array_pop($stack);
             if ($processed) {
                 $size = (int)$this->ffiNodeSizes[$idx];
-                $start = (int)$this->treeOffsets[$idx];
-                $end = (int)$this->treeOffsets[$idx + 1];
+                $start = (int)$this->strongTreeOffsets[$idx];
+                $end = (int)$this->strongTreeOffsets[$idx + 1];
                 for ($i = $start; $i < $end; $i++) {
-                    $size += (int)$this->ffiSubtreeSizes[(int)$this->treeEdges[$i]];
+                    $size += (int)$this->ffiSubtreeSizes[(int)$this->strongTreeEdges[$i]];
                 }
                 $this->ffiSubtreeSizes[$idx] = $size;
                 $visited[$idx] = true;
             } else {
                 $stack[] = [$idx, true];
-                $start = (int)$this->treeOffsets[$idx];
-                $end = (int)$this->treeOffsets[$idx + 1];
+                $start = (int)$this->strongTreeOffsets[$idx];
+                $end = (int)$this->strongTreeOffsets[$idx + 1];
                 for ($i = $start; $i < $end; $i++) {
-                    $childIdx = (int)$this->treeEdges[$i];
+                    $childIdx = (int)$this->strongTreeEdges[$i];
                     if (!isset($visited[$childIdx])) {
                         $stack[] = [$childIdx, false];
                     }
@@ -540,106 +606,33 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $this->subtreeSizesComputed = true;
     }
 
-    /** @psalm-suppress UnsupportedReferenceUsage, MixedArgument */
-    private function computeSccFfi(): void
-    {
-        $use_unified = $this->scc_adjacency !== [];
-
-        // When using unified adjacency, run Tarjan on canonical node_ids
-        // (not CSR indices) since scc_adjacency uses node_ids.
-        if ($use_unified) {
-            $this->computeSccFfiUnified();
-            return;
-        }
-
-        $index_counter = 0;
-        $stack = [];
-        $on_stack = [];
-        $index = [];
-        $lowlink = [];
-        $sccs = [];
-
-        for ($v = 0; $v < $this->nodeCount; $v++) {
-            // Skip the -1 sentinel node
-            if ((int)$this->indexToNodeFfi[$v] === -1) {
-                continue;
-            }
-            if (isset($index[$v])) {
-                continue;
-            }
-
-            $call_stack = [[$v, 0]];
-            $index[$v] = $lowlink[$v] = $index_counter++;
-            $stack[] = $v;
-            $on_stack[$v] = true;
-
-            while ($call_stack) {
-                [$node, $ci] = array_pop($call_stack);
-                $start = (int)$this->allOffsets[$node];
-                $end = (int)$this->allOffsets[$node + 1];
-                $count = $end - $start;
-
-                $found_unvisited = false;
-                for ($i = $ci; $i < $count; $i++) {
-                    $w = (int)$this->allEdges[$start + $i];
-                    if (!isset($index[$w])) {
-                        $call_stack[] = [$node, $i + 1];
-                        $index[$w] = $lowlink[$w] = $index_counter++;
-                        $stack[] = $w;
-                        $on_stack[$w] = true;
-                        $call_stack[] = [$w, 0];
-                        $found_unvisited = true;
-                        break;
-                    } elseif (isset($on_stack[$w])) {
-                        $lowlink[$node] = min($lowlink[$node], $index[$w]);
-                    }
-                }
-
-                if (!$found_unvisited) {
-                    if ($lowlink[$node] === $index[$node]) {
-                        /** @var list<int> $scc CSR indices */
-                        $scc = [];
-                        do {
-                            /** @var int $w */
-                            $w = array_pop($stack);
-                            unset($on_stack[$w]);
-                            $scc[] = $w;
-                        } while ($w !== $node);
-                        if (count($scc) > 1) {
-                            $sccs[] = $scc;
-                        }
-                    }
-                    if ($call_stack) {
-                        $parent_frame = &$call_stack[count($call_stack) - 1];
-                        $lowlink[$parent_frame[0]] = min(
-                            $lowlink[$parent_frame[0]],
-                            $lowlink[$node]
-                        );
-                    }
-                }
-            }
-        }
-
-        $this->buildSccProfilesFfi($sccs);
-    }
-
     /**
-     * SCC computation using unified adjacency (canonical node_ids).
-     * Used when address unification is active.
+     * SCC computation using strongAll CSR with inline canonical resolution.
+     * Runs Tarjan on CSR indices; when canonical mapping exists, maps
+     * each neighbor to its canonical CSR index before visiting. This
+     * avoids materializing a separate scc_adjacency PHP array.
      *
      * @psalm-suppress UnsupportedReferenceUsage, MixedArgument
      */
-    private function computeSccFfiUnified(): void
+    private function computeSccFfi(): void
     {
-        // Collect canonical node_ids to visit
-        $canonical_nodes = [];
-        for ($v = 0; $v < $this->nodeCount; $v++) {
-            $nid = (int)$this->indexToNodeFfi[$v];
-            if ($nid === -1) {
-                continue;
+        $has_canonical = $this->canonical !== [];
+
+        // If canonical mapping exists, build index-level canonical map:
+        // csrIdx → canonical csrIdx. This avoids repeated node_id lookups.
+        /** @var array<int, int> $canonIdx  csrIdx → canonical csrIdx */
+        $canonIdx = [];
+        if ($has_canonical) {
+            for ($v = 0; $v < $this->nodeCount; $v++) {
+                $nid = (int)$this->indexToNodeFfi[$v];
+                if ($nid === -1) {
+                    continue;
+                }
+                $canon = $this->findCanonical($nid);
+                if ($canon !== $nid) {
+                    $canonIdx[$v] = $this->nodeIdToIndex($canon);
+                }
             }
-            $canon = $this->findCanonical($nid);
-            $canonical_nodes[$canon] = true;
         }
 
         $index_counter = 0;
@@ -649,24 +642,61 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $lowlink = [];
         $sccs = [];
 
-        foreach ($canonical_nodes as $v => $_) {
-            if (isset($index[$v])) {
+        for ($v = 0; $v < $this->nodeCount; $v++) {
+            if ((int)$this->indexToNodeFfi[$v] === -1) {
+                continue;
+            }
+            // Use canonical index if available
+            $cv = $canonIdx[$v] ?? $v;
+            if (isset($index[$cv])) {
                 continue;
             }
 
-            $call_stack = [[$v, 0]];
-            $index[$v] = $lowlink[$v] = $index_counter++;
-            $stack[] = $v;
-            $on_stack[$v] = true;
+            $call_stack = [[$cv, 0]];
+            $index[$cv] = $lowlink[$cv] = $index_counter++;
+            $stack[] = $cv;
+            $on_stack[$cv] = true;
 
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
-                $node_children = $this->scc_adjacency[$node] ?? [];
-                $count = count($node_children);
+
+                // Collect neighbors from all CSR indices that map to this
+                // canonical index. For non-canonical graphs, just the node itself.
+                // For canonical, iterate all originals.
+                /** @var list<int> $originals CSR indices sharing this canonical */
+                $originals = [];
+                if ($has_canonical) {
+                    $canonNid = (int)$this->indexToNodeFfi[$node];
+                    foreach ($this->canonicalToOriginals[$canonNid] ?? [$canonNid] as $origNid) {
+                        $oi = $this->nodeIdToIndex($origNid);
+                        if ($oi >= 0) {
+                            $originals[] = $oi;
+                        }
+                    }
+                } else {
+                    $originals[] = $node;
+                }
+
+                // Flatten all neighbors from all original indices
+                $neighbors = [];
+                foreach ($originals as $oi) {
+                    $start = (int)$this->strongAllOffsets[$oi];
+                    $end = (int)$this->strongAllOffsets[$oi + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$this->strongAllEdges[$j];
+                        $cw = $canonIdx[$w] ?? $w;
+                        if ($cw !== $node) {
+                            $neighbors[] = $cw;
+                        }
+                    }
+                }
+                // Deduplicate (cheap for small neighbor lists)
+                $neighbors = array_values(array_unique($neighbors));
+                $count = count($neighbors);
 
                 $found_unvisited = false;
                 for ($i = $ci; $i < $count; $i++) {
-                    $w = $node_children[$i];
+                    $w = $neighbors[$i];
                     if (!isset($index[$w])) {
                         $call_stack[] = [$node, $i + 1];
                         $index[$w] = $lowlink[$w] = $index_counter++;
@@ -682,7 +712,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
                 if (!$found_unvisited) {
                     if ($lowlink[$node] === $index[$node]) {
-                        /** @var list<int> $scc canonical node_ids */
+                        /** @var list<int> $scc CSR indices (canonical) */
                         $scc = [];
                         do {
                             /** @var int $w */
@@ -705,38 +735,26 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
         }
 
-        // Expand canonical nodes to all originals
-        foreach ($sccs as &$scc) {
-            $expanded = [];
-            foreach ($scc as $canonical) {
-                if (isset($this->canonicalToOriginals[$canonical])) {
-                    foreach ($this->canonicalToOriginals[$canonical] as $orig) {
-                        $expanded[] = $orig;
+        // When canonical mapping was used, SCCs contain canonical CSR indices.
+        // Expand to all original CSR indices for profile building.
+        if ($has_canonical) {
+            foreach ($sccs as &$scc) {
+                $expanded = [];
+                foreach ($scc as $canonicalIdx) {
+                    $canonNid = (int)$this->indexToNodeFfi[$canonicalIdx];
+                    foreach ($this->canonicalToOriginals[$canonNid] ?? [$canonNid] as $origNid) {
+                        $oi = $this->nodeIdToIndex($origNid);
+                        if ($oi >= 0) {
+                            $expanded[] = $oi;
+                        }
                     }
-                } else {
-                    $expanded[] = $canonical;
                 }
+                $scc = array_values(array_unique($expanded));
             }
-            $scc = array_values(array_unique($expanded));
-        }
-        unset($scc);
-
-        // Convert node_ids to CSR indices for profile building
-        $csr_sccs = [];
-        foreach ($sccs as $scc_nodes) {
-            $scc_indices = [];
-            foreach ($scc_nodes as $nid) {
-                $idx = $this->nodeIdToIndex($nid);
-                if ($idx >= 0) {
-                    $scc_indices[] = $idx;
-                }
-            }
-            if (count($scc_indices) > 1) {
-                $csr_sccs[] = $scc_indices;
-            }
+            unset($scc);
         }
 
-        $this->buildSccProfilesFfi($csr_sccs);
+        $this->buildSccProfilesFfi($sccs);
     }
 
     /**

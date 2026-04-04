@@ -44,7 +44,11 @@ final class OwnershipPatternPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        $link_names = $this->loadLinkNames();
+        $link_stmt = $this->db->prepare(
+            "SELECT link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
+        );
 
         // Build class instance counts (canonical-or-unique only)
         /** @var array<string, int> */
@@ -67,7 +71,7 @@ final class OwnershipPatternPass implements PassInterface
                 continue;
             }
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($link_names[$child] ?? '') !== 'object_properties') {
+                if (($this->lookupLinkName($link_stmt, $child)) !== 'object_properties') {
                     continue;
                 }
                 // child = ObjectPropertiesContext, iterate its children
@@ -112,7 +116,7 @@ final class OwnershipPatternPass implements PassInterface
                 $prop = $this->findLinkingProperty(
                     $owner_class,
                     $owned_class,
-                    $link_names,
+                    $link_stmt,
                 );
 
                 $patterns[] = [
@@ -214,13 +218,12 @@ final class OwnershipPatternPass implements PassInterface
     }
 
     /**
-     * @param array<int, string> $link_names
      * @psalm-suppress MixedAssignment, MixedReturnStatement
      */
     private function findLinkingProperty(
         string $owner_class,
         string $owned_class,
-        array $link_names,
+        \PDOStatement $link_stmt,
     ): string {
         // Sample: find one owner instance and check which property points to owned
         foreach ($this->substrate->iterateNodeClasses() as $node_id => $cls) {
@@ -228,11 +231,11 @@ final class OwnershipPatternPass implements PassInterface
                 continue;
             }
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($link_names[$child] ?? '') !== 'object_properties') {
+                if (($this->lookupLinkName($link_stmt, $child)) !== 'object_properties') {
                     continue;
                 }
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $link_names[$prop_child] ?? '';
+                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child) ?? '';
                     // Direct child
                     if ($this->substrate->getNodeClass($prop_child) === $owned_class) {
                         return $prop_name;
@@ -256,18 +259,11 @@ final class OwnershipPatternPass implements PassInterface
      * @return array<int, string>
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function loadLinkNames(): array
+    /** @psalm-suppress MixedAssignment */
+    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
     {
-        $rows = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-
-        $map = [];
-        foreach ($rows as $r) {
-            $map[(int)$r[0]] = (string)$r[1];
-        }
-        unset($rows);
-        return $map;
+        $stmt->execute([$child_node_id]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? (string)$val : null;
     }
 }
