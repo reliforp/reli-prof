@@ -555,6 +555,18 @@ the same "load all tree edges link_name" pattern:
 
 All 4 can use the same prepared statement approach (on-demand lookup by node_id).
 
+**Status:** All link_name fetchAll passes converted. Next OOM:
+`BlameAllocationPass::analyze()` (line 71) builds `$incoming_count` array for all
+2.1M nodes via `iterateAllParents()`. This is different from the fetchAll pattern —
+the data comes from CSR substrate, not DB. The issue is BlameAllocationPass building
+PHP arrays covering all nodes.
+
+**Fix for BlameAllocationPass:** Add `getIncomingCount(int $nodeId): int` to
+FfiCsrGraphSubstrate (trivial: `revOffsets[idx+1] - revOffsets[idx]`). Then
+BlameAllocationPass queries per-node instead of building a full map. Same approach
+for `iterateNodeSizes` — substrate already has `getNodeSize(nodeId)`, just needs to
+be used in-loop instead of pre-building a map.
+
 **LIFO bug:** Fixed — roots are reversed before push, visited is deferred to pop time,
 push order is `[$adj_os, $adj]` so non-objects_store edges are preferred.
 
