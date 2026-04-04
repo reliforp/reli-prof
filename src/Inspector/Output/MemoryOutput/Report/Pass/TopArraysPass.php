@@ -23,10 +23,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TopArraysPass implements PassInterface
 {
-    /** @var array<int, array{0: int, 1: string}>|null */
-    private ?array $parentMapCache = null;
-    /** @var array<int, string>|null */
-    private ?array $nodeTypeCache = null;
+    private ?\PDOStatement $parentStmt = null;
+    private ?\PDOStatement $nodeTypeStmt = null;
 
     public function __construct(
         private \PDO $db,
@@ -57,14 +55,14 @@ final class TopArraysPass implements PassInterface
     private function analyzeWithGraph(): array
     {
         assert($this->substrate !== null);
-        $link_names = $this->loadLinkNames();
+        $array_element_nodes = $this->loadArrayElementNodes();
         $labeler = new NodeLabeler($this->db, $this->run_id);
         $use_retained = $this->substrate->hasSubtreeSizes();
 
         $arrays = [];
         foreach ($this->substrate->iterateNodeSizes() as $node => $shallow) {
             foreach ($this->substrate->getChildren($node) as $child) {
-                if (($link_names[$child] ?? '') === 'array_elements') {
+                if (isset($array_element_nodes[$child])) {
                     $retained = $use_retained
                         ? $this->substrate->getSubtreeSize($node)
                         : $shallow;
@@ -285,18 +283,24 @@ final class TopArraysPass implements PassInterface
      * @return array<int, string>
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function loadLinkNames(): array
+    /**
+     * Load only nodes that are linked as 'array_elements' (not all link_names).
+     * @return array<int, true> child_node_id => true
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function loadArrayElementNodes(): array
     {
         $stmt = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
+            "SELECT child_node_id FROM context_edges"
             . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+            . " AND link_name = 'array_elements'"
         );
 
-        $map = [];
+        $set = [];
         while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $map[(int)$r[0]] = (string)$r[1];
+            $set[(int)$r[0]] = true;
         }
-        return $map;
+        return $set;
     }
 
     /**
@@ -309,39 +313,36 @@ final class TopArraysPass implements PassInterface
     ): string {
         assert($this->substrate !== null);
 
-        if ($this->parentMapCache === null) {
-            $this->parentMapCache = [];
-            $stmt = $this->db->query(
-                "SELECT child_node_id, parent_node_id, link_name"
-                . " FROM context_edges WHERE is_tree = 1"
-                . " AND run_id = {$this->run_id}"
+        if ($this->parentStmt === null) {
+            $this->parentStmt = $this->db->prepare(
+                "SELECT parent_node_id, link_name FROM context_edges"
+                . " WHERE child_node_id = ? AND is_tree = 1"
+                . " AND run_id = {$this->run_id} LIMIT 1"
             );
-            while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-                $this->parentMapCache[(int)$r[0]]
-                    = [(int)($r[1] ?? -1), (string)$r[2]];
-            }
-
-            $this->nodeTypeCache = [];
-            $stmt = $this->db->query(
-                "SELECT node_id, type FROM context_nodes"
-                . " WHERE run_id = {$this->run_id}"
+            $this->nodeTypeStmt = $this->db->prepare(
+                "SELECT type FROM context_nodes"
+                . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
             );
-            while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-                $this->nodeTypeCache[(int)$r[0]] = (string)$r[1];
-            }
         }
 
         $parts = [];
         $types = [];
         $cur = $node_id;
         for ($i = 0; $i < 20; $i++) {
-            if (!isset($this->parentMapCache[$cur])) {
+            $this->parentStmt->execute([$cur]);
+            $row = $this->parentStmt->fetch(\PDO::FETCH_NUM);
+            if (!$row) {
                 break;
             }
-            [$parent, $link] = $this->parentMapCache[$cur];
+            $parent = (int)$row[0];
+            $link = (string)$row[1];
             $resolved = $labeler->resolvePathLabel($link, $cur);
             array_unshift($parts, $resolved);
-            array_unshift($types, $this->nodeTypeCache[$cur] ?? '');
+
+            assert($this->nodeTypeStmt !== null);
+            $this->nodeTypeStmt->execute([$cur]);
+            $nt = $this->nodeTypeStmt->fetchColumn();
+            array_unshift($types, $nt !== false ? (string)$nt : '');
             $cur = $parent;
         }
 
