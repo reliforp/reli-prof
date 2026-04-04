@@ -65,12 +65,6 @@ final class BlameAllocationPass implements PassInterface
             }
         }
 
-        // Compute incoming count per node
-        $incoming_count = [];
-        foreach ($this->substrate->iterateAllParents() as $child => $parents) {
-            $incoming_count[$child] = count($parents);
-        }
-
         // Compute blame
         $blame = [];
         foreach ($this->substrate->getRoots() as $root) {
@@ -104,7 +98,7 @@ final class BlameAllocationPass implements PassInterface
                 continue;
             }
 
-            $in_count = $incoming_count[$node] ?? 1;
+            $in_count = $this->substrate->getIncomingCount($node) ?: 1;
 
             if ($in_count <= 1) {
                 $blame[$owner]['exclusive'] += $group_size;

@@ -148,6 +148,11 @@ class GraphSubstrate
         return $this->all_parents[$nodeId] ?? [];
     }
 
+    public function getIncomingCount(int $nodeId): int
+    {
+        return count($this->all_parents[$nodeId] ?? []);
+    }
+
     public function getNodeSize(int $nodeId): int
     {
         return $this->node_sizes[$nodeId] ?? 0;

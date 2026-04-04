@@ -150,6 +150,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     #[\Override]
+    public function getIncomingCount(int $nodeId): int
+    {
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return 0;
+        }
+        return (int)$this->revOffsets[$idx + 1] - (int)$this->revOffsets[$idx];
+    }
+
+    #[\Override]
     public function getNodeSize(int $nodeId): int
     {
         $idx = $this->nodeIdToIndex($nodeId);
