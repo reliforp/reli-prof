@@ -527,12 +527,22 @@ PropertyScalingPass.php:319,356,392
 ```
 
 For bounded-memory operation on Case 15-scale data (6M+ edges), these need either:
-- Cursor-based iteration where possible
+- Cursor-based iteration where possible (done for most)
+- **Deferred loading**: load only data relevant to the current pass's results.
+  Example: `CycleClusterPass::loadNodeTypes()` loads 2.1M node types but only
+  needs the ~36K nodes in SCCs. Run SCC first (needs only node IDs), then load
+  types for SCC nodes only via `WHERE node_id IN (...)`.
 - LIMIT/pagination for report passes that only need top-N results
-- Lazy loading (only fetch when the pass actually runs)
+- Lazy lookup for infrequent access patterns
 
-This is a broader architectural issue — the report layer was designed assuming
-the data fits in memory. For extreme cases, a streaming/pagination approach is needed.
+**Recommended pattern (2-stage):** For passes that compute a result set then
+enrich it with metadata:
+1. Compute the result using node IDs only (SCC, choke_point ranking, etc.)
+2. Load metadata (node types, class names, link names) only for result nodes
+
+This avoids loading 2M+ rows when only a few thousand are needed. The current
+`loadNodeTypes()` OOM (line 628) is a concrete example — SCC has 36K nodes but
+the method loads all 2.1M node types into a PHP map.
 
 **LIFO bug:** Fixed — roots are reversed before push, visited is deferred to pop time,
 push order is `[$adj_os, $adj]` so non-objects_store edges are preferred.
