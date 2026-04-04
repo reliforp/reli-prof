@@ -37,7 +37,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private \FFI\CData $treeOffsets;
     private \FFI\CData $treeEdges;
 
-    // CSR for all children (tree + non-tree, for SCC)
+    // CSR for strong tree children (tree + strong, for subtree sizes)
+    private \FFI\CData $strongTreeOffsets;
+    private \FFI\CData $strongTreeEdges;
+
+    // CSR for all children (tree + non-tree)
     private \FFI\CData $allOffsets;
     private \FFI\CData $allEdges;
 
@@ -105,7 +109,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getStrongChildren(int $nodeId): array
     {
-        return $this->strong_children[$nodeId] ?? [];
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return [];
+        }
+        return $this->csrSlice($this->strongTreeOffsets, $this->strongTreeEdges, $idx);
     }
 
     /** @return list<int> */
@@ -399,142 +407,146 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         unset($rows);
     }
 
-    /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument */
+    /**
+     * Load edges from DB into CSR arrays using cursor streaming.
+     * Two cursor passes avoid loading all edges into a PHP array.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
     private function loadEdgesFfi(\PDO $db, int $run_id): void
     {
-        $rows = $db->query(
-            "SELECT parent_node_id, child_node_id, is_tree, strength"
-            . " FROM context_edges WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        $nc = $this->nodeCount;
+        $edge_query = "SELECT parent_node_id, child_node_id, is_tree, strength"
+            . " FROM context_edges WHERE run_id = {$run_id}";
 
-        $this->edge_count = count($rows);
+        // Pass 1 (cursor): count degrees and collect roots
+        $treeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $allDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
+        $revDeg = FFIHelper::new("int32_t[{$nc}]");
 
-        // Step 1: Count degrees
-        $treeDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $allDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $strongAllDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $revDegree = FFIHelper::new("int32_t[{$this->nodeCount}]");
+        $treeCount = 0;
+        $strongTreeCount = 0;
+        $allCount = 0;
+        $strongAllCount = 0;
+        $edgeCount = 0;
 
-        $treeEdgeCount = 0;
-        $allEdgeCount = 0;
-        $strongAllEdgeCount = 0;
-
-        foreach ($rows as $r) {
+        $stmt = $db->query($edge_query);
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $edgeCount++;
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
-            $strength = (string)($r[3] ?? 'strong');
-            $is_strong = $strength === 'strong';
+            $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
 
-            $parentIdx = $this->nodeIdToIndex($parent);
-            $childIdx = $this->nodeIdToIndex($child);
+            $pi = $this->nodeIdToIndex($parent);
+            $ci = $this->nodeIdToIndex($child);
 
             if ($is_tree) {
-                $treeDegree[$parentIdx] = $treeDegree[$parentIdx] + 1;
-                $treeEdgeCount++;
+                $treeDeg[$pi] = $treeDeg[$pi] + 1;
+                $treeCount++;
                 if ($is_strong) {
-                    $this->strong_children[$parent][] = $child;
+                    $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
+                    $strongTreeCount++;
                 }
                 if ($parent === -1) {
                     $this->roots[] = $child;
                 }
             }
             if ($parent !== -1) {
-                $allDegree[$parentIdx] = $allDegree[$parentIdx] + 1;
-                $allEdgeCount++;
+                $allDeg[$pi] = $allDeg[$pi] + 1;
+                $allCount++;
                 if ($is_strong) {
-                    $strongAllDegree[$parentIdx] = $strongAllDegree[$parentIdx] + 1;
-                    $strongAllEdgeCount++;
+                    $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
+                    $strongAllCount++;
                 }
             }
-            $revDegree[$childIdx] = $revDegree[$childIdx] + 1;
+            $revDeg[$ci] = $revDeg[$ci] + 1;
         }
+        $stmt->closeCursor();
+        $this->edge_count = $edgeCount;
 
-        $revEdgeCount = count($rows);
-
-        // Step 2: Build offsets via prefix sum
-        $this->treeOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
-        $this->allOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
-        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
-        $this->revOffsets = FFIHelper::new("int32_t[" . ($this->nodeCount + 1) . "]");
+        // Build offsets via prefix sum
+        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
 
         $this->treeOffsets[0] = 0;
+        $this->strongTreeOffsets[0] = 0;
         $this->allOffsets[0] = 0;
         $this->strongAllOffsets[0] = 0;
         $this->revOffsets[0] = 0;
 
-        for ($i = 0; $i < $this->nodeCount; $i++) {
-            $this->treeOffsets[$i + 1] = $this->treeOffsets[$i] + $treeDegree[$i];
-            $this->allOffsets[$i + 1] = $this->allOffsets[$i] + $allDegree[$i];
-            $this->strongAllOffsets[$i + 1] = $this->strongAllOffsets[$i] + $strongAllDegree[$i];
-            $this->revOffsets[$i + 1] = $this->revOffsets[$i] + $revDegree[$i];
+        for ($i = 0; $i < $nc; $i++) {
+            $this->treeOffsets[$i + 1] = $this->treeOffsets[$i] + $treeDeg[$i];
+            $this->strongTreeOffsets[$i + 1] = $this->strongTreeOffsets[$i] + $strongTreeDeg[$i];
+            $this->allOffsets[$i + 1] = $this->allOffsets[$i] + $allDeg[$i];
+            $this->strongAllOffsets[$i + 1] = $this->strongAllOffsets[$i] + $strongAllDeg[$i];
+            $this->revOffsets[$i + 1] = $this->revOffsets[$i] + $revDeg[$i];
+        }
+        unset($treeDeg, $strongTreeDeg, $allDeg, $strongAllDeg, $revDeg);
+
+        // Allocate edge arrays
+        $this->treeEdges = FFIHelper::new("int32_t[" . max($treeCount, 1) . "]");
+        $this->strongTreeEdges = FFIHelper::new("int32_t[" . max($strongTreeCount, 1) . "]");
+        $this->allEdges = FFIHelper::new("int32_t[" . max($allCount, 1) . "]");
+        $this->strongAllEdges = FFIHelper::new("int32_t[" . max($strongAllCount, 1) . "]");
+        $this->revEdges = FFIHelper::new("int32_t[" . max($edgeCount, 1) . "]");
+
+        // Write positions (FFI)
+        $treeP = FFIHelper::new("int32_t[{$nc}]");
+        $streeP = FFIHelper::new("int32_t[{$nc}]");
+        $allP = FFIHelper::new("int32_t[{$nc}]");
+        $sallP = FFIHelper::new("int32_t[{$nc}]");
+        $revP = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $treeP[$i] = $this->treeOffsets[$i];
+            $streeP[$i] = $this->strongTreeOffsets[$i];
+            $allP[$i] = $this->allOffsets[$i];
+            $sallP[$i] = $this->strongAllOffsets[$i];
+            $revP[$i] = $this->revOffsets[$i];
         }
 
-        // Step 3: Allocate edge arrays
-        $safeTreeCount = max($treeEdgeCount, 1);
-        $safeAllCount = max($allEdgeCount, 1);
-        $safeStrongAllCount = max($strongAllEdgeCount, 1);
-        $safeRevCount = max($revEdgeCount, 1);
-
-        $this->treeEdges = FFIHelper::new("int32_t[{$safeTreeCount}]");
-        $this->allEdges = FFIHelper::new("int32_t[{$safeAllCount}]");
-        $this->strongAllEdges = FFIHelper::new("int32_t[{$safeStrongAllCount}]");
-        $this->revEdges = FFIHelper::new("int32_t[{$safeRevCount}]");
-
-        // Step 4: Fill edges using write positions
-        $treePos = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $allPos = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $strongAllPos = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $revPos = FFIHelper::new("int32_t[{$this->nodeCount}]");
-
-        for ($i = 0; $i < $this->nodeCount; $i++) {
-            $treePos[$i] = $this->treeOffsets[$i];
-            $allPos[$i] = $this->allOffsets[$i];
-            $strongAllPos[$i] = $this->strongAllOffsets[$i];
-            $revPos[$i] = $this->revOffsets[$i];
-        }
-
-        foreach ($rows as $r) {
+        // Pass 2 (cursor): fill CSR arrays
+        $stmt = $db->query($edge_query);
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
-            $strength = (string)($r[3] ?? 'strong');
-            $is_strong = $strength === 'strong';
+            $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
 
-            $parentIdx = $this->nodeIdToIndex($parent);
-            $childIdx = $this->nodeIdToIndex($child);
+            $pi = $this->nodeIdToIndex($parent);
+            $ci = $this->nodeIdToIndex($child);
 
             if ($is_tree) {
-                $pos = (int)$treePos[$parentIdx];
-                $this->treeEdges[$pos] = $childIdx;
-                $treePos[$parentIdx] = $pos + 1;
-            }
-            if ($parent !== -1) {
-                $pos = (int)$allPos[$parentIdx];
-                $this->allEdges[$pos] = $childIdx;
-                $allPos[$parentIdx] = $pos + 1;
+                $p = (int)$treeP[$pi];
+                $this->treeEdges[$p] = $ci;
+                $treeP[$pi] = $p + 1;
                 if ($is_strong) {
-                    $pos = (int)$strongAllPos[$parentIdx];
-                    $this->strongAllEdges[$pos] = $childIdx;
-                    $strongAllPos[$parentIdx] = $pos + 1;
+                    $p = (int)$streeP[$pi];
+                    $this->strongTreeEdges[$p] = $ci;
+                    $streeP[$pi] = $p + 1;
                 }
             }
-            $pos = (int)$revPos[$childIdx];
-            $this->revEdges[$pos] = $parent;
-            $revPos[$childIdx] = $pos + 1;
+            if ($parent !== -1) {
+                $p = (int)$allP[$pi];
+                $this->allEdges[$p] = $ci;
+                $allP[$pi] = $p + 1;
+                if ($is_strong) {
+                    $p = (int)$sallP[$pi];
+                    $this->strongAllEdges[$p] = $ci;
+                    $sallP[$pi] = $p + 1;
+                }
+            }
+            $p = (int)$revP[$ci];
+            $this->revEdges[$p] = $parent;
+            $revP[$ci] = $p + 1;
         }
-
-        unset(
-            $rows,
-            $treeDegree,
-            $allDegree,
-            $strongAllDegree,
-            $revDegree,
-            $treePos,
-            $allPos,
-            $strongAllPos,
-            $revPos,
-        );
+        $stmt->closeCursor();
+        unset($treeP, $streeP, $allP, $sallP, $revP);
     }
 
     /**
@@ -583,19 +595,19 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             [$idx, $processed] = array_pop($stack);
             if ($processed) {
                 $size = (int)$this->ffiNodeSizes[$idx];
-                $start = (int)$this->treeOffsets[$idx];
-                $end = (int)$this->treeOffsets[$idx + 1];
+                $start = (int)$this->strongTreeOffsets[$idx];
+                $end = (int)$this->strongTreeOffsets[$idx + 1];
                 for ($i = $start; $i < $end; $i++) {
-                    $size += (int)$this->ffiSubtreeSizes[(int)$this->treeEdges[$i]];
+                    $size += (int)$this->ffiSubtreeSizes[(int)$this->strongTreeEdges[$i]];
                 }
                 $this->ffiSubtreeSizes[$idx] = $size;
                 $visited[$idx] = true;
             } else {
                 $stack[] = [$idx, true];
-                $start = (int)$this->treeOffsets[$idx];
-                $end = (int)$this->treeOffsets[$idx + 1];
+                $start = (int)$this->strongTreeOffsets[$idx];
+                $end = (int)$this->strongTreeOffsets[$idx + 1];
                 for ($i = $start; $i < $end; $i++) {
-                    $childIdx = (int)$this->treeEdges[$i];
+                    $childIdx = (int)$this->strongTreeEdges[$i];
                     if (!isset($visited[$childIdx])) {
                         $stack[] = [$childIdx, false];
                     }
