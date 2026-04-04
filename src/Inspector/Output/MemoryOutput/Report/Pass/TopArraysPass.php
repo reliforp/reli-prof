@@ -152,7 +152,7 @@ final class TopArraysPass implements PassInterface
     {
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
-        $rows = $this->db->query("
+        $stmt = $this->db->query("
             SELECT
                 va.node_id,
                 va.total_size,
@@ -182,10 +182,10 @@ final class TopArraysPass implements PassInterface
             WHERE va.run_id = {$this->run_id}
             ORDER BY va.total_size DESC
             LIMIT 10
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        ");
 
         $findings = [];
-        foreach ($rows as $row) {
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $total = (int)$row['total_size'];
             if ($total < 10240) {
                 continue;
@@ -238,7 +238,7 @@ final class TopArraysPass implements PassInterface
                 AND va.element_count * 4 < va.table_size / 32
             ORDER BY va.table_size DESC
             LIMIT 5
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        ");
 
         foreach ($sparse_rows as $sr) {
             $s_node = (int)$sr['node_id'];
@@ -287,16 +287,15 @@ final class TopArraysPass implements PassInterface
      */
     private function loadLinkNames(): array
     {
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT child_node_id, link_name FROM context_edges"
             . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
         $map = [];
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $map[(int)$r[0]] = (string)$r[1];
         }
-        unset($rows);
         return $map;
     }
 
@@ -312,26 +311,24 @@ final class TopArraysPass implements PassInterface
 
         if ($this->parentMapCache === null) {
             $this->parentMapCache = [];
-            $rows = $this->db->query(
+            $stmt = $this->db->query(
                 "SELECT child_node_id, parent_node_id, link_name"
                 . " FROM context_edges WHERE is_tree = 1"
                 . " AND run_id = {$this->run_id}"
-            )->fetchAll(\PDO::FETCH_NUM);
-            foreach ($rows as $r) {
+            );
+            while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
                 $this->parentMapCache[(int)$r[0]]
                     = [(int)($r[1] ?? -1), (string)$r[2]];
             }
-            unset($rows);
 
             $this->nodeTypeCache = [];
-            $rows = $this->db->query(
+            $stmt = $this->db->query(
                 "SELECT node_id, type FROM context_nodes"
                 . " WHERE run_id = {$this->run_id}"
-            )->fetchAll(\PDO::FETCH_NUM);
-            foreach ($rows as $r) {
+            );
+            while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
                 $this->nodeTypeCache[(int)$r[0]] = (string)$r[1];
             }
-            unset($rows);
         }
 
         $parts = [];

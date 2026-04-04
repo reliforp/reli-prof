@@ -43,12 +43,12 @@ final class ChokePointPass implements PassInterface
 
         // Identify objects_store node IDs — used to deprioritize, not exclude.
         $objects_store_nodes = [];
-        $os_rows = $this->db->query(
+        $os_stmt = $this->db->query(
             "SELECT DISTINCT node_id FROM context_node_locations"
             . " WHERE run_id = {$this->run_id}"
             . " AND location_type = 'ObjectsStoreMemoryLocation'"
-        )->fetchAll(\PDO::FETCH_COLUMN);
-        foreach ($os_rows as $nid) {
+        );
+        while ($nid = $os_stmt->fetchColumn()) {
             $objects_store_nodes[(int)$nid] = true;
         }
 
@@ -106,25 +106,23 @@ final class ChokePointPass implements PassInterface
 
         // Build parent map and node type map for path lookup
         $parent_map = [];
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT child_node_id, parent_node_id, link_name FROM context_edges"
             . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-        foreach ($rows as $r) {
+        );
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $parent_map[(int)$r[0]] = [(int)$r[1], $r[2]];
         }
-        unset($rows);
 
         /** @var array<int, string> */
         $node_type_map = [];
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT node_id, type FROM context_nodes"
             . " WHERE run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-        foreach ($rows as $r) {
+        );
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $node_type_map[(int)$r[0]] = (string)$r[1];
         }
-        unset($rows);
 
         $labeler = new NodeLabeler($this->db, $this->run_id);
 

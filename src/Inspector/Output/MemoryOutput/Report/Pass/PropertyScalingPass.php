@@ -291,7 +291,7 @@ final class PropertyScalingPass implements PassInterface
      */
     private function analyzeWithSql(string $dominant_class): array
     {
-        $rows = $this->db->query("
+        $stmt = $this->db->query("
             SELECT
                 e_prop.link_name,
                 count(*) as total_refs,
@@ -316,10 +316,10 @@ final class PropertyScalingPass implements PassInterface
                 AND cnl_obj.run_id = {$this->run_id}
             GROUP BY e_prop.link_name
             ORDER BY tree_size DESC
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        ");
 
         $results = [];
-        foreach ($rows as $row) {
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $distinct = (int)$row['distinct_targets'];
             $total_refs = (int)$row['total_refs'];
 
@@ -350,16 +350,15 @@ final class PropertyScalingPass implements PassInterface
      */
     private function loadLinkNames(): array
     {
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT child_node_id, link_name FROM context_edges"
             . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
         $map = [];
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $map[(int)$r[0]] = (string)$r[1];
         }
-        unset($rows);
         return $map;
     }
 
@@ -381,7 +380,7 @@ final class PropertyScalingPass implements PassInterface
         $placeholders = implode(',', $child_ids);
 
         $info = [];
-        $rows = $this->db->query(
+        $stmt = $this->db->query(
             "SELECT cn.node_id, cn.type, cnl.location_type"
             . " FROM context_nodes cn"
             . " LEFT JOIN context_node_locations cnl"
@@ -389,8 +388,8 @@ final class PropertyScalingPass implements PassInterface
             . " AND cnl.run_id = cn.run_id"
             . " WHERE cn.run_id = {$this->run_id}"
             . " AND cn.node_id IN ({$placeholders})"
-        )->fetchAll(\PDO::FETCH_ASSOC);
-        foreach ($rows as $r) {
+        );
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $info[(int)$r['node_id']] = [
                 'type' => (string)($r['type'] ?? ''),
                 'loc_type' => (string)($r['location_type'] ?? ''),

@@ -297,17 +297,17 @@ class GraphSubstrate
      */
     protected function loadAddressMapping(\PDO $db, int $run_id): void
     {
-        $rows = $db->query(
+        $stmt = $db->query(
             "SELECT node_id, canonical_node_id"
             . " FROM context_nodes"
             . " WHERE run_id = {$run_id} AND canonical_node_id IS NOT NULL"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
-        if (!$rows) {
+        if (!$stmt) {
             return;
         }
 
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $node_id = (int)$r[0];
             $canon = (int)$r[1];
             $this->canonical[$node_id] = $canon;
@@ -354,30 +354,31 @@ class GraphSubstrate
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     protected function loadNodeSizes(\PDO $db, int $run_id): void
     {
-        $rows = $db->query(
+        $stmt = $db->query(
             "SELECT node_id, sum(size) as s, group_concat(DISTINCT class_name) as cls"
             . " FROM context_node_locations WHERE run_id = {$run_id} GROUP BY node_id"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
-        foreach ($rows as $r) {
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $node_id = (int)$r[0];
             $this->node_sizes[$node_id] = (int)$r[1];
             if ($r[2] !== null) {
                 $this->node_classes[$node_id] = $r[2];
             }
         }
-        unset($rows);
     }
 
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument */
     protected function loadEdges(\PDO $db, int $run_id): void
     {
-        $rows = $db->query(
+        $stmt = $db->query(
             "SELECT parent_node_id, child_node_id, is_tree, strength"
             . " FROM context_edges WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
+        );
 
-        foreach ($rows as $r) {
+        $edge_count = 0;
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $edge_count++;
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
@@ -401,8 +402,7 @@ class GraphSubstrate
             }
             $this->all_parents[$child][] = $parent;
         }
-        $this->edge_count = count($rows);
-        unset($rows);
+        $this->edge_count = $edge_count;
     }
 
     protected function computeSubtreeSizes(): void
