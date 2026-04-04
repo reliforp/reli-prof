@@ -550,35 +550,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     /**
-     * Override: build SCC adjacency from strong_all CSR instead of PHP array.
+     * Override: skip building scc_adjacency PHP array entirely.
+     * computeSccFfiUnified resolves canonical IDs inline during Tarjan.
      */
     #[\Override]
     protected function buildSccAdjacency(): void
     {
-        if ($this->canonical === []) {
-            return;
-        }
-
-        for ($i = 0; $i < $this->nodeCount; $i++) {
-            $parent = (int)$this->indexToNodeFfi[$i];
-            if ($parent === -1) {
-                continue;
-            }
-            $cp = $this->findCanonical($parent);
-            $start = (int)$this->strongAllOffsets[$i];
-            $end = (int)$this->strongAllOffsets[$i + 1];
-            for ($j = $start; $j < $end; $j++) {
-                $childIdx = (int)$this->strongAllEdges[$j];
-                $child = (int)$this->indexToNodeFfi[$childIdx];
-                $cc = $this->findCanonical($child);
-                if ($cp !== $cc) {
-                    $this->scc_adjacency[$cp][] = $cc;
-                }
-            }
-        }
-        foreach ($this->scc_adjacency as $node => $children) {
-            $this->scc_adjacency[$node] = array_values(array_unique($children));
-        }
+        // Intentionally empty — canonical resolution is done inline
+        // in computeSccFfiUnified using the strongAll CSR directly.
     }
 
     /** @psalm-suppress UnsupportedReferenceUsage */
@@ -617,106 +596,33 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $this->subtreeSizesComputed = true;
     }
 
-    /** @psalm-suppress UnsupportedReferenceUsage, MixedArgument */
-    private function computeSccFfi(): void
-    {
-        $use_unified = $this->scc_adjacency !== [];
-
-        // When using unified adjacency, run Tarjan on canonical node_ids
-        // (not CSR indices) since scc_adjacency uses node_ids.
-        if ($use_unified) {
-            $this->computeSccFfiUnified();
-            return;
-        }
-
-        $index_counter = 0;
-        $stack = [];
-        $on_stack = [];
-        $index = [];
-        $lowlink = [];
-        $sccs = [];
-
-        for ($v = 0; $v < $this->nodeCount; $v++) {
-            // Skip the -1 sentinel node
-            if ((int)$this->indexToNodeFfi[$v] === -1) {
-                continue;
-            }
-            if (isset($index[$v])) {
-                continue;
-            }
-
-            $call_stack = [[$v, 0]];
-            $index[$v] = $lowlink[$v] = $index_counter++;
-            $stack[] = $v;
-            $on_stack[$v] = true;
-
-            while ($call_stack) {
-                [$node, $ci] = array_pop($call_stack);
-                $start = (int)$this->strongAllOffsets[$node];
-                $end = (int)$this->strongAllOffsets[$node + 1];
-                $count = $end - $start;
-
-                $found_unvisited = false;
-                for ($i = $ci; $i < $count; $i++) {
-                    $w = (int)$this->strongAllEdges[$start + $i];
-                    if (!isset($index[$w])) {
-                        $call_stack[] = [$node, $i + 1];
-                        $index[$w] = $lowlink[$w] = $index_counter++;
-                        $stack[] = $w;
-                        $on_stack[$w] = true;
-                        $call_stack[] = [$w, 0];
-                        $found_unvisited = true;
-                        break;
-                    } elseif (isset($on_stack[$w])) {
-                        $lowlink[$node] = min($lowlink[$node], $index[$w]);
-                    }
-                }
-
-                if (!$found_unvisited) {
-                    if ($lowlink[$node] === $index[$node]) {
-                        /** @var list<int> $scc CSR indices */
-                        $scc = [];
-                        do {
-                            /** @var int $w */
-                            $w = array_pop($stack);
-                            unset($on_stack[$w]);
-                            $scc[] = $w;
-                        } while ($w !== $node);
-                        if (count($scc) > 1) {
-                            $sccs[] = $scc;
-                        }
-                    }
-                    if ($call_stack) {
-                        $parent_frame = &$call_stack[count($call_stack) - 1];
-                        $lowlink[$parent_frame[0]] = min(
-                            $lowlink[$parent_frame[0]],
-                            $lowlink[$node]
-                        );
-                    }
-                }
-            }
-        }
-
-        $this->buildSccProfilesFfi($sccs);
-    }
-
     /**
-     * SCC computation using unified adjacency (canonical node_ids).
-     * Used when address unification is active.
+     * SCC computation using strongAll CSR with inline canonical resolution.
+     * Runs Tarjan on CSR indices; when canonical mapping exists, maps
+     * each neighbor to its canonical CSR index before visiting. This
+     * avoids materializing a separate scc_adjacency PHP array.
      *
      * @psalm-suppress UnsupportedReferenceUsage, MixedArgument
      */
-    private function computeSccFfiUnified(): void
+    private function computeSccFfi(): void
     {
-        // Collect canonical node_ids to visit
-        $canonical_nodes = [];
-        for ($v = 0; $v < $this->nodeCount; $v++) {
-            $nid = (int)$this->indexToNodeFfi[$v];
-            if ($nid === -1) {
-                continue;
+        $has_canonical = $this->canonical !== [];
+
+        // If canonical mapping exists, build index-level canonical map:
+        // csrIdx → canonical csrIdx. This avoids repeated node_id lookups.
+        /** @var array<int, int> $canonIdx  csrIdx → canonical csrIdx */
+        $canonIdx = [];
+        if ($has_canonical) {
+            for ($v = 0; $v < $this->nodeCount; $v++) {
+                $nid = (int)$this->indexToNodeFfi[$v];
+                if ($nid === -1) {
+                    continue;
+                }
+                $canon = $this->findCanonical($nid);
+                if ($canon !== $nid) {
+                    $canonIdx[$v] = $this->nodeIdToIndex($canon);
+                }
             }
-            $canon = $this->findCanonical($nid);
-            $canonical_nodes[$canon] = true;
         }
 
         $index_counter = 0;
@@ -726,24 +632,61 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $lowlink = [];
         $sccs = [];
 
-        foreach ($canonical_nodes as $v => $_) {
-            if (isset($index[$v])) {
+        for ($v = 0; $v < $this->nodeCount; $v++) {
+            if ((int)$this->indexToNodeFfi[$v] === -1) {
+                continue;
+            }
+            // Use canonical index if available
+            $cv = $canonIdx[$v] ?? $v;
+            if (isset($index[$cv])) {
                 continue;
             }
 
-            $call_stack = [[$v, 0]];
-            $index[$v] = $lowlink[$v] = $index_counter++;
-            $stack[] = $v;
-            $on_stack[$v] = true;
+            $call_stack = [[$cv, 0]];
+            $index[$cv] = $lowlink[$cv] = $index_counter++;
+            $stack[] = $cv;
+            $on_stack[$cv] = true;
 
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
-                $node_children = $this->scc_adjacency[$node] ?? [];
-                $count = count($node_children);
+
+                // Collect neighbors from all CSR indices that map to this
+                // canonical index. For non-canonical graphs, just the node itself.
+                // For canonical, iterate all originals.
+                /** @var list<int> $originals CSR indices sharing this canonical */
+                $originals = [];
+                if ($has_canonical) {
+                    $canonNid = (int)$this->indexToNodeFfi[$node];
+                    foreach ($this->canonicalToOriginals[$canonNid] ?? [$canonNid] as $origNid) {
+                        $oi = $this->nodeIdToIndex($origNid);
+                        if ($oi >= 0) {
+                            $originals[] = $oi;
+                        }
+                    }
+                } else {
+                    $originals[] = $node;
+                }
+
+                // Flatten all neighbors from all original indices
+                $neighbors = [];
+                foreach ($originals as $oi) {
+                    $start = (int)$this->strongAllOffsets[$oi];
+                    $end = (int)$this->strongAllOffsets[$oi + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$this->strongAllEdges[$j];
+                        $cw = $canonIdx[$w] ?? $w;
+                        if ($cw !== $node) {
+                            $neighbors[] = $cw;
+                        }
+                    }
+                }
+                // Deduplicate (cheap for small neighbor lists)
+                $neighbors = array_values(array_unique($neighbors));
+                $count = count($neighbors);
 
                 $found_unvisited = false;
                 for ($i = $ci; $i < $count; $i++) {
-                    $w = $node_children[$i];
+                    $w = $neighbors[$i];
                     if (!isset($index[$w])) {
                         $call_stack[] = [$node, $i + 1];
                         $index[$w] = $lowlink[$w] = $index_counter++;
@@ -759,7 +702,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
                 if (!$found_unvisited) {
                     if ($lowlink[$node] === $index[$node]) {
-                        /** @var list<int> $scc canonical node_ids */
+                        /** @var list<int> $scc CSR indices (canonical) */
                         $scc = [];
                         do {
                             /** @var int $w */
@@ -782,38 +725,26 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
         }
 
-        // Expand canonical nodes to all originals
-        foreach ($sccs as &$scc) {
-            $expanded = [];
-            foreach ($scc as $canonical) {
-                if (isset($this->canonicalToOriginals[$canonical])) {
-                    foreach ($this->canonicalToOriginals[$canonical] as $orig) {
-                        $expanded[] = $orig;
+        // When canonical mapping was used, SCCs contain canonical CSR indices.
+        // Expand to all original CSR indices for profile building.
+        if ($has_canonical) {
+            foreach ($sccs as &$scc) {
+                $expanded = [];
+                foreach ($scc as $canonicalIdx) {
+                    $canonNid = (int)$this->indexToNodeFfi[$canonicalIdx];
+                    foreach ($this->canonicalToOriginals[$canonNid] ?? [$canonNid] as $origNid) {
+                        $oi = $this->nodeIdToIndex($origNid);
+                        if ($oi >= 0) {
+                            $expanded[] = $oi;
+                        }
                     }
-                } else {
-                    $expanded[] = $canonical;
                 }
+                $scc = array_values(array_unique($expanded));
             }
-            $scc = array_values(array_unique($expanded));
-        }
-        unset($scc);
-
-        // Convert node_ids to CSR indices for profile building
-        $csr_sccs = [];
-        foreach ($sccs as $scc_nodes) {
-            $scc_indices = [];
-            foreach ($scc_nodes as $nid) {
-                $idx = $this->nodeIdToIndex($nid);
-                if ($idx >= 0) {
-                    $scc_indices[] = $idx;
-                }
-            }
-            if (count($scc_indices) > 1) {
-                $csr_sccs[] = $scc_indices;
-            }
+            unset($scc);
         }
 
-        $this->buildSccProfilesFfi($csr_sccs);
+        $this->buildSccProfilesFfi($sccs);
     }
 
     /**
