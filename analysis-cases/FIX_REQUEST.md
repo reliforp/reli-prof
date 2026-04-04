@@ -544,6 +544,11 @@ This avoids loading 2M+ rows when only a few thousand are needed. The current
 `loadNodeTypes()` OOM (line 628) is a concrete example — SCC has 36K nodes but
 the method loads all 2.1M node types into a PHP map.
 
+**Status:** Deferred metadata loading applied to CycleClusterPass, ChokePointPass,
+PropertyScalingPass, TopArraysPass. But `PerPropertyMemoryPass::loadLinkNames()`
+(line 145) still does `fetchAll` on all tree edges — same pattern, not yet converted.
+This should use the same 2-stage approach or at minimum cursor iteration.
+
 **LIFO bug:** Fixed — roots are reversed before push, visited is deferred to pop time,
 push order is `[$adj_os, $adj]` so non-objects_store edges are preferred.
 
