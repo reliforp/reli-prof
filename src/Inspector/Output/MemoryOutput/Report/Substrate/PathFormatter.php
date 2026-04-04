@@ -25,7 +25,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
  */
 final class PathFormatter
 {
-    /** Context types that are structural and should be skipped */
+    /** Link names that are structural and should be skipped */
     private const STRUCTURAL = [
         'call_frames',
         'local_variables',
@@ -45,6 +45,11 @@ final class PathFormatter
         'modules',
     ];
 
+    /** Node types whose children (key/value) are structural indirection */
+    private const INDIRECTION_TYPES = [
+        'ArrayElementContext',
+    ];
+
     /**
      * Format a raw path (from link_names) into PHP-style syntax.
      *
@@ -62,6 +67,7 @@ final class PathFormatter
         $segments = [];
         $prev_type = '';
         $in_variable_table = false;
+        $in_global_variables = false;
         $in_object_props = false;
         $in_array_elements = false;
 
@@ -69,10 +75,21 @@ final class PathFormatter
             $part = $parts[$i];
             $type = $node_types[$i] ?? '';
 
+            // Skip key/value indirection inside ArrayElementContext
+            if (
+                in_array($prev_type, self::INDIRECTION_TYPES, true)
+                && ($part === 'key' || $part === 'value')
+            ) {
+                $prev_type = $type;
+                continue;
+            }
+
             // Skip structural intermediaries
             if (in_array($part, self::STRUCTURAL, true)) {
                 if ($part === 'local_variables' || $part === 'symbol_table') {
                     $in_variable_table = true;
+                } elseif ($part === 'global_variables') {
+                    $in_global_variables = true;
                 } elseif ($part === 'object_properties') {
                     $in_object_props = true;
                 } elseif ($part === 'array_elements') {
@@ -83,8 +100,25 @@ final class PathFormatter
             }
 
             // Format based on context
+            if ($in_global_variables && $in_array_elements && $part !== 'value') {
+                // global_variables → array_elements → varname: treat as $varname
+                $segments[] = '$' . $part;
+                $in_global_variables = false;
+                $in_array_elements = false;
+                $in_variable_table = false;
+                $prev_type = $type;
+                continue;
+            }
+            if ($in_variable_table && $in_array_elements && $part !== 'value') {
+                // local_variables → symbol_table → array_elements → varname: treat as $varname
+                $segments[] = '$' . $part;
+                $in_variable_table = false;
+                $in_array_elements = false;
+                $prev_type = $type;
+                continue;
+            }
             if ($in_array_elements && $part !== 'value') {
-                // Array index
+                // Array index — append [key] to previous segment
                 if ($segments !== []) {
                     $last = count($segments) - 1;
                     $segments[$last] .= "[{$part}]";
@@ -96,7 +130,11 @@ final class PathFormatter
                 continue;
             }
 
-            if ($in_variable_table) {
+            if ($in_global_variables) {
+                // Global variable — add $ prefix
+                $segments[] = '$' . $part;
+                $in_global_variables = false;
+            } elseif ($in_variable_table) {
                 // Local variable — add $ prefix
                 $segments[] = '$' . $part;
                 $in_variable_table = false;
