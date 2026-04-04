@@ -497,11 +497,16 @@ the rebuild should either:
 
 Approach 1 is cleaner — single load, single DFS, correct is_tree from the start.
 
-**Status:** `rebuildSpanningTree` now uses FFI CSR for the DFS itself, but the
-edge loading still uses `fetchAll()` into a PHP array (OOM at ~6M edges / 512MB).
-Additionally, `FfiCsrGraphSubstrate::loadFromDb()` builds `strong_all_children` as
-a PHP array (OOM at 2GB for Case 15). The `fetchAll` should be replaced with cursor
-streaming that fills CSR directly.
+**Status:** `rebuildSpanningTree` and `loadEdgesFfi` both use cursor + FFI CSR.
+`fetchAll` OOMs resolved. Remaining: `scc_adjacency` PHP array in
+`FfiCsrGraphSubstrate::buildSccAdjacency()` (line 575) still OOMs at 512M for
+Case 15 (6.2M edges). With unlimited memory, everything works correctly — paths
+show app-level routes, cycles detected, "Break this_ptr" suggested.
+
+**Last remaining OOM:** `$this->scc_adjacency[$cp][] = $cc` builds a PHP array
+for SCC computation. For Case 15 this is the only blocker for bounded-memory
+operation. Could be replaced with another FFI CSR or by running Tarjan directly
+on the existing `strongAllEdges` CSR without materializing a separate adjacency.
 
 **LIFO bug:** Fixed — roots are reversed before push, visited is deferred to pop time,
 push order is `[$adj_os, $adj]` so non-objects_store edges are preferred.
