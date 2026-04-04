@@ -645,18 +645,26 @@ NodeLabeler currently only resolves CallFrameContext. Extend it to handle:
 
 ### Status
 
-Current fix (commit `31475962`) did not resolve the issue. Case 9 and 15 still show:
+`$key` indirection removed (commit `416b1bd5`). Remaining issues:
+
 ```
-<main>:40::[conn]->$key->statementCache[0]    ← want: $conn->statementCache[0]
-<main>:58::[widget]->$key->emitter->listeners  ← want: $widgets[N]->emitter->listeners
+Current:  <main>:40::[conn]->$statementCache[0]
+Want:     $conn->statementCache[0]
+
+Current:  <main>:58::[widget]->$emitter->listeners[render]
+Want:     $widgets[N]->emitter->listeners['render']
 ```
 
-The `$key` is a link_name in context_edges — it comes from the ArrayElementContext
-which has children `key` (the array key) and `value` (the array value). The path
-walks through `value` to reach the object, but displays the `key` link_name as
-`$key`. The fix needs to:
+1. **`[conn]` needs `$` prefix:** This is under `global_variables`, so it's the PHP
+   variable `$conn`. Should display as `$conn`.
+2. **`$statementCache` should not have `$`:** This is an object property access,
+   not a variable. Should be `->statementCache` (arrow notation).
+3. **`[widget]` vs `$widgets`:** The variable name may be truncated or the link_name
+   in the edge uses a different form. Needs investigation.
+4. **Missing array index after variable:** `$widgets` should be `$widgets[N]` with
+   the specific index from the heaviest path.
 
-1. Detect when walking through ArrayElementContext
-2. Skip the key/value indirection
-3. Use the key's actual value as the array index: `[0]`, `[conn]`, etc.
-4. Prefix global variables with `$`: `[conn]` → `$conn`
+**Priority: HIGH** — The analysis engine is now accurate (Bugs 1-6 fixed, cycle
+detection works, app-level paths found) but the output is hard to read. A PHP
+developer seeing `[conn]->$statementCache` won't immediately understand it means
+`$conn->statementCache`. This is the main barrier to practical usability.
