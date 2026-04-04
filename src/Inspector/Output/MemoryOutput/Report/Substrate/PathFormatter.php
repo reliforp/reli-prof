@@ -105,6 +105,15 @@ final class PathFormatter
                 $segments[] = '$' . $part;
                 $in_global_variables = false;
                 $in_array_elements = false;
+                $in_variable_table = false;
+                $prev_type = $type;
+                continue;
+            }
+            if ($in_variable_table && $in_array_elements && $part !== 'value') {
+                // local_variables → symbol_table → array_elements → varname: treat as $varname
+                $segments[] = '$' . $part;
+                $in_variable_table = false;
+                $in_array_elements = false;
                 $prev_type = $type;
                 continue;
             }
