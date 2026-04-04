@@ -592,3 +592,53 @@ Desired display: global_variables[conn]->statementCache[0]
 - `src/Inspector/Output/MemoryOutput/Report/Pass/` — whichever pass generates choke_point findings
 - `src/Inspector/Output/MemoryOutput/Report/Substrate/PathFormatter.php` — path collapsing
   and node labeling logic
+
+---
+
+## Bug 7: Path display doesn't match PHP syntax (LOW)
+
+**Status:** Open.
+
+### Symptom
+
+Paths in bottleneck_path / choke_point don't resemble PHP code that developers write:
+
+```
+Current:  <main>:58::[widget]->$key->emitter->listeners[render]
+Want:     $widgets[0]->emitter->listeners['render']
+```
+
+### Issues
+
+1. **`$key` leaks internal structure:** ArrayElementContext has `key` and `value` child
+   links. The path walks through `value` to reach the Widget but displays `$key` as an
+   intermediate step. Users don't know what ArrayElementContext is — this should be
+   invisible, with the key's value used as the array index (e.g., `[0]`).
+
+2. **Variable name mismatch:** `[widget]` appears instead of `$widgets`. The variable
+   name may be truncated or coming from a different source than the actual PHP variable.
+
+3. **`global_variables` collapsed leaves bare `[widget]`:** After PathFormatter collapses
+   `global_variables`, the remaining `[widget]` has no `$` prefix and no context about
+   what it is.
+
+4. **Missing array index:** `$widgets` should show the specific index that leads to
+   the heaviest path, e.g., `$widgets[0]` or `$widgets[1018]`.
+
+### Suggested Fix
+
+Path formatting should translate internal context tree structure to PHP syntax:
+- `global_variables[varname]` → `$varname`
+- `ArrayElementContext -> key: K, value: V` → `[K]` (collapse key/value indirection)
+- `ObjectPropertiesContext -> propname` → `->propname`
+- `CallFrameContext` → `functionName():lineno`
+
+NodeLabeler currently only resolves CallFrameContext. Extend it to handle:
+- Object nodes → class name
+- Array element nodes → collapse key/value into `[index]`
+- Global variable nodes → `$` prefix
+
+### Location
+
+- `src/Inspector/Output/MemoryOutput/Report/Substrate/NodeLabeler.php`
+- `src/Inspector/Output/MemoryOutput/Report/Substrate/PathFormatter.php`
