@@ -161,6 +161,12 @@ final class ChokePointPass implements PassInterface
                 if (!$pr) {
                     break;
                 }
+                if ($pr[0] === null) {
+                    // Reached root — record the root link_name and stop
+                    array_unshift($up_parts, (string)$pr[1]);
+                    array_unshift($up_types, '');
+                    break;
+                }
                 $parent = (int)$pr[0];
                 $link = (string)$pr[1];
 

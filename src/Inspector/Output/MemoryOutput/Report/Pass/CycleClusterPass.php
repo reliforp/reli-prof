@@ -583,6 +583,11 @@ final class CycleClusterPass implements PassInterface
             if (!$row) {
                 break;
             }
+            if ($row[0] === null) {
+                array_unshift($parts, (string)$row[1]);
+                array_unshift($types, '');
+                break;
+            }
             $parent = (int)$row[0];
             $link = (string)$row[1];
             $resolved = $labeler->resolvePathLabel($link, $cur);
