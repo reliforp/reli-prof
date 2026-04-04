@@ -2584,10 +2584,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             <<<'CODE'
             <?php
             class NodeA {
-                public ?object $peer = null;
+                public $peer = null;
             }
             class NodeB {
-                public ?object $peer = null;
+                public $peer = null;
             }
             $a = new NodeA;
             $b = new NodeB;
