@@ -43,8 +43,12 @@ final class PerPropertyMemoryPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        // Load link_names for edges we need
-        $link_names = $this->loadLinkNames();
+        // On-demand link_name lookup (avoids loading all tree edges)
+        $link_stmt = $this->db->prepare(
+            "SELECT link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
+        );
 
         // For each object node (has class_name), find object_properties child,
         // then aggregate property link → value size
@@ -58,13 +62,13 @@ final class PerPropertyMemoryPass implements PassInterface
         foreach ($this->substrate->iterateNodeClasses() as $node_id => $class_name) {
             // Find the object_properties child
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                $link = $link_names[$child] ?? null;
+                $link = $this->lookupLinkName($link_stmt, $child);
                 if ($link !== 'object_properties') {
                     continue;
                 }
                 // child is ObjectPropertiesContext — iterate its children
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $link_names[$prop_child] ?? null;
+                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
                     if ($prop_name === null) {
                         continue;
                     }
@@ -137,18 +141,13 @@ final class PerPropertyMemoryPass implements PassInterface
      * @return array<int, string> child_node_id => link_name
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function loadLinkNames(): array
+    /**
+     * @psalm-suppress MixedAssignment
+     */
+    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
     {
-        $rows = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-        )->fetchAll(\PDO::FETCH_NUM);
-
-        $map = [];
-        foreach ($rows as $r) {
-            $map[(int)$r[0]] = (string)$r[1];
-        }
-        unset($rows);
-        return $map;
+        $stmt->execute([$child_node_id]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? (string)$val : null;
     }
 }
