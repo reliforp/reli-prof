@@ -25,7 +25,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
  */
 final class PathFormatter
 {
-    /** Context types that are structural and should be skipped */
+    /** Link names that are structural and should be skipped */
     private const STRUCTURAL = [
         'call_frames',
         'local_variables',
@@ -43,6 +43,11 @@ final class PathFormatter
         'global_constants',
         'global_callbacks',
         'modules',
+    ];
+
+    /** Node types whose children (key/value) are structural indirection */
+    private const INDIRECTION_TYPES = [
+        'ArrayElementContext',
     ];
 
     /**
@@ -69,6 +74,15 @@ final class PathFormatter
         for ($i = 0; $i < count($parts); $i++) {
             $part = $parts[$i];
             $type = $node_types[$i] ?? '';
+
+            // Skip key/value indirection inside ArrayElementContext
+            if (
+                in_array($prev_type, self::INDIRECTION_TYPES, true)
+                && ($part === 'key' || $part === 'value')
+            ) {
+                $prev_type = $type;
+                continue;
+            }
 
             // Skip structural intermediaries
             if (in_array($part, self::STRUCTURAL, true)) {
