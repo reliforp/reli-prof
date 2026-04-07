@@ -1111,6 +1111,16 @@ bin overhead to be slightly under-counted.
 embedded arrays, include the array header in the reconstructed location:
 use the ZendArrayMemoryLocation address and add header size to the total.
 
+**Note:** The previous 99.9% result (with full MemoryLocations + RegionAnalyzer)
+was likely from error cancellation, not precise calculation. RegionAnalyzer
+computed `getOverhead` for ZendArrayMemoryLocation headers independently
+(returning `bin_size(56) - 56`), but on an embedded array the page's bin info
+covers the full header+table allocation, so `bin_size` returned the allocation
+size, not the 64-byte bin. This produced an over-large overhead for headers
+that happened to cancel out the under-counted table overhead. The current
+94-98% with inline overhead is likely closer to correct — the remaining gap
+is the structural limitation of not knowing which arrays are embedded.
+
 ---
 
 ## Design Proposal: Inline region + overhead at emit time, eliminate MemoryLocations accumulation
