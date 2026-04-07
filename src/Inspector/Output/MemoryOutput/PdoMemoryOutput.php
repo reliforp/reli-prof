@@ -199,7 +199,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 string_value TEXT,
                 refcount BIGINT,
                 type_info BIGINT,
-                region TEXT
+                region TEXT,
+                bin_overhead BIGINT DEFAULT 0
             )
         ");
 

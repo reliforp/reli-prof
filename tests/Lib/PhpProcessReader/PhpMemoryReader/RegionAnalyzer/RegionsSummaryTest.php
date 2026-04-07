@@ -110,7 +110,8 @@ class RegionsSummaryTest extends BaseTestCase
             string_value TEXT,
             refcount BIGINT,
             type_info BIGINT,
-            region TEXT
+            region TEXT,
+            bin_overhead BIGINT DEFAULT 0
         )');
 
         $stmt = $db->prepare(
@@ -130,7 +131,8 @@ class RegionsSummaryTest extends BaseTestCase
         // NULL region — should be excluded
         $stmt->execute([1, 7, 0x7000, 888, 'ZendStringMemoryLocation', null]);
 
-        $sums = RegionsSummary::queryRegionSums($db, 1);
+        $result = RegionsSummary::queryRegionSums($db, 1);
+        $sums = $result['sums'];
 
         // 0x1000 and 0x2000 appear twice but must be counted once each
         $this->assertSame(300, $sums['zend_mm_heap']);
@@ -138,6 +140,7 @@ class RegionsSummaryTest extends BaseTestCase
         $this->assertSame(50, $sums['vm_stack']);
         $this->assertSame(25, $sums['compiler_arena']);
         $this->assertArrayNotHasKey('', $sums);
+        $this->assertSame(0, $result['overhead']);
     }
 
     public function testToArrayIsUnchanged(): void

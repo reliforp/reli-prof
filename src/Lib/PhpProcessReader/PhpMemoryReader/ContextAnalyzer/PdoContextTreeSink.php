@@ -105,6 +105,7 @@ final class PdoContextTreeSink implements ContextTreeSink
             $this->location_buffer[] = $location instanceof RefcountedMemoryLocation
                 ? $location->type_info : null;
             $this->location_buffer[] = $this->region_boundaries?->classifyRegion($location);
+            $this->location_buffer[] = $this->region_boundaries?->computeBinOverhead($location) ?? 0;
             $this->location_row_count++;
 
             if ($this->location_row_count >= self::LOCATION_BATCH_SIZE) {
@@ -181,8 +182,8 @@ final class PdoContextTreeSink implements ContextTreeSink
             ??= $this->db->prepare(
                 'INSERT INTO context_node_locations'
                 . ' (run_id, node_id, address, size, location_type,'
-                . ' class_name, string_value, refcount, type_info, region)'
-                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?,?,?,?,?,?,?)'))
+                . ' class_name, string_value, refcount, type_info, region, bin_overhead)'
+                . ' VALUES ' . implode(',', array_fill(0, $row_count, '(?,?,?,?,?,?,?,?,?,?,?)'))
             );
     }
 
