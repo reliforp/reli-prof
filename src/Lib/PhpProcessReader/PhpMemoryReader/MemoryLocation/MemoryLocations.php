@@ -37,8 +37,12 @@ final class MemoryLocations
     /** @var array<int, true> seen addresses for lightweight mode */
     private array $seen = [];
 
+    /** @var list<MemoryLocation>|null sorted index for binary search (lazily built) */
+    private ?array $sorted_index = null;
+
     public function add(MemoryLocation $memory_location): void
     {
+        $this->sorted_index = null;
         if ($this->lightweight) {
             $this->seen[$memory_location->address] = true;
             return;
@@ -67,6 +71,7 @@ final class MemoryLocations
      */
     public function addAlias(int $address, MemoryLocation $memory_location): void
     {
+        $this->sorted_index = null;
         if ($this->lightweight) {
             $this->seen[$address] = true;
             return;
@@ -94,12 +99,56 @@ final class MemoryLocations
 
     public function getContainingMemoryLocation(MemoryLocation $memory_location): ?MemoryLocation
     {
-        foreach ($this->memory_locations as $memory_location_in_this) {
-            if ($memory_location_in_this->contains($memory_location)) {
-                return $memory_location_in_this;
+        if ($this->sorted_index === null) {
+            $this->buildSortedIndex();
+        }
+        assert($this->sorted_index !== null);
+
+        $index = $this->sorted_index;
+        $count = count($index);
+        if ($count === 0) {
+            return null;
+        }
+
+        $target = $memory_location->address;
+
+        // Binary search: find the rightmost location with address <= target
+        $lo = 0;
+        $hi = $count - 1;
+        $result = -1;
+        while ($lo <= $hi) {
+            $mid = ($lo + $hi) >> 1;
+            if ($index[$mid]->address <= $target) {
+                $result = $mid;
+                $lo = $mid + 1;
+            } else {
+                $hi = $mid - 1;
             }
         }
+
+        if ($result === -1) {
+            return null;
+        }
+
+        // All entries 0..$result have address <= target.
+        // Any of them could contain the query if they are large enough,
+        // so scan all candidates (safe for overlapping regions).
+        for ($i = $result; $i >= 0; $i--) {
+            if ($index[$i]->contains($memory_location)) {
+                return $index[$i];
+            }
+        }
+
         return null;
+    }
+
+    private function buildSortedIndex(): void
+    {
+        $this->sorted_index = array_values($this->memory_locations);
+        usort(
+            $this->sorted_index,
+            static fn (MemoryLocation $a, MemoryLocation $b) => $a->address <=> $b->address,
+        );
     }
 
     public function getTotalSize(): int
