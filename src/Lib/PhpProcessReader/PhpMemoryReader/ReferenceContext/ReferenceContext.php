@@ -19,9 +19,9 @@ interface ReferenceContext
 {
     public function getName(): string;
 
-    public function add(string $link_name, self $reference_context): void;
+    public function add(string $link_name, self|int $reference_context): void;
 
-    /** @return iterable<string, self> */
+    /** @return iterable<string, self|int> */
     public function getLinks(): iterable;
 
     /** @return iterable<array-key, MemoryLocation> */

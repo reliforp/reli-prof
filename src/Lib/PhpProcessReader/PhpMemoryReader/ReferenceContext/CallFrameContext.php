@@ -29,7 +29,7 @@ final class CallFrameContext implements ReferenceContext
         return $this->referencing_contexts['local_variables'] ?? null;
     }
 
-    public function getLocalVariable(string $variable_name): ?ReferenceContext
+    public function getLocalVariable(string $variable_name): ReferenceContext|int|null
     {
         return $this->getLocalVariables()?->getVariable($variable_name) ?? null;
     }

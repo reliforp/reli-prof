@@ -19,7 +19,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContextPool
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\PhpReferenceContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ResourceContextPool;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\SentinelContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContextPool;
 
@@ -27,8 +26,6 @@ final class ContextPools
 {
     /** @var array<int, int> address → node_id for cross-branch dedup */
     private array $sentinels = [];
-
-    private SentinelContext $shared_sentinel;
 
     public function __construct(
         public StringContextPool $string_context_pool,
@@ -39,22 +36,14 @@ final class ContextPools
         public UserFunctionDefinitionContextPool $user_function_definition_context_pool,
         public ClosureContextPool $closure_context_pool = new ClosureContextPool(),
     ) {
-        $this->shared_sentinel = new SentinelContext(0);
     }
 
     /**
      * Check if the given address was already emitted to DB in a previous branch.
-     * Returns a shared SentinelContext with the node_id set, or null.
-     * The returned object is reused across calls — do not store it.
      */
-    public function getSentinel(int $address): ?SentinelContext
+    public function getSentinel(int $address): ?int
     {
-        $node_id = $this->sentinels[$address] ?? null;
-        if ($node_id === null) {
-            return null;
-        }
-        $this->shared_sentinel->node_id = $node_id;
-        return $this->shared_sentinel;
+        return $this->sentinels[$address] ?? null;
     }
 
     public static function createDefault(): self
@@ -81,10 +70,10 @@ final class ContextPools
     }
 
     /**
-     * Convert emitted pooled contexts to lightweight sentinels.
+     * Convert emitted pooled contexts to lightweight node_id placeholders.
      * Only drains entries that have been emitted (have a node_id in memo).
      * Entries not yet emitted are kept in the pool so they can be emitted
-     * later and their sentinels stored correctly.
+     * later and their node_ids stored correctly.
      *
      * @param \WeakMap<ReferenceContext, int> $memo
      */

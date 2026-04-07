@@ -18,7 +18,7 @@ use Reli\Lib\Process\MemoryLocation;
 /** @psalm-require-implements ReferenceContext */
 trait ReferenceContextDefault
 {
-    /** @var array<string, ReferenceContext> */
+    /** @var array<string, ReferenceContext|int> */
     private array $referencing_contexts = [];
 
     public function getName(): string
@@ -26,12 +26,12 @@ trait ReferenceContextDefault
         return (new \ReflectionClass(static::class))->getShortName();
     }
 
-    public function add(string $link_name, ReferenceContext $reference_context): void
+    public function add(string $link_name, ReferenceContext|int $reference_context): void
     {
         $this->referencing_contexts[$link_name] = $reference_context;
     }
 
-    /** @return array<string, ReferenceContext> */
+    /** @return array<string, ReferenceContext|int> */
     public function getLinks(): iterable
     {
         return $this->referencing_contexts;

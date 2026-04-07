@@ -30,7 +30,7 @@ final class ArrayHeaderContext implements ReferenceContext
         return $this->referencing_contexts['array_elements'] ?? null;
     }
 
-    public function getElement(int|string $key): ?ReferenceContext
+    public function getElement(int|string $key): ReferenceContext|int|null
     {
         return $this->getElements()?->getElementByKey($key) ?? null;
     }

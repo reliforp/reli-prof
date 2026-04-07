@@ -29,7 +29,7 @@ final class ArrayElementsContext implements ReferenceContext
         return count($this->referencing_contexts);
     }
 
-    public function getElementByKey(int|string $key): ?ReferenceContext
+    public function getElementByKey(int|string $key): ReferenceContext|int|null
     {
         return $this->referencing_contexts[(string)$key] ?? null;
     }

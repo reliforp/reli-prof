@@ -20,7 +20,7 @@ in streaming mode:
 2. Within branches, inner loops (array elements, object properties, local
    variables) also emit per-iteration via `emitChildIfStreaming()`
 3. After each emission, `flushPoolsIfStreaming()` converts pool entries to
-   lightweight sentinels and clears the pools
+   lightweight node_id placeholders and clears the pools
 
 **Collection order** (streaming mode only):
 ```
@@ -29,7 +29,7 @@ class_table → global_variables → global_constants → global_callbacks →
 modules → call_frames
 ```
 
-objects_store is collected first so that subsequent phases hit sentinels
+objects_store is collected first so that subsequent phases hit cached node IDs
 for most objects/arrays/strings instead of recursively expanding.
 
 Non-streaming mode preserves the original 0.12.x collection order.
@@ -47,24 +47,25 @@ $this->deferred_object_edges[] = [parent_node_id, child_address, link_name, poin
 ```
 
 After all phases complete, deferred edges are resolved:
-1. If the child address has a sentinel → emit reference edge
+1. If the child address already has a node_id → emit reference edge
 2. Otherwise → collect the target with defer off and emit normally
 
 Dynamic properties, closures, generators, fibers, and weak references/maps
 are also skipped during defer mode to prevent bypassing the defer guard.
 
-### Sentinel-based deduplication
+### Node-id based deduplication
 
 **Status: Implemented**
 
-`ContextPools` maintains a sentinel map (`array<int, int>` address → node_id).
+`ContextPools` maintains a node-id map (`array<int, int>` address → node_id).
 After each branch emission, `convertToSentinels()` extracts node_ids from the
-analyzer's WeakMap and stores them. `getSentinel()` returns a shared
-`SentinelContext` (single instance, node_id updated per call) to avoid
-per-sentinel object overhead.
+analyzer's WeakMap and stores them. Later cache hits reuse the integer node_id
+directly, and parent contexts keep only encoded ints for already-emitted
+children rather than full child objects.
 
-`ContextAnalyzer` recognizes `SentinelContext` and emits a reference edge
-without traversing.
+`ContextAnalyzer` recognizes these encoded node IDs and either emits a
+reference edge or skips edge emission when the parent-child edge was already
+materialized earlier.
 
 ### Lightweight MemoryLocations
 

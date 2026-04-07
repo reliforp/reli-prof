@@ -2660,6 +2660,86 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     }
 
     /**
+     * Bug 3 regression test: In streaming mode, eager child emission must not
+     * be followed by a duplicate reference edge when the parent context is
+     * later analyzed from its encoded placeholder links.
+     */
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testStreamingObjectsStoreEdgeIsNotDuplicated(string $php_version, string $docker_image_name): void
+    {
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            class EdgeDupProbe {
+                public $label = '';
+            }
+            $tracked = new EdgeDupProbe;
+            $tracked->label = 'streaming-edge-dedup';
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        [$db, $run_id, $tmp_path] = $this->collectStreamingDb(
+            $pid,
+            $php_version,
+            $memory_reader,
+            $type_reader_creator,
+        );
+
+        $objects_store_node_stmt = $db->prepare(
+            'SELECT child_node_id FROM context_edges'
+            . ' WHERE run_id = ? AND parent_node_id IS NULL AND link_name = ?'
+        );
+        $objects_store_node_stmt->execute([$run_id, 'objects_store']);
+        $objects_store_node_id = $objects_store_node_stmt->fetchColumn();
+        $this->assertIsNumeric($objects_store_node_id);
+
+        $object_node_stmt = $db->prepare(
+            "SELECT cn.node_id FROM context_nodes cn"
+            . " JOIN context_node_locations loc"
+            . "   ON loc.run_id = cn.run_id AND loc.node_id = cn.node_id"
+            . " WHERE cn.run_id = ? AND cn.type = 'ObjectContext' AND loc.class_name = ?"
+            . " LIMIT 1"
+        );
+        $object_node_stmt->execute([$run_id, 'EdgeDupProbe']);
+        $object_node_id = $object_node_stmt->fetchColumn();
+        $this->assertIsNumeric($object_node_id);
+
+        $edge_count_stmt = $db->prepare(
+            'SELECT COUNT(*) FROM context_edges'
+            . ' WHERE run_id = ? AND parent_node_id = ? AND child_node_id = ?'
+        );
+        $edge_count_stmt->execute([$run_id, (int)$objects_store_node_id, (int)$object_node_id]);
+        $this->assertSame(1, (int)$edge_count_stmt->fetchColumn());
+
+        $edge_strength_stmt = $db->prepare(
+            'SELECT strength, is_tree FROM context_edges'
+            . ' WHERE run_id = ? AND parent_node_id = ? AND child_node_id = ?'
+            . ' LIMIT 1'
+        );
+        $edge_strength_stmt->execute([$run_id, (int)$objects_store_node_id, (int)$object_node_id]);
+        $edge_row = $edge_strength_stmt->fetch(\PDO::FETCH_ASSOC);
+        $this->assertIsArray($edge_row);
+        $this->assertSame('weak', $edge_row['strength']);
+        $this->assertContains((int)$edge_row['is_tree'], [0, 1]);
+
+        $db = null;
+        @unlink($tmp_path);
+    }
+
+    /**
      * Bug 2 + report regression test: Streaming mode must produce findings
      * from graph-based analysis passes (CycleCluster, DrillDown, etc.)
      * when the graph has cycles.

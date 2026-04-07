@@ -17,13 +17,14 @@ use Reli\Lib\Process\MemoryLocation;
 
 /**
  * Lightweight placeholder for a context that was already emitted to DB.
- * Holds only the node_id so the analyzer can emit a reference edge
- * without keeping the full context object in memory.
+ * Holds only the node_id and whether the incoming edge still needs to be
+ * materialized by the analyzer.
  */
 final class SentinelContext implements ReferenceContext
 {
     public function __construct(
-        public int $node_id,
+        public readonly int $node_id,
+        public readonly bool $emit_reference_edge = true,
     ) {
     }
 
@@ -34,12 +35,12 @@ final class SentinelContext implements ReferenceContext
     }
 
     #[\Override]
-    public function add(string $link_name, ReferenceContext $reference_context): void
+    public function add(string $link_name, ReferenceContext|int $reference_context): void
     {
         throw new \LogicException('SentinelContext cannot have children');
     }
 
-    /** @return array<string, ReferenceContext> */
+    /** @return array<string, ReferenceContext|int> */
     #[\Override]
     public function getLinks(): iterable
     {

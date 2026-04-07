@@ -30,7 +30,7 @@ final class StringContext implements ReferenceContext
     }
 
     #[\Override]
-    public function add(string $link_name, ReferenceContext $reference_context): void
+    public function add(string $link_name, ReferenceContext|int $reference_context): void
     {
         throw new \LogicException("StringContext cannot have reference to another context");
     }
