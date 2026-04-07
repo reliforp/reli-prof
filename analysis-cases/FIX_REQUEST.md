@@ -941,7 +941,13 @@ no overlap filtering). The >100% from Bug 8 was caused by same-address duplicate
 (multiple context paths), not by address-range overlaps. Address-range overlap
 filtering is correct for retained-size calculation but over-corrects the percentage.
 
-**Case 15 (memory_get_usage: 0 B) — ROOT CAUSE IDENTIFIED:**
+**Case 15 — FIXED (EFAULT) but OOM@512M remains:**
+EFAULT crash fixed by try-catch in job loop + per-element error resilience.
+With unlimited memory: 26 findings, 83.1% coverage, cycle_cluster detected,
+bottleneck `$emitter->listeners[update][0]`. At 512M: OOM in
+FfiCsrGraphSubstrate::computeSccFfi line 637 (`canonical_original_indices`).
+
+**Previous root cause (resolved):**
 `EmitArrayJob.php:72` throws `MemoryReaderException (errno=14 EFAULT)` when
 dereferencing an array pointer with an invalid address. The exception propagates
 to the main job loop (`MemoryLocationsCollector.php:463`) unhandled, aborting
