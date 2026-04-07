@@ -28,6 +28,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendClassConstantMe
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendClassEntryMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendPropertyInfoMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ClassConstantContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ClassConstantInfoContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ClassConstantsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ClassDefinitionContext;
@@ -79,17 +80,33 @@ final class EmitClassTableJob implements CollectorJob
             }
 
             $class_entry = $ctx->dereferencer->deref($pointer);
-            $class_def_context = $this->collectClassDefinition($class_entry, $ctx, $queue);
+            [$class_def_context, $deferred_zvals] = $this->collectClassDefinition($class_entry, $ctx, $queue);
 
             $ctx->emitNode($class_def_context, $parent, (string)$class_name);
+
+            // Push deferred static property / class constant zvals after emit
+            /** @psalm-suppress ArgumentTypeCoercion, MixedAssignment, MixedArgument */
+            foreach ($deferred_zvals as [$zval_parent_context, $zval_name, $zval_value]) {
+                $zval_parent_id = $ctx->memo[$zval_parent_context] ?? null;
+                if ($zval_parent_id !== null) {
+                    $zval_parent_id = $zval_parent_id < 0 ? -$zval_parent_id - 1 : $zval_parent_id;
+                }
+                $queue->push(new ResolveZvalJob($zval_value, $zval_parent_id, $zval_name));
+            }
         }
     }
 
+    /**
+     * @return array{ClassDefinitionContext, list<array{ReferenceContext, string, mixed}>}
+     * @psalm-suppress MixedArrayAssignment, RedundantCastGivenDocblockType
+     */
     private function collectClassDefinition(
         ZendClassEntry $class_entry,
         CollectorContext $ctx,
         JobQueue $queue,
-    ): ClassDefinitionContext {
+    ): array {
+        /** @var list<array{ReferenceContext, string, mixed}> */
+        $deferred_zvals = [];
         $class_definition_context = new ClassDefinitionContext($class_entry->isInternal());
         $memory_location = ZendClassEntryMemoryLocation::fromZendClassEntry($class_entry);
         $ctx->memory_locations->add($memory_location);
@@ -117,7 +134,7 @@ final class EmitClassTableJob implements CollectorJob
             }
         }
 
-        // Static properties - values may contain zvals that need iterative processing
+        // Static properties - values may contain zvals referencing objects/arrays
         if (
             $class_entry->default_static_members_count > 0
             and !is_null($class_entry->static_members_table)
@@ -134,17 +151,17 @@ final class EmitClassTableJob implements CollectorJob
             );
             $class_definition_context->add('static_properties', $static_properties_context);
 
-            // Collect static property values inline - they may reference objects
+            // Collect static property zvals — push to queue for iterative processing.
+            // We need the static_properties node_id as parent, which will be assigned
+            // when class_definition_context is emitted. Store zvals and push jobs
+            // after the class definition is emitted (below).
             $static_property_iterator = $class_entry->getStaticPropertyIterator(
                 $ctx->dereferencer,
                 $ctx->zend_type_reader,
                 $ctx->map_ptr_base,
             );
             foreach ($static_property_iterator as $name => $value) {
-                // These are zvals that could reference objects/arrays.
-                // We emit the static_properties_context first, then the values
-                // become children via the analyzer. For the iterative design,
-                // we need the parent node_id first.
+                $deferred_zvals[] = [$static_properties_context, (string)$name, $value];
             }
         }
 
@@ -181,12 +198,15 @@ final class EmitClassTableJob implements CollectorJob
         $methods_context = $this->collectFunctionTableInline($methods_array, $ctx);
         $class_definition_context->add('methods', $methods_context);
 
-        // Class constants
+        // Class constants (may have non-scalar values that need queue processing)
         $constants_array = $ctx->dereferencer->deref($class_entry->constants_table->getPointer());
-        $class_constants_context = $this->collectClassConstantsTable($constants_array, $ctx);
+        [$class_constants_context, $constant_deferred] = $this->collectClassConstantsTable($constants_array, $ctx);
         $class_definition_context->add('constants', $class_constants_context);
+        foreach ($constant_deferred as $d) {
+            $deferred_zvals[] = $d;
+        }
 
-        return $class_definition_context;
+        return [$class_definition_context, $deferred_zvals];
     }
 
     private function collectPropertiesInfo(
@@ -254,10 +274,15 @@ final class EmitClassTableJob implements CollectorJob
         return $defined_functions_context;
     }
 
+    /**
+     * @return array{ClassConstantsContext, list<array{ReferenceContext, string, mixed}>}
+     */
     private function collectClassConstantsTable(
         ZendArray $array,
         CollectorContext $ctx,
-    ): ClassConstantsContext {
+    ): array {
+        /** @var list<array{ReferenceContext, string, mixed}> */
+        $deferred = [];
         $array_table_location = ZendArrayTableMemoryLocation::fromZendArray($array);
         $array_table_overhead_location = ZendArrayTableOverheadMemoryLocation::fromZendArrayAndUsedLocation(
             $array,
@@ -316,10 +341,12 @@ final class EmitClassTableJob implements CollectorJob
                     }
                 }
             }
-            // Non-scalar class constant values (arrays, objects) are skipped here
-            // to avoid recursion. They'll be discovered through other paths.
+            // Non-scalar class constant values (arrays, objects) — defer to queue
+            if ($zval->isArray() || $zval->isObject() || $zval->isReference()) {
+                $deferred[] = [$constant_context, 'value', $zval];
+            }
         }
 
-        return $class_constants_context;
+        return [$class_constants_context, $deferred];
     }
 }
