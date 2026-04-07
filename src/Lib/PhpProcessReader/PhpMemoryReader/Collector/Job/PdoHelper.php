@@ -76,6 +76,7 @@ final class PdoHelper
         $dbh_size = $ctx->zend_type_reader->sizeOf('pdo_dbh_t');
         $dbh_location = new PdoDbhMemoryLocation($inner_address, $dbh_size);
         $ctx->memory_locations->add($dbh_location);
+        $object_context->addLocation($dbh_location);
 
         $driver_name = self::detectPdoDriver($inner_address, $ctx);
 

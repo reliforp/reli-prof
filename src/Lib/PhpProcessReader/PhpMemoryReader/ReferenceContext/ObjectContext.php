@@ -19,15 +19,23 @@ final class ObjectContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
+    /** @var list<\Reli\Lib\Process\MemoryLocation> */
+    private array $extra_locations = [];
+
     public function __construct(
         public ZendObjectMemoryLocation $memory_location,
     ) {
     }
 
+    public function addLocation(\Reli\Lib\Process\MemoryLocation $location): void
+    {
+        $this->extra_locations[] = $location;
+    }
+
     #[\Override]
     public function getLocations(): array
     {
-        return [$this->memory_location];
+        return array_merge([$this->memory_location], $this->extra_locations);
     }
 
     #[\Override]
