@@ -149,9 +149,6 @@ final class ChokePointPass implements PassInterface
             }
 
             // Walk up to root for full PHP-syntax path.
-            // If the path goes through objects_store, try to find an
-            // alternative application-level parent (global_variables,
-            // call_frames, etc.) that reaches the same object.
             $up_parts = [];
             $up_types = [];
             $cur = $node;
@@ -170,19 +167,8 @@ final class ChokePointPass implements PassInterface
                 $parent = (int)$pr[0];
                 $link = (string)$pr[1];
 
-                // If the parent is objects_store, try to find a better path
-                if (isset($objects_store_nodes[$parent])) {
-                    $alt = $this->findAlternativeTreeParent(
-                        $cur,
-                        $objects_store_nodes,
-                    );
-                    if ($alt !== null) {
-                        [$parent, $link] = $alt;
-                    }
-                }
-
                 $resolved = $labeler->resolvePathLabel(
-                    (string)$link,
+                    $link,
                     $cur
                 );
                 array_unshift($up_parts, $resolved);
@@ -191,7 +177,7 @@ final class ChokePointPass implements PassInterface
                 $nt = $ntype_stmt->fetchColumn();
                 array_unshift($up_types, $nt !== false ? (string)$nt : '');
                 if ($label === '') {
-                    $label = (string)$link;
+                    $label = $link;
                 }
                 $cur = $parent;
             }
@@ -244,44 +230,5 @@ final class ChokePointPass implements PassInterface
         }
 
         return $findings;
-    }
-
-    /**
-     * Find an alternative parent for a node that avoids objects_store.
-     *
-     * In streaming mode, objects_store is traversed first so its edges
-     * get is_tree=1, while app-level edges (global_variables, call_frames)
-     * arrive later as is_tree=0. Therefore we search ALL edges, not just
-     * tree edges.
-     *
-     * @param array<int, true> $objects_store_nodes
-     * @param array<int, array{int, string}> $parent_map tree parent_map
-     * @return array{int, string}|null [parent_node_id, link_name] or null
-     */
-    private function findAlternativeTreeParent(
-        int $node,
-        array $objects_store_nodes,
-    ): ?array {
-        foreach ($this->substrate->getAllParents($node) as $alt_parent) {
-            if ($alt_parent < 0) {
-                continue;
-            }
-            if (isset($objects_store_nodes[$alt_parent])) {
-                continue;
-            }
-            // Found a non-objects_store parent; look up any edge link_name
-            $stmt = $this->db->prepare(
-                "SELECT link_name FROM context_edges"
-                . " WHERE run_id = {$this->run_id}"
-                . " AND parent_node_id = ? AND child_node_id = ?"
-                . " LIMIT 1"
-            );
-            $stmt->execute([$alt_parent, $node]);
-            $link = $stmt->fetchColumn();
-            if ($link !== false) {
-                return [$alt_parent, (string)$link];
-            }
-        }
-        return null;
     }
 }
