@@ -81,41 +81,36 @@ final class CollectorHelpers
      * typically small and don't form deep chains, the stack depth is bounded.
      */
     /**
-     * @return array{FunctionDefinitionContext, list<array{\Reli\Lib\Process\Pointer\Pointer, string}>}
-     *   [context, deferred_arrays: [[pointer, link_name], ...]]
-     * @psalm-suppress all
      */
     public static function collectZendFunction(
         ZendFunction $func,
         CollectorContext $ctx,
-    ): array {
+    ): FunctionCollectionResult {
         if ($func->isUserFunction()) {
-            [$function_definition_context, $deferred] = self::collectUserFunctionDefinition($func, $ctx);
+            $result = self::collectUserFunctionDefinition($func, $ctx);
         } else {
-            $function_definition_context = new InternalFunctionDefinitionContext();
-            $deferred = [];
+            $result = new FunctionCollectionResult(new InternalFunctionDefinitionContext());
         }
         if (!is_null($func->function_name)) {
             $function_name_context = self::collectZendStringPointer(
                 $func->function_name,
                 $ctx,
             );
-            $function_definition_context->add('name', $function_name_context);
+            $result->context->add('name', $function_name_context);
         }
-        return [$function_definition_context, $deferred];
+        return $result;
     }
 
     /**
      * @param Pointer<ZendFunction> $pointer
      */
     /**
-     * @psalm-suppress all
-     * @return mixed
+     * @param Pointer<ZendFunction> $pointer
      */
     public static function collectZendFunctionPointer(
         Pointer $pointer,
         CollectorContext $ctx,
-    ): mixed {
+    ): FunctionCollectionResult|int {
         $address = $pointer->address;
         if ($ctx->memory_locations->has($address)) {
             $existing_node_id = $ctx->address_map[$address] ?? null;
@@ -124,7 +119,7 @@ final class CollectorHelpers
             }
             $cached = $ctx->context_pools->user_function_definition_context_pool->getContextByAddress($address);
             if ($cached !== null) {
-                return $cached;
+                return new FunctionCollectionResult($cached);
             }
         }
         $func = $ctx->dereferencer->deref($pointer);
@@ -132,13 +127,11 @@ final class CollectorHelpers
     }
 
     /**
-     * @return array{UserFunctionDefinitionContext, list<array{\Reli\Lib\Process\Pointer\Pointer, string}>}
-     * @psalm-suppress all
      */
     private static function collectUserFunctionDefinition(
         ZendFunction $func,
         CollectorContext $ctx,
-    ): array {
+    ): FunctionCollectionResult {
         /** @var list<array{\Reli\Lib\Process\Pointer\Pointer, string}> */
         $deferred_arrays = [];
         $function_name = $func->getFullyQualifiedFunctionName(
@@ -271,7 +264,7 @@ final class CollectorHelpers
                 if (is_int($result)) {
                     $dynamic_func_defs_context->add((string)$key, $result);
                 } else {
-                    $dynamic_func_defs_context->add((string)$key, $result[0]);
+                    $dynamic_func_defs_context->add((string)$key, $result->context);
                 }
             }
             $op_array_context->add('dynamic_function_definitions', $dynamic_func_defs_context);
@@ -295,6 +288,7 @@ final class CollectorHelpers
             }
         }
 
-        return [$function_definition_context, $deferred_arrays];
+        /** @psalm-suppress ArgumentTypeCoercion -- Pointer<ZendArray> from op_array->static_variables */
+        return new FunctionCollectionResult($function_definition_context, $deferred_arrays);
     }
 }

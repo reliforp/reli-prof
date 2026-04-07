@@ -62,7 +62,7 @@ final class EmitClassTableJob implements CollectorJob
     ) {
     }
 
-    /** @psalm-suppress all */
+    /** @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess */
     #[\Override]
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
@@ -86,7 +86,7 @@ final class EmitClassTableJob implements CollectorJob
             $ctx->emitNode($class_def_context, $parent, (string)$class_name);
 
             // Push deferred zvals/arrays after emit (need parent node_id from memo)
-            /** @psalm-suppress ArgumentTypeCoercion, MixedAssignment, MixedArgument */
+            /** @psalm-suppress ArgumentTypeCoercion */
             foreach ($deferred_zvals as [$parent_ctx, $link, $value]) {
                 $pid = $ctx->memo[$parent_ctx] ?? null;
                 if ($pid !== null) {
@@ -103,7 +103,7 @@ final class EmitClassTableJob implements CollectorJob
 
     /**
      * @return array{ClassDefinitionContext, list<array{ReferenceContext, string, mixed}>}
-     * @psalm-suppress all
+     * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess, RedundantCastGivenDocblockType
      */
     private function collectClassDefinition(
         ZendClassEntry $class_entry,
@@ -200,12 +200,11 @@ final class EmitClassTableJob implements CollectorJob
 
         // Methods (function table) — may have deferred static_variables
         $methods_array = $ctx->dereferencer->deref($class_entry->function_table->getPointer());
-        [$methods_context, $method_deferred] = $this->collectFunctionTableInline($methods_array, $ctx);
+        [$methods_context, $method_results] = $this->collectFunctionTableInline($methods_array, $ctx);
         $class_definition_context->add('methods', $methods_context);
-        // Collect deferred arrays from methods
-        foreach ($method_deferred as [$fc, $arrays]) {
-            foreach ($arrays as [$arr_pointer, $arr_link]) {
-                $deferred_zvals[] = [$fc, $arr_link, $arr_pointer];
+        foreach ($method_results as $r) {
+            foreach ($r->deferred_arrays as [$arr_pointer, $arr_link]) {
+                $deferred_zvals[] = [$r->context, $arr_link, $arr_pointer];
             }
         }
 
@@ -254,8 +253,7 @@ final class EmitClassTableJob implements CollectorJob
     }
 
     /**
-     * @return array{DefinedFunctionsContext, list<mixed>}
-     * @psalm-suppress all
+     * @return array{DefinedFunctionsContext, list<FunctionCollectionResult>}
      */
     private function collectFunctionTableInline(
         ZendArray $array,
@@ -277,8 +275,8 @@ final class EmitClassTableJob implements CollectorJob
             $array_table_location,
         );
 
-        /** @var list<array{mixed, list<array{\Reli\Lib\Process\Pointer\Pointer, string}>}> */
-        $method_deferred = [];
+        /** @var list<FunctionCollectionResult> */
+        $deferred_results = [];
         foreach ($array->getItemIterator($ctx->dereferencer) as $function_name => $zval) {
             assert(is_string($function_name));
             assert(!is_null($zval->value->func));
@@ -286,14 +284,13 @@ final class EmitClassTableJob implements CollectorJob
             if (is_int($result)) {
                 $defined_functions_context->add($function_name, $result);
             } else {
-                [$fc, $arrays] = $result;
-                $defined_functions_context->add($function_name, $fc);
-                if ($arrays !== []) {
-                    $method_deferred[] = [$fc, $arrays];
+                $defined_functions_context->add($function_name, $result->context);
+                if ($result->deferred_arrays !== []) {
+                    $deferred_results[] = $result;
                 }
             }
         }
-        return [$defined_functions_context, $method_deferred];
+        return [$defined_functions_context, $deferred_results];
     }
 
     /**
