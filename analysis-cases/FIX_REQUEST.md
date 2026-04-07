@@ -941,8 +941,27 @@ no overlap filtering). The >100% from Bug 8 was caused by same-address duplicate
 (multiple context paths), not by address-range overlaps. Address-range overlap
 filtering is correct for retained-size calculation but over-corrects the percentage.
 
-**Case 15 (memory_get_usage: 0 B) — STILL BROKEN:**
-Collector fails silently. 0 findings, empty output. Separate issue.
+**Case 15 (memory_get_usage: 0 B) — ROOT CAUSE IDENTIFIED:**
+`EmitArrayJob.php:72` throws `MemoryReaderException (errno=14 EFAULT)` when
+dereferencing an array pointer with an invalid address. The exception propagates
+to the main job loop (`MemoryLocationsCollector.php:463`) unhandled, aborting
+the entire collection. DB ends up empty (0 nodes, 0 edges).
+
+The old recursive collector had try-catch around individual collect methods so a
+single bad pointer would skip that object and continue. The iterative job queue
+loop has no error handling — one bad pointer kills the whole analysis.
+
+**Fix:** Wrap `$job->execute($ctx, $queue)` in try-catch to skip failed jobs:
+```php
+while (!$queue->isEmpty()) {
+    $job = $queue->pop();
+    try {
+        $job->execute($ctx, $queue);
+    } catch (\Throwable) {
+        // Skip this job, continue with remaining queue
+    }
+}
+```
 
 **Case 15 (memory_get_usage: 0 B):**
 Collector appears to fail silently. DB file is 168 MB but summary shows all zeros.
