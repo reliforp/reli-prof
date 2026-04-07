@@ -34,7 +34,8 @@ class RegionBoundariesTest extends BaseTestCase
             string_value TEXT,
             refcount BIGINT,
             type_info BIGINT,
-            region TEXT
+            region TEXT,
+            bin_overhead BIGINT DEFAULT 0
         )');
         return $db;
     }
@@ -196,7 +197,8 @@ class RegionBoundariesTest extends BaseTestCase
         $this->assertSame('zend_mm_huge', $regions[7]);
 
         // ---- queryRegionSums ----
-        $sums = RegionsSummary::queryRegionSums($db, 1);
+        $result = RegionsSummary::queryRegionSums($db, 1);
+        $sums = $result['sums'];
 
         $this->assertSame(90000, $sums['zend_mm_heap']);  // 40000+30000+20000
         $this->assertSame(6144, $sums['vm_stack']);    // 4096+2048

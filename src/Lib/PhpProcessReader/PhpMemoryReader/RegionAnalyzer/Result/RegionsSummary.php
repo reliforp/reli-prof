@@ -90,19 +90,16 @@ final class RegionsSummary
     }
 
     /**
-     * Query context_node_locations for SUM(size) grouped by region.
-     * Deduplicates by address and filters overlapping locations (where one
-     * allocation is contained within another, e.g. Closure op_array inside
-     * ZendObject).
+     * Query context_node_locations for SUM(size) and SUM(bin_overhead) grouped by region.
+     * Deduplicates by address and filters overlapping locations.
      *
-     * @return array<string, int> region name => total size
+     * @return array{sums: array<string, int>, overhead: int}
      * @psalm-suppress MixedAssignment, MixedArrayAccess
      */
     public static function queryRegionSums(\PDO $db, int $run_id): array
     {
-        // Get deduplicated locations sorted by address for overlap filtering
         $stmt = $db->prepare(
-            'SELECT address, MAX(size) AS size, region'
+            'SELECT address, MAX(size) AS size, region, MAX(bin_overhead) AS bin_overhead'
             . ' FROM context_node_locations'
             . ' WHERE run_id = ? AND region IS NOT NULL'
             . ' GROUP BY address, region'
@@ -110,23 +107,23 @@ final class RegionsSummary
         );
         $stmt->execute([$run_id]);
 
-        // Walk through sorted by address, skip locations contained within
-        // the previous one (same logic as RegionAnalyzer::filterOverlappingLocations)
         $sums = [];
+        $total_overhead = 0;
         $prev_end = -1;
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $address = (int)$row['address'];
             $size = (int)$row['size'];
             $region = (string)$row['region'];
+            $overhead = (int)($row['bin_overhead'] ?? 0);
 
             $end = $address + $size;
             if ($address < $prev_end && $end <= $prev_end) {
-                // Contained within previous location — skip
                 continue;
             }
             $prev_end = $end;
             $sums[$region] = ($sums[$region] ?? 0) + $size;
+            $total_overhead += $overhead;
         }
-        return $sums;
+        return ['sums' => $sums, 'overhead' => $total_overhead];
     }
 }

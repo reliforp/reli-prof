@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
 use Reli\Lib\Process\MemoryLocation;
 
 final class RegionBoundaries
@@ -41,6 +42,22 @@ final class RegionBoundaries
             return 'zend_mm_huge';
         }
         return 'outside';
+    }
+
+    /**
+     * Compute ZendMM bin alignment overhead for a location.
+     * Returns the overhead in bytes, or 0 if not applicable.
+     */
+    public function computeBinOverhead(MemoryLocation $location): int
+    {
+        $chunk = $this->chunk_memory_locations->getContainingMemoryLocation($location);
+        if ($chunk instanceof ZendMmChunkMemoryLocation) {
+            $overhead = $chunk->getOverhead($location);
+            if ($overhead !== null) {
+                return $overhead->size;
+            }
+        }
+        return 0;
     }
 
     /**
