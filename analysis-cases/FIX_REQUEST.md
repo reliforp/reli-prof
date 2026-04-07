@@ -839,3 +839,75 @@ be suppressed or downgraded significantly.
 
 For string/scalar dedup candidates, size + content matching (current behavior) is
 correct and useful.
+
+---
+
+## Architectural Proposal: Remove objects_store pre-read and non-streaming mode
+
+**Status:** Proposal. Would resolve Bugs 2, 4, 5, 6, 7 (partially), 11 at the root.
+
+### Problem
+
+The objects_store shallow pre-read was introduced for streaming mode to avoid deep
+recursion in object graphs. But it caused a cascade of bugs:
+
+| Bug | Caused by |
+|-----|-----------|
+| 2 | Deferred properties disconnect object → SCC can't find cycles |
+| 4 | Closure this_ptr skipped in defer |
+| 5 | Generator/Fiber also skipped |
+| 6 | is_tree reflects objects_store-first order → spanning tree rebuild needed |
+| 7 | Path display needs objects_store-aware alternative path search |
+| 11 | dynamic_properties skipped in defer → stdClass always "empty" |
+
+All stem from one decision: traverse objects_store first, shallowly.
+
+### Proposed Change: Restore original DFS order in streaming mode
+
+The original non-streaming mode used:
+
+```
+call_frames → global_variables → function_table → class_table → global_constants
+→ global_callbacks → modules → included_files → interned_strings → objects_store (last)
+```
+
+Do the same in streaming mode. Use **address → node_id table** for dedup:
+
+1. DFS from call_frames — emit objects as encountered, register address in table
+2. Same address reached again → reference edge only (no re-expansion)
+3. Continue with global_variables, function_table, class_table, etc.
+4. objects_store **last** — only emit objects not yet reached from app-level paths
+5. Use iterative DFS (explicit stack) to avoid stack overflow on deep graphs
+
+This eliminates:
+
+- `defer_unseen_objects` and all deferred lists (closure, generator, fiber, dynamic_properties)
+- `flushPoolsIfStreaming()` and pool flush / WeakMap identity issues
+- `rebuildSpanningTree` (is_tree is correct from the start — app paths get tree edges)
+- `findAlternativeTreeParent` (objects_store edges are already non-tree)
+- Sentinel mechanism (address table replaces it)
+- ContextPools / convertToSentinels complexity
+
+### Also: Remove non-streaming mode
+
+Non-streaming mode is no longer used — even `-f report` goes through temp sqlite.
+Two code paths caused Bug 1 (Findings differ) and double the maintenance surface.
+
+- Streaming with `:memory:` sqlite gives equivalent performance for small cases
+- One code path = fewer bugs, fewer tests needed
+- All current test cases already exercise the streaming path
+
+### Risk Assessment
+
+| Risk | Mitigation |
+|------|-----------|
+| Deep object graphs → stack overflow | Iterative DFS with explicit stack (no recursion limit) |
+| Memory for address table | `int → int` map, ~16 bytes per object. 1M objects = 16 MB |
+| Performance change | objects_store traversal becomes minimal (most already visited). Less deferred resolution work → likely net positive |
+
+### Scope
+
+This is a significant refactor of `MemoryLocationsCollector`, but it **removes more
+code than it adds**. The current fix-by-fix approach (Bugs 2→4→5→6→11) is adding
+workaround complexity to compensate for the pre-read design. A clean rewrite of the
+streaming traversal would simplify the codebase.
