@@ -622,11 +622,17 @@ foreach ($this->substrate->getChildren($node_id) as $child) {
 // dynamic_properties is never checked
 ```
 
-### Fix
+### Status
 
-Also check the `dynamic_properties` child. If it has any children (array elements),
-the object is not empty. For prop_sig, include dynamic property names or a marker
-like `[dynamic:N]` to indicate N dynamic properties exist. Case 14 heap percentage exceeds 100% (123.3%) — overlapping locations (MEDIUM)
+Fix applied: `StructuralDedupPass` now checks `dynamic_properties` children. However,
+**dynamic_properties is not emitted in streaming mode** — the `defer_unseen_objects`
+early-return (line 1833) skips dynamic property collection entirely. This is the same
+root cause as Bug 5 (Closure/Generator/Fiber skip). stdClass objects in the DB have
+no `dynamic_properties` child node, so the check always finds zero children.
+
+Needs: either add `dynamic_properties` to the deferred collection list (like
+`deferred_closure_addresses`), or collect dynamic properties even in defer mode
+since they are simple arrays that don't cause deep recursion. Case 14 heap percentage exceeds 100% (123.3%) — overlapping locations (MEDIUM)
 
 **Status:** Open. Root cause identified.
 
