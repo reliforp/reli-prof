@@ -1142,12 +1142,26 @@ is not meaningful because `size` = unused portion and `bin_overhead` = full tabl
 bin padding. The actual overhead values (e.g., 24 = bin_size(160) - full_table(136))
 are correct.
 
-**Real gap root cause:** Manual recomputation shows `filtered_size + overhead +
-vm_stack + compiler_arena` = 40,287,400 vs `memory_get_usage` = 40,297,656 — only
-**10 KB gap**. But `queryRegionSums` stored `heap_usage` = 39,825,598, which is
-462 KB less than manual computation. The bug is in `queryRegionSums`, not in
-`computeBinOverhead`. Need to investigate why `queryRegionSums` returns a smaller
-sum than manually iterating the same data.
+**Real gap root cause:** `MemoryCommand.php` line 151-152 computes `zend_mm_heap_usage`
+as `$chunk_usage + $huge_usage + $vm_stack_total + $compiler_arena_total` but does NOT
+add `$allocation_overhead`. The overhead is stored in the summary (line 162) but not
+included in the usage calculation that drives the percentage.
+
+```php
+// Line 151-152 (current):
+'zend_mm_heap_usage' => $chunk_usage + $huge_usage
+    + $vm_stack_total + $compiler_arena_total,
+
+// Should be:
+'zend_mm_heap_usage' => $chunk_usage + $huge_usage
+    + $vm_stack_total + $compiler_arena_total + $allocation_overhead,
+```
+
+Manual verification:
+- Without overhead: 39,497,918 + 262,144 + 65,536 = 39,825,598 (matches stored)
+- With overhead:    39,497,918 + 461,802 + 262,144 + 65,536 = 40,287,400
+- memory_get_usage: 40,297,656
+- Gap with fix: **10 KB** (0.025%)
 
 ---
 
