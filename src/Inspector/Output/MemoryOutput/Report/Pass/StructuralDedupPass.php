@@ -83,12 +83,15 @@ final class StructuralDedupPass implements PassInterface
                     evidence_node_ids: [$g['example_id']],
                 );
             } else {
+                // Same class + same property names = same shape, but values may differ.
+                // This is expected for any class with many instances — only actionable
+                // if instances are actually interchangeable (flyweight pattern).
                 $findings[] = new Finding(
                     kind: 'structural_duplicate',
                     severity: $waste > 102400
-                        ? FindingSeverity::Medium
-                        : FindingSeverity::Low,
-                    confidence: FindingConfidence::Medium,
+                        ? FindingSeverity::Low
+                        : FindingSeverity::Info,
+                    confidence: FindingConfidence::Low,
                     summary: sprintf(
                         '%s: %s identical shapes x %s = %s'
                         . ' (saving: %s)',
@@ -106,8 +109,8 @@ final class StructuralDedupPass implements PassInterface
                         'theoretical_saving' => $waste,
                         'properties' => $g['props'],
                     ],
-                    hypothesis: 'Identical object shapes'
-                        . ' — candidates for flyweight/sharing',
+                    hypothesis: 'Same class and property names (shape match).'
+                        . ' Values may differ — check if instances are interchangeable.',
                     impact_bytes: $waste,
                     evidence_node_ids: [$g['example_id']],
                 );
@@ -145,17 +148,24 @@ final class StructuralDedupPass implements PassInterface
 
             // Find object_properties child, collect property names
             $props = [];
+            $has_dynamic_props = false;
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($this->lookupLinkName($link_stmt, $child)) !== 'object_properties') {
-                    continue;
-                }
-                foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
-                    if ($prop_name !== null) {
-                        $props[] = $prop_name;
+                $child_link = $this->lookupLinkName($link_stmt, $child);
+                if ($child_link === 'object_properties') {
+                    foreach ($this->substrate->getChildren($child) as $prop_child) {
+                        $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
+                        if ($prop_name !== null) {
+                            $props[] = $prop_name;
+                        }
+                    }
+                } elseif ($child_link === 'dynamic_properties') {
+                    // stdClass and __set() classes store props here
+                    $dyn_count = count($this->substrate->getChildren($child));
+                    if ($dyn_count > 0) {
+                        $has_dynamic_props = true;
+                        $props[] = "[dynamic:{$dyn_count}]";
                     }
                 }
-                break;
             }
 
             sort($props);
