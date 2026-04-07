@@ -65,6 +65,11 @@ final class PdoContextTreeSink implements ContextTreeSink
         );
     }
 
+    public function setRegionBoundaries(RegionBoundaries $region_boundaries): void
+    {
+        $this->region_boundaries = $region_boundaries;
+    }
+
     /**
      * @param iterable<array-key, MemoryLocation> $locations
      * @param array<string, mixed> $attributes

@@ -47,6 +47,7 @@ use Reli\Lib\PhpInternals\Types\Php\PdoSqliteDbHandle;
 use Reli\Lib\PhpInternals\Types\Php\PdoSqliteStmt;
 use Reli\Lib\PhpInternals\Types\Php\MysqlndRes;
 use Reli\Lib\PhpInternals\Types\Php\MysqlndResBuffered;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpInternals\Types\Php\PhpStream;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamMemoryData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamOps;
@@ -332,7 +333,7 @@ final class MemoryLocationsCollector
             $zend_type_reader->sizeOf('zend_mm_chunk'),
         );
 
-        $memory_locations = new MemoryLocations();
+        $memory_locations = MemoryLocations::createLightweight();
         $chunk_memory_locations = new MemoryLocations();
         $this->chunk_memory_locations = $chunk_memory_locations;
 
@@ -406,12 +407,24 @@ final class MemoryLocationsCollector
 
         $this->fiber_vm_stack_memory_locations = $vm_stack_memory_locations;
 
+        // Build RegionBoundaries now — chunk/huge/vm_stack/compiler_arena are known.
+        // Set on sink so emitNode writes region inline (no backfill needed).
+        $region_boundaries = new RegionBoundaries(
+            $chunk_memory_locations,
+            $huge_memory_locations,
+            $vm_stack_memory_locations,
+            $compiler_arena_memory_locations,
+        );
+
         $context_pools = ContextPools::createDefault();
 
         // If no sink was provided, create an internal ArrayContextTreeSink
         // so the iterative code path always has a sink to emit to.
         if ($sink === null) {
             $sink = new \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ArrayContextTreeSink();
+        }
+        if ($sink instanceof \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink) {
+            $sink->setRegionBoundaries($region_boundaries);
         }
         $analyzer = new ContextAnalyzer();
         /** @var \WeakMap<ReferenceContext, int> $memo */

@@ -101,4 +101,13 @@ final class MemoryLocations
         }
         return null;
     }
+
+    public function getTotalSize(): int
+    {
+        $total = 0;
+        foreach ($this->memory_locations as $location) {
+            $total += $location->size;
+        }
+        return $total;
+    }
 }
