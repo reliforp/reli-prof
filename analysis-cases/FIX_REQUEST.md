@@ -1042,3 +1042,69 @@ ZendArrayTable, and ZendArrayTableOverhead locations, totaling ~8.6 MB.
 
 **Fix:** Push `EmitArrayJob` for `$func->op_array->static_variables` and add
 it to the function context as `static_variables` child link.
+
+---
+
+## Design Proposal: Inline region + overhead at emit time, eliminate MemoryLocations accumulation
+
+**Status:** Proposed. Addresses MemoryLocations memory concern + simplifies architecture.
+
+### Problem
+
+Full `MemoryLocations` (non-lightweight) accumulates all MemoryLocation objects for
+the process lifetime. Node count scales with target process size — problematic for
+the large processes that motivated the iterative DFS rewrite in the first place.
+
+### Proposed Design
+
+Compute region classification and bin alignment overhead **at emit time** in
+PdoContextTreeSink, instead of post-hoc in RegionAnalyzer/backfillRegions.
+
+```
+collect → MemoryLocation created
+  → emit to PdoContextTreeSink:
+      1. region = RegionBoundaries.classifyRegion(location)
+      2. bin_overhead = chunk.getOverhead(location)
+      → INSERT into context_node_locations with region + bin_overhead
+  → MemoryLocation object becomes eligible for GC immediately
+```
+
+### Why This Works
+
+- **RegionBoundaries can be built before the job loop:** chunk/huge/vm_stack/compiler_arena
+  memory locations are determined by reading ZendMM heap structures at the start of
+  `collectAll`, before any jobs execute. No chicken-and-egg problem.
+
+- **MemoryLocations stays lightweight:** Only needs address→bool for dedup checking.
+  No MemoryLocation objects accumulated.
+
+- **backfillRegions becomes unnecessary:** Region is written inline at INSERT time.
+
+- **RegionAnalyzer becomes unnecessary:** Its three jobs are handled elsewhere:
+  1. filterOverlappingLocations → `queryRegionSums` with address-sort containment check (already exists)
+  2. bin alignment overhead → computed at emit time, stored in DB
+  3. region classification → computed at emit time, stored in DB
+
+- **Overlap filtering for percentage:** Done in `queryRegionSums` at report time
+  (sort by address, skip contained ranges). Emit writes everything, aggregation filters.
+
+### Implementation
+
+1. **Add `bin_overhead` column** to `context_node_locations`
+2. **Pass RegionBoundaries + chunk_memory_locations to PdoContextTreeSink** at construction
+   (after chunk enumeration, before job loop)
+3. **In `emitNode`:** call `classifyRegion(location)` and `chunk.getOverhead(location)`
+   for each location, write to DB
+4. **In `queryRegionSums`:** `SUM(size + bin_overhead)` with address-sort overlap filter
+5. **Remove:** RegionAnalyzer, backfillRegions, full MemoryLocations, correctedToArray
+
+### What Changes vs Current
+
+| Component | Current | Proposed |
+|-----------|---------|----------|
+| MemoryLocations | Full (all objects) | Lightweight (address→bool) |
+| Region classification | backfillRegions (post-hoc UPDATE) | Inline at INSERT |
+| Bin overhead | RegionAnalyzer (needs full MemoryLocations) | Inline at INSERT |
+| Overlap filtering | RegionAnalyzer.filterOverlappingLocations | queryRegionSums (DB-side) |
+| RegionAnalyzer | Required | Eliminated |
+| PdoContextTreeSink | Receives RegionBoundaries optionally | Always receives RegionBoundaries |
