@@ -595,7 +595,42 @@ Desired display: global_variables[conn]->statementCache[0]
 
 ---
 
-## Bug 7: Path display doesn't match PHP syntax (LOW)
+## Bug 8: Case 14 heap percentage exceeds 100% (123.3%) (LOW)
+
+**Status:** Open. Observed on 0.12.x.
+
+### Symptom
+
+Case 14 (Laravel bootstrap, 27,600 Closures) reports 123.3% analyzed.
+
+### Analysis
+
+```
+DB dedup sum (zend_mm_heap): 29,712,178 (28.3 MB)
+memory_get_usage:            24,356,488 (23.2 MB)
+Difference:                   5,355,690 (5.1 MB)
+```
+
+- `possible_allocation_overhead_total = 0` (streaming mode can't compute this)
+- `vm_stack_total + compiler_arena_total = 327 KB` (negligible)
+- No same-address duplicates (dedup removes 0 rows)
+- 27,600 `ZendOpArrayHeaderMemoryLocation` × 256 B = 6.7 MB, all unique addresses
+
+The 5.1 MB excess comes from reli-prof's object size sum exceeding what
+`memory_get_usage(false)` reports. Likely cause: reli-prof reads struct sizes from
+type definitions (e.g., `sizeof(zend_op_array)`) which may differ from what ZendMM
+actually allocated per bin. With 27,600 Closures, a small per-object discrepancy
+(~190 bytes) accumulates to 5+ MB.
+
+Other cases (2, 3, 5) with similar total object counts but fewer Closures show
+98-99%, confirming this is Closure/op_array-specific.
+
+**Impact:** Low — 123% is still a useful result and findings are correct. The
+percentage is a sanity indicator, not a precise accounting metric.
+
+---
+
+## Bug 7: Path display doesn't match PHP syntax (HIGH)
 
 **Status:** Open.
 
