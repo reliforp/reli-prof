@@ -58,23 +58,27 @@ final class ObjectPropertiesIteratorJob implements CollectorJob
             return;
         }
 
-        $name = (string)$this->iterator->key();
-        /** @var Zval $property */
-        $property = $this->iterator->current();
+        try {
+            $name = (string)$this->iterator->key();
+            /** @var Zval $property */
+            $property = $this->iterator->current();
 
-        // Advance the iterator
-        $this->iterator->next();
+            $this->iterator->next();
 
-        // For DFS: push continuation first (processed later), then child (processed next)
-        if ($this->iterator->valid()) {
-            $queue->push($this);
+            if ($this->iterator->valid()) {
+                $queue->push($this);
+            }
+
+            $queue->push(new ResolveZvalJob(
+                $property,
+                $this->properties_node_id,
+                $name,
+            ));
+        } catch (\Throwable) {
+            $this->iterator->next();
+            if ($this->iterator->valid()) {
+                $queue->push($this);
+            }
         }
-
-        // Push job to resolve the property value
-        $queue->push(new ResolveZvalJob(
-            $property,
-            $this->properties_node_id,
-            $name,
-        ));
     }
 }
