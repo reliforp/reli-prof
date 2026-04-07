@@ -91,25 +91,41 @@ final class RegionsSummary
 
     /**
      * Query context_node_locations for SUM(size) grouped by region.
+     * Deduplicates by address and filters overlapping locations (where one
+     * allocation is contained within another, e.g. Closure op_array inside
+     * ZendObject).
      *
      * @return array<string, int> region name => total size
+     * @psalm-suppress MixedAssignment, MixedArrayAccess
      */
     public static function queryRegionSums(\PDO $db, int $run_id): array
     {
+        // Get deduplicated locations sorted by address for overlap filtering
         $stmt = $db->prepare(
-            'SELECT region, COALESCE(SUM(size), 0) AS total_size FROM ('
-            . '  SELECT address, region, MAX(size) AS size'
-            . '  FROM context_node_locations'
-            . '  WHERE run_id = ? AND region IS NOT NULL'
-            . '  GROUP BY address, region'
-            . ') GROUP BY region'
+            'SELECT address, MAX(size) AS size, region'
+            . ' FROM context_node_locations'
+            . ' WHERE run_id = ? AND region IS NOT NULL'
+            . ' GROUP BY address, region'
+            . ' ORDER BY address ASC, size DESC'
         );
         $stmt->execute([$run_id]);
+
+        // Walk through sorted by address, skip locations contained within
+        // the previous one (same logic as RegionAnalyzer::filterOverlappingLocations)
         $sums = [];
-        /** @psalm-suppress MixedAssignment */
+        $prev_end = -1;
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-            /** @psalm-suppress MixedArrayAccess */
-            $sums[(string)$row['region']] = (int)$row['total_size'];
+            $address = (int)$row['address'];
+            $size = (int)$row['size'];
+            $region = (string)$row['region'];
+
+            $end = $address + $size;
+            if ($address < $prev_end && $end <= $prev_end) {
+                // Contained within previous location — skip
+                continue;
+            }
+            $prev_end = $end;
+            $sums[$region] = ($sums[$region] ?? 0) + $size;
         }
         return $sums;
     }
