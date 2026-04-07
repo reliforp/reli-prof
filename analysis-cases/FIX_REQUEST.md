@@ -1041,7 +1041,30 @@ This loses 23,001 arrays (Closure captured variables via `use ($name, $i)`).
 ZendArrayTable, and ZendArrayTableOverhead locations, totaling ~8.6 MB.
 
 **Fix:** Push `EmitArrayJob` for `$func->op_array->static_variables` and add
-it to the function context as `static_variables` child link.
+it to the function context as `static_variables` child link. (Done)
+
+### Inline overhead status
+
+Bin overhead now computed at emit time. But **all cases exceed 100%** (Case 11: 134.5%,
+Case 14: 122.9%, Case 2: 128.1%, Case 5: 131.7%).
+
+The overhead is being added on top of struct sizes, but `memory_get_usage()` already
+counts bin-aligned sizes. So:
+
+```
+memory_get_usage = Σ(bin_size) = Σ(struct_size + overhead)
+heap_usage       = Σ(struct_size) + Σ(overhead)   ← should equal memory_get_usage
+```
+
+If heap_usage > memory_get_usage, then either:
+1. Overhead is computed for locations that were removed by overlap filtering
+   (OpArrayHeaders inside Closures get removed, but their overhead was already added)
+2. Overhead is computed for locations outside the heap (wrong region)
+3. The overhead calculation itself is wrong (bin_size lookup issue)
+
+Need to check: is overhead being added for overlap-filtered locations? The overlap
+filter removes the child location from the sum but if its overhead was already
+accumulated separately, that's a double-count.
 
 ---
 
