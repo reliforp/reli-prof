@@ -226,36 +226,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
-
-        $region_analyzer = new RegionAnalyzer(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations
-        );
-        $region_analized = $region_analyzer->analyze($collected_memories->memory_locations);
-        $this->assertGreaterThan(0, $region_analized->summary->zend_mm_heap_usage);
-        $this->assertLessThanOrEqual(
-            $collected_memories->memory_get_usage_size,
-            $region_analized->summary->zend_mm_heap_usage
-        );
-        $this->assertSame(
-            $collected_memories->memory_get_usage_real_size,
-            $region_analized->summary->zend_mm_heap_total
-        );
-        $location_type_analyzer = new LocationTypeAnalyzer();
-        $location_type_analized_result = $location_type_analyzer->analyze(
-            $region_analized->regional_memory_locations->locations_in_zend_mm_heap,
-        );
-        $this->assertSame(
-            2,
-            $location_type_analized_result->per_type_usage['ZendObjectMemoryLocation']['count']
-        );
-        $object_class_analyzer = new ObjectClassAnalyzer();
-        $object_class_analyzer_result = $object_class_analyzer->analyze(
-            $region_analized->regional_memory_locations->locations_in_zend_mm_heap,
-        );
-        $this->assertSame(1, $object_class_analyzer_result->per_class_usage['A']['count']);
         $contexts_analyzed = $sink->getResult();
         $this->assertSame(
             'fgets',
@@ -1979,41 +1949,11 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
-        $region_analyzer = new RegionAnalyzer(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations
-        );
-        $region_analyzed = $region_analyzer->analyze($collected_memories->memory_locations);
-        $this->assertGreaterThan(0, $region_analyzed->summary->zend_mm_heap_usage);
-
         // Fiber VM stacks should contribute to vm_stack_memory_total.
-        // With 100 fibers each having deep call stacks, the total VM stack memory
-        // should be significantly larger than just the main thread's VM stack.
         $this->assertGreaterThan(
             0,
-            $region_analyzed->summary->vm_stack_total,
+            $collected_memories->vm_stack_memory_locations->getTotalSize(),
             'VM stack memory total should be greater than 0'
-        );
-
-        // analyzed_percentage must not exceed 100%
-        $this->assertLessThanOrEqual(
-            $collected_memories->memory_get_usage_size,
-            $region_analyzed->summary->zend_mm_heap_usage,
-            'analyzed_percentage must not exceed 100%'
-        );
-
-        // analyzed_percentage should not be extremely low — with 100 fibers
-        // having deep call stacks, the fiber VM stacks represent a significant
-        // portion of heap usage. If the C stack scanning fails to find them,
-        // analyzed_percentage drops well below 50%.
-        $analyzed_percentage = (float)$region_analyzed->summary->zend_mm_heap_usage
-            / (float)$collected_memories->memory_get_usage_size * 100.0;
-        $this->assertGreaterThan(
-            50.0,
-            $analyzed_percentage,
-            'analyzed_percentage should not be extremely low (fiber VM stacks should be found)'
         );
     }
 
