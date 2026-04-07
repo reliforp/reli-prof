@@ -332,7 +332,7 @@ final class MemoryLocationsCollector
             $zend_type_reader->sizeOf('zend_mm_chunk'),
         );
 
-        $memory_locations = MemoryLocations::createLightweight();
+        $memory_locations = new MemoryLocations();
         $chunk_memory_locations = new MemoryLocations();
         $this->chunk_memory_locations = $chunk_memory_locations;
 
