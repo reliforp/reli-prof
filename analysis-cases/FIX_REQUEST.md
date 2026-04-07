@@ -744,3 +744,61 @@ PHP allows identical names across classes, functions, and constants
 (`class app`, `function app`, `const app` can coexist), so the prefix
 is the only way to disambiguate. Collapsing loses information that
 users need.
+
+---
+
+## Bug 9: dedup_candidate reports key/value as near-duplicate noise (MEDIUM)
+
+**Status:** Open.
+
+### Symptom
+
+dedup_candidate reports `$hoge[key]` with N copies and `$hoge[value]` with N-1 or
+N+1 copies, both showing nearly identical content. This is noisy — they're describing
+the same array elements from two angles.
+
+### Root Cause
+
+ArrayElementContext stores `key` and `value` as separate child nodes. The dedup pass
+collects strings by their parent property path, so `SomeClass::$prop[key]` and
+`SomeClass::$prop[value]` are counted independently. For a homogeneous array like
+`['a' => 'x', 'b' => 'x', ...]`, this produces two findings that say essentially
+the same thing.
+
+### Fix
+
+Merge key/value findings for the same array path, or only report the value side
+(the key side is rarely actionable — you can't "deduplicate" array keys).
+
+---
+
+## Bug 10: dedup_candidate flags same-class objects by size alone (MEDIUM)
+
+**Status:** Open.
+
+### Symptom
+
+dedup_candidate reports things like:
+```
+Widget: 2,000 copies x 88 B
+```
+
+But all instances of the same class (without dynamic properties) are always the same
+size — this is a PHP language guarantee, not a deduplication opportunity. The finding
+is noise unless the **values** are actually identical.
+
+### Root Cause
+
+The dedup pass groups by `(property_path, size)` and counts occurrences. For objects,
+size is determined by the class definition, so N instances of the same class always
+match. The pass doesn't check whether the actual content/values are identical.
+
+### Fix
+
+For object-typed dedup candidates, require **value identity** (or at least structural
+identity of properties), not just size equality. The existing "X% have identical
+content" metric already distinguishes this — if it's 0% identical, the finding should
+be suppressed or downgraded significantly.
+
+For string/scalar dedup candidates, size + content matching (current behavior) is
+correct and useful.
