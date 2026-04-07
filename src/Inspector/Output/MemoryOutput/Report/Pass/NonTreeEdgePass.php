@@ -246,6 +246,11 @@ final class NonTreeEdgePass implements PassInterface
             if (($row['location_type'] ?? '') === 'ZendArrayMemoryLocation') {
                 continue;
             }
+            // Skip ArrayElementContext key links — the value side is
+            // the actionable finding, key side is just noise
+            if ($row['link_name'] === 'key') {
+                continue;
+            }
 
             // Use retained size when substrate available
             $size = $shallow_size;
