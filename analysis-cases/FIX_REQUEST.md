@@ -1080,20 +1080,23 @@ accumulated separately, that's a double-count.
    ZendArrayTable + ZendArrayTableOverhead already equals the full table allocation.
    Adding bin_overhead on top of that goes past what ZendMM actually allocated.
 
-**The fundamental issue:** `ZendArrayTableMemoryLocation` size = used slots.
-`ZendArrayTableOverheadMemoryLocation` size = unused slots. Together = full table.
-`bin_overhead` = `bin_size - allocation_size`. But allocation_size = full table,
-which is already `used + unused`. So:
+**The fundamental issue:** `ZendArrayTableMemoryLocation` size = used slots only
+(`getUsedTableSize()`). `ZendArrayTableOverheadMemoryLocation` size = unused slots
+(`getTableSize() - getUsedTableSize()`). They are **adjacent non-overlapping regions**
+within a single `emalloc`:
 ```
-size(used) + size(unused) + bin_overhead(used) + bin_overhead(unused)
-= used + unused + (bin - (used + unused)) + extra
+[--- used (ZendArrayTable) ---][--- unused (Overhead) ---]
+|<------------ 1 emalloc(full_table_size) ------------>|
 ```
-The `bin_overhead` for the used part should be `bin_size - full_table_size`, and
-the unused part should have `bin_overhead = 0` (it's not a separate allocation).
+`getOverhead()` treats each location as an independent allocation and computes
+`bin_size(location.size) - location.size`. But the actual emalloc was for the
+full table — both locations share one bin allocation.
 
-**Fix:** Don't compute bin_overhead for ZendArrayTableOverheadMemoryLocation.
-For ZendArrayTableMemoryLocation, compute overhead as `bin_size - (used + unused)`
-i.e., `bin_size - full_table_size`, not `bin_size - used_size`.
+**Fix:** For ZendArrayTableMemoryLocation, compute overhead as
+`bin_size(full_table_size) - full_table_size` where full_table = used + unused.
+For ZendArrayTableOverheadMemoryLocation, set bin_overhead = 0 (not a separate
+allocation). The `used_location` field on ZendArrayTableOverheadMemoryLocation
+already links to the table location, so full_table_size is available.
 
 ---
 
