@@ -331,60 +331,65 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
                 $php_globals_finder,
             ),
         );
+        $tmp_path = tempnam(sys_get_temp_dir(), 'reli_test_mysql_') . '.sqlite3';
+        $driver = new \Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver($tmp_path);
+        $pdo_output = new \Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput($driver);
+        [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
+
         $collected_memories = $memory_locations_collector->collectAll(
             $process_specifier,
             $target_php_settings,
             $executor_globals_address,
             $compiler_globals_address,
+            null,
+            null,
+            $sink,
         );
 
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+        $sink->flush();
 
-        $region_analyzer = new RegionAnalyzer(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-        $region_analyzed = $region_analyzer->analyze($collected_memories->memory_locations);
+        // Verify PDO structures via DB
+        /** @psalm-suppress MixedAssignment */
+        $pdo_dbh_count = $db->query(
+            "SELECT COUNT(*) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND location_type = 'PdoDbhMemoryLocation'"
+        )->fetchColumn();
+        $this->assertGreaterThan(0, (int)$pdo_dbh_count, 'pdo_dbh_t should be tracked for MySQL');
 
-        $location_type_analyzer = new LocationTypeAnalyzer();
-        $location_type_result = $location_type_analyzer->analyze(
-            $region_analyzed->regional_memory_locations->locations_in_zend_mm_heap,
-        );
+        /** @psalm-suppress MixedAssignment */
+        $driver_data_count = $db->query(
+            "SELECT COUNT(*) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND location_type = 'PdoDriverDataMemoryLocation'"
+        )->fetchColumn();
+        $this->assertGreaterThan(0, (int)$driver_data_count, 'pdo_mysql_db_handle should be tracked');
 
-        // Verify PDO structures are tracked
-        $this->assertArrayHasKey(
-            'PdoDbhMemoryLocation',
-            $location_type_result->per_type_usage,
-            'pdo_dbh_t should be tracked for MySQL',
-        );
-        $this->assertArrayHasKey(
-            'PdoDriverDataMemoryLocation',
-            $location_type_result->per_type_usage,
-            'pdo_mysql_db_handle should be tracked',
-        );
+        /** @psalm-suppress MixedAssignment */
+        $mysqlnd_count = $db->query(
+            "SELECT COUNT(*) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND location_type = 'MysqlndMemoryLocation'"
+        )->fetchColumn();
+        $this->assertGreaterThan(0, (int)$mysqlnd_count, 'mysqlnd result buffers should be tracked');
 
-        // Verify mysqlnd result buffers are tracked
-        $this->assertArrayHasKey(
-            'MysqlndMemoryLocation',
-            $location_type_result->per_type_usage,
-            'mysqlnd result buffers should be tracked (MYSQLND_RES, MYSQLND_RES_BUFFERED, row_buffers, arena)',
-        );
         // With 100 rows fetched, we expect: MYSQLND_RES + MYSQLND_RES_BUFFERED
         // + row_buffers array + memory_pool(s) + arena chunk(s) = at least 3 locations
-        $mysqlnd_count = $location_type_result->per_type_usage['MysqlndMemoryLocation']['count'];
         $this->assertGreaterThanOrEqual(
             3,
-            $mysqlnd_count,
-            "Expected at least 3 MysqlndMemoryLocation entries, got $mysqlnd_count",
+            (int)$mysqlnd_count,
+            "Expected at least 3 MysqlndMemoryLocation entries",
         );
-        // The total tracked mysqlnd memory should be significant (100 rows * ~200 bytes)
-        $mysqlnd_bytes = $location_type_result->per_type_usage['MysqlndMemoryLocation']['memory_usage'];
+        /** @psalm-suppress MixedAssignment */
+        $mysqlnd_bytes = $db->query(
+            "SELECT COALESCE(SUM(size), 0) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND location_type = 'MysqlndMemoryLocation'"
+        )->fetchColumn();
         $this->assertGreaterThan(
             1000,
-            $mysqlnd_bytes,
-            "mysqlnd buffer tracking should capture significant memory ($mysqlnd_bytes bytes)",
+            (int)$mysqlnd_bytes,
+            "mysqlnd buffer tracking should capture significant memory",
         );
+
+        $db = null;
+        @unlink($tmp_path);
     }
 }
