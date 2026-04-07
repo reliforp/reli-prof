@@ -1136,6 +1136,19 @@ actual bin table (8,16,24,32,40,48,56,64,80,96,112,128,160,192,...).
 page info returns the wrong bin size, all overhead calculations for that page
 are wrong. This could be a page classification issue or a bin table mismatch.
 
+**Update: bin calculation is correct.** The invalid-looking bin_size values were
+a misinterpretation — `size + bin_overhead` for ZendArrayTableOverheadMemoryLocation
+is not meaningful because `size` = unused portion and `bin_overhead` = full table's
+bin padding. The actual overhead values (e.g., 24 = bin_size(160) - full_table(136))
+are correct.
+
+**Real gap root cause:** Manual recomputation shows `filtered_size + overhead +
+vm_stack + compiler_arena` = 40,287,400 vs `memory_get_usage` = 40,297,656 — only
+**10 KB gap**. But `queryRegionSums` stored `heap_usage` = 39,825,598, which is
+462 KB less than manual computation. The bug is in `queryRegionSums`, not in
+`computeBinOverhead`. Need to investigate why `queryRegionSums` returns a smaller
+sum than manually iterating the same data.
+
 ---
 
 ## Design Proposal: Inline region + overhead at emit time, eliminate MemoryLocations accumulation
