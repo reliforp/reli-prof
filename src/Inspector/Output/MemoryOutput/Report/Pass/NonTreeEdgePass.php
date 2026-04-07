@@ -21,6 +21,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class NonTreeEdgePass implements PassInterface
 {
+    private ?\PDOStatement $node_location_stmt = null;
+
     public function __construct(
         private \PDO $db,
         private int $run_id,
@@ -36,6 +38,23 @@ final class NonTreeEdgePass implements PassInterface
      */
     #[\Override]
     public function analyze(): array
+    {
+        if ($this->substrate !== null) {
+            return $this->analyzeWithSubstrate();
+        }
+
+        return $this->analyzeWithSql();
+    }
+
+    /**
+     * SQL-only path for report generation without GraphSubstrate.
+     *
+     * @return list<Finding>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument, RiskyTruthyFalsyComparison
+     * @psalm-suppress MixedArgumentTypeCoercion
+     */
+    private function analyzeWithSql(): array
     {
         // Classify shared references by link_name with class context
         $stmt = $this->db->query("
@@ -332,6 +351,389 @@ final class NonTreeEdgePass implements PassInterface
     }
 
     /**
+     * Full-analysis path: keep the expensive aggregation in SQL, but resolve
+     * class/owner metadata only for top candidates.
+     *
+     * @return list<Finding>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
+     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument, RiskyTruthyFalsyComparison
+     * @psalm-suppress MixedArgumentTypeCoercion
+     */
+    private function analyzeWithSubstrate(): array
+    {
+        assert($this->substrate !== null);
+
+        [$tree_parents, $tree_links] = $this->loadTreeParentsAndLinks();
+
+        $findings = [];
+        $shared_rows = $this->db->query("
+            SELECT
+                e.link_name,
+                count(*) as ref_count,
+                count(DISTINCT e.child_node_id) as target_count,
+                min(e.parent_node_id) as sample_parent_node_id,
+                min(e.child_node_id) as sample_child_node_id
+            FROM context_edges e
+            WHERE e.run_id = {$this->run_id}
+                AND e.is_tree = 0
+                AND e.strength = 'strong'
+            GROUP BY e.link_name
+            HAVING count(*) > 10
+            ORDER BY count(*) DESC
+            LIMIT 20
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        foreach ($shared_rows as $row) {
+            $link_name = (string)$row['link_name'];
+            if (ctype_digit($link_name)) {
+                continue;
+            }
+
+            $ref_count = (int)$row['ref_count'];
+            $target_count = (int)$row['target_count'];
+            $avg_refs = round($ref_count / max(1, $target_count), 1);
+            $source_class = $this->resolveDirectSourceClass(
+                (int)$row['sample_parent_node_id'],
+                $tree_parents,
+                $tree_links,
+            );
+            $target_class = $this->substrate->getNodeClass(
+                (int)$row['sample_child_node_id']
+            );
+            $qualified = $source_class
+                ? "{$source_class}::\${$link_name}"
+                : $link_name;
+            $target_label = $target_class ? " ({$target_class})" : '';
+
+            if ($target_count === 1 && $ref_count > 50) {
+                $findings[] = new Finding(
+                    kind: 'shared_singleton',
+                    severity: FindingSeverity::Info,
+                    confidence: FindingConfidence::High,
+                    summary: sprintf(
+                        '%s%s: %s refs -> 1 target [singleton]',
+                        $qualified,
+                        $target_label,
+                        number_format($ref_count),
+                    ),
+                    facts: [
+                        'link_name' => $link_name,
+                        'source_class' => $source_class,
+                        'target_class' => $target_class,
+                        'ref_count' => $ref_count,
+                        'target_count' => $target_count,
+                    ],
+                );
+            } elseif ($target_count > 1 && $avg_refs > 2.0) {
+                $findings[] = new Finding(
+                    kind: 'shared_fanin',
+                    severity: FindingSeverity::Info,
+                    confidence: FindingConfidence::Medium,
+                    summary: sprintf(
+                        '%s -> %s (%s refs -> %s targets, %.1f each)',
+                        $qualified,
+                        $target_class ?? '?',
+                        number_format($ref_count),
+                        number_format($target_count),
+                        $avg_refs,
+                    ),
+                    facts: [
+                        'link_name' => $link_name,
+                        'ref_count' => $ref_count,
+                        'target_count' => $target_count,
+                        'avg_refs_per_target' => $avg_refs,
+                    ],
+                    hypothesis: 'Multiple references to shared objects — may indicate cycle back-references',
+                    next_checks: [
+                        'Check if these are intentional shared references or cycle artifacts',
+                    ],
+                );
+            }
+        }
+
+        $dedup_rows = $this->db->query("
+            SELECT
+                e.link_name,
+                cnl.size,
+                count(*) as cnt,
+                count(*) * cnl.size as total_waste,
+                min(e.parent_node_id) as sample_parent_node_id,
+                min(e.child_node_id) as sample_child_node_id
+            FROM context_edges e
+            JOIN context_node_locations cnl
+                ON cnl.node_id = e.child_node_id
+                AND cnl.run_id = {$this->run_id}
+            WHERE e.run_id = {$this->run_id}
+                AND e.is_tree = 0
+                AND e.strength = 'strong'
+            GROUP BY e.link_name, cnl.size
+            HAVING count(*) > 50 AND count(*) * cnl.size > 10240
+            ORDER BY count(*) * cnl.size DESC
+            LIMIT 10
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        $use_retained = $this->substrate->hasSubtreeSizes();
+        foreach ($dedup_rows as $row) {
+            $link_name = (string)$row['link_name'];
+            $cnt = (int)$row['cnt'];
+            $shallow_size = (int)$row['size'];
+            $total = (int)$row['total_waste'];
+            $sample_parent_node_id = (int)$row['sample_parent_node_id'];
+            $sample_child_node_id = (int)$row['sample_child_node_id'];
+
+            $target_info = $this->loadNodeLocationInfo($sample_child_node_id);
+            if (($target_info['location_type'] ?? null) === 'ZendArrayMemoryLocation') {
+                continue;
+            }
+
+            $size = $shallow_size;
+            if ($use_retained) {
+                $retained = $this->getRetainedForDedup(
+                    $link_name,
+                    $shallow_size,
+                );
+                if ($retained > $shallow_size) {
+                    $size = $retained;
+                    $total = $cnt * $retained;
+                }
+            }
+
+            [
+                'source_class' => $dedup_src,
+                'owner_prop' => $owner_prop,
+            ] = $this->resolveDedupOwnerInfo(
+                $sample_parent_node_id,
+                $tree_parents,
+                $tree_links,
+            );
+            $dedup_tgt = $this->substrate->getNodeClass($sample_child_node_id);
+
+            if ($dedup_src && $owner_prop) {
+                $dedup_label = "{$dedup_src}::\${$owner_prop}[{$link_name}]";
+            } elseif ($dedup_src) {
+                $dedup_label = "{$dedup_src}::\${$link_name}";
+            } else {
+                $dedup_label = $link_name;
+            }
+            if ($dedup_tgt) {
+                $dedup_label .= " ({$dedup_tgt})";
+            }
+
+            $examples = $this->getDedupExamples($link_name, $shallow_size);
+
+            $hypothesis = 'Multiple copies of same-size objects'
+                . ' via shared references; may be shareable';
+            $confidence = FindingConfidence::Low;
+
+            if ($examples['type'] === 'string') {
+                if ($examples['identical_count'] > 0) {
+                    $pct = $cnt > 0
+                        ? $examples['identical_count'] / $cnt * 100.0
+                        : 0;
+                    $hypothesis = sprintf(
+                        '%d/%d copies have identical content (%.0f%%).'
+                        . ' Example: "%s"',
+                        $examples['identical_count'],
+                        $cnt,
+                        $pct,
+                        $examples['sample_value'],
+                    );
+                    $confidence = $pct > 50.0
+                        ? FindingConfidence::High
+                        : FindingConfidence::Medium;
+                } else {
+                    $hypothesis = sprintf(
+                        'Same size but different content.'
+                        . ' Examples: "%s", "%s"',
+                        $examples['samples'][0] ?? '?',
+                        $examples['samples'][1] ?? '?',
+                    );
+                }
+            } elseif ($examples['type'] === 'object') {
+                $hypothesis .= sprintf(
+                    '. Examples: %s',
+                    implode(', ', array_slice($examples['samples'], 0, 3)),
+                );
+            }
+
+            $findings[] = new Finding(
+                kind: 'dedup_candidate',
+                severity: $total > 102400
+                    ? FindingSeverity::Low
+                    : FindingSeverity::Info,
+                confidence: $confidence,
+                summary: sprintf(
+                    '%s: %s copies x %s%s = %s',
+                    $dedup_label,
+                    number_format($cnt),
+                    SizeFormatter::format($size),
+                    $size > $shallow_size ? ' retained' : '',
+                    SizeFormatter::format($total),
+                ),
+                facts: [
+                    'link_name' => $link_name,
+                    'source_class' => $dedup_src,
+                    'target_class' => $dedup_tgt,
+                    'count' => $cnt,
+                    'each_size' => $size,
+                    'total_waste' => $total,
+                    'examples' => $examples,
+                ],
+                hypothesis: $hypothesis,
+                impact_bytes: $total,
+            );
+        }
+
+        return $findings;
+    }
+
+    /**
+     * @return array{array<int, int>, array<int, string>}
+     * @psalm-suppress MixedAssignment
+     */
+    private function loadTreeParentsAndLinks(): array
+    {
+        $tree_parents = [];
+        $tree_links = [];
+
+        $stmt = $this->db->query(
+            "SELECT parent_node_id, child_node_id, link_name"
+            . " FROM context_edges"
+            . " WHERE run_id = {$this->run_id}"
+            . " AND is_tree = 1"
+            . " AND parent_node_id IS NOT NULL"
+        );
+
+        while (true) {
+            /** @var array{0: int|string, 1: int|string, 2: string}|false $row */
+            $row = $stmt->fetch(\PDO::FETCH_NUM);
+            if ($row === false) {
+                break;
+            }
+            $tree_parents[(int)$row[1]] = (int)$row[0];
+            $tree_links[(int)$row[1]] = $row[2];
+        }
+
+        return [$tree_parents, $tree_links];
+    }
+
+    /**
+     * @param array<int, int> $tree_parents
+     * @param array<int, string> $tree_links
+     */
+    private function resolveDirectSourceClass(
+        int $parent_node_id,
+        array $tree_parents,
+        array $tree_links,
+    ): ?string {
+        if (($tree_links[$parent_node_id] ?? null) !== 'object_properties') {
+            return null;
+        }
+
+        $owner_node_id = $tree_parents[$parent_node_id] ?? null;
+        if ($owner_node_id === null) {
+            return null;
+        }
+
+        assert($this->substrate !== null);
+        return $this->substrate->getNodeClass($owner_node_id);
+    }
+
+    /**
+     * @param array<int, int> $tree_parents
+     * @param array<int, string> $tree_links
+     * @return array{source_class: ?string, owner_prop: ?string}
+     */
+    private function resolveDedupOwnerInfo(
+        int $parent_node_id,
+        array $tree_parents,
+        array $tree_links,
+    ): array {
+        $source_class = $this->resolveDirectSourceClass(
+            $parent_node_id,
+            $tree_parents,
+            $tree_links,
+        );
+        if ($source_class !== null) {
+            return [
+                'source_class' => $source_class,
+                'owner_prop' => null,
+            ];
+        }
+
+        $array_elements_node_id = $tree_parents[$parent_node_id] ?? null;
+        if ($array_elements_node_id === null) {
+            return [
+                'source_class' => null,
+                'owner_prop' => null,
+            ];
+        }
+
+        if (($tree_links[$array_elements_node_id] ?? null) !== 'array_elements') {
+            return [
+                'source_class' => null,
+                'owner_prop' => null,
+            ];
+        }
+
+        $array_header_node_id = $tree_parents[$array_elements_node_id] ?? null;
+        if ($array_header_node_id === null) {
+            return [
+                'source_class' => null,
+                'owner_prop' => null,
+            ];
+        }
+
+        $owner_prop = $tree_links[$array_header_node_id] ?? null;
+        $object_properties_node_id = $tree_parents[$array_header_node_id] ?? null;
+        if (
+            $object_properties_node_id === null
+            || ($tree_links[$object_properties_node_id] ?? null) !== 'object_properties'
+        ) {
+            return [
+                'source_class' => null,
+                'owner_prop' => null,
+            ];
+        }
+
+        $owner_node_id = $tree_parents[$object_properties_node_id] ?? null;
+        if ($owner_node_id === null) {
+            return [
+                'source_class' => null,
+                'owner_prop' => null,
+            ];
+        }
+
+        assert($this->substrate !== null);
+        return [
+            'source_class' => $this->substrate->getNodeClass($owner_node_id),
+            'owner_prop' => $owner_prop,
+        ];
+    }
+
+    /**
+     * @return array{location_type: ?string}
+     * @psalm-suppress MixedAssignment
+     */
+    private function loadNodeLocationInfo(int $node_id): array
+    {
+        if ($this->node_location_stmt === null) {
+            $this->node_location_stmt = $this->db->prepare(
+                "SELECT location_type FROM context_node_locations"
+                . " WHERE run_id = ? AND node_id = ? LIMIT 1"
+            );
+        }
+
+        $this->node_location_stmt->execute([$this->run_id, $node_id]);
+        /** @var array{location_type?: string}|false $row */
+        $row = $this->node_location_stmt->fetch(\PDO::FETCH_ASSOC);
+
+        return [
+            'location_type' => $row['location_type'] ?? null,
+        ];
+    }
+
+    /**
      * Get average retained size for a dedup candidate group.
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
@@ -351,6 +753,7 @@ final class NonTreeEdgePass implements PassInterface
                 AND cnl.size = {$shallow_size}
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
+                AND e.strength = 'strong'
                 AND e.link_name = " . $this->db->quote($link_name) . "
             LIMIT 20
         ");
@@ -391,6 +794,7 @@ final class NonTreeEdgePass implements PassInterface
                 AND cnl.run_id = {$this->run_id}
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
+                AND e.strength = 'strong'
                 AND e.link_name = " . $this->db->quote($link_name) . "
                 AND cnl.size = {$size}
                 AND cnl.string_value IS NOT NULL
@@ -436,6 +840,7 @@ final class NonTreeEdgePass implements PassInterface
                 AND cnl.run_id = {$this->run_id}
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
+                AND e.strength = 'strong'
                 AND e.link_name = " . $this->db->quote($link_name) . "
                 AND cnl.size = {$size}
             LIMIT 3
