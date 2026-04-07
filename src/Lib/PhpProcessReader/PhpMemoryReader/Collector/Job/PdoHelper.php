@@ -85,10 +85,10 @@ final class PdoHelper
         $driver_data_address = $ctx->dereferencer->deref($dd_ptr)->value;
 
         if ($driver_data_address !== 0) {
-            self::collectPdoDriverData($driver_name, $driver_data_address, $ctx);
+            self::collectPdoDriverData($driver_name, $driver_data_address, $ctx, $object_context);
         }
 
-        self::collectPdoDbhStrings($inner_address, $ctx);
+        self::collectPdoDbhStrings($inner_address, $ctx, $object_context);
     }
 
     public static function collectPdoStmt(
@@ -137,6 +137,7 @@ final class PdoHelper
                     $array = $ctx->dereferencer->deref($ht_pointer);
                     $array_header_location = ZendArrayMemoryLocation::fromZendArray($array);
                     $ctx->memory_locations->add($array_header_location);
+                    $object_context->addLocation($array_header_location);
                     if (!is_null($array->arData)) {
                         $array_table_location = ZendArrayTableMemoryLocation::fromZendArray($array);
                         $array_table_overhead_location =
@@ -145,7 +146,9 @@ final class PdoHelper
                                 $array_table_location,
                             );
                         $ctx->memory_locations->add($array_table_location);
+                        $object_context->addLocation($array_table_location);
                         $ctx->memory_locations->add($array_table_overhead_location);
+                        $object_context->addLocation($array_table_overhead_location);
                     }
                 }
             } catch (\Throwable) {
@@ -167,7 +170,7 @@ final class PdoHelper
         $dd_ptr = new Pointer(RawInt64::class, $stmt_address + $dd_offset, 8);
         $driver_data_address = $ctx->dereferencer->deref($dd_ptr)->value;
         if ($driver_data_address !== 0) {
-            self::collectPdoStmtDriverData($driver_name, $driver_data_address, $ctx);
+            self::collectPdoStmtDriverData($driver_name, $driver_data_address, $ctx, $object_context);
         }
 
         // Columns
@@ -188,9 +191,9 @@ final class PdoHelper
         if ($columns_address !== 0 && $column_count > 0 && $column_count < 10000) {
             $column_data_size = $ctx->zend_type_reader->sizeOf('pdo_column_data');
             if (!$ctx->memory_locations->has($columns_address)) {
-                $ctx->memory_locations->add(
-                    new PdoDriverDataMemoryLocation($columns_address, (int)$column_count * $column_data_size),
-                );
+                $columns_location = new PdoDriverDataMemoryLocation($columns_address, (int)$column_count * $column_data_size);
+                $ctx->memory_locations->add($columns_location);
+                $object_context->addLocation($columns_location);
             }
             for ($i = 0; $i < $column_count; $i++) {
                 $col = $ctx->dereferencer->deref(new Pointer(
@@ -232,6 +235,7 @@ final class PdoHelper
         string $driver_name,
         int $driver_data_address,
         CollectorContext $ctx,
+        ObjectContext $object_context,
     ): void {
         $map = self::PDO_DRIVER_DBH_MAP[$driver_name] ?? null;
         if ($map === null) {
@@ -241,7 +245,9 @@ final class PdoHelper
         try {
             $size = $ctx->zend_type_reader->sizeOf($ctype);
             $ctx->dereferencer->deref(new Pointer($class, $driver_data_address, $size));
-            $ctx->memory_locations->add(new PdoDriverDataMemoryLocation($driver_data_address, $size));
+            $location = new PdoDriverDataMemoryLocation($driver_data_address, $size);
+            $ctx->memory_locations->add($location);
+            $object_context->addLocation($location);
         } catch (\Throwable) {
         }
     }
@@ -250,6 +256,7 @@ final class PdoHelper
         string $driver_name,
         int $driver_data_address,
         CollectorContext $ctx,
+        ObjectContext $object_context,
     ): void {
         $map = self::PDO_DRIVER_STMT_MAP[$driver_name] ?? null;
         if ($map === null) {
@@ -259,19 +266,22 @@ final class PdoHelper
         try {
             $size = $ctx->zend_type_reader->sizeOf($ctype);
             $ctx->dereferencer->deref(new Pointer($class, $driver_data_address, $size));
-            $ctx->memory_locations->add(new PdoDriverDataMemoryLocation($driver_data_address, $size));
+            $location = new PdoDriverDataMemoryLocation($driver_data_address, $size);
+            $ctx->memory_locations->add($location);
+            $object_context->addLocation($location);
         } catch (\Throwable) {
             return;
         }
 
         if ($driver_name === 'mysql') {
-            self::collectMysqlndResultFromPdoMysqlStmt($driver_data_address, $ctx);
+            self::collectMysqlndResultFromPdoMysqlStmt($driver_data_address, $ctx, $object_context);
         }
     }
 
     private static function collectMysqlndResultFromPdoMysqlStmt(
         int $pdo_mysql_stmt_address,
         CollectorContext $ctx,
+        ObjectContext $object_context,
     ): void {
         try {
             $result_ptr = new Pointer(RawInt64::class, $pdo_mysql_stmt_address + 8, 8);
@@ -279,13 +289,16 @@ final class PdoHelper
             if ($result_address === 0) {
                 return;
             }
-            self::collectMysqlndResult($result_address, $ctx);
+            self::collectMysqlndResult($result_address, $ctx, $object_context);
         } catch (\Throwable) {
         }
     }
 
-    private static function collectMysqlndResult(int $res_address, CollectorContext $ctx): void
-    {
+    private static function collectMysqlndResult(
+        int $res_address,
+        CollectorContext $ctx,
+        ObjectContext $object_context,
+    ): void {
         if ($ctx->memory_locations->has($res_address)) {
             return;
         }
@@ -295,7 +308,9 @@ final class PdoHelper
         } catch (\Throwable) {
             return;
         }
-        $ctx->memory_locations->add(new MysqlndMemoryLocation($res_address, $res_size));
+        $location = new MysqlndMemoryLocation($res_address, $res_size);
+        $ctx->memory_locations->add($location);
+        $object_context->addLocation($location);
 
         [$sd_offset] = $ctx->zend_type_reader->getOffsetAndSizeOfMember('MYSQLND_RES', 'stored_data');
         $stored_data_address = $ctx->dereferencer->deref(
@@ -303,7 +318,7 @@ final class PdoHelper
         )->value;
 
         if ($stored_data_address !== 0) {
-            self::collectMysqlndResBuffered($stored_data_address, $ctx);
+            self::collectMysqlndResBuffered($stored_data_address, $ctx, $object_context);
         }
 
         [$mp_offset] = $ctx->zend_type_reader->getOffsetAndSizeOfMember('MYSQLND_RES', 'memory_pool');
@@ -314,14 +329,19 @@ final class PdoHelper
         if ($mempool_address !== 0 && !$ctx->memory_locations->has($mempool_address)) {
             $mp_size = $ctx->zend_type_reader->sizeOf('MYSQLND_MEMORY_POOL');
             try {
-                $ctx->memory_locations->add(new MysqlndMemoryLocation($mempool_address, $mp_size));
+                $mp_location = new MysqlndMemoryLocation($mempool_address, $mp_size);
+                $ctx->memory_locations->add($mp_location);
+                $object_context->addLocation($mp_location);
             } catch (\Throwable) {
             }
         }
     }
 
-    private static function collectMysqlndResBuffered(int $buf_address, CollectorContext $ctx): void
-    {
+    private static function collectMysqlndResBuffered(
+        int $buf_address,
+        CollectorContext $ctx,
+        ObjectContext $object_context,
+    ): void {
         if ($ctx->memory_locations->has($buf_address)) {
             return;
         }
@@ -331,7 +351,9 @@ final class PdoHelper
         } catch (\Throwable) {
             return;
         }
-        $ctx->memory_locations->add(new MysqlndMemoryLocation($buf_address, $buf_size));
+        $location = new MysqlndMemoryLocation($buf_address, $buf_size);
+        $ctx->memory_locations->add($location);
+        $object_context->addLocation($location);
 
         [$rb_offset] = $ctx->zend_type_reader->getOffsetAndSizeOfMember('MYSQLND_RES_BUFFERED', 'row_buffers');
         $row_buffers_address = $ctx->dereferencer->deref(
@@ -347,7 +369,9 @@ final class PdoHelper
             $rb_element_size = $ctx->zend_type_reader->sizeOf('MYSQLND_ROW_BUFFER');
             $total_size = (int)($row_count * $rb_element_size);
             if (!$ctx->memory_locations->has($row_buffers_address)) {
-                $ctx->memory_locations->add(new MysqlndMemoryLocation($row_buffers_address, $total_size));
+                $rb_location = new MysqlndMemoryLocation($row_buffers_address, $total_size);
+                $ctx->memory_locations->add($rb_location);
+                $object_context->addLocation($rb_location);
             }
         }
 
@@ -361,15 +385,20 @@ final class PdoHelper
 
         if ($rmp_address !== 0 && !$ctx->memory_locations->has($rmp_address)) {
             $mp_size = $ctx->zend_type_reader->sizeOf('MYSQLND_MEMORY_POOL');
-            $ctx->memory_locations->add(new MysqlndMemoryLocation($rmp_address, $mp_size));
+            $mp_location = new MysqlndMemoryLocation($rmp_address, $mp_size);
+            $ctx->memory_locations->add($mp_location);
+            $object_context->addLocation($mp_location);
 
             $arena_address = $ctx->dereferencer->deref(new Pointer(RawInt64::class, $rmp_address, 8))->value;
-            self::collectZendArenaChain($arena_address, $ctx);
+            self::collectZendArenaChain($arena_address, $ctx, $object_context);
         }
     }
 
-    private static function collectZendArenaChain(int $arena_address, CollectorContext $ctx): void
-    {
+    private static function collectZendArenaChain(
+        int $arena_address,
+        CollectorContext $ctx,
+        ObjectContext $object_context,
+    ): void {
         $visited = 0;
         while ($arena_address !== 0 && $visited < 1000) {
             if ($ctx->memory_locations->has($arena_address)) {
@@ -382,7 +411,9 @@ final class PdoHelper
                 if ($end_address > $arena_address) {
                     $chunk_size = $end_address - $arena_address;
                     if ($chunk_size < 64 * 1024 * 1024) {
-                        $ctx->memory_locations->add(new MysqlndMemoryLocation($arena_address, (int)$chunk_size));
+                        $arena_location = new MysqlndMemoryLocation($arena_address, (int)$chunk_size);
+                        $ctx->memory_locations->add($arena_location);
+                        $object_context->addLocation($arena_location);
                     }
                 }
                 $arena_address = $ctx->dereferencer->deref(
@@ -395,8 +426,11 @@ final class PdoHelper
         }
     }
 
-    private static function collectPdoDbhStrings(int $dbh_address, CollectorContext $ctx): void
-    {
+    private static function collectPdoDbhStrings(
+        int $dbh_address,
+        CollectorContext $ctx,
+        ObjectContext $object_context,
+    ): void {
         try {
             [$ds_offset] = $ctx->zend_type_reader->getOffsetAndSizeOfMember('pdo_dbh_t', 'data_source');
             $ds_ptr = new Pointer(RawInt64::class, $dbh_address + $ds_offset, 8);
@@ -408,7 +442,9 @@ final class PdoHelper
             $dsl_ptr = new Pointer(RawInt64::class, $dbh_address + $dsl_offset, 8);
             $ds_len = $ctx->dereferencer->deref($dsl_ptr)->value;
             if ($ds_address !== 0 && $ds_len > 0 && $ds_len < 65536) {
-                $ctx->memory_locations->add(new PdoDbhMemoryLocation($ds_address, $ds_len + 1));
+                $ds_location = new PdoDbhMemoryLocation($ds_address, $ds_len + 1);
+                $ctx->memory_locations->add($ds_location);
+                $object_context->addLocation($ds_location);
             }
         } catch (\Throwable) {
         }
@@ -422,7 +458,9 @@ final class PdoHelper
                     $str = (string)$ctx->dereferencer->deref(new Pointer(RawString::class, $f_address, 256));
                     $len = strlen($str);
                     if ($len > 0) {
-                        $ctx->memory_locations->add(new PdoDbhMemoryLocation($f_address, $len + 1));
+                        $f_location = new PdoDbhMemoryLocation($f_address, $len + 1);
+                        $ctx->memory_locations->add($f_location);
+                        $object_context->addLocation($f_location);
                     }
                 }
             } catch (\Throwable) {
