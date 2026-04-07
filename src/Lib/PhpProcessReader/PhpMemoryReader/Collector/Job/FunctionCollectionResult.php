@@ -27,8 +27,9 @@ final class FunctionCollectionResult
      * @param list<array{Pointer<ZendArray>, string}> $deferred_arrays
      */
     public function __construct(
-        public readonly FunctionDefinitionContext $context,
-        public readonly array $deferred_arrays = [],
+        public FunctionDefinitionContext $context,
+        /** @var list<array{Pointer<ZendArray>, string}> */
+        public array $deferred_arrays = [],
     ) {
     }
 }
