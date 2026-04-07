@@ -63,27 +63,27 @@ final class EmitCallFrameJob implements CollectorJob
             ));
         }
 
-        // Local variables
-        $variable_table_context = new CallFrameVariableTableContext();
+        // Local variables — emit the variable table node, then push iterator job
         $local_variables_iterator = $this->execute_data->getVariables(
             $ctx->dereferencer,
             $ctx->zend_type_reader,
         );
         $has_variables = false;
-        foreach ($local_variables_iterator as $name => $value) {
+        foreach ($local_variables_iterator as $_name => $_value) {
             $has_variables = true;
             break;
         }
         if ($has_variables) {
-            // Re-get the iterator since we consumed one element for the check
-            $call_frame_context->add('local_variables', $variable_table_context);
-            $var_table_node_id = $ctx->memo[$variable_table_context] ?? null;
-            if ($var_table_node_id !== null) {
-                $var_table_node_id = $var_table_node_id < 0 ? -$var_table_node_id - 1 : $var_table_node_id;
-            }
+            $variable_table_context = new CallFrameVariableTableContext();
+            $var_table_node_id = $ctx->emitNode(
+                $variable_table_context,
+                $parent,
+                'local_variables',
+            );
+            $var_parent = $var_table_node_id >= 0 ? $var_table_node_id : $parent;
             $queue->push(new CallFrameVariableIteratorJob(
                 $this->execute_data,
-                $var_table_node_id,
+                $var_parent,
             ));
         }
 
