@@ -953,6 +953,17 @@ no overlap filtering). The >100% from Bug 8 was caused by same-address duplicate
 (multiple context paths), not by address-range overlaps. Address-range overlap
 filtering is correct for retained-size calculation but over-corrects the percentage.
 
+**Confirmed:** `sizeof(zend_closure)` = 344 is correct (std=56 + func=256 + this_ptr=16
++ called_scope=8 + orig_internal_handler=8 = 344). The header definition is NOT empty.
+`getMemorySize()` also returns 344 (coincidentally matching). Overlap filtering
+correctly removes the embedded op_array (offset +56, 256 B) because it falls within
+the Closure's 344 B range. But `memory_get_usage()` counts the full 344 B per Closure
+including the embedded func region.
+
+The issue is purely in the percentage formula: overlap-filtered sum should NOT be
+used as the numerator. Use raw address-dedup sum (21 MB / 24 MB = 86.5%) instead of
+overlap-filtered sum (14 MB / 24 MB = 58.8%).
+
 **Case 15 — FIXED (EFAULT) but OOM@512M remains:**
 EFAULT crash fixed by try-catch in job loop + per-element error resilience.
 With unlimited memory: 26 findings, 83.1% coverage, cycle_cluster detected,
