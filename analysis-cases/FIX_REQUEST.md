@@ -980,10 +980,24 @@ plus alignment on all other objects = ~3.3 MB total. This is a fundamental
 measurement difference, not a bug.
 
 Raw dedup sum (21 MB) over-counts by including the embedded OpArrayHeader (6.7 MB).
-Overlap-filtered sum (14 MB) is the correct logical size. The 86.5% from raw dedup
-is coincidentally close to correct, but for the wrong reason. The true coverage is
-14 MB / (24 MB - ~3 MB bin overhead) ≈ 67%, or if we accept that bin overhead is
-unmeasurable, **58.8% is actually accurate** for what reli-prof can see.
+Overlap-filtered sum (14 MB) is the correct logical size. The 58.8% gap is mainly
+from ZendMM bin alignment overhead (~3.3 MB) which `possible_allocation_overhead_total`
+is supposed to account for — but it's 0 in the current implementation.
+
+**Root cause:** `MemoryLocations` is still created in lightweight mode (address-only,
+no size info), so `RegionAnalyzer` can't compute bin alignment overhead. The
+lightweight mode was introduced for streaming to save memory, but with the iterative
+DFS rewrite (no more pool/sentinel/defer), the memory pressure that motivated
+lightweight is gone. Using full `MemoryLocations` would restore:
+
+- `RegionAnalyzer::filterOverlappingLocations` working correctly
+- `possible_allocation_overhead_total` computed (bin alignment)
+- Percentage calculation accounting for bin overhead
+- No need for the `queryRegionSums` DB-side workaround
+
+**Fix:** Remove `createLightweight()` usage in the iterative collector and use full
+`MemoryLocations`. This is a small change and aligns with the goal of simplifying
+the streaming path.
 
 **Case 15 — FIXED (EFAULT) but OOM@512M remains:**
 EFAULT crash fixed by try-catch in job loop + per-element error resilience.
