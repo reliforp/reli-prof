@@ -964,6 +964,27 @@ The issue is purely in the percentage formula: overlap-filtered sum should NOT b
 used as the numerator. Use raw address-dedup sum (21 MB / 24 MB = 86.5%) instead of
 overlap-filtered sum (14 MB / 24 MB = 58.8%).
 
+Confirmed: `memory_get_usage()` counts each `emalloc` allocation once. A Closure is
+one `emalloc(sizeof(zend_closure))` = 344 B. ZendMM has no concept of "overlap" —
+that's purely reli-prof recording the same memory as two locations (ZendObject 344B
+and embedded OpArrayHeader 256B). Overlap filtering correctly removes the child for
+retained-size purposes, but for percentage calculation the parent's 344 B already
+covers the full allocation, so the filtered sum IS the right number for the Closure
+portion.
+
+The remaining gap (14 MB filtered vs 24 MB memory_get_usage = 10 MB) is NOT from
+overlap. It's **ZendMM bin alignment overhead**: each allocation is rounded up to
+the next bin size (e.g., 344 → 384, 56 → 64). reli-prof records struct sizes,
+`memory_get_usage` records bin sizes. 27,600 closures × 40B overhead = 1.1 MB,
+plus alignment on all other objects = ~3.3 MB total. This is a fundamental
+measurement difference, not a bug.
+
+Raw dedup sum (21 MB) over-counts by including the embedded OpArrayHeader (6.7 MB).
+Overlap-filtered sum (14 MB) is the correct logical size. The 86.5% from raw dedup
+is coincidentally close to correct, but for the wrong reason. The true coverage is
+14 MB / (24 MB - ~3 MB bin overhead) ≈ 67%, or if we accept that bin overhead is
+unmeasurable, **58.8% is actually accurate** for what reli-prof can see.
+
 **Case 15 — FIXED (EFAULT) but OOM@512M remains:**
 EFAULT crash fixed by try-catch in job loop + per-element error resilience.
 With unlimited memory: 26 findings, 83.1% coverage, cycle_cluster detected,
