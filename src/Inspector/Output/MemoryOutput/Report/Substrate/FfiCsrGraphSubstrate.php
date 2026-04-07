@@ -622,6 +622,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // csrIdx → canonical csrIdx. This avoids repeated node_id lookups.
         /** @var array<int, int> $canonIdx  csrIdx → canonical csrIdx */
         $canonIdx = [];
+        /** @var array<int, list<int>> $canonical_original_indices canonical csrIdx => original csrIdx list */
+        $canonical_original_indices = [];
         if ($has_canonical) {
             for ($v = 0; $v < $this->nodeCount; $v++) {
                 $nid = (int)$this->indexToNodeFfi[$v];
@@ -632,8 +634,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 if ($canon !== $nid) {
                     $canonIdx[$v] = $this->nodeIdToIndex($canon);
                 }
+                $canonical_original_indices[$canonIdx[$v] ?? $v][] = $v;
             }
         }
+        /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
+        $canonical_neighbors = [];
 
         $index_counter = 0;
         $stack = [];
@@ -660,38 +665,38 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
 
-                // Collect neighbors from all CSR indices that map to this
-                // canonical index. For non-canonical graphs, just the node itself.
-                // For canonical, iterate all originals.
-                /** @var list<int> $originals CSR indices sharing this canonical */
-                $originals = [];
                 if ($has_canonical) {
-                    $canonNid = (int)$this->indexToNodeFfi[$node];
-                    foreach ($this->canonicalToOriginals[$canonNid] ?? [$canonNid] as $origNid) {
-                        $oi = $this->nodeIdToIndex($origNid);
-                        if ($oi >= 0) {
-                            $originals[] = $oi;
+                    if (!isset($canonical_neighbors[$node])) {
+                        $neighbors = [];
+                        $seen = [];
+                        foreach ($canonical_original_indices[$node] ?? [$node] as $oi) {
+                            $start = (int)$this->strongAllOffsets[$oi];
+                            $end = (int)$this->strongAllOffsets[$oi + 1];
+                            for ($j = $start; $j < $end; $j++) {
+                                $w = (int)$this->strongAllEdges[$j];
+                                $cw = $canonIdx[$w] ?? $w;
+                                if ($cw !== $node && !isset($seen[$cw])) {
+                                    $seen[$cw] = true;
+                                    $neighbors[] = $cw;
+                                }
+                            }
                         }
+                        $canonical_neighbors[$node] = $neighbors;
                     }
+                    $neighbors = $canonical_neighbors[$node];
                 } else {
-                    $originals[] = $node;
-                }
-
-                // Flatten all neighbors from all original indices
-                $neighbors = [];
-                foreach ($originals as $oi) {
-                    $start = (int)$this->strongAllOffsets[$oi];
-                    $end = (int)$this->strongAllOffsets[$oi + 1];
+                    $neighbors = [];
+                    $seen = [];
+                    $start = (int)$this->strongAllOffsets[$node];
+                    $end = (int)$this->strongAllOffsets[$node + 1];
                     for ($j = $start; $j < $end; $j++) {
                         $w = (int)$this->strongAllEdges[$j];
-                        $cw = $canonIdx[$w] ?? $w;
-                        if ($cw !== $node) {
-                            $neighbors[] = $cw;
+                        if ($w !== $node && !isset($seen[$w])) {
+                            $seen[$w] = true;
+                            $neighbors[] = $w;
                         }
                     }
                 }
-                // Deduplicate (cheap for small neighbor lists)
-                $neighbors = array_values(array_unique($neighbors));
                 $count = count($neighbors);
 
                 $found_unvisited = false;
@@ -740,16 +745,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($has_canonical) {
             foreach ($sccs as &$scc) {
                 $expanded = [];
-                foreach ($scc as $canonicalIdx) {
-                    $canonNid = (int)$this->indexToNodeFfi[$canonicalIdx];
-                    foreach ($this->canonicalToOriginals[$canonNid] ?? [$canonNid] as $origNid) {
-                        $oi = $this->nodeIdToIndex($origNid);
-                        if ($oi >= 0) {
-                            $expanded[] = $oi;
-                        }
+                foreach ($scc as $canonical_idx) {
+                    foreach ($canonical_original_indices[$canonical_idx] ?? [$canonical_idx] as $original_idx) {
+                        $expanded[] = $original_idx;
                     }
                 }
-                $scc = array_values(array_unique($expanded));
+                $scc = $expanded;
             }
             unset($scc);
         }
