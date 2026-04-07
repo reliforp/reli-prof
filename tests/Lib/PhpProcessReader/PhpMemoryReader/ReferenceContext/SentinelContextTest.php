@@ -29,11 +29,16 @@ class SentinelContextTest extends BaseTestCase
         $this->assertSame(99, $sentinel->node_id);
     }
 
-    public function testNodeIdIsMutable(): void
+    public function testEmitReferenceEdgeDefaultsToTrue(): void
     {
         $sentinel = new SentinelContext(1);
-        $sentinel->node_id = 2;
-        $this->assertSame(2, $sentinel->node_id);
+        $this->assertTrue($sentinel->emit_reference_edge);
+    }
+
+    public function testReferenceEmissionCanBeSuppressed(): void
+    {
+        $sentinel = new SentinelContext(1, false);
+        $this->assertFalse($sentinel->emit_reference_edge);
     }
 
     public function testAddThrowsLogicException(): void

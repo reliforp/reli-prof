@@ -85,29 +85,42 @@ final class ContextAnalyzer
         ContextTreeSink $sink,
         ?int $parent_node_id = null,
         ?WeakMap $memo = null,
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
         if ($memo === null) {
             /** @var WeakMap<ReferenceContext, int> $memo */
             $memo = new WeakMap();
         }
-        $this->analyzeContext($context, $link_name, $parent_node_id, $sink, $memo);
+        $this->analyzeContext($context, $link_name, $parent_node_id, $sink, $memo, $edge_strength);
     }
 
     /**
      * @param WeakMap<ReferenceContext, int> $memo
      */
     private function analyzeContext(
-        ReferenceContext $linked_context,
+        ReferenceContext|int $linked_context,
         string $link_name,
         ?int $parent_node_id,
         ContextTreeSink $sink,
         WeakMap $memo,
         EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
-        // SentinelContext: already emitted to DB in a previous branch,
-        // just record the reference edge.
+        if (is_int($linked_context)) {
+            // Encoded node_id placeholder:
+            //   >= 0 ... node already emitted elsewhere, emit a reference edge
+            //   < 0  ... node and incoming edge already emitted, skip
+            if ($linked_context >= 0) {
+                $sink->emitReference($linked_context, $parent_node_id, $link_name, $edge_strength);
+            }
+            return;
+        }
+
+        // SentinelContext is retained for compatibility in tests and
+        // non-hot paths. Streaming collection uses encoded int placeholders.
         if ($linked_context instanceof SentinelContext) {
-            $sink->emitReference($linked_context->node_id, $parent_node_id, $link_name, $edge_strength);
+            if ($linked_context->emit_reference_edge) {
+                $sink->emitReference($linked_context->node_id, $parent_node_id, $link_name, $edge_strength);
+            }
             return;
         }
 

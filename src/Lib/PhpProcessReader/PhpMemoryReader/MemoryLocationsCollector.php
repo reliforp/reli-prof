@@ -135,7 +135,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ResourceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\RuntimeCacheContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ScalarValueContext;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\SentinelContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\TopReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContext;
@@ -261,7 +261,7 @@ final class MemoryLocationsCollector
         }
         $existing = $this->streaming_memo[$parent] ?? null;
         if ($existing !== null) {
-            return $existing;
+            return $existing < 0 ? -$existing - 1 : $existing;
         }
         $node_id = $this->streaming_analyzer->assignNodeId($parent, $this->streaming_memo);
         return $node_id;
@@ -269,14 +269,17 @@ final class MemoryLocationsCollector
 
     /**
      * In streaming mode, emit a child context that was just collected,
-     * and return a SentinelContext so the parent holds only node_id.
+     * and return an encoded node_id so the parent holds only an int.
+     * Non-negative values mean "emit a reference edge later".
+     * Negative values mean "the edge was already emitted".
      * In non-streaming mode, return the child as-is for normal tree building.
      */
     private function emitChildIfStreaming(
         string $link_name,
-        ReferenceContext $child,
+        ReferenceContext|int $child,
         int $parent_node_id,
-    ): ReferenceContext {
+        EdgeStrength $edge_strength = EdgeStrength::Strong,
+    ): ReferenceContext|int {
         if (
             $this->streaming_sink === null
             || $this->streaming_analyzer === null
@@ -284,8 +287,8 @@ final class MemoryLocationsCollector
         ) {
             return $child;
         }
-        // Already a sentinel — no need to emit again
-        if ($child instanceof SentinelContext) {
+        // Already emitted elsewhere — keep only the node_id placeholder.
+        if (is_int($child)) {
             return $child;
         }
         // Emit the child subtree to DB
@@ -295,11 +298,12 @@ final class MemoryLocationsCollector
             $this->streaming_sink,
             $parent_node_id,
             $this->streaming_memo,
+            $edge_strength,
         );
         // Look up the node_id that was assigned
         $node_id = $this->streaming_memo[$child] ?? null;
         if ($node_id !== null) {
-            return new SentinelContext($node_id);
+            return -$node_id - 1;
         }
         return $child;
     }
@@ -519,7 +523,14 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
-            $analyzer->analyzeSingleLink('objects_store', $objects_store_context, $sink, null, $memo);
+            $analyzer->analyzeSingleLink(
+                'objects_store',
+                $objects_store_context,
+                $sink,
+                null,
+                $memo,
+                EdgeStrength::Weak,
+            );
             unset($objects_store_context);
             $context_pools->convertToSentinels($memo);
 
@@ -646,9 +657,9 @@ final class MemoryLocationsCollector
             $this->defer_unseen_objects = false;
             $remaining_deferred = [];
             foreach ($this->deferred_object_edges as [$parent_node_id, $child_address, $link_name, $pointer_type]) {
-                $child_sentinel = $context_pools->getSentinel($child_address);
-                if ($child_sentinel !== null) {
-                    $sink->emitReference($child_sentinel->node_id, $parent_node_id, $link_name);
+                $child_node_id = $context_pools->getSentinel($child_address);
+                if ($child_node_id !== null) {
+                    $sink->emitReference($child_node_id, $parent_node_id, $link_name);
                     continue;
                 }
                 // Not resolved — collect it now
@@ -661,9 +672,9 @@ final class MemoryLocationsCollector
             // will be fully expanded. Each is emitted as a child of the
             // original parent.
             foreach ($remaining_deferred as [$parent_node_id, $child_address, $link_name, $pointer_type]) {
-                $child_sentinel = $context_pools->getSentinel($child_address);
-                if ($child_sentinel !== null) {
-                    $sink->emitReference($child_sentinel->node_id, $parent_node_id, $link_name);
+                $child_node_id = $context_pools->getSentinel($child_address);
+                if ($child_node_id !== null) {
+                    $sink->emitReference($child_node_id, $parent_node_id, $link_name);
                     continue;
                 }
                 $child_context = match ($pointer_type) {
@@ -684,9 +695,11 @@ final class MemoryLocationsCollector
                     ),
                     default => null,
                 };
-                if ($child_context !== null) {
+                if ($child_context instanceof ReferenceContext) {
                     $analyzer->analyzeSingleLink($link_name, $child_context, $sink, $parent_node_id, $memo);
                     $context_pools->convertToSentinels($memo);
+                } elseif (is_int($child_context)) {
+                    $sink->emitReference($child_context, $parent_node_id, $link_name);
                 }
             }
 
@@ -694,11 +707,10 @@ final class MemoryLocationsCollector
             // defer, collectClosure() was skipped. Now collect this_ptr/func
             // and emit as children of the Closure's ObjectContext node.
             foreach ($this->deferred_closure_addresses as $closure_address) {
-                $sentinel = $context_pools->getSentinel($closure_address);
-                if ($sentinel === null) {
+                $closure_node_id = $context_pools->getSentinel($closure_address);
+                if ($closure_node_id === null) {
                     continue;
                 }
-                $closure_node_id = $sentinel->node_id;
                 $closure_pointer = ZendClosure::getPointerFromZendObjectPointer(
                     new Pointer(
                         ZendObject::class,
@@ -734,11 +746,10 @@ final class MemoryLocationsCollector
 
             // Resolve deferred Generator objects
             foreach ($this->deferred_generator_addresses as $gen_address) {
-                $sentinel = $context_pools->getSentinel($gen_address);
-                if ($sentinel === null) {
+                $gen_node_id = $context_pools->getSentinel($gen_address);
+                if ($gen_node_id === null) {
                     continue;
                 }
-                $gen_node_id = $sentinel->node_id;
                 try {
                     $gen_pointer = ZendGenerator::getPointerFromZendObjectPointer(
                         new Pointer(
@@ -772,11 +783,10 @@ final class MemoryLocationsCollector
 
             // Resolve deferred Fiber objects
             foreach ($this->deferred_fiber_addresses as $fiber_address) {
-                $sentinel = $context_pools->getSentinel($fiber_address);
-                if ($sentinel === null) {
+                $fiber_node_id = $context_pools->getSentinel($fiber_address);
+                if ($fiber_node_id === null) {
                     continue;
                 }
-                $fiber_node_id = $sentinel->node_id;
                 try {
                     $fiber_pointer = ZendFiber::getPointerFromZendObjectPointer(
                         new Pointer(
@@ -976,7 +986,7 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): ?ReferenceContext {
+    ): ReferenceContext|int|null {
         if ($zval->isArray()) {
             assert(!is_null($zval->value->arr));
             return $this->collectZendArrayPointer(
@@ -1066,11 +1076,11 @@ final class MemoryLocationsCollector
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools
-    ): ResourceContext|SentinelContext {
+    ): ResourceContext|int {
         if ($memory_locations->has($pointer->address)) {
-            $sentinel = $context_pools->getSentinel($pointer->address);
-            if ($sentinel !== null) {
-                return $sentinel;
+            $node_id = $context_pools->getSentinel($pointer->address);
+            if ($node_id !== null) {
+                return $node_id;
             }
             $cached = $context_pools->resource_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -1786,11 +1796,11 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): PhpReferenceContext|SentinelContext|null {
+    ): PhpReferenceContext|int|null {
         if ($memory_locations->has($pointer->address)) {
-            $sentinel = $context_pools->getSentinel($pointer->address);
-            if ($sentinel !== null) {
-                return $sentinel;
+            $node_id = $context_pools->getSentinel($pointer->address);
+            if ($node_id !== null) {
+                return $node_id;
             }
             $cached = $context_pools->php_reference_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -1849,11 +1859,11 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): ArrayHeaderContext|SentinelContext|null {
+    ): ArrayHeaderContext|int|null {
         if ($memory_locations->has($pointer->address)) {
-            $sentinel = $context_pools->getSentinel($pointer->address);
-            if ($sentinel !== null) {
-                return $sentinel;
+            $node_id = $context_pools->getSentinel($pointer->address);
+            if ($node_id !== null) {
+                return $node_id;
             }
             $cached = $context_pools->array_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -1904,11 +1914,11 @@ final class MemoryLocationsCollector
         ZendTypeReader $zend_type_reader,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): ObjectContext|SentinelContext|null {
+    ): ObjectContext|int|null {
         if ($memory_locations->has($pointer->address)) {
-            $sentinel = $context_pools->getSentinel($pointer->address);
-            if ($sentinel !== null) {
-                return $sentinel;
+            $node_id = $context_pools->getSentinel($pointer->address);
+            if ($node_id !== null) {
+                return $node_id;
             }
             $cached = $context_pools->object_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -1957,11 +1967,11 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         Dereferencer $dereferencer,
         ContextPools $context_pools
-    ): StringContext|SentinelContext {
+    ): StringContext|int {
         if ($memory_locations->has($pointer->address)) {
-            $sentinel = $context_pools->getSentinel($pointer->address);
-            if ($sentinel !== null) {
-                return $sentinel;
+            $node_id = $context_pools->getSentinel($pointer->address);
+            if ($node_id !== null) {
+                return $node_id;
             }
             $cached = $context_pools->string_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -3091,11 +3101,11 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): FunctionDefinitionContext|SentinelContext {
+    ): FunctionDefinitionContext|int {
         if ($memory_locations->has($pointer->address)) {
-            $sentinel = $context_pools->getSentinel($pointer->address);
-            if ($sentinel !== null) {
-                return $sentinel;
+            $node_id = $context_pools->getSentinel($pointer->address);
+            if ($node_id !== null) {
+                return $node_id;
             }
             $cached = $context_pools->user_function_definition_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -3790,6 +3800,7 @@ final class MemoryLocationsCollector
                     (string)$key,
                     $objects_store_bucket_context,
                     $parent_node_id,
+                    EdgeStrength::Weak,
                 );
                 $this->flushPoolsIfStreaming();
             }
@@ -3978,7 +3989,7 @@ final class MemoryLocationsCollector
         MemoryLocations $memory_locations,
         ContextPools $context_pools,
         ?MemoryLimitErrorDetails $memory_limit_error_details,
-    ): ?ReferenceContext {
+    ): ReferenceContext|int|null {
         if ($zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)) {
             // v70-v80: function_name is an inline zval
             $callable_zval = $entry->getFunctionNameDirect();
