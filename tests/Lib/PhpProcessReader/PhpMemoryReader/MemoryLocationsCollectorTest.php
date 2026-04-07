@@ -1795,6 +1795,11 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $php_globals_finder
             )
         );
+        $tmp_path = tempnam(sys_get_temp_dir(), 'reli_test_gen_') . '.sqlite3';
+        $driver = new SqliteDriver($tmp_path);
+        $pdo_output = new PdoMemoryOutput($driver);
+        [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
+
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
@@ -1802,38 +1807,38 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $compiler_globals_address,
             null,
             $basic_globals_address,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
-        $region_analyzer = new RegionAnalyzer(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations
-        );
-        $region_analyzed = $region_analyzer->analyze($collected_memories->memory_locations);
-        $this->assertGreaterThan(0, $region_analyzed->summary->zend_mm_heap_usage);
+        $sink->flush();
+        $region_result = RegionsSummary::queryRegionSums($db, $run_id);
+        $region_sums = $region_result['sums'];
+        $heap_usage = ($region_sums['zend_mm_heap'] ?? 0) + ($region_sums['zend_mm_huge'] ?? 0)
+            + $collected_memories->vm_stack_memory_locations->getTotalSize()
+            + $collected_memories->compiler_arena_memory_locations->getTotalSize();
+        $this->assertGreaterThan(0, $heap_usage);
 
-        // The key assertion: with many generators, analyzed heap usage must not
-        // exceed memory_get_usage. Before the call frame overhead fix, this
-        // ratio would exceed 120% due to double-counted bin overhead.
         $this->assertLessThanOrEqual(
             $collected_memories->memory_get_usage_size,
-            $region_analyzed->summary->zend_mm_heap_usage,
+            $heap_usage,
             'analyzed_percentage must not exceed 100%'
         );
 
-        $location_type_analyzer = new LocationTypeAnalyzer();
-        $location_type_analyzed_result = $location_type_analyzer->analyze(
-            $region_analyzed->regional_memory_locations->locations_in_zend_mm_heap,
-        );
-        // Verify that generators are tracked as ZendObjectMemoryLocation
+        // Verify generators tracked via DB
+        /** @psalm-suppress MixedAssignment */
+        $gen_count = $db->query(
+            "SELECT COUNT(DISTINCT address) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND class_name = 'Generator'"
+        )->fetchColumn();
         $this->assertGreaterThanOrEqual(
             1000,
-            $location_type_analyzed_result->per_type_usage['ZendObjectMemoryLocation']['count']
-                ?? 0,
+            (int)$gen_count,
             'Should track at least 1000 generator objects'
         );
+
+        $db = null;
+        @unlink($tmp_path);
     }
 
     public static function provideFromV82()
