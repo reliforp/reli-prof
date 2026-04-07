@@ -163,9 +163,6 @@ final class CoreDumpReaderFactory
              * @param NtFileEntry[] $file_maps
              * @param array<string, int> $coredump_offsets
              */
-            /** @var array<string, int> path => cached fd */
-            private array $fd_cache = [];
-
             public function __construct(
                 private ByteReaderInterface $core_dump_file,
                 private ProcessMemoryMap $process_memory_map,
@@ -175,6 +172,9 @@ final class CoreDumpReaderFactory
                 private FFI $libc_ffi,
             ) {
             }
+
+            /** @var array<string, int> path => cached fd */
+            private array $fd_cache = [];
 
             public function __destruct()
             {
