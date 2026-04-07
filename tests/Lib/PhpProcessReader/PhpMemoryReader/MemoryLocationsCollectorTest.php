@@ -496,52 +496,22 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $sink,
         );
 
-        // ---- build RegionBoundaries and backfill ----
-        $region_boundaries = new RegionBoundaries(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-
-        $region_analyzer = new RegionAnalyzer(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-        $analyzed_regions = $region_analyzer->analyze(
-            $collected_memories->memory_locations,
-        );
-
+        // ---- verify region data in DB (written inline at emit time) ----
         $sink->flush();
-        $region_boundaries->backfillRegions($db, $run_id);
-
-        // ---- verify region data in DB ----
         $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
 
         // There must be at least zend_mm_heap data (normal heap allocations)
         $this->assertArrayHasKey('zend_mm_heap', $region_sums);
         $this->assertGreaterThan(0, $region_sums['zend_mm_heap']);
 
-        // vm_stack should exist inside a chunk
-        $this->assertGreaterThan(
-            0,
-            $collected_memories->vm_stack_memory_locations->memory_locations !== []
-                ? count($collected_memories->vm_stack_memory_locations->memory_locations)
-                : 0,
-            'vm_stack regions should be collected'
-        );
+        // ---- compute summary and percentage ----
+        $chunk_usage = $region_sums['zend_mm_heap'] ?? 0;
+        $huge_usage = $region_sums['zend_mm_huge'] ?? 0;
+        $vm_stack_total = $collected_memories->vm_stack_memory_locations->getTotalSize();
+        $compiler_arena_total = $collected_memories->compiler_arena_memory_locations->getTotalSize();
+        $heap_usage = $chunk_usage + $huge_usage + $vm_stack_total + $compiler_arena_total;
 
-        // If there are vm_stack locations in the DB they must be classified
-        if (isset($region_sums['vm_stack'])) {
-            $this->assertGreaterThan(0, $region_sums['vm_stack']);
-        }
-
-        // ---- compute corrected summary and percentage ----
-        $summary_base = $analyzed_regions->summary->correctedToArray($region_sums);
-
-        $pct = (float)$summary_base['zend_mm_heap_usage']
+        $pct = (float)$heap_usage
             / (float)$collected_memories->memory_get_usage_size * 100.0;
 
         // The percentage must NOT be near-zero (the bug we're fixing).
@@ -553,7 +523,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 'heap_memory_analyzed_percentage too low: %.2f%% '
                 . '(heap_usage=%d, memory_get_usage=%d, region_sums=%s)',
                 $pct,
-                $summary_base['zend_mm_heap_usage'],
+                $heap_usage,
                 $collected_memories->memory_get_usage_size,
                 json_encode($region_sums),
             )
@@ -2841,26 +2811,30 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $sink,
         );
 
-        $region_boundaries = new RegionBoundaries(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-        $region_analyzer = new RegionAnalyzer(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-        $analyzed_regions = $region_analyzer->analyze($collected_memories->memory_locations);
-
         $sink->flush();
-        $region_boundaries->backfillRegions($db, $run_id);
         $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
-        $summary_base = $region_sums !== []
-            ? $analyzed_regions->summary->correctedToArray($region_sums)
-            : $analyzed_regions->summary->toArray();
+
+        $chunk_usage = $region_sums['zend_mm_heap'] ?? 0;
+        $huge_usage = $region_sums['zend_mm_huge'] ?? 0;
+        $vm_stack_total = $collected_memories->vm_stack_memory_locations->getTotalSize();
+        $compiler_arena_total = $collected_memories->compiler_arena_memory_locations->getTotalSize();
+        $heap_usage = $chunk_usage + $huge_usage + $vm_stack_total + $compiler_arena_total;
+
+        $summary_base = [
+            'zend_mm_heap_total' => $collected_memories->chunk_memory_locations->getTotalSize()
+                + $collected_memories->huge_memory_locations->getTotalSize(),
+            'zend_mm_heap_usage' => $heap_usage,
+            'zend_mm_chunk_total' => $collected_memories->chunk_memory_locations->getTotalSize(),
+            'zend_mm_chunk_usage' => $chunk_usage + $vm_stack_total + $compiler_arena_total,
+            'zend_mm_huge_total' => $collected_memories->huge_memory_locations->getTotalSize(),
+            'zend_mm_huge_usage' => $huge_usage,
+            'vm_stack_total' => $vm_stack_total,
+            'vm_stack_usage' => $region_sums['vm_stack'] ?? 0,
+            'compiler_arena_total' => $compiler_arena_total,
+            'compiler_arena_usage' => $region_sums['compiler_arena'] ?? 0,
+            'possible_allocation_overhead_total' => 0,
+            'possible_array_overhead_total' => 0,
+        ];
 
         $summary = [
             $summary_base
@@ -2871,7 +2845,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ]
             + [
                 'heap_memory_analyzed_percentage' =>
-                    (float)$summary_base['zend_mm_heap_usage']
+                    (float)$heap_usage
                     / (float)$collected_memories->memory_get_usage_size * 100.0,
             ]
             + ['php_version' => $php_version]

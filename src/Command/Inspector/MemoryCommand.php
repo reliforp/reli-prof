@@ -22,8 +22,6 @@ use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
@@ -130,35 +128,36 @@ final class MemoryCommand extends Command
                 $sink,
             );
 
-            $region_boundaries = new RegionBoundaries(
-                $collected_memories->chunk_memory_locations,
-                $collected_memories->huge_memory_locations,
-                $collected_memories->vm_stack_memory_locations,
-                $collected_memories->compiler_arena_memory_locations,
-            );
-
-            $region_analyzer = new RegionAnalyzer(
-                $collected_memories->chunk_memory_locations,
-                $collected_memories->huge_memory_locations,
-                $collected_memories->vm_stack_memory_locations,
-                $collected_memories->compiler_arena_memory_locations,
-            );
-
-            $analyzed_regions = $region_analyzer->analyze(
-                $collected_memories->memory_locations,
-            );
-
-            // In streaming mode, memory_locations uses lightweight (address-only)
-            // tracking, so RegionAnalyzer cannot compute usage from individual
-            // locations.  Back-fill the region column (NULL during streaming
-            // because RegionBoundaries was not yet available) and correct the
-            // summary using region sums from the DB.
+            // Region classification happens inline at emit time (PdoContextTreeSink
+            // has RegionBoundaries set by the collector before the job loop).
+            // Query the DB for region sums — no backfill needed.
             $sink->flush();
-            $region_boundaries->backfillRegions($db, $run_id);
             $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
-            $summary_base = $region_sums !== []
-                ? $analyzed_regions->summary->correctedToArray($region_sums)
-                : $analyzed_regions->summary->toArray();
+
+            $heap_total = $collected_memories->chunk_memory_locations->getTotalSize()
+                + $collected_memories->huge_memory_locations->getTotalSize();
+            $chunk_total = $collected_memories->chunk_memory_locations->getTotalSize();
+            $huge_total = $collected_memories->huge_memory_locations->getTotalSize();
+            $vm_stack_total = $collected_memories->vm_stack_memory_locations->getTotalSize();
+            $compiler_arena_total = $collected_memories->compiler_arena_memory_locations->getTotalSize();
+
+            $chunk_usage = $region_sums['zend_mm_heap'] ?? 0;
+            $huge_usage = $region_sums['zend_mm_huge'] ?? 0;
+
+            $summary_base = [
+                'zend_mm_heap_total' => $heap_total,
+                'zend_mm_heap_usage' => $chunk_usage + $huge_usage + $vm_stack_total + $compiler_arena_total,
+                'zend_mm_chunk_total' => $chunk_total,
+                'zend_mm_chunk_usage' => $chunk_usage + $vm_stack_total + $compiler_arena_total,
+                'zend_mm_huge_total' => $huge_total,
+                'zend_mm_huge_usage' => $huge_usage,
+                'vm_stack_total' => $vm_stack_total,
+                'vm_stack_usage' => $region_sums['vm_stack'] ?? 0,
+                'compiler_arena_total' => $compiler_arena_total,
+                'compiler_arena_usage' => $region_sums['compiler_arena'] ?? 0,
+                'possible_allocation_overhead_total' => 0,
+                'possible_array_overhead_total' => 0,
+            ];
 
             $summary = [
                 $summary_base
@@ -180,7 +179,7 @@ final class MemoryCommand extends Command
                 ]
             ];
 
-            unset($collected_memories, $analyzed_regions, $region_analyzer);
+            unset($collected_memories);
 
             // Finalize the streaming DB (summary, indexes, views)
             $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
@@ -199,7 +198,6 @@ final class MemoryCommand extends Command
 
                 $memory_output = $output_factory->create(
                     $memory_profiler_settings,
-                    $region_boundaries,
                 );
                 $memory_output->output($result);
             }
