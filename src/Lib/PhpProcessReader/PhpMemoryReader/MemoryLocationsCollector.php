@@ -137,7 +137,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\RuntimeCacheConte
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ScalarValueContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StringContext;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\TopReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\WeakMapContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\WeakReferenceContext;
@@ -166,6 +165,9 @@ final class MemoryLocationsCollector
     private ?\WeakMap $streaming_memo = null;
     private ?ContextPools $streaming_context_pools = null;
 
+    /** @var array<int, int> address → node_id for cross-branch dedup */
+    private array $streaming_address_map = [];
+
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
@@ -174,7 +176,8 @@ final class MemoryLocationsCollector
     }
 
     /**
-     * In streaming mode, convert pool entries to sentinels and release them.
+     * In streaming mode, drain pool entries to the address→node_id map
+     * and release the Context objects.
      */
     private function flushPoolsIfStreaming(): void
     {
@@ -184,14 +187,16 @@ final class MemoryLocationsCollector
         ) {
             return;
         }
-        $this->streaming_context_pools->convertToSentinels($this->streaming_memo);
+        $this->streaming_context_pools->drainToAddressMap(
+            $this->streaming_memo,
+            $this->streaming_address_map,
+        );
     }
 
     /**
-     * In streaming mode, register a parent node in the analyzer's memo
-     * and emit it to the sink, so that children can be emitted as
-     * sub-nodes during collection. Returns the assigned node_id, or
-     * null if not in streaming mode.
+     * Register a parent node in the analyzer's memo and emit it to the
+     * sink, so that children can be emitted as sub-nodes during collection.
+     * Returns the assigned node_id.
      */
     private function registerParentIfStreaming(
         ReferenceContext $parent,
@@ -313,7 +318,7 @@ final class MemoryLocationsCollector
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
-        $dereferencer = $this->getDereferencer($pid, $php_version, enable_cache: $sink !== null);
+        $dereferencer = $this->getDereferencer($pid, $php_version, enable_cache: true);
         $zend_type_reader = $this->zend_type_reader_creator->create($php_version);
 
         $main_chunk_header_pointer = new Pointer(
@@ -327,9 +332,7 @@ final class MemoryLocationsCollector
             $zend_type_reader->sizeOf('zend_mm_chunk'),
         );
 
-        $memory_locations = $sink !== null
-            ? MemoryLocations::createLightweight()
-            : new MemoryLocations();
+        $memory_locations = MemoryLocations::createLightweight();
         $chunk_memory_locations = new MemoryLocations();
         $this->chunk_memory_locations = $chunk_memory_locations;
 
@@ -405,19 +408,22 @@ final class MemoryLocationsCollector
 
         $context_pools = ContextPools::createDefault();
 
-        // In streaming mode, set up the analyzer and memo early so we can
-        // emit each branch right after collection and release it.
-        // Also set instance properties so collect* methods can emit sub-trees.
-        $analyzer = $sink !== null ? new ContextAnalyzer() : null;
-        /** @var \WeakMap<ReferenceContext, int>|null $memo */
-        $memo = $sink !== null ? new \WeakMap() : null;
-
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
-            $this->streaming_sink = $sink;
-            $this->streaming_analyzer = $analyzer;
-            $this->streaming_memo = $memo;
-            $this->streaming_context_pools = $context_pools;
+        // Set up the analyzer and memo so we can emit each branch right
+        // after collection and release it.
+        // If no sink was provided, create an internal ArrayContextTreeSink
+        // so the streaming code path is always used.
+        if ($sink === null) {
+            $sink = new \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ArrayContextTreeSink();
         }
+        $analyzer = new ContextAnalyzer();
+        /** @var \WeakMap<ReferenceContext, int> $memo */
+        $memo = new \WeakMap();
+
+        $this->streaming_sink = $sink;
+        $this->streaming_analyzer = $analyzer;
+        $this->streaming_memo = $memo;
+        $this->streaming_context_pools = $context_pools;
+        $this->streaming_address_map = [];
 
         $included_files_context = $this->collectIncludedFiles(
             $eg->included_files,
@@ -425,11 +431,9 @@ final class MemoryLocationsCollector
             $memory_locations,
             $context_pools,
         );
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
-            $analyzer->analyzeSingleLink('included_files', $included_files_context, $sink, null, $memo);
-            unset($included_files_context);
-            $context_pools->convertToSentinels($memo);
-        }
+        $analyzer->analyzeSingleLink('included_files', $included_files_context, $sink, null, $memo);
+        unset($included_files_context);
+        $this->flushPoolsIfStreaming();
 
         $interned_strings_context = $this->collectInternedStrings(
             $cg->interned_strings,
@@ -439,11 +443,9 @@ final class MemoryLocationsCollector
             $memory_locations,
             $context_pools,
         );
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
-            $analyzer->analyzeSingleLink('interned_strings', $interned_strings_context, $sink, null, $memo);
-            unset($interned_strings_context);
-            $context_pools->convertToSentinels($memo);
-        }
+        $analyzer->analyzeSingleLink('interned_strings', $interned_strings_context, $sink, null, $memo);
+        unset($interned_strings_context);
+        $this->flushPoolsIfStreaming();
 
         assert(!is_null($eg->function_table));
         assert(!is_null($eg->class_table));
@@ -453,253 +455,8 @@ final class MemoryLocationsCollector
         $class_table = $dereferencer->deref($eg->class_table);
         $zend_constants = $dereferencer->deref($eg->zend_constants);
 
-        if ($sink !== null && $analyzer !== null && $memo !== null) {
-            // Streaming mode: traverse in natural order (same as non-streaming).
-            // call_frames first, objects_store last. Dedup is handled by
-            // memory_locations->has() and pool getContextByAddress().
-            $call_frames_context = $this->collectCallFrames(
-                $eg,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-
-            if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
-                $call_frames_context = $this->collectRealCallStackOnMemoryLimitViolation(
-                    $this->memory_limit_error_function_context,
-                    $memory_limit_error_details->max_challenge_depth,
-                    $call_frames_context,
-                    $eg,
-                    $cg->map_ptr_base,
-                    $dereferencer,
-                    $zend_type_reader,
-                    $memory_locations,
-                    $context_pools,
-                );
-            }
-
-            $analyzer->analyzeSingleLink('call_frames', $call_frames_context, $sink, null, $memo);
-            unset($call_frames_context);
-            $context_pools->convertToSentinels($memo);
-
-            $global_variables_context = $this->collectGlobalVariables(
-                $eg->symbol_table,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
-            unset($global_variables_context);
-            $context_pools->convertToSentinels($memo);
-
-            $defined_functions_context = $this->collectFunctionTable(
-                $function_table,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $analyzer->analyzeSingleLink('function_table', $defined_functions_context, $sink, null, $memo);
-            unset($defined_functions_context);
-            $context_pools->convertToSentinels($memo);
-
-            $defined_classes_context = $this->collectClassTable(
-                $class_table,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $analyzer->analyzeSingleLink('class_table', $defined_classes_context, $sink, null, $memo);
-            unset($defined_classes_context);
-            $context_pools->convertToSentinels($memo);
-
-            $global_constants_context = $this->collectGlobalConstants(
-                $zend_constants,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $analyzer->analyzeSingleLink('global_constants', $global_constants_context, $sink, null, $memo);
-            unset($global_constants_context);
-            $context_pools->convertToSentinels($memo);
-
-            try {
-                $global_callbacks_context = $this->collectGlobalCallbacks(
-                    $eg,
-                    $cg->map_ptr_base,
-                    $dereferencer,
-                    $zend_type_reader,
-                    $memory_locations,
-                    $context_pools,
-                    $memory_limit_error_details,
-                );
-            } catch (\Throwable $e) {
-                Log::info('failed to collect global callbacks', ['error' => $e->getMessage()]);
-                $global_callbacks_context = new GlobalCallbacksContext();
-            }
-            $analyzer->analyzeSingleLink('global_callbacks', $global_callbacks_context, $sink, null, $memo);
-            unset($global_callbacks_context);
-            $context_pools->convertToSentinels($memo);
-
-            try {
-                $modules_context = $this->collectModules(
-                    $bg_address,
-                    $cg->map_ptr_base,
-                    $dereferencer,
-                    $zend_type_reader,
-                    $memory_locations,
-                    $context_pools,
-                    $memory_limit_error_details,
-                );
-            } catch (\Throwable $e) {
-                Log::info('failed to collect modules', ['error' => $e->getMessage()]);
-                $modules_context = new ModulesContext();
-            }
-            $analyzer->analyzeSingleLink('modules', $modules_context, $sink, null, $memo);
-            unset($modules_context);
-            $context_pools->convertToSentinels($memo);
-
-            $objects_store_context = $this->collectObjectsStore(
-                $eg->objects_store,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $analyzer->analyzeSingleLink(
-                'objects_store',
-                $objects_store_context,
-                $sink,
-                null,
-                $memo,
-                EdgeStrength::Weak,
-            );
-            unset($objects_store_context);
-            $context_pools->convertToSentinels($memo);
-
-            $context_pools->clear();
-
-            // Clear streaming state
-            $this->streaming_sink = null;
-            $this->streaming_analyzer = null;
-            $this->streaming_memo = null;
-            $this->streaming_context_pools = null;
-
-            return new CollectedMemories(
-                $chunk_memory_locations,
-                $huge_memory_locations,
-                $vm_stack_memory_locations,
-                $compiler_arena_memory_locations,
-                $cached_chunks_size,
-                $memory_locations,
-                null,
-                $memory_get_usage_size,
-                $memory_get_usage_real_size,
-                $memory_get_peak_usage,
-                $memory_limit,
-            );
-        }
-
-        // Non-streaming path: original collection order (0.12.x compatible).
-        // call_frames → function_table → class_table → ... → objects_store
-        $global_variables_context = $this->collectGlobalVariables(
-            $eg->symbol_table,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-
         $call_frames_context = $this->collectCallFrames(
             $eg,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-
-        $defined_functions_context = $this->collectFunctionTable(
-            $function_table,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-
-        $defined_classes_context = $this->collectClassTable(
-            $class_table,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-
-        $global_constants_context = $this->collectGlobalConstants(
-            $zend_constants,
-            $cg->map_ptr_base,
-            $dereferencer,
-            $zend_type_reader,
-            $memory_locations,
-            $context_pools,
-            $memory_limit_error_details,
-        );
-
-        try {
-            $global_callbacks_context = $this->collectGlobalCallbacks(
-                $eg,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-        } catch (\Throwable $e) {
-            Log::info('failed to collect global callbacks', ['error' => $e->getMessage()]);
-            $global_callbacks_context = new GlobalCallbacksContext();
-        }
-
-        try {
-            $modules_context = $this->collectModules(
-                $bg_address,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-        } catch (\Throwable $e) {
-            Log::info('failed to collect modules', ['error' => $e->getMessage()]);
-            $modules_context = new ModulesContext();
-        }
-
-        $objects_store_context = $this->collectObjectsStore(
-            $eg->objects_store,
             $cg->map_ptr_base,
             $dereferencer,
             $zend_type_reader,
@@ -722,21 +479,126 @@ final class MemoryLocationsCollector
             );
         }
 
-        $top_reference_context = new TopReferenceContext(
-            $call_frames_context,
-            $global_variables_context,
-            $defined_functions_context,
-            $defined_classes_context,
-            $global_constants_context,
-            $included_files_context,
-            $interned_strings_context,
-            $objects_store_context,
-            $global_callbacks_context,
-            $modules_context,
-        );
+        $analyzer->analyzeSingleLink('call_frames', $call_frames_context, $sink, null, $memo);
+        unset($call_frames_context);
+        $this->flushPoolsIfStreaming();
 
-        // Release pool references so ContextAnalyzer's releaseLinks() can trigger GC
+        $global_variables_context = $this->collectGlobalVariables(
+            $eg->symbol_table,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
+        unset($global_variables_context);
+        $this->flushPoolsIfStreaming();
+
+        $defined_functions_context = $this->collectFunctionTable(
+            $function_table,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        $analyzer->analyzeSingleLink('function_table', $defined_functions_context, $sink, null, $memo);
+        unset($defined_functions_context);
+        $this->flushPoolsIfStreaming();
+
+        $defined_classes_context = $this->collectClassTable(
+            $class_table,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        $analyzer->analyzeSingleLink('class_table', $defined_classes_context, $sink, null, $memo);
+        unset($defined_classes_context);
+        $this->flushPoolsIfStreaming();
+
+        $global_constants_context = $this->collectGlobalConstants(
+            $zend_constants,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        $analyzer->analyzeSingleLink('global_constants', $global_constants_context, $sink, null, $memo);
+        unset($global_constants_context);
+        $this->flushPoolsIfStreaming();
+
+        try {
+            $global_callbacks_context = $this->collectGlobalCallbacks(
+                $eg,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+        } catch (\Throwable $e) {
+            Log::info('failed to collect global callbacks', ['error' => $e->getMessage()]);
+            $global_callbacks_context = new GlobalCallbacksContext();
+        }
+        $analyzer->analyzeSingleLink('global_callbacks', $global_callbacks_context, $sink, null, $memo);
+        unset($global_callbacks_context);
+        $this->flushPoolsIfStreaming();
+
+        try {
+            $modules_context = $this->collectModules(
+                $bg_address,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
+            );
+        } catch (\Throwable $e) {
+            Log::info('failed to collect modules', ['error' => $e->getMessage()]);
+            $modules_context = new ModulesContext();
+        }
+        $analyzer->analyzeSingleLink('modules', $modules_context, $sink, null, $memo);
+        unset($modules_context);
+        $this->flushPoolsIfStreaming();
+
+        $objects_store_context = $this->collectObjectsStore(
+            $eg->objects_store,
+            $cg->map_ptr_base,
+            $dereferencer,
+            $zend_type_reader,
+            $memory_locations,
+            $context_pools,
+            $memory_limit_error_details,
+        );
+        $analyzer->analyzeSingleLink(
+            'objects_store',
+            $objects_store_context,
+            $sink,
+            null,
+            $memo,
+            EdgeStrength::Weak,
+        );
+        unset($objects_store_context);
+        $this->flushPoolsIfStreaming();
+
         $context_pools->clear();
+
+        // Clear streaming state
+        $this->streaming_sink = null;
+        $this->streaming_analyzer = null;
+        $this->streaming_memo = null;
+        $this->streaming_context_pools = null;
+        $this->streaming_address_map = [];
 
         return new CollectedMemories(
             $chunk_memory_locations,
@@ -745,7 +607,6 @@ final class MemoryLocationsCollector
             $compiler_arena_memory_locations,
             $cached_chunks_size,
             $memory_locations,
-            $top_reference_context,
             $memory_get_usage_size,
             $memory_get_usage_real_size,
             $memory_get_peak_usage,
@@ -853,9 +714,9 @@ final class MemoryLocationsCollector
         ContextPools $context_pools
     ): ResourceContext|int {
         if ($memory_locations->has($pointer->address)) {
-            $node_id = $context_pools->getSentinel($pointer->address);
-            if ($node_id !== null) {
-                return $node_id;
+            $existing_node_id = $this->streaming_address_map[$pointer->address] ?? null;
+            if ($existing_node_id !== null) {
+                return $existing_node_id;
             }
             $cached = $context_pools->resource_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -1573,9 +1434,9 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): PhpReferenceContext|int|null {
         if ($memory_locations->has($pointer->address)) {
-            $node_id = $context_pools->getSentinel($pointer->address);
-            if ($node_id !== null) {
-                return $node_id;
+            $existing_node_id = $this->streaming_address_map[$pointer->address] ?? null;
+            if ($existing_node_id !== null) {
+                return $existing_node_id;
             }
             $cached = $context_pools->php_reference_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -1615,9 +1476,9 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ArrayHeaderContext|int|null {
         if ($memory_locations->has($pointer->address)) {
-            $node_id = $context_pools->getSentinel($pointer->address);
-            if ($node_id !== null) {
-                return $node_id;
+            $existing_node_id = $this->streaming_address_map[$pointer->address] ?? null;
+            if ($existing_node_id !== null) {
+                return $existing_node_id;
             }
             $cached = $context_pools->array_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -1647,9 +1508,9 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): ObjectContext|int|null {
         if ($memory_locations->has($pointer->address)) {
-            $node_id = $context_pools->getSentinel($pointer->address);
-            if ($node_id !== null) {
-                return $node_id;
+            $existing_node_id = $this->streaming_address_map[$pointer->address] ?? null;
+            if ($existing_node_id !== null) {
+                return $existing_node_id;
             }
             $cached = $context_pools->object_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -1676,9 +1537,9 @@ final class MemoryLocationsCollector
         ContextPools $context_pools
     ): StringContext|int {
         if ($memory_locations->has($pointer->address)) {
-            $node_id = $context_pools->getSentinel($pointer->address);
-            if ($node_id !== null) {
-                return $node_id;
+            $existing_node_id = $this->streaming_address_map[$pointer->address] ?? null;
+            if ($existing_node_id !== null) {
+                return $existing_node_id;
             }
             $cached = $context_pools->string_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
@@ -2763,9 +2624,9 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details,
     ): FunctionDefinitionContext|int {
         if ($memory_locations->has($pointer->address)) {
-            $node_id = $context_pools->getSentinel($pointer->address);
-            if ($node_id !== null) {
-                return $node_id;
+            $existing_node_id = $this->streaming_address_map[$pointer->address] ?? null;
+            if ($existing_node_id !== null) {
+                return $existing_node_id;
             }
             $cached = $context_pools->user_function_definition_context_pool->getContextByAddress($pointer->address);
             if ($cached !== null) {
