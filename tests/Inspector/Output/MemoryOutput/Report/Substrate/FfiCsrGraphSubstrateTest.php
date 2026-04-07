@@ -262,6 +262,48 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
         );
     }
 
+    public function testConsistencyWithPhpArrayVersionForUnifiedScc(): void
+    {
+        $db = $this->createDirectDb();
+
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id) VALUES
+            (1, 100, 'ObjectContext', 100),
+            (1, 200, 'ObjectContext', 200),
+            (1, 500, 'ObjectContext', 100),
+            (1, 600, 'ObjectContext', 200)
+        ");
+
+        $db->exec("INSERT INTO context_node_locations (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 100, 1000, 64, 'ZendObjectMemoryLocation', 'App\\NodeA'),
+            (1, 200, 2000, 64, 'ZendObjectMemoryLocation', 'App\\NodeB'),
+            (1, 500, 1000, 64, 'ZendObjectMemoryLocation', 'App\\NodeA'),
+            (1, 600, 2000, 64, 'ZendObjectMemoryLocation', 'App\\NodeB')
+        ");
+
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 100, 'objects_store', 1, 'strong'),
+            (1, 100, 200, 'next', 1, 'strong'),
+            (1, NULL, 500, 'call_frames', 1, 'strong'),
+            (1, 600, 500, 'next', 0, 'strong')
+        ");
+
+        $php = GraphSubstrate::loadFromDb($db, 1);
+        $ffi = FfiCsrGraphSubstrate::loadFromDb($db, 1);
+
+        $this->assertSame(count($php->getSccProfiles()), count($ffi->getSccProfiles()));
+        $this->assertNotEmpty($ffi->getSccProfiles());
+
+        $php_scc = $php->getSccProfiles()[0];
+        $ffi_scc = $ffi->getSccProfiles()[0];
+
+        $this->assertEqualsCanonicalizing($php_scc['nodes'], $ffi_scc['nodes']);
+        $this->assertSame($php_scc['node_count'], $ffi_scc['node_count']);
+        $this->assertSame($php_scc['total_size'], $ffi_scc['total_size']);
+        $this->assertSame($php_scc['ext_in'], $ffi_scc['ext_in']);
+        $this->assertSame($php_scc['ext_out'], $ffi_scc['ext_out']);
+    }
+
     public function testCreateFromDbSelectsCorrectImplementation(): void
     {
         $child = $this->createMockContext('child', [], [
@@ -284,6 +326,51 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
     {
         $db = new \PDO('sqlite:' . $this->db_path);
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        return $db;
+    }
+
+    private function createDirectDb(): \PDO
+    {
+        $db = $this->openDb();
+
+        $db->exec('CREATE TABLE IF NOT EXISTS runs (run_id INTEGER PRIMARY KEY, created_at TEXT NOT NULL)');
+        $db->exec("INSERT INTO runs (run_id, created_at) VALUES (1, '2024-01-01T00:00:00Z')");
+
+        $db->exec('
+            CREATE TABLE IF NOT EXISTS context_nodes (
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                canonical_node_id INTEGER,
+                PRIMARY KEY (run_id, node_id)
+            )
+        ');
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS context_edges (
+                run_id INTEGER NOT NULL,
+                parent_node_id INTEGER,
+                child_node_id INTEGER NOT NULL,
+                link_name TEXT NOT NULL,
+                is_tree INTEGER NOT NULL,
+                strength TEXT NOT NULL DEFAULT 'strong'
+            )
+        ");
+        $db->exec('
+            CREATE TABLE IF NOT EXISTS context_node_locations (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                address BIGINT,
+                size BIGINT,
+                location_type TEXT NOT NULL,
+                class_name TEXT,
+                string_value TEXT,
+                refcount BIGINT,
+                type_info BIGINT,
+                region TEXT
+            )
+        ');
+
         return $db;
     }
 
