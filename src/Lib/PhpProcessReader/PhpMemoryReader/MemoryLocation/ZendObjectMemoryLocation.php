@@ -44,13 +44,31 @@ final class ZendObjectMemoryLocation extends RefcountedMemoryLocation
             $class_name === \Closure::class
             and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
         ) {
-            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_closure', 'std');
-            $address -= $std_offset;
-            $size = $zend_type_reader->sizeOf('zend_closure');
+            try {
+                [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_closure', 'std');
+                $closure_size = $zend_type_reader->sizeOf('zend_closure');
+                if ($closure_size > 0 && $std_offset > 0) {
+                    $address -= $std_offset;
+                    $size = $closure_size;
+                } else {
+                    $size = $zend_object->getMemorySize($dereferencer);
+                }
+            } catch (\Throwable) {
+                $size = $zend_object->getMemorySize($dereferencer);
+            }
         } elseif ($class_name === \Generator::class) {
-            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_generator', 'std');
-            $address -= $std_offset;
-            $size = $zend_type_reader->sizeOf('zend_generator');
+            try {
+                [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_generator', 'std');
+                $generator_size = $zend_type_reader->sizeOf('zend_generator');
+                if ($generator_size > 0 && $std_offset > 0) {
+                    $address -= $std_offset;
+                    $size = $generator_size;
+                } else {
+                    $size = $zend_object->getMemorySize($dereferencer);
+                }
+            } catch (\Throwable) {
+                $size = $zend_object->getMemorySize($dereferencer);
+            }
         } elseif (
             $class_name === \WeakReference::class
             and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V74)
