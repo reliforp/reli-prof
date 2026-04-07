@@ -14,11 +14,8 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
-<<<<<<< HEAD
-=======
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableOverheadMemoryLocation;
->>>>>>> origin/claude/fix-memory-analysis-2WiRL
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
 use Reli\Lib\Process\MemoryLocation;
 
@@ -52,11 +49,6 @@ final class RegionBoundaries
     /**
      * Compute ZendMM bin alignment overhead for a location.
      * Returns the overhead in bytes, or 0 if not applicable.
-<<<<<<< HEAD
-     */
-    public function computeBinOverhead(MemoryLocation $location): int
-    {
-=======
      *
      * ZendArrayTableOverheadMemoryLocation is NOT a separate allocation —
      * it shares the same emalloc as ZendArrayTableMemoryLocation. The
@@ -74,7 +66,6 @@ final class RegionBoundaries
             return 0;
         }
 
->>>>>>> origin/claude/fix-memory-analysis-2WiRL
         $chunk = $this->chunk_memory_locations->getContainingMemoryLocation($location);
         if ($chunk instanceof ZendMmChunkMemoryLocation) {
             $overhead = $chunk->getOverhead($location);

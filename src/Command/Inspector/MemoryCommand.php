@@ -149,17 +149,10 @@ final class MemoryCommand extends Command
             $summary_base = [
                 'zend_mm_heap_total' => $heap_total,
                 'zend_mm_heap_usage' => $chunk_usage + $huge_usage
-<<<<<<< HEAD
-                    + $vm_stack_total + $compiler_arena_total + $allocation_overhead,
-                'zend_mm_chunk_total' => $chunk_total,
-                'zend_mm_chunk_usage' => $chunk_usage
-                    + $vm_stack_total + $compiler_arena_total + $allocation_overhead,
-=======
                     + $vm_stack_total + $compiler_arena_total,
                 'zend_mm_chunk_total' => $chunk_total,
                 'zend_mm_chunk_usage' => $chunk_usage
                     + $vm_stack_total + $compiler_arena_total,
->>>>>>> origin/claude/fix-memory-analysis-2WiRL
                 'zend_mm_huge_total' => $huge_total,
                 'zend_mm_huge_usage' => $huge_usage,
                 'vm_stack_total' => $vm_stack_total,

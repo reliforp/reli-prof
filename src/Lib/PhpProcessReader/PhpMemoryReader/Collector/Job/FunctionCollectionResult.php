@@ -27,14 +27,9 @@ final class FunctionCollectionResult
      * @param list<array{Pointer<ZendArray>, string}> $deferred_arrays
      */
     public function __construct(
-<<<<<<< HEAD
-        public readonly FunctionDefinitionContext $context,
-        public readonly array $deferred_arrays = [],
-=======
         public FunctionDefinitionContext $context,
         /** @var list<array{Pointer<ZendArray>, string}> */
         public array $deferred_arrays = [],
->>>>>>> origin/claude/fix-memory-analysis-2WiRL
     ) {
     }
 }
