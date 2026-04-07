@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\TopReferenceContext;
 
 final class CollectedMemories
 {
@@ -25,7 +24,6 @@ final class CollectedMemories
         public MemoryLocations $compiler_arena_memory_locations,
         public int $cached_chunks_size,
         public MemoryLocations $memory_locations,
-        public ?TopReferenceContext $top_reference_context,
         public int $memory_get_usage_size,
         public int $memory_get_usage_real_size,
         public int $memory_get_peak_usage,

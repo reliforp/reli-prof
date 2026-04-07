@@ -19,14 +19,21 @@ final class ArrayElementsContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
+    private ?int $preset_count = null;
+
     public function __construct(
         public ZendArrayTableMemoryLocation $memory_location,
     ) {
     }
 
+    public function setCount(int $count): void
+    {
+        $this->preset_count = $count;
+    }
+
     public function getCount(): int
     {
-        return count($this->referencing_contexts);
+        return $this->preset_count ?? count($this->referencing_contexts);
     }
 
     public function getElementByKey(int|string $key): ReferenceContext|int|null

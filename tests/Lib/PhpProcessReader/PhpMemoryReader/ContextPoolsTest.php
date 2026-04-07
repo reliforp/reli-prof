@@ -18,7 +18,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLoc
 
 class ContextPoolsTest extends BaseTestCase
 {
-    public function testGetSentinelKeepsNodeIdsStableAcrossAddresses(): void
+    public function testDrainToAddressMapKeepsNodeIdsStableAcrossAddresses(): void
     {
         $pools = ContextPools::createDefault();
 
@@ -33,13 +33,10 @@ class ContextPoolsTest extends BaseTestCase
         $memo[$context_a] = 10;
         $memo[$context_b] = 20;
 
-        $pools->convertToSentinels($memo);
+        $address_map = [];
+        $pools->drainToAddressMap($memo, $address_map);
 
-        $sentinel_a = $pools->getSentinel(0x1000);
-        $sentinel_b = $pools->getSentinel(0x2000);
-
-        $this->assertSame(10, $sentinel_a);
-        $this->assertSame(20, $sentinel_b);
-        $this->assertSame(10, $pools->getSentinel(0x1000));
+        $this->assertSame(10, $address_map[0x1000]);
+        $this->assertSame(20, $address_map[0x2000]);
     }
 }

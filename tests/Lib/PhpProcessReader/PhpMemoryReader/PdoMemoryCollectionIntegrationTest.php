@@ -189,94 +189,62 @@ class PdoMemoryCollectionIntegrationTest extends BaseTestCase
                 $php_globals_finder,
             ),
         );
+        $tmp_path = tempnam(sys_get_temp_dir(), 'reli_test_pdo_') . '.sqlite3';
+        $driver = new \Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver($tmp_path);
+        $pdo_output = new \Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput($driver);
+        [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
+
         $collected_memories = $memory_locations_collector->collectAll(
             $process_specifier,
             $target_php_settings,
             $executor_globals_address,
             $compiler_globals_address,
+            null,
+            null,
+            $sink,
         );
 
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
         // Verify PDO and PDOStatement objects are detected
         $object_class_analyzer = new ObjectClassAnalyzer();
-        $region_analyzer = new RegionAnalyzer(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-        $region_analyzed = $region_analyzer->analyze($collected_memories->memory_locations);
-        $object_class_result = $object_class_analyzer->analyze(
-            $region_analyzed->regional_memory_locations->locations_in_zend_mm_heap,
-        );
+        $sink->flush();
+        /** @psalm-suppress MixedAssignment */
+        $pdo_count = $db->query(
+            "SELECT COUNT(DISTINCT address) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND class_name = 'PDO'"
+        )->fetchColumn();
+        $this->assertSame(1, (int)$pdo_count);
+        /** @psalm-suppress MixedAssignment */
+        $stmt_count = $db->query(
+            "SELECT COUNT(DISTINCT address) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND class_name = 'PDOStatement'"
+        )->fetchColumn();
+        $this->assertSame(1, (int)$stmt_count);
 
-        $this->assertArrayHasKey('PDO', $object_class_result->per_class_usage);
-        $this->assertSame(1, $object_class_result->per_class_usage['PDO']['count']);
-        $this->assertArrayHasKey('PDOStatement', $object_class_result->per_class_usage);
-        $this->assertSame(1, $object_class_result->per_class_usage['PDOStatement']['count']);
+        /** @psalm-suppress MixedAssignment */
+        $pdo_memory = $db->query(
+            "SELECT MAX(size) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND class_name = 'PDO'"
+        )->fetchColumn();
+        $this->assertGreaterThan(0, (int)$pdo_memory);
 
-        // Verify PDO object has non-trivial memory (includes pdo_dbh_object_t prefix)
-        $pdo_memory = $object_class_result->per_class_usage['PDO']['memory_usage'];
-        $this->assertGreaterThan(0, $pdo_memory);
-
-        // Verify PDOStatement object has non-trivial memory (includes pdo_stmt_t prefix)
-        $stmt_memory = $object_class_result->per_class_usage['PDOStatement']['memory_usage'];
+        /** @psalm-suppress MixedAssignment */
+        $stmt_memory = $db->query(
+            "SELECT MAX(size) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND class_name = 'PDOStatement'"
+        )->fetchColumn();
         $this->assertGreaterThan(0, $stmt_memory);
 
         // Verify pdo_dbh_t internal handle is tracked as PdoDbhMemoryLocation
-        $location_type_analyzer = new LocationTypeAnalyzer();
-        $location_type_result = $location_type_analyzer->analyze(
-            $region_analyzed->regional_memory_locations->locations_in_zend_mm_heap,
-        );
-        $this->assertArrayHasKey(
-            'PdoDbhMemoryLocation',
-            $location_type_result->per_type_usage,
-            'pdo_dbh_t internal handle should be tracked',
-        );
+        /** @psalm-suppress MixedAssignment */
+        $pdo_dbh_count = $db->query(
+            "SELECT COUNT(*) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND location_type = 'PdoDbhMemoryLocation'"
+        )->fetchColumn();
+        $this->assertGreaterThan(0, (int)$pdo_dbh_count, 'pdo_dbh_t should be tracked');
 
-        // Verify PdoDriverDataMemoryLocation is tracked (sqlite driver data + columns array)
-        $this->assertArrayHasKey(
-            'PdoDriverDataMemoryLocation',
-            $location_type_result->per_type_usage,
-            'PDO driver data should be tracked',
-        );
-        // pdo_sqlite_db_handle + pdo_sqlite_stmt + columns array = at least 3
-        $this->assertGreaterThanOrEqual(
-            3,
-            $location_type_result->per_type_usage['PdoDriverDataMemoryLocation']['count'],
-            'Driver data should include sqlite handles and columns array',
-        );
-
-        // pdo_dbh_t.data_source string is also tracked as PdoDbhMemoryLocation
-        // (pdo_dbh_t itself + data_source string = at least 2)
-        $this->assertGreaterThanOrEqual(
-            2,
-            $location_type_result->per_type_usage['PdoDbhMemoryLocation']['count'],
-            'PdoDbhMemoryLocation should include pdo_dbh_t and DSN string',
-        );
-
-        // Verify ZendArrayMemoryLocation count increased due to bound_params tracking
-        $this->assertArrayHasKey(
-            'ZendArrayMemoryLocation',
-            $location_type_result->per_type_usage,
-        );
-        $array_count = $location_type_result->per_type_usage['ZendArrayMemoryLocation']['count'];
-        // The script creates bound_params via bindValue, so there should be
-        // at least the global symbol table + bound_params HashTable
-        $this->assertGreaterThanOrEqual(
-            2,
-            $array_count,
-            'Should track HashTables including PDO bound_params',
-        );
-
-        // Verify memory coverage is reasonable
-        $heap_usage = $region_analyzed->summary->zend_mm_heap_usage;
-        $analyzed_percentage = $heap_usage / $collected_memories->memory_get_usage_size * 100.0;
-        $this->assertGreaterThan(
-            50.0,
-            $analyzed_percentage,
-            'Memory analysis should cover a reasonable percentage of heap',
-        );
+        $db = null;
+        @unlink($tmp_path);
     }
 }

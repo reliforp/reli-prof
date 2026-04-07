@@ -21,6 +21,9 @@ trait ReferenceContextDefault
     /** @var array<string, ReferenceContext|int> */
     private array $referencing_contexts = [];
 
+    /** @var list<MemoryLocation> */
+    private array $extra_locations = [];
+
     public function getName(): string
     {
         return (new \ReflectionClass(static::class))->getShortName();
@@ -29,6 +32,11 @@ trait ReferenceContextDefault
     public function add(string $link_name, ReferenceContext|int $reference_context): void
     {
         $this->referencing_contexts[$link_name] = $reference_context;
+    }
+
+    public function addLocation(MemoryLocation $location): void
+    {
+        $this->extra_locations[] = $location;
     }
 
     /** @return array<string, ReferenceContext|int> */
@@ -40,7 +48,7 @@ trait ReferenceContextDefault
     /** @return iterable<array-key, MemoryLocation> */
     public function getLocations(): iterable
     {
-        return [];
+        return $this->extra_locations;
     }
 
     public function getContexts(): iterable

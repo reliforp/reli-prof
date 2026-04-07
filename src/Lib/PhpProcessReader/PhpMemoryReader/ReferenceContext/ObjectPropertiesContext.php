@@ -17,11 +17,18 @@ final class ObjectPropertiesContext implements ReferenceContext
 {
     use ReferenceContextDefault;
 
+    private ?int $preset_count = null;
+
+    public function setCount(int $count): void
+    {
+        $this->preset_count = $count;
+    }
+
     #[\Override]
     public function getContexts(): iterable
     {
         return [
-            '#count' => count($this->referencing_contexts),
+            '#count' => $this->preset_count ?? count($this->referencing_contexts),
         ];
     }
 }
