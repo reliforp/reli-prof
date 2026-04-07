@@ -460,7 +460,12 @@ final class MemoryLocationsCollector
         while (!$queue->isEmpty()) {
             $job = $queue->pop();
             assert($job !== null);
-            $job->execute($ctx, $queue);
+            try {
+                $job->execute($ctx, $queue);
+            } catch (\Throwable) {
+                // Skip failed jobs (bad pointers, unmapped memory, etc.)
+                // and continue processing remaining queue
+            }
         }
 
         // Post-processing: memory limit violation real call stack recovery.
