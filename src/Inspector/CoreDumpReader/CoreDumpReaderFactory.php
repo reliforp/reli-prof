@@ -163,6 +163,9 @@ final class CoreDumpReaderFactory
              * @param NtFileEntry[] $file_maps
              * @param array<string, int> $coredump_offsets
              */
+            /** @var array<string, int> path => cached fd */
+            private array $fd_cache = [];
+
             public function __construct(
                 private ByteReaderInterface $core_dump_file,
                 private ProcessMemoryMap $process_memory_map,
@@ -173,22 +176,31 @@ final class CoreDumpReaderFactory
             ) {
             }
 
+            public function __destruct()
+            {
+                foreach ($this->fd_cache as $fd) {
+                    $this->libc_ffi->close($fd);
+                }
+            }
+
             private function readFile(string $path, int $offset, int $size): ?string
             {
-                /** @var int $fd */
-                $fd = $this->libc_ffi->open($path, 0); // O_RDONLY = 0
-                if ($fd < 0) {
-                    return null;
+                if (!isset($this->fd_cache[$path])) {
+                    /** @var int $fd */
+                    $fd = $this->libc_ffi->open($path, 0); // O_RDONLY = 0
+                    if ($fd < 0) {
+                        return null;
+                    }
+                    $this->fd_cache[$path] = $fd;
                 }
+                $fd = $this->fd_cache[$path];
                 $this->libc_ffi->lseek($fd, $offset, 0); // SEEK_SET = 0
                 $buf = FFIHelper::new("unsigned char[$size]");
                 if (is_null($buf)) {
-                    $this->libc_ffi->close($fd);
                     return null;
                 }
                 /** @var int $read_len */
                 $read_len = $this->libc_ffi->read($fd, $buf, $size);
-                $this->libc_ffi->close($fd);
                 if ($read_len < $size) {
                     return null;
                 }
