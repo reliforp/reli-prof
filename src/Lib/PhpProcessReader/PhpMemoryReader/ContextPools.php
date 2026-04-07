@@ -24,9 +24,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefin
 
 final class ContextPools
 {
-    /** @var array<int, int> address → node_id for cross-branch dedup */
-    private array $sentinels = [];
-
     public function __construct(
         public StringContextPool $string_context_pool,
         public ArrayContextPool $array_context_pool,
@@ -36,14 +33,6 @@ final class ContextPools
         public UserFunctionDefinitionContextPool $user_function_definition_context_pool,
         public ClosureContextPool $closure_context_pool = new ClosureContextPool(),
     ) {
-    }
-
-    /**
-     * Check if the given address was already emitted to DB in a previous branch.
-     */
-    public function getSentinel(int $address): ?int
-    {
-        return $this->sentinels[$address] ?? null;
     }
 
     public static function createDefault(): self
@@ -70,36 +59,47 @@ final class ContextPools
     }
 
     /**
-     * Convert pooled contexts to lightweight node_id placeholders (sentinels).
-     * Drains all entries from every pool and records their node_ids for
-     * cross-branch dedup.
+     * Drain all pool entries that have been emitted (exist in memo) and
+     * record their address→node_id mappings in the given map.
+     * Entries not yet emitted remain in the pool for later use.
      *
      * @param \WeakMap<ReferenceContext, int> $memo
+     * @param array<int, int> $address_map
      */
-    public function convertToSentinels(\WeakMap $memo): void
+    public function drainToAddressMap(\WeakMap $memo, array &$address_map): void
     {
-        $this->convertPoolToSentinels($this->string_context_pool->drainWithAddresses(), $memo);
-        $this->convertPoolToSentinels($this->array_context_pool->drainWithAddresses(), $memo);
-        $this->convertPoolToSentinels($this->object_context_pool->drainWithAddresses(), $memo);
-        $this->convertPoolToSentinels($this->php_reference_context_pool->drainWithAddresses(), $memo);
-        $this->convertPoolToSentinels($this->resource_context_pool->drainWithAddresses(), $memo);
-        $this->convertPoolToSentinels(
+        $this->drainPoolToAddressMap($this->string_context_pool->drainWithAddresses(), $memo, $address_map);
+        $this->drainPoolToAddressMap($this->array_context_pool->drainWithAddresses(), $memo, $address_map);
+        $this->drainPoolToAddressMap($this->object_context_pool->drainWithAddresses(), $memo, $address_map);
+        $this->drainPoolToAddressMap(
+            $this->php_reference_context_pool->drainWithAddresses(),
+            $memo,
+            $address_map,
+        );
+        $this->drainPoolToAddressMap($this->resource_context_pool->drainWithAddresses(), $memo, $address_map);
+        $this->drainPoolToAddressMap(
             $this->user_function_definition_context_pool->drainWithAddresses(),
             $memo,
+            $address_map,
         );
-        $this->convertPoolToSentinels($this->closure_context_pool->drainWithAddresses(), $memo);
+        $this->drainPoolToAddressMap($this->closure_context_pool->drainWithAddresses(), $memo, $address_map);
     }
 
     /**
      * @param iterable<int, ReferenceContext> $entries address => context
      * @param \WeakMap<ReferenceContext, int> $memo
+     * @param array<int, int> $address_map
      */
-    private function convertPoolToSentinels(iterable $entries, \WeakMap $memo): void
-    {
+    private function drainPoolToAddressMap(
+        iterable $entries,
+        \WeakMap $memo,
+        array &$address_map,
+    ): void {
         foreach ($entries as $address => $context) {
             $node_id = $memo[$context] ?? null;
             if ($node_id !== null) {
-                $this->sentinels[$address] = $node_id;
+                // Decode negative memo values (reserved but emitted)
+                $address_map[$address] = $node_id < 0 ? -$node_id - 1 : $node_id;
             }
         }
     }
