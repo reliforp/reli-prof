@@ -595,7 +595,38 @@ Desired display: global_variables[conn]->statementCache[0]
 
 ---
 
-## Bug 8: Case 14 heap percentage exceeds 100% (123.3%) — overlapping locations (MEDIUM)
+## Bug 11: empty_object false positive for stdClass and dynamic-property classes (MEDIUM)
+
+**Status:** Open.
+
+### Symptom
+
+`stdClass` (and any class using dynamic properties via `__set()`) is reported as
+`empty_object: N instances, no properties` even when instances have properties.
+
+### Root Cause
+
+`StructuralDedupPass::analyzeWithGraph()` (line 147-158) only checks
+`object_properties` children for property names. stdClass stores all properties in
+`dynamic_properties` (a separate child link), which is not examined. So `$props`
+is always empty for stdClass → `$is_empty = true` → false `empty_object` finding.
+
+```php
+// Current: only checks object_properties
+foreach ($this->substrate->getChildren($node_id) as $child) {
+    if ($this->lookupLinkName($link_stmt, $child) !== 'object_properties') {
+        continue;
+    }
+    // ... collects property names
+}
+// dynamic_properties is never checked
+```
+
+### Fix
+
+Also check the `dynamic_properties` child. If it has any children (array elements),
+the object is not empty. For prop_sig, include dynamic property names or a marker
+like `[dynamic:N]` to indicate N dynamic properties exist. Case 14 heap percentage exceeds 100% (123.3%) — overlapping locations (MEDIUM)
 
 **Status:** Open. Root cause identified.
 
