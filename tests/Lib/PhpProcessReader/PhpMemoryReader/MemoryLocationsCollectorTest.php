@@ -37,7 +37,6 @@ use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
 use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
 use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ArrayContextTreeSink;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\LocationTypeAnalyzer\LocationTypeAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ObjectClassAnalyzer\ObjectClassAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
@@ -215,11 +214,15 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $php_globals_finder
             )
         );
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
-            $compiler_globals_address
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
@@ -253,12 +256,6 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $region_analized->regional_memory_locations->locations_in_zend_mm_heap,
         );
         $this->assertSame(1, $object_class_analyzer_result->per_class_usage['A']['count']);
-        $context_analyzer = new ContextAnalyzer();
-        $sink = new ArrayContextTreeSink();
-        $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
-            $sink,
-        );
         $contexts_analyzed = $sink->getResult();
         $this->assertSame(
             'fgets',
@@ -685,20 +682,18 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $php_globals_finder
             )
         );
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
-            $compiler_globals_address
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
-        $context_analyzer = new ContextAnalyzer();
-        $sink = new ArrayContextTreeSink();
-        $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
-            $sink,
-        );
         $contexts_analyzed = $sink->getResult();
 
         // Verify that a generator with call_frames exists somewhere in the context tree
@@ -840,20 +835,18 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $php_globals_finder
             )
         );
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
-            $compiler_globals_address
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
-        $context_analyzer = new ContextAnalyzer();
-        $sink = new ArrayContextTreeSink();
-        $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
-            $sink,
-        );
         $contexts_analyzed = $sink->getResult();
 
         // Verify that a fiber with call_frames exists somewhere in the context tree
@@ -1012,6 +1005,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             )
         );
         $error = json_decode($error_json, true);
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
@@ -1021,54 +1015,42 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $error['file'],
                 $error['line'],
                 512
-            )
+            ),
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
-        $this->assertGreaterThan(
-            3,
-            $collected_memories->top_reference_context->call_frames->getFrameCount()
-        );
+        $contexts = $sink->getResult();
+        $call_frames = $contexts['call_frames'] ?? [];
+        // Count numeric frames
+        $frame_keys = array_filter(array_keys($call_frames), 'is_numeric');
+        $frame_count = count($frame_keys);
+        $this->assertGreaterThan(3, $frame_count);
         $this->assertSame(
             'f',
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
-                ->function_name
+            $call_frames['3']['function_name']
         );
         $this->assertSame(
             $php_version >= ZendTypeReader::V81 ? 16 : 15,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
-                ->lineno
+            $call_frames['3']['lineno']
         );
         $this->assertSame(
             0x1000,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(4)
-                ->getLocalVariable('var')
-                ->getElements()
-                ->getCount()
+            $call_frames['4']['local_variables']['var']['array_elements']['#count']
         );
         $this->assertSame(
             0x1000,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(5)
-                ->getLocalVariable('var')
-                ->getElements()
-                ->getCount()
+            $call_frames['5']['local_variables']['var']['array_elements']['#count']
         );
-        $last_frame = $collected_memories->top_reference_context->call_frames->getFrameCount() - 1;
+        $last_frame_key = (string)max(array_map('intval', $frame_keys));
         $this->assertSame(
             '<main>',
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt($last_frame)
-                ->function_name
+            $call_frames[$last_frame_key]['function_name']
         );
         $this->assertSame(
             18,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt($last_frame)
-                ->lineno
+            $call_frames[$last_frame_key]['lineno']
         );
     }
 
@@ -1207,6 +1189,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             )
         );
         $error = json_decode($error_json, true);
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
@@ -1216,54 +1199,41 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $error['file'],
                 $error['line'],
                 512
-            )
+            ),
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
-        $this->assertGreaterThan(
-            3,
-            $collected_memories->top_reference_context->call_frames->getFrameCount()
-        );
+        $contexts = $sink->getResult();
+        $call_frames = $contexts['call_frames'] ?? [];
+        $frame_keys = array_filter(array_keys($call_frames), 'is_numeric');
+        $frame_count = count($frame_keys);
+        $this->assertGreaterThan(3, $frame_count);
         $this->assertSame(
             'C::f',
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
-                ->function_name
+            $call_frames['3']['function_name']
         );
         $this->assertSame(
             $php_version >= ZendTypeReader::V81 ? 17 : 16,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
-                ->lineno
+            $call_frames['3']['lineno']
         );
         $this->assertSame(
             0x1000,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(4)
-                ->getLocalVariable('var')
-                ->getElements()
-                ->getCount()
+            $call_frames['4']['local_variables']['var']['array_elements']['#count']
         );
         $this->assertSame(
             0x1000,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(5)
-                ->getLocalVariable('var')
-                ->getElements()
-                ->getCount()
+            $call_frames['5']['local_variables']['var']['array_elements']['#count']
         );
-        $last_frame = $collected_memories->top_reference_context->call_frames->getFrameCount() - 1;
+        $last_frame_key = (string)max(array_map('intval', $frame_keys));
         $this->assertSame(
             '<main>',
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt($last_frame)
-                ->function_name
+            $call_frames[$last_frame_key]['function_name']
         );
         $this->assertSame(
             20,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt($last_frame)
-                ->lineno
+            $call_frames[$last_frame_key]['lineno']
         );
     }
 
@@ -1418,6 +1388,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             )
         );
         $error = json_decode($error_json, true);
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
@@ -1427,54 +1398,41 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $error['file'],
                 $error['line'],
                 512
-            )
+            ),
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_real_size);
-        $this->assertGreaterThan(
-            2,
-            $collected_memories->top_reference_context->call_frames->getFrameCount()
-        );
+        $contexts = $sink->getResult();
+        $call_frames = $contexts['call_frames'] ?? [];
+        $frame_keys = array_filter(array_keys($call_frames), 'is_numeric');
+        $frame_count = count($frame_keys);
+        $this->assertGreaterThan(2, $frame_count);
         $this->assertSame(
             'C::{closure}(/source:16-19)',
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
-                ->function_name
+            $call_frames['3']['function_name']
         );
         $this->assertSame(
             $php_version >= ZendTypeReader::V81 ? 18 : 17,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(3)
-                ->lineno
+            $call_frames['3']['lineno']
         );
         $this->assertSame(
             0x1000,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(4)
-                ->getLocalVariable('var')
-                ->getElements()
-                ->getCount()
+            $call_frames['4']['local_variables']['var']['array_elements']['#count']
         );
         $this->assertSame(
             0x1000,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt(5)
-                ->getLocalVariable('var')
-                ->getElements()
-                ->getCount()
+            $call_frames['5']['local_variables']['var']['array_elements']['#count']
         );
-        $last_frame = $collected_memories->top_reference_context->call_frames->getFrameCount() - 1;
+        $last_frame_key = (string)max(array_map('intval', $frame_keys));
         $this->assertSame(
             '<main>',
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt($last_frame)
-                ->function_name
+            $call_frames[$last_frame_key]['function_name']
         );
         $this->assertSame(
             23,
-            $collected_memories->top_reference_context->call_frames
-                ->getFrameAt($last_frame)
-                ->lineno
+            $call_frames[$last_frame_key]['lineno']
         );
     }
 
@@ -1577,21 +1535,17 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $php_globals_finder
             )
         );
-        $collected_memories = $memory_locations_collector->collectAll(
+        $sink = new ArrayContextTreeSink();
+        $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
             $compiler_globals_address,
             null,
             $basic_globals_address,
-        );
-
-        $context_analyzer = new ContextAnalyzer();
-        $sink = new ArrayContextTreeSink();
-        $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
             $sink,
         );
+
         return $sink->getResult();
     }
 
@@ -2202,20 +2156,18 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $php_globals_finder
             )
         );
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
-            $compiler_globals_address
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
-        $context_analyzer = new ContextAnalyzer();
-        $sink = new ArrayContextTreeSink();
-        $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
-            $sink,
-        );
         $contexts_analyzed = $sink->getResult();
 
         $found_weak_reference_with_referent = false;
@@ -2354,20 +2306,18 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $php_globals_finder
             )
         );
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
-            $compiler_globals_address
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
-        $context_analyzer = new ContextAnalyzer();
-        $sink = new ArrayContextTreeSink();
-        $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
-            $sink,
-        );
         $contexts_analyzed = $sink->getResult();
 
         $found_weak_map_with_entries = false;
@@ -2502,20 +2452,18 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 $php_globals_finder
             )
         );
+        $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
             new TargetPhpSettings(php_version: $php_version),
             $executor_globals_address,
-            $compiler_globals_address
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
         );
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
-        $context_analyzer = new ContextAnalyzer();
-        $sink = new ArrayContextTreeSink();
-        $context_analyzer->analyze(
-            $collected_memories->top_reference_context,
-            $sink,
-        );
         $contexts_analyzed = $sink->getResult();
 
         // Search for ResourceContext nodes with stream_type_label
