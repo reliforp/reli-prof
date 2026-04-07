@@ -921,12 +921,25 @@ Iterative job queue collector implemented (`claude/fix-memory-analysis-2WiRL`).
 EmitClassTableJob now expands static_properties. Coverage restored to 97.8%.
 `sessionstore->static_properties->sessions` correctly detected.
 
-**Case 14 (58.3%, was 94.3%) — PARTIALLY FIXED:**
-Bottleneck path now correct: `bootstrappers[0][1]->bindings`. cycle_cluster detected.
-22 findings (was 15). Coverage improved to 58.8% but still below the 94.3% of the
-previous (pre-iterative) implementation. DB shows `zend_mm_heap` region sum = 21 MB
-but `heap_usage` summary = 14.3 MB — overlap filtering may be over-removing, or
-some Closure-related objects not yet fully collected by the iterative jobs.
+**Case 14 (58.3%, was 94.3%) — ROOT CAUSE IDENTIFIED:**
+Overlap filtering (Bug 8 fix) removes ALL 27,600 ZendOpArrayHeaderMemoryLocation
+(6.7 MB) from the sum, but `memory_get_usage()` counts them as part of `zend_closure`.
+
+The issue: `ZendObjectMemoryLocation` for Closure = 344 B (`sizeof(zend_object)`),
+but the actual `zend_closure` struct is ~600 B (includes embedded `zend_function`).
+The op_array header (256 B) is recorded as a separate location at offset +56.
+Overlap filtering correctly identifies the containment but removes the op_array
+from the sum, leaving only 344 B per Closure while `memory_get_usage` counts ~600 B.
+
+**Proper fix:** Report Closure's `ZendObjectMemoryLocation` with `sizeof(zend_closure)`
+instead of `sizeof(zend_object)`. Then the op_array is already included in the object
+size, the separate `ZendOpArrayHeaderMemoryLocation` would be purely informational
+(or skipped), and overlap filtering doesn't affect the sum.
+
+**Quick fix:** For percentage calculation only, use raw dedup sum (address dedup but
+no overlap filtering). The >100% from Bug 8 was caused by same-address duplicates
+(multiple context paths), not by address-range overlaps. Address-range overlap
+filtering is correct for retained-size calculation but over-corrects the percentage.
 
 **Case 15 (memory_get_usage: 0 B) — STILL BROKEN:**
 Collector fails silently. 0 findings, empty output. Separate issue.
