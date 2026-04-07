@@ -620,16 +620,13 @@ The 1.6 MB difference is from ZendMM bin alignment (344 → 384 byte bin).
 ### Fix
 
 `RegionAnalyzer::filterOverlappingLocations()` already handles overlapping locations
-in non-streaming mode (sorted by address, skipping locations contained within the
-previous one). The same overlap filtering needs to be applied when computing region
-sums from the DB.
+in non-streaming mode — sort by address, skip locations contained within the preceding
+one. Apply the same overlap filtering when computing region sums from the DB:
 
-Option A: In `queryRegionSums`, sort by address and exclude locations that fall within
-a preceding location's address range (like `filterOverlappingLocations` does).
-
-Option B: Don't emit `ZendOpArrayHeaderMemoryLocation` for Closures when it's known
-to be embedded in the `zend_closure` struct — the parent `ZendObjectMemoryLocation`
-already covers the memory.
+In `queryRegionSums`, after deduplicating by address, sort by `(region, address)` and
+walk through sequentially, skipping any location whose address range falls within the
+previous location's range. This is the DB equivalent of `filterOverlappingLocations`
+and handles any embedded struct pattern generically (not just Closure op_arrays).
 
 ---
 
