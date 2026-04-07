@@ -80,14 +80,20 @@ final class CollectorHelpers
      * here (non-recursively) to match the original behavior. Since these are
      * typically small and don't form deep chains, the stack depth is bounded.
      */
+    /**
+     * @return array{FunctionDefinitionContext, list<array{\Reli\Lib\Process\Pointer\Pointer, string}>}
+     *   [context, deferred_arrays: [[pointer, link_name], ...]]
+     * @psalm-suppress all
+     */
     public static function collectZendFunction(
         ZendFunction $func,
         CollectorContext $ctx,
-    ): FunctionDefinitionContext {
+    ): array {
         if ($func->isUserFunction()) {
-            $function_definition_context = self::collectUserFunctionDefinition($func, $ctx);
+            [$function_definition_context, $deferred] = self::collectUserFunctionDefinition($func, $ctx);
         } else {
             $function_definition_context = new InternalFunctionDefinitionContext();
+            $deferred = [];
         }
         if (!is_null($func->function_name)) {
             $function_name_context = self::collectZendStringPointer(
@@ -96,16 +102,20 @@ final class CollectorHelpers
             );
             $function_definition_context->add('name', $function_name_context);
         }
-        return $function_definition_context;
+        return [$function_definition_context, $deferred];
     }
 
     /**
      * @param Pointer<ZendFunction> $pointer
      */
+    /**
+     * @psalm-suppress all
+     * @return mixed
+     */
     public static function collectZendFunctionPointer(
         Pointer $pointer,
         CollectorContext $ctx,
-    ): FunctionDefinitionContext|int {
+    ): mixed {
         $address = $pointer->address;
         if ($ctx->memory_locations->has($address)) {
             $existing_node_id = $ctx->address_map[$address] ?? null;
@@ -121,10 +131,16 @@ final class CollectorHelpers
         return self::collectZendFunction($func, $ctx);
     }
 
+    /**
+     * @return array{UserFunctionDefinitionContext, list<array{\Reli\Lib\Process\Pointer\Pointer, string}>}
+     * @psalm-suppress all
+     */
     private static function collectUserFunctionDefinition(
         ZendFunction $func,
         CollectorContext $ctx,
-    ): UserFunctionDefinitionContext {
+    ): array {
+        /** @var list<array{\Reli\Lib\Process\Pointer\Pointer, string}> */
+        $deferred_arrays = [];
         $function_name = $func->getFullyQualifiedFunctionName(
             $ctx->dereferencer,
             $ctx->zend_type_reader,
@@ -209,8 +225,10 @@ final class CollectorHelpers
         // These don't participate in the deep recursive chain (they're typically small).
         // We keep them as direct calls to avoid complexity.
         if (!is_null($func->op_array->static_variables)) {
-            // Static variables are collected as a direct array (may contain objects/arrays
-            // but this happens inside function definitions, not in the main recursive chain)
+            // Defer static_variables array processing — it may contain
+            // object/array references that need the job queue.
+            // The caller will push EmitArrayJob after emitting this context.
+            $deferred_arrays[] = [$func->op_array->static_variables, 'static_variables'];
         }
 
         if (!is_null($func->op_array->vars)) {
@@ -249,11 +267,12 @@ final class CollectorHelpers
                 $ctx->zend_type_reader,
             );
             foreach ($dynamic_func_defs_iterator as $key => $dynamic_func_def) {
-                $dynamic_function_context = self::collectZendFunctionPointer(
-                    $dynamic_func_def,
-                    $ctx,
-                );
-                $dynamic_func_defs_context->add((string)$key, $dynamic_function_context);
+                $result = self::collectZendFunctionPointer($dynamic_func_def, $ctx);
+                if (is_int($result)) {
+                    $dynamic_func_defs_context->add((string)$key, $result);
+                } else {
+                    $dynamic_func_defs_context->add((string)$key, $result[0]);
+                }
             }
             $op_array_context->add('dynamic_function_definitions', $dynamic_func_defs_context);
         }
@@ -276,6 +295,6 @@ final class CollectorHelpers
             }
         }
 
-        return $function_definition_context;
+        return [$function_definition_context, $deferred_arrays];
     }
 }
