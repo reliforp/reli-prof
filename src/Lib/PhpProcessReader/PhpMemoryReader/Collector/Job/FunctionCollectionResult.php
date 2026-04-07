@@ -15,6 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FunctionDefinitionContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
@@ -24,11 +25,11 @@ use Reli\Lib\Process\Pointer\Pointer;
 final class FunctionCollectionResult
 {
     /**
-     * @param list<array{Pointer<ZendArray>, string}> $deferred_arrays
+     * @param list<array{Pointer<ZendArray>, string, ReferenceContext}> $deferred_arrays
      */
     public function __construct(
         public FunctionDefinitionContext $context,
-        /** @var list<array{Pointer<ZendArray>, string}> */
+        /** @var list<array{Pointer<ZendArray>, string, ReferenceContext}> */
         public array $deferred_arrays = [],
     ) {
     }

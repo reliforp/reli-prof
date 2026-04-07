@@ -221,7 +221,7 @@ final class CollectorHelpers
             // Defer static_variables array processing — it may contain
             // object/array references that need the job queue.
             // The caller will push EmitArrayJob after emitting this context.
-            $deferred_arrays[] = [$func->op_array->static_variables, 'static_variables'];
+            $deferred_arrays[] = [$func->op_array->static_variables, 'static_variables', $op_array_context];
         }
 
         if (!is_null($func->op_array->vars)) {

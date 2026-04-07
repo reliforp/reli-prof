@@ -235,16 +235,14 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             'ResourceContext',
             $contexts_analyzed['call_frames']['0']['local_variables']['$args_to_internal_function[0]']['#type']
         );
-        // In iterative collector, object_properties #count may be 0 since
-        // properties are emitted by iterator jobs after the context is emitted.
-        // Verify properties exist via the result key.
-        $this->assertNotNull(
+        $this->assertSame(
+            1,
             $contexts_analyzed
             ['call_frames']
             ['1']
             ['this']
             ['object_properties']
-            ?? null
+            ['#count']
         );
         $this->assertSame(
             42,
@@ -313,10 +311,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             '/** function doc_comment */',
             $contexts_analyzed['class_table']['a']['methods']['wait']['op_array']['doc_comment']['#locations'][0]->value
         );
-        // In iterative collector, #count may be 0 since array elements
-        // are emitted by iterator jobs after the context is emitted.
-        // Just verify static_variables exists.
-        $this->assertNotNull(
+        $this->assertSame(
+            1,
             $contexts_analyzed
             ['class_table']
             ['a']
@@ -324,7 +320,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ['wait']
             ['op_array']
             ['static_variables']
-            ?? null
+            ['array_elements']
+            ['#count']
         );
         $this->assertSame(
             0xdeadbeef,

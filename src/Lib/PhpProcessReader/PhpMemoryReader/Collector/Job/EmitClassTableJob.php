@@ -203,8 +203,8 @@ final class EmitClassTableJob implements CollectorJob
         [$methods_context, $method_results] = $this->collectFunctionTableInline($methods_array, $ctx);
         $class_definition_context->add('methods', $methods_context);
         foreach ($method_results as $r) {
-            foreach ($r->deferred_arrays as [$arr_pointer, $arr_link]) {
-                $deferred_zvals[] = [$r->context, $arr_link, $arr_pointer];
+            foreach ($r->deferred_arrays as [$arr_pointer, $arr_link, $parent_ctx]) {
+                $deferred_zvals[] = [$parent_ctx, $arr_link, $arr_pointer];
             }
         }
 

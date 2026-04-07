@@ -98,6 +98,13 @@ final class EmitObjectJob implements CollectorJob
 
         // Create properties context and add to object
         $object_properties_context = new ObjectPropertiesContext();
+        if ($object->ce !== null) {
+            try {
+                $ce = $ctx->dereferencer->deref($object->ce);
+                $object_properties_context->setCount($ce->default_properties_count);
+            } catch (\Throwable) {
+            }
+        }
         $object_context->add('object_properties', $object_properties_context);
 
         // PDO/PDOStatement handling (must be before emit so locations are included)
