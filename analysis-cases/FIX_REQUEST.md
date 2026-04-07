@@ -1264,3 +1264,18 @@ Add header definitions for `pdo_column_data` and follow pointers from `pdo_stmt_
 
 The `columns` array is the main missing piece — it's a C-level `emalloc` not visible
 as a PHP-level property.
+
+### Status after PDO columns tracking
+
+`PdoStatementColumnsMemoryLocation` now tracked (96 KB for 2000 stmts). Column name
+strings also tracked. But coverage remains 92.7% — gap is 294 KB (147 B/stmt).
+
+`execute()` + `fetch()` adds ~576 B/stmt to `memory_get_usage` (confirmed by test).
+Of that, reli-prof now tracks ~429 B/stmt. Remaining 147 B/stmt may be:
+- `pdo_stmt_t->bound_columns` (column binding metadata after fetch)
+- Internal SQLite emalloc for compiled statement (`sqlite3_stmt`)
+- `pdo_bound_param_data` copies from execute-time parameter binding
+
+Note: `bound_params` support exists but Case 9 uses `execute(['id' => N])` (inline
+binding, not `bindParam()`), so `bound_params` HashTable may not be populated
+persistently.
