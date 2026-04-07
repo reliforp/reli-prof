@@ -917,16 +917,19 @@ streaming traversal would simplify the codebase.
 Iterative job queue collector implemented (`claude/fix-memory-analysis-2WiRL`).
 10/15 cases work well, but 3 regressions remain:
 
-**Case 11 (13.1% coverage, was 97.8%) and Case 14 (58.3%, was 94.3%):**
-class_table static_properties not expanded. `SessionStore::$sessions` (Case 11)
-and `Application::$bootstrappers` (Case 14) are only reachable via
-`class_table → ClassName → static_properties → ...`. The iterative DFS job for
-class_table is not pushing jobs to expand the contents of static properties
-(arrays, objects inside them). DB confirms: SessionStore not in
-context_node_locations at all, `heap_usage` = 411 KB vs `memory_get_usage` = 3.15 MB.
+**Case 11 (13.1% coverage, was 97.8%) — FIXED:**
+EmitClassTableJob now expands static_properties. Coverage restored to 97.8%.
+`sessionstore->static_properties->sessions` correctly detected.
 
-Bottleneck path falls back to `class_table->intlchar->constants->BLOCK_CODE_...`
-(intl extension constant) because the actual heavy data is never collected.
+**Case 14 (58.3%, was 94.3%) — PARTIALLY FIXED:**
+Bottleneck path now correct: `bootstrappers[0][1]->bindings`. cycle_cluster detected.
+22 findings (was 15). Coverage improved to 58.8% but still below the 94.3% of the
+previous (pre-iterative) implementation. DB shows `zend_mm_heap` region sum = 21 MB
+but `heap_usage` summary = 14.3 MB — overlap filtering may be over-removing, or
+some Closure-related objects not yet fully collected by the iterative jobs.
+
+**Case 15 (memory_get_usage: 0 B) — STILL BROKEN:**
+Collector fails silently. 0 findings, empty output. Separate issue.
 
 **Case 15 (memory_get_usage: 0 B):**
 Collector appears to fail silently. DB file is 168 MB but summary shows all zeros.
