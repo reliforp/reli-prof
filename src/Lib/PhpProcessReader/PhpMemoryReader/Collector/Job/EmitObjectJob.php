@@ -100,6 +100,14 @@ final class EmitObjectJob implements CollectorJob
         $object_properties_context = new ObjectPropertiesContext();
         $object_context->add('object_properties', $object_properties_context);
 
+        // PDO/PDOStatement handling (must be before emit so locations are included)
+        $this->handlePdoClasses(
+            $object,
+            $object_location->class_name,
+            $ctx,
+            $object_context,
+        );
+
         // Emit the object node
         $object_node_id = $ctx->emitNode(
             $object_context,
@@ -147,14 +155,6 @@ final class EmitObjectJob implements CollectorJob
                 'dynamic_properties',
             ));
         }
-
-        // PDO/PDOStatement handling (inline, does not push recursive jobs)
-        $this->handlePdoClasses(
-            $object,
-            $object_location->class_name,
-            $ctx,
-            $object_context,
-        );
 
         // Properties iterator job (processed first = DFS into properties)
         $queue->push(new ObjectPropertiesIteratorJob(
