@@ -36,6 +36,7 @@ final class EmitFunctionTableJob implements CollectorJob
     }
 
     #[\Override]
+    /** @psalm-suppress all */
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
         $array_header_location = ZendArrayMemoryLocation::fromZendArray($this->array);
@@ -54,16 +55,34 @@ final class EmitFunctionTableJob implements CollectorJob
             $array_table_location,
         );
 
+        /** @var list<array{mixed, string, list<array{\Reli\Lib\Process\Pointer\Pointer, string}>}> */
+        $deferred_all = [];
         foreach ($this->array->getItemIterator($ctx->dereferencer) as $function_name => $zval) {
             assert(is_string($function_name));
             assert(!is_null($zval->value->func));
-            $function_context = CollectorHelpers::collectZendFunctionPointer(
-                $zval->value->func,
-                $ctx,
-            );
-            $defined_functions_context->add($function_name, $function_context);
+            $result = CollectorHelpers::collectZendFunctionPointer($zval->value->func, $ctx);
+            if (is_int($result)) {
+                $defined_functions_context->add($function_name, $result);
+            } else {
+                [$fc, $deferred] = $result;
+                $defined_functions_context->add($function_name, $fc);
+                if ($deferred !== []) {
+                    $deferred_all[] = [$fc, $function_name, $deferred];
+                }
+            }
         }
 
         $ctx->emitNode($defined_functions_context, $this->parent_node_id, $this->link_name);
+
+        // Push deferred static_variables arrays
+        foreach ($deferred_all as [$fc, $_name, $arrays]) {
+            $fc_node_id = $ctx->memo[$fc] ?? null;
+            if ($fc_node_id !== null) {
+                $fc_node_id = $fc_node_id < 0 ? -$fc_node_id - 1 : $fc_node_id;
+            }
+            foreach ($arrays as [$arr_pointer, $arr_link]) {
+                $queue->push(new EmitArrayJob($arr_pointer, $fc_node_id, $arr_link));
+            }
+        }
     }
 }

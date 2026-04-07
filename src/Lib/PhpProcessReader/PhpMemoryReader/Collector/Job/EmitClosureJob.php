@@ -42,6 +42,7 @@ final class EmitClosureJob implements CollectorJob
     }
 
     #[\Override]
+    /** @psalm-suppress all */
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
         $closure_address = $this->zend_closure->getPointer()->address;
@@ -55,7 +56,7 @@ final class EmitClosureJob implements CollectorJob
         $ctx->context_pools->closure_context_pool->register($closure_address, $closure_context);
 
         // Collect the function definition (this is not recursive, it's a leaf-like operation)
-        $func_context = CollectorHelpers::collectZendFunction(
+        [$func_context, $deferred_arrays] = CollectorHelpers::collectZendFunction(
             $ctx->dereferencer->deref($this->zend_closure->func->getPointer()),
             $ctx,
         );
@@ -63,6 +64,15 @@ final class EmitClosureJob implements CollectorJob
 
         // Emit the closure context
         $closure_node_id = $ctx->emitNode($closure_context, $this->object_node_id, 'closure');
+
+        // Push deferred static_variables arrays
+        foreach ($deferred_arrays as [$arr_pointer, $arr_link]) {
+            $func_node_id = $ctx->memo[$func_context] ?? null;
+            if ($func_node_id !== null) {
+                $func_node_id = $func_node_id < 0 ? -$func_node_id - 1 : $func_node_id;
+            }
+            $queue->push(new EmitArrayJob($arr_pointer, $func_node_id, $arr_link));
+        }
 
         // Push job for this_ptr (may reference objects = recursive)
         $queue->push(new ResolveZvalJob(
