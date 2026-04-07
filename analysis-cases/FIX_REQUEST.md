@@ -936,6 +936,18 @@ instead of `sizeof(zend_object)`. Then the op_array is already included in the o
 size, the separate `ZendOpArrayHeaderMemoryLocation` would be purely informational
 (or skipped), and overlap filtering doesn't affect the sum.
 
+**Current blocker:** The fix in `ZendObjectMemoryLocation::fromZendObject()` calls
+`$zend_type_reader->sizeOf('zend_closure')`, but the header file (`v84.h`) defines
+`zend_closure` as an **empty struct** with no members:
+```c
+typedef struct _zend_closure {
+} zend_closure;
+```
+This makes `sizeOf('zend_closure')` return 0 and `getOffsetAndSizeOfMember('zend_closure', 'std')`
+fail. The code falls through to the `else` branch using `getMemorySize()` = 344
+(sizeof(zend_object)). The header definitions need the full `zend_closure` struct
+including at minimum `zend_object std` and `zend_function func` members.
+
 **Quick fix:** For percentage calculation only, use raw dedup sum (address dedup but
 no overlap filtering). The >100% from Bug 8 was caused by same-address duplicates
 (multiple context paths), not by address-range overlaps. Address-range overlap
