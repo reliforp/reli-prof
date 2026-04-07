@@ -1112,14 +1112,29 @@ embedded arrays, include the array header in the reconstructed location:
 use the ZendArrayMemoryLocation address and add header size to the total.
 
 **Note:** The previous 99.9% result (with full MemoryLocations + RegionAnalyzer)
-was likely from error cancellation, not precise calculation. RegionAnalyzer
-computed `getOverhead` for ZendArrayMemoryLocation headers independently
-(returning `bin_size(56) - 56`), but on an embedded array the page's bin info
-covers the full header+table allocation, so `bin_size` returned the allocation
-size, not the 64-byte bin. This produced an over-large overhead for headers
-that happened to cancel out the under-counted table overhead. The current
-94-98% with inline overhead is likely closer to correct — the remaining gap
-is the structural limitation of not knowing which arrays are embedded.
+was likely from error cancellation, not precise calculation.
+
+**Remaining 1.2% gap root cause identified:** `computeBinOverhead` produces invalid
+bin sizes that don't match ZendMM's actual bin table. Examples from Case 2:
+
+```
+bin=72 (243 items)   ← ZendMM has no 72B bin (64→80)
+bin=88 (81 items)    ← no 88B bin (80→96)
+bin=104 (3,307 items) ← no 104B bin (96→112)
+bin=120 (9 items)    ← no 120B bin (112→128)
+bin=136 (4 items)    ← no 136B bin (128→160)
+```
+
+Also, 6,561 items with size=136 have overhead=0, but 136 is not a valid bin —
+real bin is 160, so overhead should be 24.
+
+The pattern (72, 88, 104, 120, 136) is 8-byte aligned increments, suggesting
+the bin lookup is rounding up to 8-byte alignment instead of using ZendMM's
+actual bin table (8,16,24,32,40,48,56,64,80,96,112,128,160,192,...).
+
+`getOverhead` uses page info from the chunk map to determine bin size. If the
+page info returns the wrong bin size, all overhead calculations for that page
+are wrong. This could be a page classification issue or a bin table mismatch.
 
 ---
 
