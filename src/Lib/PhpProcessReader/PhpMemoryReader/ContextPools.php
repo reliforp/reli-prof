@@ -70,25 +70,24 @@ final class ContextPools
     }
 
     /**
-     * Convert emitted pooled contexts to lightweight node_id placeholders.
-     * Only drains entries that have been emitted (have a node_id in memo).
-     * Entries not yet emitted are kept in the pool so they can be emitted
-     * later and their node_ids stored correctly.
+     * Convert pooled contexts to lightweight node_id placeholders (sentinels).
+     * Drains all entries from every pool and records their node_ids for
+     * cross-branch dedup.
      *
      * @param \WeakMap<ReferenceContext, int> $memo
      */
     public function convertToSentinels(\WeakMap $memo): void
     {
-        $this->convertPoolToSentinels($this->string_context_pool->drainEmittedWithAddresses($memo), $memo);
-        $this->convertPoolToSentinels($this->array_context_pool->drainEmittedWithAddresses($memo), $memo);
-        $this->convertPoolToSentinels($this->object_context_pool->drainEmittedWithAddresses($memo), $memo);
-        $this->convertPoolToSentinels($this->php_reference_context_pool->drainEmittedWithAddresses($memo), $memo);
-        $this->convertPoolToSentinels($this->resource_context_pool->drainEmittedWithAddresses($memo), $memo);
+        $this->convertPoolToSentinels($this->string_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->array_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->object_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->php_reference_context_pool->drainWithAddresses(), $memo);
+        $this->convertPoolToSentinels($this->resource_context_pool->drainWithAddresses(), $memo);
         $this->convertPoolToSentinels(
-            $this->user_function_definition_context_pool->drainEmittedWithAddresses($memo),
+            $this->user_function_definition_context_pool->drainWithAddresses(),
             $memo,
         );
-        $this->convertPoolToSentinels($this->closure_context_pool->drainEmittedWithAddresses($memo), $memo);
+        $this->convertPoolToSentinels($this->closure_context_pool->drainWithAddresses(), $memo);
     }
 
     /**

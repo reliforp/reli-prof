@@ -166,59 +166,6 @@ final class MemoryLocationsCollector
     private ?\WeakMap $streaming_memo = null;
     private ?ContextPools $streaming_context_pools = null;
 
-    /**
-     * When true, collectZendObjectPointer skips deep recursion for unseen
-     * objects, deferring them to the objects_store bucket loop. This prevents
-     * deep object graph traversal from within a single bucket.
-     */
-    private bool $defer_unseen_objects = false;
-
-    /**
-     * Edges deferred during objects_store collection. Each entry records
-     * a property reference to an object that was not yet collected.
-     * After all objects are collected, these are resolved via the sentinel
-     * map and emitted as reference edges.
-     *
-     * @var list<array{int, int, string, string}> [parent_node_id, child_address, link_name, pointer_type]
-     */
-    private array $deferred_object_edges = [];
-
-    /**
-     * Closure objects collected shallowly during objects_store (defer mode).
-     * Their collectClosure() was skipped. Resolved after all phases complete.
-     *
-     * @var list<int> ZendObject pointer addresses
-     */
-    private array $deferred_closure_addresses = [];
-
-    /**
-     * Generator objects collected shallowly during objects_store (defer mode).
-     * Their collectGenerator() was skipped. Resolved after all phases complete.
-     *
-     * @var list<int> ZendObject pointer addresses
-     */
-    private array $deferred_generator_addresses = [];
-
-    /**
-     * Fiber objects collected shallowly during objects_store (defer mode).
-     * Their collectFiber() was skipped. Resolved after all phases complete.
-     *
-     * @var list<int> ZendObject pointer addresses
-     */
-    private array $deferred_fiber_addresses = [];
-
-    /**
-     * The node_id of the innermost streaming parent that is currently
-     * being populated. Used by defer logic to record edges.
-     */
-    private ?int $current_streaming_parent_node_id = null;
-
-    /**
-     * The link name under which the current child is being collected.
-     * Used by defer logic to record the correct edge name.
-     */
-    private ?string $current_streaming_link_name = null;
-
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
@@ -227,10 +174,7 @@ final class MemoryLocationsCollector
     }
 
     /**
-     * In streaming mode, convert emitted pool entries to sentinels.
-     * Only entries that have been emitted (present in memo) are drained;
-     * unemitted entries (e.g. the current object being constructed) are
-     * kept in the pool so they can be emitted later and get sentinels.
+     * In streaming mode, convert pool entries to sentinels and release them.
      */
     private function flushPoolsIfStreaming(): void
     {
@@ -510,12 +454,11 @@ final class MemoryLocationsCollector
         $zend_constants = $dereferencer->deref($eg->zend_constants);
 
         if ($sink !== null && $analyzer !== null && $memo !== null) {
-            // Streaming mode: collect objects_store, function_table, and
-            // class_table BEFORE global_variables and call_frames. This
-            // populates the sentinel map so later phases hit sentinels
-            // instead of recursively expanding the object graph.
-            $objects_store_context = $this->collectObjectsStore(
-                $eg->objects_store,
+            // Streaming mode: traverse in natural order (same as non-streaming).
+            // call_frames first, objects_store last. Dedup is handled by
+            // memory_locations->has() and pool getContextByAddress().
+            $call_frames_context = $this->collectCallFrames(
+                $eg,
                 $cg->map_ptr_base,
                 $dereferencer,
                 $zend_type_reader,
@@ -523,15 +466,36 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
-            $analyzer->analyzeSingleLink(
-                'objects_store',
-                $objects_store_context,
-                $sink,
-                null,
-                $memo,
-                EdgeStrength::Weak,
+
+            if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
+                $call_frames_context = $this->collectRealCallStackOnMemoryLimitViolation(
+                    $this->memory_limit_error_function_context,
+                    $memory_limit_error_details->max_challenge_depth,
+                    $call_frames_context,
+                    $eg,
+                    $cg->map_ptr_base,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $memory_locations,
+                    $context_pools,
+                );
+            }
+
+            $analyzer->analyzeSingleLink('call_frames', $call_frames_context, $sink, null, $memo);
+            unset($call_frames_context);
+            $context_pools->convertToSentinels($memo);
+
+            $global_variables_context = $this->collectGlobalVariables(
+                $eg->symbol_table,
+                $cg->map_ptr_base,
+                $dereferencer,
+                $zend_type_reader,
+                $memory_locations,
+                $context_pools,
+                $memory_limit_error_details,
             );
-            unset($objects_store_context);
+            $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
+            unset($global_variables_context);
             $context_pools->convertToSentinels($memo);
 
             $defined_functions_context = $this->collectFunctionTable(
@@ -558,19 +522,6 @@ final class MemoryLocationsCollector
             );
             $analyzer->analyzeSingleLink('class_table', $defined_classes_context, $sink, null, $memo);
             unset($defined_classes_context);
-            $context_pools->convertToSentinels($memo);
-
-            $global_variables_context = $this->collectGlobalVariables(
-                $eg->symbol_table,
-                $cg->map_ptr_base,
-                $dereferencer,
-                $zend_type_reader,
-                $memory_locations,
-                $context_pools,
-                $memory_limit_error_details,
-            );
-            $analyzer->analyzeSingleLink('global_variables', $global_variables_context, $sink, null, $memo);
-            unset($global_variables_context);
             $context_pools->convertToSentinels($memo);
 
             $global_constants_context = $this->collectGlobalConstants(
@@ -622,8 +573,8 @@ final class MemoryLocationsCollector
             unset($modules_context);
             $context_pools->convertToSentinels($memo);
 
-            $call_frames_context = $this->collectCallFrames(
-                $eg,
+            $objects_store_context = $this->collectObjectsStore(
+                $eg->objects_store,
                 $cg->map_ptr_base,
                 $dereferencer,
                 $zend_type_reader,
@@ -631,192 +582,16 @@ final class MemoryLocationsCollector
                 $context_pools,
                 $memory_limit_error_details,
             );
-
-            if ($memory_limit_error_details and !is_null($this->memory_limit_error_function_context)) {
-                $call_frames_context = $this->collectRealCallStackOnMemoryLimitViolation(
-                    $this->memory_limit_error_function_context,
-                    $memory_limit_error_details->max_challenge_depth,
-                    $call_frames_context,
-                    $eg,
-                    $cg->map_ptr_base,
-                    $dereferencer,
-                    $zend_type_reader,
-                    $memory_locations,
-                    $context_pools,
-                );
-            }
-
-            $analyzer->analyzeSingleLink('call_frames', $call_frames_context, $sink, null, $memo);
-            unset($call_frames_context);
+            $analyzer->analyzeSingleLink(
+                'objects_store',
+                $objects_store_context,
+                $sink,
+                null,
+                $memo,
+                EdgeStrength::Weak,
+            );
+            unset($objects_store_context);
             $context_pools->convertToSentinels($memo);
-
-            // Resolve deferred edges from objects_store shallow collection.
-            // By now most addresses have sentinels from all phases.
-            // For remaining unresolved addresses (only reachable from
-            // objects_store properties), collect them now with defer off.
-            $this->defer_unseen_objects = false;
-            $remaining_deferred = [];
-            foreach ($this->deferred_object_edges as [$parent_node_id, $child_address, $link_name, $pointer_type]) {
-                $child_node_id = $context_pools->getSentinel($child_address);
-                if ($child_node_id !== null) {
-                    $sink->emitReference($child_node_id, $parent_node_id, $link_name);
-                    continue;
-                }
-                // Not resolved — collect it now
-                $remaining_deferred[] = [$parent_node_id, $child_address, $link_name, $pointer_type];
-            }
-            $this->deferred_object_edges = [];
-
-            // Collect unresolved deferred targets (arrays/objects/references
-            // only reachable from object properties). Defer is off, so they
-            // will be fully expanded. Each is emitted as a child of the
-            // original parent.
-            foreach ($remaining_deferred as [$parent_node_id, $child_address, $link_name, $pointer_type]) {
-                $child_node_id = $context_pools->getSentinel($child_address);
-                if ($child_node_id !== null) {
-                    $sink->emitReference($child_node_id, $parent_node_id, $link_name);
-                    continue;
-                }
-                $child_context = match ($pointer_type) {
-                    'array' => $this->collectZendArrayPointer(
-                        new Pointer(ZendArray::class, $child_address, $zend_type_reader->sizeOf('zend_array')),
-                        $cg->map_ptr_base, $memory_locations, $dereferencer,
-                        $zend_type_reader, $context_pools, $memory_limit_error_details,
-                    ),
-                    'object' => $this->collectZendObjectPointer(
-                        new Pointer(ZendObject::class, $child_address, $zend_type_reader->sizeOf('zend_object')),
-                        $cg->map_ptr_base, $memory_locations, $dereferencer,
-                        $zend_type_reader, $context_pools, $memory_limit_error_details,
-                    ),
-                    'reference' => $this->collectPhpReferencePointer(
-                        new Pointer(ZendReference::class, $child_address, $zend_type_reader->sizeOf('zend_reference')),
-                        $cg->map_ptr_base, $memory_locations, $dereferencer,
-                        $zend_type_reader, $context_pools, $memory_limit_error_details,
-                    ),
-                    default => null,
-                };
-                if ($child_context instanceof ReferenceContext) {
-                    $analyzer->analyzeSingleLink($link_name, $child_context, $sink, $parent_node_id, $memo);
-                    $context_pools->convertToSentinels($memo);
-                } elseif (is_int($child_context)) {
-                    $sink->emitReference($child_context, $parent_node_id, $link_name);
-                }
-            }
-
-            // Resolve deferred Closure objects: during objects_store with
-            // defer, collectClosure() was skipped. Now collect this_ptr/func
-            // and emit as children of the Closure's ObjectContext node.
-            foreach ($this->deferred_closure_addresses as $closure_address) {
-                $closure_node_id = $context_pools->getSentinel($closure_address);
-                if ($closure_node_id === null) {
-                    continue;
-                }
-                $closure_pointer = ZendClosure::getPointerFromZendObjectPointer(
-                    new Pointer(
-                        ZendObject::class,
-                        $closure_address,
-                        $zend_type_reader->sizeOf('zend_object'),
-                    ),
-                    $zend_type_reader,
-                );
-                try {
-                    $zend_closure = $dereferencer->deref($closure_pointer);
-                    $closure_context = $this->collectClosure(
-                        $zend_closure,
-                        $cg->map_ptr_base,
-                        $dereferencer,
-                        $zend_type_reader,
-                        $memory_locations,
-                        $context_pools,
-                        $memory_limit_error_details,
-                    );
-                    $analyzer->analyzeSingleLink(
-                        'closure',
-                        $closure_context,
-                        $sink,
-                        $closure_node_id,
-                        $memo,
-                    );
-                    $context_pools->convertToSentinels($memo);
-                } catch (\Throwable) {
-                    // Skip closures that can't be dereferenced
-                }
-            }
-            $this->deferred_closure_addresses = [];
-
-            // Resolve deferred Generator objects
-            foreach ($this->deferred_generator_addresses as $gen_address) {
-                $gen_node_id = $context_pools->getSentinel($gen_address);
-                if ($gen_node_id === null) {
-                    continue;
-                }
-                try {
-                    $gen_pointer = ZendGenerator::getPointerFromZendObjectPointer(
-                        new Pointer(
-                            ZendObject::class,
-                            $gen_address,
-                            $zend_type_reader->sizeOf('zend_object'),
-                        ),
-                        $zend_type_reader,
-                    );
-                    $generator_context = $this->collectGenerator(
-                        $dereferencer->deref($gen_pointer),
-                        $cg->map_ptr_base,
-                        $dereferencer,
-                        $zend_type_reader,
-                        $memory_locations,
-                        $context_pools,
-                        $memory_limit_error_details,
-                    );
-                    $analyzer->analyzeSingleLink(
-                        'generator',
-                        $generator_context,
-                        $sink,
-                        $gen_node_id,
-                        $memo,
-                    );
-                    $context_pools->convertToSentinels($memo);
-                } catch (\Throwable) {
-                }
-            }
-            $this->deferred_generator_addresses = [];
-
-            // Resolve deferred Fiber objects
-            foreach ($this->deferred_fiber_addresses as $fiber_address) {
-                $fiber_node_id = $context_pools->getSentinel($fiber_address);
-                if ($fiber_node_id === null) {
-                    continue;
-                }
-                try {
-                    $fiber_pointer = ZendFiber::getPointerFromZendObjectPointer(
-                        new Pointer(
-                            ZendObject::class,
-                            $fiber_address,
-                            $zend_type_reader->sizeOf('zend_object'),
-                        ),
-                        $zend_type_reader,
-                    );
-                    $fiber_context = $this->collectFiber(
-                        $dereferencer->deref($fiber_pointer),
-                        $cg->map_ptr_base,
-                        $dereferencer,
-                        $zend_type_reader,
-                        $memory_locations,
-                        $context_pools,
-                        $memory_limit_error_details,
-                    );
-                    $analyzer->analyzeSingleLink(
-                        'fiber',
-                        $fiber_context,
-                        $sink,
-                        $fiber_node_id,
-                        $memo,
-                    );
-                    $context_pools->convertToSentinels($memo);
-                } catch (\Throwable) {
-                }
-            }
-            $this->deferred_fiber_addresses = [];
 
             $context_pools->clear();
 
@@ -1806,27 +1581,6 @@ final class MemoryLocationsCollector
             if ($cached !== null) {
                 return $cached;
             }
-            if ($this->defer_unseen_objects) {
-                if ($this->current_streaming_parent_node_id !== null) {
-                    $this->deferred_object_edges[] = [
-                        $this->current_streaming_parent_node_id,
-                        $pointer->address,
-                        $this->current_streaming_link_name ?? 'deferred_reference',
-                        'reference',
-                    ];
-                }
-                return null;
-            }
-        } elseif ($this->defer_unseen_objects) {
-            if ($this->current_streaming_parent_node_id !== null) {
-                $this->deferred_object_edges[] = [
-                    $this->current_streaming_parent_node_id,
-                    $pointer->address,
-                    $this->current_streaming_link_name ?? 'deferred_reference',
-                    'reference',
-                ];
-            }
-            return null;
         }
         $php_reference = $dereferencer->deref($pointer);
         $memory_location = ZendReferenceMemoryLocation::fromZendReference($php_reference);
@@ -1869,29 +1623,6 @@ final class MemoryLocationsCollector
             if ($cached !== null) {
                 return $cached;
             }
-            if ($this->defer_unseen_objects) {
-                if ($this->current_streaming_parent_node_id !== null) {
-                    $this->deferred_object_edges[] = [
-                        $this->current_streaming_parent_node_id,
-                        $pointer->address,
-                        $this->current_streaming_link_name ?? 'deferred_array',
-                        'array',
-                    ];
-                }
-                return null;
-            }
-        } elseif ($this->defer_unseen_objects) {
-            // During shallow collection: don't recurse into unseen arrays.
-            // Record a deferred edge if we have a parent context.
-            if ($this->current_streaming_parent_node_id !== null) {
-                $this->deferred_object_edges[] = [
-                    $this->current_streaming_parent_node_id,
-                    $pointer->address,
-                    $this->current_streaming_link_name ?? 'deferred_array',
-                    'array',
-                ];
-            }
-            return null;
         }
         $array = $dereferencer->deref($pointer);
         return $this->collectZendArray(
@@ -1924,30 +1655,6 @@ final class MemoryLocationsCollector
             if ($cached !== null) {
                 return $cached;
             }
-            if ($this->defer_unseen_objects) {
-                if ($this->current_streaming_parent_node_id !== null) {
-                    $this->deferred_object_edges[] = [
-                        $this->current_streaming_parent_node_id,
-                        $pointer->address,
-                        $this->current_streaming_link_name ?? 'deferred_object',
-                        'object',
-                    ];
-                }
-                return null;
-            }
-        } elseif ($this->defer_unseen_objects) {
-            // During objects_store collection: don't recurse into unseen
-            // objects via property traversal. Record the edge so it can
-            // be emitted after all objects are collected.
-            if ($this->current_streaming_parent_node_id !== null) {
-                $this->deferred_object_edges[] = [
-                    $this->current_streaming_parent_node_id,
-                    $pointer->address,
-                    $this->current_streaming_link_name ?? 'deferred_object',
-                    'object',
-                ];
-            }
-            return null;
         }
         $obj = $dereferencer->deref($pointer);
         return $this->collectZendObject(
@@ -2384,29 +2091,15 @@ final class MemoryLocationsCollector
         ;
         $object_context->add('object_handlers', $object_handlers_context);
 
-        // In streaming mode, enable defer for all nested object references
-        // within this object. This prevents deep recursion through the
-        // object graph — referenced objects will be collected later from
-        // their own objects_store bucket.
-        $saved_defer = $this->defer_unseen_objects;
-        if ($this->streaming_sink !== null) {
-            $this->defer_unseen_objects = true;
-        }
-
         $properties_exists = false;
         $object_properties_context = new ObjectPropertiesContext();
         $properties_parent_node_id = $this->registerParentIfStreaming($object_properties_context);
-        $saved_parent_node_id = $this->current_streaming_parent_node_id;
-        if ($properties_parent_node_id !== null) {
-            $this->current_streaming_parent_node_id = $properties_parent_node_id;
-        }
         $properties_iterator = $object->getPropertiesIterator(
             $dereferencer,
             $zend_type_reader,
         );
         foreach ($properties_iterator as $name => $property) {
             assert(is_string($name));
-            $this->current_streaming_link_name = $name;
             $property_context = $this->collectZval(
                 $property,
                 $map_ptr_base,
@@ -2429,14 +2122,10 @@ final class MemoryLocationsCollector
                 $properties_exists = true;
             }
         }
-        $this->current_streaming_parent_node_id = $saved_parent_node_id;
         if ($properties_exists || $properties_parent_node_id !== null) {
             $object_context->add('object_properties', $object_properties_context);
         }
 
-        // PDO internal data collection follows extension-internal pointers
-        // (pdo_dbh_t, pdo_stmt_t), not object references, so it is safe
-        // even during deferred/shallow collection.
         if ($object_location->class_name === \PDO::class) {
             try {
                 $this->collectPdoDbhObject(
@@ -2463,34 +2152,6 @@ final class MemoryLocationsCollector
                 );
             } catch (\Throwable) {
             }
-        }
-
-        // When defer is active (shallow collection for objects_store),
-        // skip dynamic properties, closures, generators, and fibers.
-        // These can trigger deep recursive expansion. They will be
-        // collected when the object is reached from another phase, or
-        // via deferred edge resolution.
-        if ($this->defer_unseen_objects) {
-            // Record special objects for deferred collection so their
-            // internal links (this_ptr, func, call_frames, etc.) are
-            // created during resolution.
-            assert(!is_null($object->ce));
-            $class_name = $dereferencer->deref($object->ce)->getClassName($dereferencer);
-            if (
-                $class_name === 'Closure'
-                and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
-            ) {
-                $this->deferred_closure_addresses[] = $object->getPointer()->address;
-            } elseif ($class_name === 'Generator') {
-                $this->deferred_generator_addresses[] = $object->getPointer()->address;
-            } elseif (
-                $class_name === 'Fiber'
-                and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V81)
-            ) {
-                $this->deferred_fiber_addresses[] = $object->getPointer()->address;
-            }
-            $this->defer_unseen_objects = $saved_defer;
-            return $object_context;
         }
 
         if (
@@ -2626,7 +2287,6 @@ final class MemoryLocationsCollector
             }
         }
 
-        $this->defer_unseen_objects = $saved_defer;
         return $object_context;
     }
 
@@ -3779,10 +3439,6 @@ final class MemoryLocationsCollector
             if ($key >= $objects_store->top) {
                 break;
             }
-            // Disable defer for the top-level bucket call so the object
-            // itself is collected. It will be re-enabled inside
-            // collectZendObject's property loop.
-            $this->defer_unseen_objects = false;
             $objects_store_bucket_context = $this->collectZendObjectPointer(
                 $bucket,
                 $map_ptr_base,
@@ -3806,7 +3462,6 @@ final class MemoryLocationsCollector
             }
             $objects_store_context->add((string)$key, $objects_store_bucket_context);
         }
-        $this->defer_unseen_objects = false;
         return $objects_store_context;
     }
 
