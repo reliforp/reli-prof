@@ -1098,6 +1098,19 @@ For ZendArrayTableOverheadMemoryLocation, set bin_overhead = 0 (not a separate
 allocation). The `used_location` field on ZendArrayTableOverheadMemoryLocation
 already links to the table location, so full_table_size is available.
 
+**Remaining gap (~1.2% under):** For embedded arrays, the emalloc covers
+`sizeof(zend_array) + full_table_size` but `getOverhead` for the
+ZendArrayTableOverheadMemoryLocation reconstructs the location from
+`used_location.address` (= table start, not array header start) with
+`used.size + unused.size` (= table only, not header + table). So the
+bin lookup uses `bin_size(table_size)` instead of `bin_size(header + table_size)`.
+The 56-byte header is excluded from the overhead calculation, causing the
+bin overhead to be slightly under-counted.
+
+**Fix:** When computing overhead for ZendArrayTableOverheadMemoryLocation in
+embedded arrays, include the array header in the reconstructed location:
+use the ZendArrayMemoryLocation address and add header size to the total.
+
 ---
 
 ## Design Proposal: Inline region + overhead at emit time, eliminate MemoryLocations accumulation
