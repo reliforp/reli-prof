@@ -58,24 +58,28 @@ final class CallFrameVariableIteratorJob implements CollectorJob
             return;
         }
 
-        /** @var string $name */
-        $name = $this->iterator->key();
-        /** @var Zval $value */
-        $value = $this->iterator->current();
+        try {
+            /** @var string $name */
+            $name = $this->iterator->key();
+            /** @var Zval $value */
+            $value = $this->iterator->current();
 
-        // Advance iterator
-        $this->iterator->next();
+            $this->iterator->next();
 
-        // For DFS: push continuation first, then child
-        if ($this->iterator->valid()) {
-            $queue->push($this);
+            if ($this->iterator->valid()) {
+                $queue->push($this);
+            }
+
+            $queue->push(new ResolveZvalJob(
+                $value,
+                $this->variable_table_node_id,
+                $name,
+            ));
+        } catch (\Throwable) {
+            $this->iterator->next();
+            if ($this->iterator->valid()) {
+                $queue->push($this);
+            }
         }
-
-        // Push zval resolution job
-        $queue->push(new ResolveZvalJob(
-            $value,
-            $this->variable_table_node_id,
-            $name,
-        ));
     }
 }
