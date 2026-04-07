@@ -191,7 +191,8 @@ final class PdoHelper
         if ($columns_address !== 0 && $column_count > 0 && $column_count < 10000) {
             $column_data_size = $ctx->zend_type_reader->sizeOf('pdo_column_data');
             if (!$ctx->memory_locations->has($columns_address)) {
-                $columns_location = new PdoDriverDataMemoryLocation($columns_address, (int)$column_count * $column_data_size);
+                $col_size = (int)$column_count * $column_data_size;
+                $columns_location = new PdoDriverDataMemoryLocation($columns_address, $col_size);
                 $ctx->memory_locations->add($columns_location);
                 $object_context->addLocation($columns_location);
             }
