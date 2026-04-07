@@ -32,6 +32,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MysqlndMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PdoDbhMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PdoDriverDataMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PdoStatementColumnsMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableOverheadMemoryLocation;
@@ -192,21 +193,28 @@ final class PdoHelper
             $column_data_size = $ctx->zend_type_reader->sizeOf('pdo_column_data');
             if (!$ctx->memory_locations->has($columns_address)) {
                 $col_size = (int)$column_count * $column_data_size;
-                $columns_location = new PdoDriverDataMemoryLocation($columns_address, $col_size);
+                $columns_location = new PdoStatementColumnsMemoryLocation($columns_address, $col_size);
                 $ctx->memory_locations->add($columns_location);
                 $object_context->addLocation($columns_location);
             }
+            $zend_string_size = $ctx->zend_type_reader->sizeOf('zend_string');
             for ($i = 0; $i < $column_count; $i++) {
-                $col = $ctx->dereferencer->deref(new Pointer(
-                    PdoColumnData::class,
-                    $columns_address + $i * $column_data_size,
-                    $column_data_size,
-                ));
-                if ($col->name !== 0) {
-                    CollectorHelpers::collectZendStringPointer(
-                        new Pointer(ZendString::class, $col->name, $ctx->zend_type_reader->sizeOf('zend_string')),
-                        $ctx,
-                    );
+                try {
+                    $col = $ctx->dereferencer->deref(new Pointer(
+                        PdoColumnData::class,
+                        $columns_address + $i * $column_data_size,
+                        $column_data_size,
+                    ));
+                    if ($col->name !== 0) {
+                        $name_pointer = new Pointer(ZendString::class, $col->name, $zend_string_size);
+                        $name_str = $ctx->dereferencer->deref($name_pointer);
+                        $name_location = ZendStringMemoryLocation::fromZendString($name_str, $ctx->dereferencer);
+                        if (!$ctx->memory_locations->has($name_location->address)) {
+                            $ctx->memory_locations->add($name_location);
+                            $object_context->addLocation($name_location);
+                        }
+                    }
+                } catch (\Throwable) {
                 }
             }
         }
