@@ -1228,3 +1228,39 @@ collect → MemoryLocation created
 | Overlap filtering | RegionAnalyzer.filterOverlappingLocations | queryRegionSums (DB-side) |
 | RegionAnalyzer | Required | Eliminated |
 | PdoContextTreeSink | Receives RegionBoundaries optionally | Always receives RegionBoundaries |
+
+---
+
+## Enhancement: Track remaining PDO internal structures (Case 9 gap)
+
+**Status:** Enhancement request. Case 9 coverage is 92.7% — remaining 287 KB (7.3%)
+is from PDO internal structures not yet tracked.
+
+### Missing Structures
+
+| Structure | Size per stmt | × 2000 stmts | Notes |
+|-----------|--------------|--------------|-------|
+| `pdo_stmt_t->columns` (pdo_column_data[]) | ~64 B | 128 KB | Allocated after `execute()`, array of column metadata |
+| Column name zend_strings | ~16 B | 32 KB | May be interned/shared |
+| `pdo_stmt_t->bound_param_map` (HashTable) | ~56 B | 112 KB | For named parameter mapping (`:id` etc.) |
+| Bound param entries | ~32 B | 64 KB | Individual parameter bindings |
+| **Total estimated** | **~168 B** | **~328 KB** | |
+
+Actual gap: 287 KB. Difference from estimate is column name interning.
+
+### What's Already Tracked
+
+- `pdo_stmt_t` struct (via ZendObjectMemoryLocation, 368 B)
+- `driver_data` (via PdoDriverDataMemoryLocation, 36 B for SQLite)
+- `query_string` (via ZendStringMemoryLocation)
+
+### Implementation
+
+Add header definitions for `pdo_column_data` and follow pointers from `pdo_stmt_t`:
+- `columns`: array of `pdo_column_data` with `column_count` elements
+- `bound_params`: `zend_array` (standard PHP array, should already be reachable from
+  object properties — may need verification)
+- `bound_param_map`: `zend_array` (same)
+
+The `columns` array is the main missing piece — it's a C-level `emalloc` not visible
+as a PHP-level property.
