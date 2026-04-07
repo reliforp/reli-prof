@@ -1596,6 +1596,14 @@ struct _pdo_dbh_object_t {
 	zend_object std;
 };
 
+typedef struct {
+	zend_long paramno;
+	zend_string *name;
+	zend_long max_value_len;
+	zval parameter;
+	zend_long param_type;
+} pdo_bound_param_data;
+
 struct pdo_column_data {
 	zend_string *name;
 	size_t maxlen;
