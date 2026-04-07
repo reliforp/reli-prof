@@ -1066,6 +1066,35 @@ Need to check: is overhead being added for overlap-filtered locations? The overl
 filter removes the child location from the sum but if its overhead was already
 accumulated separately, that's a double-count.
 
+**DB investigation reveals two issues:**
+
+1. **ZendArrayTableOverheadMemoryLocation gets its own bin_overhead (3,120 B total):**
+   This location represents the *unused* portion of an array table. The *used* portion
+   (ZendArrayTableMemoryLocation) already has bin_overhead that covers the full
+   allocation (used + unused + alignment). Adding bin_overhead to the Overhead
+   location double-counts the alignment.
+
+2. **ZendArrayTableMemoryLocation overhead is large (1,098,656 B, exceeding its
+   own size of 883,296 B):** The overhead values themselves look correct (e.g.,
+   size=225536 → bin_total=327680, overhead=102144). But the issue is that
+   ZendArrayTable + ZendArrayTableOverhead already equals the full table allocation.
+   Adding bin_overhead on top of that goes past what ZendMM actually allocated.
+
+**The fundamental issue:** `ZendArrayTableMemoryLocation` size = used slots.
+`ZendArrayTableOverheadMemoryLocation` size = unused slots. Together = full table.
+`bin_overhead` = `bin_size - allocation_size`. But allocation_size = full table,
+which is already `used + unused`. So:
+```
+size(used) + size(unused) + bin_overhead(used) + bin_overhead(unused)
+= used + unused + (bin - (used + unused)) + extra
+```
+The `bin_overhead` for the used part should be `bin_size - full_table_size`, and
+the unused part should have `bin_overhead = 0` (it's not a separate allocation).
+
+**Fix:** Don't compute bin_overhead for ZendArrayTableOverheadMemoryLocation.
+For ZendArrayTableMemoryLocation, compute overhead as `bin_size - (used + unused)`
+i.e., `bin_size - full_table_size`, not `bin_size - used_size`.
+
 ---
 
 ## Design Proposal: Inline region + overhead at emit time, eliminate MemoryLocations accumulation
