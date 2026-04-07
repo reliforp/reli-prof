@@ -498,7 +498,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
 
         // ---- verify region data in DB (written inline at emit time) ----
         $sink->flush();
-        $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
+        $region_result = RegionsSummary::queryRegionSums($db, $run_id);
+        $region_sums = $region_result['sums'];
 
         // There must be at least zend_mm_heap data (normal heap allocations)
         $this->assertArrayHasKey('zend_mm_heap', $region_sums);
@@ -2812,7 +2813,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
 
         $sink->flush();
-        $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
+        $region_result = RegionsSummary::queryRegionSums($db, $run_id);
+        $region_sums = $region_result['sums'];
 
         $chunk_usage = $region_sums['zend_mm_heap'] ?? 0;
         $huge_usage = $region_sums['zend_mm_huge'] ?? 0;

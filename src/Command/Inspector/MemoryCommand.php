@@ -132,7 +132,9 @@ final class MemoryCommand extends Command
             // has RegionBoundaries set by the collector before the job loop).
             // Query the DB for region sums — no backfill needed.
             $sink->flush();
-            $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
+            $region_result = RegionsSummary::queryRegionSums($db, $run_id);
+            $region_sums = $region_result['sums'];
+            $allocation_overhead = $region_result['overhead'];
 
             $heap_total = $collected_memories->chunk_memory_locations->getTotalSize()
                 + $collected_memories->huge_memory_locations->getTotalSize();
@@ -146,16 +148,18 @@ final class MemoryCommand extends Command
 
             $summary_base = [
                 'zend_mm_heap_total' => $heap_total,
-                'zend_mm_heap_usage' => $chunk_usage + $huge_usage + $vm_stack_total + $compiler_arena_total,
+                'zend_mm_heap_usage' => $chunk_usage + $huge_usage
+                    + $vm_stack_total + $compiler_arena_total + $allocation_overhead,
                 'zend_mm_chunk_total' => $chunk_total,
-                'zend_mm_chunk_usage' => $chunk_usage + $vm_stack_total + $compiler_arena_total,
+                'zend_mm_chunk_usage' => $chunk_usage
+                    + $vm_stack_total + $compiler_arena_total + $allocation_overhead,
                 'zend_mm_huge_total' => $huge_total,
                 'zend_mm_huge_usage' => $huge_usage,
                 'vm_stack_total' => $vm_stack_total,
                 'vm_stack_usage' => $region_sums['vm_stack'] ?? 0,
                 'compiler_arena_total' => $compiler_arena_total,
                 'compiler_arena_usage' => $region_sums['compiler_arena'] ?? 0,
-                'possible_allocation_overhead_total' => 0,
+                'possible_allocation_overhead_total' => $allocation_overhead,
                 'possible_array_overhead_total' => 0,
             ];
 

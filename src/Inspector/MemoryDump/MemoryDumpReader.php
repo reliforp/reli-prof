@@ -86,7 +86,8 @@ final class MemoryDumpReader
 
             $sink->flush();
             $region_boundaries->backfillRegions($db, $run_id);
-            $region_sums = RegionsSummary::queryRegionSums($db, $run_id);
+            $_region_result = RegionsSummary::queryRegionSums($db, $run_id);
+            $region_sums = $_region_result['sums'];
             $summary_base = $region_sums !== []
                 ? $analyzed_regions->summary->correctedToArray($region_sums)
                 : $analyzed_regions->summary->toArray();
