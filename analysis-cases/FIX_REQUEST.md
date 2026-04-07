@@ -595,38 +595,41 @@ Desired display: global_variables[conn]->statementCache[0]
 
 ---
 
-## Bug 8: Case 14 heap percentage exceeds 100% (123.3%) (LOW)
+## Bug 8: Case 14 heap percentage exceeds 100% (123.3%) — overlapping locations (MEDIUM)
 
-**Status:** Open. Observed on 0.12.x.
+**Status:** Open. Root cause identified.
 
-### Symptom
+### Root Cause
 
-Case 14 (Laravel bootstrap, 27,600 Closures) reports 123.3% analyzed.
-
-### Analysis
+`ZendOpArrayHeaderMemoryLocation` for Closures points to a **sub-region inside**
+`ZendObjectMemoryLocation`. The `zend_closure` struct embeds `zend_function func`
+at offset +56, so the op_array address falls within the Closure object's address range:
 
 ```
-DB dedup sum (zend_mm_heap): 29,712,178 (28.3 MB)
-memory_get_usage:            24,356,488 (23.2 MB)
-Difference:                   5,355,690 (5.1 MB)
+Closure ZendObject:  addr 973440, size 344 (bytes 973440–973784)
+OpArray inside it:   addr 973496, size 256 (bytes 973496–973752) ← OVERLAPS
 ```
 
-- `possible_allocation_overhead_total = 0` (streaming mode can't compute this)
-- `vm_stack_total + compiler_arena_total = 327 KB` (negligible)
-- No same-address duplicates (dedup removes 0 rows)
-- 27,600 `ZendOpArrayHeaderMemoryLocation` × 256 B = 6.7 MB, all unique addresses
+All 27,600 OpArrayHeaders are inside their parent Closure object (27,600/27,600
+confirmed). Address-based dedup doesn't catch this because the addresses are
+different — it only deduplicates identical addresses, not containment.
 
-The 5.1 MB excess comes from reli-prof's object size sum exceeding what
-`memory_get_usage(false)` reports. Likely cause: reli-prof reads struct sizes from
-type definitions (e.g., `sizeof(zend_op_array)`) which may differ from what ZendMM
-actually allocated per bin. With 27,600 Closures, a small per-object discrepancy
-(~190 bytes) accumulates to 5+ MB.
+Double-counted: 27,600 × 256 = 6.7 MB. Actual excess over `memory_get_usage`: 5.1 MB.
+The 1.6 MB difference is from ZendMM bin alignment (344 → 384 byte bin).
 
-Other cases (2, 3, 5) with similar total object counts but fewer Closures show
-98-99%, confirming this is Closure/op_array-specific.
+### Fix
 
-**Impact:** Low — 123% is still a useful result and findings are correct. The
-percentage is a sanity indicator, not a precise accounting metric.
+`RegionAnalyzer::filterOverlappingLocations()` already handles overlapping locations
+in non-streaming mode (sorted by address, skipping locations contained within the
+previous one). The same overlap filtering needs to be applied when computing region
+sums from the DB.
+
+Option A: In `queryRegionSums`, sort by address and exclude locations that fall within
+a preceding location's address range (like `filterOverlappingLocations` does).
+
+Option B: Don't emit `ZendOpArrayHeaderMemoryLocation` for Closures when it's known
+to be embedded in the `zend_closure` struct — the parent `ZendObjectMemoryLocation`
+already covers the memory.
 
 ---
 
