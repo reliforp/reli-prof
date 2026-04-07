@@ -1027,6 +1027,18 @@ while (!$queue->isEmpty()) {
 }
 ```
 
-**Case 15 (memory_get_usage: 0 B):**
-Collector appears to fail silently. DB file is 168 MB but summary shows all zeros.
-Separate issue from Cases 11/14.
+**Case 15 — FIXED (EFAULT) but OOM@512M in FfiCsr remains.**
+
+**Case 14 — ROOT CAUSE: `static_variables` not collected in iterative DFS.**
+`CollectorHelpers::collectZendFunction()` line 211-214 has an empty block:
+```php
+if (!is_null($func->op_array->static_variables)) {
+    // Empty — no collection code
+}
+```
+This loses 23,001 arrays (Closure captured variables via `use ($name, $i)`).
+0.12.x vs iterative comparison confirms exactly 23,001 fewer ZendArray,
+ZendArrayTable, and ZendArrayTableOverhead locations, totaling ~8.6 MB.
+
+**Fix:** Push `EmitArrayJob` for `$func->op_array->static_variables` and add
+it to the function context as `static_variables` child link.
