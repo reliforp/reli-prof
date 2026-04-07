@@ -911,3 +911,23 @@ This is a significant refactor of `MemoryLocationsCollector`, but it **removes m
 code than it adds**. The current fix-by-fix approach (Bugs 2→4→5→6→11) is adding
 workaround complexity to compensate for the pre-read design. A clean rewrite of the
 streaming traversal would simplify the codebase.
+
+### Status: Iterative DFS implemented, regressions found
+
+Iterative job queue collector implemented (`claude/fix-memory-analysis-2WiRL`).
+10/15 cases work well, but 3 regressions remain:
+
+**Case 11 (13.1% coverage, was 97.8%) and Case 14 (58.3%, was 94.3%):**
+class_table static_properties not expanded. `SessionStore::$sessions` (Case 11)
+and `Application::$bootstrappers` (Case 14) are only reachable via
+`class_table → ClassName → static_properties → ...`. The iterative DFS job for
+class_table is not pushing jobs to expand the contents of static properties
+(arrays, objects inside them). DB confirms: SessionStore not in
+context_node_locations at all, `heap_usage` = 411 KB vs `memory_get_usage` = 3.15 MB.
+
+Bottleneck path falls back to `class_table->intlchar->constants->BLOCK_CODE_...`
+(intl extension constant) because the actual heavy data is never collected.
+
+**Case 15 (memory_get_usage: 0 B):**
+Collector appears to fail silently. DB file is 168 MB but summary shows all zeros.
+Separate issue from Cases 11/14.
