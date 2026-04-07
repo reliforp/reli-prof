@@ -109,6 +109,7 @@ final class EmitArrayJob implements CollectorJob
         $ctx->memory_locations->add($array_table_overhead_location);
 
         $array_elements_context = new ArrayElementsContext($array_table_location);
+        $array_elements_context->setCount($array->nNumOfElements);
         $overhead_context = new ArrayPossibleOverheadContext($array_table_overhead_location);
 
         $array_header_context->add('possible_unused_area', $overhead_context);

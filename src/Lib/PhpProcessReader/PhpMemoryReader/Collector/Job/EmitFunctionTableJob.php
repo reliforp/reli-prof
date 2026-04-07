@@ -77,9 +77,13 @@ final class EmitFunctionTableJob implements CollectorJob
             if ($fc_node_id !== null) {
                 $fc_node_id = $fc_node_id < 0 ? -$fc_node_id - 1 : $fc_node_id;
             }
-            foreach ($r->deferred_arrays as [$arr_pointer, $arr_link]) {
+            foreach ($r->deferred_arrays as [$arr_pointer, $arr_link, $parent_ctx]) {
+                $pid = $ctx->memo[$parent_ctx] ?? null;
+                if ($pid !== null) {
+                    $pid = $pid < 0 ? -$pid - 1 : $pid;
+                }
                 /** @psalm-suppress ArgumentTypeCoercion */
-                $queue->push(new EmitArrayJob($arr_pointer, $fc_node_id, $arr_link));
+                $queue->push(new EmitArrayJob($arr_pointer, $pid, $arr_link));
             }
         }
     }

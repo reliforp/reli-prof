@@ -63,13 +63,13 @@ final class EmitClosureJob implements CollectorJob
         $closure_node_id = $ctx->emitNode($closure_context, $this->object_node_id, 'closure');
 
         // Push deferred static_variables arrays
-        foreach ($func_result->deferred_arrays as [$arr_pointer, $arr_link]) {
-            $func_node_id = $ctx->memo[$func_result->context] ?? null;
-            if ($func_node_id !== null) {
-                $func_node_id = $func_node_id < 0 ? -$func_node_id - 1 : $func_node_id;
+        foreach ($func_result->deferred_arrays as [$arr_pointer, $arr_link, $parent_ctx]) {
+            $parent_id = $ctx->memo[$parent_ctx] ?? null;
+            if ($parent_id !== null) {
+                $parent_id = $parent_id < 0 ? -$parent_id - 1 : $parent_id;
             }
             /** @psalm-suppress ArgumentTypeCoercion */
-            $queue->push(new EmitArrayJob($arr_pointer, $func_node_id, $arr_link));
+            $queue->push(new EmitArrayJob($arr_pointer, $parent_id, $arr_link));
         }
 
         // Push job for this_ptr (may reference objects = recursive)
