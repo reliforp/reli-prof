@@ -44,8 +44,12 @@ final class ZendObjectMemoryLocation extends RefcountedMemoryLocation
             $class_name === \Closure::class
             and !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V71)
         ) {
+            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_closure', 'std');
+            $address -= $std_offset;
             $size = $zend_type_reader->sizeOf('zend_closure');
         } elseif ($class_name === \Generator::class) {
+            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('zend_generator', 'std');
+            $address -= $std_offset;
             $size = $zend_type_reader->sizeOf('zend_generator');
         } elseif (
             $class_name === \WeakReference::class
