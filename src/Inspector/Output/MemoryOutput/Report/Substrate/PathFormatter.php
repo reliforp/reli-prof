@@ -44,6 +44,11 @@ final class PathFormatter
         'ArrayElementContext',
     ];
 
+    /** Node types whose children (key/value) are structural indirection */
+    private const INDIRECTION_TYPES = [
+        'ArrayElementContext',
+    ];
+
     /**
      * Format a raw path (from link_names) into PHP-style syntax.
      *
