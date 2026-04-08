@@ -322,8 +322,11 @@ sudo ./reli inspector:memory -p <pid> -f sqlite3 -o before.db
 # Capture target
 sudo ./reli inspector:memory -p <pid> -f sqlite3 -o after.db
 
-# Compare
+# Compare two files
 ./reli inspector:memory:compare before.db after.db
+
+# Compare run IDs within the same file
+./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
 ```
 
 ### Example Output
@@ -344,6 +347,14 @@ sudo ./reli inspector:memory -p <pid> -f sqlite3 -o after.db
   memory_get_usage(true)             28.00 MB         34.00 MB       +6.00 MB (+21.4%)
   Heap usage                         23.80 MB         30.50 MB       +6.70 MB (+28.2%)
   Analyzed                             98.2%            97.5%          -0.7pt
+
+=== Type Breakdown Delta ===
+
+  Type                           Count Δ     Baseline       Target      Memory Δ
+  ----------------------------------------------------------------------------------
+  ZendObject                      +4050    20.00 MB     26.40 MB      +6.40 MB
+  ZendString                       +100   800.00 KB    810.00 KB     +10.00 KB
+  ZendArray                         +20     2.00 MB      2.03 MB     +32.00 KB
 
 === Class Memory Changes ===
 
@@ -376,11 +387,12 @@ sudo ./reli inspector:memory -p <pid> -f sqlite3 -o after.db
 
 ```
 Usage:
-  inspector:memory:compare [options] <baseline> <target>
+  inspector:memory:compare [options] <baseline> [<target>]
 
 Arguments:
   baseline                               Path to the baseline SQLite database file
   target                                 Path to the target SQLite database file
+                                         (omit to compare run IDs within the same file)
 
 Options:
   -f, --output-format=FORMAT             Output format: report (text) or report-json [default: report]
@@ -405,6 +417,9 @@ Options:
   "target": { "captured_at": "2026-04-01T14:00:00Z", "node_count": 80000 },
   "summary_deltas": [
     { "metric": "memory_get_usage", "baseline": 25690112, "target": 32717824, "delta": 7027712, "delta_percent": 27.3 }
+  ],
+  "type_deltas": [
+    { "type": "ZendObjectMemoryLocation", "baseline_count": 10000, "target_count": 14050, "baseline_memory": 20971520, "target_memory": 27682816, "count_delta": 4050, "memory_delta": 6711296 }
   ],
   "class_deltas": {
     "changed": [
@@ -432,4 +447,15 @@ Use `--threshold` to suppress small changes (useful for noisy environments):
 ./reli inspector:memory:compare before.db after.db --threshold 5
 ```
 
-This filters both summary metric deltas and class memory changes below the given percentage.
+This filters summary metric deltas, type breakdown deltas, and class memory changes below the given percentage.
+
+### What Gets Compared
+
+| Dimension | Source | Scope |
+|---|---|---|
+| Summary metrics | `summary` table | All metrics (memory_get_usage, heap, VM stack, etc.) |
+| Type breakdown | `location_types_summary` table | All location types |
+| Class memory | `class_objects_summary` table | All classes (not limited to top 20) |
+| Findings | `ReportGenerator` output | Actionable findings (large arrays/strings, cycles, dominant classes, etc.) |
+
+Large arrays and strings are compared via their findings (matched by `owner_path`). If the same array at the same path grows or shrinks, it appears in the "Changed findings" section.
