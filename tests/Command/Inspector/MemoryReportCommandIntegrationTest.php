@@ -91,18 +91,18 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
         $target_script = <<<'PHP'
         <?php
         class TestUser {
-            public string $name;
-            public string $email;
-            public array $data;
-            public function __construct(string $name) {
+            public $name;
+            public $email;
+            public $data;
+            public function __construct($name) {
                 $this->name = $name;
                 $this->email = $name . '@example.com';
                 $this->data = range(1, 10);
             }
         }
         class TestItem {
-            public string $label;
-            public function __construct(string $label) {
+            public $label;
+            public function __construct($label) {
                 $this->label = $label;
             }
         }
