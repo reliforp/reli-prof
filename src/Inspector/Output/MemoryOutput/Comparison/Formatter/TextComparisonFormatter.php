@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Comparison\Formatter;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ClassDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonResult;
 use Reli\Inspector\Output\MemoryOutput\Comparison\SummaryDelta;
+use Reli\Inspector\Output\MemoryOutput\Comparison\TypeDelta;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
@@ -38,6 +39,9 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
 
         // Summary deltas
         $this->formatSummaryDeltas($lines, $result->summary_deltas);
+
+        // Type breakdown deltas
+        $this->formatTypeDeltas($lines, $result->type_deltas);
 
         // Class deltas
         $this->formatClassDeltas($lines, $result);
@@ -118,6 +122,47 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
                 $target_str,
                 $delta_str,
                 $pct_str,
+            );
+        }
+        $lines[] = '';
+    }
+
+    /**
+     * @param list<string> $lines
+     * @param list<TypeDelta> $deltas
+     * @psalm-suppress InvalidOperand
+     */
+    private function formatTypeDeltas(array &$lines, array $deltas): void
+    {
+        if ($deltas === []) {
+            return;
+        }
+
+        $lines[] = '=== Location Type Delta ===';
+        $lines[] = '';
+        $lines[] = sprintf(
+            '  %-30s %10s %12s %12s %14s',
+            'Type',
+            'Count \xce\x94',
+            'Baseline',
+            'Target',
+            'Memory \xce\x94',
+        );
+        $lines[] = '  ' . str_repeat('-', 82);
+
+        foreach ($deltas as $td) {
+            $short_type = preg_replace('/^.*\\\\/', '', $td->type) ?? $td->type;
+            $short_type = str_replace('MemoryLocation', '', $short_type);
+            $count_str = sprintf('%+d', $td->count_delta);
+            $mem_sign = $td->memory_delta >= 0 ? '+' : '-';
+            $mem_delta_str = $mem_sign . SizeFormatter::format(abs($td->memory_delta));
+            $lines[] = sprintf(
+                '  %-30s %10s %12s %12s %14s',
+                $short_type,
+                $count_str,
+                SizeFormatter::format($td->baseline_memory),
+                SizeFormatter::format($td->target_memory),
+                $mem_delta_str,
             );
         }
         $lines[] = '';

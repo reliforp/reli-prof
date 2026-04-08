@@ -28,6 +28,7 @@ class JsonComparisonFormatterTest extends BaseTestCase
             summary_deltas: [
                 new SummaryDelta('memory_get_usage', 100000, 200000, 100000, 100.0),
             ],
+            type_deltas: [],
             class_changes: [],
             class_added: [],
             class_removed: [],
@@ -53,6 +54,7 @@ class JsonComparisonFormatterTest extends BaseTestCase
             baseline_meta: [],
             target_meta: [],
             summary_deltas: [],
+            type_deltas: [],
             class_changes: [],
             class_added: [],
             class_removed: [],
