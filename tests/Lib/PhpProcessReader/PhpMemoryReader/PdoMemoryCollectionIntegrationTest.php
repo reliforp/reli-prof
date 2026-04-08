@@ -273,6 +273,23 @@ class PdoMemoryCollectionIntegrationTest extends BaseTestCase
             'Column name zend_strings should be tracked under PDOStatement context'
         );
 
+        // Verify pdo_bound_param_data entries from bound_columns are tracked
+        /** @psalm-suppress MixedAssignment */
+        $bound_param_count = $db->query(
+            "SELECT COUNT(*) FROM context_node_locations"
+            . " WHERE run_id = {$run_id}"
+            . " AND location_type = 'PdoDriverDataMemoryLocation'"
+            . " AND node_id IN ("
+            . "   SELECT node_id FROM context_node_locations"
+            . "   WHERE run_id = {$run_id} AND class_name = 'PDOStatement'"
+            . " )"
+        )->fetchColumn();
+        $this->assertGreaterThan(
+            0,
+            (int)$bound_param_count,
+            'pdo_bound_param_data entries from bound_columns should be tracked'
+        );
+
         $db = null;
         @unlink($tmp_path);
     }

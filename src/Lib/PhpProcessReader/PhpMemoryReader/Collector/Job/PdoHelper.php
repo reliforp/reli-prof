@@ -150,6 +150,11 @@ final class PdoHelper
                         $object_context->addLocation($array_table_location);
                         $ctx->memory_locations->add($array_table_overhead_location);
                         $object_context->addLocation($array_table_overhead_location);
+
+                        // Track IS_PTR entries (pdo_bound_param_data) in bound_columns/bound_params
+                        if ($ht_field !== 'bound_param_map') {
+                            self::collectBoundParamDataEntries($array, $ctx, $object_context);
+                        }
                     }
                 }
             } catch (\Throwable) {
@@ -432,6 +437,27 @@ final class PdoHelper
             } catch (\Throwable) {
                 break;
             }
+        }
+    }
+
+    private static function collectBoundParamDataEntries(
+        ZendArray $array,
+        CollectorContext $ctx,
+        ObjectContext $object_context,
+    ): void {
+        $bound_param_size = $ctx->zend_type_reader->sizeOf('pdo_bound_param_data');
+        try {
+            foreach ($array->getBucketIterator($ctx->dereferencer) as $bucket) {
+                if ($bucket->val->getType() === 'IS_PTR') {
+                    $ptr_address = $bucket->val->value->lval;
+                    if ($ptr_address !== 0 && !$ctx->memory_locations->has($ptr_address)) {
+                        $location = new PdoDriverDataMemoryLocation($ptr_address, $bound_param_size);
+                        $ctx->memory_locations->add($location);
+                        $object_context->addLocation($location);
+                    }
+                }
+            }
+        } catch (\Throwable) {
         }
     }
 
