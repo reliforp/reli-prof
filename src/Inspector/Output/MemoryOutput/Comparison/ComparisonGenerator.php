@@ -78,6 +78,14 @@ final class ComparisonGenerator
             $threshold_percent,
         );
 
+        $type_deltas = $this->compareTypes(
+            $baseline_db,
+            $target_db,
+            $baseline_run_id,
+            $target_run_id,
+            $threshold_percent,
+        );
+
         [$class_changes, $class_added, $class_removed] = $this->compareClasses(
             $baseline_db,
             $target_db,
@@ -95,6 +103,7 @@ final class ComparisonGenerator
             baseline_meta: $baseline_report->meta,
             target_meta: $target_report->meta,
             summary_deltas: $summary_deltas,
+            type_deltas: $type_deltas,
             class_changes: $class_changes,
             class_added: $class_added,
             class_removed: $class_removed,
@@ -140,6 +149,61 @@ final class ComparisonGenerator
                 delta_percent: $pct !== null ? round($pct, 1) : null,
             );
         }
+
+        return $deltas;
+    }
+
+    /**
+     * @return list<TypeDelta>
+     * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess
+     */
+    private function compareTypes(
+        \PDO $baseline_db,
+        \PDO $target_db,
+        int $baseline_run_id,
+        int $target_run_id,
+        float $threshold_percent,
+    ): array {
+        $baseline = $this->loadTypeMap($baseline_db, $baseline_run_id);
+        $target = $this->loadTypeMap($target_db, $target_run_id);
+
+        $all_types = array_unique(array_merge(
+            array_keys($baseline),
+            array_keys($target),
+        ));
+
+        $deltas = [];
+        foreach ($all_types as $type) {
+            $b = $baseline[$type] ?? ['count' => 0, 'memory_usage' => 0];
+            $t = $target[$type] ?? ['count' => 0, 'memory_usage' => 0];
+
+            $mem_delta = $t['memory_usage'] - $b['memory_usage'];
+            $count_delta = $t['count'] - $b['count'];
+
+            if ($mem_delta === 0 && $count_delta === 0) {
+                continue;
+            }
+
+            if (
+                $threshold_percent > 0.0
+                && $b['memory_usage'] > 0
+                && abs((float)$mem_delta / (float)$b['memory_usage'] * 100.0) < $threshold_percent
+            ) {
+                continue;
+            }
+
+            $deltas[] = new TypeDelta(
+                type: $type,
+                baseline_count: $b['count'],
+                target_count: $t['count'],
+                baseline_memory: $b['memory_usage'],
+                target_memory: $t['memory_usage'],
+                count_delta: $count_delta,
+                memory_delta: $mem_delta,
+            );
+        }
+
+        usort($deltas, fn(TypeDelta $a, TypeDelta $b) => abs($b->memory_delta) <=> abs($a->memory_delta));
 
         return $deltas;
     }
@@ -336,6 +400,27 @@ final class ComparisonGenerator
                     ? (float)$value
                     : (int)$value;
             }
+        }
+        return $result;
+    }
+
+    /**
+     * @return array<string, array{count: int, memory_usage: int}>
+     * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess
+     */
+    private function loadTypeMap(\PDO $db, int $run_id): array
+    {
+        $rows = $db->query(
+            "SELECT type, count, memory_usage FROM location_types_summary"
+            . " WHERE run_id = {$run_id}"
+        )->fetchAll(\PDO::FETCH_ASSOC);
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(string)$row['type']] = [
+                'count' => (int)$row['count'],
+                'memory_usage' => (int)$row['memory_usage'],
+            ];
         }
         return $result;
     }
