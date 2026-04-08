@@ -1231,7 +1231,50 @@ collect → MemoryLocation created
 
 ---
 
-## Enhancement: Track remaining PDO internal structures (Case 9 gap)
+## Bug: MemoryLimitHandler OOM in shutdown handler — needs memory_limit bump
+
+**Status:** Open.
+
+### Symptom
+
+When the application hits `memory_limit`, the shutdown handler tries to create
+a `SidecarClient` and communicate via socket, but OOMs because there's no
+available memory.
+
+```
+PHP Fatal error: Allowed memory size of 16777216 bytes exhausted
+  in SidecarClient.php on line 1
+```
+
+### Root Cause
+
+`MemoryLimitHandler::createHandler()` does not raise `memory_limit` before
+attempting socket communication. The shutdown handler runs at the memory limit,
+so any allocation (even `new SidecarClient`) fails.
+
+### Fix
+
+Add `ini_set('memory_limit', ...)` at the start of the shutdown handler to
+temporarily allow enough memory for the socket request (~1-2 MB):
+
+```php
+return static function () use (...): void {
+    $error = error_get_last();
+    if ($error === null) return;
+    if (!self::isMemoryLimitError($error['message'])) return;
+
+    // Temporarily raise memory_limit to allow socket communication
+    ini_set('memory_limit', (string)(memory_get_usage(true) + 2 * 1024 * 1024));
+
+    // ... rest of handler
+};
+```
+
+### Verified Working
+
+Manual socket request (`stream_socket_client` + `json_encode` + `fwrite`) works
+correctly — sidecar returns status=ok with call trace and memory stats. The issue
+is only in the automated MemoryLimitHandler path.
 
 **Status:** Enhancement request. Case 9 coverage is 92.7% — remaining 287 KB (7.3%)
 is from PDO internal structures not yet tracked.
