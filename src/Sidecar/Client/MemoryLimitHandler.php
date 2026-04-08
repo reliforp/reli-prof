@@ -63,6 +63,12 @@ final class MemoryLimitHandler
         ?callable $on_error = null,
         int $reserve_bytes = self::DEFAULT_RESERVE_BYTES,
     ): void {
+        // Pre-load classes so autoload doesn't run inside the shutdown handler.
+        // Autoloading involves file I/O + parsing which can easily exceed
+        // the emergency reserve when memory_limit is already exhausted.
+        class_exists(SidecarClient::class);
+        class_exists(SidecarClientResponse::class);
+
         self::$reserve = str_repeat("\0", $reserve_bytes);
         register_shutdown_function(
             self::createHandler($socket_path, $on_response, $on_error),
