@@ -81,6 +81,37 @@ Example output:
     dedup_candidate: Attachment::$part (Part): 600 copies x 312 B = 182.81 KB
     195/600 copies have identical content (32%). Example: "--boundary_mixed..."
 
+=== Type Breakdown ===
+
+  Type                            Count       Memory       %
+  ----------------------------------------------------------------
+  ZendObject                     14,200      20.00 MB    83.3%
+  ZendString                      3,500       2.00 MB     8.3%
+  ZendArray                       1,200       1.50 MB     6.3%
+  ZendReference                     100      12.00 KB     0.0%
+
+=== Top Classes by Memory ===
+
+    #  Class                                      Count   Avg Size       Memory       %
+  ---------------------------------------------------------------------------------------
+    1  App\Models\User                            10,000      72 B   703.13 KB    98.2%
+    2  App\Cache\Item                                100     640 B    62.50 KB     0.9%
+    3  Webklex\PHPIMAP\Message                       200     256 B    50.00 KB     0.7%
+
+=== Top Arrays ===
+
+    #      Retained        Table    Elems  Path
+  --------------------------------------------------------------------------------
+    1     15.30 MB   160.00 KB   10,000  <main>:28::$users
+    2      2.00 MB    64.00 KB    1,200  $GLOBALS->container->cache
+
+=== Top Strings ===
+
+    #          Size  Path                            Preview
+  ------------------------------------------------------------------------------------------
+    1   205.88 KB  ...messages[0]->structure->raw   Content-Type: multipart/mixed; boun...
+    2   102.40 KB  App\Logger->$buffer              [2026-01-15 12:00:00] app.INFO: Sta...
+
 === Root Blame Allocation ===
 
   Root Branch                Exclusive     Shared      Total   % Heap
@@ -231,6 +262,8 @@ All class names use fully qualified names (FQCN). Paths use PHP syntax: `<main>:
 | `shared_singleton` | Many references to one target (normal singleton pattern) |
 | `shared_fanin` | Multiple references to shared objects (supplementary) |
 | `di_container_cycle` | Large DI container cycle (structural cost, >15 classes) |
+| `type_ranking` | Memory breakdown by allocation type (always shown as table) |
+| `class_ranking` | Top 20 classes by memory usage (always shown as table) |
 | `root_blame` | Memory attributed to each root branch |
 | `retained_exact` | No cycles — retained size is exact |
 | `retained_approximate` | Cycles exist — retained size is approximate |
@@ -272,3 +305,157 @@ Memory usage for graph load: ~300 MB for 1M edges, ~2 GB for 6M edges.
 - **Paths use PHP syntax**: `<main>:28::$messages[0]->structure->raw` instead of raw context tree paths.
 - **Companion clusters**: When classes have matching counts, reducing one reduces the others. The `ownership_pattern` finding shows the actual parent-child relationship.
 - **Property scaling**: The `property_scaling` finding shows which properties scale with instance count (per-instance) vs which are shared (CoW). Per-instance properties with small values may benefit from lazy initialization.
+- **Compare snapshots**: Use `inspector:memory:compare` to diff two snapshots and find regressions or verify fixes.
+
+## Comparing Two Snapshots
+
+The `inspector:memory:compare` command diffs two SQLite memory snapshot databases and highlights what changed.
+
+### Quick Start
+
+```bash
+# Capture baseline
+sudo ./reli inspector:memory -p <pid> -f sqlite3 -o before.db
+
+# ... deploy code change, trigger workload, etc.
+
+# Capture target
+sudo ./reli inspector:memory -p <pid> -f sqlite3 -o after.db
+
+# Compare two files
+./reli inspector:memory:compare before.db after.db
+
+# Compare run IDs within the same file
+./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
+```
+
+### Example Output
+
+```
+==============================================================================
+ reli-prof Memory Comparison Report
+==============================================================================
+
+  Baseline: 2026-04-01 10:00:00
+  Target:   2026-04-01 14:00:00
+
+=== Summary Delta ===
+
+  Metric                              Baseline         Target          Delta
+  ---------------------------------------------------------------------------------------
+  memory_get_usage()                 24.50 MB         31.20 MB       +6.70 MB (+27.3%)
+  memory_get_usage(true)             28.00 MB         34.00 MB       +6.00 MB (+21.4%)
+  Heap usage                         23.80 MB         30.50 MB       +6.70 MB (+28.2%)
+  Analyzed                             98.2%            97.5%          -0.7pt
+
+=== Type Breakdown Delta ===
+
+  Type                           Count Δ     Baseline       Target      Memory Δ
+  ----------------------------------------------------------------------------------
+  ZendObject                      +4050    20.00 MB     26.40 MB      +6.40 MB
+  ZendString                       +100   800.00 KB    810.00 KB     +10.00 KB
+  ZendArray                         +20     2.00 MB      2.03 MB     +32.00 KB
+
+=== Class Memory Changes ===
+
+  Class                                     Count Δ      Memory Δ  Target Memory
+  ----------------------------------------------------------------------------------
+  App\Entity\User                            +4000       +6.40 MB       6.91 MB
+  App\Cache\Item                               +20      +32.00 KB      64.00 KB
+
+  New classes (target only):
+    App\NewFeature\Handler                         50 instances  800.00 KB
+
+  Removed classes (baseline only):
+    App\Legacy\OldHandler                          10 instances  160.00 KB
+
+=== Findings Diff ===
+
+  New findings:
+    + [HIGH] 6.40 MB: property_scaling: App\Entity\User — 4000 instances
+
+  Resolved findings:
+    - [MEDIUM] 320.00 KB: cycle_cluster: App\Legacy\OldHandler cycle
+
+  Changed findings:
+    near_memory_limit: severity warning → high, impact 8.00 MB → 2.00 MB
+
+==============================================================================
+```
+
+### Command Reference
+
+```
+Usage:
+  inspector:memory:compare [options] <baseline> [<target>]
+
+Arguments:
+  baseline                               Path to the baseline SQLite database file
+  target                                 Path to the target SQLite database file
+                                         (omit to compare run IDs within the same file)
+
+Options:
+  -f, --output-format=FORMAT             Output format: report (text) or report-json [default: report]
+  -o, --output=PATH                      Output file path (default: stdout)
+      --run-id-baseline=ID               Run ID for baseline [default: 1]
+      --run-id-target=ID                 Run ID for target [default: 1]
+      --threshold=PERCENT                Minimum change percentage to report [default: 0]
+      --pretty-print|--no-pretty-print   Pretty print JSON output (default: on)
+      --full-analysis|--no-full-analysis Run all analysis passes for both snapshots (default: off)
+      --memory-limit=LIMIT               Set PHP memory_limit (e.g. 2G, 512M)
+```
+
+### JSON Output
+
+```bash
+./reli inspector:memory:compare before.db after.db -f report-json -o diff.json
+```
+
+```json
+{
+  "baseline": { "captured_at": "2026-04-01T10:00:00Z", "node_count": 50000 },
+  "target": { "captured_at": "2026-04-01T14:00:00Z", "node_count": 80000 },
+  "summary_deltas": [
+    { "metric": "memory_get_usage", "baseline": 25690112, "target": 32717824, "delta": 7027712, "delta_percent": 27.3 }
+  ],
+  "type_deltas": [
+    { "type": "ZendObjectMemoryLocation", "baseline_count": 10000, "target_count": 14050, "baseline_memory": 20971520, "target_memory": 27682816, "count_delta": 4050, "memory_delta": 6711296 }
+  ],
+  "class_deltas": {
+    "changed": [
+      { "class_name": "App\\Entity\\User", "baseline_count": 100, "target_count": 4100, "baseline_memory": 25600, "target_memory": 6578200, "count_delta": 4000, "memory_delta": 6552600 }
+    ],
+    "added": [],
+    "removed": []
+  },
+  "findings_diff": {
+    "new": [ { "kind": "property_scaling", "severity": "high", "..." : "..." } ],
+    "resolved": [ { "kind": "cycle_cluster", "severity": "medium", "..." : "..." } ],
+    "changed": [
+      { "baseline": { "kind": "near_memory_limit", "severity": "warning" }, "target": { "kind": "near_memory_limit", "severity": "high" } }
+    ]
+  }
+}
+```
+
+### Threshold Filtering
+
+Use `--threshold` to suppress small changes (useful for noisy environments):
+
+```bash
+# Only show changes >= 5%
+./reli inspector:memory:compare before.db after.db --threshold 5
+```
+
+This filters summary metric deltas, type breakdown deltas, and class memory changes below the given percentage.
+
+### What Gets Compared
+
+| Dimension | Source | Scope |
+|---|---|---|
+| Summary metrics | `summary` table | All metrics (memory_get_usage, heap, VM stack, etc.) |
+| Type breakdown | `location_types_summary` table | All location types |
+| Class memory | `class_objects_summary` table | All classes (not limited to top 20) |
+| Findings | `ReportGenerator` output | Actionable findings (large arrays/strings, cycles, dominant classes, etc.) |
+
+Large arrays and strings are compared via their findings (matched by `owner_path`). If the same array at the same path grows or shrinks, it appears in the "Changed findings" section.
