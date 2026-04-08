@@ -36,10 +36,22 @@ final class TextReportFormatter implements ReportFormatterInterface
         $overview = [];
         $actionable = [];
         $info = [];
+        $type_rankings = [];
+        $class_rankings = [];
+        $top_arrays = [];
+        $top_strings = [];
 
         foreach ($result->findings as $finding) {
             if (in_array($finding->kind, ['overview', 'coverage_gap', 'call_stack'], true)) {
                 $overview[] = $finding;
+            } elseif ($finding->kind === 'type_ranking') {
+                $type_rankings[] = $finding;
+            } elseif ($finding->kind === 'class_ranking') {
+                $class_rankings[] = $finding;
+            } elseif ($finding->kind === 'large_array' || $finding->kind === 'sparse_array') {
+                $top_arrays[] = $finding;
+            } elseif ($finding->kind === 'large_string') {
+                $top_strings[] = $finding;
             } elseif (
                 in_array($finding->kind, ['root_blame', 'retained_exact', 'retained_approximate'], true)
             ) {
@@ -108,6 +120,138 @@ final class TextReportFormatter implements ReportFormatterInterface
             }
         }
 
+        // Type breakdown table
+        if ($type_rankings !== []) {
+            $lines[] = '=== Type Breakdown ===';
+            $lines[] = '';
+            $lines[] = sprintf('  %-30s %10s %12s %8s', 'Type', 'Count', 'Memory', '%');
+            $lines[] = '  ' . str_repeat('-', 64);
+
+            foreach ($type_rankings as $finding) {
+                $facts = $finding->facts;
+                /** @var string $type */
+                $type = $facts['type'] ?? '?';
+                $short_type = preg_replace('/^.*\\\\/', '', $type) ?? $type;
+                $short_type = str_replace('MemoryLocation', '', $short_type);
+                /** @var int $count */
+                $count = $facts['count'] ?? 0;
+                /** @var int $memory */
+                $memory = $facts['memory_usage'] ?? 0;
+                /** @var float $pct */
+                $pct = $facts['percentage'] ?? 0;
+                $lines[] = sprintf(
+                    '  %-30s %10s %12s %7.1f%%',
+                    $short_type,
+                    number_format($count),
+                    SizeFormatter::format($memory),
+                    $pct,
+                );
+            }
+            $lines[] = '';
+        }
+
+        // Top classes table
+        if ($class_rankings !== []) {
+            $lines[] = '=== Top Classes by Memory ===';
+            $lines[] = '';
+            $lines[] = sprintf('  %3s  %-40s %8s %10s %12s %8s', '#', 'Class', 'Count', 'Avg Size', 'Memory', '%');
+            $lines[] = '  ' . str_repeat('-', 87);
+
+            foreach ($class_rankings as $finding) {
+                $facts = $finding->facts;
+                /** @var int $rank */
+                $rank = $facts['rank'] ?? 0;
+                /** @var string $class_name */
+                $class_name = $facts['class_name'] ?? '?';
+                /** @var int $count */
+                $count = $facts['count'] ?? 0;
+                /** @var int $avg_size */
+                $avg_size = $facts['avg_size'] ?? 0;
+                /** @var int $memory */
+                $memory = $facts['memory_bytes'] ?? 0;
+                /** @var float $pct */
+                $pct = $facts['percentage_of_object_memory'] ?? 0;
+                $display_name = strlen($class_name) > 40
+                    ? '...' . substr($class_name, -37)
+                    : $class_name;
+                $lines[] = sprintf(
+                    '  %3d  %-40s %8s %10s %12s %7.1f%%',
+                    $rank,
+                    $display_name,
+                    number_format($count),
+                    SizeFormatter::format($avg_size),
+                    SizeFormatter::format($memory),
+                    $pct,
+                );
+            }
+            $lines[] = '';
+        }
+
+        // Top arrays table
+        if ($top_arrays !== []) {
+            $lines[] = '=== Top Arrays ===';
+            $lines[] = '';
+            $lines[] = sprintf('  %3s  %12s %12s %8s  %s', '#', 'Retained', 'Table', 'Elems', 'Path');
+            $lines[] = '  ' . str_repeat('-', 80);
+
+            $array_rank = 0;
+            foreach ($top_arrays as $finding) {
+                $facts = $finding->facts;
+                /** @var int $retained */
+                $retained = $facts['retained_size'] ?? $facts['table_size'] ?? 0;
+                /** @var int $table */
+                $table = $facts['table_size'] ?? 0;
+                /** @var int $elements */
+                $elements = $facts['element_count'] ?? $facts['capacity'] ?? 0;
+                /** @var string $path */
+                $path = $facts['owner_path'] ?? '';
+                $tag = $finding->kind === 'sparse_array' ? ' [sparse]' : '';
+                $lines[] = sprintf(
+                    '  %3d  %12s %12s %8s  %s%s',
+                    ++$array_rank,
+                    SizeFormatter::format($retained),
+                    SizeFormatter::format($table),
+                    number_format($elements),
+                    $path ?: '(root)',
+                    $tag,
+                );
+            }
+            $lines[] = '';
+        }
+
+        // Top strings table
+        if ($top_strings !== []) {
+            $lines[] = '=== Top Strings ===';
+            $lines[] = '';
+            $lines[] = sprintf('  %3s  %12s  %-30s  %s', '#', 'Size', 'Path', 'Preview');
+            $lines[] = '  ' . str_repeat('-', 90);
+
+            $string_rank = 0;
+            foreach ($top_strings as $finding) {
+                $facts = $finding->facts;
+                /** @var int $size */
+                $size = $facts['size'] ?? 0;
+                /** @var string $path */
+                $path = $facts['owner_path'] ?? '';
+                /** @var string $preview */
+                $preview = $facts['preview'] ?? '';
+                $display_path = strlen($path) > 30
+                    ? '...' . substr($path, -27)
+                    : $path;
+                $display_preview = strlen($preview) > 40
+                    ? substr($preview, 0, 37) . '...'
+                    : $preview;
+                $lines[] = sprintf(
+                    '  %3d  %12s  %-30s  %s',
+                    ++$string_rank,
+                    SizeFormatter::format($size),
+                    $display_path ?: '(root)',
+                    $display_preview ?: '(binary)',
+                );
+            }
+            $lines[] = '';
+        }
+
         // Blame allocation
         $blame_findings = array_filter($info, fn(Finding $f) => $f->kind === 'root_blame');
         if ($blame_findings !== []) {
@@ -140,8 +284,18 @@ final class TextReportFormatter implements ReportFormatterInterface
             $lines[] = '';
         }
 
-        // Info findings (non-blame)
-        $other_info = array_filter($info, fn(Finding $f) => $f->kind !== 'root_blame');
+        // Info findings (non-table)
+        $other_info = array_filter(
+            $info,
+            fn(Finding $f) => !in_array($f->kind, [
+                'root_blame',
+                'type_ranking',
+                'class_ranking',
+                'large_array',
+                'sparse_array',
+                'large_string',
+            ], true)
+        );
         if ($other_info !== []) {
             $lines[] = '=== Additional Info ===';
             foreach ($other_info as $finding) {

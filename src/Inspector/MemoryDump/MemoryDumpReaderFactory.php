@@ -59,6 +59,9 @@ final class MemoryDumpReaderFactory
             $process_memory_map,
             $path_resolver,
         ) implements MemoryReaderInterface {
+            /** @var array<string, resource> path => cached file handle */
+            private array $fp_cache = [];
+
             /**
              * @param list<array{address: int, size: int, file_offset: int}> $region_index
              */
@@ -68,6 +71,26 @@ final class MemoryDumpReaderFactory
                 private ProcessMemoryMap $process_memory_map,
                 private MappedPathResolver $path_resolver,
             ) {
+            }
+
+            public function __destruct()
+            {
+                foreach ($this->fp_cache as $fp) {
+                    fclose($fp);
+                }
+            }
+
+            /** @return resource|null */
+            private function openCached(string $path)
+            {
+                if (!isset($this->fp_cache[$path])) {
+                    $fp = fopen($path, 'rb');
+                    if ($fp === false) {
+                        return null;
+                    }
+                    $this->fp_cache[$path] = $fp;
+                }
+                return $this->fp_cache[$path];
             }
 
             #[\Override]
@@ -80,16 +103,12 @@ final class MemoryDumpReaderFactory
                         $offset_in_region = $remote_address - $region_start;
                         $file_offset = $region['file_offset'] + $offset_in_region;
 
-                        $fp = fopen($this->file_path, 'rb');
-                        if ($fp === false) {
+                        $fp = $this->openCached($this->file_path);
+                        if ($fp === null) {
                             throw new \RuntimeException("failed to open dump file: {$this->file_path}");
                         }
-                        try {
-                            fseek($fp, $file_offset);
-                            $data = fread($fp, $size);
-                        } finally {
-                            fclose($fp);
-                        }
+                        fseek($fp, $file_offset);
+                        $data = fread($fp, $size);
                         if ($data === false || strlen($data) !== $size) {
                             throw new \RuntimeException(
                                 "failed to read {$size} bytes at file offset {$file_offset}"
@@ -111,14 +130,13 @@ final class MemoryDumpReaderFactory
                     if ($memory_area->name !== '' && !$memory_area->attribute->write) {
                         $resolved_path = $this->path_resolver->resolve($pid, $memory_area->name);
                         if (file_exists($resolved_path)) {
-                            $file_fp = fopen($resolved_path, 'rb');
-                            if ($file_fp === false) {
+                            $file_fp = $this->openCached($resolved_path);
+                            if ($file_fp === null) {
                                 continue;
                             }
                             $offset = $remote_address - hexdec($memory_area->begin);
                             fseek($file_fp, (int)hexdec($memory_area->file_offset) + $offset);
                             $data = fread($file_fp, $size);
-                            fclose($file_fp);
                             if ($data === false) {
                                 continue;
                             }
