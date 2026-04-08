@@ -20,6 +20,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 - [Automatic memory analysis report](docs/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
 - [Condition-based monitoring](docs/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
 - [Variable inspection](docs/peek-var-command.md): read PHP variable values from a running process without modifying it
+- [Sidecar daemon](docs/sidecar.md): run a daemon that accepts on-demand memory dump requests from PHP processes via Unix socket — no FFI needed in the application, ideal for memory_limit crash analysis and CI regression detection
 
 ## How it works
 It's implemented by using following techniques:
@@ -788,9 +789,12 @@ $ sudo php ./reli i:m -p <pid> -f sqlite3 -o before.db
 # ... deploy code change, trigger workload, etc.
 $ sudo php ./reli i:m -p <pid> -f sqlite3 -o after.db
 $ php ./reli inspector:memory:compare before.db after.db
+
+# Or compare run IDs within the same database
+$ php ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
 ```
 
-The comparison report shows summary deltas (memory_get_usage, heap, etc.), per-class memory changes (added/removed/changed), and findings diff (new/resolved/changed issues). Use `--threshold 5` to filter changes smaller than 5%. See [docs/memory-report.md](docs/memory-report.md) for details.
+The comparison report shows summary deltas, type breakdown deltas, per-class memory changes (added/removed/changed), and findings diff (new/resolved/changed issues). Use `--threshold 5` to filter changes smaller than 5%. See [docs/memory-report.md](docs/memory-report.md) for details.
 
 ## Binary analysis cache
 Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.

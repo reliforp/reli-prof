@@ -38,8 +38,8 @@ final class MemoryCompareCommand extends Command
         );
         $this->addArgument(
             'target',
-            InputArgument::REQUIRED,
-            'path to the target SQLite database file'
+            InputArgument::OPTIONAL,
+            'path to the target SQLite database file (omit to compare run IDs within the same file)'
         );
         $this->addOption(
             'run-id-baseline',
@@ -115,13 +115,15 @@ final class MemoryCompareCommand extends Command
         Log::info('start memory:compare command');
 
         $baseline_file = (string)$input->getArgument('baseline');
-        $target_file = (string)$input->getArgument('target');
+        /** @var string|null $target_arg */
+        $target_arg = $input->getArgument('target');
+        $target_file = $target_arg !== null ? $target_arg : $baseline_file;
 
         if (!file_exists($baseline_file)) {
             $output->writeln("<error>Baseline database not found: {$baseline_file}</error>");
             return 1;
         }
-        if (!file_exists($target_file)) {
+        if ($target_file !== $baseline_file && !file_exists($target_file)) {
             $output->writeln("<error>Target database not found: {$target_file}</error>");
             return 1;
         }
