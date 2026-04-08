@@ -59,4 +59,31 @@ class SidecarClientResponseTest extends BaseTestCase
         $this->assertSame([], $response->trace);
         $this->assertNull($response->memory_stats);
     }
+
+    public function testProtocolVersionParsed(): void
+    {
+        $response = SidecarClientResponse::fromJson(
+            json_encode(['status' => 'ok', 'protocol_version' => 1]),
+        );
+        $this->assertNotNull($response);
+        $this->assertSame(1, $response->protocol_version);
+        $this->assertTrue($response->isCompatible());
+    }
+
+    public function testIsCompatibleWithoutVersion(): void
+    {
+        $response = SidecarClientResponse::fromJson(json_encode(['status' => 'ok']));
+        $this->assertNotNull($response);
+        $this->assertNull($response->protocol_version);
+        $this->assertTrue($response->isCompatible());
+    }
+
+    public function testIsCompatibleWithFutureVersion(): void
+    {
+        $response = SidecarClientResponse::fromJson(
+            json_encode(['status' => 'ok', 'protocol_version' => 999]),
+        );
+        $this->assertNotNull($response);
+        $this->assertFalse($response->isCompatible());
+    }
 }

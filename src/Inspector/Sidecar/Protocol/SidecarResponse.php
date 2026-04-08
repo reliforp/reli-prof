@@ -16,6 +16,17 @@ namespace Reli\Inspector\Sidecar\Protocol;
 final class SidecarResponse
 {
     /**
+     * Protocol version. Bump on breaking changes.
+     *
+     * Compatibility contract:
+     *  - Additive changes (new optional fields) do NOT bump the version.
+     *    Both sides ignore unknown keys via fromJson/isset.
+     *  - Breaking changes (removed/renamed fields, semantic changes)
+     *    MUST bump the version so clients can detect incompatibility.
+     */
+    public const PROTOCOL_VERSION = 1;
+
+    /**
      * @param list<string> $trace
      * @param array<string, mixed>|null $error_context
      * @param array<string, int|null> $memory_stats
@@ -63,7 +74,10 @@ final class SidecarResponse
 
     public function toJson(): string
     {
-        $data = ['status' => $this->status];
+        $data = [
+            'protocol_version' => self::PROTOCOL_VERSION,
+            'status' => $this->status,
+        ];
         if ($this->path !== null) {
             $data['path'] = $this->path;
         }

@@ -41,6 +41,7 @@ class SidecarResponseTest extends BaseTestCase
         $response = SidecarResponse::ok('/tmp/d.bin', 512);
         $decoded = json_decode($response->toJson(), true);
 
+        $this->assertSame(SidecarResponse::PROTOCOL_VERSION, $decoded['protocol_version']);
         $this->assertSame('ok', $decoded['status']);
         $this->assertSame('/tmp/d.bin', $decoded['path']);
         $this->assertSame(512, $decoded['bytes']);
@@ -53,6 +54,7 @@ class SidecarResponseTest extends BaseTestCase
         $response = SidecarResponse::error('boom');
         $decoded = json_decode($response->toJson(), true);
 
+        $this->assertSame(SidecarResponse::PROTOCOL_VERSION, $decoded['protocol_version']);
         $this->assertSame('error', $decoded['status']);
         $this->assertSame('boom', $decoded['message']);
         $this->assertArrayNotHasKey('path', $decoded);

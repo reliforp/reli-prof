@@ -421,12 +421,21 @@ Only `command` and `pid` are required. All other fields are optional.
 **Response:**
 
 ```json
-{"status": "ok", "path": "/tmp/dumps/sidecar-1234-20260403-120000.dump", "bytes": 52428800, "trace": ["..."], "memory_stats": {"memory_usage": 52428800, "rss": 89128960}}
+{"protocol_version": 1, "status": "ok", "path": "/tmp/dumps/sidecar-1234-20260403-120000.dump", "bytes": 52428800, "trace": ["..."], "memory_stats": {"memory_usage": 52428800, "rss": 89128960}}
 ```
 
 ```json
-{"status": "error", "message": "process 1234 not found"}
+{"protocol_version": 1, "status": "error", "message": "process 1234 not found"}
 ```
+
+### Protocol Versioning
+
+Every response includes `protocol_version` (integer). The compatibility contract:
+
+- **Additive changes** (new optional fields) do **not** bump the version. Both sides ignore unknown JSON keys.
+- **Breaking changes** (removed/renamed fields, semantic changes) **must** bump the version.
+
+Clients can check `$response->isCompatible()` to detect whether the server's version exceeds what the client understands. A response without `protocol_version` (from a pre-versioning server) is treated as compatible.
 
 ## Relationship with Other Commands
 
