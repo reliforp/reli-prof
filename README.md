@@ -20,6 +20,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 - [Automatic memory analysis report](docs/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
 - [Condition-based monitoring](docs/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
 - [Variable inspection](docs/peek-var-command.md): read PHP variable values from a running process without modifying it
+- [Sidecar daemon](docs/sidecar.md): run a daemon that accepts on-demand memory dump requests from PHP processes via Unix socket — no FFI needed in the application, ideal for memory_limit crash analysis and CI regression detection
 
 ## How it works
 It's implemented by using following techniques:
