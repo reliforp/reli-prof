@@ -61,6 +61,7 @@ final class SidecarServer
             $socket_path,
         ));
 
+        /** @psalm-suppress RedundantCondition -- $this->running is set to false by signal handler */
         while ($this->running) {
             // Use stream_select to allow signal handling between polls
             $read = [$server];
@@ -70,6 +71,7 @@ final class SidecarServer
 
             pcntl_signal_dispatch();
 
+            /** @psalm-suppress TypeDoesNotContainType -- signal handler sets $this->running = false */
             if (!$this->running) {
                 break;
             }
@@ -134,8 +136,8 @@ final class SidecarServer
             if ($response->status === 'ok') {
                 $output->writeln(sprintf(
                     '<info>[sidecar] Dump complete: %s (%.1f MB)</info>',
-                    $response->path,
-                    ($response->bytes ?? 0) / 1024.0 / 1024.0,
+                    $response->path ?? '',
+                    (float)($response->bytes ?? 0) / 1024.0 / 1024.0,
                 ));
             } else {
                 $output->writeln(sprintf(

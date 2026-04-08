@@ -115,7 +115,7 @@ final class SidecarDumpHandler
             );
 
             $label_slug = $request->label !== null
-                ? '-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $request->label)
+                ? '-' . (string)preg_replace('/[^a-zA-Z0-9_-]/', '_', $request->label)
                 : '';
             $output_path = sprintf(
                 '%s/sidecar-%d-%s%s.dump',
@@ -182,6 +182,7 @@ final class SidecarDumpHandler
     }
 
     /**
+     * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @return list<string>
      */
     private function readTrace(
@@ -202,7 +203,7 @@ final class SidecarDumpHandler
             if ($call_trace === null) {
                 return [];
             }
-            return array_map(
+            return array_values(array_map(
                 fn (CallFrame $frame): string => sprintf(
                     '%s %s:%d',
                     $frame->getFullyQualifiedFunctionName(),
@@ -210,7 +211,7 @@ final class SidecarDumpHandler
                     $frame->getLineno(),
                 ),
                 $call_trace->call_frames,
-            );
+            ));
         } catch (\Throwable) {
             return [];
         }
@@ -218,7 +219,7 @@ final class SidecarDumpHandler
 
     /**
      * @param list<string> $trace
-     * @param array<string, int> $memory_stats
+     * @param array<string, int|null> $memory_stats
      */
     private function writeMetadata(
         SidecarRequest $request,
@@ -252,7 +253,7 @@ final class SidecarDumpHandler
         }
         file_put_contents(
             $meta_path,
-            json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n",
+            (string)json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n",
         );
     }
 }

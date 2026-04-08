@@ -45,6 +45,7 @@ final class SidecarRequest
 
         $metadata = [];
         if (isset($data['metadata']) && is_array($data['metadata'])) {
+            /** @var mixed $v */
             foreach ($data['metadata'] as $k => $v) {
                 if (is_string($k) && is_string($v)) {
                     $metadata[$k] = $v;

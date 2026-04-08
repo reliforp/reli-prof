@@ -18,7 +18,7 @@ final class SidecarResponse
     /**
      * @param list<string> $trace
      * @param array<string, mixed>|null $error_context
-     * @param array<string, int>|null $memory_stats
+     * @param array<string, int|null> $memory_stats
      */
     public function __construct(
         public readonly string $status,
@@ -34,7 +34,7 @@ final class SidecarResponse
     /**
      * @param list<string> $trace
      * @param array<string, mixed>|null $error_context
-     * @param array<string, int>|null $memory_stats
+     * @param array<string, int|null>|null $memory_stats
      */
     public static function ok(
         string $path,
@@ -82,6 +82,6 @@ final class SidecarResponse
         if ($this->message !== null) {
             $data['message'] = $this->message;
         }
-        return json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return (string)json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 }

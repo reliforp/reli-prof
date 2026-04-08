@@ -40,10 +40,14 @@ final class SidecarClient
         private int $timeout_seconds = 30,
         private array $default_metadata = [],
     ) {
-        $this->socket_path = $socket_path
-            ?? ($_SERVER[self::ENV_SOCKET_PATH] ?? null)
-            ?? (getenv(self::ENV_SOCKET_PATH) ?: null)
-            ?? self::DEFAULT_SOCKET_PATH;
+        if ($socket_path !== null) {
+            $this->socket_path = $socket_path;
+        } else {
+            $env = getenv(self::ENV_SOCKET_PATH);
+            $this->socket_path = (is_string($env) && $env !== '')
+                ? $env
+                : self::DEFAULT_SOCKET_PATH;
+        }
     }
 
     /**
@@ -125,7 +129,7 @@ final class SidecarClient
         try {
             stream_set_timeout($sock, $this->timeout_seconds);
 
-            $written = fwrite($sock, json_encode($payload) . "\n");
+            $written = fwrite($sock, (string)json_encode($payload) . "\n");
             if ($written === false) {
                 return null;
             }

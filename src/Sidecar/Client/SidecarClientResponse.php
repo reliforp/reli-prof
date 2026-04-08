@@ -42,13 +42,26 @@ final class SidecarClientResponse
         if (!is_array($data) || !isset($data['status']) || !is_string($data['status'])) {
             return null;
         }
+        /** @var list<string> $trace */
+        $trace = isset($data['trace']) && is_array($data['trace'])
+            ? array_values(array_filter($data['trace'], 'is_string'))
+            : [];
+        /** @var array<string, mixed>|null $error_context */
+        $error_context = isset($data['error_context']) && is_array($data['error_context'])
+            ? $data['error_context']
+            : null;
+        /** @var array<string, int>|null $memory_stats */
+        $memory_stats = isset($data['memory_stats']) && is_array($data['memory_stats'])
+            ? $data['memory_stats']
+            : null;
+
         return new self(
             status: $data['status'],
             path: isset($data['path']) && is_string($data['path']) ? $data['path'] : null,
             bytes: isset($data['bytes']) && is_int($data['bytes']) ? $data['bytes'] : null,
-            trace: isset($data['trace']) && is_array($data['trace']) ? array_values($data['trace']) : [],
-            error_context: isset($data['error_context']) && is_array($data['error_context']) ? $data['error_context'] : null,
-            memory_stats: isset($data['memory_stats']) && is_array($data['memory_stats']) ? $data['memory_stats'] : null,
+            trace: $trace,
+            error_context: $error_context,
+            memory_stats: $memory_stats,
             message: isset($data['message']) && is_string($data['message']) ? $data['message'] : null,
         );
     }

@@ -54,7 +54,7 @@ final class MemoryLimitHandler
      * @param string|null $socket_path
      * @param (callable(SidecarClientResponse): void)|null $on_response
      * @param (callable(string): void)|null $on_error
-     * @return callable(): void
+     * @return \Closure
      */
     private static function createHandler(
         ?string $socket_path,
@@ -95,8 +95,8 @@ final class MemoryLimitHandler
             } elseif ($response->isOk()) {
                 error_log(sprintf(
                     'reli-sidecar: memory dump saved to %s (%.1f MB)',
-                    $response->path,
-                    ($response->bytes ?? 0) / 1024.0 / 1024.0,
+                    $response->path ?? '',
+                    (float)($response->bytes ?? 0) / 1024.0 / 1024.0,
                 ));
             } else {
                 error_log(sprintf(
