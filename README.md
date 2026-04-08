@@ -779,6 +779,19 @@ $ sudo php ./reli i:m -p <pid> -f report
 
 The report identifies dominant classes, circular references, choke points, deduplication candidates, and more — with severity, hypothesis, and next steps for each finding. See [docs/memory-report.md](docs/memory-report.md) for details.
 
+### Comparing two snapshots
+
+Compare memory snapshots to find regressions, verify fixes, or track leaks over time:
+
+```bash
+$ sudo php ./reli i:m -p <pid> -f sqlite3 -o before.db
+# ... deploy code change, trigger workload, etc.
+$ sudo php ./reli i:m -p <pid> -f sqlite3 -o after.db
+$ php ./reli inspector:memory:compare before.db after.db
+```
+
+The comparison report shows summary deltas (memory_get_usage, heap, etc.), per-class memory changes (added/removed/changed), and findings diff (new/resolved/changed issues). Use `--threshold 5` to filter changes smaller than 5%. See [docs/memory-report.md](docs/memory-report.md) for details.
+
 ## Binary analysis cache
 Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.
 
