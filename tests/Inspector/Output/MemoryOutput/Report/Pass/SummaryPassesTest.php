@@ -174,6 +174,32 @@ class SummaryPassesTest extends BaseTestCase
         $this->assertCount(0, $dominant);
     }
 
+    public function testTypeBreakdownAlwaysEmitsTypeRankings(): void
+    {
+        $pass = new TypeBreakdownPass([
+            'ZendObjectMemoryLocation' => ['count' => 500, 'memory_usage' => 400000],
+            'ZendStringMemoryLocation' => ['count' => 300, 'memory_usage' => 200000],
+            'ZendArrayMemoryLocation' => ['count' => 100, 'memory_usage' => 100000],
+        ]);
+        $findings = $pass->analyze();
+
+        $rankings = array_values(array_filter(
+            $findings,
+            fn(Finding $f) => $f->kind === 'type_ranking'
+        ));
+        $this->assertCount(3, $rankings);
+
+        // First entry should be the largest by memory (input is already sorted by memory desc)
+        $this->assertSame('ZendObjectMemoryLocation', $rankings[0]->facts['type']);
+        $this->assertSame(400000, $rankings[0]->facts['memory_usage']);
+        $this->assertSame(500, $rankings[0]->facts['count']);
+        $this->assertSame('info', $rankings[0]->severity->value);
+        $this->assertSame(400000, $rankings[0]->impact_bytes);
+
+        // Percentage should be calculated
+        $this->assertEqualsWithDelta(57.1, $rankings[0]->facts['percentage'], 0.1);
+    }
+
     public function testTypeBreakdownHandlesEmpty(): void
     {
         $pass = new TypeBreakdownPass([]);
@@ -199,6 +225,48 @@ class SummaryPassesTest extends BaseTestCase
         // Per-entity cost: 5000000 / 10000 = 500
         $this->assertStringContainsString('500 B', $f->summary);
         $this->assertSame(500, $f->facts['avg_size']);
+    }
+
+    public function testClassRankingAlwaysEmitsClassRankings(): void
+    {
+        $pass = new ClassRankingPass([
+            'App\\Big' => ['count' => 1000, 'memory_usage' => 500000],
+            'App\\Medium' => ['count' => 500, 'memory_usage' => 200000],
+            'App\\Small' => ['count' => 100, 'memory_usage' => 50000],
+        ]);
+        $findings = $pass->analyze();
+
+        $rankings = array_values(array_filter(
+            $findings,
+            fn(Finding $f) => $f->kind === 'class_ranking'
+        ));
+        $this->assertCount(3, $rankings);
+
+        // First should be #1, largest class
+        $this->assertSame(1, $rankings[0]->facts['rank']);
+        $this->assertSame('App\\Big', $rankings[0]->facts['class_name']);
+        $this->assertSame(1000, $rankings[0]->facts['count']);
+        $this->assertSame(500000, $rankings[0]->facts['memory_bytes']);
+        $this->assertSame(500, $rankings[0]->facts['avg_size']);
+        $this->assertSame('info', $rankings[0]->severity->value);
+        $this->assertSame(500000, $rankings[0]->impact_bytes);
+
+        // Second should be #2
+        $this->assertSame(2, $rankings[1]->facts['rank']);
+        $this->assertSame('App\\Medium', $rankings[1]->facts['class_name']);
+    }
+
+    public function testClassRankingLimitsTo20(): void
+    {
+        $classes = [];
+        for ($i = 1; $i <= 25; $i++) {
+            $classes["App\\Class{$i}"] = ['count' => 100, 'memory_usage' => 10000 * (26 - $i)];
+        }
+        $pass = new ClassRankingPass($classes);
+        $findings = $pass->analyze();
+
+        $rankings = array_filter($findings, fn(Finding $f) => $f->kind === 'class_ranking');
+        $this->assertCount(20, $rankings);
     }
 
     public function testClassRankingHandlesEmpty(): void
