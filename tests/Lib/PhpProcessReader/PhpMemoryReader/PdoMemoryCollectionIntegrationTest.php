@@ -244,6 +244,52 @@ class PdoMemoryCollectionIntegrationTest extends BaseTestCase
         )->fetchColumn();
         $this->assertGreaterThan(0, (int)$pdo_dbh_count, 'pdo_dbh_t should be tracked');
 
+        // Verify pdo_column_data[] is tracked as PdoStatementColumnsMemoryLocation
+        /** @psalm-suppress MixedAssignment */
+        $columns_count = $db->query(
+            "SELECT COUNT(*) FROM context_node_locations"
+            . " WHERE run_id = {$run_id} AND location_type = 'PdoStatementColumnsMemoryLocation'"
+        )->fetchColumn();
+        $this->assertGreaterThan(
+            0,
+            (int)$columns_count,
+            'pdo_stmt_t->columns (pdo_column_data[]) should be tracked'
+        );
+
+        // Verify column name strings are tracked under PDOStatement context
+        /** @psalm-suppress MixedAssignment */
+        $stmt_string_count = $db->query(
+            "SELECT COUNT(*) FROM context_node_locations"
+            . " WHERE run_id = {$run_id}"
+            . " AND location_type = 'ZendStringMemoryLocation'"
+            . " AND node_id IN ("
+            . "   SELECT node_id FROM context_node_locations"
+            . "   WHERE run_id = {$run_id} AND class_name = 'PDOStatement'"
+            . " )"
+        )->fetchColumn();
+        $this->assertGreaterThan(
+            0,
+            (int)$stmt_string_count,
+            'Column name zend_strings should be tracked under PDOStatement context'
+        );
+
+        // Verify pdo_bound_param_data entries from bound_columns are tracked
+        /** @psalm-suppress MixedAssignment */
+        $bound_param_count = $db->query(
+            "SELECT COUNT(*) FROM context_node_locations"
+            . " WHERE run_id = {$run_id}"
+            . " AND location_type = 'PdoDriverDataMemoryLocation'"
+            . " AND node_id IN ("
+            . "   SELECT node_id FROM context_node_locations"
+            . "   WHERE run_id = {$run_id} AND class_name = 'PDOStatement'"
+            . " )"
+        )->fetchColumn();
+        $this->assertGreaterThan(
+            0,
+            (int)$bound_param_count,
+            'pdo_bound_param_data entries from bound_columns should be tracked'
+        );
+
         $db = null;
         @unlink($tmp_path);
     }
