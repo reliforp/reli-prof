@@ -1270,6 +1270,23 @@ return static function () use (...): void {
 };
 ```
 
+### Status
+
+Emergency memory reserve (256 KB) added. But `SidecarClient` and
+`SidecarClientResponse` are NOT autoloaded at `register()` time — they are first
+loaded in the shutdown handler via `new SidecarClient()`, triggering composer
+autoload which consumes more than the 256 KB reserve.
+
+**Fix:** Pre-load client classes at registration time:
+```php
+public static function register(...): void {
+    class_exists(SidecarClient::class);
+    class_exists(SidecarClientResponse::class);
+    self::$reserve = str_repeat("\0", $reserve_bytes);
+    // ...
+}
+```
+
 ### Verified Working
 
 Manual socket request (`stream_socket_client` + `json_encode` + `fwrite`) works
