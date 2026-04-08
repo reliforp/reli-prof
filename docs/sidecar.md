@@ -48,6 +48,18 @@ The sidecar approach:
 
 The client library requires **no FFI** and has **no heavy dependencies**. It's designed to work in shutdown handlers with minimal memory overhead.
 
+### Emergency Memory Reserve
+
+When PHP hits `memory_limit`, the shutdown handler runs with almost no free memory — even `stream_socket_client()` can fail because it needs to allocate internal buffers. To handle this, `MemoryLimitHandler` pre-allocates a block of memory (default 256 KB) at `register()` time and releases it at the very start of the shutdown handler, freeing enough headroom for socket operations.
+
+```php
+// Default: 256 KB reserve
+\Reli\Sidecar\Client\MemoryLimitHandler::register();
+
+// Custom reserve size (e.g., 512 KB for applications with heavy shutdown hooks)
+\Reli\Sidecar\Client\MemoryLimitHandler::register(reserve_bytes: 512 * 1024);
+```
+
 ### Automatic memory_limit Handler
 
 ```php

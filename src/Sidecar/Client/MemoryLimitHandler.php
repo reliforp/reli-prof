@@ -32,19 +32,38 @@ namespace Reli\Sidecar\Client;
  *   1. $socket_path argument
  *   2. RELI_SIDECAR_SOCKET environment variable
  *   3. Default: /var/run/reli-sidecar.sock
+ *
+ * ## Emergency Memory Reserve
+ *
+ * When PHP hits memory_limit, the shutdown handler runs with almost no
+ * free memory. Even `stream_socket_client()` needs to allocate buffers.
+ * To ensure the handler can function, this class pre-allocates a block
+ * of memory (default 256 KB) at `register()` time and releases it at
+ * the very start of the shutdown handler, freeing enough headroom for
+ * the socket operations.
+ *
+ * Adjust the reserve size via the $reserve_bytes parameter if needed.
  */
 final class MemoryLimitHandler
 {
+    private const DEFAULT_RESERVE_BYTES = 256 * 1024;
+
+    /** @var string|null Pre-allocated memory block, released on shutdown */
+    private static ?string $reserve = null;
+
     /**
      * @param string|null $socket_path UDS path (null = auto-detect)
      * @param (callable(SidecarClientResponse): void)|null $on_response
      * @param (callable(string): void)|null $on_error called with error message on failure
+     * @param int $reserve_bytes emergency memory reserve size (default: 256 KB)
      */
     public static function register(
         ?string $socket_path = null,
         ?callable $on_response = null,
         ?callable $on_error = null,
+        int $reserve_bytes = self::DEFAULT_RESERVE_BYTES,
     ): void {
+        self::$reserve = str_repeat("\0", $reserve_bytes);
         register_shutdown_function(
             self::createHandler($socket_path, $on_response, $on_error),
         );
@@ -62,6 +81,9 @@ final class MemoryLimitHandler
         ?callable $on_error,
     ): \Closure {
         return static function () use ($socket_path, $on_response, $on_error): void {
+            // Release emergency reserve to free memory for socket operations
+            self::$reserve = null;
+
             $error = error_get_last();
             if ($error === null) {
                 return;
