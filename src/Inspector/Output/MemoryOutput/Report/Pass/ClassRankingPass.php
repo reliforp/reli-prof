@@ -47,21 +47,21 @@ final class ClassRankingPass implements PassInterface
         }
 
         $findings = [];
+        $rank = 0;
         foreach ($this->class_objects_summary as $class_name => $entry) {
             $pct = $entry['memory_usage'] / $total_object_memory * 100.0;
-            if ($pct > 50.0) {
-                $short = $class_name;
-                $avg_size = $entry['count'] > 0
-                    ? (int)($entry['memory_usage'] / $entry['count'])
-                    : 0;
+            $avg_size = $entry['count'] > 0
+                ? (int)($entry['memory_usage'] / $entry['count'])
+                : 0;
 
+            if ($pct > 50.0) {
                 $findings[] = new Finding(
                     kind: 'dominant_class',
                     severity: FindingSeverity::High,
                     confidence: FindingConfidence::High,
                     summary: sprintf(
                         '%s: %s instances x %s = %.1f%% of object memory (%s)',
-                        $short,
+                        $class_name,
                         number_format($entry['count']),
                         SizeFormatter::format($avg_size),
                         $pct,
@@ -82,6 +82,31 @@ final class ClassRankingPass implements PassInterface
                     impact_bytes: $entry['memory_usage'],
                     replay_query: "SELECT class_name, count, memory_usage"
                         . " FROM class_objects_summary ORDER BY memory_usage DESC LIMIT 1",
+                );
+            }
+
+            if (++$rank <= 20) {
+                $findings[] = new Finding(
+                    kind: 'class_ranking',
+                    severity: FindingSeverity::Info,
+                    confidence: FindingConfidence::High,
+                    summary: sprintf(
+                        '#%d %s: %s instances x %s (%s)',
+                        $rank,
+                        $class_name,
+                        number_format($entry['count']),
+                        SizeFormatter::format($avg_size),
+                        SizeFormatter::format($entry['memory_usage']),
+                    ),
+                    facts: [
+                        'rank' => $rank,
+                        'class_name' => $class_name,
+                        'count' => $entry['count'],
+                        'memory_bytes' => $entry['memory_usage'],
+                        'percentage_of_object_memory' => round($pct, 1),
+                        'avg_size' => $avg_size,
+                    ],
+                    impact_bytes: $entry['memory_usage'],
                 );
             }
         }

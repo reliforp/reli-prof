@@ -49,10 +49,10 @@ final class TypeBreakdownPass implements PassInterface
         $findings = [];
         foreach ($this->location_types_summary as $type => $entry) {
             $pct = $entry['memory_usage'] / $total * 100.0;
-            if ($pct > 50.0) {
-                $short_type = preg_replace('/^.*\\\\/', '', $type) ?? $type;
-                $short_type = str_replace('MemoryLocation', '', $short_type);
+            $short_type = preg_replace('/^.*\\\\/', '', $type) ?? $type;
+            $short_type = str_replace('MemoryLocation', '', $short_type);
 
+            if ($pct > 50.0) {
                 $findings[] = new Finding(
                     kind: 'dominant_type',
                     severity: $pct > 80.0 ? FindingSeverity::High : FindingSeverity::Medium,
@@ -80,6 +80,25 @@ final class TypeBreakdownPass implements PassInterface
                         . " FROM location_types_summary ORDER BY memory_usage DESC",
                 );
             }
+
+            $findings[] = new Finding(
+                kind: 'type_ranking',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: sprintf(
+                    '%s: %s (%s)',
+                    $short_type,
+                    SizeFormatter::format($entry['memory_usage']),
+                    number_format($entry['count']),
+                ),
+                facts: [
+                    'type' => $type,
+                    'count' => $entry['count'],
+                    'memory_usage' => $entry['memory_usage'],
+                    'percentage' => round($pct, 1),
+                ],
+                impact_bytes: $entry['memory_usage'],
+            );
         }
 
         return $findings;
