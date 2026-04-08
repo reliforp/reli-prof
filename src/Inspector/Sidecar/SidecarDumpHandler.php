@@ -133,52 +133,55 @@ final class SidecarDumpHandler
                 $output_path,
                 $this->include_binary,
             );
-
-            $this->disk_tracker->recordFile($output_path);
-
-            $memory_stats = [
-                'memory_usage' => $heap_stats->size,
-                'memory_real_usage' => $heap_stats->real_size,
-                'memory_peak_usage' => $heap_stats->peak,
-                'memory_limit' => $heap_stats->limit,
-                'rss' => $rss_bytes,
-            ];
-
-            $this->writeMetadata(
-                $request,
-                $output_path,
-                $trace_strings,
-                $php_version,
-                $memory_stats,
-            );
-
-            Log::info('sidecar dump saved', [
-                'path' => $result->output_path,
-                'regions' => $result->region_count,
-                'bytes' => $result->total_bytes,
-                'pid' => $pid,
-            ]);
-
-            $error_context = null;
-            if ($request->error_file !== null && $request->error_line !== null) {
-                $error_context = [
-                    'file' => $request->error_file,
-                    'line' => $request->error_line,
-                ];
-            }
-
-            return SidecarResponse::ok(
-                path: $result->output_path,
-                bytes: $result->total_bytes,
-                trace: $trace_strings,
-                error_context: $error_context,
-                memory_stats: $memory_stats,
-            );
         } finally {
+            // Resume the target as soon as dump is captured.
+            // Everything below (metadata write, response build) doesn't
+            // need the process stopped — minimize the stop window.
             if ($stopped) {
                 $this->process_stopper->resume($pid);
             }
         }
+
+        $this->disk_tracker->recordFile($output_path);
+
+        $memory_stats = [
+            'memory_usage' => $heap_stats->size,
+            'memory_real_usage' => $heap_stats->real_size,
+            'memory_peak_usage' => $heap_stats->peak,
+            'memory_limit' => $heap_stats->limit,
+            'rss' => $rss_bytes,
+        ];
+
+        $this->writeMetadata(
+            $request,
+            $output_path,
+            $trace_strings,
+            $php_version,
+            $memory_stats,
+        );
+
+        Log::info('sidecar dump saved', [
+            'path' => $result->output_path,
+            'regions' => $result->region_count,
+            'bytes' => $result->total_bytes,
+            'pid' => $pid,
+        ]);
+
+        $error_context = null;
+        if ($request->error_file !== null && $request->error_line !== null) {
+            $error_context = [
+                'file' => $request->error_file,
+                'line' => $request->error_line,
+            ];
+        }
+
+        return SidecarResponse::ok(
+            path: $result->output_path,
+            bytes: $result->total_bytes,
+            trace: $trace_strings,
+            error_context: $error_context,
+            memory_stats: $memory_stats,
+        );
     }
 
     /**
