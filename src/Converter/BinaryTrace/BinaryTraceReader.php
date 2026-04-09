@@ -205,7 +205,10 @@ final class BinaryTraceReader
 
         $type_int = ord($type_byte);
 
-        // Detect new segment header ('R' = 0x52)
+        // 0x52 ('R') is reserved — it is the first byte of the "RELI" magic.
+        // When encountered as an event type, probe for a segment header.
+        // If the next 3 bytes complete the magic, this is a new segment.
+        // Otherwise it is an error (0x52 must not be used as an event type).
         if ($type_int === 0x52) {
             $rest = fread($stream, 3);
             if ($rest !== false && strlen($rest) === 3 && $type_byte . $rest === BinaryTraceWriter::MAGIC) {
@@ -214,7 +217,9 @@ final class BinaryTraceReader
                 $this->resetSegmentState();
                 return 'new_segment';
             }
-            throw new BinaryTraceException('Unexpected byte 0x52 where event type expected');
+            throw new BinaryTraceException(
+                'Reserved event type 0x52 encountered without valid segment header'
+            );
         }
 
         $payload_length = Varint::decodeFromStream($stream);

@@ -365,4 +365,84 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
 
         fclose($stream);
     }
+
+    public function testReservedEventType0x52ThrowsWithoutMagic(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 10000);
+        $writer->writeHeader();
+
+        $trace = new ParsedCallTrace(
+            new ParsedCallFrame('func', '/file.php', 1),
+        );
+        $writer->writeTrace($trace);
+
+        // Inject 0x52 followed by bytes that do NOT form "RELI"
+        fwrite($stream, chr(0x52) . "XYZ");
+
+        rewind($stream);
+
+        $reader = new BinaryTraceReader();
+        $this->expectException(BinaryTraceException::class);
+        $this->expectExceptionMessage('Reserved event type 0x52');
+        iterator_to_array($reader->read($stream));
+        fclose($stream);
+    }
+
+    public function testSamplingPeriodPreservedThroughReadWrite(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        // Write with a non-default sampling period
+        $writer = new BinaryTraceWriter($stream, 7500);
+        $writer->writeHeader();
+
+        $trace = new ParsedCallTrace(
+            new ParsedCallFrame('func', '/file.php', 1),
+        );
+        $writer->writeTrace($trace);
+
+        rewind($stream);
+
+        $reader = new BinaryTraceReader();
+        iterator_to_array($reader->read($stream));
+        fclose($stream);
+
+        $this->assertSame(7500, $reader->getSamplingPeriodUs());
+    }
+
+    public function testSamplingPeriodAvailableAfterFirstSample(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 25000);
+        $writer->writeHeader();
+
+        $trace = new ParsedCallTrace(
+            new ParsedCallFrame('func', '/file.php', 1),
+        );
+        $writer->writeTrace($trace);
+        $writer->writeTrace($trace);
+
+        rewind($stream);
+
+        $reader = new BinaryTraceReader();
+
+        // Before iteration, period is not yet known
+        $this->assertSame(0, $reader->getSamplingPeriodUs());
+
+        // Consume first sample (triggers header parse)
+        $gen = $reader->read($stream);
+        $first = $gen->current();
+        $this->assertInstanceOf(BinaryTraceSample::class, $first);
+
+        // Now the period is available
+        $this->assertSame(25000, $reader->getSamplingPeriodUs());
+
+        fclose($stream);
+    }
 }

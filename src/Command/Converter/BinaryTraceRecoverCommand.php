@@ -31,7 +31,7 @@ final class BinaryTraceRecoverCommand extends Command
                 'format',
                 'f',
                 InputOption::VALUE_REQUIRED,
-                'Output format: rbt (binary trace) or phpspy (text)',
+                'Output format: rbt (re-encoded binary trace) or phpspy (text)',
                 'rbt',
             )
         ;
@@ -58,17 +58,23 @@ final class BinaryTraceRecoverCommand extends Command
                 $count++;
             }
         } else {
-            $writer = new BinaryTraceWriter(STDOUT, $reader->getSamplingPeriodUs() ?: 10000, true);
-            $header_written = false;
+            // Defer writer creation until the first sample so the reader has
+            // already parsed at least one header and getSamplingPeriodUs()
+            // returns the actual value from the input file.
+            $writer = null;
             foreach ($reader->readWithRecovery(STDIN) as $sample) {
-                if (!$header_written) {
+                if ($writer === null) {
+                    $writer = new BinaryTraceWriter(
+                        STDOUT,
+                        $reader->getSamplingPeriodUs() ?: 10000,
+                        has_timestamps: true,
+                    );
                     $writer->writeHeader();
-                    $header_written = true;
                 }
                 $writer->writeTrace($sample->trace, $sample->timestamp_delta_us ?? 0);
                 $count++;
             }
-            if ($header_written) {
+            if ($writer !== null) {
                 $writer->writeCheckpoint();
                 $writer->writeSegmentEnd();
             }

@@ -253,4 +253,89 @@ final class PprofEncoderTest extends BaseTestCase
         // 500_000 µs = 500_000_000 ns
         $this->assertSame(500_000_000, $duration_nanos);
     }
+
+    public function testLazyClosureSamplingPeriod(): void
+    {
+        $traces = [
+            new ParsedCallTrace(
+                new ParsedCallFrame('func', '/file.php', 1),
+            ),
+        ];
+
+        $encoder = new PprofEncoder();
+
+        // Pass a closure that resolves to 7500 µs
+        $data = $encoder->encode($traces, fn () => 7500);
+
+        // Extract period (field 12, varint) from protobuf
+        $offset = 0;
+        $period = null;
+        while ($offset < strlen($data)) {
+            [$tag, $consumed] = Varint::decode($data, $offset);
+            $offset += $consumed;
+            $field_number = $tag >> 3;
+            $wire_type = $tag & 0x07;
+
+            if ($wire_type === 0) {
+                [$val, $consumed] = Varint::decode($data, $offset);
+                $offset += $consumed;
+                if ($field_number === 12) {
+                    $period = $val;
+                }
+            } elseif ($wire_type === 2) {
+                [$length, $consumed] = Varint::decode($data, $offset);
+                $offset += $consumed;
+                $offset += $length;
+            }
+        }
+
+        $this->assertSame(7500, $period);
+    }
+
+    public function testSamplingPeriodFromReaderViaLazyClosure(): void
+    {
+        // End-to-end: write with period=25000, read via PprofEncoder with lazy closure
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 25000);
+        $writer->writeHeader();
+        $writer->writeTrace(
+            new ParsedCallTrace(new ParsedCallFrame('func', '/file.php', 1)),
+        );
+
+        rewind($stream);
+
+        $reader = new BinaryTraceReader();
+        $encoder = new PprofEncoder();
+        $data = $encoder->encode(
+            $reader->read($stream),
+            fn () => $reader->getSamplingPeriodUs() ?: 10000,
+        );
+        fclose($stream);
+
+        // Extract period (field 12)
+        $offset = 0;
+        $period = null;
+        while ($offset < strlen($data)) {
+            [$tag, $consumed] = Varint::decode($data, $offset);
+            $offset += $consumed;
+            $field_number = $tag >> 3;
+            $wire_type = $tag & 0x07;
+
+            if ($wire_type === 0) {
+                [$val, $consumed] = Varint::decode($data, $offset);
+                $offset += $consumed;
+                if ($field_number === 12) {
+                    $period = $val;
+                }
+            } elseif ($wire_type === 2) {
+                [$length, $consumed] = Varint::decode($data, $offset);
+                $offset += $consumed;
+                $offset += $length;
+            }
+        }
+
+        $this->assertSame(25000, $period);
+    }
 }

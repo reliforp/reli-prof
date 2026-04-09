@@ -109,6 +109,8 @@ All events are **length-delimited**:
 
 When an unknown `event_type` is encountered, skip `payload_length` bytes and proceed to the next event. This ensures forward compatibility with future event types.
 
+**Reserved event type**: `0x52` ('R') is **reserved** and must never be used as an event type. It is the first byte of the "RELI" segment magic. The reader uses this byte to detect segment boundaries in a concatenated stream. If `0x52` is followed by `0x45 0x4C 0x49` ("ELI"), it is treated as a new segment header rather than an event.
+
 ### Event Types
 
 | Type | Value | Description |
@@ -256,12 +258,14 @@ The implementation provides two levels of recovery:
 ### Using the Recovery Command
 
 ```bash
-# Recover to clean .rbt
+# Recover to a clean single-segment .rbt
 reli converter:binary-trace-recover < corrupted.rbt > recovered.rbt
 
 # Recover directly to phpspy text
 reli converter:binary-trace-recover -f phpspy < corrupted.rbt > recovered.txt
 ```
+
+**Note:** The `-f rbt` output is a **re-encoded** file, not a byte-preserving repair of the original. The recovery command reads all recoverable samples from the input, then writes them into a clean single-segment `.rbt` file with fresh frame/stack IDs. The sampling period is preserved from the input header.
 
 ### CHECKPOINT Verification
 
@@ -302,6 +306,27 @@ $writer = new SegmentedBinaryTraceWriter(
         return fopen("trace_{$segment_index}.rbt", 'wb');
     },
 );
+```
+
+### Stream Ownership
+
+The `SegmentedBinaryTraceWriter` **does not close** any stream — neither the `$stream` passed directly nor streams returned by `$stream_factory`. The **caller is responsible for closing** all streams after calling `finish()`. This avoids resource lifecycle ambiguity in long-running processes.
+
+In file rotation mode, the caller should track the streams returned by the factory and close them when appropriate. A typical pattern:
+
+```php
+$streams = [];
+$writer = new SegmentedBinaryTraceWriter(
+    stream: null,
+    stream_factory: function (int $i) use (&$streams) {
+        $s = fopen("trace_{$i}.rbt", 'wb');
+        $streams[$i] = $s;
+        return $s;
+    },
+);
+// ... write traces ...
+$writer->finish();
+foreach ($streams as $s) { fclose($s); }
 ```
 
 ### Segment Self-Containment

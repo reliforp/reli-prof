@@ -29,9 +29,11 @@ final class PprofEncoder
      * Encode traces to pprof protobuf format with streaming aggregation.
      *
      * @param iterable<BinaryTraceSample|ParsedCallTrace> $traces
-     * @param int $sampling_period_us Sampling period in microseconds
+     * @param (\Closure(): int)|int $sampling_period_us Sampling period in microseconds.
+     *        May be a closure for lazy resolution (e.g. from a reader whose header
+     *        is only parsed after iteration begins).
      */
-    public function encode(iterable $traces, int $sampling_period_us = 10000): string
+    public function encode(iterable $traces, \Closure|int $sampling_period_us = 10000): string
     {
         // Phase 1: streaming aggregation
         /** @var array<string, int> string => string_table_index */
@@ -185,7 +187,10 @@ final class PprofEncoder
         $profile .= $this->encodeBytesField(11, $pt);
 
         // field 12: period (int64)
-        $profile .= $this->encodeVarintField(12, $sampling_period_us);
+        $resolved_period = $sampling_period_us instanceof \Closure
+            ? $sampling_period_us()
+            : $sampling_period_us;
+        $profile .= $this->encodeVarintField(12, $resolved_period);
 
         return $profile;
     }
