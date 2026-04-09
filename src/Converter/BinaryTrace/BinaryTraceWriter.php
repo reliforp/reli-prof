@@ -151,6 +151,27 @@ final class BinaryTraceWriter
     }
 
     /**
+     * Write a SAMPLE_ANNOTATION event for the most recent sample.
+     * Must be called immediately after a SAMPLE/COMPACT_SAMPLE/PID_SAMPLE.
+     *
+     * @param array<string, string> $annotations Key-value pairs to annotate.
+     */
+    public function writeSampleAnnotation(array $annotations): void
+    {
+        if ($annotations === []) {
+            return;
+        }
+        // Flush pending RLE run so the COMPACT_SAMPLE is written before the annotation
+        $this->flushPendingRun();
+        $payload = Varint::encode(count($annotations));
+        foreach ($annotations as $key => $value) {
+            $payload .= Varint::encode($this->internString($key));
+            $payload .= Varint::encode($this->internString($value));
+        }
+        $this->writeEvent(EventType::SAMPLE_ANNOTATION, $payload);
+    }
+
+    /**
      * Write a trace as a PID_SAMPLE, emitting FRAME_DEF and STACK_DEF as needed.
      *
      * @return int The stack_id used for this sample

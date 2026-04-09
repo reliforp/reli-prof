@@ -29,4 +29,6 @@ enum EventType: int
     case REPEAT_SAMPLE = 0x09;
     /** String definition: [string_id: varint][string: remaining bytes] */
     case STRING_DEF = 0x0A;
+    /** Sample annotation: [count: varint][key_sid: varint][value_sid: varint] × count */
+    case SAMPLE_ANNOTATION = 0x0B;
 }

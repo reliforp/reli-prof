@@ -125,6 +125,7 @@ When an unknown `event_type` is encountered, skip `payload_length` bytes and pro
 | `COMPACT_SAMPLE` | 0x08 | Compact sample (no payload_length) |
 | `REPEAT_SAMPLE` | 0x09 | Repeat last sample N times (no payload_length) |
 | `STRING_DEF` | 0x0A | String definition for the intern table |
+| `SAMPLE_ANNOTATION` | 0x0B | Key-value annotations for preceding sample |
 
 ---
 
@@ -315,6 +316,35 @@ REPEAT_SAMPLE(4)      // 2 bytes
 **Segment boundaries**: The writer's run-length state is flushed on CHECKPOINT, SEGMENT_END, or writer destruction. The reader's `last_sample_stack_id` resets on each new segment.
 
 **Recovery**: If REPEAT_SAMPLE appears without a preceding sample (e.g., at segment start after recovery), it is treated as a corrupt event and triggers segment-level recovery.
+
+### SAMPLE_ANNOTATION (0x0B)
+
+Attaches key-value metadata to the immediately preceding sample. Must appear directly after a SAMPLE, COMPACT_SAMPLE, PID_SAMPLE, or REPEAT_SAMPLE event.
+
+```
+Payload:
+  [count: varint]
+  [key_string_id: varint] [value_string_id: varint]  × count
+```
+
+- Keys and values reference the STRING_DEF intern table
+- Multiple annotations per sample are supported (count > 1)
+- Annotations are optional — samples without a following SAMPLE_ANNOTATION have `null` annotations
+- The reader buffers each sample and attaches annotations before yielding, so consumers see the annotations on `BinaryTraceSample::$annotations`
+
+**Use cases**:
+- `query`: SQL query text from PDO::execute
+- `http.url`: Request URL from HTTP client
+- `http.method`: Request method
+- Custom application-level metadata
+
+**Example**:
+```
+COMPACT_SAMPLE(stack_id=3)
+SAMPLE_ANNOTATION(count=2, "query"→"SELECT * FROM users", "db.system"→"mysql")
+```
+
+**Note**: When using COMPACT_SAMPLE with RLE, the writer must flush pending runs before writing annotations (so the COMPACT_SAMPLE event precedes the annotation in the stream).
 
 ---
 
