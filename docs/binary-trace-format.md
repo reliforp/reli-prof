@@ -265,7 +265,13 @@ reli converter:binary-trace-recover < corrupted.rbt > recovered.rbt
 reli converter:binary-trace-recover -f phpspy < corrupted.rbt > recovered.txt
 ```
 
-**Note:** The `-f rbt` output is a **re-encoded** file, not a byte-preserving repair of the original. The recovery command reads all recoverable samples from the input, then writes them into a clean single-segment `.rbt` file with fresh frame/stack IDs. The sampling period is preserved from the input header.
+**Note:** The `-f rbt` output is a **re-encoded** file, not a byte-preserving repair of the original. The recovery command reads all recoverable samples from the input, then writes them into a clean single-segment `.rbt` file with fresh frame/stack IDs. The sampling period is taken from the **first successfully parsed** segment header.
+
+### Sampling Period in Multi-Segment Conversions
+
+When converting a multi-segment stream into a single output (pprof, recovered `.rbt`), only **one** sampling period value can be used. The converters use the value from the **last segment header** parsed before the period is resolved — in practice, this is the first segment for the recovery command and the last segment for the pprof command.
+
+The format does not enforce that all segments share the same sampling period. However, tools that flatten multiple segments into a single profile (pprof's `Profile.period`, recovered `.rbt` header) **implicitly assume a uniform period**. If segments were captured with different periods, the resulting output will carry only one value and sample weights may be inaccurate. Callers producing multi-segment streams should use a consistent sampling period across all segments.
 
 ### CHECKPOINT Verification
 
