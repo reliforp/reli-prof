@@ -123,6 +123,7 @@ When an unknown `event_type` is encountered, skip `payload_length` bytes and pro
 | `METADATA` | 0x06 | Key-value metadata |
 | `PID_SAMPLE` | 0x07 | Sample with process ID |
 | `COMPACT_SAMPLE` | 0x08 | Compact sample (no payload_length) |
+| `REPEAT_SAMPLE` | 0x09 | Repeat last sample N times (no payload_length) |
 
 ---
 
@@ -240,6 +241,31 @@ This is the most compact representation of a sample. It is used automatically wh
 
 **Note**: Because COMPACT_SAMPLE is not length-delimited, readers that do not recognize event type 0x08 cannot skip it safely. All readers at version >= 1 must handle this event type.
 
+### REPEAT_SAMPLE (0x09)
+
+Repeats the most recent sample's stack_id a given number of times. Like COMPACT_SAMPLE, this event has **no payload_length**.
+
+```
+[0x09] [count: varint]
+```
+
+- `count` is the number of additional occurrences (e.g., count=4 means 4 more copies)
+- A preceding COMPACT_SAMPLE (or SAMPLE/PID_SAMPLE) must exist in the current segment
+- If no preceding sample exists, the stream is considered corrupt
+
+**When used**: The writer emits REPEAT_SAMPLE for runs of 3 or more identical consecutive stacks (in `timestamps=none` mode only). Runs of 1-2 use individual COMPACT_SAMPLE events, as REPEAT_SAMPLE offers no size benefit at that length.
+
+**Example**: Stack A sampled 5 times consecutively:
+```
+COMPACT_SAMPLE(A)     // 2 bytes
+REPEAT_SAMPLE(4)      // 2 bytes
+                      // Total: 4 bytes instead of 10 bytes
+```
+
+**Segment boundaries**: The writer's run-length state is flushed on CHECKPOINT, SEGMENT_END, or writer destruction. The reader's `last_sample_stack_id` resets on each new segment.
+
+**Recovery**: If REPEAT_SAMPLE appears without a preceding sample (e.g., at segment start after recovery), it is treated as a corrupt event and triggers segment-level recovery.
+
 ---
 
 ## Timestamp Modes
@@ -248,7 +274,7 @@ The `--rbt-timestamps` option controls whether samples carry timestamp deltas:
 
 | Mode | Default | Description |
 |------|---------|-------------|
-| `none` | yes | No timestamps. Uses COMPACT_SAMPLE (2 bytes/sample). Best for phpspy/pprof/folded. |
+| `none` | yes | No timestamps. Uses COMPACT_SAMPLE (2 bytes) + REPEAT_SAMPLE RLE. Best for phpspy/pprof/folded. |
 | `delta` | | Per-sample timestamp delta in µs. Uses length-delimited SAMPLE (5 bytes/sample). Needed for timeline/Perfetto. |
 
 The mode is recorded in the segment header's `has_timestamps` flag (bit 0 of Flags byte).

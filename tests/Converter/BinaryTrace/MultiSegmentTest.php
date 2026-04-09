@@ -72,11 +72,13 @@ final class MultiSegmentTest extends BaseTestCase
         $writer1 = new BinaryTraceWriter($stream, 10000);
         $writer1->writeHeader();
         $writer1->writeTrace($trace1);
+        $writer1->flushPendingRun();
 
         // Segment 2 starts immediately (magic detected where event_type expected)
         $writer2 = new BinaryTraceWriter($stream, 10000);
         $writer2->writeHeader();
         $writer2->writeTrace($trace2);
+        $writer2->flushPendingRun();
 
         rewind($stream);
 

@@ -33,6 +33,7 @@ final class BinaryTraceRecoveryTest extends BaseTestCase
         $writer->writeTrace($trace);
         $writer->writeTrace($trace);
         $writer->writeTrace($trace);
+        unset($writer);
 
         // Append truncated garbage (incomplete event)
         fwrite($stream, chr(EventType::SAMPLE->value));
@@ -65,6 +66,7 @@ final class BinaryTraceRecoveryTest extends BaseTestCase
         $writer1 = new BinaryTraceWriter($stream, 10000);
         $writer1->writeHeader();
         $writer1->writeTrace($trace1);
+        unset($writer1);
 
         // Inject corruption: invalid payload_length varint then garbage
         fwrite($stream, chr(EventType::SAMPLE->value));
@@ -104,6 +106,7 @@ final class BinaryTraceRecoveryTest extends BaseTestCase
         $writer1 = new BinaryTraceWriter($stream, 10000);
         $writer1->writeHeader();
         $writer1->writeTrace($trace);
+        unset($writer1);
 
         // Manually write SAMPLE with undefined stack_id=99
         fwrite($stream, chr(EventType::SAMPLE->value));
@@ -195,6 +198,7 @@ final class BinaryTraceRecoveryTest extends BaseTestCase
         $writer1 = new BinaryTraceWriter($stream, 10000);
         $writer1->writeHeader();
         $writer1->writeTrace($trace);
+        unset($writer1);
 
         // Broken varint: continuation bit set but no more data before next segment
         fwrite($stream, chr(EventType::FRAME_DEF->value));
@@ -204,6 +208,7 @@ final class BinaryTraceRecoveryTest extends BaseTestCase
         $writer2 = new BinaryTraceWriter($stream, 10000);
         $writer2->writeHeader();
         $writer2->writeTrace($trace);
+        unset($writer2);
 
         rewind($stream);
 

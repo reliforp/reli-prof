@@ -33,6 +33,11 @@ final class BinaryTraceWriter
     private int $sample_count = 0;
     private int $last_checkpoint_samples = 0;
 
+    // Run-length state for compact (no-timestamp) samples.
+    // Tracks consecutive occurrences of the same stack_id.
+    private ?int $pending_compact_stack_id = null;
+    private int $pending_run_count = 0;
+
     /** @var resource */
     private $stream;
     private int $flags;
@@ -49,6 +54,14 @@ final class BinaryTraceWriter
     ) {
         $this->stream = $stream;
         $this->flags = $has_timestamps ? self::FLAG_HAS_TIMESTAMPS : 0;
+    }
+
+    public function __destruct()
+    {
+        /** @psalm-suppress RedundantConditionGivenDocblockType stream may be closed */
+        if (is_resource($this->stream)) {
+            $this->flushPendingRun();
+        }
     }
 
     public function writeHeader(): void
@@ -91,6 +104,7 @@ final class BinaryTraceWriter
 
     public function writeCheckpoint(): void
     {
+        $this->flushPendingRun();
         $payload = Varint::encode($this->next_frame_id)
             . Varint::encode($this->next_stack_id)
             . Varint::encode($this->sample_count);
@@ -100,6 +114,7 @@ final class BinaryTraceWriter
 
     public function writeSegmentEnd(): void
     {
+        $this->flushPendingRun();
         $this->writeEvent(EventType::SEGMENT_END, '');
     }
 
@@ -108,6 +123,7 @@ final class BinaryTraceWriter
      */
     public function writeMetadata(string $key, string $value): void
     {
+        $this->flushPendingRun();
         $payload = Varint::encode(strlen($key)) . $key
             . Varint::encode(strlen($value)) . $value;
         $this->writeEvent(EventType::METADATA, $payload);
@@ -214,15 +230,57 @@ final class BinaryTraceWriter
     private function writeSample(int $stack_id, int $timestamp_delta_us): void
     {
         if (($this->flags & self::FLAG_HAS_TIMESTAMPS) !== 0) {
+            // Timestamped samples: no RLE (each has a unique delta)
             $payload = Varint::encode($stack_id)
                 . Varint::encode($timestamp_delta_us);
             $this->writeEvent(EventType::SAMPLE, $payload);
+            $this->sample_count++;
+            return;
+        }
+
+        // Compact (no-timestamp) path with run-length encoding.
+        // Accumulate consecutive identical stack_ids into a pending run.
+        if ($this->pending_compact_stack_id === $stack_id) {
+            $this->pending_run_count++;
         } else {
-            // Compact sample: no payload_length, just event_type + stack_id varint
+            $this->flushPendingRun();
+            $this->pending_compact_stack_id = $stack_id;
+            $this->pending_run_count = 1;
+        }
+        $this->sample_count++;
+    }
+
+    /**
+     * Flush any pending run-length encoded compact samples.
+     * Called on stack change, checkpoint, segment end, or any non-sample write.
+     */
+    public function flushPendingRun(): void
+    {
+        if ($this->pending_compact_stack_id === null || $this->pending_run_count === 0) {
+            return;
+        }
+
+        $stack_id = $this->pending_compact_stack_id;
+        $count = $this->pending_run_count;
+
+        // Always emit the initial COMPACT_SAMPLE
+        fwrite($this->stream, chr(EventType::COMPACT_SAMPLE->value));
+        fwrite($this->stream, Varint::encode($stack_id));
+
+        // Use REPEAT_SAMPLE for runs of 3+ (threshold: count-1 >= 2).
+        // Run of 2: COMPACT + COMPACT = 4 bytes vs COMPACT + REPEAT(1) = 4 bytes → no gain.
+        // Run of 3: COMPACT + COMPACT + COMPACT = 6 bytes vs COMPACT + REPEAT(2) = 4 bytes → 2 byte gain.
+        $remaining = $count - 1;
+        if ($remaining >= 2) {
+            fwrite($this->stream, chr(EventType::REPEAT_SAMPLE->value));
+            fwrite($this->stream, Varint::encode($remaining));
+        } elseif ($remaining === 1) {
             fwrite($this->stream, chr(EventType::COMPACT_SAMPLE->value));
             fwrite($this->stream, Varint::encode($stack_id));
         }
-        $this->sample_count++;
+
+        $this->pending_compact_stack_id = null;
+        $this->pending_run_count = 0;
     }
 
     private function writeEvent(EventType $type, string $payload): void

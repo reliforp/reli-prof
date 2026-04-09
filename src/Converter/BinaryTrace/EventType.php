@@ -24,4 +24,6 @@ enum EventType: int
     case PID_SAMPLE = 0x07;
     /** Compact sample without payload_length: [0x08][stack_id: varint] */
     case COMPACT_SAMPLE = 0x08;
+    /** Repeat last compact sample: [0x09][count: varint] (no payload_length) */
+    case REPEAT_SAMPLE = 0x09;
 }

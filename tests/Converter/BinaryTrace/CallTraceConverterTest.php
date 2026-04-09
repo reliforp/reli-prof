@@ -48,6 +48,7 @@ final class CallTraceConverterTest extends BaseTestCase
         $writer = new BinaryTraceWriter($stream, 10000);
         $writer->writeHeader();
         $writer->writeTrace($parsed);
+        unset($writer);
 
         rewind($stream);
 

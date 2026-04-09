@@ -80,6 +80,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
         }
 
         $data_size = ftell($stream);
+        unset($writer);
         rewind($stream);
 
         $reader = new BinaryTraceReader();
@@ -105,6 +106,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
         $writer = new BinaryTraceWriter($stream, 10000);
         $writer->writeHeader();
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -155,17 +157,23 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
         $writer = new BinaryTraceWriter($stream, 10000);
         $writer->writeHeader();
 
-        $trace = new ParsedCallTrace(
+        $traceA = new ParsedCallTrace(
             new ParsedCallFrame('App\\Service::process', '/app/src/Service.php', 100),
             new ParsedCallFrame('App\\Controller::handle', '/app/src/Controller.php', 50),
             new ParsedCallFrame('main', '/app/public/index.php', 3),
         );
+        $traceB = new ParsedCallTrace(
+            new ParsedCallFrame('other', '/other.php', 1),
+        );
 
-        $writer->writeTrace($trace);
-        $pos_after_first = ftell($stream);
+        $writer->writeTrace($traceA);
+        $writer->writeTrace($traceB); // different stack, flushes A
+        $writer->flushPendingRun();
+        $pos_after_defs = ftell($stream);
 
-        $writer->writeTrace($trace);
-        $pos_after_second = ftell($stream);
+        $writer->writeTrace($traceA); // reuse existing stack, triggers flush of B
+        $writer->flushPendingRun();
+        $pos_after_one_sample = ftell($stream);
 
         $sample_only_size = $pos_after_second - $pos_after_first;
         $this->assertLessThanOrEqual(5, $sample_only_size, 'Repeated sample should be 2-5 bytes');
@@ -220,6 +228,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
             new ParsedCallFrame('func', '/file.php', 1),
         );
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -302,6 +311,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
         fwrite($stream, $unknown_payload);
 
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -330,6 +340,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
 
         $writer->writeTrace($trace);
         $this->assertSame(1, $writer->getSampleCount());
+        unset($writer);
 
         rewind($stream);
 
@@ -378,6 +389,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
             new ParsedCallFrame('func', '/file.php', 1),
         );
         $writer->writeTrace($trace);
+        unset($writer);
 
         // Inject 0x52 followed by bytes that do NOT form "RELI"
         fwrite($stream, chr(0x52) . "XYZ");
@@ -404,6 +416,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
             new ParsedCallFrame('func', '/file.php', 1),
         );
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -427,6 +440,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
         );
         $writer->writeTrace($trace);
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -460,6 +474,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
             new ParsedCallFrame('func', '/file.php', 1),
         );
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -516,6 +531,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
             new ParsedCallFrame('func', '/file.php', 1),
         );
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 

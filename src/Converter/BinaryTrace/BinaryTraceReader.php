@@ -30,6 +30,10 @@ final class BinaryTraceReader
     private int $sampling_period_us = 0;
     private int $flags = 0;
     private int $accumulated_timestamp_us = 0;
+    private ?int $last_sample_stack_id = null;
+
+    /** @var list<BinaryTraceSample> buffered repeat expansion */
+    private array $repeat_buffer = [];
 
     /**
      * Read header and yield BinaryTraceSample for each SAMPLE event.
@@ -62,7 +66,15 @@ final class BinaryTraceReader
         }
         $this->resetSegmentState();
 
-        while (!feof($stream)) {
+        while (!feof($stream) || $this->repeat_buffer !== []) {
+            // Drain any buffered repeat expansion first
+            if ($this->repeat_buffer !== []) {
+                foreach ($this->repeat_buffer as $buffered) {
+                    yield $buffered;
+                }
+                $this->repeat_buffer = [];
+                continue;
+            }
             try {
                 $result = $this->readOneEvent($stream);
                 if ($result === false) {
@@ -149,6 +161,8 @@ final class BinaryTraceReader
         $this->stacks = [];
         $this->metadata = [];
         $this->accumulated_timestamp_us = 0;
+        $this->last_sample_stack_id = null;
+        $this->repeat_buffer = [];
     }
 
     /**
@@ -188,7 +202,15 @@ final class BinaryTraceReader
      */
     private function readEvents($stream): iterable
     {
-        while (!feof($stream)) {
+        while (!feof($stream) || $this->repeat_buffer !== []) {
+            // Drain any buffered repeat expansion first
+            if ($this->repeat_buffer !== []) {
+                foreach ($this->repeat_buffer as $buffered) {
+                    yield $buffered;
+                }
+                $this->repeat_buffer = [];
+                continue;
+            }
             $result = $this->readOneEvent($stream);
             if ($result === false) {
                 break; // EOF
@@ -239,7 +261,24 @@ final class BinaryTraceReader
         // COMPACT_SAMPLE has no payload_length — just [event_type][stack_id: varint]
         if ($type_int === EventType::COMPACT_SAMPLE->value) {
             $stack_id = Varint::decodeFromStream($stream);
+            $this->last_sample_stack_id = $stack_id;
             return $this->resolveStack($stack_id);
+        }
+
+        // REPEAT_SAMPLE has no payload_length — just [event_type][count: varint]
+        // Expands to count copies of the last sample's stack, buffered for yield.
+        if ($type_int === EventType::REPEAT_SAMPLE->value) {
+            $count = Varint::decodeFromStream($stream);
+            if ($this->last_sample_stack_id === null) {
+                throw new BinaryTraceException(
+                    'REPEAT_SAMPLE without a preceding sample'
+                );
+            }
+            $sample = $this->resolveStack($this->last_sample_stack_id);
+            for ($i = 0; $i < $count; $i++) {
+                $this->repeat_buffer[] = $sample;
+            }
+            return null; // readEvents will drain repeat_buffer
         }
 
         $payload_length = Varint::decodeFromStream($stream);
@@ -335,6 +374,7 @@ final class BinaryTraceReader
             $this->accumulated_timestamp_us += $timestamp_delta_us;
         }
 
+        $this->last_sample_stack_id = $stack_id;
         return $this->resolveStack($stack_id, $timestamp_delta_us);
     }
 

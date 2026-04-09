@@ -34,6 +34,7 @@ final class CompactSampleTest extends BaseTestCase
         $writer->writeTrace($trace);
         $writer->writeTrace($trace);
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -77,6 +78,7 @@ final class CompactSampleTest extends BaseTestCase
         for ($i = 0; $i < $sample_count; $i++) {
             $writer_compact->writeTrace($trace);
         }
+        $writer_compact->flushPendingRun();
         $size_compact = ftell($stream_compact);
         fclose($stream_compact);
 
@@ -106,19 +108,25 @@ final class CompactSampleTest extends BaseTestCase
         $writer = new BinaryTraceWriter($stream, 10000, has_timestamps: false);
         $writer->writeHeader();
 
-        $trace = new ParsedCallTrace(
-            new ParsedCallFrame('func', '/file.php', 1),
+        $traceA = new ParsedCallTrace(
+            new ParsedCallFrame('func_a', '/a.php', 1),
+        );
+        $traceB = new ParsedCallTrace(
+            new ParsedCallFrame('func_b', '/b.php', 2),
         );
 
-        // First write includes FRAME_DEF + STACK_DEF + COMPACT_SAMPLE
-        $writer->writeTrace($trace);
-        $pos_after_first = ftell($stream);
+        // First two writes: defs + samples for A and B
+        $writer->writeTrace($traceA);
+        $writer->writeTrace($traceB);
+        $writer->flushPendingRun();
+        $pos_after_defs = ftell($stream);
 
-        // Second write is COMPACT_SAMPLE only
-        $writer->writeTrace($trace);
-        $pos_after_second = ftell($stream);
+        // Next write: only a COMPACT_SAMPLE (different stack, triggers flush of previous)
+        $writer->writeTrace($traceA);
+        $writer->flushPendingRun();
+        $pos_after_one_sample = ftell($stream);
 
-        $compact_sample_size = $pos_after_second - $pos_after_first;
+        $compact_sample_size = $pos_after_one_sample - $pos_after_defs;
         // COMPACT_SAMPLE: event_type(1) + stack_id_varint(1) = 2 bytes
         $this->assertSame(2, $compact_sample_size);
 
@@ -139,6 +147,7 @@ final class CompactSampleTest extends BaseTestCase
         );
         $writer->writeTrace($trace);
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -162,6 +171,7 @@ final class CompactSampleTest extends BaseTestCase
             new ParsedCallFrame('func', '/file.php', 1),
         );
         $writer->writeTrace($trace);
+        unset($writer);
 
         rewind($stream);
 
@@ -189,6 +199,7 @@ final class CompactSampleTest extends BaseTestCase
         );
         $writer->writeTrace($trace);
         $writer->writeTrace($trace);
+        unset($writer);
 
         // Append truncated garbage
         fwrite($stream, "\xFF\xFF");
