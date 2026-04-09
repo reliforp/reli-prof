@@ -169,7 +169,14 @@ final class DaemonCommand extends Command
         });
         foreach ($worker_pool->getWorkers() as $reader) {
             $futures[] = async(
-                function () use ($reader, $dispatch_table, $trace_output, $output_settings, $bundled_writer, &$bundled_last_hrtime_ns) {
+                function () use (
+                    $reader,
+                    $dispatch_table,
+                    $trace_output,
+                    $output_settings,
+                    $bundled_writer,
+                    &$bundled_last_hrtime_ns,
+                ) {
                     while (1) {
                         $result = $reader->receiveTraceOrDetachWorker();
                         if ($result instanceof TraceMessage) {
