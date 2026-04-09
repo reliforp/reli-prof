@@ -527,6 +527,14 @@ reli inspector:daemon -F rbt ...
 - **IPC carries only control messages** (attach/detach) — zero serialize overhead for traces
 - Workers install a SIGTERM handler for clean shutdown (CHECKPOINT + SEGMENT_END on the in-flight segment)
 - Files can be merged post-hoc: `cat output_dir/*.rbt > combined.rbt`
+- Merge and convert in one step:
+  ```bash
+  cat output_dir/worker_*.rbt | reli converter:speedscope > combined.json
+  cat output_dir/worker_*.rbt | reli converter:pprof > combined.pb.gz
+  cat output_dir/worker_*.rbt | reli converter:folded > combined.folded
+  # Also works with gzip-compressed files
+  cat output_dir/worker_*.rbt.gz | reli converter:pprof > combined.pb.gz
+  ```
 - The sampling period in each segment header is derived from `--sleep-ns` (loop settings), not hardcoded
 
 ### Bundled Output (`--output-format=rbt-bundled`)
