@@ -574,6 +574,39 @@ Additional options for rbt formats:
 
 ---
 
+## Gzip Compression
+
+`.rbt` files can be transparently compressed with gzip. The reader auto-detects gzip by checking for the gzip magic number (`0x1f 0x8b`) before the "RELI" header magic.
+
+### Reading
+
+All reader paths (converter commands, `rbt:recover`) accept both raw `.rbt` and gzip-compressed `.rbt.gz` input transparently:
+
+```bash
+# Both work identically
+reli converter:folded < trace.rbt
+reli converter:folded < trace.rbt.gz
+```
+
+### Writing
+
+Use `--compress` with `converter:rbt` to produce gzip-compressed output:
+
+```bash
+reli converter:rbt --compress < trace.txt > trace.rbt.gz
+```
+
+### When to use which
+
+| Format | Best for |
+|--------|----------|
+| Raw `.rbt` | Live capture, append, tail, recovery, daemon output |
+| `.rbt.gz` | Archival, transfer, CI artifacts, Pyroscope upload |
+
+Raw `.rbt` is the default for live capture because it supports append-only writing, crash recovery, and real-time tailing. Gzip compression is a post-capture or conversion-time optimization.
+
+---
+
 ## Future Extensions
 
 The following can be added while maintaining backward compatibility:
@@ -581,7 +614,6 @@ The following can be added while maintaining backward compatibility:
 - **New event types**: Unknown length-delimited events are safely skipped via payload_length
 - **Derived STACK_DEF**: Differential stack definitions based on an existing stack_id with 1-2 frames changed
 - **THREAD_SAMPLE**: Sample event that includes a thread_id
-- **Compression**: Stream-level or segment-level zstd/gzip compression
 - **Flag extensions**: Reserved header bits are available for future use
 - **Pyroscope integration**: Segment-level export for continuous profiling aggregation
 

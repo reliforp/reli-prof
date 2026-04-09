@@ -15,6 +15,7 @@ namespace Reli\Command\Rbt;
 
 use Reli\Converter\BinaryTrace\BinaryTraceReader;
 use Reli\Converter\BinaryTrace\BinaryTraceWriter;
+use Reli\Converter\StreamDecompressor;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -43,10 +44,11 @@ final class RecoverCommand extends Command
         /** @var string $format */
         $format = $input->getOption('format');
         $reader = new BinaryTraceReader();
+        $input_stream = StreamDecompressor::decompressIfNeeded(STDIN);
 
         $count = 0;
         if ($format === 'phpspy') {
-            foreach ($reader->readWithRecovery(STDIN) as $sample) {
+            foreach ($reader->readWithRecovery($input_stream) as $sample) {
                 foreach ($sample->trace->call_frames as $depth => $frame) {
                     $output->writeln(
                         $depth . ' '
@@ -59,7 +61,7 @@ final class RecoverCommand extends Command
             }
         } else {
             $writer = null;
-            foreach ($reader->readWithRecovery(STDIN) as $sample) {
+            foreach ($reader->readWithRecovery($input_stream) as $sample) {
                 if ($writer === null) {
                     $writer = new BinaryTraceWriter(
                         STDOUT,

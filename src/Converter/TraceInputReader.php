@@ -19,8 +19,9 @@ use Reli\Converter\BinaryTrace\BinaryTraceWriter;
 /**
  * Auto-detecting trace input reader.
  *
- * Peeks the first 4 bytes to distinguish rbt (magic "RELI") from phpspy text.
- * Yields ParsedCallTrace for all formats so converters don't need to know the input type.
+ * Handles gzip-compressed input transparently (detects 0x1f 0x8b magic).
+ * Then peeks the first 4 bytes to distinguish rbt ("RELI") from phpspy text.
+ * Yields ParsedCallTrace for all formats.
  */
 final class TraceInputReader
 {
@@ -32,6 +33,9 @@ final class TraceInputReader
      */
     public function read($stream): iterable
     {
+        // Transparently decompress gzip input
+        $stream = StreamDecompressor::decompressIfNeeded($stream);
+
         $magic = fread($stream, 4);
         if ($magic === false || strlen($magic) < 4) {
             return;
@@ -44,12 +48,10 @@ final class TraceInputReader
                 return;
             }
 
-            // Write the full header into a memory stream so the reader can parse it
             $wrapped = fopen('php://memory', 'r+');
             assert($wrapped !== false);
             fwrite($wrapped, $magic . $header_rest);
 
-            // Copy remaining data
             while (!feof($stream)) {
                 $chunk = fread($stream, 65536);
                 if ($chunk === false || $chunk === '') {
