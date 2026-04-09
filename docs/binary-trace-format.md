@@ -18,11 +18,11 @@ The reli Binary Trace Format is an append-only binary stream format for efficien
 
 ### Core Principles
 
-- **Frames** (function name + file name + line number) are defined once per segment and assigned a `frame_id`
+- **Strings** (namespace, class, method, file path) are interned via `STRING_DEF` — each unique string is stored once per segment
+- **Frames** reference interned strings by ID and are defined once per segment via `FRAME_DEF`
 - **Stacks** (arrays of frame_ids) are defined once per segment and assigned a `stack_id`
-- **Samples** reference only a `stack_id` (plus an optional timestamp delta)
-- Avoiding repeated strings provides the compression benefit
-- Each segment is independently decodable; frame/stack tables reset at segment boundaries
+- **Samples** reference only a `stack_id`; in compact mode (`timestamps=none`), consecutive identical stacks are run-length encoded
+- Each segment is independently decodable; all tables reset at segment boundaries
 
 ---
 
@@ -196,7 +196,7 @@ Payload:
 - `stack_id` must have been previously defined by a STACK_DEF event in the same segment
 - `timestamp_delta_us` is the elapsed time in microseconds since the previous sample (0 for the first sample)
 
-**Size**: When stack_id <= 127 and timestamps are disabled, each event is **3 bytes**.
+**Size**: When stack_id <= 127 and timestamps are enabled, each event is **5 bytes** (type + length + stack_id + delta). When timestamps are disabled, the writer uses COMPACT_SAMPLE (2 bytes) instead.
 
 ### CHECKPOINT (0x04)
 
@@ -321,26 +321,35 @@ Timestamps enable:
 
 ## Size Estimates
 
-Assuming a typical workload of 100 samples/sec:
+### Per-Event Sizes
 
 | Component | Size | Notes |
 |-----------|------|-------|
 | Header | 16 bytes | Once per segment |
-| FRAME_DEF | ~40-80 bytes each | Depends on function/file name length |
-| STACK_DEF | ~5-20 bytes each | Depends on stack depth |
-| SAMPLE (repeated) | **3 bytes** | stack_id < 128, no timestamps |
-| SAMPLE (with timestamp) | **5 bytes** | stack_id < 128, delta < 16384 |
+| STRING_DEF | varies | Each unique string once (namespace, class, method, file) |
+| FRAME_DEF | ~6 bytes | 6 varints (frame_id + 4 string_ids + lineno) |
+| STACK_DEF | ~5-20 bytes | Depends on stack depth |
+| COMPACT_SAMPLE | **2 bytes** | `timestamps=none`, stack_id < 128 |
+| REPEAT_SAMPLE | **2 bytes** | Run of N identical stacks compressed to 1 event |
+| SAMPLE (with timestamp) | **5 bytes** | `timestamps=delta`, stack_id < 128 |
 | CHECKPOINT | ~5-10 bytes | Every 1000 samples |
 
-Typical example (100 unique frames, 50 unique stacks):
+### Real-World Measurements
 
-```
-Initial definitions: ~100 x 60 + 50 x 15 = ~6,750 bytes
-1 hour of samples:   100 x 3600 x 3      = ~1,080,000 bytes = 1.03 MB
-Total: ~1.04 MB/hour
-```
+Measured on a ~9 minute PHP trace (~54,000 samples):
 
-Equivalent data in phpspy text format: ~50-100 MB/hour. **~40-100x compression**.
+| Format | Size | Compression vs phpspy |
+|--------|------|----------------------|
+| phpspy text | 70 MB | 1x |
+| speedscope JSON | 2 MB | 35x |
+| **.rbt** (`timestamps=none`) | **180 KB** | **~370x** |
+| .rbt + gzip | 92 KB | ~720x |
+| pprof (from .rbt) | 106 KB | ~660x |
+
+The compression comes from three layers:
+1. **String interning**: shared namespace/class/file strings defined once (~60% definition reduction)
+2. **COMPACT_SAMPLE**: 2 bytes per sample vs ~130 bytes in phpspy text
+3. **REPEAT_SAMPLE RLE**: consecutive identical stacks (idle/spin) compressed to a single event
 
 ---
 
@@ -367,10 +376,10 @@ The implementation provides two levels of recovery:
 
 ```bash
 # Recover to a clean single-segment .rbt
-reli converter:binary-trace-recover < corrupted.rbt > recovered.rbt
+reli rbt:recover < corrupted.rbt > recovered.rbt
 
 # Recover directly to phpspy text
-reli converter:binary-trace-recover -f phpspy < corrupted.rbt > recovered.txt
+reli rbt:recover -f phpspy < corrupted.rbt > recovered.txt
 ```
 
 **Note:** The `-f rbt` output is a **re-encoded** file, not a byte-preserving repair of the original. The recovery command reads all recoverable samples from the input, then writes them into a clean single-segment `.rbt` file with fresh frame/stack IDs. The sampling period is taken from the **first successfully parsed** segment header.
@@ -539,14 +548,14 @@ Additional options for rbt formats:
 
 ## Future Extensions
 
-The following are not implemented in v1 but can be added while maintaining backward compatibility:
+The following can be added while maintaining backward compatibility:
 
-- **New event types**: Unknown events are safely skipped via payload_length
+- **New event types**: Unknown length-delimited events are safely skipped via payload_length
 - **Derived STACK_DEF**: Differential stack definitions based on an existing stack_id with 1-2 frames changed
 - **THREAD_SAMPLE**: Sample event that includes a thread_id
-- **METADATA**: Arbitrary key-value metadata events (e.g., segment start wall-clock time)
 - **Compression**: Stream-level or segment-level zstd/gzip compression
-- **Flag extensions**: Reserved bits are available for future use
+- **Flag extensions**: Reserved header bits are available for future use
+- **Pyroscope integration**: Segment-level export for continuous profiling aggregation
 
 ---
 
