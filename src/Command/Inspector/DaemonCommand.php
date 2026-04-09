@@ -85,11 +85,16 @@ final class DaemonCommand extends Command
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
         $output_settings = $this->output_settings_from_console_input->createSettings($input);
 
-        $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
-            $output,
-            $output_settings,
-            $loop_settings,
-        );
+        // TraceOutput is only used for template-based text output.
+        // Binary modes (rbt, rbt-bundled) handle their own output.
+        $trace_output = null;
+        if ($output_settings->isTemplate()) {
+            $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
+                $output,
+                $output_settings,
+                $loop_settings,
+            );
+        }
 
         // For rbt (per-worker) mode, ensure output_path is a directory
         if ($output_settings->isBinaryTrace() && $output_settings->output_path !== null) {
@@ -198,8 +203,8 @@ final class DaemonCommand extends Command
                                     $result->pid,
                                     $bundled_last_hrtime_ns,
                                 );
-                            } elseif (!$output_settings->isBinaryTrace()) {
-                                // Template mode or rbt-bundled without PID: use TraceOutput
+                            } elseif ($trace_output !== null) {
+                                // Template mode: use TraceOutput
                                 $trace_output->output($result->trace);
                             }
                             // rbt per-worker mode: traces written by worker directly, nothing to do here
