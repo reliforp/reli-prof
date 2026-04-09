@@ -103,6 +103,7 @@ final class GetTraceCommand extends Command
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
             $output,
             $output_settings,
+            $loop_settings,
         );
 
         // Native trace requires process stopping (for ptrace GETREGS)

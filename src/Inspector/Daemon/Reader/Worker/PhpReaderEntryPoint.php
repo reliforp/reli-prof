@@ -48,8 +48,17 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
         $output_settings = $set_settings_message->output_settings;
         $use_binary_direct = $output_settings !== null && $output_settings->isBinaryTrace();
 
+        // Derive sampling period from loop settings (ns → µs)
+        $sampling_period_us = (int)(
+            $set_settings_message->trace_loop_settings->sleep_nano_seconds / 1000
+        );
+        if ($sampling_period_us <= 0) {
+            $sampling_period_us = 10000;
+        }
+
+        // Open the output file once; segments share the stream
         if ($use_binary_direct && $output_settings->output_path !== null) {
-            $this->setupBinaryWriter($output_settings->output_path);
+            $this->openBinaryStream($output_settings->output_path);
         }
 
         $this->installSignalHandler();
@@ -59,8 +68,17 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             Log::debug('attach_message', [$attach_message]);
             $pid = $attach_message->process_descriptor->pid;
 
-            if ($use_binary_direct && $this->binary_writer !== null) {
+            // Start a new self-contained segment for this attach.
+            // A fresh BinaryTraceWriter resets frame/stack intern state.
+            if ($use_binary_direct && $this->binary_stream !== null) {
+                $this->binary_writer = new BinaryTraceWriter(
+                    $this->binary_stream,
+                    $sampling_period_us,
+                    has_timestamps: true,
+                );
+                $this->binary_writer->writeHeader();
                 $this->binary_writer->writeMetadata('pid', (string)$pid);
+                $this->last_hrtime_ns = null;
             }
 
             try {
@@ -74,8 +92,9 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                     if ($use_binary_direct && $this->binary_writer !== null) {
                         $this->writeBinaryTrace($message->trace);
                     } else {
-                        $message = new TraceMessage($message->trace, $pid);
-                        $this->protocol->sendTrace($message);
+                        $this->protocol->sendTrace(
+                            new TraceMessage($message->trace, $pid)
+                        );
                     }
                 }
                 Log::debug('end trace');
@@ -86,9 +105,11 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 ]);
             }
 
-            if ($use_binary_direct && $this->binary_writer !== null) {
+            // Close the segment cleanly on detach
+            if ($this->binary_writer !== null) {
                 $this->binary_writer->writeCheckpoint();
                 $this->binary_writer->writeSegmentEnd();
+                $this->binary_writer = null;
             }
 
             Log::debug('detaching worker');
@@ -98,10 +119,10 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             Log::debug('detached worker');
         }
 
-        $this->closeBinaryWriter();
+        $this->closeBinaryStream();
     }
 
-    private function setupBinaryWriter(string $output_dir): void
+    private function openBinaryStream(string $output_dir): void
     {
         $my_pid = getmypid();
         $worker_id = $my_pid !== false ? $my_pid : 0;
@@ -112,8 +133,6 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             return;
         }
         $this->binary_stream = $stream;
-        $this->binary_writer = new BinaryTraceWriter($stream, 10000, has_timestamps: true);
-        $this->binary_writer->writeHeader();
     }
 
     private function writeBinaryTrace(CallTrace $call_trace): void
@@ -141,7 +160,11 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
         }
     }
 
-    private function closeBinaryWriter(): void
+    /**
+     * Close the current segment (if open) and the underlying stream.
+     * Called on clean shutdown (SIGTERM or loop exit).
+     */
+    private function closeBinaryStream(): void
     {
         if ($this->binary_writer !== null) {
             $this->binary_writer->writeCheckpoint();
@@ -159,8 +182,8 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
     {
         if (function_exists('pcntl_signal')) {
             pcntl_signal(SIGTERM, function (): void {
-                Log::debug('SIGTERM received in worker, closing binary writer');
-                $this->closeBinaryWriter();
+                Log::debug('SIGTERM received in worker, closing binary stream');
+                $this->closeBinaryStream();
                 exit(0);
             });
         }

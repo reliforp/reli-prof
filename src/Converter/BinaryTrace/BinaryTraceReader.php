@@ -267,8 +267,9 @@ final class BinaryTraceReader
             case EventType::CHECKPOINT:
                 return null;
             case EventType::SEGMENT_END:
-                $this->resetSegmentState();
-                // Try to read next segment header
+                // Try to read next segment header; reset state only
+                // when a new segment actually starts. This preserves
+                // metadata/state for callers inspecting the last segment.
                 if ($this->tryReadHeader($stream)) {
                     $this->resetSegmentState();
                 }

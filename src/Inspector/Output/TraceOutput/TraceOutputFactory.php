@@ -17,6 +17,7 @@ use Reli\Converter\BinaryTrace\BinaryTraceWriter;
 use Reli\Inspector\Output\OutputChannel\StreamOutputChannel;
 use Reli\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
+use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class TraceOutputFactory
@@ -31,11 +32,12 @@ final class TraceOutputFactory
     public function fromSettingsAndConsoleOutput(
         OutputInterface $output,
         OutputSettings $output_settings,
+        ?TraceLoopSettings $loop_settings = null,
     ): TraceOutput {
         $stream = $this->resolveStream($output_settings);
 
         if ($output_settings->isBinaryTrace() || $output_settings->isBinaryTraceBundled()) {
-            $sampling_period_us = 10000; // default; matches TraceLoopSettings default of 10ms
+            $sampling_period_us = $this->deriveSamplingPeriodUs($loop_settings);
             $writer = new BinaryTraceWriter($stream, $sampling_period_us, has_timestamps: true);
             return new BinaryTraceOutput($writer);
         }
@@ -48,6 +50,17 @@ final class TraceOutputFactory
                 $output_settings
             )
         );
+    }
+
+    private function deriveSamplingPeriodUs(?TraceLoopSettings $loop_settings): int
+    {
+        if ($loop_settings !== null) {
+            $us = (int)($loop_settings->sleep_nano_seconds / 1000);
+            if ($us > 0) {
+                return $us;
+            }
+        }
+        return 10000; // fallback: 10ms
     }
 
     /**

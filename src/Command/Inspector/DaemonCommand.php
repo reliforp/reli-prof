@@ -88,6 +88,7 @@ final class DaemonCommand extends Command
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
             $output,
             $output_settings,
+            $loop_settings,
         );
 
         // For rbt (per-worker) mode, ensure output_path is a directory
@@ -126,14 +127,27 @@ final class DaemonCommand extends Command
 
         $cancellation = new DeferredCancellation();
 
+        // Derive sampling period from loop settings (ns → µs)
+        $sampling_period_us = (int)($loop_settings->sleep_nano_seconds / 1000);
+        if ($sampling_period_us <= 0) {
+            $sampling_period_us = 10000;
+        }
+
         // Set up PID_SAMPLE writer for bundled mode
+        /** @var BinaryTraceWriter|null $bundled_writer */
         $bundled_writer = null;
+        /** @var resource|null $bundled_stream */
+        $bundled_stream = null;
         $bundled_last_hrtime_ns = null;
         if ($output_settings->isBinaryTraceBundled()) {
-            $stream = $output_settings->output_path !== null
+            $bundled_stream = $output_settings->output_path !== null
                 ? (fopen($output_settings->output_path, 'wb') ?: \STDOUT)
                 : \STDOUT;
-            $bundled_writer = new BinaryTraceWriter($stream, 10000, has_timestamps: true);
+            $bundled_writer = new BinaryTraceWriter(
+                $bundled_stream,
+                $sampling_period_us,
+                has_timestamps: true,
+            );
             $bundled_writer->writeHeader();
         }
 
@@ -141,14 +155,10 @@ final class DaemonCommand extends Command
             EventLoop::onReadable(
                 STDIN,
                 /** @param resource $stream */
-                function (string $watcher_id, $stream) use ($cancellation, $bundled_writer) {
+                function (string $watcher_id, $stream) use ($cancellation) {
                     $key = fread($stream, 1);
                     if ($key === 'q') {
                         EventLoop::cancel($watcher_id);
-                        if ($bundled_writer !== null) {
-                            $bundled_writer->writeCheckpoint();
-                            $bundled_writer->writeSegmentEnd();
-                        }
                         $cancellation->cancel();
                     }
                 }
@@ -206,9 +216,22 @@ final class DaemonCommand extends Command
             await($futures, $cancellation->getCancellation());
         } catch (CancelledException $e) {
             Log::debug('cancelled', ['exception' => $e->getMessage()]);
+        } finally {
+            $this->closeBundledWriter($bundled_writer, $bundled_stream);
         }
 
         return 0;
+    }
+
+    private function closeBundledWriter(?BinaryTraceWriter $writer, mixed $stream): void
+    {
+        if ($writer !== null) {
+            $writer->writeCheckpoint();
+            $writer->writeSegmentEnd();
+        }
+        if (is_resource($stream) && $stream !== \STDOUT) {
+            fclose($stream);
+        }
     }
 
     private function writeBundledTrace(

@@ -392,11 +392,18 @@ reli inspector:daemon -F rbt -o /path/to/output_dir/ ...
 ```
 
 - Workers write to `{output_dir}/worker_{pid}.rbt`
-- Each target process attachment creates a new segment with `METADATA(pid=...)` at the head
-- Segment boundaries align with attach/detach events
+- **Each attach creates a new segment**: fresh header + fresh `BinaryTraceWriter` (frame/stack intern state is reset)
+- Segment lifecycle per attach:
+  1. `Header` (16 bytes)
+  2. `METADATA(pid={target_pid})`
+  3. `FRAME_DEF` / `STACK_DEF` / `SAMPLE` events
+  4. `CHECKPOINT` + `SEGMENT_END` on detach
+- A single `.rbt` file may contain multiple segments if the worker is reattached to a different target
+- Each segment is self-contained and independently decodable
 - **IPC carries only control messages** (attach/detach) — zero serialize overhead for traces
-- Workers install a SIGTERM handler for clean shutdown (CHECKPOINT + SEGMENT_END)
+- Workers install a SIGTERM handler for clean shutdown (CHECKPOINT + SEGMENT_END on the in-flight segment)
 - Files can be merged post-hoc: `cat output_dir/*.rbt > combined.rbt`
+- The sampling period in each segment header is derived from `--sleep-ns` (loop settings), not hardcoded
 
 ### Bundled Output (`--output-format=rbt-bundled`)
 
@@ -406,9 +413,12 @@ All traces are collected to the main process and written to a single stream usin
 reli inspector:daemon -F rbt-bundled -o combined.rbt ...
 ```
 
-- Single output file, simpler management
+- Single output file with one segment, simpler management
 - Workers send `TraceMessage` (with PID) via IPC to the main process
-- Main process writes PID_SAMPLE events with per-trace PID
+- Main process writes `PID_SAMPLE` events that carry per-sample PID
+- On clean shutdown (`q` key or signal), the main process writes `CHECKPOINT` + `SEGMENT_END` via a `finally` block
+- If the output path is a file (not stdout), the stream is closed on shutdown
+- The sampling period in the header is derived from `--sleep-ns`
 - Higher IPC overhead than per-worker mode (though TraceMessage now carries PID, not full stack text)
 
 ---
