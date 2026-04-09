@@ -69,7 +69,10 @@ final class TraceOutputFactory
     private function resolveStream(OutputSettings $output_settings)
     {
         if ($output_settings->output_path !== null) {
-            $stream = fopen($output_settings->output_path, 'w', false);
+            $mode = $output_settings->isBinaryTrace() || $output_settings->isBinaryTraceBundled()
+                ? 'wb'
+                : 'w';
+            $stream = fopen($output_settings->output_path, $mode, false);
             if ($stream === false) {
                 throw new \RuntimeException("Failed to open output file: {$output_settings->output_path}");
             }

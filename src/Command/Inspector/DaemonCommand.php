@@ -103,7 +103,9 @@ final class DaemonCommand extends Command
             $rbt_output_dir = TraceOutputPathResolver::resolveRbtOutputDir(
                 $output_settings->output_path
             );
-            $output->writeln("<info>rbt output: {$rbt_output_dir}</info>");
+            if ($output instanceof \Symfony\Component\Console\Output\ConsoleOutputInterface) {
+                $output->getErrorOutput()->writeln("rbt output: {$rbt_output_dir}");
+            }
         }
 
         $searcher_context = $this->php_searcher_context_creator->create();
