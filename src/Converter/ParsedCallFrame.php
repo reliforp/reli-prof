@@ -16,11 +16,24 @@ namespace Reli\Converter;
 /** @psalm-immutable */
 final class ParsedCallFrame
 {
+    public const TYPE_PHP = 0;
+    public const TYPE_NATIVE = 1;
+
     public function __construct(
         public string $function_name,
         public string $file_name,
         public int $lineno,
         public ?OriginalDataContext $original_context = null,
+        public int $frame_type = self::TYPE_PHP,
+        public ?string $opcode_name = null,
+        // Native frame fields (only when frame_type = TYPE_NATIVE)
+        public ?string $module_name = null,
+        public ?int $symbol_offset = null,
     ) {
+    }
+
+    public function isNative(): bool
+    {
+        return $this->frame_type === self::TYPE_NATIVE;
     }
 }

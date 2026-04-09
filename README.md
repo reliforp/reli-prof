@@ -57,7 +57,7 @@ Other features of reli that phpspy does not currently have include:
 - Customize output format with PHP templates
 - Get running opcodes of the PHP-VM
 - Automatic retrieval of the target PHP version from stripped PHP binaries
-- Output traces in speedscope format
+- Output traces in speedscope, pprof, folded stacks, callgrind, or [compact binary (`.rbt`)](docs/binary-trace-format.md) format
 - Deeply analyzing memory usage of the target process
 - Collecting native (C-level) stack traces alongside PHP traces via DWARF `.eh_frame` unwinding
 - Resolving JIT-compiled function names via perf map and GDB JIT interface
@@ -609,6 +609,32 @@ See [#101](https://github.com/reliforp/reli-prof/pull/101).
 $ ./reli c:callgrind <traces >callgrind.out
 $ kcachegrind callgrind.out
   ```
+
+### Binary trace format (`.rbt`)
+
+Reli includes a compact binary trace format that achieves **~370x compression** vs phpspy text (measured: 70 MB phpspy → 180 KB rbt). It uses string interning, stack deduplication, and run-length encoding.
+
+```bash
+# Capture directly to rbt (single process)
+$ sudo php ./reli i:trace -p <pid> -F rbt -o trace.rbt
+
+# Capture with daemon (per-worker files, zero IPC overhead)
+$ sudo php ./reli i:daemon -F rbt -o /path/to/output_dir/
+
+# Convert between formats (auto-detects rbt or phpspy input)
+$ ./reli converter:pprof <trace.rbt >profile.pb.gz
+$ ./reli converter:speedscope <trace.rbt >profile.json
+$ ./reli converter:folded <trace.rbt | flamegraph.pl >flame.svg
+$ ./reli converter:phpspy <trace.rbt     # decode to text
+
+# Also works with phpspy text input
+$ ./reli converter:pprof <traces >profile.pb.gz
+
+# Recover corrupted/truncated files
+$ ./reli rbt:recover <corrupted.rbt >recovered.rbt
+```
+
+See [docs/binary-trace-format.md](docs/binary-trace-format.md) for the full specification.
 
 ### Dump the memory usage of the target process
 

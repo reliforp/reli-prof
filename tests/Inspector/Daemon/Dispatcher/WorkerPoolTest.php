@@ -32,7 +32,8 @@ class WorkerPoolTest extends BaseTestCase
         $reader_context->expects()
             ->sendSettings(
                 $trace_settings,
-                $get_trace_settings
+                $get_trace_settings,
+                null,
             );
         $reader_context_creator = Mockery::mock(PhpReaderContextCreatorInterface::class);
         $reader_context_creator->expects()

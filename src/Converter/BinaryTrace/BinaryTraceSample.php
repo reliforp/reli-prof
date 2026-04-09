@@ -11,14 +11,17 @@
 
 declare(strict_types=1);
 
-namespace Reli\Inspector\Daemon\Reader\Protocol\Message;
+namespace Reli\Converter\BinaryTrace;
 
-use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
+use Reli\Converter\ParsedCallTrace;
 
-final class TraceMessage
+/** @psalm-immutable */
+final class BinaryTraceSample
 {
     public function __construct(
-        public CallTrace $trace,
+        public ParsedCallTrace $trace,
+        public ?int $timestamp_delta_us = null,
+        public ?int $accumulated_timestamp_us = null,
         public ?int $pid = null,
     ) {
     }

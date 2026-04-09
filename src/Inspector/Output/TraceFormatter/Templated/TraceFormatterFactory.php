@@ -29,12 +29,13 @@ class TraceFormatterFactory
 
     public function createFromSettings(OutputSettings $settings): CallTraceFormatter
     {
-        if (!isset($this->cache[$settings->template_name])) {
-            $this->cache[$settings->template_name] = new TemplatedCallTraceFormatter(
+        $template_name = $settings->getTemplateName();
+        if (!isset($this->cache[$template_name])) {
+            $this->cache[$template_name] = new TemplatedCallTraceFormatter(
                 $this->template_path_resolver,
-                $settings->template_name
+                $template_name
             );
         }
-        return $this->cache[$settings->template_name];
+        return $this->cache[$template_name];
     }
 }

@@ -15,19 +15,25 @@ namespace Reli\Command\Inspector;
 
 use Amp\CancelledException;
 use Amp\DeferredCancellation;
+use Reli\Converter\BinaryTrace\BinaryTraceWriter;
+use Reli\Converter\BinaryTrace\CallTraceConverter;
 use Reli\Inspector\Daemon\Dispatcher\DispatchTable;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Daemon\Dispatcher\WorkerPool;
 use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreator;
 use Reli\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
+use Reli\Inspector\Output\TraceOutput\TraceOutput;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
 use Reli\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Reli\Inspector\Settings\OutputSettings\OutputSettingsFromConsoleInput;
+use Reli\Inspector\Settings\OutputSettings\TraceOutputPathResolver;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use Reli\Lib\Console\EchoBackCanceller;
 use Reli\Lib\Log\Log;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -77,10 +83,30 @@ final class DaemonCommand extends Command
         $daemon_settings = $this->daemon_settings_from_console_input->createSettings($input);
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $loop_settings = $this->trace_loop_settings_from_console_input->createSettings($input);
-        $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
-            $output,
-            $this->output_settings_from_console_input->createSettings($input),
-        );
+        $output_settings = $this->output_settings_from_console_input->createSettings($input);
+
+        // TraceOutput is only used for template-based text output.
+        // Binary modes (rbt, rbt-bundled) handle their own output.
+        $trace_output = null;
+        if ($output_settings->isTemplate()) {
+            $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
+                $output,
+                $output_settings,
+                $loop_settings,
+            );
+        }
+
+        // For rbt (per-worker) mode, resolve the output directory.
+        // Defaults to XDG_STATE_HOME/reli/daemon-traces/{session}/ when -o is not given.
+        $rbt_output_dir = null;
+        if ($output_settings->isBinaryTrace()) {
+            $rbt_output_dir = TraceOutputPathResolver::resolveRbtOutputDir(
+                $output_settings->output_path
+            );
+            if ($output instanceof \Symfony\Component\Console\Output\ConsoleOutputInterface) {
+                $output->getErrorOutput()->writeln("rbt output: {$rbt_output_dir}");
+            }
+        }
 
         $searcher_context = $this->php_searcher_context_creator->create();
         $searcher_context->start();
@@ -95,11 +121,17 @@ final class DaemonCommand extends Command
             $no_cache,
         );
 
+        // Pass resolved output dir to workers (not the raw user path)
+        $worker_output_settings = $rbt_output_dir !== null
+            ? new OutputSettings($output_settings->output_format, $rbt_output_dir)
+            : $output_settings;
+
         $worker_pool = WorkerPool::create(
             $this->php_reader_context_creator,
             $daemon_settings->threads,
             $loop_settings,
-            $get_trace_settings
+            $get_trace_settings,
+            $worker_output_settings,
         );
 
         $dispatch_table = new DispatchTable(
@@ -109,6 +141,30 @@ final class DaemonCommand extends Command
         $_echo_back_canceler = new EchoBackCanceller();
 
         $cancellation = new DeferredCancellation();
+
+        // Derive sampling period from loop settings (ns → µs)
+        $sampling_period_us = (int)($loop_settings->sleep_nano_seconds / 1000);
+        if ($sampling_period_us <= 0) {
+            $sampling_period_us = 10000;
+        }
+
+        // Set up PID_SAMPLE writer for bundled mode
+        /** @var BinaryTraceWriter|null $bundled_writer */
+        $bundled_writer = null;
+        /** @var resource|null $bundled_stream */
+        $bundled_stream = null;
+        $bundled_last_hrtime_ns = null;
+        if ($output_settings->isBinaryTraceBundled()) {
+            $bundled_stream = $output_settings->output_path !== null
+                ? (fopen($output_settings->output_path, 'wb') ?: \STDOUT)
+                : \STDOUT;
+            $bundled_writer = new BinaryTraceWriter(
+                $bundled_stream,
+                $sampling_period_us,
+                has_timestamps: $output_settings->hasRbtTimestamps(),
+            );
+            $bundled_writer->writeHeader();
+        }
 
         if (stream_isatty(STDIN)) {
             EventLoop::onReadable(
@@ -138,11 +194,30 @@ final class DaemonCommand extends Command
         });
         foreach ($worker_pool->getWorkers() as $reader) {
             $futures[] = async(
-                function () use ($reader, $dispatch_table, $trace_output) {
+                function () use (
+                    $reader,
+                    $dispatch_table,
+                    $trace_output,
+                    $output_settings,
+                    $bundled_writer,
+                    &$bundled_last_hrtime_ns,
+                ) {
                     while (1) {
                         $result = $reader->receiveTraceOrDetachWorker();
                         if ($result instanceof TraceMessage) {
-                            $trace_output->output($result->trace);
+                            if ($bundled_writer !== null && $result->pid !== null) {
+                                // Bundled mode: write PID_SAMPLE directly
+                                $this->writeBundledTrace(
+                                    $bundled_writer,
+                                    $result->trace,
+                                    $result->pid,
+                                    $bundled_last_hrtime_ns,
+                                );
+                            } elseif ($trace_output !== null) {
+                                // Template mode: use TraceOutput
+                                $trace_output->output($result->trace);
+                            }
+                            // rbt per-worker mode: traces written by worker directly, nothing to do here
                         } else {
                             Log::debug('releaseOne', [$result]);
                             $dispatch_table->releaseOne($result->pid);
@@ -156,8 +231,41 @@ final class DaemonCommand extends Command
             await($futures, $cancellation->getCancellation());
         } catch (CancelledException $e) {
             Log::debug('cancelled', ['exception' => $e->getMessage()]);
+        } finally {
+            $this->closeBundledWriter($bundled_writer, $bundled_stream);
         }
 
         return 0;
+    }
+
+    private function closeBundledWriter(?BinaryTraceWriter $writer, mixed $stream): void
+    {
+        if ($writer !== null) {
+            $writer->writeCheckpoint();
+            $writer->writeSegmentEnd();
+        }
+        if (is_resource($stream) && $stream !== \STDOUT) {
+            fclose($stream);
+        }
+    }
+
+    private function writeBundledTrace(
+        BinaryTraceWriter $writer,
+        CallTrace $call_trace,
+        int $pid,
+        ?int &$last_hrtime_ns,
+    ): void {
+        $now_ns = hrtime(true);
+        $delta_us = 0;
+        if ($last_hrtime_ns !== null) {
+            $delta_us = (int)(($now_ns - $last_hrtime_ns) / 1000);
+        }
+        $last_hrtime_ns = $now_ns;
+
+        $writer->writePidTrace(CallTraceConverter::toParsed($call_trace), $pid, $delta_us);
+
+        if ($writer->getSamplesSinceCheckpoint() >= 1000) {
+            $writer->writeCheckpoint();
+        }
     }
 }

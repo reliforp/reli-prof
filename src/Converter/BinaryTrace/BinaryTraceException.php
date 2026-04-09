@@ -11,15 +11,8 @@
 
 declare(strict_types=1);
 
-namespace Reli\Inspector\Daemon\Reader\Protocol\Message;
+namespace Reli\Converter\BinaryTrace;
 
-use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
-
-final class TraceMessage
+final class BinaryTraceException extends \RuntimeException
 {
-    public function __construct(
-        public CallTrace $trace,
-        public ?int $pid = null,
-    ) {
-    }
 }

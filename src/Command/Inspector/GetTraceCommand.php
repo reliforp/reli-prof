@@ -15,6 +15,7 @@ namespace Reli\Command\Inspector;
 
 use Reli\Inspector\Output\TraceFormatter\MergedCallTraceFormatter;
 use Reli\Inspector\Output\TraceOutput\FormattedMergedTraceOutput;
+use Reli\Inspector\Output\TraceOutput\MergedTraceOutput;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
 use Reli\Inspector\Output\OutputChannel\StreamOutputChannel;
 use Reli\Inspector\RetryingLoopProvider;
@@ -103,6 +104,7 @@ final class GetTraceCommand extends Command
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
             $output,
             $output_settings,
+            $loop_settings,
         );
 
         // Native trace requires process stopping (for ptrace GETREGS)
@@ -155,13 +157,18 @@ final class GetTraceCommand extends Command
         if ($with_native && $this->native_trace_collector !== null) {
             $this->native_trace_collector->refreshMemoryMap($process_specifier->pid);
             $trace_merger = new TraceMerger();
-            $stream = ($output_settings->output_path !== null)
-                ? (fopen($output_settings->output_path, 'w') ?: \STDOUT)
-                : \STDOUT;
-            $merged_trace_output = new FormattedMergedTraceOutput(
-                new StreamOutputChannel($stream),
-                new MergedCallTraceFormatter(),
-            );
+            if ($trace_output instanceof MergedTraceOutput) {
+                // BinaryTraceOutput handles merged traces directly
+                $merged_trace_output = $trace_output;
+            } else {
+                $stream = ($output_settings->output_path !== null)
+                    ? (fopen($output_settings->output_path, 'w') ?: \STDOUT)
+                    : \STDOUT;
+                $merged_trace_output = new FormattedMergedTraceOutput(
+                    new StreamOutputChannel($stream),
+                    new MergedCallTraceFormatter(),
+                );
+            }
         }
 
         $trace_cache = new TraceCache();

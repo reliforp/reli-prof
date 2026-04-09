@@ -20,33 +20,53 @@ use Symfony\Component\Console\Input\InputInterface;
 
 class OutputSettingsFromConsoleInputTest extends BaseTestCase
 {
-    public function testCreateSettings(): void
+    public function testCreateSettingsWithOutputFormat(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('template')->andReturns('test');
+        $input->expects()->getOption('output-format')->andReturns('template:test');
+        $input->allows()->getOption('template')->andReturns(null);
         $input->expects()->getOption('output')->andReturns(null);
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
         $config = Mockery::mock(Config::class);
-        $config->expects()->get()->never();
 
         $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
-        $this->assertSame('test', $settings->template_name);
+        $this->assertSame('template:test', $settings->output_format);
+        $this->assertSame('test', $settings->getTemplateName());
+    }
+
+    public function testCreateSettingsWithTemplateFallback(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns(null);
+        $input->expects()->getOption('template')->andReturns('test');
+        $input->expects()->getOption('output')->andReturns(null);
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $config = Mockery::mock(Config::class);
+
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+        $this->assertSame('template:test', $settings->output_format);
+        $this->assertSame('test', $settings->getTemplateName());
     }
 
     public function testCreateSettingsFallbackToConfig(): void
     {
         $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns(null);
         $input->expects()->getOption('template')->andReturns(null);
         $input->allows()->getOption('output')->andReturns(null);
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
         $config = Mockery::mock(Config::class);
         $config->expects()->get('output.template.default')->andReturns('test');
 
         $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
-        $this->assertSame('test', $settings->template_name);
+        $this->assertSame('template:test', $settings->output_format);
+        $this->assertSame('test', $settings->getTemplateName());
     }
 
     public function testCreateSettingsFallbackToConfigReturnsNull(): void
     {
         $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns(null);
         $input->expects()->getOption('template')->andReturns(null);
         $input->allows()->getOption('output')->andReturns(null);
         $config = Mockery::mock(Config::class);
@@ -59,12 +79,40 @@ class OutputSettingsFromConsoleInputTest extends BaseTestCase
     public function testCreateSettingsInvalidOutput(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->allows()->getOption('template')->andReturns('test');
+        $input->allows()->getOption('output-format')->andReturns('template:test');
+        $input->allows()->getOption('template')->andReturns(null);
         $input->expects()->getOption('output')->andReturns(123);
         $config = Mockery::mock(Config::class);
-        $config->expects()->get()->never();
         $this->expectException(OutputSettingsException::class);
 
         (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+    }
+
+    public function testCreateSettingsRbt(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns('rbt');
+        $input->allows()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns(null);
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $config = Mockery::mock(Config::class);
+
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+        $this->assertTrue($settings->isBinaryTrace());
+        $this->assertFalse($settings->isTemplate());
+    }
+
+    public function testCreateSettingsRbtBundled(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns('rbt-bundled');
+        $input->allows()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns(null);
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $config = Mockery::mock(Config::class);
+
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+        $this->assertTrue($settings->isBinaryTraceBundled());
+        $this->assertFalse($settings->isTemplate());
     }
 }

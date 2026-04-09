@@ -16,6 +16,7 @@ namespace Reli\Inspector\Daemon\Dispatcher;
 use Reli\Inspector\Daemon\Reader\Context\PhpReaderContextCreatorInterface;
 use Reli\Inspector\Daemon\Reader\Controller\PhpReaderControllerInterface;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 use function array_fill;
@@ -41,7 +42,8 @@ final class WorkerPool implements WorkerPoolInterface
         PhpReaderContextCreatorInterface $creator,
         int $number,
         TraceLoopSettings $loop_settings,
-        GetTraceSettings $get_trace_settings
+        GetTraceSettings $get_trace_settings,
+        ?OutputSettings $output_settings = null,
     ): self {
         /** @var list<PhpReaderControllerInterface> $contexts */
         $contexts = [];
@@ -50,11 +52,11 @@ final class WorkerPool implements WorkerPoolInterface
             $context->start();
             $contexts[] = $context;
         }
-        $send_settings = [];
         for ($i = 0; $i < $number; $i++) {
             $contexts[$i]->sendSettings(
                 $loop_settings,
-                $get_trace_settings
+                $get_trace_settings,
+                $output_settings,
             );
         }
 

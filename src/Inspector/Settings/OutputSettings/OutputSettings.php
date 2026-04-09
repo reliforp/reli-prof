@@ -18,9 +18,42 @@ namespace Reli\Inspector\Settings\OutputSettings;
  */
 final class OutputSettings
 {
+    /**
+     * @param string $rbt_timestamps 'none' or 'delta'
+     */
     public function __construct(
-        public string $template_name,
+        public string $output_format,
         public ?string $output_path = null,
+        public string $rbt_timestamps = 'none',
     ) {
+    }
+
+    public function hasRbtTimestamps(): bool
+    {
+        return $this->rbt_timestamps === 'delta';
+    }
+
+    public function isBinaryTrace(): bool
+    {
+        return $this->output_format === 'rbt';
+    }
+
+    public function isBinaryTraceBundled(): bool
+    {
+        return $this->output_format === 'rbt-bundled';
+    }
+
+    public function isTemplate(): bool
+    {
+        return !$this->isBinaryTrace() && !$this->isBinaryTraceBundled();
+    }
+
+    public function getTemplateName(): string
+    {
+        // "template:phpspy" → "phpspy", plain "phpspy" → "phpspy"
+        if (str_starts_with($this->output_format, 'template:')) {
+            return substr($this->output_format, strlen('template:'));
+        }
+        return $this->output_format;
     }
 }

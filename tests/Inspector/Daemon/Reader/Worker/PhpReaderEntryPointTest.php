@@ -81,15 +81,15 @@ class PhpReaderEntryPointTest extends BaseTestCase
         ;
         $protocol->expects()
             ->sendTrace()
-            ->with(Matchers::equalTo($this->getTestTrace('abc')))
+            ->with(Matchers::equalTo($this->getTestTrace('abc', 123)))
         ;
         $protocol->expects()
             ->sendTrace()
-            ->with(Matchers::equalTo($this->getTestTrace('def')))
+            ->with(Matchers::equalTo($this->getTestTrace('def', 123)))
         ;
         $protocol->expects()
             ->sendTrace()
-            ->with(Matchers::equalTo($this->getTestTrace('ghi')))
+            ->with(Matchers::equalTo($this->getTestTrace('ghi', 123)))
         ;
         $protocol->expects()
             ->sendDetachWorker()
@@ -105,12 +105,13 @@ class PhpReaderEntryPointTest extends BaseTestCase
         $php_reader_entry_point->run();
     }
 
-    private function getTestTrace(string $function): TraceMessage
+    private function getTestTrace(string $function, ?int $pid = null): TraceMessage
     {
         return new TraceMessage(
             new CallTrace(
                 new CallFrame('class', $function, 'file', null)
-            )
+            ),
+            $pid,
         );
     }
 }
