@@ -60,8 +60,8 @@ final class RbtCommand extends Command
         $reader = new TraceInputReader();
 
         if ($compress) {
-            // Write to memory, then gzip-compress to stdout
-            $buffer = fopen('php://memory', 'r+');
+            // Write to temp (spills to disk if large), then gzip to stdout
+            $buffer = fopen('php://temp', 'r+');
             assert($buffer !== false);
             $writer = new BinaryTraceWriter($buffer, $sampling_period, $has_timestamps);
         } else {

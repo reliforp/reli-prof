@@ -54,7 +54,7 @@ final class GzipTransparencyTest extends BaseTestCase
 
         $decompressed = StreamDecompressor::decompressIfNeeded($stream);
         $content = stream_get_contents($decompressed);
-        fclose($stream);
+        // For raw seekable input, decompressed IS the original stream (no copy)
         fclose($decompressed);
 
         $this->assertSame($raw, $content);
@@ -239,7 +239,6 @@ final class GzipTransparencyTest extends BaseTestCase
         $result = StreamDecompressor::decompressIfNeeded($stream);
         rewind($result);
         $content = stream_get_contents($result);
-        fclose($stream);
         fclose($result);
 
         $this->assertStringStartsWith('0 func', $content);

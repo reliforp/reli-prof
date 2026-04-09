@@ -228,4 +228,101 @@ final class CompressedSegmentTest extends BaseTestCase
             fclose($s);
         }
     }
+
+    /**
+     * Verify that compress + file rotation creates separate streams per segment
+     * and the factory is called the expected number of times.
+     */
+    public function testFileRotationCompressCallsFactoryPerSegment(): void
+    {
+        $factory_calls = [];
+        $streams = [];
+        $factory = function (int $index) use (&$factory_calls, &$streams) {
+            $factory_calls[] = $index;
+            $s = fopen('php://memory', 'r+');
+            assert($s !== false);
+            $streams[$index] = $s;
+            return $s;
+        };
+
+        $writer = new SegmentedBinaryTraceWriter(
+            stream: null,
+            sampling_period_us: 10000,
+            segment_duration_us: 30_000,
+            stream_factory: $factory,
+            compress_completed_segments: true,
+        );
+
+        $traceA = new ParsedCallTrace(
+            new ParsedCallFrame('func_a', '/a.php', 1),
+        );
+        $traceB = new ParsedCallTrace(
+            new ParsedCallFrame('func_b', '/b.php', 2),
+        );
+
+        // Segment 0: t=0..29ms
+        $writer->writeTrace($traceA, 0);
+        $writer->writeTrace($traceA, 10_000);
+
+        // Segment 1: t=30..59ms (rotation)
+        $writer->writeTrace($traceB, 30_000);
+        $writer->writeTrace($traceB, 40_000);
+
+        // Segment 2: t=60ms+ (rotation)
+        $writer->writeTrace($traceA, 60_000);
+
+        $writer->finish();
+
+        // Factory should be called exactly 3 times (indices 0, 1, 2)
+        $this->assertSame([0, 1, 2], $factory_calls);
+        $this->assertCount(3, $streams);
+
+        // Each stream should be independent gzip data
+        foreach ($streams as $index => $s) {
+            rewind($s);
+            $data = stream_get_contents($s);
+            $this->assertNotEmpty($data, "Stream {$index} should have data");
+
+            // Each should start with gzip magic
+            $this->assertSame(
+                "\x1f\x8b",
+                substr($data, 0, 2),
+                "Stream {$index} should be gzip",
+            );
+
+            // Each should decompress independently to valid rbt
+            rewind($s);
+            $decompressed = StreamDecompressor::decompressIfNeeded($s);
+            $reader = new BinaryTraceReader();
+            $samples = iterator_to_array($reader->read($decompressed));
+            fclose($decompressed);
+
+            $this->assertGreaterThanOrEqual(
+                1,
+                count($samples),
+                "Stream {$index} should have samples",
+            );
+        }
+
+        // Verify content: segment 0 has func_a, segment 1 has func_b
+        rewind($streams[0]);
+        $d0 = StreamDecompressor::decompressIfNeeded($streams[0]);
+        $r0 = new BinaryTraceReader();
+        $s0 = iterator_to_array($r0->read($d0));
+        fclose($d0);
+        $this->assertSame(
+            'func_a',
+            $s0[0]->trace->call_frames[0]->function_name,
+        );
+
+        rewind($streams[1]);
+        $d1 = StreamDecompressor::decompressIfNeeded($streams[1]);
+        $r1 = new BinaryTraceReader();
+        $s1 = iterator_to_array($r1->read($d1));
+        fclose($d1);
+        $this->assertSame(
+            'func_b',
+            $s1[0]->trace->call_frames[0]->function_name,
+        );
+    }
 }

@@ -33,7 +33,9 @@ final class TraceInputReader
      */
     public function read($stream): iterable
     {
-        // Transparently decompress gzip input
+        // Transparently decompress gzip input.
+        // For raw input, returns the original stream (seeked back) or
+        // a php://temp buffer for non-seekable streams like stdin.
         $stream = StreamDecompressor::decompressIfNeeded($stream);
 
         $magic = fread($stream, 4);
@@ -42,48 +44,56 @@ final class TraceInputReader
         }
 
         if ($magic === BinaryTraceWriter::MAGIC) {
-            // rbt format — reconstruct the full header and read
-            $header_rest = fread($stream, 12);
-            if ($header_rest === false || strlen($header_rest) < 12) {
-                return;
-            }
-
-            $wrapped = fopen('php://memory', 'r+');
-            assert($wrapped !== false);
-            fwrite($wrapped, $magic . $header_rest);
-
-            while (!feof($stream)) {
-                $chunk = fread($stream, 65536);
-                if ($chunk === false || $chunk === '') {
-                    break;
+            // rbt format — seek back to start so reader gets the full header
+            $meta = stream_get_meta_data($stream);
+            if ($meta['seekable']) {
+                fseek($stream, 0);
+                $this->binary_reader = new BinaryTraceReader();
+                foreach ($this->binary_reader->read($stream) as $sample) {
+                    yield $sample->trace;
                 }
-                fwrite($wrapped, $chunk);
+            } else {
+                // Non-seekable: buffer into php://temp
+                $wrapped = fopen('php://temp', 'r+');
+                assert($wrapped !== false);
+                fwrite($wrapped, $magic);
+                while (!feof($stream)) {
+                    $chunk = fread($stream, 65536);
+                    if ($chunk === false || $chunk === '') {
+                        break;
+                    }
+                    fwrite($wrapped, $chunk);
+                }
+                rewind($wrapped);
+                $this->binary_reader = new BinaryTraceReader();
+                foreach ($this->binary_reader->read($wrapped) as $sample) {
+                    yield $sample->trace;
+                }
+                fclose($wrapped);
             }
-            rewind($wrapped);
-
-            $this->binary_reader = new BinaryTraceReader();
-            foreach ($this->binary_reader->read($wrapped) as $sample) {
-                yield $sample->trace;
-            }
-            fclose($wrapped);
         } else {
-            // phpspy text format — prepend the peeked bytes back
-            $wrapped = fopen('php://memory', 'r+');
-            assert($wrapped !== false);
-            fwrite($wrapped, $magic);
-
-            while (!feof($stream)) {
-                $chunk = fread($stream, 65536);
-                if ($chunk === false || $chunk === '') {
-                    break;
+            // phpspy text format — seek back or buffer
+            $meta = stream_get_meta_data($stream);
+            if ($meta['seekable']) {
+                fseek($stream, 0);
+                $parser = new PhpSpyCompatibleParser();
+                yield from $parser->parseFile($stream);
+            } else {
+                $wrapped = fopen('php://temp', 'r+');
+                assert($wrapped !== false);
+                fwrite($wrapped, $magic);
+                while (!feof($stream)) {
+                    $chunk = fread($stream, 65536);
+                    if ($chunk === false || $chunk === '') {
+                        break;
+                    }
+                    fwrite($wrapped, $chunk);
                 }
-                fwrite($wrapped, $chunk);
+                rewind($wrapped);
+                $parser = new PhpSpyCompatibleParser();
+                yield from $parser->parseFile($wrapped);
+                fclose($wrapped);
             }
-            rewind($wrapped);
-
-            $parser = new PhpSpyCompatibleParser();
-            yield from $parser->parseFile($wrapped);
-            fclose($wrapped);
         }
     }
 

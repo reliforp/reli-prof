@@ -621,6 +621,16 @@ reli inspector:daemon -F rbt --rbt-compress -o /path/to/output_dir/ ...
 
 Raw `.rbt` is the default for live capture because it supports append-only writing, crash recovery, and real-time tailing. Gzip compression trades recovery for space efficiency.
 
+### File rotation + compression
+
+With `--rbt-compress` and file rotation (daemon per-worker mode), each segment is written to a separate compressed file. The stream factory is called once per segment, and each file receives exactly one gzip member containing one self-contained rbt segment.
+
+### Performance notes
+
+- **Raw input**: The gzip auto-detection peeks 2 bytes and, for seekable streams, simply seeks back — no full copy of the input occurs
+- **Gzip input**: The compressed data is expanded into `php://temp` (spills to disk for large inputs) before parsing
+- **Gzip output**: `converter:rbt --compress` buffers to `php://temp` before compressing; `--rbt-compress` in daemon mode buffers each segment individually
+
 ---
 
 ## Future Extensions

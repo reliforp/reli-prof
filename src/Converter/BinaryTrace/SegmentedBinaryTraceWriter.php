@@ -150,6 +150,8 @@ final class SegmentedBinaryTraceWriter
             $this->flushCompressedSegment();
         }
 
+        // Reset stream for file rotation mode so next segment gets a new file
+        $this->current_stream = null;
         $this->segment_index++;
         $this->startSegment($timestamp_us);
     }
@@ -178,28 +180,15 @@ final class SegmentedBinaryTraceWriter
             throw new BinaryTraceException('Failed to gzip-compress segment');
         }
 
-        $output = $this->resolveOutputStream();
-        fwrite($output, $compressed);
-    }
-
-    /**
-     * Get the output stream for writing compressed data.
-     *
-     * @return resource
-     */
-    private function resolveOutputStream()
-    {
+        // In file rotation mode, get a fresh stream for this segment.
+        // In single-stream mode, append to the shared stream.
         if ($this->stream_factory !== null) {
-            // In file rotation + compress mode, the factory provides
-            // the output file. Reuse current_stream if already open
-            // for this segment index.
-            if ($this->current_stream === null) {
-                $this->current_stream = ($this->stream_factory)($this->segment_index);
-            }
-            return $this->current_stream;
+            $this->current_stream = ($this->stream_factory)($this->segment_index);
+            fwrite($this->current_stream, $compressed);
+        } else {
+            assert($this->stream !== null);
+            fwrite($this->stream, $compressed);
         }
-        assert($this->stream !== null);
-        return $this->stream;
     }
 
     /**
