@@ -102,4 +102,65 @@ class TraceOutputFactoryTest extends BaseTestCase
         fseek($buffer, 0);
         $this->assertSame('formatted', fread($buffer, 4096));
     }
+
+    public function testFromSettingsCreatesRbtOutput()
+    {
+        $buffer = fopen('php://memory', 'r+');
+        assert($buffer !== false);
+
+        $trace_formatter_factory = \Mockery::mock(TraceFormatterFactory::class);
+        $trace_output_factory = new TraceOutputFactory($trace_formatter_factory, $buffer);
+
+        $output_settings = new OutputSettings('rbt');
+        $loop_settings = new \Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings(
+            10_000_000,
+            'q',
+            10,
+            false,
+        );
+
+        $trace_output = $trace_output_factory->fromSettingsAndConsoleOutput(
+            new StreamOutput(fopen('php://memory', 'w')),
+            $output_settings,
+            $loop_settings,
+        );
+
+        $this->assertInstanceOf(BinaryTraceOutput::class, $trace_output);
+    }
+
+    public function testFromSettingsCreatesCompressedRbtOutput()
+    {
+        $buffer = fopen('php://memory', 'r+');
+        assert($buffer !== false);
+
+        $trace_formatter_factory = \Mockery::mock(TraceFormatterFactory::class);
+        $trace_output_factory = new TraceOutputFactory($trace_formatter_factory, $buffer);
+
+        $output_settings = new OutputSettings('rbt', rbt_compress: true);
+        $loop_settings = new \Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings(
+            10_000_000,
+            'q',
+            10,
+            false,
+        );
+
+        $trace_output = $trace_output_factory->fromSettingsAndConsoleOutput(
+            new StreamOutput(fopen('php://memory', 'w')),
+            $output_settings,
+            $loop_settings,
+        );
+
+        $this->assertInstanceOf(BinaryTraceOutput::class, $trace_output);
+
+        // Write a trace and finish — should produce gzip in the buffer
+        $test_trace = new CallTrace(
+            new CallFrame('', 'func', '/file.php', null)
+        );
+        $trace_output->output($test_trace);
+        $trace_output->finish();
+
+        fseek($buffer, 0);
+        $magic = fread($buffer, 2);
+        $this->assertSame("\x1f\x8b", $magic, 'Output should be gzip');
+    }
 }

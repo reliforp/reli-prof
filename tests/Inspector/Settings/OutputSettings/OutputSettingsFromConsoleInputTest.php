@@ -27,6 +27,7 @@ class OutputSettingsFromConsoleInputTest extends BaseTestCase
         $input->allows()->getOption('template')->andReturns(null);
         $input->expects()->getOption('output')->andReturns(null);
         $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
         $config = Mockery::mock(Config::class);
 
         $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
@@ -41,6 +42,7 @@ class OutputSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('template')->andReturns('test');
         $input->expects()->getOption('output')->andReturns(null);
         $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
         $config = Mockery::mock(Config::class);
 
         $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
@@ -55,6 +57,7 @@ class OutputSettingsFromConsoleInputTest extends BaseTestCase
         $input->expects()->getOption('template')->andReturns(null);
         $input->allows()->getOption('output')->andReturns(null);
         $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
         $config = Mockery::mock(Config::class);
         $config->expects()->get('output.template.default')->andReturns('test');
 
@@ -95,6 +98,7 @@ class OutputSettingsFromConsoleInputTest extends BaseTestCase
         $input->allows()->getOption('template')->andReturns(null);
         $input->expects()->getOption('output')->andReturns(null);
         $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
         $config = Mockery::mock(Config::class);
 
         $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
@@ -109,6 +113,7 @@ class OutputSettingsFromConsoleInputTest extends BaseTestCase
         $input->allows()->getOption('template')->andReturns(null);
         $input->expects()->getOption('output')->andReturns(null);
         $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
         $config = Mockery::mock(Config::class);
 
         $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);

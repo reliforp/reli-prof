@@ -29,6 +29,9 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
     private ?BinaryTraceWriter $binary_writer = null;
     /** @var resource|null */
     private $binary_stream = null;
+    /** @var resource|null temp buffer for compressed segment */
+    private $segment_buffer = null;
+    private bool $compress = false;
     private ?int $last_hrtime_ns = null;
 
     public function __construct(
@@ -57,6 +60,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 
         // Open the output file once; segments share the stream
         if ($use_binary_direct && $output_settings->output_path !== null) {
+            $this->compress = $output_settings->rbt_compress;
             $this->openBinaryStream($output_settings->output_path);
         }
 
@@ -71,8 +75,16 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             // A fresh BinaryTraceWriter resets frame/stack intern state.
             $has_timestamps = $output_settings !== null && $output_settings->hasRbtTimestamps();
             if ($use_binary_direct && $this->binary_stream !== null) {
+                if ($this->compress) {
+                    $buf = fopen('php://temp', 'r+');
+                    assert($buf !== false);
+                    $this->segment_buffer = $buf;
+                    $write_target = $this->segment_buffer;
+                } else {
+                    $write_target = $this->binary_stream;
+                }
                 $this->binary_writer = new BinaryTraceWriter(
-                    $this->binary_stream,
+                    $write_target,
                     $sampling_period_us,
                     has_timestamps: $has_timestamps,
                 );
@@ -110,6 +122,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 $this->binary_writer->writeCheckpoint();
                 $this->binary_writer->writeSegmentEnd();
                 $this->binary_writer = null;
+                $this->flushCompressedSegment();
             }
 
             Log::debug('detaching worker');
@@ -126,7 +139,8 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
     {
         $my_pid = getmypid();
         $worker_id = $my_pid !== false ? $my_pid : 0;
-        $path = rtrim($output_dir, '/') . "/worker_{$worker_id}.rbt";
+        $ext = $this->compress ? '.rbt.gz' : '.rbt';
+        $path = rtrim($output_dir, '/') . "/worker_{$worker_id}{$ext}";
         $stream = fopen($path, 'wb');
         if ($stream === false) {
             Log::debug('failed to open binary trace file', ['path' => $path]);
@@ -162,12 +176,39 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             $this->binary_writer->writeCheckpoint();
             $this->binary_writer->writeSegmentEnd();
             $this->binary_writer = null;
+            $this->flushCompressedSegment();
         }
         if ($this->binary_stream !== null) {
             $stream = $this->binary_stream;
             $this->binary_stream = null;
             fclose($stream);
         }
+    }
+
+    /**
+     * If compressing, gzencode the temp segment buffer and append to output file.
+     */
+    private function flushCompressedSegment(): void
+    {
+        if ($this->segment_buffer === null) {
+            return;
+        }
+
+        $buf = $this->segment_buffer;
+        $this->segment_buffer = null;
+        rewind($buf);
+        $raw = stream_get_contents($buf);
+        fclose($buf);
+
+        if ($raw === false || $raw === '' || $this->binary_stream === null) {
+            return;
+        }
+
+        $compressed = gzencode($raw);
+        if ($compressed === false) {
+            return;
+        }
+        fwrite($this->binary_stream, $compressed);
     }
 
     private function installSignalHandler(): void

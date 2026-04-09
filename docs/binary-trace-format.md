@@ -527,6 +527,14 @@ reli inspector:daemon -F rbt ...
 - **IPC carries only control messages** (attach/detach) — zero serialize overhead for traces
 - Workers install a SIGTERM handler for clean shutdown (CHECKPOINT + SEGMENT_END on the in-flight segment)
 - Files can be merged post-hoc: `cat output_dir/*.rbt > combined.rbt`
+- Merge and convert in one step:
+  ```bash
+  cat output_dir/worker_*.rbt | reli converter:speedscope > combined.json
+  cat output_dir/worker_*.rbt | reli converter:pprof > combined.pb.gz
+  cat output_dir/worker_*.rbt | reli converter:folded > combined.folded
+  # Also works with gzip-compressed files
+  cat output_dir/worker_*.rbt.gz | reli converter:pprof > combined.pb.gz
+  ```
 - The sampling period in each segment header is derived from `--sleep-ns` (loop settings), not hardcoded
 
 ### Bundled Output (`--output-format=rbt-bundled`)
@@ -571,6 +579,67 @@ Additional options for rbt formats:
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--rbt-timestamps` | `none`, `delta` | `none` | Timestamp mode. `none` uses COMPACT_SAMPLE for minimal size. `delta` records per-sample timing. |
+| `--rbt-compress` | flag | off | Gzip-compress completed segments. Produces `.rbt.gz` with concatenated gzip members. |
+
+---
+
+## Gzip Compression
+
+`.rbt` files can be transparently compressed with gzip. The reader auto-detects gzip by checking for the gzip magic number (`0x1f 0x8b`) before the "RELI" header magic.
+
+### Reading
+
+All reader paths (converter commands, `rbt:recover`) accept both raw `.rbt` and gzip-compressed `.rbt.gz` input transparently:
+
+```bash
+# Both work identically
+reli converter:folded < trace.rbt
+reli converter:folded < trace.rbt.gz
+```
+
+### Writing
+
+Use `--compress` with `converter:rbt` to produce gzip-compressed output:
+
+```bash
+reli converter:rbt --compress < trace.txt > trace.rbt.gz
+```
+
+### Daemon segment compression (`--rbt-compress`)
+
+In daemon per-worker mode, `--rbt-compress` gzip-compresses each completed segment and writes concatenated gzip members to a single `.rbt.gz` file per worker:
+
+```bash
+reli inspector:daemon -F rbt --rbt-compress -o /path/to/output_dir/ ...
+# Produces worker_{pid}.rbt.gz files with concatenated gzip members
+```
+
+- Each segment is written to `php://temp`, gzip-compressed on completion, and appended to the output file
+- The resulting `.rbt.gz` contains concatenated gzip members (RFC 1952 compliant)
+- Readable with `zcat`, `gzopen`, or reli's auto-detecting reader
+- No raw `.rbt` data touches disk — only compressed data is written
+- Without `--rbt-compress`, output is raw `.rbt` per worker (default, best for recovery/tail)
+
+### When to use which
+
+| Format | Best for |
+|--------|----------|
+| Raw `.rbt` | Live capture, append, tail, recovery |
+| `.rbt.gz` (`--rbt-compress`) | Daemon long-run, archival, transfer, Pyroscope upload |
+
+Raw `.rbt` is the default for live capture because it supports append-only writing, crash recovery, and real-time tailing. Gzip compression trades recovery for space efficiency.
+
+### Compression modes by use case
+
+**Daemon per-worker mode** (`inspector:daemon -F rbt --rbt-compress`): each worker writes a single `.rbt.gz` file. Completed segments are gzip-compressed and appended as concatenated gzip members. One file per worker, multiple segments inside.
+
+**File rotation via `stream_factory`** (programmatic API): each segment is written to a separate file. With `compress_completed_segments=true`, each file receives exactly one gzip member. The writer closes each stream on rotation.
+
+### Performance notes
+
+- **Raw input**: The gzip auto-detection peeks 2 bytes and, for seekable streams, simply seeks back — no full copy of the input occurs
+- **Gzip input**: The compressed data is expanded into `php://temp` (spills to disk for large inputs) before parsing
+- **Gzip output**: `converter:rbt --compress` buffers to `php://temp` before compressing; `--rbt-compress` in daemon mode buffers each segment individually
 
 ---
 
@@ -581,7 +650,6 @@ The following can be added while maintaining backward compatibility:
 - **New event types**: Unknown length-delimited events are safely skipped via payload_length
 - **Derived STACK_DEF**: Differential stack definitions based on an existing stack_id with 1-2 frames changed
 - **THREAD_SAMPLE**: Sample event that includes a thread_id
-- **Compression**: Stream-level or segment-level zstd/gzip compression
 - **Flag extensions**: Reserved header bits are available for future use
 - **Pyroscope integration**: Segment-level export for continuous profiling aggregation
 

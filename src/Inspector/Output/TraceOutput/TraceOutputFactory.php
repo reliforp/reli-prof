@@ -38,6 +38,21 @@ final class TraceOutputFactory
 
         if ($output_settings->isBinaryTrace() || $output_settings->isBinaryTraceBundled()) {
             $sampling_period_us = $this->deriveSamplingPeriodUs($loop_settings);
+            if ($output_settings->rbt_compress) {
+                // Write to temp buffer; BinaryTraceOutput gzips on finish()
+                $buffer = fopen('php://temp', 'r+');
+                assert($buffer !== false);
+                $writer = new BinaryTraceWriter(
+                    $buffer,
+                    $sampling_period_us,
+                    has_timestamps: $output_settings->hasRbtTimestamps(),
+                );
+                return new BinaryTraceOutput(
+                    $writer,
+                    write_buffer: $buffer,
+                    compress_to: $stream,
+                );
+            }
             $writer = new BinaryTraceWriter(
                 $stream,
                 $sampling_period_us,

@@ -25,6 +25,7 @@ final class OutputSettings
         public string $output_format,
         public ?string $output_path = null,
         public string $rbt_timestamps = 'none',
+        public bool $rbt_compress = false,
     ) {
     }
 

@@ -21,6 +21,11 @@ use Reli\Converter\ParsedCallTrace;
  * Produces self-contained segments, each with its own header and
  * FRAME_DEF/STACK_DEF events. Segments are concatenated in a single stream
  * or rotated to separate files via a stream factory callback.
+ *
+ * With compress_completed_segments=true, each completed segment is
+ * gzip-compressed before being written to the output. The resulting
+ * file contains concatenated gzip members (RFC 1952 compliant) and
+ * can be decompressed with gzopen/gzread or zcat.
  */
 final class SegmentedBinaryTraceWriter
 {
@@ -33,14 +38,20 @@ final class SegmentedBinaryTraceWriter
     private ?int $last_timestamp_us = null;
     private int $segment_index = 0;
 
-    /** @var resource|null current stream (for file rotation cleanup) */
+    /** @var resource|null current stream from stream_factory */
     private $current_stream = null;
+
+    /** @var resource|null temp buffer for segment when compressing */
+    private $segment_buffer = null;
 
     /**
      * @param resource|null $stream Single stream for concatenated segments (stdout mode).
      *                              Mutually exclusive with $stream_factory.
      * @param (\Closure(int): resource)|null $stream_factory Called with segment index to get a
      *                              new stream for each segment (file rotation mode).
+     * @param bool $compress_completed_segments When true, each completed segment is
+     *             gzip-compressed before writing to the output stream. The output is
+     *             concatenated gzip members (readable with gzopen/zcat).
      */
     public function __construct(
         private $stream,
@@ -48,6 +59,7 @@ final class SegmentedBinaryTraceWriter
         private int $segment_duration_us = 10_000_000,
         private int $checkpoint_interval = 1000,
         private ?\Closure $stream_factory = null,
+        private bool $compress_completed_segments = false,
     ) {
     }
 
@@ -83,8 +95,8 @@ final class SegmentedBinaryTraceWriter
 
     /**
      * Finish the current segment cleanly.
-     * Note: does not close streams created by the stream factory;
-     * the caller is responsible for closing them.
+     * Closes stream_factory-created streams if any; the shared $stream
+     * passed to the constructor is not closed (caller-owned).
      */
     public function finish(): void
     {
@@ -92,6 +104,12 @@ final class SegmentedBinaryTraceWriter
             $this->current_writer->writeCheckpoint();
             $this->current_writer->writeSegmentEnd();
             $this->current_writer = null;
+            $this->flushCompressedSegment();
+            if ($this->stream_factory !== null && $this->current_stream !== null) {
+                $s = $this->current_stream;
+                $this->current_stream = null;
+                fclose($s);
+            }
         }
     }
 
@@ -104,9 +122,18 @@ final class SegmentedBinaryTraceWriter
     {
         $this->segment_start_us = $timestamp_us;
 
-        $stream = $this->resolveStream();
+        if ($this->compress_completed_segments) {
+            // Write segment to a temp buffer; flush to output on completion
+            $buf = fopen('php://temp', 'r+');
+            assert($buf !== false);
+            $this->segment_buffer = $buf;
+            $write_stream = $this->segment_buffer;
+        } else {
+            $write_stream = $this->resolveStream();
+        }
+
         $this->current_writer = new BinaryTraceWriter(
-            $stream,
+            $write_stream,
             $this->sampling_period_us,
             has_timestamps: true,
         );
@@ -124,11 +151,55 @@ final class SegmentedBinaryTraceWriter
         if ($this->current_writer !== null) {
             $this->current_writer->writeCheckpoint();
             $this->current_writer->writeSegmentEnd();
+            $this->current_writer = null;
+            $this->flushCompressedSegment();
         }
 
+        // Close and reset stream for file rotation mode
+        if ($this->stream_factory !== null && $this->current_stream !== null) {
+            $s = $this->current_stream;
+            $this->current_stream = null;
+            fclose($s);
+        } else {
+            $this->current_stream = null;
+        }
         $this->segment_index++;
-        $this->current_writer = null;
         $this->startSegment($timestamp_us);
+    }
+
+    /**
+     * If compressing, gzencode the segment buffer and append to the output stream.
+     */
+    private function flushCompressedSegment(): void
+    {
+        if (!$this->compress_completed_segments || $this->segment_buffer === null) {
+            return;
+        }
+
+        $buf = $this->segment_buffer;
+        $this->segment_buffer = null;
+        rewind($buf);
+        $raw = stream_get_contents($buf);
+        fclose($buf);
+
+        if ($raw === false || $raw === '') {
+            return;
+        }
+
+        $compressed = gzencode($raw);
+        if ($compressed === false) {
+            throw new BinaryTraceException('Failed to gzip-compress segment');
+        }
+
+        // In file rotation mode, get a fresh stream for this segment.
+        // In single-stream mode, append to the shared stream.
+        if ($this->stream_factory !== null) {
+            $this->current_stream = ($this->stream_factory)($this->segment_index);
+            fwrite($this->current_stream, $compressed);
+        } else {
+            assert($this->stream !== null);
+            fwrite($this->stream, $compressed);
+        }
     }
 
     /**

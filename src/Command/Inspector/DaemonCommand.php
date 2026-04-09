@@ -153,13 +153,23 @@ final class DaemonCommand extends Command
         $bundled_writer = null;
         /** @var resource|null $bundled_stream */
         $bundled_stream = null;
+        /** @var resource|null $bundled_buffer */
+        $bundled_buffer = null;
         $bundled_last_hrtime_ns = null;
+        $bundled_compress = $output_settings->rbt_compress;
         if ($output_settings->isBinaryTraceBundled()) {
             $bundled_stream = $output_settings->output_path !== null
                 ? (fopen($output_settings->output_path, 'wb') ?: \STDOUT)
                 : \STDOUT;
+            if ($bundled_compress) {
+                $bundled_buffer = fopen('php://temp', 'r+');
+                assert($bundled_buffer !== false);
+                $write_target = $bundled_buffer;
+            } else {
+                $write_target = $bundled_stream;
+            }
             $bundled_writer = new BinaryTraceWriter(
-                $bundled_stream,
+                $write_target,
                 $sampling_period_us,
                 has_timestamps: $output_settings->hasRbtTimestamps(),
             );
@@ -232,17 +242,37 @@ final class DaemonCommand extends Command
         } catch (CancelledException $e) {
             Log::debug('cancelled', ['exception' => $e->getMessage()]);
         } finally {
-            $this->closeBundledWriter($bundled_writer, $bundled_stream);
+            $this->closeBundledWriter(
+                $bundled_writer,
+                $bundled_buffer,
+                $bundled_stream,
+                $bundled_compress,
+            );
         }
 
         return 0;
     }
 
-    private function closeBundledWriter(?BinaryTraceWriter $writer, mixed $stream): void
-    {
+    private function closeBundledWriter(
+        ?BinaryTraceWriter $writer,
+        mixed $buffer,
+        mixed $stream,
+        bool $compress,
+    ): void {
         if ($writer !== null) {
             $writer->writeCheckpoint();
             $writer->writeSegmentEnd();
+        }
+        if ($compress && is_resource($buffer) && is_resource($stream)) {
+            rewind($buffer);
+            $raw = stream_get_contents($buffer);
+            fclose($buffer);
+            if ($raw !== false && $raw !== '') {
+                $compressed = gzencode($raw);
+                if ($compressed !== false) {
+                    fwrite($stream, $compressed);
+                }
+            }
         }
         if (is_resource($stream) && $stream !== \STDOUT) {
             fclose($stream);

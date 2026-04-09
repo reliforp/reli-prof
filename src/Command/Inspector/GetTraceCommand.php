@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Command\Inspector;
 
 use Reli\Inspector\Output\TraceFormatter\MergedCallTraceFormatter;
+use Reli\Inspector\Output\TraceOutput\BinaryTraceOutput;
 use Reli\Inspector\Output\TraceOutput\FormattedMergedTraceOutput;
 use Reli\Inspector\Output\TraceOutput\MergedTraceOutput;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
@@ -223,6 +224,10 @@ final class GetTraceCommand extends Command
             },
             $loop_settings
         )->invoke();
+
+        if ($trace_output instanceof BinaryTraceOutput) {
+            $trace_output->finish();
+        }
 
         return 0;
     }

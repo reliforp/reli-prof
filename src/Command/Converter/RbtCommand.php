@@ -41,6 +41,12 @@ final class RbtCommand extends Command
                 'Timestamp mode: none or delta',
                 'none',
             )
+            ->addOption(
+                'compress',
+                null,
+                InputOption::VALUE_NONE,
+                'Gzip-compress the output (.rbt.gz)',
+            )
         ;
     }
 
@@ -49,17 +55,38 @@ final class RbtCommand extends Command
     {
         $sampling_period = (int)$input->getOption('sampling-period');
         $has_timestamps = $input->getOption('rbt-timestamps') === 'delta';
+        $compress = (bool)$input->getOption('compress');
 
         $reader = new TraceInputReader();
-        $writer = new BinaryTraceWriter(STDOUT, $sampling_period, $has_timestamps);
-        $writer->writeHeader();
 
+        if ($compress) {
+            // Write to temp (spills to disk if large), then gzip to stdout
+            $buffer = fopen('php://temp', 'r+');
+            assert($buffer !== false);
+            $writer = new BinaryTraceWriter($buffer, $sampling_period, $has_timestamps);
+        } else {
+            $buffer = null;
+            $writer = new BinaryTraceWriter(STDOUT, $sampling_period, $has_timestamps);
+        }
+
+        $writer->writeHeader();
         foreach ($reader->read(STDIN) as $trace) {
             $writer->writeTrace($trace);
         }
-
         $writer->writeCheckpoint();
         $writer->writeSegmentEnd();
+
+        if ($buffer !== null) {
+            rewind($buffer);
+            $raw = stream_get_contents($buffer);
+            fclose($buffer);
+            assert($raw !== false);
+            $compressed = gzencode($raw);
+            if ($compressed === false) {
+                throw new \RuntimeException('Failed to gzip-compress rbt output');
+            }
+            fwrite(STDOUT, $compressed);
+        }
 
         return 0;
     }

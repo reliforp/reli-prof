@@ -24,9 +24,17 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
     private bool $header_written = false;
     private ?int $last_hrtime_ns = null;
 
+    /**
+     * @param resource|null $write_buffer The buffer the writer writes to
+     *        (only needed when compress_to is set, so we can read it back).
+     * @param resource|null $compress_to When set, the write_buffer is
+     *        gzip-compressed and written to this stream on finish().
+     */
     public function __construct(
         private BinaryTraceWriter $writer,
         private int $checkpoint_interval = 1000,
+        private $write_buffer = null,
+        private $compress_to = null,
     ) {
     }
 
@@ -40,6 +48,36 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
     public function outputMerged(MergedCallTrace $merged_trace): void
     {
         $this->writeParsed(CallTraceConverter::mergedToParsed($merged_trace));
+    }
+
+    /**
+     * Finalize: write checkpoint + segment end, then gzip if configured.
+     */
+    public function finish(): void
+    {
+        if ($this->header_written) {
+            $this->writer->writeCheckpoint();
+            $this->writer->writeSegmentEnd();
+        }
+
+        if (
+            $this->compress_to !== null
+            && $this->write_buffer !== null
+            && $this->header_written
+        ) {
+            $buf = $this->write_buffer;
+            $this->write_buffer = null;
+            rewind($buf);
+            $raw = stream_get_contents($buf);
+            fclose($buf);
+
+            if ($raw !== false && $raw !== '') {
+                $compressed = gzencode($raw);
+                if ($compressed !== false) {
+                    fwrite($this->compress_to, $compressed);
+                }
+            }
+        }
     }
 
     private function writeParsed(ParsedCallTrace $parsed): void
