@@ -94,7 +94,9 @@ final class SegmentedBinaryTraceWriter
     }
 
     /**
-     * Finish the current segment cleanly and close the output stream.
+     * Finish the current segment cleanly.
+     * Closes stream_factory-created streams if any; the shared $stream
+     * passed to the constructor is not closed (caller-owned).
      */
     public function finish(): void
     {
