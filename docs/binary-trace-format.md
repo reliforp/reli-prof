@@ -120,6 +120,8 @@ When an unknown `event_type` is encountered, skip `payload_length` bytes and pro
 | `SAMPLE` | 0x03 | Sample event |
 | `CHECKPOINT` | 0x04 | Checkpoint |
 | `SEGMENT_END` | 0x05 | Segment terminator (optional) |
+| `METADATA` | 0x06 | Key-value metadata |
+| `PID_SAMPLE` | 0x07 | Sample with process ID |
 
 ---
 
@@ -192,6 +194,36 @@ Payload: (empty, length = 0)
 ```
 
 **This event is optional.** Its absence does not indicate data corruption; the writer may have been interrupted. All events written before the interruption point remain valid.
+
+### METADATA (0x06)
+
+Records a key-value metadata pair for the current segment. Typically written after the header, before sample events.
+
+```
+Payload:
+  [key_length: varint]   [key: UTF-8 bytes]
+  [value_length: varint] [value: UTF-8 bytes]
+```
+
+Common keys:
+- `pid` — process ID being profiled (written per-segment by the daemon worker)
+- `host` — hostname of the profiled machine
+
+Metadata is scoped to the current segment and resets on segment boundaries.
+
+### PID_SAMPLE (0x07)
+
+Records a sample with an explicit process ID. Used in bundled daemon output where traces from multiple processes are interleaved in a single stream.
+
+```
+Payload:
+  [stack_id: varint]
+  [pid: varint]
+  if flags.has_timestamps:
+    [timestamp_delta_us: varint]
+```
+
+Semantically identical to SAMPLE except for the additional `pid` field. The reader exposes the PID via `BinaryTraceSample::$pid`.
 
 ---
 
@@ -344,6 +376,56 @@ When a segment boundary is reached:
 4. New samples continue with the primed definition tables
 
 This ensures each segment can be decoded independently.
+
+---
+
+## Daemon Output Modes
+
+When the daemon profiles multiple PHP processes concurrently, two output modes are available:
+
+### Per-Worker File Output (`--output-format=rbt`)
+
+Each worker process writes directly to its own file, bypassing IPC for trace data entirely.
+
+```
+reli inspector:daemon -F rbt -o /path/to/output_dir/ ...
+```
+
+- Workers write to `{output_dir}/worker_{pid}.rbt`
+- Each target process attachment creates a new segment with `METADATA(pid=...)` at the head
+- Segment boundaries align with attach/detach events
+- **IPC carries only control messages** (attach/detach) — zero serialize overhead for traces
+- Workers install a SIGTERM handler for clean shutdown (CHECKPOINT + SEGMENT_END)
+- Files can be merged post-hoc: `cat output_dir/*.rbt > combined.rbt`
+
+### Bundled Output (`--output-format=rbt-bundled`)
+
+All traces are collected to the main process and written to a single stream using PID_SAMPLE events.
+
+```
+reli inspector:daemon -F rbt-bundled -o combined.rbt ...
+```
+
+- Single output file, simpler management
+- Workers send `TraceMessage` (with PID) via IPC to the main process
+- Main process writes PID_SAMPLE events with per-trace PID
+- Higher IPC overhead than per-worker mode (though TraceMessage now carries PID, not full stack text)
+
+---
+
+## Output Format Selection
+
+The `--output-format` (`-F`) option selects the output format for `inspector:trace` and `inspector:daemon`:
+
+| Value | Description |
+|-------|-------------|
+| `template:phpspy` | phpspy-compatible text format (default) |
+| `template:phpspy_with_opcode` | phpspy with opcode information |
+| `template:json_lines` | JSON Lines format |
+| `rbt` | Binary trace format (per-worker files in daemon mode) |
+| `rbt-bundled` | Binary trace format with PID_SAMPLE (single file in daemon mode) |
+
+The `--template` (`-t`) option is a backward-compatible alias for `--output-format=template:{name}`.
 
 ---
 

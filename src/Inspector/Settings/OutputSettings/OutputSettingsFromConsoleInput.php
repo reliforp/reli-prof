@@ -31,10 +31,16 @@ final class OutputSettingsFromConsoleInput
     {
         $command
             ->addOption(
+                'output-format',
+                'F',
+                InputOption::VALUE_OPTIONAL,
+                'output format (template:phpspy|template:phpspy_with_opcode|template:json_lines|rbt|rbt-bundled)'
+            )
+            ->addOption(
                 'template',
                 't',
                 InputOption::VALUE_OPTIONAL,
-                'template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)'
+                '[deprecated: use --output-format=template:{name}] template name'
             )
             ->addOption(
                 'output',
@@ -47,10 +53,21 @@ final class OutputSettingsFromConsoleInput
 
     public function createSettings(InputInterface $input): OutputSettings
     {
-        $template = NullableCast::toString($input->getOption('template'));
-        if (is_null($template)) {
-            $template = NullableCast::toString($this->config->get('output.template.default'));
-            if (is_null($template)) {
+        $output_format = NullableCast::toString($input->getOption('output-format'));
+
+        // --template is a backward-compatible alias for --output-format=template:{name}
+        if ($output_format === null) {
+            $template = NullableCast::toString($input->getOption('template'));
+            if ($template !== null) {
+                $output_format = 'template:' . $template;
+            }
+        }
+
+        if ($output_format === null) {
+            $default_template = NullableCast::toString($this->config->get('output.template.default'));
+            if ($default_template !== null) {
+                $output_format = 'template:' . $default_template;
+            } else {
                 throw OutputSettingsException::create(
                     OutputSettingsException::TEMPLATE_NOT_SPECIFIED
                 );
@@ -65,7 +82,7 @@ final class OutputSettingsFromConsoleInput
         }
 
         return new OutputSettings(
-            $template,
+            $output_format,
             $output_path,
         );
     }

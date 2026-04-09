@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TraceOutput;
 
+use Reli\Converter\BinaryTrace\BinaryTraceWriter;
 use Reli\Inspector\Output\OutputChannel\StreamOutputChannel;
 use Reli\Inspector\Output\TraceFormatter\Templated\TraceFormatterFactory;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
@@ -31,14 +32,14 @@ final class TraceOutputFactory
         OutputInterface $output,
         OutputSettings $output_settings,
     ): TraceOutput {
-        if ($output_settings->output_path !== null) {
-            $stream = fopen($output_settings->output_path, 'w', false);
-            if ($stream === false) {
-                throw new \RuntimeException("Failed to open output file: {$output_settings->output_path}");
-            }
-        } else {
-            $stream = $this->default_stream ?? \STDOUT;
+        $stream = $this->resolveStream($output_settings);
+
+        if ($output_settings->isBinaryTrace() || $output_settings->isBinaryTraceBundled()) {
+            $sampling_period_us = 10000; // default; matches TraceLoopSettings default of 10ms
+            $writer = new BinaryTraceWriter($stream, $sampling_period_us, has_timestamps: true);
+            return new BinaryTraceOutput($writer);
         }
+
         // Direct stream I/O bypasses Symfony Console's Unicode
         // normalization overhead (normalizer_is_normalized, grapheme_strlen)
         return new FormattedTraceOutput(
@@ -47,5 +48,20 @@ final class TraceOutputFactory
                 $output_settings
             )
         );
+    }
+
+    /**
+     * @return resource
+     */
+    private function resolveStream(OutputSettings $output_settings)
+    {
+        if ($output_settings->output_path !== null) {
+            $stream = fopen($output_settings->output_path, 'w', false);
+            if ($stream === false) {
+                throw new \RuntimeException("Failed to open output file: {$output_settings->output_path}");
+            }
+            return $stream;
+        }
+        return $this->default_stream ?? \STDOUT;
     }
 }

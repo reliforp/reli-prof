@@ -22,6 +22,7 @@ final class BinaryTraceSample
         public ParsedCallTrace $trace,
         public ?int $timestamp_delta_us = null,
         public ?int $accumulated_timestamp_us = null,
+        public ?int $pid = null,
     ) {
     }
 }

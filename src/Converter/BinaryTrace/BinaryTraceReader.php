@@ -24,6 +24,9 @@ final class BinaryTraceReader
     /** @var array<int, int[]> stack_id => frame_id[] */
     private array $stacks = [];
 
+    /** @var array<string, string> key => value */
+    private array $metadata = [];
+
     private int $sampling_period_us = 0;
     private int $flags = 0;
     private int $accumulated_timestamp_us = 0;
@@ -130,10 +133,21 @@ final class BinaryTraceReader
         // bytes 12-15: reserved
     }
 
+    /**
+     * Get metadata from the current/last segment.
+     *
+     * @return array<string, string>
+     */
+    public function getMetadata(): array
+    {
+        return $this->metadata;
+    }
+
     private function resetSegmentState(): void
     {
         $this->frames = [];
         $this->stacks = [];
+        $this->metadata = [];
         $this->accumulated_timestamp_us = 0;
     }
 
@@ -245,6 +259,11 @@ final class BinaryTraceReader
                 return null;
             case EventType::SAMPLE:
                 return $this->handleSample($payload);
+            case EventType::PID_SAMPLE:
+                return $this->handlePidSample($payload);
+            case EventType::METADATA:
+                $this->handleMetadata($payload);
+                return null;
             case EventType::CHECKPOINT:
                 return null;
             case EventType::SEGMENT_END:
@@ -327,6 +346,57 @@ final class BinaryTraceReader
             $timestamp_delta_us,
             $timestamp_delta_us !== null ? $this->accumulated_timestamp_us : null,
         );
+    }
+
+    private function handlePidSample(string $payload): BinaryTraceSample
+    {
+        $offset = 0;
+        [$stack_id, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+
+        [$pid, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+
+        $timestamp_delta_us = null;
+        if (($this->flags & BinaryTraceWriter::FLAG_HAS_TIMESTAMPS) !== 0 && $offset < strlen($payload)) {
+            [$timestamp_delta_us, $consumed] = Varint::decode($payload, $offset);
+            $this->accumulated_timestamp_us += $timestamp_delta_us;
+        }
+
+        if (!isset($this->stacks[$stack_id])) {
+            throw new BinaryTraceException("Reference to undefined stack_id: {$stack_id}");
+        }
+
+        $frame_ids = $this->stacks[$stack_id];
+        $frames = [];
+        foreach ($frame_ids as $fid) {
+            if (!isset($this->frames[$fid])) {
+                throw new BinaryTraceException("Reference to undefined frame_id: {$fid}");
+            }
+            $frames[] = $this->frames[$fid];
+        }
+
+        return new BinaryTraceSample(
+            new ParsedCallTrace(...$frames),
+            $timestamp_delta_us,
+            $timestamp_delta_us !== null ? $this->accumulated_timestamp_us : null,
+            $pid,
+        );
+    }
+
+    private function handleMetadata(string $payload): void
+    {
+        $offset = 0;
+        [$key_len, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+        $key = substr($payload, $offset, $key_len);
+        $offset += $key_len;
+
+        [$value_len, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+        $value = substr($payload, $offset, $value_len);
+
+        $this->metadata[$key] = $value;
     }
 
     /**

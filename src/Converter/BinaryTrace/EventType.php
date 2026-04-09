@@ -20,4 +20,6 @@ enum EventType: int
     case SAMPLE = 0x03;
     case CHECKPOINT = 0x04;
     case SEGMENT_END = 0x05;
+    case METADATA = 0x06;
+    case PID_SAMPLE = 0x07;
 }

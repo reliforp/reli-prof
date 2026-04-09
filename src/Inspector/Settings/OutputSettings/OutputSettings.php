@@ -19,8 +19,32 @@ namespace Reli\Inspector\Settings\OutputSettings;
 final class OutputSettings
 {
     public function __construct(
-        public string $template_name,
+        public string $output_format,
         public ?string $output_path = null,
     ) {
+    }
+
+    public function isBinaryTrace(): bool
+    {
+        return $this->output_format === 'rbt';
+    }
+
+    public function isBinaryTraceBundled(): bool
+    {
+        return $this->output_format === 'rbt-bundled';
+    }
+
+    public function isTemplate(): bool
+    {
+        return !$this->isBinaryTrace() && !$this->isBinaryTraceBundled();
+    }
+
+    public function getTemplateName(): string
+    {
+        // "template:phpspy" → "phpspy", plain "phpspy" → "phpspy"
+        if (str_starts_with($this->output_format, 'template:')) {
+            return substr($this->output_format, strlen('template:'));
+        }
+        return $this->output_format;
     }
 }

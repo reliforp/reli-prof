@@ -445,4 +445,119 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
 
         fclose($stream);
     }
+
+    public function testMetadataRoundTrip(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 10000);
+        $writer->writeHeader();
+        $writer->writeMetadata('pid', '12345');
+        $writer->writeMetadata('host', 'web-01');
+
+        $trace = new ParsedCallTrace(
+            new ParsedCallFrame('func', '/file.php', 1),
+        );
+        $writer->writeTrace($trace);
+
+        rewind($stream);
+
+        $reader = new BinaryTraceReader();
+        $results = iterator_to_array($reader->read($stream));
+        fclose($stream);
+
+        $this->assertCount(1, $results);
+        $metadata = $reader->getMetadata();
+        $this->assertSame('12345', $metadata['pid']);
+        $this->assertSame('web-01', $metadata['host']);
+    }
+
+    public function testPidSampleRoundTrip(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 10000, has_timestamps: true);
+        $writer->writeHeader();
+
+        $trace = new ParsedCallTrace(
+            new ParsedCallFrame('func', '/file.php', 1),
+        );
+        $writer->writePidTrace($trace, 1234, 0);
+        $writer->writePidTrace($trace, 5678, 10000);
+        $writer->writePidTrace($trace, 1234, 10000);
+
+        rewind($stream);
+
+        $reader = new BinaryTraceReader();
+        $results = iterator_to_array($reader->read($stream));
+        fclose($stream);
+
+        $this->assertCount(3, $results);
+        $this->assertSame(1234, $results[0]->pid);
+        $this->assertSame(5678, $results[1]->pid);
+        $this->assertSame(1234, $results[2]->pid);
+
+        // Timestamps should be preserved
+        $this->assertSame(0, $results[0]->timestamp_delta_us);
+        $this->assertSame(10000, $results[1]->timestamp_delta_us);
+    }
+
+    public function testPidSampleNullForRegularSample(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 10000);
+        $writer->writeHeader();
+
+        $trace = new ParsedCallTrace(
+            new ParsedCallFrame('func', '/file.php', 1),
+        );
+        $writer->writeTrace($trace);
+
+        rewind($stream);
+
+        $reader = new BinaryTraceReader();
+        $results = iterator_to_array($reader->read($stream));
+        fclose($stream);
+
+        $this->assertCount(1, $results);
+        $this->assertNull($results[0]->pid);
+    }
+
+    public function testMetadataResetsOnNewSegment(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        // Segment 1 with pid metadata
+        $w1 = new BinaryTraceWriter($stream, 10000);
+        $w1->writeHeader();
+        $w1->writeMetadata('pid', '100');
+        $trace = new ParsedCallTrace(new ParsedCallFrame('func', '/file.php', 1));
+        $w1->writeTrace($trace);
+        $w1->writeSegmentEnd();
+
+        // Segment 2 with different pid
+        $w2 = new BinaryTraceWriter($stream, 10000);
+        $w2->writeHeader();
+        $w2->writeMetadata('pid', '200');
+        $w2->writeTrace($trace);
+        $w2->writeSegmentEnd();
+
+        rewind($stream);
+
+        $reader = new BinaryTraceReader();
+        $samples = [];
+        foreach ($reader->read($stream) as $sample) {
+            $samples[] = ['sample' => $sample, 'metadata' => $reader->getMetadata()];
+        }
+        fclose($stream);
+
+        $this->assertCount(2, $samples);
+        $this->assertSame('100', $samples[0]['metadata']['pid']);
+        $this->assertSame('200', $samples[1]['metadata']['pid']);
+    }
 }

@@ -103,6 +103,42 @@ final class BinaryTraceWriter
         $this->writeEvent(EventType::SEGMENT_END, '');
     }
 
+    /**
+     * Write a METADATA event (key-value pair).
+     */
+    public function writeMetadata(string $key, string $value): void
+    {
+        $payload = Varint::encode(strlen($key)) . $key
+            . Varint::encode(strlen($value)) . $value;
+        $this->writeEvent(EventType::METADATA, $payload);
+    }
+
+    /**
+     * Write a PID_SAMPLE event (sample with process ID).
+     */
+    public function writePidSample(int $stack_id, int $pid, int $timestamp_delta_us = 0): void
+    {
+        $payload = Varint::encode($stack_id)
+            . Varint::encode($pid);
+        if (($this->flags & self::FLAG_HAS_TIMESTAMPS) !== 0) {
+            $payload .= Varint::encode($timestamp_delta_us);
+        }
+        $this->writeEvent(EventType::PID_SAMPLE, $payload);
+        $this->sample_count++;
+    }
+
+    /**
+     * Write a trace as a PID_SAMPLE, emitting FRAME_DEF and STACK_DEF as needed.
+     *
+     * @return int The stack_id used for this sample
+     */
+    public function writePidTrace(ParsedCallTrace $trace, int $pid, int $timestamp_delta_us = 0): int
+    {
+        $stack_id = $this->defineTrace($trace);
+        $this->writePidSample($stack_id, $pid, $timestamp_delta_us);
+        return $stack_id;
+    }
+
     public function getSampleCount(): int
     {
         return $this->sample_count;

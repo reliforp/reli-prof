@@ -17,6 +17,7 @@ use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 interface PhpReaderControllerInterface
@@ -27,7 +28,8 @@ interface PhpReaderControllerInterface
 
     public function sendSettings(
         TraceLoopSettings $loop_settings,
-        GetTraceSettings $get_trace_settings
+        GetTraceSettings $get_trace_settings,
+        ?OutputSettings $output_settings = null,
     ): void;
 
     public function sendAttach(TargetProcessDescriptor $process_descriptor): void;

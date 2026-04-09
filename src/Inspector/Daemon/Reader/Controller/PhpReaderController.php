@@ -21,6 +21,7 @@ use Reli\Inspector\Daemon\Reader\Protocol\Message\AttachMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderControllerProtocolInterface;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 
 final class PhpReaderController implements PhpReaderControllerInterface
@@ -69,11 +70,13 @@ final class PhpReaderController implements PhpReaderControllerInterface
     #[\Override]
     public function sendSettings(
         TraceLoopSettings $loop_settings,
-        GetTraceSettings $get_trace_settings
+        GetTraceSettings $get_trace_settings,
+        ?OutputSettings $output_settings = null,
     ): void {
         $settings_message = new SetSettingsMessage(
             $loop_settings,
-            $get_trace_settings
+            $get_trace_settings,
+            $output_settings,
         );
         $this->auto_context_recovering->withAutoRecover(
             function (PhpReaderControllerProtocolInterface $protocol) use ($settings_message) {

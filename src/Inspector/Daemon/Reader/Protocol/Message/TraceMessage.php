@@ -19,6 +19,7 @@ final class TraceMessage
 {
     public function __construct(
         public CallTrace $trace,
+        public ?int $pid = null,
     ) {
     }
 }
