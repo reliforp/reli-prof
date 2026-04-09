@@ -552,39 +552,50 @@ The following are not implemented in v1 but can be added while maintaining backw
 
 ## Conversion Pipeline
 
+All converter commands auto-detect the input format (rbt or phpspy text) by peeking the first 4 bytes for the "RELI" magic.
+
 ```
-                                      +-> speedscope JSON
-                                      |
-phpspy text --> binary-trace-encode --+-> pprof protobuf (gzip)
-                                      |
-CallTrace --> BinaryTraceOutput      -+-> folded stacks -> flamegraph.pl
-            | SegmentedBinaryTrace    |
-              Output                  +-> phpspy text (decode)
-                                      |
-                                      +-> recovered .rbt (recover)
+                              +-> converter:speedscope -> JSON
+                              |
+  phpspy text or .rbt input --+-> converter:pprof      -> protobuf (gzip)
+                              |
+  CallTrace --> BinaryTrace   +-> converter:folded     -> folded stacks
+    Output / Segmented        |
+                              +-> converter:phpspy     -> phpspy text
+                              |
+                              +-> converter:rbt        -> .rbt binary
+                              |
+                              +-> converter:recover    -> recovered .rbt
 ```
 
 ### CLI Commands
 
 ```bash
-# phpspy text -> binary trace
-reli converter:binary-trace-encode < trace.txt > trace.rbt
+# Any input → speedscope JSON (auto-detects rbt or phpspy)
+reli converter:speedscope < trace.rbt > profile.json
+reli converter:speedscope < trace.txt > profile.json
 
-# binary trace -> phpspy text
-reli converter:binary-trace-decode < trace.rbt
+# Any input → folded stacks
+reli converter:folded < trace.rbt | flamegraph.pl > graph.svg
 
-# binary trace -> speedscope JSON
-reli converter:binary-trace-to-speedscope < trace.rbt > profile.json
+# Any input → pprof protobuf
+reli converter:pprof < trace.rbt > profile.pb.gz
 
-# binary trace -> folded stacks (for flamegraph)
-reli converter:binary-trace-to-folded < trace.rbt | flamegraph.pl > graph.svg
+# Any input → callgrind
+reli converter:callgrind < trace.rbt > callgrind.out
 
-# binary trace -> pprof protobuf
-reli converter:binary-trace-to-pprof < trace.rbt > profile.pb.gz
+# Any input → phpspy text
+reli converter:phpspy < trace.rbt
 
-# recover corrupted/truncated binary trace
-reli converter:binary-trace-recover < corrupted.rbt > recovered.rbt
-reli converter:binary-trace-recover -f phpspy < corrupted.rbt > recovered.txt
+# Any input → rbt binary
+reli converter:rbt < trace.txt > trace.rbt
+
+# Recover corrupted/truncated rbt
+reli converter:recover < corrupted.rbt > recovered.rbt
+reli converter:recover -f phpspy < corrupted.rbt > recovered.txt
+
+# Flamegraph (phpspy input only, pipes through perl scripts)
+reli converter:flamegraph < trace.txt > graph.svg
 ```
 
 ### Live Capture Usage
@@ -639,9 +650,9 @@ $output->finish();
 | `src/Converter/BinaryTrace/PprofEncoder.php` | pprof protobuf encoder |
 | `src/Inspector/Output/TraceOutput/BinaryTraceOutput.php` | TraceOutput adapter (single segment) |
 | `src/Inspector/Output/TraceOutput/SegmentedBinaryTraceOutput.php` | TraceOutput adapter (segmented) |
-| `src/Command/Converter/BinaryTraceEncodeCommand.php` | phpspy -> binary CLI |
-| `src/Command/Converter/BinaryTraceDecodeCommand.php` | binary -> phpspy CLI |
-| `src/Command/Converter/BinaryTraceSpeedscopeCommand.php` | binary -> speedscope CLI |
-| `src/Command/Converter/BinaryTraceFoldedCommand.php` | binary -> folded stacks CLI |
-| `src/Command/Converter/BinaryTracePprofCommand.php` | binary -> pprof CLI |
-| `src/Command/Converter/BinaryTraceRecoverCommand.php` | Recovery CLI |
+| `src/Converter/TraceInputReader.php` | Auto-detecting input reader (rbt or phpspy) |
+| `src/Command/Converter/RbtCommand.php` | converter:rbt CLI |
+| `src/Command/Converter/PhpspyCommand.php` | converter:phpspy CLI |
+| `src/Command/Converter/FoldedCommand.php` | converter:folded CLI |
+| `src/Command/Converter/PprofCommand.php` | converter:pprof CLI |
+| `src/Command/Converter/RecoverCommand.php` | converter:recover CLI |

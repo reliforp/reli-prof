@@ -20,13 +20,13 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class BinaryTraceRecoverCommand extends Command
+final class RecoverCommand extends Command
 {
     #[\Override]
     public function configure(): void
     {
-        $this->setName('converter:binary-trace-recover')
-            ->setDescription('recover samples from a corrupted or truncated binary trace file')
+        $this->setName('converter:recover')
+            ->setDescription('recover samples from a corrupted or truncated rbt file')
             ->addOption(
                 'format',
                 'f',
@@ -58,9 +58,6 @@ final class BinaryTraceRecoverCommand extends Command
                 $count++;
             }
         } else {
-            // Defer writer creation until the first sample so the reader has
-            // already parsed at least one header and getSamplingPeriodUs()
-            // returns the actual value from the input file.
             $writer = null;
             foreach ($reader->readWithRecovery(STDIN) as $sample) {
                 if ($writer === null) {
@@ -71,7 +68,10 @@ final class BinaryTraceRecoverCommand extends Command
                     );
                     $writer->writeHeader();
                 }
-                $writer->writeTrace($sample->trace, $sample->timestamp_delta_us ?? 0);
+                $writer->writeTrace(
+                    $sample->trace,
+                    $sample->timestamp_delta_us ?? 0,
+                );
                 $count++;
             }
             if ($writer !== null) {

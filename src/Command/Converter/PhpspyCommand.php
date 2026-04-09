@@ -13,29 +13,36 @@ declare(strict_types=1);
 
 namespace Reli\Command\Converter;
 
-use Reli\Converter\BinaryTrace\BinaryTraceReader;
-use Reli\Converter\BinaryTrace\FoldedStacksFormatter;
+use Reli\Converter\TraceInputReader;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class BinaryTraceFoldedCommand extends Command
+final class PhpspyCommand extends Command
 {
     #[\Override]
     public function configure(): void
     {
-        $this->setName('converter:binary-trace-to-folded')
-            ->setDescription('convert binary trace format to folded stacks (for flamegraph)')
+        $this->setName('converter:phpspy')
+            ->setDescription('convert traces to phpspy-compatible text (auto-detects rbt or phpspy input)')
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $reader = new BinaryTraceReader();
-        $formatter = new FoldedStacksFormatter();
+        $reader = new TraceInputReader();
 
-        $output->write($formatter->format($reader->read(STDIN)));
+        foreach ($reader->read(STDIN) as $trace) {
+            foreach ($trace->call_frames as $depth => $frame) {
+                $output->writeln(
+                    $depth . ' '
+                    . $frame->function_name . ' '
+                    . $frame->file_name . ':' . $frame->lineno
+                );
+            }
+            $output->writeln('');
+        }
 
         return 0;
     }

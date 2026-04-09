@@ -13,36 +13,36 @@ declare(strict_types=1);
 
 namespace Reli\Command\Converter;
 
-use Reli\Converter\BinaryTrace\BinaryTraceReader;
 use Reli\Converter\BinaryTrace\PprofEncoder;
+use Reli\Converter\TraceInputReader;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class BinaryTracePprofCommand extends Command
+final class PprofCommand extends Command
 {
     #[\Override]
     public function configure(): void
     {
-        $this->setName('converter:binary-trace-to-pprof')
-            ->setDescription('convert binary trace format to pprof protobuf')
+        $this->setName('converter:pprof')
+            ->setDescription('convert traces to pprof protobuf (auto-detects rbt or phpspy input)')
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $reader = new BinaryTraceReader();
+        $reader = new TraceInputReader();
         $encoder = new PprofEncoder();
 
-        // Pass a closure for sampling_period_us so the encoder resolves it
-        // after iteration has started (when the header has been parsed).
         $pprof_data = $encoder->encode(
             $reader->read(STDIN),
-            fn () => $reader->getSamplingPeriodUs() ?: 10000,
+            function () use ($reader): int {
+                $period = $reader->getBinaryReader()?->getSamplingPeriodUs();
+                return ($period !== null && $period > 0) ? $period : 10000;
+            },
         );
 
-        // pprof files are gzip-compressed
         $compressed = gzencode($pprof_data);
         if ($compressed === false) {
             throw new \RuntimeException('Failed to gzip-compress pprof data');

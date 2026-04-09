@@ -14,19 +14,19 @@ declare(strict_types=1);
 namespace Reli\Command\Converter;
 
 use Reli\Converter\BinaryTrace\BinaryTraceWriter;
-use Reli\Converter\PhpSpyCompatibleParser;
+use Reli\Converter\TraceInputReader;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class BinaryTraceEncodeCommand extends Command
+final class RbtCommand extends Command
 {
     #[\Override]
     public function configure(): void
     {
-        $this->setName('converter:binary-trace-encode')
-            ->setDescription('convert phpspy-compatible traces to binary trace format')
+        $this->setName('converter:rbt')
+            ->setDescription('convert traces to rbt binary format (auto-detects rbt or phpspy input)')
             ->addOption(
                 'sampling-period',
                 null,
@@ -35,11 +35,11 @@ final class BinaryTraceEncodeCommand extends Command
                 '10000',
             )
             ->addOption(
-                'checkpoint-interval',
+                'rbt-timestamps',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Number of samples between checkpoints',
-                '1000',
+                'Timestamp mode: none or delta',
+                'none',
             )
         ;
     }
@@ -48,19 +48,14 @@ final class BinaryTraceEncodeCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $sampling_period = (int)$input->getOption('sampling-period');
-        $checkpoint_interval = (int)$input->getOption('checkpoint-interval');
+        $has_timestamps = $input->getOption('rbt-timestamps') === 'delta';
 
-        $writer = new BinaryTraceWriter(STDOUT, $sampling_period);
+        $reader = new TraceInputReader();
+        $writer = new BinaryTraceWriter(STDOUT, $sampling_period, $has_timestamps);
         $writer->writeHeader();
 
-        $parser = new PhpSpyCompatibleParser();
-        $count = 0;
-        foreach ($parser->parseFile(STDIN) as $trace) {
+        foreach ($reader->read(STDIN) as $trace) {
             $writer->writeTrace($trace);
-            $count++;
-            if ($count % $checkpoint_interval === 0) {
-                $writer->writeCheckpoint();
-            }
         }
 
         $writer->writeCheckpoint();
