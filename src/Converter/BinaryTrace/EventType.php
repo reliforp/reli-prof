@@ -22,4 +22,6 @@ enum EventType: int
     case SEGMENT_END = 0x05;
     case METADATA = 0x06;
     case PID_SAMPLE = 0x07;
+    /** Compact sample without payload_length: [0x08][stack_id: varint] */
+    case COMPACT_SAMPLE = 0x08;
 }

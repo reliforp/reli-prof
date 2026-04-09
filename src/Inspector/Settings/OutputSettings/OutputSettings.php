@@ -18,10 +18,19 @@ namespace Reli\Inspector\Settings\OutputSettings;
  */
 final class OutputSettings
 {
+    /**
+     * @param string $rbt_timestamps 'none' or 'delta'
+     */
     public function __construct(
         public string $output_format,
         public ?string $output_path = null,
+        public string $rbt_timestamps = 'none',
     ) {
+    }
+
+    public function hasRbtTimestamps(): bool
+    {
+        return $this->rbt_timestamps === 'delta';
     }
 
     public function isBinaryTrace(): bool

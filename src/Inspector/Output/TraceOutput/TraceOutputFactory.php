@@ -38,7 +38,11 @@ final class TraceOutputFactory
 
         if ($output_settings->isBinaryTrace() || $output_settings->isBinaryTraceBundled()) {
             $sampling_period_us = $this->deriveSamplingPeriodUs($loop_settings);
-            $writer = new BinaryTraceWriter($stream, $sampling_period_us, has_timestamps: true);
+            $writer = new BinaryTraceWriter(
+                $stream,
+                $sampling_period_us,
+                has_timestamps: $output_settings->hasRbtTimestamps(),
+            );
             return new BinaryTraceOutput($writer);
         }
 

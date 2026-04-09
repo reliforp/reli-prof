@@ -236,6 +236,12 @@ final class BinaryTraceReader
             );
         }
 
+        // COMPACT_SAMPLE has no payload_length — just [event_type][stack_id: varint]
+        if ($type_int === EventType::COMPACT_SAMPLE->value) {
+            $stack_id = Varint::decodeFromStream($stream);
+            return $this->resolveStack($stack_id);
+        }
+
         $payload_length = Varint::decodeFromStream($stream);
         // Sanity check: reject absurdly large payloads (max 16 MB)
         if ($payload_length > 16 * 1024 * 1024) {
@@ -329,41 +335,14 @@ final class BinaryTraceReader
             $this->accumulated_timestamp_us += $timestamp_delta_us;
         }
 
-        if (!isset($this->stacks[$stack_id])) {
-            throw new BinaryTraceException("Reference to undefined stack_id: {$stack_id}");
-        }
-
-        $frame_ids = $this->stacks[$stack_id];
-        $frames = [];
-        foreach ($frame_ids as $fid) {
-            if (!isset($this->frames[$fid])) {
-                throw new BinaryTraceException("Reference to undefined frame_id: {$fid}");
-            }
-            $frames[] = $this->frames[$fid];
-        }
-
-        return new BinaryTraceSample(
-            new ParsedCallTrace(...$frames),
-            $timestamp_delta_us,
-            $timestamp_delta_us !== null ? $this->accumulated_timestamp_us : null,
-        );
+        return $this->resolveStack($stack_id, $timestamp_delta_us);
     }
 
-    private function handlePidSample(string $payload): BinaryTraceSample
+    /**
+     * Build a BinaryTraceSample from a stack_id with optional timestamp.
+     */
+    private function resolveStack(int $stack_id, ?int $timestamp_delta_us = null, ?int $pid = null): BinaryTraceSample
     {
-        $offset = 0;
-        [$stack_id, $consumed] = Varint::decode($payload, $offset);
-        $offset += $consumed;
-
-        [$pid, $consumed] = Varint::decode($payload, $offset);
-        $offset += $consumed;
-
-        $timestamp_delta_us = null;
-        if (($this->flags & BinaryTraceWriter::FLAG_HAS_TIMESTAMPS) !== 0 && $offset < strlen($payload)) {
-            [$timestamp_delta_us, $consumed] = Varint::decode($payload, $offset);
-            $this->accumulated_timestamp_us += $timestamp_delta_us;
-        }
-
         if (!isset($this->stacks[$stack_id])) {
             throw new BinaryTraceException("Reference to undefined stack_id: {$stack_id}");
         }
@@ -383,6 +362,24 @@ final class BinaryTraceReader
             $timestamp_delta_us !== null ? $this->accumulated_timestamp_us : null,
             $pid,
         );
+    }
+
+    private function handlePidSample(string $payload): BinaryTraceSample
+    {
+        $offset = 0;
+        [$stack_id, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+
+        [$pid, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+
+        $timestamp_delta_us = null;
+        if (($this->flags & BinaryTraceWriter::FLAG_HAS_TIMESTAMPS) !== 0 && $offset < strlen($payload)) {
+            [$timestamp_delta_us, $consumed] = Varint::decode($payload, $offset);
+            $this->accumulated_timestamp_us += $timestamp_delta_us;
+        }
+
+        return $this->resolveStack($stack_id, $timestamp_delta_us, $pid);
     }
 
     private function handleMetadata(string $payload): void

@@ -48,6 +48,13 @@ final class OutputSettingsFromConsoleInput
                 InputOption::VALUE_REQUIRED,
                 'path to write output from this tool (default: stdout)'
             )
+            ->addOption(
+                'rbt-timestamps',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'timestamp mode for rbt format: none (compact, default) or delta (with timestamps)',
+                'none',
+            )
         ;
     }
 
@@ -81,9 +88,13 @@ final class OutputSettingsFromConsoleInput
             );
         }
 
+        /** @var string $rbt_timestamps */
+        $rbt_timestamps = $input->getOption('rbt-timestamps');
+
         return new OutputSettings(
             $output_format,
             $output_path,
+            $rbt_timestamps,
         );
     }
 }

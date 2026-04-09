@@ -69,11 +69,12 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 
             // Start a new self-contained segment for this attach.
             // A fresh BinaryTraceWriter resets frame/stack intern state.
+            $has_timestamps = $output_settings !== null && $output_settings->hasRbtTimestamps();
             if ($use_binary_direct && $this->binary_stream !== null) {
                 $this->binary_writer = new BinaryTraceWriter(
                     $this->binary_stream,
                     $sampling_period_us,
-                    has_timestamps: true,
+                    has_timestamps: $has_timestamps,
                 );
                 $this->binary_writer->writeHeader();
                 $this->binary_writer->writeMetadata('pid', (string)$pid);

@@ -122,6 +122,7 @@ When an unknown `event_type` is encountered, skip `payload_length` bytes and pro
 | `SEGMENT_END` | 0x05 | Segment terminator (optional) |
 | `METADATA` | 0x06 | Key-value metadata |
 | `PID_SAMPLE` | 0x07 | Sample with process ID |
+| `COMPACT_SAMPLE` | 0x08 | Compact sample (no payload_length) |
 
 ---
 
@@ -225,9 +226,36 @@ Payload:
 
 Semantically identical to SAMPLE except for the additional `pid` field. The reader exposes the PID via `BinaryTraceSample::$pid`.
 
+### COMPACT_SAMPLE (0x08)
+
+A minimal sample event used when timestamps are disabled (`has_timestamps=0`). Unlike all other events, COMPACT_SAMPLE has **no payload_length** — the varint-encoded stack_id is self-delimiting.
+
+```
+[0x08] [stack_id: varint]
+```
+
+**Size**: 2 bytes when stack_id <= 127.
+
+This is the most compact representation of a sample. It is used automatically when the header's `has_timestamps` flag is 0. The reader detects event type 0x08 and reads the stack_id varint directly without a preceding payload_length.
+
+**Note**: Because COMPACT_SAMPLE is not length-delimited, readers that do not recognize event type 0x08 cannot skip it safely. All readers at version >= 1 must handle this event type.
+
 ---
 
-## Timestamps
+## Timestamp Modes
+
+The `--rbt-timestamps` option controls whether samples carry timestamp deltas:
+
+| Mode | Default | Description |
+|------|---------|-------------|
+| `none` | yes | No timestamps. Uses COMPACT_SAMPLE (2 bytes/sample). Best for phpspy/pprof/folded. |
+| `delta` | | Per-sample timestamp delta in µs. Uses length-delimited SAMPLE (5 bytes/sample). Needed for timeline/Perfetto. |
+
+The mode is recorded in the segment header's `has_timestamps` flag (bit 0 of Flags byte).
+
+---
+
+## Timestamps (delta mode)
 
 When `flags.has_timestamps` is set:
 
@@ -452,6 +480,12 @@ The `--output-format` (`-F`) option selects the output format for `inspector:tra
 | `rbt-bundled` | Binary trace format with PID_SAMPLE (single file in daemon mode) |
 
 The `--template` (`-t`) option is a backward-compatible alias for `--output-format=template:{name}`.
+
+Additional options for rbt formats:
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `--rbt-timestamps` | `none`, `delta` | `none` | Timestamp mode. `none` uses COMPACT_SAMPLE for minimal size. `delta` records per-sample timing. |
 
 ---
 

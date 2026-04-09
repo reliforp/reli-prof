@@ -213,11 +213,15 @@ final class BinaryTraceWriter
 
     private function writeSample(int $stack_id, int $timestamp_delta_us): void
     {
-        $payload = Varint::encode($stack_id);
         if (($this->flags & self::FLAG_HAS_TIMESTAMPS) !== 0) {
-            $payload .= Varint::encode($timestamp_delta_us);
+            $payload = Varint::encode($stack_id)
+                . Varint::encode($timestamp_delta_us);
+            $this->writeEvent(EventType::SAMPLE, $payload);
+        } else {
+            // Compact sample: no payload_length, just event_type + stack_id varint
+            fwrite($this->stream, chr(EventType::COMPACT_SAMPLE->value));
+            fwrite($this->stream, Varint::encode($stack_id));
         }
-        $this->writeEvent(EventType::SAMPLE, $payload);
         $this->sample_count++;
     }
 

@@ -161,7 +161,7 @@ final class DaemonCommand extends Command
             $bundled_writer = new BinaryTraceWriter(
                 $bundled_stream,
                 $sampling_period_us,
-                has_timestamps: true,
+                has_timestamps: $output_settings->hasRbtTimestamps(),
             );
             $bundled_writer->writeHeader();
         }
