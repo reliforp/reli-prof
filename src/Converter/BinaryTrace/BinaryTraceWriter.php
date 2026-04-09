@@ -22,6 +22,10 @@ final class BinaryTraceWriter
     public const VERSION = 1;
     public const FLAG_HAS_TIMESTAMPS = 0x01;
 
+    /** @var array<string, int> string => string_id */
+    private array $string_map = [];
+    private int $next_string_id = 0;
+
     /** @var array<string, int> frame_key => frame_id */
     private array $frame_map = [];
     private int $next_frame_id = 0;
@@ -34,7 +38,6 @@ final class BinaryTraceWriter
     private int $last_checkpoint_samples = 0;
 
     // Run-length state for compact (no-timestamp) samples.
-    // Tracks consecutive occurrences of the same stack_id.
     private ?int $pending_compact_stack_id = null;
     private int $pending_run_count = 0;
 
@@ -90,7 +93,7 @@ final class BinaryTraceWriter
     }
 
     /**
-     * Write a trace sample, emitting FRAME_DEF and STACK_DEF events as needed.
+     * Write a trace sample, emitting STRING_DEF, FRAME_DEF and STACK_DEF events as needed.
      *
      * @return int The stack_id used for this sample
      */
@@ -166,7 +169,69 @@ final class BinaryTraceWriter
     }
 
     /**
-     * Write a FRAME_DEF if this frame hasn't been seen before.
+     * Intern a string and emit STRING_DEF if new.
+     */
+    private function internString(string $value): int
+    {
+        if (isset($this->string_map[$value])) {
+            return $this->string_map[$value];
+        }
+
+        $string_id = $this->next_string_id++;
+        $this->string_map[$value] = $string_id;
+
+        $payload = Varint::encode($string_id) . $value;
+        $this->writeEvent(EventType::STRING_DEF, $payload);
+
+        return $string_id;
+    }
+
+    /**
+     * Decompose a function_name into (namespace, class, method).
+     *
+     * Examples:
+     *   "App\Http\Controllers\UserController::index"
+     *     → ("App\Http\Controllers", "UserController", "index")
+     *   "App\Helpers\format_date"
+     *     → ("App\Helpers", "", "format_date")
+     *   "array_map"
+     *     → ("", "", "array_map")
+     *
+     * @return array{string, string, string} [namespace, class, method]
+     */
+    public static function decomposeFunctionName(string $function_name): array
+    {
+        // Split class::method first
+        $class_part = '';
+        $method = $function_name;
+        $double_colon = strrpos($function_name, '::');
+        if ($double_colon !== false) {
+            $class_part = substr($function_name, 0, $double_colon);
+            $method = substr($function_name, $double_colon + 2);
+        }
+
+        // Split namespace from class (or from function if no class)
+        $subject = $class_part !== '' ? $class_part : $method;
+        $last_ns_sep = strrpos($subject, '\\');
+        if ($last_ns_sep !== false) {
+            $namespace = substr($subject, 0, $last_ns_sep);
+            $short = substr($subject, $last_ns_sep + 1);
+            if ($class_part !== '') {
+                return [$namespace, $short, $method];
+            }
+            // Namespaced function (no class)
+            return [$namespace, '', $short];
+        }
+
+        // No namespace
+        if ($class_part !== '') {
+            return ['', $class_part, $method];
+        }
+        return ['', '', $method];
+    }
+
+    /**
+     * Write STRING_DEFs and FRAME_DEF if this frame hasn't been seen before.
      */
     private function ensureFrame(ParsedCallFrame $frame): int
     {
@@ -177,7 +242,21 @@ final class BinaryTraceWriter
 
         $frame_id = $this->next_frame_id++;
         $this->frame_map[$key] = $frame_id;
-        $this->writeFrameDef($frame_id, $frame);
+
+        [$namespace, $class, $method] = self::decomposeFunctionName($frame->function_name);
+        $ns_sid = $this->internString($namespace);
+        $class_sid = $this->internString($class);
+        $method_sid = $this->internString($method);
+        $file_sid = $this->internString($frame->file_name);
+
+        $payload = Varint::encode($frame_id)
+            . Varint::encode($ns_sid)
+            . Varint::encode($class_sid)
+            . Varint::encode($method_sid)
+            . Varint::encode($file_sid)
+            . Varint::encode($frame->lineno);
+
+        $this->writeEvent(EventType::FRAME_DEF, $payload);
 
         return $frame_id;
     }
@@ -201,19 +280,6 @@ final class BinaryTraceWriter
         return $stack_id;
     }
 
-    private function writeFrameDef(int $frame_id, ParsedCallFrame $frame): void
-    {
-        $func_bytes = $frame->function_name;
-        $file_bytes = $frame->file_name;
-
-        $payload = Varint::encode($frame_id)
-            . Varint::encode(strlen($func_bytes)) . $func_bytes
-            . Varint::encode(strlen($file_bytes)) . $file_bytes
-            . Varint::encode($frame->lineno);
-
-        $this->writeEvent(EventType::FRAME_DEF, $payload);
-    }
-
     /**
      * @param int[] $frame_ids
      */
@@ -230,7 +296,6 @@ final class BinaryTraceWriter
     private function writeSample(int $stack_id, int $timestamp_delta_us): void
     {
         if (($this->flags & self::FLAG_HAS_TIMESTAMPS) !== 0) {
-            // Timestamped samples: no RLE (each has a unique delta)
             $payload = Varint::encode($stack_id)
                 . Varint::encode($timestamp_delta_us);
             $this->writeEvent(EventType::SAMPLE, $payload);
@@ -239,7 +304,6 @@ final class BinaryTraceWriter
         }
 
         // Compact (no-timestamp) path with run-length encoding.
-        // Accumulate consecutive identical stack_ids into a pending run.
         if ($this->pending_compact_stack_id === $stack_id) {
             $this->pending_run_count++;
         } else {
@@ -252,7 +316,6 @@ final class BinaryTraceWriter
 
     /**
      * Flush any pending run-length encoded compact samples.
-     * Called on stack change, checkpoint, segment end, or any non-sample write.
      */
     public function flushPendingRun(): void
     {
@@ -263,13 +326,10 @@ final class BinaryTraceWriter
         $stack_id = $this->pending_compact_stack_id;
         $count = $this->pending_run_count;
 
-        // Always emit the initial COMPACT_SAMPLE
         fwrite($this->stream, chr(EventType::COMPACT_SAMPLE->value));
         fwrite($this->stream, Varint::encode($stack_id));
 
-        // Use REPEAT_SAMPLE for runs of 3+ (threshold: count-1 >= 2).
-        // Run of 2: COMPACT + COMPACT = 4 bytes vs COMPACT + REPEAT(1) = 4 bytes → no gain.
-        // Run of 3: COMPACT + COMPACT + COMPACT = 6 bytes vs COMPACT + REPEAT(2) = 4 bytes → 2 byte gain.
+        // REPEAT for runs of 3+ (no gain at 2)
         $remaining = $count - 1;
         if ($remaining >= 2) {
             fwrite($this->stream, chr(EventType::REPEAT_SAMPLE->value));

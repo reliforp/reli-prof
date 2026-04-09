@@ -124,26 +124,48 @@ When an unknown `event_type` is encountered, skip `payload_length` bytes and pro
 | `PID_SAMPLE` | 0x07 | Sample with process ID |
 | `COMPACT_SAMPLE` | 0x08 | Compact sample (no payload_length) |
 | `REPEAT_SAMPLE` | 0x09 | Repeat last sample N times (no payload_length) |
+| `STRING_DEF` | 0x0A | String definition for the intern table |
 
 ---
 
 ## Event Details
 
+### STRING_DEF (0x0A)
+
+Defines a string in the per-segment intern table. Referenced by FRAME_DEF via string_id.
+
+```
+Payload:
+  [string_id: varint] [string: remaining bytes, UTF-8]
+```
+
+- `string_id` is assigned sequentially starting from 0 within each segment
+- Strings are interned for: namespace, class name, method name, file path
+- Shared strings (e.g., the same namespace across many frames) are defined once and referenced by ID
+- All STRING_DEFs referenced by a FRAME_DEF must appear before that FRAME_DEF
+
 ### FRAME_DEF (0x01)
 
-Defines a new frame (function name + file name + line number tuple).
+Defines a new frame by referencing interned strings for each component.
 
 ```
 Payload:
   [frame_id: varint]
-  [function_name_length: varint] [function_name: UTF-8 bytes]
-  [file_name_length: varint]     [file_name: UTF-8 bytes]
+  [namespace_string_id: varint]
+  [class_string_id: varint]
+  [method_string_id: varint]
+  [file_string_id: varint]
   [lineno: varint]
 ```
 
 - `frame_id` is assigned sequentially starting from 0 within each segment
-- `function_name` uses `Class::method` format for class methods
+- The reader reconstructs the function name as:
+  - `Namespace\Class::method` (namespaced class method)
+  - `Class::method` (class method, no namespace)
+  - `Namespace\function` (namespaced function, class_string_id → empty string)
+  - `function` (plain function, both namespace and class → empty string)
 - The same frame is never defined twice within a segment
+- String deduplication reduces definition size significantly when many frames share the same namespace or file path
 
 ### STACK_DEF (0x02)
 

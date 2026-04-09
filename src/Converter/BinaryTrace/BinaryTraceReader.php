@@ -18,6 +18,9 @@ use Reli\Converter\ParsedCallTrace;
 
 final class BinaryTraceReader
 {
+    /** @var array<int, string> string_id => string */
+    private array $strings = [];
+
     /** @var array<int, ParsedCallFrame> frame_id => frame */
     private array $frames = [];
 
@@ -157,6 +160,7 @@ final class BinaryTraceReader
 
     private function resetSegmentState(): void
     {
+        $this->strings = [];
         $this->frames = [];
         $this->stacks = [];
         $this->metadata = [];
@@ -296,6 +300,9 @@ final class BinaryTraceReader
         }
 
         switch ($type) {
+            case EventType::STRING_DEF:
+                $this->handleStringDef($payload);
+                return null;
             case EventType::FRAME_DEF:
                 $this->handleFrameDef($payload);
                 return null;
@@ -322,23 +329,55 @@ final class BinaryTraceReader
         }
     }
 
+    private function handleStringDef(string $payload): void
+    {
+        $offset = 0;
+        [$string_id, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+        $this->strings[$string_id] = substr($payload, $offset);
+    }
+
+    private function resolveString(int $string_id): string
+    {
+        if (!isset($this->strings[$string_id])) {
+            throw new BinaryTraceException("Reference to undefined string_id: {$string_id}");
+        }
+        return $this->strings[$string_id];
+    }
+
+    /**
+     * FRAME_DEF payload: [frame_id][ns_sid][class_sid][method_sid][file_sid][lineno]
+     * Reconstructs function_name as "Namespace\Class::method" (or subsets).
+     */
     private function handleFrameDef(string $payload): void
     {
         $offset = 0;
         [$frame_id, $consumed] = Varint::decode($payload, $offset);
         $offset += $consumed;
 
-        [$func_len, $consumed] = Varint::decode($payload, $offset);
+        [$ns_sid, $consumed] = Varint::decode($payload, $offset);
         $offset += $consumed;
-        $function_name = substr($payload, $offset, $func_len);
-        $offset += $func_len;
-
-        [$file_len, $consumed] = Varint::decode($payload, $offset);
+        [$class_sid, $consumed] = Varint::decode($payload, $offset);
         $offset += $consumed;
-        $file_name = substr($payload, $offset, $file_len);
-        $offset += $file_len;
-
+        [$method_sid, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+        [$file_sid, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
         [$lineno, $consumed] = Varint::decode($payload, $offset);
+
+        $namespace = $this->resolveString($ns_sid);
+        $class = $this->resolveString($class_sid);
+        $method = $this->resolveString($method_sid);
+        $file_name = $this->resolveString($file_sid);
+
+        // Reconstruct function_name: "Namespace\Class::method"
+        $function_name = $method;
+        if ($class !== '') {
+            $fqcn = $namespace !== '' ? $namespace . '\\' . $class : $class;
+            $function_name = $fqcn . '::' . $method;
+        } elseif ($namespace !== '') {
+            $function_name = $namespace . '\\' . $method;
+        }
 
         $this->frames[$frame_id] = new ParsedCallFrame($function_name, $file_name, $lineno);
     }

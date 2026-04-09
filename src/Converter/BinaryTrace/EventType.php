@@ -15,6 +15,7 @@ namespace Reli\Converter\BinaryTrace;
 
 enum EventType: int
 {
+    /** Frame definition: [frame_id][namespace_sid][class_sid][method_sid][file_sid][lineno] */
     case FRAME_DEF = 0x01;
     case STACK_DEF = 0x02;
     case SAMPLE = 0x03;
@@ -26,4 +27,6 @@ enum EventType: int
     case COMPACT_SAMPLE = 0x08;
     /** Repeat last compact sample: [0x09][count: varint] (no payload_length) */
     case REPEAT_SAMPLE = 0x09;
+    /** String definition: [string_id: varint][string: remaining bytes] */
+    case STRING_DEF = 0x0A;
 }
