@@ -15,9 +15,11 @@ namespace Reli\Inspector\Output\TraceOutput;
 
 use Reli\Converter\BinaryTrace\BinaryTraceWriter;
 use Reli\Converter\BinaryTrace\CallTraceConverter;
+use Reli\Converter\ParsedCallTrace;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
+use Reli\Lib\PhpProcessReader\CallTraceReader\MergedCallTrace;
 
-final class BinaryTraceOutput implements TraceOutput
+final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
 {
     private bool $header_written = false;
     private ?int $last_hrtime_ns = null;
@@ -31,6 +33,17 @@ final class BinaryTraceOutput implements TraceOutput
     #[\Override]
     public function output(CallTrace $call_trace): void
     {
+        $this->writeParsed(CallTraceConverter::toParsed($call_trace));
+    }
+
+    #[\Override]
+    public function outputMerged(MergedCallTrace $merged_trace): void
+    {
+        $this->writeParsed(CallTraceConverter::mergedToParsed($merged_trace));
+    }
+
+    private function writeParsed(ParsedCallTrace $parsed): void
+    {
         if (!$this->header_written) {
             $this->writer->writeHeader();
             $this->header_written = true;
@@ -43,7 +56,7 @@ final class BinaryTraceOutput implements TraceOutput
         }
         $this->last_hrtime_ns = $now_ns;
 
-        $this->writer->writeTrace(CallTraceConverter::toParsed($call_trace), $delta_us);
+        $this->writer->writeTrace($parsed, $delta_us);
 
         if ($this->writer->getSamplesSinceCheckpoint() >= $this->checkpoint_interval) {
             $this->writer->writeCheckpoint();
