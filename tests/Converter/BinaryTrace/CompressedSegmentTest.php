@@ -183,11 +183,16 @@ final class CompressedSegmentTest extends BaseTestCase
 
     public function testFileRotationWithCompression(): void
     {
-        $streams = [];
-        $factory = function (int $index) use (&$streams) {
-            $s = fopen('php://memory', 'r+');
+        // Capture data written to each stream before the writer closes them
+        /** @var array<int, string> */
+        $captured = [];
+        $factory = function (int $index) use (&$captured) {
+            // Use a real temp file so data persists after fclose
+            $tmp = tempnam(sys_get_temp_dir(), "rbt_rot_test_{$index}_");
+            assert($tmp !== false);
+            $captured[$index] = $tmp;
+            $s = fopen($tmp, 'w+b');
             assert($s !== false);
-            $streams[$index] = $s;
             return $s;
         };
 
@@ -208,24 +213,26 @@ final class CompressedSegmentTest extends BaseTestCase
         $writer->writeTrace($trace, 100_000); // rotate
         $writer->finish();
 
-        // Each stream should contain gzip data
-        foreach ($streams as $index => $s) {
-            rewind($s);
-            $magic = fread($s, 2);
+        // Writer has closed all streams. Read from temp files.
+        $this->assertCount(3, $captured);
+        foreach ($captured as $index => $path) {
+            $data = file_get_contents($path);
+            $this->assertNotEmpty($data, "File {$index} should have data");
             $this->assertSame(
                 "\x1f\x8b",
-                $magic,
-                "Stream {$index} should start with gzip magic",
+                substr($data, 0, 2),
+                "File {$index} should start with gzip magic",
             );
 
-            // Each should be independently decompressible and readable
-            rewind($s);
+            // Each should be independently decompressible
+            $s = fopen($path, 'rb');
+            assert($s !== false);
             $decompressed = StreamDecompressor::decompressIfNeeded($s);
             $reader = new BinaryTraceReader();
             $results = iterator_to_array($reader->read($decompressed));
             fclose($decompressed);
             $this->assertGreaterThanOrEqual(1, count($results));
-            fclose($s);
+            unlink($path);
         }
     }
 
@@ -236,12 +243,15 @@ final class CompressedSegmentTest extends BaseTestCase
     public function testFileRotationCompressCallsFactoryPerSegment(): void
     {
         $factory_calls = [];
-        $streams = [];
-        $factory = function (int $index) use (&$factory_calls, &$streams) {
+        /** @var array<int, string> */
+        $paths = [];
+        $factory = function (int $index) use (&$factory_calls, &$paths) {
             $factory_calls[] = $index;
-            $s = fopen('php://memory', 'r+');
+            $tmp = tempnam(sys_get_temp_dir(), "rbt_fc_test_{$index}_");
+            assert($tmp !== false);
+            $paths[$index] = $tmp;
+            $s = fopen($tmp, 'w+b');
             assert($s !== false);
-            $streams[$index] = $s;
             return $s;
         };
 
@@ -260,69 +270,48 @@ final class CompressedSegmentTest extends BaseTestCase
             new ParsedCallFrame('func_b', '/b.php', 2),
         );
 
-        // Segment 0: t=0..29ms
         $writer->writeTrace($traceA, 0);
         $writer->writeTrace($traceA, 10_000);
-
-        // Segment 1: t=30..59ms (rotation)
-        $writer->writeTrace($traceB, 30_000);
+        $writer->writeTrace($traceB, 30_000);  // rotate
         $writer->writeTrace($traceB, 40_000);
-
-        // Segment 2: t=60ms+ (rotation)
-        $writer->writeTrace($traceA, 60_000);
-
+        $writer->writeTrace($traceA, 60_000);  // rotate
         $writer->finish();
 
-        // Factory should be called exactly 3 times (indices 0, 1, 2)
+        // Factory called exactly 3 times
         $this->assertSame([0, 1, 2], $factory_calls);
-        $this->assertCount(3, $streams);
+        $this->assertCount(3, $paths);
 
-        // Each stream should be independent gzip data
-        foreach ($streams as $index => $s) {
-            rewind($s);
-            $data = stream_get_contents($s);
-            $this->assertNotEmpty($data, "Stream {$index} should have data");
-
-            // Each should start with gzip magic
+        // Each file is independent gzip with valid rbt content
+        foreach ($paths as $index => $path) {
+            $data = file_get_contents($path);
+            $this->assertNotEmpty($data, "File {$index} should have data");
             $this->assertSame(
                 "\x1f\x8b",
                 substr($data, 0, 2),
-                "Stream {$index} should be gzip",
-            );
-
-            // Each should decompress independently to valid rbt
-            rewind($s);
-            $decompressed = StreamDecompressor::decompressIfNeeded($s);
-            $reader = new BinaryTraceReader();
-            $samples = iterator_to_array($reader->read($decompressed));
-            fclose($decompressed);
-
-            $this->assertGreaterThanOrEqual(
-                1,
-                count($samples),
-                "Stream {$index} should have samples",
+                "File {$index} should be gzip",
             );
         }
 
-        // Verify content: segment 0 has func_a, segment 1 has func_b
-        rewind($streams[0]);
-        $d0 = StreamDecompressor::decompressIfNeeded($streams[0]);
+        // Segment 0 → func_a, Segment 1 → func_b
+        $s0 = fopen($paths[0], 'rb');
+        assert($s0 !== false);
+        $d0 = StreamDecompressor::decompressIfNeeded($s0);
         $r0 = new BinaryTraceReader();
-        $s0 = iterator_to_array($r0->read($d0));
+        $samples0 = iterator_to_array($r0->read($d0));
         fclose($d0);
-        $this->assertSame(
-            'func_a',
-            $s0[0]->trace->call_frames[0]->function_name,
-        );
+        $this->assertSame('func_a', $samples0[0]->trace->call_frames[0]->function_name);
 
-        rewind($streams[1]);
-        $d1 = StreamDecompressor::decompressIfNeeded($streams[1]);
+        $s1 = fopen($paths[1], 'rb');
+        assert($s1 !== false);
+        $d1 = StreamDecompressor::decompressIfNeeded($s1);
         $r1 = new BinaryTraceReader();
-        $s1 = iterator_to_array($r1->read($d1));
+        $samples1 = iterator_to_array($r1->read($d1));
         fclose($d1);
-        $this->assertSame(
-            'func_b',
-            $s1[0]->trace->call_frames[0]->function_name,
-        );
+        $this->assertSame('func_b', $samples1[0]->trace->call_frames[0]->function_name);
+
+        // Cleanup
+        foreach ($paths as $path) {
+            @unlink($path);
+        }
     }
 }

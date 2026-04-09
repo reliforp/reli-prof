@@ -129,11 +129,14 @@ final class SegmentedBinaryTraceWriterTest extends BaseTestCase
 
     public function testFileRotationMode(): void
     {
-        $streams = [];
-        $factory = function (int $index) use (&$streams) {
-            $stream = fopen('php://memory', 'r+');
+        /** @var array<int, string> */
+        $paths = [];
+        $factory = function (int $index) use (&$paths) {
+            $tmp = tempnam(sys_get_temp_dir(), "rbt_rot_{$index}_");
+            assert($tmp !== false);
+            $paths[$index] = $tmp;
+            $stream = fopen($tmp, 'w+b');
             assert($stream !== false);
-            $streams[$index] = $stream;
             return $stream;
         };
 
@@ -153,16 +156,18 @@ final class SegmentedBinaryTraceWriterTest extends BaseTestCase
         $writer->writeTrace($trace, 100_000); // triggers rotation
         $writer->finish();
 
-        // Should have created 3 streams (segments 0, 1, 2)
-        $this->assertCount(3, $streams);
+        // Should have created 3 files (segments 0, 1, 2)
+        $this->assertCount(3, $paths);
 
-        // Each stream should be independently readable
+        // Each file should be independently readable
         $reader = new BinaryTraceReader();
-        foreach ($streams as $index => $stream) {
-            rewind($stream);
+        foreach ($paths as $index => $path) {
+            $stream = fopen($path, 'rb');
+            assert($stream !== false);
             $results = iterator_to_array($reader->read($stream));
-            $this->assertGreaterThanOrEqual(1, count($results), "Segment {$index} should have samples");
             fclose($stream);
+            $this->assertGreaterThanOrEqual(1, count($results), "Segment {$index} should have samples");
+            unlink($path);
         }
     }
 

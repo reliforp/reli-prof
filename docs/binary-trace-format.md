@@ -629,9 +629,11 @@ reli inspector:daemon -F rbt --rbt-compress -o /path/to/output_dir/ ...
 
 Raw `.rbt` is the default for live capture because it supports append-only writing, crash recovery, and real-time tailing. Gzip compression trades recovery for space efficiency.
 
-### File rotation + compression
+### Compression modes by use case
 
-With `--rbt-compress` and file rotation (daemon per-worker mode), each segment is written to a separate compressed file. The stream factory is called once per segment, and each file receives exactly one gzip member containing one self-contained rbt segment.
+**Daemon per-worker mode** (`inspector:daemon -F rbt --rbt-compress`): each worker writes a single `.rbt.gz` file. Completed segments are gzip-compressed and appended as concatenated gzip members. One file per worker, multiple segments inside.
+
+**File rotation via `stream_factory`** (programmatic API): each segment is written to a separate file. With `compress_completed_segments=true`, each file receives exactly one gzip member. The writer closes each stream on rotation.
 
 ### Performance notes
 

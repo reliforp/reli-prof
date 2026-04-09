@@ -94,9 +94,7 @@ final class SegmentedBinaryTraceWriter
     }
 
     /**
-     * Finish the current segment cleanly.
-     * Note: does not close streams created by the stream factory;
-     * the caller is responsible for closing them.
+     * Finish the current segment cleanly and close the output stream.
      */
     public function finish(): void
     {
@@ -105,6 +103,11 @@ final class SegmentedBinaryTraceWriter
             $this->current_writer->writeSegmentEnd();
             $this->current_writer = null;
             $this->flushCompressedSegment();
+            if ($this->stream_factory !== null && $this->current_stream !== null) {
+                $s = $this->current_stream;
+                $this->current_stream = null;
+                fclose($s);
+            }
         }
     }
 
@@ -150,8 +153,14 @@ final class SegmentedBinaryTraceWriter
             $this->flushCompressedSegment();
         }
 
-        // Reset stream for file rotation mode so next segment gets a new file
-        $this->current_stream = null;
+        // Close and reset stream for file rotation mode
+        if ($this->stream_factory !== null && $this->current_stream !== null) {
+            $s = $this->current_stream;
+            $this->current_stream = null;
+            fclose($s);
+        } else {
+            $this->current_stream = null;
+        }
         $this->segment_index++;
         $this->startSegment($timestamp_us);
     }
