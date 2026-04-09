@@ -13,9 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TraceOutput;
 
+use Reli\Converter\BinaryTrace\CallTraceConverter;
 use Reli\Converter\BinaryTrace\SegmentedBinaryTraceWriter;
-use Reli\Converter\ParsedCallFrame;
-use Reli\Converter\ParsedCallTrace;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 final class SegmentedBinaryTraceOutput implements TraceOutput
@@ -36,25 +35,11 @@ final class SegmentedBinaryTraceOutput implements TraceOutput
         }
 
         $timestamp_us = (int)(($now_ns - $this->start_hrtime_ns) / 1000);
-        $parsed = $this->convertToParsed($call_trace);
-        $this->writer->writeTrace($parsed, $timestamp_us);
+        $this->writer->writeTrace(CallTraceConverter::toParsed($call_trace), $timestamp_us);
     }
 
     public function finish(): void
     {
         $this->writer->finish();
-    }
-
-    private function convertToParsed(CallTrace $call_trace): ParsedCallTrace
-    {
-        $frames = [];
-        foreach ($call_trace->call_frames as $call_frame) {
-            $frames[] = new ParsedCallFrame(
-                $call_frame->getFullyQualifiedFunctionName(),
-                $call_frame->file_name,
-                $call_frame->getLineno(),
-            );
-        }
-        return new ParsedCallTrace(...$frames);
     }
 }

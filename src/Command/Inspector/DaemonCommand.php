@@ -16,8 +16,7 @@ namespace Reli\Command\Inspector;
 use Amp\CancelledException;
 use Amp\DeferredCancellation;
 use Reli\Converter\BinaryTrace\BinaryTraceWriter;
-use Reli\Converter\ParsedCallFrame;
-use Reli\Converter\ParsedCallTrace;
+use Reli\Converter\BinaryTrace\CallTraceConverter;
 use Reli\Inspector\Daemon\Dispatcher\DispatchTable;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Daemon\Dispatcher\WorkerPool;
@@ -29,6 +28,7 @@ use Reli\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Reli\Inspector\Settings\OutputSettings\OutputSettingsFromConsoleInput;
+use Reli\Inspector\Settings\OutputSettings\TraceOutputPathResolver;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use Reli\Lib\Console\EchoBackCanceller;
@@ -96,11 +96,14 @@ final class DaemonCommand extends Command
             );
         }
 
-        // For rbt (per-worker) mode, ensure output_path is a directory
-        if ($output_settings->isBinaryTrace() && $output_settings->output_path !== null) {
-            if (!is_dir($output_settings->output_path)) {
-                mkdir($output_settings->output_path, 0755, true);
-            }
+        // For rbt (per-worker) mode, resolve the output directory.
+        // Defaults to XDG_STATE_HOME/reli/daemon-traces/{session}/ when -o is not given.
+        $rbt_output_dir = null;
+        if ($output_settings->isBinaryTrace()) {
+            $rbt_output_dir = TraceOutputPathResolver::resolveRbtOutputDir(
+                $output_settings->output_path
+            );
+            $output->writeln("<info>rbt output: {$rbt_output_dir}</info>");
         }
 
         $searcher_context = $this->php_searcher_context_creator->create();
@@ -116,12 +119,17 @@ final class DaemonCommand extends Command
             $no_cache,
         );
 
+        // Pass resolved output dir to workers (not the raw user path)
+        $worker_output_settings = $rbt_output_dir !== null
+            ? new OutputSettings($output_settings->output_format, $rbt_output_dir)
+            : $output_settings;
+
         $worker_pool = WorkerPool::create(
             $this->php_reader_context_creator,
             $daemon_settings->threads,
             $loop_settings,
             $get_trace_settings,
-            $output_settings,
+            $worker_output_settings,
         );
 
         $dispatch_table = new DispatchTable(
@@ -252,15 +260,7 @@ final class DaemonCommand extends Command
         }
         $last_hrtime_ns = $now_ns;
 
-        $frames = [];
-        foreach ($call_trace->call_frames as $call_frame) {
-            $frames[] = new ParsedCallFrame(
-                $call_frame->getFullyQualifiedFunctionName(),
-                $call_frame->file_name,
-                $call_frame->getLineno(),
-            );
-        }
-        $writer->writePidTrace(new ParsedCallTrace(...$frames), $pid, $delta_us);
+        $writer->writePidTrace(CallTraceConverter::toParsed($call_trace), $pid, $delta_us);
 
         if ($writer->getSamplesSinceCheckpoint() >= 1000) {
             $writer->writeCheckpoint();

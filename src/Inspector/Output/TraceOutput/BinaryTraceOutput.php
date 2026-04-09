@@ -14,8 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\TraceOutput;
 
 use Reli\Converter\BinaryTrace\BinaryTraceWriter;
-use Reli\Converter\ParsedCallFrame;
-use Reli\Converter\ParsedCallTrace;
+use Reli\Converter\BinaryTrace\CallTraceConverter;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 final class BinaryTraceOutput implements TraceOutput
@@ -44,24 +43,10 @@ final class BinaryTraceOutput implements TraceOutput
         }
         $this->last_hrtime_ns = $now_ns;
 
-        $parsed = $this->convertToParsed($call_trace);
-        $this->writer->writeTrace($parsed, $delta_us);
+        $this->writer->writeTrace(CallTraceConverter::toParsed($call_trace), $delta_us);
 
         if ($this->writer->getSamplesSinceCheckpoint() >= $this->checkpoint_interval) {
             $this->writer->writeCheckpoint();
         }
-    }
-
-    private function convertToParsed(CallTrace $call_trace): ParsedCallTrace
-    {
-        $frames = [];
-        foreach ($call_trace->call_frames as $call_frame) {
-            $frames[] = new ParsedCallFrame(
-                $call_frame->getFullyQualifiedFunctionName(),
-                $call_frame->file_name,
-                $call_frame->getLineno(),
-            );
-        }
-        return new ParsedCallTrace(...$frames);
     }
 }

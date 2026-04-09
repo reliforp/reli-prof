@@ -387,9 +387,20 @@ When the daemon profiles multiple PHP processes concurrently, two output modes a
 
 Each worker process writes directly to its own file, bypassing IPC for trace data entirely.
 
-```
+```bash
+# Explicit output directory
 reli inspector:daemon -F rbt -o /path/to/output_dir/ ...
+
+# Default: auto-creates a session directory under XDG_STATE_HOME
+reli inspector:daemon -F rbt ...
+# -> writes to $XDG_STATE_HOME/reli/daemon-traces/2026-04-09T163012Z_{pid}/
 ```
+
+**Default output directory** (when `-o` is not specified):
+- `$XDG_STATE_HOME/reli/daemon-traces/{session}/` if `XDG_STATE_HOME` is set
+- `~/.local/state/reli/daemon-traces/{session}/` otherwise
+- `{session}` is `{UTC timestamp}_{daemon PID}` (e.g., `2026-04-09T163012Z_12345`)
+- The resolved path is printed to stderr at startup
 
 - Workers write to `{output_dir}/worker_{pid}.rbt`
 - **Each attach creates a new segment**: fresh header + fresh `BinaryTraceWriter` (frame/stack intern state is reset)
@@ -409,10 +420,15 @@ reli inspector:daemon -F rbt -o /path/to/output_dir/ ...
 
 All traces are collected to the main process and written to a single stream using PID_SAMPLE events.
 
-```
+```bash
+# Explicit output file
 reli inspector:daemon -F rbt-bundled -o combined.rbt ...
+
+# Default: writes to stdout (pipe-friendly)
+reli inspector:daemon -F rbt-bundled ... > combined.rbt
 ```
 
+- **Default output**: stdout (same as template modes), so it can be piped
 - Single output file with one segment, simpler management
 - Workers send `TraceMessage` (with PID) via IPC to the main process
 - Main process writes `PID_SAMPLE` events that carry per-sample PID

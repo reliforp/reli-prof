@@ -14,8 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Daemon\Reader\Worker;
 
 use Reli\Converter\BinaryTrace\BinaryTraceWriter;
-use Reli\Converter\ParsedCallFrame;
-use Reli\Converter\ParsedCallTrace;
+use Reli\Converter\BinaryTrace\CallTraceConverter;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\DetachWorkerMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
@@ -145,15 +144,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
         }
         $this->last_hrtime_ns = $now_ns;
 
-        $frames = [];
-        foreach ($call_trace->call_frames as $call_frame) {
-            $frames[] = new ParsedCallFrame(
-                $call_frame->getFullyQualifiedFunctionName(),
-                $call_frame->file_name,
-                $call_frame->getLineno(),
-            );
-        }
-        $this->binary_writer->writeTrace(new ParsedCallTrace(...$frames), $delta_us);
+        $this->binary_writer->writeTrace(CallTraceConverter::toParsed($call_trace), $delta_us);
 
         if ($this->binary_writer->getSamplesSinceCheckpoint() >= 1000) {
             $this->binary_writer->writeCheckpoint();
