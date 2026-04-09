@@ -346,15 +346,32 @@ final class BinaryTraceReader
     }
 
     /**
-     * FRAME_DEF payload: [frame_id][ns_sid][class_sid][method_sid][file_sid][lineno]
-     * Reconstructs function_name as "Namespace\Class::method" (or subsets).
+     * FRAME_DEF payload:
+     *   [frame_id][flags]
+     *   if PHP:    [ns_sid][class_sid][method_sid][file_sid][lineno][opcode_sid if HAS_OPCODE]
+     *   if native: [symbol_sid][module_sid][offset]
      */
     private function handleFrameDef(string $payload): void
     {
         $offset = 0;
         [$frame_id, $consumed] = Varint::decode($payload, $offset);
         $offset += $consumed;
+        [$flags, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
 
+        if (($flags & BinaryTraceWriter::FRAME_FLAG_NATIVE) !== 0) {
+            $this->handleNativeFrameDef($frame_id, $payload, $offset);
+        } else {
+            $this->handlePhpFrameDef($frame_id, $flags, $payload, $offset);
+        }
+    }
+
+    private function handlePhpFrameDef(
+        int $frame_id,
+        int $flags,
+        string $payload,
+        int $offset,
+    ): void {
         [$ns_sid, $consumed] = Varint::decode($payload, $offset);
         $offset += $consumed;
         [$class_sid, $consumed] = Varint::decode($payload, $offset);
@@ -364,6 +381,13 @@ final class BinaryTraceReader
         [$file_sid, $consumed] = Varint::decode($payload, $offset);
         $offset += $consumed;
         [$lineno, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+
+        $opcode_name = null;
+        if (($flags & BinaryTraceWriter::FRAME_FLAG_HAS_OPCODE) !== 0 && $offset < strlen($payload)) {
+            [$opcode_sid, $consumed] = Varint::decode($payload, $offset);
+            $opcode_name = $this->resolveString($opcode_sid);
+        }
 
         $namespace = $this->resolveString($ns_sid);
         $class = $this->resolveString($class_sid);
@@ -379,7 +403,33 @@ final class BinaryTraceReader
             $function_name = $namespace . '\\' . $method;
         }
 
-        $this->frames[$frame_id] = new ParsedCallFrame($function_name, $file_name, $lineno);
+        $this->frames[$frame_id] = new ParsedCallFrame(
+            $function_name,
+            $file_name,
+            $lineno,
+            opcode_name: $opcode_name,
+        );
+    }
+
+    private function handleNativeFrameDef(int $frame_id, string $payload, int $offset): void
+    {
+        [$symbol_sid, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+        [$module_sid, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+        [$sym_offset, $consumed] = Varint::decode($payload, $offset);
+
+        $symbol_name = $this->resolveString($symbol_sid);
+        $module_name = $this->resolveString($module_sid);
+
+        $this->frames[$frame_id] = new ParsedCallFrame(
+            $symbol_name,
+            $module_name,
+            0,
+            frame_type: ParsedCallFrame::TYPE_NATIVE,
+            module_name: $module_name,
+            symbol_offset: $sym_offset,
+        );
     }
 
     private function handleStackDef(string $payload): void

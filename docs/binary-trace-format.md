@@ -146,26 +146,54 @@ Payload:
 
 ### FRAME_DEF (0x01)
 
-Defines a new frame by referencing interned strings for each component.
+Defines a new frame. The `flags` field determines whether this is a PHP frame or a native (C-level) frame.
 
 ```
 Payload:
   [frame_id: varint]
-  [namespace_string_id: varint]
-  [class_string_id: varint]
-  [method_string_id: varint]
-  [file_string_id: varint]
-  [lineno: varint]
+  [flags: varint]
+
+  if PHP frame (flags & 0x01 == 0):
+    [namespace_string_id: varint]
+    [class_string_id: varint]
+    [method_string_id: varint]
+    [file_string_id: varint]
+    [lineno: varint]
+    if flags & 0x02 (HAS_OPCODE):
+      [opcode_string_id: varint]
+
+  if native frame (flags & 0x01 == 1):
+    [symbol_string_id: varint]
+    [module_string_id: varint]
+    [offset: varint]
 ```
 
+#### Flags
+
+| Bit | Name | Description |
+|-----|------|-------------|
+| 0 | `NATIVE` | 1 = native (C-level) frame, 0 = PHP frame |
+| 1 | `HAS_OPCODE` | PHP frame includes an opcode name (e.g., `ZEND_DO_FCALL`) |
+
+#### PHP Frames
+
+- The reader reconstructs the function name as `Namespace\Class::method` (or subsets)
+- Opcode name is optional; when present, it identifies the specific Zend VM instruction
+- Opcode names are interned via STRING_DEF (~200 unique opcodes, high dedup)
+
+#### Native Frames
+
+- `symbol_string_id` — function symbol name (e.g., `zend_execute_scripts`)
+- `module_string_id` — shared library name (e.g., `libphp.so`, `libc.so.6`)
+- `offset` — offset from symbol start (unsigned)
+- Module names are interned, so frames from the same library share one STRING_DEF
+- Native frames appear in merged PHP + C-level traces (via `--with-native-trace`)
+
+#### General
+
 - `frame_id` is assigned sequentially starting from 0 within each segment
-- The reader reconstructs the function name as:
-  - `Namespace\Class::method` (namespaced class method)
-  - `Class::method` (class method, no namespace)
-  - `Namespace\function` (namespaced function, class_string_id → empty string)
-  - `function` (plain function, both namespace and class → empty string)
 - The same frame is never defined twice within a segment
-- String deduplication reduces definition size significantly when many frames share the same namespace or file path
+- String deduplication reduces definition size significantly when many frames share the same namespace, file path, or module
 
 ### STACK_DEF (0x02)
 

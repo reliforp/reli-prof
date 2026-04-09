@@ -22,6 +22,10 @@ final class BinaryTraceWriter
     public const VERSION = 1;
     public const FLAG_HAS_TIMESTAMPS = 0x01;
 
+    // FRAME_DEF flags
+    public const FRAME_FLAG_NATIVE = 0x01;
+    public const FRAME_FLAG_HAS_OPCODE = 0x02;
+
     /** @var array<string, int> string => string_id */
     private array $string_map = [];
     private int $next_string_id = 0;
@@ -235,13 +239,32 @@ final class BinaryTraceWriter
      */
     private function ensureFrame(ParsedCallFrame $frame): int
     {
-        $key = $frame->function_name . "\0" . $frame->file_name . "\0" . $frame->lineno;
+        $key = $frame->function_name . "\0" . $frame->file_name . "\0"
+            . $frame->lineno . "\0" . $frame->frame_type
+            . "\0" . ($frame->opcode_name ?? '')
+            . "\0" . ($frame->symbol_offset ?? '');
         if (isset($this->frame_map[$key])) {
             return $this->frame_map[$key];
         }
 
         $frame_id = $this->next_frame_id++;
         $this->frame_map[$key] = $frame_id;
+
+        if ($frame->isNative()) {
+            $this->writeNativeFrameDef($frame_id, $frame);
+        } else {
+            $this->writePhpFrameDef($frame_id, $frame);
+        }
+
+        return $frame_id;
+    }
+
+    private function writePhpFrameDef(int $frame_id, ParsedCallFrame $frame): void
+    {
+        $flags = 0;
+        if ($frame->opcode_name !== null) {
+            $flags |= self::FRAME_FLAG_HAS_OPCODE;
+        }
 
         [$namespace, $class, $method] = self::decomposeFunctionName($frame->function_name);
         $ns_sid = $this->internString($namespace);
@@ -250,15 +273,33 @@ final class BinaryTraceWriter
         $file_sid = $this->internString($frame->file_name);
 
         $payload = Varint::encode($frame_id)
+            . Varint::encode($flags)
             . Varint::encode($ns_sid)
             . Varint::encode($class_sid)
             . Varint::encode($method_sid)
             . Varint::encode($file_sid)
             . Varint::encode($frame->lineno);
 
-        $this->writeEvent(EventType::FRAME_DEF, $payload);
+        if ($frame->opcode_name !== null) {
+            $opcode_sid = $this->internString($frame->opcode_name);
+            $payload .= Varint::encode($opcode_sid);
+        }
 
-        return $frame_id;
+        $this->writeEvent(EventType::FRAME_DEF, $payload);
+    }
+
+    private function writeNativeFrameDef(int $frame_id, ParsedCallFrame $frame): void
+    {
+        $symbol_sid = $this->internString($frame->function_name);
+        $module_sid = $this->internString($frame->module_name ?? '');
+
+        $payload = Varint::encode($frame_id)
+            . Varint::encode(self::FRAME_FLAG_NATIVE)
+            . Varint::encode($symbol_sid)
+            . Varint::encode($module_sid)
+            . Varint::encode($frame->symbol_offset ?? 0);
+
+        $this->writeEvent(EventType::FRAME_DEF, $payload);
     }
 
     /**
