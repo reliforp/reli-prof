@@ -565,7 +565,7 @@ All converter commands auto-detect the input format (rbt or phpspy text) by peek
                               |
                               +-> converter:rbt        -> .rbt binary
                               |
-                              +-> converter:recover    -> recovered .rbt
+                              +-> rbt:recover          -> recovered .rbt
 ```
 
 ### CLI Commands
@@ -591,8 +591,8 @@ reli converter:phpspy < trace.rbt
 reli converter:rbt < trace.txt > trace.rbt
 
 # Recover corrupted/truncated rbt
-reli converter:recover < corrupted.rbt > recovered.rbt
-reli converter:recover -f phpspy < corrupted.rbt > recovered.txt
+reli rbt:recover < corrupted.rbt > recovered.rbt
+reli rbt:recover -f phpspy < corrupted.rbt > recovered.txt
 
 # Flamegraph (phpspy input only, pipes through perl scripts)
 reli converter:flamegraph < trace.txt > graph.svg
@@ -655,4 +655,4 @@ $output->finish();
 | `src/Command/Converter/PhpspyCommand.php` | converter:phpspy CLI |
 | `src/Command/Converter/FoldedCommand.php` | converter:folded CLI |
 | `src/Command/Converter/PprofCommand.php` | converter:pprof CLI |
-| `src/Command/Converter/RecoverCommand.php` | converter:recover CLI |
+| `src/Command/Rbt/RecoverCommand.php` | rbt:recover CLI |

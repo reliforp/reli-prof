@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Converter;
+namespace Reli\Command\Rbt;
 
 use Reli\Converter\BinaryTrace\BinaryTraceReader;
 use Reli\Converter\BinaryTrace\BinaryTraceWriter;
@@ -25,7 +25,7 @@ final class RecoverCommand extends Command
     #[\Override]
     public function configure(): void
     {
-        $this->setName('converter:recover')
+        $this->setName('rbt:recover')
             ->setDescription('recover samples from a corrupted or truncated rbt file')
             ->addOption(
                 'format',
