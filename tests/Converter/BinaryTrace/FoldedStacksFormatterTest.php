@@ -69,4 +69,29 @@ final class FoldedStacksFormatterTest extends BaseTestCase
 
         $this->assertSame(" 1\n", $result);
     }
+
+    public function testAcceptsBinaryTraceSample(): void
+    {
+        $traces = [
+            new BinaryTraceSample(
+                new ParsedCallTrace(
+                    new ParsedCallFrame('func', '/file.php', 1),
+                    new ParsedCallFrame('main', '/index.php', 5),
+                ),
+                timestamp_delta_us: 10000,
+            ),
+            new BinaryTraceSample(
+                new ParsedCallTrace(
+                    new ParsedCallFrame('func', '/file.php', 1),
+                    new ParsedCallFrame('main', '/index.php', 5),
+                ),
+                timestamp_delta_us: 10000,
+            ),
+        ];
+
+        $formatter = new FoldedStacksFormatter();
+        $result = $formatter->format($traces);
+
+        $this->assertSame("main /index.php:5;func /file.php:1 2\n", $result);
+    }
 }

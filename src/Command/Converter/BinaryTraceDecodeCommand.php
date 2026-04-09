@@ -33,8 +33,8 @@ final class BinaryTraceDecodeCommand extends Command
     {
         $reader = new BinaryTraceReader();
 
-        foreach ($reader->read(STDIN) as $trace) {
-            foreach ($trace->call_frames as $depth => $frame) {
+        foreach ($reader->read(STDIN) as $sample) {
+            foreach ($sample->trace->call_frames as $depth => $frame) {
                 $output->writeln(
                     $depth . ' '
                     . $frame->function_name . ' '

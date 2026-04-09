@@ -26,12 +26,14 @@ use Reli\Converter\ParsedCallTrace;
 final class PprofEncoder
 {
     /**
-     * @param iterable<ParsedCallTrace> $traces
+     * Encode traces to pprof protobuf format with streaming aggregation.
+     *
+     * @param iterable<BinaryTraceSample|ParsedCallTrace> $traces
      * @param int $sampling_period_us Sampling period in microseconds
      */
     public function encode(iterable $traces, int $sampling_period_us = 10000): string
     {
-        // Phase 1: collect all data
+        // Phase 1: streaming aggregation
         /** @var array<string, int> string => string_table_index */
         $string_table = ['' => 0];
         $string_list = [''];
@@ -49,7 +51,7 @@ final class PprofEncoder
         // Intern well-known strings
         $samples_idx = $intern('samples');
         $count_idx = $intern('count');
-        $cpu_idx = $intern('cpu');
+        $wall_idx = $intern('wall');
         $microseconds_idx = $intern('microseconds');
 
         /** @var array<string, int> frame_key => function_id */
@@ -69,7 +71,18 @@ final class PprofEncoder
         /** @var list<array{location_ids: int[], count: int}> */
         $samples = [];
 
-        foreach ($traces as $trace) {
+        $max_accumulated_us = 0;
+
+        foreach ($traces as $item) {
+            if ($item instanceof BinaryTraceSample) {
+                $trace = $item->trace;
+                if ($item->accumulated_timestamp_us !== null) {
+                    $max_accumulated_us = max($max_accumulated_us, $item->accumulated_timestamp_us);
+                }
+            } else {
+                $trace = $item;
+            }
+
             $location_ids = [];
             // pprof: first location is the leaf (innermost), same as call_frames[0]
             foreach ($trace->call_frames as $frame) {
@@ -110,48 +123,48 @@ final class PprofEncoder
         // Phase 2: encode protobuf
         $profile = '';
 
-        // field 1: sample_type (repeated ValueType)
+        // field 1: sample_type (repeated ValueType message)
         // ValueType: type=1(int64), unit=2(int64)
-        $vt = $this->encodeField(1, $this->encodeVarint($samples_idx))
-            . $this->encodeField(2, $this->encodeVarint($count_idx));
-        $profile .= $this->encodeField(1, $vt);
+        $vt = $this->encodeVarintField(1, $samples_idx)
+            . $this->encodeVarintField(2, $count_idx);
+        $profile .= $this->encodeBytesField(1, $vt);
 
-        // field 2: sample (repeated Sample)
+        // field 2: sample (repeated Sample message)
         foreach ($samples as $sample) {
             $s = '';
             // Sample.location_id: field 1, packed repeated uint64
             $packed = '';
             foreach ($sample['location_ids'] as $lid) {
-                $packed .= $this->rawVarint($lid);
+                $packed .= Varint::encode($lid);
             }
             $s .= $this->encodeBytesField(1, $packed);
             // Sample.value: field 2, packed repeated int64
-            $s .= $this->encodeBytesField(2, $this->rawVarint($sample['count']));
+            $s .= $this->encodeBytesField(2, Varint::encode($sample['count']));
             $profile .= $this->encodeBytesField(2, $s);
         }
 
-        // field 4: location (repeated Location)
+        // field 4: location (repeated Location message)
         foreach ($locations as $loc) {
             $l = '';
             // Location.id: field 1
-            $l .= $this->encodeField(1, $this->encodeVarint($loc['id']));
-            // Location.line: field 4 (repeated Line)
+            $l .= $this->encodeVarintField(1, $loc['id']);
+            // Location.line: field 4 (repeated Line message)
             // Line: function_id=1, line=2
-            $line = $this->encodeField(1, $this->encodeVarint($loc['function_id']))
-                . $this->encodeField(2, $this->encodeVarint($loc['line']));
+            $line = $this->encodeVarintField(1, $loc['function_id'])
+                . $this->encodeVarintField(2, $loc['line']);
             $l .= $this->encodeBytesField(4, $line);
             $profile .= $this->encodeBytesField(4, $l);
         }
 
-        // field 5: function (repeated Function)
+        // field 5: function (repeated Function message)
         foreach ($functions as $func) {
             $f = '';
             // Function.id: field 1
-            $f .= $this->encodeField(1, $this->encodeVarint($func['id']));
+            $f .= $this->encodeVarintField(1, $func['id']);
             // Function.name: field 2
-            $f .= $this->encodeField(2, $this->encodeVarint($func['name']));
+            $f .= $this->encodeVarintField(2, $func['name']);
             // Function.filename: field 4
-            $f .= $this->encodeField(4, $this->encodeVarint($func['filename']));
+            $f .= $this->encodeVarintField(4, $func['filename']);
             $profile .= $this->encodeBytesField(5, $f);
         }
 
@@ -160,13 +173,19 @@ final class PprofEncoder
             $profile .= $this->encodeBytesField(6, $str);
         }
 
-        // field 11: period_type (ValueType)
-        $pt = $this->encodeField(1, $this->encodeVarint($cpu_idx))
-            . $this->encodeField(2, $this->encodeVarint($microseconds_idx));
+        // field 9: time_nanos (int64) - not available from binary trace, set to 0
+        // field 10: duration_nanos (int64)
+        if ($max_accumulated_us > 0) {
+            $profile .= $this->encodeVarintField(10, $max_accumulated_us * 1000);
+        }
+
+        // field 11: period_type (ValueType message)
+        $pt = $this->encodeVarintField(1, $wall_idx)
+            . $this->encodeVarintField(2, $microseconds_idx);
         $profile .= $this->encodeBytesField(11, $pt);
 
-        // field 12: period
-        $profile .= $this->encodeField(12, $this->encodeVarint($sampling_period_us));
+        // field 12: period (int64)
+        $profile .= $this->encodeVarintField(12, $sampling_period_us);
 
         return $profile;
     }
@@ -174,9 +193,9 @@ final class PprofEncoder
     /**
      * Encode a varint wire-type field: (field_num << 3 | 0) + varint
      */
-    private function encodeField(int $field_number, string $varint_value): string
+    private function encodeVarintField(int $field_number, int $value): string
     {
-        return $this->rawVarint(($field_number << 3) | 0) . $varint_value;
+        return Varint::encode(($field_number << 3) | 0) . Varint::encode($value);
     }
 
     /**
@@ -184,18 +203,8 @@ final class PprofEncoder
      */
     private function encodeBytesField(int $field_number, string $bytes): string
     {
-        return $this->rawVarint(($field_number << 3) | 2)
-            . $this->rawVarint(strlen($bytes))
+        return Varint::encode(($field_number << 3) | 2)
+            . Varint::encode(strlen($bytes))
             . $bytes;
-    }
-
-    private function encodeVarint(int $value): string
-    {
-        return $this->rawVarint($value);
-    }
-
-    private function rawVarint(int $value): string
-    {
-        return Varint::encode($value);
     }
 }

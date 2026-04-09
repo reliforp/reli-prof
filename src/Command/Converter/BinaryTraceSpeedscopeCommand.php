@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Reli\Command\Converter;
 
 use Reli\Converter\BinaryTrace\BinaryTraceReader;
-use Reli\Converter\Speedscope\Settings\SpeedscopeConverterSettings;
 use Reli\Converter\Speedscope\Settings\SpeedscopeConverterSettingsFromConsoleInput;
 use Reli\Converter\Speedscope\SpeedscopeConverter;
 use Symfony\Component\Console\Command\Command;
@@ -45,11 +44,15 @@ final class BinaryTraceSpeedscopeCommand extends Command
         $settings = $this->settings_from_console_input->createSettings($input);
         $reader = new BinaryTraceReader();
 
+        // SpeedscopeConverter expects iterable<ParsedCallTrace>
+        $traces = (function () use ($reader) {
+            foreach ($reader->read(STDIN) as $sample) {
+                yield $sample->trace;
+            }
+        })();
+
         $encoded = \json_encode(
-            $this->speedscope_converter->collectFrames(
-                $reader->read(STDIN),
-                $settings,
-            ),
+            $this->speedscope_converter->collectFrames($traces, $settings),
             JSON_THROW_ON_ERROR | $settings->utf8_error_handling_type->toFlag(),
         );
         if ($encoded === false) {

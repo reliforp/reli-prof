@@ -35,14 +35,11 @@ final class BinaryTracePprofCommand extends Command
         $reader = new BinaryTraceReader();
         $encoder = new PprofEncoder();
 
-        $sampling_period_us = 10000;
-        $traces = [];
-        foreach ($reader->read(STDIN) as $trace) {
-            $traces[] = $trace;
-            $sampling_period_us = $reader->getSamplingPeriodUs();
-        }
-
-        $pprof_data = $encoder->encode($traces, $sampling_period_us ?: 10000);
+        // Streaming: PprofEncoder aggregates internally, no need to buffer all traces
+        $pprof_data = $encoder->encode(
+            $reader->read(STDIN),
+            $reader->getSamplingPeriodUs() ?: 10000,
+        );
 
         // pprof files are gzip-compressed
         $compressed = gzencode($pprof_data);

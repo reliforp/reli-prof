@@ -62,18 +62,28 @@ final class BinaryTraceWriter
     }
 
     /**
+     * Define frames and stack without emitting a SAMPLE event.
+     * Useful for priming a new segment with known definitions.
+     *
+     * @return int The stack_id for this trace
+     */
+    public function defineTrace(ParsedCallTrace $trace): int
+    {
+        $frame_ids = [];
+        foreach ($trace->call_frames as $frame) {
+            $frame_ids[] = $this->ensureFrame($frame);
+        }
+        return $this->ensureStack($frame_ids);
+    }
+
+    /**
      * Write a trace sample, emitting FRAME_DEF and STACK_DEF events as needed.
      *
      * @return int The stack_id used for this sample
      */
     public function writeTrace(ParsedCallTrace $trace, int $timestamp_delta_us = 0): int
     {
-        $frame_ids = [];
-        foreach ($trace->call_frames as $frame) {
-            $frame_ids[] = $this->ensureFrame($frame);
-        }
-
-        $stack_id = $this->ensureStack($frame_ids);
+        $stack_id = $this->defineTrace($trace);
         $this->writeSample($stack_id, $timestamp_delta_us);
 
         return $stack_id;

@@ -26,51 +26,58 @@ final class BinaryTraceReader
 
     private int $sampling_period_us = 0;
     private int $flags = 0;
+    private int $accumulated_timestamp_us = 0;
 
     /**
-     * Read header and yield ParsedCallTrace for each SAMPLE event.
+     * Read header and yield BinaryTraceSample for each SAMPLE event.
+     * Supports multiple concatenated segments in a single stream.
      *
      * @param resource $stream
-     * @return iterable<ParsedCallTrace>
+     * @return iterable<BinaryTraceSample>
      */
     public function read($stream): iterable
     {
-        $this->readHeader($stream);
+        if (!$this->tryReadHeader($stream)) {
+            return;
+        }
+        $this->resetSegmentState();
+
+        yield from $this->readEvents($stream);
+    }
+
+    /**
+     * Read with crash recovery: scans for segment boundaries on error,
+     * yields all samples that can be recovered.
+     *
+     * @param resource $stream
+     * @return iterable<BinaryTraceSample>
+     */
+    public function readWithRecovery($stream): iterable
+    {
+        if (!$this->scanForMagic($stream)) {
+            return;
+        }
+        $this->resetSegmentState();
 
         while (!feof($stream)) {
-            $type_byte = fread($stream, 1);
-            if ($type_byte === '' || $type_byte === false) {
-                break;
-            }
-
-            $type_int = ord($type_byte);
-            $payload_length = Varint::decodeFromStream($stream);
-
-            $type = EventType::tryFrom($type_int);
-            if ($type === null) {
-                // Unknown event: skip payload
-                if ($payload_length > 0) {
-                    $this->readExact($stream, $payload_length);
+            try {
+                $result = $this->readOneEvent($stream);
+                if ($result === false) {
+                    break; // EOF
                 }
-                continue;
-            }
-
-            $payload = $payload_length > 0 ? $this->readExact($stream, $payload_length) : '';
-
-            switch ($type) {
-                case EventType::FRAME_DEF:
-                    $this->handleFrameDef($payload);
+                if ($result instanceof BinaryTraceSample) {
+                    yield $result;
+                }
+                if ($result === 'new_segment') {
+                    // Already handled in readOneEvent
+                    continue;
+                }
+            } catch (BinaryTraceException) {
+                // Error in current segment - scan for next segment
+                if (!$this->scanForMagic($stream)) {
                     break;
-                case EventType::STACK_DEF:
-                    $this->handleStackDef($payload);
-                    break;
-                case EventType::SAMPLE:
-                    yield $this->handleSample($payload);
-                    break;
-                case EventType::CHECKPOINT:
-                case EventType::SEGMENT_END:
-                    // Informational, no action needed for basic reading
-                    break;
+                }
+                $this->resetSegmentState();
             }
         }
     }
@@ -86,19 +93,28 @@ final class BinaryTraceReader
     }
 
     /**
+     * Try to read a 16-byte header from current position.
+     *
      * @param resource $stream
      */
-    private function readHeader($stream): void
+    private function tryReadHeader($stream): bool
     {
-        $header = $this->readExact($stream, 16);
-
-        $magic = substr($header, 0, 4);
+        $magic = @fread($stream, 4);
+        if ($magic === '' || $magic === false || strlen($magic) < 4) {
+            return false;
+        }
         if ($magic !== BinaryTraceWriter::MAGIC) {
             throw new BinaryTraceException(
                 sprintf('Invalid magic: expected "RELI", got "%s"', $magic)
             );
         }
+        $rest = $this->readExact($stream, 12);
+        $this->parseHeaderBytes($magic . $rest);
+        return true;
+    }
 
+    private function parseHeaderBytes(string $header): void
+    {
         $version = ord($header[4]);
         if ($version !== BinaryTraceWriter::VERSION) {
             throw new BinaryTraceException(
@@ -110,6 +126,128 @@ final class BinaryTraceReader
         // bytes 6-7: reserved
         $this->sampling_period_us = unpack('V', substr($header, 8, 4))[1];
         // bytes 12-15: reserved
+    }
+
+    private function resetSegmentState(): void
+    {
+        $this->frames = [];
+        $this->stacks = [];
+        $this->accumulated_timestamp_us = 0;
+    }
+
+    /**
+     * Scan forward for "RELI" magic and read the full header.
+     *
+     * @param resource $stream
+     */
+    private function scanForMagic($stream): bool
+    {
+        $buffer = '';
+        while (!feof($stream)) {
+            $byte = fread($stream, 1);
+            if ($byte === '' || $byte === false) {
+                return false;
+            }
+            $buffer .= $byte;
+            if (strlen($buffer) > 4) {
+                $buffer = substr($buffer, -4);
+            }
+            if ($buffer === BinaryTraceWriter::MAGIC) {
+                try {
+                    $remaining = $this->readExact($stream, 12);
+                    $this->parseHeaderBytes(BinaryTraceWriter::MAGIC . $remaining);
+                    return true;
+                } catch (BinaryTraceException) {
+                    $buffer = '';
+                    continue;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param resource $stream
+     * @return iterable<BinaryTraceSample>
+     */
+    private function readEvents($stream): iterable
+    {
+        while (!feof($stream)) {
+            $result = $this->readOneEvent($stream);
+            if ($result === false) {
+                break; // EOF
+            }
+            if ($result instanceof BinaryTraceSample) {
+                yield $result;
+            }
+            // 'new_segment' and null (non-sample events) just continue
+        }
+    }
+
+    /**
+     * Read and handle a single event.
+     *
+     * @param resource $stream
+     * @return BinaryTraceSample|string|null|false
+     *         BinaryTraceSample for SAMPLE events,
+     *         'new_segment' when a new segment header is detected,
+     *         null for non-sample events (FRAME_DEF, STACK_DEF, CHECKPOINT),
+     *         false for EOF
+     */
+    private function readOneEvent($stream): BinaryTraceSample|string|null|false
+    {
+        $type_byte = fread($stream, 1);
+        if ($type_byte === '' || $type_byte === false) {
+            return false;
+        }
+
+        $type_int = ord($type_byte);
+
+        // Detect new segment header ('R' = 0x52)
+        if ($type_int === 0x52) {
+            $rest = fread($stream, 3);
+            if ($rest !== false && strlen($rest) === 3 && $type_byte . $rest === BinaryTraceWriter::MAGIC) {
+                $remaining = $this->readExact($stream, 12);
+                $this->parseHeaderBytes(BinaryTraceWriter::MAGIC . $remaining);
+                $this->resetSegmentState();
+                return 'new_segment';
+            }
+            throw new BinaryTraceException('Unexpected byte 0x52 where event type expected');
+        }
+
+        $payload_length = Varint::decodeFromStream($stream);
+        // Sanity check: reject absurdly large payloads (max 16 MB)
+        if ($payload_length > 16 * 1024 * 1024) {
+            throw new BinaryTraceException(
+                sprintf('Payload length too large: %d bytes', $payload_length)
+            );
+        }
+        $payload = $payload_length > 0 ? $this->readExact($stream, $payload_length) : '';
+
+        $type = EventType::tryFrom($type_int);
+        if ($type === null) {
+            return null; // Unknown event, skip
+        }
+
+        switch ($type) {
+            case EventType::FRAME_DEF:
+                $this->handleFrameDef($payload);
+                return null;
+            case EventType::STACK_DEF:
+                $this->handleStackDef($payload);
+                return null;
+            case EventType::SAMPLE:
+                return $this->handleSample($payload);
+            case EventType::CHECKPOINT:
+                return null;
+            case EventType::SEGMENT_END:
+                $this->resetSegmentState();
+                // Try to read next segment header
+                if ($this->tryReadHeader($stream)) {
+                    $this->resetSegmentState();
+                }
+                return null;
+        }
     }
 
     private function handleFrameDef(string $payload): void
@@ -152,10 +290,17 @@ final class BinaryTraceReader
         $this->stacks[$stack_id] = $frame_ids;
     }
 
-    private function handleSample(string $payload): ParsedCallTrace
+    private function handleSample(string $payload): BinaryTraceSample
     {
         $offset = 0;
         [$stack_id, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+
+        $timestamp_delta_us = null;
+        if (($this->flags & BinaryTraceWriter::FLAG_HAS_TIMESTAMPS) !== 0 && $offset < strlen($payload)) {
+            [$timestamp_delta_us, $consumed] = Varint::decode($payload, $offset);
+            $this->accumulated_timestamp_us += $timestamp_delta_us;
+        }
 
         if (!isset($this->stacks[$stack_id])) {
             throw new BinaryTraceException("Reference to undefined stack_id: {$stack_id}");
@@ -170,7 +315,11 @@ final class BinaryTraceReader
             $frames[] = $this->frames[$fid];
         }
 
-        return new ParsedCallTrace(...$frames);
+        return new BinaryTraceSample(
+            new ParsedCallTrace(...$frames),
+            $timestamp_delta_us,
+            $timestamp_delta_us !== null ? $this->accumulated_timestamp_us : null,
+        );
     }
 
     /**
