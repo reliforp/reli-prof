@@ -40,6 +40,7 @@ final class BinaryTraceRecoverCommand extends Command
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string $format */
         $format = $input->getOption('format');
         $reader = new BinaryTraceReader();
 
@@ -73,7 +74,9 @@ final class BinaryTraceRecoverCommand extends Command
             }
         }
 
-        $output->getErrorOutput()->writeln("Recovered {$count} samples");
+        if ($output instanceof \Symfony\Component\Console\Output\ConsoleOutputInterface) {
+            $output->getErrorOutput()->writeln("Recovered {$count} samples");
+        }
 
         return 0;
     }

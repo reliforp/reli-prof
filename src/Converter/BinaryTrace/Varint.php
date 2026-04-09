@@ -58,6 +58,8 @@ final class Varint
 
     /**
      * Decode a varint from a stream resource.
+     *
+     * @param resource $stream
      */
     public static function decodeFromStream($stream): int
     {

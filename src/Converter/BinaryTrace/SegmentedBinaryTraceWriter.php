@@ -62,6 +62,7 @@ final class SegmentedBinaryTraceWriter
         }
 
         // Check if segment duration exceeded
+        assert($this->segment_start_us !== null);
         if ($timestamp_us - $this->segment_start_us >= $this->segment_duration_us) {
             $this->rotateSegment($timestamp_us);
         }
@@ -72,6 +73,7 @@ final class SegmentedBinaryTraceWriter
         $this->last_timestamp_us = $timestamp_us;
 
         $this->trackTrace($trace);
+        assert($this->current_writer !== null);
         $this->current_writer->writeTrace($trace, $delta);
 
         if ($this->current_writer->getSamplesSinceCheckpoint() >= $this->checkpoint_interval) {

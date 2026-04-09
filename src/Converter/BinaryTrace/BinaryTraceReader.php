@@ -124,7 +124,9 @@ final class BinaryTraceReader
 
         $this->flags = ord($header[5]);
         // bytes 6-7: reserved
-        $this->sampling_period_us = unpack('V', substr($header, 8, 4))[1];
+        /** @var array<int, int> $unpacked */
+        $unpacked = unpack('V', substr($header, 8, 4));
+        $this->sampling_period_us = $unpacked[1];
         // bytes 12-15: reserved
     }
 
