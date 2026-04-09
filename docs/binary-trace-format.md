@@ -571,6 +571,7 @@ Additional options for rbt formats:
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--rbt-timestamps` | `none`, `delta` | `none` | Timestamp mode. `none` uses COMPACT_SAMPLE for minimal size. `delta` records per-sample timing. |
+| `--rbt-compress` | flag | off | Gzip-compress completed segments. Produces `.rbt.gz` with concatenated gzip members. |
 
 ---
 
@@ -596,14 +597,29 @@ Use `--compress` with `converter:rbt` to produce gzip-compressed output:
 reli converter:rbt --compress < trace.txt > trace.rbt.gz
 ```
 
+### Daemon segment compression (`--rbt-compress`)
+
+In daemon per-worker mode, `--rbt-compress` gzip-compresses each completed segment and writes concatenated gzip members to a single `.rbt.gz` file per worker:
+
+```bash
+reli inspector:daemon -F rbt --rbt-compress -o /path/to/output_dir/ ...
+# Produces worker_{pid}.rbt.gz files with concatenated gzip members
+```
+
+- Each segment is written to `php://temp`, gzip-compressed on completion, and appended to the output file
+- The resulting `.rbt.gz` contains concatenated gzip members (RFC 1952 compliant)
+- Readable with `zcat`, `gzopen`, or reli's auto-detecting reader
+- No raw `.rbt` data touches disk — only compressed data is written
+- Without `--rbt-compress`, output is raw `.rbt` per worker (default, best for recovery/tail)
+
 ### When to use which
 
 | Format | Best for |
 |--------|----------|
-| Raw `.rbt` | Live capture, append, tail, recovery, daemon output |
-| `.rbt.gz` | Archival, transfer, CI artifacts, Pyroscope upload |
+| Raw `.rbt` | Live capture, append, tail, recovery |
+| `.rbt.gz` (`--rbt-compress`) | Daemon long-run, archival, transfer, Pyroscope upload |
 
-Raw `.rbt` is the default for live capture because it supports append-only writing, crash recovery, and real-time tailing. Gzip compression is a post-capture or conversion-time optimization.
+Raw `.rbt` is the default for live capture because it supports append-only writing, crash recovery, and real-time tailing. Gzip compression trades recovery for space efficiency.
 
 ---
 

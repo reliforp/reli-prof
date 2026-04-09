@@ -55,6 +55,12 @@ final class OutputSettingsFromConsoleInput
                 'timestamp mode for rbt format: none (compact, default) or delta (with timestamps)',
                 'none',
             )
+            ->addOption(
+                'rbt-compress',
+                null,
+                InputOption::VALUE_NONE,
+                'Gzip-compress completed rbt segments (daemon per-worker mode)',
+            )
         ;
     }
 
@@ -91,10 +97,13 @@ final class OutputSettingsFromConsoleInput
         /** @var string $rbt_timestamps */
         $rbt_timestamps = $input->getOption('rbt-timestamps');
 
+        $rbt_compress = (bool)$input->getOption('rbt-compress');
+
         return new OutputSettings(
             $output_format,
             $output_path,
             $rbt_timestamps,
+            $rbt_compress,
         );
     }
 }

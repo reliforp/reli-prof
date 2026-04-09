@@ -19,13 +19,15 @@ use Reli\Converter\BinaryTrace\BinaryTraceException;
  * Transparent gzip decompression for input streams.
  *
  * Peeks the first 2 bytes for the gzip magic number (0x1f 0x8b).
- * If found, decompresses the entire stream into a memory buffer.
+ * If found, decompresses the entire stream (including concatenated
+ * gzip members per RFC 1952) into a memory buffer.
  * If not, returns the original data as-is (prepending the peeked bytes).
  */
 final class StreamDecompressor
 {
     /**
      * If the stream starts with gzip magic, decompress it into a memory stream.
+     * Handles concatenated gzip members (multiple gzencode outputs appended).
      * Otherwise, return a stream with the original content.
      *
      * @param resource $stream
@@ -35,7 +37,6 @@ final class StreamDecompressor
     {
         $peek = fread($stream, 2);
         if ($peek === false || strlen($peek) < 2) {
-            // Too short — wrap what we got
             $out = fopen('php://memory', 'r+');
             assert($out !== false);
             if ($peek !== false && $peek !== '') {
@@ -46,26 +47,7 @@ final class StreamDecompressor
         }
 
         if ($peek === "\x1f\x8b") {
-            // Gzip magic detected — read all and decompress
-            $compressed = $peek;
-            while (!feof($stream)) {
-                $chunk = fread($stream, 65536);
-                if ($chunk === false || $chunk === '') {
-                    break;
-                }
-                $compressed .= $chunk;
-            }
-
-            $decompressed = @gzdecode($compressed);
-            if ($decompressed === false) {
-                throw new BinaryTraceException('Failed to decompress gzip input');
-            }
-
-            $out = fopen('php://memory', 'r+');
-            assert($out !== false);
-            fwrite($out, $decompressed);
-            rewind($out);
-            return $out;
+            return self::decompressConcatenatedGzip($peek, $stream);
         }
 
         // Not gzip — prepend peeked bytes and return
@@ -79,6 +61,61 @@ final class StreamDecompressor
             }
             fwrite($out, $chunk);
         }
+        rewind($out);
+        return $out;
+    }
+
+    /**
+     * Decompress concatenated gzip members using gzopen/gzread,
+     * which correctly handles multiple gzip members in one stream.
+     *
+     * @param resource $stream
+     * @return resource
+     */
+    private static function decompressConcatenatedGzip(string $peeked, $stream)
+    {
+        // Write full compressed data to a temp file for gzopen
+        $tmp = tempnam(sys_get_temp_dir(), 'reli_gz_');
+        if ($tmp === false) {
+            throw new BinaryTraceException('Failed to create temp file for gzip decompression');
+        }
+
+        $tmp_fh = fopen($tmp, 'wb');
+        assert($tmp_fh !== false);
+        fwrite($tmp_fh, $peeked);
+        while (!feof($stream)) {
+            $chunk = fread($stream, 65536);
+            if ($chunk === false || $chunk === '') {
+                break;
+            }
+            fwrite($tmp_fh, $chunk);
+        }
+        fclose($tmp_fh);
+
+        // Use gzopen to decompress all concatenated members
+        $gz = gzopen($tmp, 'rb');
+        if ($gz === false) {
+            unlink($tmp);
+            throw new BinaryTraceException('Failed to decompress gzip input');
+        }
+
+        $out = fopen('php://memory', 'r+');
+        assert($out !== false);
+        while (!gzeof($gz)) {
+            $chunk = gzread($gz, 65536);
+            if ($chunk === false || $chunk === '') {
+                break;
+            }
+            fwrite($out, $chunk);
+        }
+        gzclose($gz);
+        unlink($tmp);
+
+        if (ftell($out) === 0) {
+            fclose($out);
+            throw new BinaryTraceException('Failed to decompress gzip input');
+        }
+
         rewind($out);
         return $out;
     }
