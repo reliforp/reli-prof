@@ -612,7 +612,11 @@ final class ExploreTui
             $width,
             $state->active_pane === ActivePane::Callers,
         );
-        $banner_lines = $this->renderFocusBannerLines($state, $width);
+        $banner_lines = $this->renderFocusBannerLines(
+            $state,
+            $width,
+            $state->active_pane === ActivePane::Focus,
+        );
         $callee_lines = $this->renderPaneLines(
             'callees',
             $callee_rows,
@@ -704,7 +708,7 @@ final class ExploreTui
     /**
      * @return list<string> three lines: top border, content, bottom border
      */
-    private function renderFocusBannerLines(ViewState $state, int $width): array
+    private function renderFocusBannerLines(ViewState $state, int $width, bool $active = false): array
     {
         $label = $state->focus_label ?? '<none>';
         $stats = $this->lookupFocusSelfStats($state);
@@ -715,7 +719,11 @@ final class ExploreTui
         $top = '┌' . str_repeat('─', max(0, $width - 2)) . '┐';
         $bottom = '└' . str_repeat('─', max(0, $width - 2)) . '┘';
 
-        $left = '│ focus: ';
+        // The cursor marker (▶ when active) takes the spot the
+        // border's left vertical bar normally occupies, so the
+        // banner stays exactly $width cells wide regardless of state.
+        $left_marker = $active ? '│▶' : '│ ';
+        $left = $left_marker . ' focus: ';
         $right = $stats_text . ' │';
         $label_room = max(0, $width - mb_strlen($left) - mb_strlen($right));
         $label_short = self::shorten($label, $label_room);
@@ -724,10 +732,17 @@ final class ExploreTui
         $inner .= str_repeat(' ', $padding) . $right;
         $inner = self::padOrShorten($inner, $width);
 
+        // When active, render the banner in reverse video so it's
+        // visually obvious the cursor is parked here. The plain
+        // bold style of the inactive banner stays for the non-active
+        // case (matching what panes mode looked like before).
+        $style = $active ? "\e[1;7m" : "\e[1m";
+        $end   = $active ? "\e[27;22m" : "\e[22m";
+
         return [
-            "\e[1m" . self::padOrShorten($top, $width) . "\e[22m",
-            "\e[1m" . $inner . "\e[22m",
-            "\e[1m" . self::padOrShorten($bottom, $width) . "\e[22m",
+            $style . self::padOrShorten($top, $width) . $end,
+            $style . $inner . $end,
+            $style . self::padOrShorten($bottom, $width) . $end,
         ];
     }
 
@@ -980,7 +995,8 @@ final class ExploreTui
             '  PgUp / PgDn  page up / down',
             '  g / G        first / last row',
             '  Enter        focus selected row → sandwich view',
-            '  Tab          cycle active pane: callers → callees → overview',
+            '  Tab          cycle active pane: callers → focus → callees → overview',
+            '               (focus pane is panes-view only — Tab skips it elsewhere)',
             '  Shift+Tab    cycle the other way',
             '  ← / h        focus callers pane',
             '  → / l        focus callees pane',
@@ -1118,16 +1134,22 @@ final class ExploreTui
             $lines[] = $this->renderFlameRow($bars, $inner_w, $no_line, $cursor_for_row);
         }
 
-        // 1-line cursor info footer (counts as a body row).
+        // 1-line cursor info footer (counts as a body row). Includes
+        // both the raw sample count and the percentage of focus, so
+        // the user can read absolute weight in addition to share.
         $cursor_label = $cursor_bar !== null
             ? Aggregator::labelFor($this->model, $cursor_bar['key_id'], $no_line)
             : '';
-        $cursor_pct = $cursor_bar !== null
-            ? sprintf(' (%.1f%%)', $cursor_bar['count'] / $focus_count * 100.0)
+        $cursor_stats = $cursor_bar !== null
+            ? sprintf(
+                ' (%s · %.1f%%)',
+                number_format($cursor_bar['count']),
+                $cursor_bar['count'] / $focus_count * 100.0,
+            )
             : '';
-        $cursor_room = max(0, $inner_w - mb_strlen($cursor_pct) - 3);
+        $cursor_room = max(0, $inner_w - mb_strlen($cursor_stats) - 3);
         $cursor_text = $cursor_label !== ''
-            ? ' cursor: ' . self::shorten($cursor_label, $cursor_room - 8) . $cursor_pct
+            ? ' cursor: ' . self::shorten($cursor_label, $cursor_room - 8) . $cursor_stats
             : ' cursor: (none)';
         $lines[] = "\e[2m" . self::padOrShorten($cursor_text, $inner_w) . "\e[22m";
 
@@ -2204,6 +2226,20 @@ final class ExploreTui
             $this->moveSelection($delta);
             return;
         }
+        if ($state->active_pane === ActivePane::Focus) {
+            // Focus banner has no scroll content; ↑/↓ jump to the
+            // adjacent pane (visually: callers above, callees below).
+            // Page-step (delta = ±10) is treated the same — there's
+            // nowhere "further" to go on the focus row.
+            if ($delta < 0) {
+                $this->stack[count($this->stack) - 1]
+                    = $state->withActivePane(ActivePane::Callers);
+            } elseif ($delta > 0) {
+                $this->stack[count($this->stack) - 1]
+                    = $state->withActivePane(ActivePane::Callees);
+            }
+            return;
+        }
         if ($state->active_pane === ActivePane::Overview) {
             $this->moveSelection($delta);
             return;
@@ -2230,6 +2266,10 @@ final class ExploreTui
         $state = $this->currentState();
         if ($state->mode !== ExploreMode::Sandwich) {
             $this->setSelection($end ? PHP_INT_MAX : 0);
+            return;
+        }
+        if ($state->active_pane === ActivePane::Focus) {
+            // Nothing to "go to the start/end of" on the focus banner.
             return;
         }
         if ($state->active_pane === ActivePane::Overview) {
@@ -2259,6 +2299,12 @@ final class ExploreTui
         $state = $this->currentState();
         if ($state->mode !== ExploreMode::Sandwich) {
             $this->focusSelected();
+            return;
+        }
+        if ($state->active_pane === ActivePane::Focus) {
+            // Cursor on the focus banner: drilling into yourself
+            // would just push a duplicate. Status hint and bail.
+            $this->status = 'already focused';
             return;
         }
         if ($state->active_pane === ActivePane::Overview) {
@@ -2532,6 +2578,18 @@ final class ExploreTui
             [, $key_id, $label] = $rows[$this->overview_selected];
             return $key_id < 0 ? null : ['key_id' => $key_id, 'label' => $label];
         }
+        if ($state->active_pane === ActivePane::Focus) {
+            // Cursor parked on the focus banner: the "current frame"
+            // IS the focus, so view-switching keys see them as equal
+            // and treat the switch as in-place rather than a drilldown.
+            if ($state->focus_id === null || $state->focus_id < 0) {
+                return null;
+            }
+            return [
+                'key_id' => $state->focus_id,
+                'label' => $state->focus_label ?? '',
+            ];
+        }
         switch ($state->sandwich_view) {
             case SandwichView::Panes:
                 $rows = match ($state->active_pane) {
@@ -2543,12 +2601,12 @@ final class ExploreTui
                         $this->ensureCallees()['rows'],
                         $state->view_filter,
                     ),
-                    ActivePane::Overview => [],
+                    ActivePane::Overview, ActivePane::Focus => [],
                 };
                 $idx = match ($state->active_pane) {
                     ActivePane::Callers  => $this->callers_selected,
                     ActivePane::Callees  => $this->callees_selected,
-                    ActivePane::Overview => 0,
+                    ActivePane::Overview, ActivePane::Focus => 0,
                 };
                 if (!isset($rows[$idx])) {
                     return null;
@@ -2656,15 +2714,33 @@ final class ExploreTui
 
             case Keymap::ACTION_TOGGLE_PANE:
                 if ($state->mode === ExploreMode::Sandwich) {
+                    $next = $state->active_pane->next();
+                    // Focus pane only makes sense in panes view
+                    // (flame / tree views render the focus inline as
+                    // part of their body, so there's no separate
+                    // banner to land on); skip past it elsewhere.
+                    if (
+                        $next === ActivePane::Focus
+                        && $state->sandwich_view !== SandwichView::Panes
+                    ) {
+                        $next = $next->next();
+                    }
                     $this->stack[count($this->stack) - 1]
-                        = $state->withActivePane($state->active_pane->next());
+                        = $state->withActivePane($next);
                 }
                 return;
 
             case Keymap::ACTION_TOGGLE_PANE_REVERSE:
                 if ($state->mode === ExploreMode::Sandwich) {
+                    $prev = $state->active_pane->prev();
+                    if (
+                        $prev === ActivePane::Focus
+                        && $state->sandwich_view !== SandwichView::Panes
+                    ) {
+                        $prev = $prev->prev();
+                    }
                     $this->stack[count($this->stack) - 1]
-                        = $state->withActivePane($state->active_pane->prev());
+                        = $state->withActivePane($prev);
                 }
                 return;
 
@@ -2872,6 +2948,10 @@ final class ExploreTui
             ActivePane::Callers  => $this->callers_selected += $delta,
             ActivePane::Callees  => $this->callees_selected += $delta,
             ActivePane::Overview => $this->overview_selected += $delta,
+            // Focus is a "cursor parking spot" with no scroll content;
+            // dispatchUpDown intercepts the actual ↑↓ navigation for
+            // it, so this branch is just defensive.
+            ActivePane::Focus    => null,
         };
         if ($state->active_pane === ActivePane::Overview && $this->overview_follow) {
             $this->liveFollowOverviewFocus();
@@ -2909,6 +2989,9 @@ final class ExploreTui
                 if ($this->overview_follow) {
                     $this->liveFollowOverviewFocus();
                 }
+                return;
+            case ActivePane::Focus:
+                // No scroll content on the focus banner.
                 return;
         }
     }
@@ -2995,6 +3078,13 @@ final class ExploreTui
         }
 
         // Sandwich → Sandwich: promote the active pane's selected row.
+        if ($state->active_pane === ActivePane::Focus) {
+            // Cursor is parked on the focus banner — drilling into
+            // the current focus would just push a duplicate history
+            // entry, so just no-op.
+            $this->status = 'already focused';
+            return;
+        }
         $rows = [];
         $idx = 0;
         switch ($state->active_pane) {
@@ -3010,6 +3100,8 @@ final class ExploreTui
                 $rows = $this->ensureOverview()['rows'];
                 $idx = $this->overview_selected;
                 break;
+            case ActivePane::Focus:
+                return; // unreachable, handled above
         }
         if (!isset($rows[$idx])) {
             return;
