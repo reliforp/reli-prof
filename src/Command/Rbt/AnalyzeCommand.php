@@ -236,22 +236,27 @@ final class AnalyzeCommand extends Command
             $this->printTable($output, 'total-time top (inclusive)', $total_counts, $denominator, $top);
         }
 
-        if ($top > 0 && $callers_re !== null) {
+        // --top 0 only suppresses the default self/total tables. The
+        // callers/callees tables are explicit asks; always render them
+        // (with their own row cap so the user can still bound output).
+        $explicit_top = $top > 0 ? $top : 20;
+
+        if ($callers_re !== null) {
             $this->printTable(
                 $output,
                 "callers of frames matching /{$callers_pattern}/",
                 $caller_counts,
                 $denominator,
-                $top,
+                $explicit_top,
             );
         }
-        if ($top > 0 && $callees_re !== null) {
+        if ($callees_re !== null) {
             $this->printTable(
                 $output,
                 "callees of frames matching /{$callees_pattern}/",
                 $callee_counts,
                 $denominator,
-                $top,
+                $explicit_top,
             );
         }
 

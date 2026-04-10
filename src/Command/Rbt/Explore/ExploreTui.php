@@ -16,18 +16,28 @@ namespace Reli\Command\Rbt\Explore;
 /**
  * Render loop and event dispatcher for `rbt:explore`.
  *
- * Holds:
- *   - the immutable {@see TraceModel} loaded once at startup
- *   - the current view stack (so `back` can pop)
- *   - the current global match filter and per-view filter
- *   - the in-progress text input state when prompting for /, m, etc.
+ * Two top-level layouts:
  *
- * Each frame: aggregate → render → block on a key → dispatch.
+ *   - **List mode** ({@see ExploreMode::ListSelf} / {@see ExploreMode::ListTotal})
+ *     A single hot-frame table — the entry view, also reachable any time
+ *     via the `s` / `t` keys. Pressing Enter on a row drops into Sandwich
+ *     mode focused on that frame.
+ *
+ *   - **Sandwich mode** ({@see ExploreMode::Sandwich})
+ *     Three sections: callers pane on top, focus banner in the middle,
+ *     callees pane on the bottom. Each side pane has its own selection
+ *     and scroll position; `Tab` toggles which side is active and ↑↓
+ *     navigate that side. ←/→ explicitly pick callers or callees. `Enter`
+ *     promotes the active pane's selected row to the new focus and keeps
+ *     the same side active so the user can keep climbing in one direction.
+ *     `u` pops focus history.
  */
 final class ExploreTui
 {
     private const MIN_ROWS = 12;
     private const MIN_COLS = 60;
+    private const SYNTH_ROOT = -1;
+    private const SYNTH_LEAF = -2;
 
     private TraceModel $model;
     private Terminal $term;
@@ -38,21 +48,38 @@ final class ExploreTui
 
     private ViewOptions $opts;
 
-    private int $selected = 0;
-    private int $top_row = 0;
+    /**
+     * Per-pane scroll state. Each entry is {selected, top_row}. Resets
+     * to {0, 0} on any focus change so the user always starts at the top.
+     */
+    private int $list_selected = 0;
+    private int $list_top_row = 0;
+    private int $callers_selected = 0;
+    private int $callers_top_row = 0;
+    private int $callees_selected = 0;
+    private int $callees_top_row = 0;
 
-    /** @var array{counts: array<int, int>, matched_samples: int}|null */
-    private ?array $cached_view = null;
+    /**
+     * Per-pane caches. Each cache is
+     *   ['matched_samples' => int, 'rows' => list<array{int,int,string}>]
+     * (count, key_id, label) — built lazily by {@see self::ensurePane()}.
+     *
+     * @var array{matched_samples:int, rows:list<array{int,int,string}>}|null
+     */
+    private ?array $list_cache = null;
 
-    /** @var list<array{int, int, string}>|null sorted view rows: [count, key_id, label] */
-    private ?array $cached_rows = null;
+    /** @var array{matched_samples:int, rows:list<array{int,int,string}>}|null */
+    private ?array $callers_cache = null;
+
+    /** @var array{matched_samples:int, rows:list<array{int,int,string}>}|null */
+    private ?array $callees_cache = null;
 
     private string $status = '';
 
     /** Modal text input state (filter prompts). */
     private ?string $prompt_label = null;
     private string $prompt_buffer = '';
-    /** @var callable(string): void|null */
+    /** @var (callable(string): void)|null */
     private $prompt_commit = null;
 
     private bool $help_open = false;
@@ -65,7 +92,7 @@ final class ExploreTui
         $this->keymap = $keymap;
         $this->opts = new ViewOptions();
         $this->stack = [
-            new ViewState(view: Aggregator::VIEW_SELF, focus_id: null, focus_label: null),
+            new ViewState(mode: ExploreMode::ListSelf),
         ];
     }
 
@@ -103,107 +130,265 @@ final class ExploreTui
             return;
         }
 
-        $this->ensureAggregated();
-
-        $rows_for_table = $rows - 8;
-        if ($rows_for_table < 1) {
-            $rows_for_table = 1;
-        }
-        $this->clampSelection($rows_for_table);
-
-        $buf = '';
-        $buf .= "\e[H\e[2J"; // home + clear
-
-        // ----- header -----
         $state = $this->currentState();
-        $buf .= $this->styleHeader(sprintf(
-            'rbt:explore — %s (%s samples · %.1fs · %dus period)',
-            self::shorten(basename($this->model->source_path), $cols - 4),
-            number_format($this->model->sampleCount()),
-            $this->model->durationSeconds(),
-            $this->model->sampling_period_us,
-        )) . "\n";
 
-        $focus_label = $state->focus_label ?? '<none>';
-        $hist = count($this->stack) - 1;
-        $buf .= sprintf(
-            "Focus: %s   History: %d back\n",
-            self::shorten($focus_label, $cols - 24),
-            $hist,
-        );
+        $buf = "\e[H\e[2J"; // home + clear
+        $buf .= $this->renderHeader($state, $cols);
 
-        $view_label = $this->viewLabel($state->view);
-        $line = sprintf(
-            'View: %s   no-line: %s   match: %s   filter: %s',
-            $view_label,
-            $this->opts->no_line ? 'on' : 'off',
-            $this->opts->match_re ?? '(none)',
-            $state->view_filter ?? '(none)',
-        );
-        $buf .= self::shorten($line, $cols) . "\n";
-
-        $buf .= str_repeat('─', $cols) . "\n";
-
-        // ----- table header -----
-        $buf .= $this->styleTableHeader(self::shorten(
-            sprintf('%9s  %6s  %s', 'count', 'pct', 'frame'),
-            $cols,
-        )) . "\n";
-
-        // ----- table body -----
-        $rows_data = $this->visibleRows();
-        $denom = max(1, $this->cached_view['matched_samples'] ?? 1);
-        $rendered = 0;
-        for ($i = 0; $i < $rows_for_table; $i++) {
-            $idx = $this->top_row + $i;
-            if (!isset($rows_data[$idx])) {
-                $buf .= "\n";
-                continue;
-            }
-            [$count, $key_id, $label] = $rows_data[$idx];
-            $pct = ($count / $denom) * 100;
-            $marker = $idx === $this->selected ? '> ' : '  ';
-            $line = sprintf(
-                '%s%9s  %5.1f%%  %s',
-                $marker,
-                number_format($count),
-                $pct,
-                $label,
-            );
-            $line = self::shorten($line, $cols);
-            if ($idx === $this->selected) {
-                $line = "\e[7m" . $line . "\e[27m";
-            }
-            $buf .= $line . "\n";
-            $rendered++;
+        // Body height is everything except header (4 lines), footer (1),
+        // and status (1) — 6 fixed lines.
+        $body_rows = $rows - 6;
+        if ($body_rows < 3) {
+            $body_rows = 3;
         }
 
-        // ----- footer / status -----
-        $footer = '[↑↓] sel  [Enter] focus  [←] callers  [→] callees  [u] back  '
-            . '[s] self  [t] total  [/] filter  [m] match  [n] no-line  [?] help  [q] quit';
-        $buf .= self::shorten($footer, $cols) . "\n";
-
-        if ($this->prompt_label !== null) {
-            $buf .= self::shorten("{$this->prompt_label}{$this->prompt_buffer}_", $cols);
+        if ($state->mode === ExploreMode::Sandwich) {
+            $buf .= $this->renderSandwich($state, $cols, $body_rows);
         } else {
-            $status = $this->status;
-            if ($status === '') {
-                $status = sprintf(
-                    '%d / %d rows · matched %s / %s samples',
-                    count($rows_data),
-                    count($this->cached_rows ?? []),
-                    number_format($this->cached_view['matched_samples'] ?? 0),
-                    number_format($this->model->sampleCount()),
-                );
-            }
-            $buf .= self::shorten($status, $cols);
+            $buf .= $this->renderList($state, $cols, $body_rows);
         }
+
+        $buf .= $this->renderFooter($state, $cols);
+        $buf .= $this->renderStatus($state, $cols);
 
         if ($this->help_open) {
             $buf .= $this->renderHelpOverlay($cols, $rows);
         }
 
         $this->term->write($buf);
+    }
+
+    private function renderHeader(ViewState $state, int $cols): string
+    {
+        $line1 = sprintf(
+            'rbt:explore — %s (%s samples · %.1fs · %dus period)',
+            self::shorten(basename($this->model->source_path), $cols - 4),
+            number_format($this->model->sampleCount()),
+            $this->model->durationSeconds(),
+            $this->model->sampling_period_us,
+        );
+        $hist = count($this->stack) - 1;
+        $mode_label = match ($state->mode) {
+            ExploreMode::ListSelf  => 'self-time top',
+            ExploreMode::ListTotal => 'total-time top',
+            ExploreMode::Sandwich  => 'sandwich (focus drilldown)',
+        };
+        $line2 = sprintf('mode: %s   history: %d back', $mode_label, $hist);
+        $line3 = sprintf(
+            'no-line: %s   match: %s   filter: %s',
+            $this->opts->no_line ? 'on' : 'off',
+            $this->opts->match_re ?? '(none)',
+            $state->view_filter ?? '(none)',
+        );
+
+        $out = $this->styleHeader(self::shorten($line1, $cols)) . "\n";
+        $out .= self::shorten($line2, $cols) . "\n";
+        $out .= self::shorten($line3, $cols) . "\n";
+        $out .= str_repeat('─', $cols) . "\n";
+        return $out;
+    }
+
+    private function renderList(ViewState $state, int $cols, int $body_rows): string
+    {
+        $cache = $this->ensureList();
+        $rows_data = $this->applyViewFilter($cache['rows'], $state->view_filter);
+        $denom = max(1, $cache['matched_samples']);
+
+        $this->clampSelection($this->list_selected, $this->list_top_row, count($rows_data), $body_rows - 1);
+
+        $out = '';
+        $out .= $this->styleTableHeader(self::shorten(
+            sprintf('  %9s  %6s  %s', 'count', 'pct', 'frame'),
+            $cols,
+        )) . "\n";
+
+        $visible = $body_rows - 1; // minus header line
+        for ($i = 0; $i < $visible; $i++) {
+            $idx = $this->list_top_row + $i;
+            if (!isset($rows_data[$idx])) {
+                $out .= "\n";
+                continue;
+            }
+            [$count, , $label] = $rows_data[$idx];
+            $pct = ($count / $denom) * 100;
+            $marker = $idx === $this->list_selected ? '> ' : '  ';
+            $line = sprintf('%s%9s  %5.1f%%  %s', $marker, number_format($count), $pct, $label);
+            $line = self::shorten($line, $cols);
+            if ($idx === $this->list_selected) {
+                $line = "\e[7m" . $line . "\e[27m";
+            }
+            $out .= $line . "\n";
+        }
+        return $out;
+    }
+
+    private function renderSandwich(ViewState $state, int $cols, int $body_rows): string
+    {
+        $callers = $this->ensureCallers();
+        $callees = $this->ensureCallees();
+        $caller_rows = $this->applyViewFilter($callers['rows'], $state->view_filter);
+        $callee_rows = $this->applyViewFilter($callees['rows'], $state->view_filter);
+        $caller_denom = max(1, $callers['matched_samples']);
+        $callee_denom = max(1, $callees['matched_samples']);
+
+        // Layout: focus banner = 3 lines (top border, label, bottom border).
+        // Each pane gets a header line + body. Split remaining body_rows
+        // evenly between callers (top) and callees (bottom).
+        $banner_rows = 3;
+        $available = max(0, $body_rows - $banner_rows);
+        $caller_body = (int)floor($available / 2);
+        $callee_body = $available - $caller_body;
+
+        // Pane heights include the header line each.
+        $caller_visible = max(0, $caller_body - 1);
+        $callee_visible = max(0, $callee_body - 1);
+
+        $this->clampSelection(
+            $this->callers_selected,
+            $this->callers_top_row,
+            count($caller_rows),
+            $caller_visible,
+        );
+        $this->clampSelection(
+            $this->callees_selected,
+            $this->callees_top_row,
+            count($callee_rows),
+            $callee_visible,
+        );
+
+        $out = '';
+        $out .= $this->renderPane(
+            'callers',
+            $caller_rows,
+            $caller_denom,
+            $this->callers_selected,
+            $this->callers_top_row,
+            $caller_visible,
+            $cols,
+            $state->callers_active,
+        );
+        $out .= $this->renderFocusBanner($state, $cols);
+        $out .= $this->renderPane(
+            'callees',
+            $callee_rows,
+            $callee_denom,
+            $this->callees_selected,
+            $this->callees_top_row,
+            $callee_visible,
+            $cols,
+            !$state->callers_active,
+        );
+        return $out;
+    }
+
+    /**
+     * @param list<array{int, int, string}> $rows
+     */
+    private function renderPane(
+        string $title,
+        array $rows,
+        int $denom,
+        int $selected,
+        int $top_row,
+        int $visible,
+        int $cols,
+        bool $active,
+    ): string {
+        $marker = $active ? '▶' : ' ';
+        $count_label = sprintf('%s (%d)', $title, count($rows));
+        $header = sprintf('%s ── %s ', $marker, $count_label);
+        $pad_len = max(0, $cols - mb_strlen($header));
+        $header .= str_repeat('─', $pad_len);
+        $header = self::shorten($header, $cols);
+        if ($active) {
+            $header = "\e[1m" . $header . "\e[22m";
+        } else {
+            $header = "\e[2m" . $header . "\e[22m";
+        }
+        $out = $header . "\n";
+
+        if ($visible === 0) {
+            return $out;
+        }
+
+        if ($rows === []) {
+            $out .= self::shorten('  (no entries)', $cols) . "\n";
+            for ($i = 1; $i < $visible; $i++) {
+                $out .= "\n";
+            }
+            return $out;
+        }
+
+        for ($i = 0; $i < $visible; $i++) {
+            $idx = $top_row + $i;
+            if (!isset($rows[$idx])) {
+                $out .= "\n";
+                continue;
+            }
+            [$count, , $label] = $rows[$idx];
+            $pct = ($count / $denom) * 100;
+            $is_sel = $active && $idx === $selected;
+            $sel_mark = $is_sel ? '> ' : '  ';
+            $line = sprintf('%s%9s  %5.1f%%  %s', $sel_mark, number_format($count), $pct, $label);
+            $line = self::shorten($line, $cols);
+            if ($is_sel) {
+                $line = "\e[7m" . $line . "\e[27m";
+            }
+            $out .= $line . "\n";
+        }
+        return $out;
+    }
+
+    private function renderFocusBanner(ViewState $state, int $cols): string
+    {
+        $label = $state->focus_label ?? '<none>';
+        $top = '┌' . str_repeat('─', max(0, $cols - 2)) . '┐';
+        $bottom = '└' . str_repeat('─', max(0, $cols - 2)) . '┘';
+        $inner = '│ focus: ' . self::shorten($label, $cols - 12) . ' ';
+        $pad_len = max(0, $cols - mb_strlen($inner) - 1);
+        $inner .= str_repeat(' ', $pad_len) . '│';
+        $top = "\e[1m" . self::shorten($top, $cols) . "\e[22m";
+        $bottom = "\e[1m" . self::shorten($bottom, $cols) . "\e[22m";
+        $inner = "\e[1m" . self::shorten($inner, $cols) . "\e[22m";
+        return $top . "\n" . $inner . "\n" . $bottom . "\n";
+    }
+
+    private function renderFooter(ViewState $state, int $cols): string
+    {
+        if ($state->mode === ExploreMode::Sandwich) {
+            $footer = '[Tab] toggle pane  [↑↓] sel  [Enter] focus  [←/→] callers/callees  '
+                . '[u] back  [s] self  [t] total  [/] filter  [m] match  [n] no-line  [?] help  [q] quit';
+        } else {
+            $footer = '[↑↓] sel  [Enter] focus  [s] self  [t] total  '
+                . '[/] filter  [m] match  [n] no-line  [?] help  [q] quit';
+        }
+        return self::shorten($footer, $cols) . "\n";
+    }
+
+    private function renderStatus(ViewState $state, int $cols): string
+    {
+        if ($this->prompt_label !== null) {
+            return self::shorten("{$this->prompt_label}{$this->prompt_buffer}_", $cols);
+        }
+        if ($this->status !== '') {
+            return self::shorten($this->status, $cols);
+        }
+        if ($state->mode === ExploreMode::Sandwich) {
+            $callers = $this->ensureCallers();
+            $callees = $this->ensureCallees();
+            return self::shorten(sprintf(
+                'callers matched %s / callees matched %s samples',
+                number_format($callers['matched_samples']),
+                number_format($callees['matched_samples']),
+            ), $cols);
+        }
+        $cache = $this->ensureList();
+        return self::shorten(sprintf(
+            '%d rows · matched %s / %s samples',
+            count($cache['rows']),
+            number_format($cache['matched_samples']),
+            number_format($this->model->sampleCount()),
+        ), $cols);
     }
 
     private function styleHeader(string $s): string
@@ -216,35 +401,6 @@ final class ExploreTui
         return "\e[2m" . $s . "\e[22m";
     }
 
-    private function viewLabel(string $view): string
-    {
-        $state = $this->currentState();
-        return match ($view) {
-            Aggregator::VIEW_SELF    => 'self-time top',
-            Aggregator::VIEW_TOTAL   => 'total-time top',
-            Aggregator::VIEW_CALLERS => 'callers of ' . ($state->focus_label ?? '?'),
-            Aggregator::VIEW_CALLEES => 'callees of ' . ($state->focus_label ?? '?'),
-            default                  => $view,
-        };
-    }
-
-    /**
-     * @return list<array{int, int, string}>
-     */
-    private function visibleRows(): array
-    {
-        $rows = $this->cached_rows ?? [];
-        $state = $this->currentState();
-        if ($state->view_filter !== null) {
-            $re = '#' . str_replace('#', '\\#', $state->view_filter) . '#';
-            $rows = array_values(array_filter(
-                $rows,
-                static fn(array $row): bool => preg_match($re, $row[2]) === 1,
-            ));
-        }
-        return $rows;
-    }
-
     private function renderHelpOverlay(int $cols, int $rows): string
     {
         $lines = [
@@ -253,9 +409,10 @@ final class ExploreTui
             '  ↓ / j        select next',
             '  PgUp / PgDn  page up / down',
             '  g / G        first / last row',
-            '  Enter        focus selected row → callers view',
-            '  ← / h        callers of focus',
-            '  → / l        callees of focus',
+            '  Enter        focus selected row → sandwich view',
+            '  Tab          toggle active pane (sandwich)',
+            '  ← / h        focus callers pane',
+            '  → / l        focus callees pane',
             '  u / Bksp     pop focus history',
             '  s            self-time top (clears focus)',
             '  t            total-time top (clears focus)',
@@ -289,29 +446,61 @@ final class ExploreTui
         return $out;
     }
 
-    // ---------- aggregation ----------
+    // ---------- aggregation caches ----------
 
-    private function ensureAggregated(): void
+    /**
+     * @return array{matched_samples:int, rows:list<array{int,int,string}>}
+     */
+    private function ensureList(): array
     {
-        if ($this->cached_view !== null && $this->cached_rows !== null) {
-            return;
+        if ($this->list_cache !== null) {
+            return $this->list_cache;
         }
         $state = $this->currentState();
-        $view = match ($state->view) {
-            Aggregator::VIEW_SELF    => Aggregator::selfTime($this->model, $this->opts),
-            Aggregator::VIEW_TOTAL   => Aggregator::totalTime($this->model, $this->opts),
-            Aggregator::VIEW_CALLERS => Aggregator::callersOf(
-                $this->model,
-                $state->focus_id ?? -999,
-                $this->opts,
-            ),
-            Aggregator::VIEW_CALLEES => Aggregator::calleesOf(
-                $this->model,
-                $state->focus_id ?? -999,
-                $this->opts,
-            ),
-            default => ['counts' => [], 'matched_samples' => 0],
-        };
+        $view = $state->mode === ExploreMode::ListTotal
+            ? Aggregator::totalTime($this->model, $this->opts)
+            : Aggregator::selfTime($this->model, $this->opts);
+        return $this->list_cache = $this->buildCache($view);
+    }
+
+    /**
+     * @return array{matched_samples:int, rows:list<array{int,int,string}>}
+     */
+    private function ensureCallers(): array
+    {
+        if ($this->callers_cache !== null) {
+            return $this->callers_cache;
+        }
+        $state = $this->currentState();
+        if ($state->focus_id === null) {
+            return $this->callers_cache = ['matched_samples' => 0, 'rows' => []];
+        }
+        $view = Aggregator::callersOf($this->model, $state->focus_id, $this->opts);
+        return $this->callers_cache = $this->buildCache($view);
+    }
+
+    /**
+     * @return array{matched_samples:int, rows:list<array{int,int,string}>}
+     */
+    private function ensureCallees(): array
+    {
+        if ($this->callees_cache !== null) {
+            return $this->callees_cache;
+        }
+        $state = $this->currentState();
+        if ($state->focus_id === null) {
+            return $this->callees_cache = ['matched_samples' => 0, 'rows' => []];
+        }
+        $view = Aggregator::calleesOf($this->model, $state->focus_id, $this->opts);
+        return $this->callees_cache = $this->buildCache($view);
+    }
+
+    /**
+     * @param array{counts: array<int, int>, matched_samples: int} $view
+     * @return array{matched_samples:int, rows:list<array{int,int,string}>}
+     */
+    private function buildCache(array $view): array
+    {
         $counts = $view['counts'];
         arsort($counts);
         $rows = [];
@@ -319,38 +508,56 @@ final class ExploreTui
             $label = Aggregator::labelFor($this->model, $key_id, $this->opts->no_line);
             $rows[] = [$count, $key_id, $label];
         }
-        $this->cached_view = $view;
-        $this->cached_rows = $rows;
+        return [
+            'matched_samples' => $view['matched_samples'],
+            'rows' => $rows,
+        ];
     }
 
     private function invalidate(): void
     {
-        $this->cached_view = null;
-        $this->cached_rows = null;
+        $this->list_cache = null;
+        $this->callers_cache = null;
+        $this->callees_cache = null;
     }
 
-    private function clampSelection(int $rows_for_table): void
+    /**
+     * @param list<array{int,int,string}> $rows
+     * @return list<array{int,int,string}>
+     */
+    private function applyViewFilter(array $rows, ?string $filter): array
     {
-        $total = count($this->visibleRows());
-        if ($total === 0) {
-            $this->selected = 0;
-            $this->top_row = 0;
+        if ($filter === null) {
+            return $rows;
+        }
+        $re = '#' . str_replace('#', '\\#', $filter) . '#';
+        return array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => preg_match($re, $row[2]) === 1,
+        ));
+    }
+
+    private function clampSelection(int &$selected, int &$top_row, int $total, int $visible): void
+    {
+        if ($total === 0 || $visible <= 0) {
+            $selected = 0;
+            $top_row = 0;
             return;
         }
-        if ($this->selected < 0) {
-            $this->selected = 0;
+        if ($selected < 0) {
+            $selected = 0;
         }
-        if ($this->selected >= $total) {
-            $this->selected = $total - 1;
+        if ($selected >= $total) {
+            $selected = $total - 1;
         }
-        if ($this->selected < $this->top_row) {
-            $this->top_row = $this->selected;
+        if ($selected < $top_row) {
+            $top_row = $selected;
         }
-        if ($this->selected >= $this->top_row + $rows_for_table) {
-            $this->top_row = $this->selected - $rows_for_table + 1;
+        if ($selected >= $top_row + $visible) {
+            $top_row = $selected - $visible + 1;
         }
-        if ($this->top_row < 0) {
-            $this->top_row = 0;
+        if ($top_row < 0) {
+            $top_row = 0;
         }
     }
 
@@ -373,6 +580,7 @@ final class ExploreTui
         }
 
         $this->status = '';
+        $state = $this->currentState();
 
         switch ($action) {
             case Keymap::ACTION_QUIT:
@@ -384,41 +592,49 @@ final class ExploreTui
                 return;
 
             case Keymap::ACTION_UP:
-                $this->selected--;
-                $this->cached_rows ??= [];
+                $this->moveSelection(-1);
                 return;
 
             case Keymap::ACTION_DOWN:
-                $this->selected++;
+                $this->moveSelection(1);
                 return;
 
             case Keymap::ACTION_PAGE_UP:
-                $this->selected -= 10;
+                $this->moveSelection(-10);
                 return;
 
             case Keymap::ACTION_PAGE_DOWN:
-                $this->selected += 10;
+                $this->moveSelection(10);
                 return;
 
             case Keymap::ACTION_HOME:
-                $this->selected = 0;
-                $this->top_row = 0;
+                $this->setSelection(0);
                 return;
 
             case Keymap::ACTION_END:
-                $this->selected = max(0, count($this->visibleRows()) - 1);
+                $this->setSelection(PHP_INT_MAX);
                 return;
 
             case Keymap::ACTION_FOCUS_ENTER:
-                $this->focusSelected(Aggregator::VIEW_CALLERS);
+                $this->focusSelected();
+                return;
+
+            case Keymap::ACTION_TOGGLE_PANE:
+                if ($state->mode === ExploreMode::Sandwich) {
+                    $this->stack[count($this->stack) - 1] = $state->withCallersActive(!$state->callers_active);
+                }
                 return;
 
             case Keymap::ACTION_CALLERS:
-                $this->switchView(Aggregator::VIEW_CALLERS);
+                if ($state->mode === ExploreMode::Sandwich) {
+                    $this->stack[count($this->stack) - 1] = $state->withCallersActive(true);
+                }
                 return;
 
             case Keymap::ACTION_CALLEES:
-                $this->switchView(Aggregator::VIEW_CALLEES);
+                if ($state->mode === ExploreMode::Sandwich) {
+                    $this->stack[count($this->stack) - 1] = $state->withCallersActive(false);
+                }
                 return;
 
             case Keymap::ACTION_BACK:
@@ -426,54 +642,57 @@ final class ExploreTui
                 return;
 
             case Keymap::ACTION_VIEW_SELF:
-                $this->resetTo(Aggregator::VIEW_SELF);
+                $this->resetTo(ExploreMode::ListSelf);
                 return;
 
             case Keymap::ACTION_VIEW_TOTAL:
-                $this->resetTo(Aggregator::VIEW_TOTAL);
+                $this->resetTo(ExploreMode::ListTotal);
                 return;
 
             case Keymap::ACTION_FILTER_VIEW:
-                $this->openPrompt('view filter (PCRE, empty = clear): ', function (string $value): void {
-                    $state = $this->currentState();
-                    $value = $value === '' ? null : $value;
-                    if ($value !== null && @preg_match('#' . str_replace('#', '\\#', $value) . '#', '') === false) {
-                        $this->status = "invalid view filter: {$value}";
-                        return;
-                    }
-                    $this->stack[count($this->stack) - 1] = $state->withViewFilter($value);
-                    $this->selected = 0;
-                    $this->top_row = 0;
-                    $this->status = $value === null ? 'view filter cleared' : "view filter: {$value}";
-                });
+                $this->openPrompt(
+                    'view filter (PCRE, empty = clear): ',
+                    function (string $value): void {
+                        $state = $this->currentState();
+                        $value = $value === '' ? null : $value;
+                        if ($value !== null && @preg_match('#' . str_replace('#', '\\#', $value) . '#', '') === false) {
+                            $this->status = "invalid view filter: {$value}";
+                            return;
+                        }
+                        $this->stack[count($this->stack) - 1] = $state->withViewFilter($value);
+                        $this->resetScrolls();
+                        $this->status = $value === null ? 'view filter cleared' : "view filter: {$value}";
+                    },
+                );
                 return;
 
             case Keymap::ACTION_FILTER_MATCH:
-                $this->openPrompt('global match (PCRE, empty = clear): ', function (string $value): void {
-                    if ($value === '') {
-                        $this->opts = $this->opts->withMatch(null);
-                        $this->status = 'global match cleared';
-                    } else {
-                        $re = '#' . str_replace('#', '\\#', $value) . '#';
-                        if (@preg_match($re, '') === false) {
-                            $this->status = "invalid match: {$value}";
-                            return;
+                $this->openPrompt(
+                    'global match (PCRE, empty = clear): ',
+                    function (string $value): void {
+                        if ($value === '') {
+                            $this->opts = $this->opts->withMatch(null);
+                            $this->status = 'global match cleared';
+                        } else {
+                            $re = '#' . str_replace('#', '\\#', $value) . '#';
+                            if (@preg_match($re, '') === false) {
+                                $this->status = "invalid match: {$value}";
+                                return;
+                            }
+                            $this->opts = $this->opts->withMatch($re);
+                            $this->status = "global match: {$value}";
                         }
-                        $this->opts = $this->opts->withMatch($re);
-                        $this->status = "global match: {$value}";
-                    }
-                    $this->selected = 0;
-                    $this->top_row = 0;
-                    $this->invalidate();
-                });
+                        $this->resetScrolls();
+                        $this->invalidate();
+                    },
+                );
                 return;
 
             case Keymap::ACTION_NO_LINE:
                 $this->opts = $this->opts->withNoLine(!$this->opts->no_line);
                 $this->refocusForNoLineToggle();
                 $this->invalidate();
-                $this->selected = 0;
-                $this->top_row = 0;
+                $this->resetScrolls();
                 $this->status = 'no-line: ' . ($this->opts->no_line ? 'on' : 'off');
                 return;
         }
@@ -522,34 +741,96 @@ final class ExploreTui
         $this->prompt_commit = null;
     }
 
-    private function focusSelected(string $next_view): void
+    private function moveSelection(int $delta): void
     {
-        $rows = $this->visibleRows();
-        if (!isset($rows[$this->selected])) {
+        $state = $this->currentState();
+        if ($state->mode !== ExploreMode::Sandwich) {
+            $this->list_selected += $delta;
             return;
         }
-        [, $key_id, $label] = $rows[$this->selected];
+        if ($state->callers_active) {
+            $this->callers_selected += $delta;
+        } else {
+            $this->callees_selected += $delta;
+        }
+    }
+
+    private function setSelection(int $value): void
+    {
+        $state = $this->currentState();
+        if ($state->mode !== ExploreMode::Sandwich) {
+            $this->list_selected = $value === PHP_INT_MAX
+                ? max(0, count($this->ensureList()['rows']) - 1)
+                : $value;
+            $this->list_top_row = 0;
+            return;
+        }
+        if ($state->callers_active) {
+            $this->callers_selected = $value === PHP_INT_MAX
+                ? max(0, count($this->ensureCallers()['rows']) - 1)
+                : $value;
+            $this->callers_top_row = 0;
+        } else {
+            $this->callees_selected = $value === PHP_INT_MAX
+                ? max(0, count($this->ensureCallees()['rows']) - 1)
+                : $value;
+            $this->callees_top_row = 0;
+        }
+    }
+
+    /**
+     * Promote the active pane's selected row to a new focus and push a
+     * new sandwich state on the stack. The same pane stays active so
+     * the user can keep climbing in one direction.
+     */
+    private function focusSelected(): void
+    {
+        $state = $this->currentState();
+
+        if ($state->mode !== ExploreMode::Sandwich) {
+            $rows = $this->applyViewFilter($this->ensureList()['rows'], $state->view_filter);
+            if (!isset($rows[$this->list_selected])) {
+                return;
+            }
+            [, $key_id, $label] = $rows[$this->list_selected];
+            if ($key_id < 0) {
+                $this->status = 'cannot focus synthetic <root>/<leaf>';
+                return;
+            }
+            $this->stack[] = new ViewState(
+                mode: ExploreMode::Sandwich,
+                focus_id: $key_id,
+                focus_label: $label,
+                callers_active: true,
+            );
+            $this->resetScrolls();
+            $this->invalidate();
+            return;
+        }
+
+        // Sandwich → Sandwich: promote the active pane's selected row.
+        if ($state->callers_active) {
+            $rows = $this->applyViewFilter($this->ensureCallers()['rows'], $state->view_filter);
+            $idx = $this->callers_selected;
+        } else {
+            $rows = $this->applyViewFilter($this->ensureCallees()['rows'], $state->view_filter);
+            $idx = $this->callees_selected;
+        }
+        if (!isset($rows[$idx])) {
+            return;
+        }
+        [, $key_id, $label] = $rows[$idx];
         if ($key_id < 0) {
             $this->status = 'cannot focus synthetic <root>/<leaf>';
             return;
         }
-        $this->stack[] = new ViewState(view: $next_view, focus_id: $key_id, focus_label: $label);
-        $this->selected = 0;
-        $this->top_row = 0;
-        $this->invalidate();
-    }
-
-    private function switchView(string $view): void
-    {
-        $state = $this->currentState();
-        if ($state->focus_id === null) {
-            // Need a focus to look at callers/callees — focus the selected row first.
-            $this->focusSelected($view);
-            return;
-        }
-        $this->stack[count($this->stack) - 1] = $state->withView($view);
-        $this->selected = 0;
-        $this->top_row = 0;
+        $this->stack[] = new ViewState(
+            mode: ExploreMode::Sandwich,
+            focus_id: $key_id,
+            focus_label: $label,
+            callers_active: $state->callers_active,
+        );
+        $this->resetScrolls();
         $this->invalidate();
     }
 
@@ -560,17 +841,25 @@ final class ExploreTui
             return;
         }
         array_pop($this->stack);
-        $this->selected = 0;
-        $this->top_row = 0;
+        $this->resetScrolls();
         $this->invalidate();
     }
 
-    private function resetTo(string $view): void
+    private function resetTo(ExploreMode $mode): void
     {
-        $this->stack = [new ViewState(view: $view, focus_id: null, focus_label: null)];
-        $this->selected = 0;
-        $this->top_row = 0;
+        $this->stack = [new ViewState(mode: $mode)];
+        $this->resetScrolls();
         $this->invalidate();
+    }
+
+    private function resetScrolls(): void
+    {
+        $this->list_selected = 0;
+        $this->list_top_row = 0;
+        $this->callers_selected = 0;
+        $this->callers_top_row = 0;
+        $this->callees_selected = 0;
+        $this->callees_top_row = 0;
     }
 
     /**
@@ -584,7 +873,6 @@ final class ExploreTui
             return;
         }
         if ($this->opts->no_line) {
-            // line → no-line: map focus_id via no_line_map.
             $new_id = $this->model->no_line_map[$state->focus_id] ?? null;
             if ($new_id === null) {
                 return;
@@ -615,10 +903,11 @@ final class ExploreTui
             $new_label = $this->model->frame_keys[$best_id] ?? $state->focus_label;
         }
         $this->stack[count($this->stack) - 1] = new ViewState(
-            view: $state->view,
+            mode: $state->mode,
             focus_id: $new_id,
             focus_label: $new_label,
             view_filter: $state->view_filter,
+            callers_active: $state->callers_active,
         );
     }
 
