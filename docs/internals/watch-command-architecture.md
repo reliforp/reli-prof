@@ -223,8 +223,9 @@ CPU% is still averaged over 0.5s, preventing noisy exit transitions.
 
 **Daemon mode:** Each worker manages its own TraceSession locally.
 Workers detect trigger state transitions via TriggerStateTracker and
-start/stop traces autonomously. `WatchTraceNotifyMessage` notifies the
-controller for logging purposes; no trace data flows through the channel.
+start/stop traces autonomously. Two messages flow on EXIT:
+`WatchTraceNotifyMessage` (trace lifecycle) and `WatchTriggerExitMessage`
+(on-exit one-shot actions). No trace sample data flows through the channel.
 
 ## Action System
 
@@ -275,21 +276,48 @@ sendAttach(WatchTargetDescriptor) → receiveAttach()
                                       │  readVariables() (if needed)
                                       │  TraceSession.recordSample() (if tracing)
                                       │  trigger.evaluate() + state tracking
-                                      │  on ENTER: TraceSession.start()
+                                      │
+                                      │  on ENTER:
+                                      │    TraceSession.start() (if continuous trace)
 receiveMessage()               ←       sendTraceNotify(STARTED)
-                                      │  on EXIT: TraceSession.stop()
+                                      │
+                                      │  on EXIT:
+                                      │    TraceSession.stop() (if tracing)
 receiveMessage()               ←       sendTraceNotify(STOPPED)
-                                      │  cooldown check
-                                      │  if fired:
+receiveMessage()               ←       sendTriggerExit(WatchTriggerExitMessage)
+  → on-exit actions (log, exec)       │
+                                      │  while ACTIVE (cooldown check):
 receiveMessage()               ←       sendTrigger(WatchTriggerMessage)
+  → on-enter actions (1st time)       │
+  → regular actions                   │
                                       │  dynamic sleep (trace/poll interval)
                                       ↓ on process exit:
                                       │  TraceSession.stop() if active
 receiveMessage()               ←       sendDetach(WatchDetachMessage)
+  → on-exit for remaining active      │
 ```
+
+### Message Types (Worker → Controller)
+
+| Message | When | Controller action |
+|---------|------|-------------------|
+| `WatchTriggerMessage` | Trigger fires (condition true + cooldown) | Execute on-enter (1st), regular actions |
+| `WatchTriggerExitMessage` | Trigger condition clears | Execute on-exit actions (log, exec) |
+| `WatchTraceNotifyMessage` | Trace session starts or stops | Log notification |
+| `WatchDetachMessage` | Process exits or read failures | Clean up, execute on-exit for any remaining active triggers |
 
 Worker handles per-process cooldown/backoff internally.
 Controller handles global max-triggers counter.
+
+### Responsibility Split
+
+| Concern | Single-process | Daemon |
+|---------|---------------|--------|
+| Trigger evaluation | WatchCommand poll loop | Worker poll loop |
+| State tracking (enter/exit) | TriggerStateTracker in command | TriggerStateTracker in worker |
+| Continuous trace (stateful) | TraceSession in command | TraceSession in worker (local .rbt) |
+| One-shot on-enter/on-exit (log, exec) | Direct execution | Worker sends message → controller executes |
+| Regular actions with cooldown | Direct execution | Worker sends trigger → controller executes |
 
 ### WatchTargetDescriptor vs TargetProcessDescriptor
 
