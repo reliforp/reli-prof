@@ -170,24 +170,8 @@ final class BinaryTraceWriter
     }
 
     /**
-     * Write a SAMPLE_ANNOTATION event for the most recent sample.
-     * Must be called immediately after a SAMPLE/COMPACT_SAMPLE/PID_SAMPLE.
-     * Not needed when using writeAnnotatedTrace() which handles annotations
-     * as part of the completed sample for RLE.
-     *
-     * @param array<string, string> $annotations Key-value pairs to annotate.
-     */
-    public function writeSampleAnnotation(array $annotations): void
-    {
-        if ($annotations === []) {
-            return;
-        }
-        $this->flushPendingRun();
-        $this->emitAnnotation($annotations);
-    }
-
-    /**
-     * Emit a SAMPLE_ANNOTATION event (no RLE flush).
+     * Emit a SAMPLE_ANNOTATION event directly.
+     * Internal use only — callers should use writeAnnotatedTrace().
      *
      * @param array<string, string> $annotations
      */

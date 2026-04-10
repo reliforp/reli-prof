@@ -30,8 +30,7 @@ final class SampleAnnotationTest extends BaseTestCase
         $trace = new ParsedCallTrace(
             new ParsedCallFrame('PDO::execute', '/app/db.php', 42),
         );
-        $writer->writeTrace($trace);
-        $writer->writeSampleAnnotation([
+        $writer->writeAnnotatedTrace($trace, annotations: [
             'query' => 'SELECT * FROM users WHERE id = ?',
             'db.system' => 'mysql',
         ]);
@@ -92,15 +91,13 @@ final class SampleAnnotationTest extends BaseTestCase
         );
 
         // Sample 1: annotated
-        $writer->writeTrace($traceA, 0);
-        $writer->writeSampleAnnotation(['query' => 'SELECT 1']);
+        $writer->writeAnnotatedTrace($traceA, 0, ['query' => 'SELECT 1']);
 
         // Sample 2: not annotated
-        $writer->writeTrace($traceB, 10000);
+        $writer->writeAnnotatedTrace($traceB, 10000);
 
         // Sample 3: annotated
-        $writer->writeTrace($traceA, 10000);
-        $writer->writeSampleAnnotation(['query' => 'INSERT INTO logs']);
+        $writer->writeAnnotatedTrace($traceA, 10000, ['query' => 'INSERT INTO logs']);
 
         $writer->writeSegmentEnd();
 
@@ -129,10 +126,8 @@ final class SampleAnnotationTest extends BaseTestCase
         );
 
         // Same key "query" used twice — should be interned
-        $writer->writeTrace($trace);
-        $writer->writeSampleAnnotation(['query' => 'SELECT 1']);
-        $writer->writeTrace($trace);
-        $writer->writeSampleAnnotation(['query' => 'SELECT 2']);
+        $writer->writeAnnotatedTrace($trace, annotations: ['query' => 'SELECT 1']);
+        $writer->writeAnnotatedTrace($trace, annotations: ['query' => 'SELECT 2']);
         $writer->writeSegmentEnd();
 
         rewind($stream);
@@ -158,9 +153,7 @@ final class SampleAnnotationTest extends BaseTestCase
         $trace = new ParsedCallTrace(
             new ParsedCallFrame('PDO::execute', '/db.php', 10),
         );
-        $writer->writeTrace($trace);
-        $writer->flushPendingRun();
-        $writer->writeSampleAnnotation(['query' => 'SELECT 1']);
+        $writer->writeAnnotatedTrace($trace, annotations: ['query' => 'SELECT 1']);
         $writer->writeSegmentEnd();
 
         rewind($stream);
@@ -184,8 +177,7 @@ final class SampleAnnotationTest extends BaseTestCase
         $trace = new ParsedCallTrace(
             new ParsedCallFrame('func', '/file.php', 1),
         );
-        $writer->writeTrace($trace);
-        $writer->writeSampleAnnotation([]); // empty — should be no-op
+        $writer->writeAnnotatedTrace($trace, annotations: []); // empty — no annotation
         $writer->writeSegmentEnd();
 
         rewind($stream);
@@ -383,8 +375,7 @@ final class SampleAnnotationTest extends BaseTestCase
         $trace = new ParsedCallTrace(
             new ParsedCallFrame('PDO::execute', '/db.php', 10),
         );
-        $writer->writeTrace($trace);
-        $writer->writeSampleAnnotation(['query' => 'SELECT 1']);
+        $writer->writeAnnotatedTrace($trace, annotations: ['query' => 'SELECT 1']);
         $writer->writeSegmentEnd();
 
         // Append garbage
