@@ -75,16 +75,29 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private array $classDict = [];
     /** @var array<string, int> class_name → class_id */
     private array $classDictReverse = [];
-    private \FFI\CData $nodeClassIds; // int16_t[nodeCount], -1 = no class
+    // int32 (not int16) per node: dumps with anonymous classes / closures
+    // can easily produce 32k+ unique class names, which silently wrapped
+    // around when this was int16 and pointed every overflowed node at the
+    // wrong dict slot.
+    private \FFI\CData $nodeClassIds; // int32_t[nodeCount], -1 = no class
 
-    // Tree-edge link_name index: an int16 per child CSR slot (-1 = no
-    // tree edge) plus a small interned dict. Built during loadEdgesFfi
-    // so report passes get O(1) link_name lookups without per-row SQL.
+    // Tree-edge link_name index: an int32 per child CSR slot (-1 = no
+    // tree edge) plus an interned dict. Built during loadEdgesFfi so
+    // report passes get O(1) link_name lookups without per-row SQL.
+    //
+    // int16 was the original choice but it overflowed on real captures:
+    // array elements show up as link_name = the integer key string ("0",
+    // "1", ...), so any dump containing arrays with thousands of distinct
+    // numeric keys blew through 32767 entries and treeLinkIds wrapped to
+    // negative — collapsing some nodes to "null link_name" and pointing
+    // others at the wrong dict slot. Result: BlameAllocationPass and the
+    // walker passes (DrillDownPass etc.) emitted random numeric strings
+    // instead of real names. int32 makes the wrap unreachable in practice.
     /** @var list<string> link_id → link_name */
     private array $linkDict = [];
     /** @var array<string, int> link_name → link_id */
     private array $linkDictReverse = [];
-    private ?\FFI\CData $treeLinkIds = null;     // int16_t[nodeCount]
+    private ?\FFI\CData $treeLinkIds = null;     // int32_t[nodeCount], -1 = no tree edge
     private ?\FFI\CData $treeParentIdx = null;   // int32_t[nodeCount], -1 = no tree parent
 
     // Per-node context type ("PhpReferenceContext", etc.). Same shape
@@ -488,7 +501,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $this->ffiNodeSizes = FFIHelper::new("int64_t[{$this->nodeCount}]");
         $this->ffiSubtreeSizes = FFIHelper::new("int64_t[{$this->nodeCount}]");
         $this->ffiNodeToScc = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $this->nodeClassIds = FFIHelper::new("int16_t[{$this->nodeCount}]");
+        $this->nodeClassIds = FFIHelper::new("int32_t[{$this->nodeCount}]");
 
         // Initialize
         for ($i = 0; $i < $this->nodeCount; $i++) {
@@ -610,10 +623,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $stageChildIdx = FFIHelper::new("int32_t[{$edgeCount}]");
         $stageFlags = FFIHelper::new("int8_t[{$edgeCount}]");
 
-        // Tree-edge link_name index: int16 per child slot, -1 = no
+        // Tree-edge link_name index: int32 per child slot, -1 = no
         // tree edge. Initialised below to -1 in one pass over the
-        // CSR slot space, then filled as we walk tree edges.
-        $this->treeLinkIds = FFIHelper::new("int16_t[{$nc}]");
+        // CSR slot space, then filled as we walk tree edges. Must
+        // stay int32: see the field-declaration comment for the int16
+        // wrap-around bug that motivated the widening.
+        $this->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
         $this->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
         for ($k = 0; $k < $nc; $k++) {
             $this->treeLinkIds[$k] = -1;
