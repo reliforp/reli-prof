@@ -87,6 +87,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private ?\FFI\CData $treeLinkIds = null;     // int16_t[nodeCount]
     private ?\FFI\CData $treeParentIdx = null;   // int32_t[nodeCount], -1 = no tree parent
 
+    // Per-node context type ("PhpReferenceContext", etc.). Same shape
+    // as the class dictionary above — int16 per node plus small dict.
+    /** @var list<string> type_id → type name */
+    private array $nodeTypeDict = [];
+    /** @var array<string, int> type name → type_id */
+    private array $nodeTypeDictReverse = [];
+    private ?\FFI\CData $nodeTypeIds = null;     // int16_t[nodeCount], -1 = unknown
+
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
 
@@ -96,6 +104,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     {
         $substrate = new self();
         $substrate->loadNodeSizesFfi($db, $run_id);
+        $substrate->loadNodeTypesFfi($db, $run_id);
         $substrate->loadEdgesFfi($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
         $substrate->buildSccAdjacency();
@@ -201,6 +210,23 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             return null;
         }
         return $this->classDict[$classId] ?? null;
+    }
+
+    #[\Override]
+    public function getNodeType(int $nodeId): ?string
+    {
+        if ($this->nodeTypeIds === null) {
+            return null;
+        }
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return null;
+        }
+        $typeId = (int)$this->nodeTypeIds[$idx];
+        if ($typeId < 0) {
+            return null;
+        }
+        return $this->nodeTypeDict[$typeId] ?? null;
     }
 
     #[\Override]
@@ -489,6 +515,39 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
         }
         unset($rows);
+    }
+
+    /**
+     * Per-node context type index. One pass over context_nodes
+     * fills an int16-per-CSR-slot dictionary; the path-walker passes
+     * (DrillDownPass / ChokePointPass / TopStringsPass / TopArraysPass /
+     * CycleClusterPass::findEntryPath) read it via getNodeType
+     * instead of issuing per-node prepared statements.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    private function loadNodeTypesFfi(\PDO $db, int $run_id): void
+    {
+        $this->nodeTypeIds = FFIHelper::new("int16_t[{$this->nodeCount}]");
+        for ($i = 0; $i < $this->nodeCount; $i++) {
+            $this->nodeTypeIds[$i] = -1;
+        }
+
+        $stmt = $db->query(
+            "SELECT node_id, type FROM context_nodes WHERE run_id = {$run_id}"
+        );
+        while (($row = $stmt->fetch(\PDO::FETCH_NUM)) !== false) {
+            $idx = $this->nodeIdToIndex((int)$row[0]);
+            if ($idx < 0) {
+                continue;
+            }
+            $type = (string)$row[1];
+            if (!isset($this->nodeTypeDictReverse[$type])) {
+                $this->nodeTypeDictReverse[$type] = count($this->nodeTypeDict);
+                $this->nodeTypeDict[] = $type;
+            }
+            $this->nodeTypeIds[$idx] = $this->nodeTypeDictReverse[$type];
+        }
     }
 
     /**

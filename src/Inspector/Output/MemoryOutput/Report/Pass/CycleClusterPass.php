@@ -73,17 +73,6 @@ final class CycleClusterPass implements PassInterface
         $top_groups = array_slice($groups_sorted, 0, 10);
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
-        // Prepared statements for on-demand path lookup (max ~20 rows per path)
-        $parent_stmt = $this->db->prepare(
-            "SELECT parent_node_id, link_name FROM context_edges"
-            . " WHERE child_node_id = ? AND is_tree = 1"
-            . " AND run_id = {$this->run_id} LIMIT 1"
-        );
-        $type_stmt = $this->db->prepare(
-            "SELECT type FROM context_nodes"
-            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
-        );
-
         $findings = [];
         foreach ($top_groups as $g) {
             $group = $g['group'];
@@ -102,12 +91,7 @@ final class CycleClusterPass implements PassInterface
             $retained = $this->computeRetained($example['nodes']);
 
             // Find entry point path
-            $entry_path = $this->findEntryPath(
-                $example['nodes'],
-                $parent_stmt,
-                $type_stmt,
-                $labeler,
-            );
+            $entry_path = $this->findEntryPath($example['nodes'], $labeler);
 
             // Micro-cycles (2 nodes)
             if ($example['node_count'] === 2) {
@@ -541,20 +525,17 @@ final class CycleClusterPass implements PassInterface
 
     /**
      * Find entry point path to an SCC member.
-     * @param list<int> $nodes
-     * @param array<int, array{0: int, 1: string}> $parent_map
-     * @param array<int, string> $node_type_map
-     */
-    /**
-     * @param list<int> $nodes
+     *
+     * Walks tree parents in memory via the substrate's index. The
+     * previous version did one prepared-statement execute per depth
+     * level for both the parent edge and the node type — measurable
+     * on big dumps.
+     *
+     * @param  list<int> $nodes
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function findEntryPath(
-        array $nodes,
-        \PDOStatement $parent_stmt,
-        \PDOStatement $type_stmt,
-        NodeLabeler $labeler,
-    ): string {
+    private function findEntryPath(array $nodes, NodeLabeler $labeler): string
+    {
         $scc_set = array_flip($nodes);
 
         $entry_node = null;
@@ -571,29 +552,24 @@ final class CycleClusterPass implements PassInterface
             return '';
         }
 
-        // Walk up from entry_node to root using on-demand queries
         $parts = [];
         $types = [];
         $cur = $entry_node;
         for ($i = 0; $i < 20; $i++) {
-            $parent_stmt->execute([$cur]);
-            $row = $parent_stmt->fetch(\PDO::FETCH_NUM);
-            if (!$row) {
+            $link = $this->substrate->getTreeLinkName($cur);
+            if ($link === null) {
                 break;
             }
-            if ($row[0] === null) {
-                array_unshift($parts, (string)$row[1]);
+            $parent = $this->substrate->getTreeParentNodeId($cur);
+            if ($parent === null) {
+                // Reached the synthetic root — record the root's
+                // link_name and stop.
+                array_unshift($parts, $link);
                 array_unshift($types, '');
                 break;
             }
-            $parent = (int)$row[0];
-            $link = (string)$row[1];
-            $resolved = $labeler->resolvePathLabel($link, $cur);
-            array_unshift($parts, $resolved);
-
-            $type_stmt->execute([$cur]);
-            $type_row = $type_stmt->fetchColumn();
-            array_unshift($types, $type_row !== false ? (string)$type_row : '');
+            array_unshift($parts, $labeler->resolvePathLabel($link, $cur));
+            array_unshift($types, $this->substrate->getNodeType($cur) ?? '');
             $cur = $parent;
         }
 

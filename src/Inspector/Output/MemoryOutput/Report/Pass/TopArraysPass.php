@@ -282,16 +282,49 @@ final class TopArraysPass implements PassInterface
     }
 
     /**
-     * Walk from node to root via tree parent edges.
-     *
-     * Substrate is *not* required: this only uses prepared SQL statements.
+     * Walk from node to root via tree parent edges. Reads the
+     * substrate's in-memory tree-link / parent / type indexes when
+     * available, otherwise falls back to prepared statements.
      *
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function buildFullPath(
-        int $node_id,
-        NodeLabeler $labeler,
-    ): string {
+    private function buildFullPath(int $node_id, NodeLabeler $labeler): string
+    {
+        if ($this->substrate !== null && $this->substrate->hasTreeLinkIndex()) {
+            return $this->buildFullPathFromSubstrate($node_id, $labeler);
+        }
+        return $this->buildFullPathFromSql($node_id, $labeler);
+    }
+
+    private function buildFullPathFromSubstrate(int $node_id, NodeLabeler $labeler): string
+    {
+        assert($this->substrate !== null);
+        $parts = [];
+        $types = [];
+        $cur = $node_id;
+        for ($i = 0; $i < 20; $i++) {
+            $link = $this->substrate->getTreeLinkName($cur);
+            if ($link === null) {
+                break;
+            }
+            $parent = $this->substrate->getTreeParentNodeId($cur);
+            if ($parent === null) {
+                array_unshift($parts, $link);
+                array_unshift($types, '');
+                break;
+            }
+            array_unshift($parts, $labeler->resolvePathLabel($link, $cur));
+            array_unshift($types, $this->substrate->getNodeType($cur) ?? '');
+            $cur = $parent;
+        }
+        return PathFormatter::toPhpSyntax($parts, $types);
+    }
+
+    /**
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function buildFullPathFromSql(int $node_id, NodeLabeler $labeler): string
+    {
         if ($this->parentStmt === null) {
             $this->parentStmt = $this->db->prepare(
                 "SELECT parent_node_id, link_name FROM context_edges"

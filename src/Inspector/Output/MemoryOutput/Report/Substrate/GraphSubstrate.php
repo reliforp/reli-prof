@@ -59,6 +59,15 @@ class GraphSubstrate
     /** @var array<int, string> node_id => class name */
     public array $node_classes = [];
 
+    /**
+     * Per-node context type ("PhpReferenceContext", "ObjectPropertiesContext",
+     * etc.). Populated alongside loadNodeSizes so the path-walking passes
+     * can answer "what is this node?" without per-row prepared statements.
+     *
+     * @var array<int, string>
+     */
+    public array $node_types = [];
+
     /** @var array<int, int> node_id => scc_id */
     public array $node_to_scc = [];
 
@@ -95,6 +104,7 @@ class GraphSubstrate
     {
         $substrate = new static();
         $substrate->loadNodeSizes($db, $run_id);
+        $substrate->loadNodeTypes($db, $run_id);
         $substrate->loadEdges($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
         $substrate->buildSccAdjacency();
@@ -183,6 +193,16 @@ class GraphSubstrate
     public function getNodeClass(int $nodeId): ?string
     {
         return $this->node_classes[$nodeId] ?? null;
+    }
+
+    /**
+     * Context node type for the given node id, e.g. "PhpReferenceContext"
+     * or "ObjectPropertiesContext". Returns null when the node has no
+     * recorded type or isn't in the loaded run.
+     */
+    public function getNodeType(int $nodeId): ?string
+    {
+        return $this->node_types[$nodeId] ?? null;
     }
 
     /** @return list<int> */
@@ -387,6 +407,24 @@ class GraphSubstrate
             if ($r[2] !== null) {
                 $this->node_classes[$node_id] = $r[2];
             }
+        }
+    }
+
+    /**
+     * Load context node types ("PhpReferenceContext", etc.) into
+     * {@see self::$node_types}. Called from loadFromDb after sizes are
+     * loaded so the path-walker passes can answer type lookups
+     * directly from memory.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    protected function loadNodeTypes(\PDO $db, int $run_id): void
+    {
+        $stmt = $db->query(
+            "SELECT node_id, type FROM context_nodes WHERE run_id = {$run_id}"
+        );
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $this->node_types[(int)$r[0]] = (string)$r[1];
         }
     }
 

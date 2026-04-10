@@ -105,16 +105,49 @@ final class TopStringsPass implements PassInterface
     }
 
     /**
-     * Walk from node to root via tree parent edges, resolve with NodeLabeler + PathFormatter.
-     *
-     * Substrate is *not* required: this only uses prepared SQL statements
-     * against context_edges and context_nodes. The substrate parameter on
-     * the constructor only affects whether the upstream query needs to
-     * pre-compute join columns (it no longer does).
+     * Walk from node to root via tree parent edges, resolved entirely
+     * from the substrate's in-memory tree-link / parent / type indexes.
+     * Falls back to the old prepared-statement walk only when the
+     * substrate isn't available (Phase 2 SQL paths still use it).
      *
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function buildFullPath(int $node_id, NodeLabeler $labeler): string
+    {
+        if ($this->substrate !== null && $this->substrate->hasTreeLinkIndex()) {
+            return $this->buildFullPathFromSubstrate($node_id, $labeler);
+        }
+        return $this->buildFullPathFromSql($node_id, $labeler);
+    }
+
+    private function buildFullPathFromSubstrate(int $node_id, NodeLabeler $labeler): string
+    {
+        assert($this->substrate !== null);
+        $parts = [];
+        $types = [];
+        $cur = $node_id;
+        for ($i = 0; $i < 20; $i++) {
+            $link = $this->substrate->getTreeLinkName($cur);
+            if ($link === null) {
+                break;
+            }
+            $parent = $this->substrate->getTreeParentNodeId($cur);
+            if ($parent === null) {
+                array_unshift($parts, $link);
+                array_unshift($types, '');
+                break;
+            }
+            array_unshift($parts, $labeler->resolvePathLabel($link, $cur));
+            array_unshift($types, $this->substrate->getNodeType($cur) ?? '');
+            $cur = $parent;
+        }
+        return PathFormatter::toPhpSyntax($parts, $types);
+    }
+
+    /**
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function buildFullPathFromSql(int $node_id, NodeLabeler $labeler): string
     {
         if ($this->parentStmt === null) {
             $this->parentStmt = $this->db->prepare(
