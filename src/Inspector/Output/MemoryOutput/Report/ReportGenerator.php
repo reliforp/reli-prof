@@ -87,10 +87,13 @@ final class ReportGenerator
         $run_phase3 = $full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000);
         if ($full_analysis || $node_count < 500000) {
             $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
-            // PropertyScaling, TopArrays, TopStrings: deferred to Phase 3
-            // if graph available (full path + retained size)
+            // DynamicProperties / PropertyScaling / TopArrays / TopStrings /
+            // NonTreeEdge / StructuralDedup are all "deferred to Phase 3 if
+            // graph is available" — when the substrate isn't built we run
+            // their SQL fallbacks here, otherwise the Phase 3 block below
+            // takes over and feeds them the substrate.
             if (!$run_phase3) {
+                $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(
                     new PropertyScalingPass($db, $run_id, $class_objects)
                 ));
@@ -133,6 +136,9 @@ final class ReportGenerator
                 $link_resolver->loadAll();
             }
 
+            $findings = array_merge($findings, $this->runPass(
+                new DynamicPropertiesPass($db, $run_id, $substrate)
+            ));
             $findings = array_merge($findings, $this->runPass(
                 new CycleClusterPass($substrate, $db, $run_id, $link_resolver)
             ));
