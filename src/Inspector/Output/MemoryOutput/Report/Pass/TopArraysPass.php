@@ -150,33 +150,16 @@ final class TopArraysPass implements PassInterface
     {
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
+        // Find the top 10 largest arrays first (no joins). The previous
+        // implementation joined 3 hops of context_edges before applying
+        // ORDER BY/LIMIT, computing the join for every row in v_arrays.
+        // On large captures that single query dominated the report runtime.
         $stmt = $this->db->query("
             SELECT
                 va.node_id,
                 va.total_size,
-                va.element_count,
-                e1.link_name as link1,
-                e1.parent_node_id as parent1_id,
-                cnl_p1.class_name as parent1_class,
-                e2.link_name as link2,
-                e2.parent_node_id as parent2_id,
-                e3.link_name as link3
+                va.element_count
             FROM v_arrays va
-            LEFT JOIN context_edges e1
-                ON e1.child_node_id = va.node_id
-                AND e1.is_tree = 1
-                AND e1.run_id = {$this->run_id}
-            LEFT JOIN context_node_locations cnl_p1
-                ON cnl_p1.node_id = e1.parent_node_id
-                AND cnl_p1.run_id = {$this->run_id}
-            LEFT JOIN context_edges e2
-                ON e2.child_node_id = e1.parent_node_id
-                AND e2.is_tree = 1
-                AND e2.run_id = {$this->run_id}
-            LEFT JOIN context_edges e3
-                ON e3.child_node_id = e2.parent_node_id
-                AND e3.is_tree = 1
-                AND e3.run_id = {$this->run_id}
             WHERE va.run_id = {$this->run_id}
             ORDER BY va.total_size DESC
             LIMIT 10
@@ -190,7 +173,7 @@ final class TopArraysPass implements PassInterface
             }
 
             $elements = (int)($row['element_count'] ?? 0);
-            $path = $this->buildOwnerPath($row, $labeler);
+            $path = $this->buildFullPath((int)$row['node_id'], $labeler);
 
             $findings[] = new Finding(
                 kind: 'large_array',
@@ -305,14 +288,15 @@ final class TopArraysPass implements PassInterface
 
     /**
      * Walk from node to root via tree parent edges.
+     *
+     * Substrate is *not* required: this only uses prepared SQL statements.
+     *
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function buildFullPath(
         int $node_id,
         NodeLabeler $labeler,
     ): string {
-        assert($this->substrate !== null);
-
         if ($this->parentStmt === null) {
             $this->parentStmt = $this->db->prepare(
                 "SELECT parent_node_id, link_name FROM context_edges"
@@ -352,55 +336,5 @@ final class TopArraysPass implements PassInterface
         }
 
         return PathFormatter::toPhpSyntax($parts, $types);
-    }
-
-    private const STRUCTURAL_LINKS = [
-        'object_properties',
-        'array_elements',
-        'local_variables',
-        'symbol_table',
-        'dynamic_properties',
-        'value',
-        'call_frames',
-    ];
-
-    /**
-     * @param array<string, mixed> $row
-     * @psalm-suppress MixedArgument, MixedAssignment, RiskyTruthyFalsyComparison
-     * @psalm-suppress InvalidArgument, MixedArgumentTypeCoercion
-     */
-    private function buildOwnerPath(
-        array $row,
-        NodeLabeler $labeler,
-    ): string {
-        $raw_parts = [];
-
-        if (($row['link3'] ?? null) !== null) {
-            $raw_parts[] = (string)$row['link3'];
-        }
-
-        if (($row['link2'] ?? null) !== null) {
-            $parent2_id = (int)($row['parent2_id'] ?? 0);
-            $raw_parts[] = $labeler->resolvePathLabel(
-                (string)$row['link2'],
-                $parent2_id
-            );
-        }
-
-        $parent_class = $row['parent1_class'] ?? null;
-        if ($parent_class) {
-            $raw_parts[] = $parent_class;
-        }
-
-        if (($row['link1'] ?? null) !== null) {
-            $raw_parts[] = (string)$row['link1'];
-        }
-
-        $filtered = array_values(array_filter(
-            $raw_parts,
-            fn(string $p) => !in_array($p, self::STRUCTURAL_LINKS, true)
-        ));
-
-        return implode('->', $filtered);
     }
 }

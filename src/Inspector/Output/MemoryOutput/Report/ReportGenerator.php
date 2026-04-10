@@ -256,6 +256,12 @@ final class ReportGenerator
                 'CREATE INDEX IF NOT EXISTS idx_context_edges_run_tree_strength_link'
                 . ' ON context_edges(run_id, is_tree, strength, link_name)'
             );
+            // Required by TopStringsPass top-N scan to avoid sorting tens of
+            // millions of ZendStringMemoryLocation rows on huge dumps.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_type_size'
+                . ' ON context_node_locations(run_id, location_type, size)'
+            );
         } catch (\PDOException) {
             // Read-only DB, missing privileges, etc. — best effort.
         }
