@@ -1165,13 +1165,6 @@ final class ExploreTui
                 $idx = $this->callees_selected;
                 break;
             case ActivePane::Overview:
-                // The overview is always in no-line space; force no-line
-                // on so the focus_id we save matches the same id space
-                // the rest of the explorer reads.
-                if (!$this->opts->no_line) {
-                    $this->opts = $this->opts->withNoLine(true);
-                    $this->invalidate();
-                }
                 $rows = $this->ensureOverview()['rows'];
                 $idx = $this->overview_selected;
                 break;
@@ -1184,6 +1177,17 @@ final class ExploreTui
             $this->status = 'cannot focus synthetic <root>/<leaf>';
             return;
         }
+        // The overview is in no-line space. If the user is currently in
+        // line-aware mode, translate the no-line id we just selected into
+        // its most-frequent line-aware variant before saving — that way
+        // the focus_id ends up in the same id space the rest of the
+        // explorer reads, *without* flipping the user's no-line setting.
+        if ($state->active_pane === ActivePane::Overview && !$this->opts->no_line) {
+            $resolved = $this->resolveNoLineToLineFocus($key_id);
+            if ($resolved !== null) {
+                [$key_id, $label] = $resolved;
+            }
+        }
         $this->stack[] = new ViewState(
             mode: ExploreMode::Sandwich,
             focus_id: $key_id,
@@ -1192,6 +1196,45 @@ final class ExploreTui
         );
         $this->resetScrolls();
         $this->invalidate();
+    }
+
+    /**
+     * Find the most-frequent line-aware frame whose no-line projection
+     * matches `$no_line_id`. Returns `[line_aware_id, line_aware_label]`
+     * or null if nothing maps. Used to translate an overview pick into a
+     * line-aware focus when the user has no-line off.
+     *
+     * @return array{int, string}|null
+     */
+    private function resolveNoLineToLineFocus(int $no_line_id): ?array
+    {
+        $counts = [];
+        foreach ($this->model->samples as $stack) {
+            foreach ($stack as $fid) {
+                if (($this->model->no_line_map[$fid] ?? -1) === $no_line_id) {
+                    $counts[$fid] = ($counts[$fid] ?? 0) + 1;
+                }
+            }
+        }
+        if ($counts === []) {
+            return null;
+        }
+        $best_id = null;
+        $best_count = -1;
+        foreach ($counts as $fid => $c) {
+            if ($c > $best_count) {
+                $best_count = $c;
+                $best_id = $fid;
+            }
+        }
+        if ($best_id === null) {
+            return null;
+        }
+        $label = $this->model->frame_keys[$best_id] ?? null;
+        if ($label === null) {
+            return null;
+        }
+        return [$best_id, $label];
     }
 
     private function popFocus(): void
