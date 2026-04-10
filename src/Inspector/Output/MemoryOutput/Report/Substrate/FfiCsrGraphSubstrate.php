@@ -831,11 +831,28 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
      * each neighbor to its canonical CSR index before visiting. This
      * avoids materializing a separate scc_adjacency PHP array.
      *
+     * Tarjan's three per-node tables (index / lowlink / on_stack) live
+     * in FFI int32 / int8 buffers indexed by csrIdx instead of in PHP
+     * associative arrays. PHP hashmap access dominates the inner loop
+     * on big graphs (5M+ nodes), and these tables are accessed
+     * millions of times each — moving them to FFI removes per-visit
+     * zval overhead and gives the inner loop O(1) direct memory
+     * reads. Also localises the strongAll CSR property accesses so
+     * the loop body never goes through `$this->` for the hot reads.
+     *
      * @psalm-suppress UnsupportedReferenceUsage, MixedArgument
      */
     private function computeSccFfi(): void
     {
+        $nc = $this->nodeCount;
         $has_canonical = $this->canonical !== [];
+
+        // Localise hot FFI handles so the inner loop reads them as
+        // local variables. PHP property access has measurable overhead
+        // per call; the SCC pass touches these millions of times.
+        $strongAllOffsets = $this->strongAllOffsets;
+        $strongAllEdges = $this->strongAllEdges;
+        $indexToNodeFfi = $this->indexToNodeFfi;
 
         // If canonical mapping exists, build index-level canonical map:
         // csrIdx → canonical csrIdx. This avoids repeated node_id lookups.
@@ -844,8 +861,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         /** @var array<int, list<int>> $canonical_original_indices canonical csrIdx => original csrIdx list */
         $canonical_original_indices = [];
         if ($has_canonical) {
-            for ($v = 0; $v < $this->nodeCount; $v++) {
-                $nid = (int)$this->indexToNodeFfi[$v];
+            for ($v = 0; $v < $nc; $v++) {
+                $nid = (int)$indexToNodeFfi[$v];
                 if ($nid === -1) {
                     continue;
                 }
@@ -859,27 +876,37 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
 
+        // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
+        // tarjan_on_stack uses 0/1 because int8 is plenty.
+        $tarjan_index = FFIHelper::new("int32_t[{$nc}]");
+        $tarjan_lowlink = FFIHelper::new("int32_t[{$nc}]");
+        $tarjan_on_stack = FFIHelper::new("int8_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $tarjan_index[$i] = -1;
+            $tarjan_lowlink[$i] = -1;
+            $tarjan_on_stack[$i] = 0;
+        }
+
         $index_counter = 0;
         $stack = [];
-        $on_stack = [];
-        $index = [];
-        $lowlink = [];
         $sccs = [];
 
-        for ($v = 0; $v < $this->nodeCount; $v++) {
-            if ((int)$this->indexToNodeFfi[$v] === -1) {
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$indexToNodeFfi[$v] === -1) {
                 continue;
             }
             // Use canonical index if available
             $cv = $canonIdx[$v] ?? $v;
-            if (isset($index[$cv])) {
+            if ((int)$tarjan_index[$cv] !== -1) {
                 continue;
             }
 
             $call_stack = [[$cv, 0]];
-            $index[$cv] = $lowlink[$cv] = $index_counter++;
+            $tarjan_index[$cv] = $index_counter;
+            $tarjan_lowlink[$cv] = $index_counter;
+            $index_counter++;
             $stack[] = $cv;
-            $on_stack[$cv] = true;
+            $tarjan_on_stack[$cv] = 1;
 
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
@@ -889,10 +916,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $neighbors = [];
                         $seen = [];
                         foreach ($canonical_original_indices[$node] ?? [$node] as $oi) {
-                            $start = (int)$this->strongAllOffsets[$oi];
-                            $end = (int)$this->strongAllOffsets[$oi + 1];
+                            $start = (int)$strongAllOffsets[$oi];
+                            $end = (int)$strongAllOffsets[$oi + 1];
                             for ($j = $start; $j < $end; $j++) {
-                                $w = (int)$this->strongAllEdges[$j];
+                                $w = (int)$strongAllEdges[$j];
                                 $cw = $canonIdx[$w] ?? $w;
                                 if ($cw !== $node && !isset($seen[$cw])) {
                                     $seen[$cw] = true;
@@ -906,10 +933,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 } else {
                     $neighbors = [];
                     $seen = [];
-                    $start = (int)$this->strongAllOffsets[$node];
-                    $end = (int)$this->strongAllOffsets[$node + 1];
+                    $start = (int)$strongAllOffsets[$node];
+                    $end = (int)$strongAllOffsets[$node + 1];
                     for ($j = $start; $j < $end; $j++) {
-                        $w = (int)$this->strongAllEdges[$j];
+                        $w = (int)$strongAllEdges[$j];
                         if ($w !== $node && !isset($seen[$w])) {
                             $seen[$w] = true;
                             $neighbors[] = $w;
@@ -921,27 +948,35 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $found_unvisited = false;
                 for ($i = $ci; $i < $count; $i++) {
                     $w = $neighbors[$i];
-                    if (!isset($index[$w])) {
+                    $w_index = (int)$tarjan_index[$w];
+                    if ($w_index === -1) {
                         $call_stack[] = [$node, $i + 1];
-                        $index[$w] = $lowlink[$w] = $index_counter++;
+                        $tarjan_index[$w] = $index_counter;
+                        $tarjan_lowlink[$w] = $index_counter;
+                        $index_counter++;
                         $stack[] = $w;
-                        $on_stack[$w] = true;
+                        $tarjan_on_stack[$w] = 1;
                         $call_stack[] = [$w, 0];
                         $found_unvisited = true;
                         break;
-                    } elseif (isset($on_stack[$w])) {
-                        $lowlink[$node] = min($lowlink[$node], $index[$w]);
+                    } elseif ((int)$tarjan_on_stack[$w] !== 0) {
+                        // Inlined min() — the builtin call adds
+                        // measurable overhead in this hot loop.
+                        $cur = (int)$tarjan_lowlink[$node];
+                        if ($w_index < $cur) {
+                            $tarjan_lowlink[$node] = $w_index;
+                        }
                     }
                 }
 
                 if (!$found_unvisited) {
-                    if ($lowlink[$node] === $index[$node]) {
+                    if ((int)$tarjan_lowlink[$node] === (int)$tarjan_index[$node]) {
                         /** @var list<int> $scc CSR indices (canonical) */
                         $scc = [];
                         do {
                             /** @var int $w */
                             $w = array_pop($stack);
-                            unset($on_stack[$w]);
+                            $tarjan_on_stack[$w] = 0;
                             $scc[] = $w;
                         } while ($w !== $node);
                         if (count($scc) > 1) {
@@ -949,11 +984,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         }
                     }
                     if ($call_stack) {
-                        $parent_frame = &$call_stack[count($call_stack) - 1];
-                        $lowlink[$parent_frame[0]] = min(
-                            $lowlink[$parent_frame[0]],
-                            $lowlink[$node]
-                        );
+                        $parent_node = $call_stack[count($call_stack) - 1][0];
+                        $cur = (int)$tarjan_lowlink[$parent_node];
+                        $cand = (int)$tarjan_lowlink[$node];
+                        if ($cand < $cur) {
+                            $tarjan_lowlink[$parent_node] = $cand;
+                        }
                     }
                 }
             }
