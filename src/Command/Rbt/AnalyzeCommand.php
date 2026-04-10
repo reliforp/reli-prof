@@ -40,8 +40,16 @@ final class AnalyzeCommand extends Command
                 'top',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Number of rows to show per table',
+                'Number of rows to show per table (0 to suppress aggregation tables)',
                 '20',
+            )
+            ->addOption(
+                'last',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Print the last N samples\' call stacks (default 1) — useful for'
+                . ' watching an in-progress trace and seeing the current execution position',
+                false,
             )
             ->addOption(
                 'callers',
@@ -79,7 +87,7 @@ final class AnalyzeCommand extends Command
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $top = max(1, (int) $input->getOption('top'));
+        $top = max(0, (int) $input->getOption('top'));
         /** @var string|null $callers_pattern */
         $callers_pattern = $input->getOption('callers');
         /** @var string|null $callees_pattern */
@@ -89,6 +97,16 @@ final class AnalyzeCommand extends Command
         /** @var string|null $hide_pattern */
         $hide_pattern = $input->getOption('hide');
         $no_line = (bool) $input->getOption('no-line');
+
+        // --last:
+        //   absent  → false (no tail)
+        //   present → null (default count)
+        //   =N      → "N"  (explicit count)
+        $last_raw = $input->getOption('last');
+        $last_count = 0;
+        if ($last_raw !== false) {
+            $last_count = $last_raw === null ? 1 : max(1, (int) $last_raw);
+        }
 
         $callers_re = self::wrapPattern($callers_pattern);
         $callees_re = self::wrapPattern($callees_pattern);
@@ -109,6 +127,15 @@ final class AnalyzeCommand extends Command
 
         $sample_count = 0;
         $matched_samples = 0;
+
+        /**
+         * Ring buffer of the most recent samples for --last. We store the
+         * already-formatted frame keys (with the same hide/no-line rules
+         * applied as the aggregations) so the tail render is just printing.
+         *
+         * @var list<list<string>>
+         */
+        $tail_buffer = [];
 
         foreach ($reader->read($stream) as $sample) {
             $sample_count++;
@@ -183,6 +210,13 @@ final class AnalyzeCommand extends Command
                     }
                 }
             }
+
+            if ($last_count > 0) {
+                $tail_buffer[] = $keys;
+                if (count($tail_buffer) > $last_count) {
+                    array_shift($tail_buffer);
+                }
+            }
         }
 
         $err = $output instanceof ConsoleOutputInterface
@@ -191,12 +225,18 @@ final class AnalyzeCommand extends Command
 
         $this->writeSummary($err, $reader, $sample_count, $matched_samples);
 
+        if ($last_count > 0) {
+            $this->printTail($output, $tail_buffer);
+        }
+
         $denominator = $matched_samples > 0 ? $matched_samples : 1;
 
-        $this->printTable($output, 'self-time top', $self_counts, $denominator, $top);
-        $this->printTable($output, 'total-time top (inclusive)', $total_counts, $denominator, $top);
+        if ($top > 0) {
+            $this->printTable($output, 'self-time top', $self_counts, $denominator, $top);
+            $this->printTable($output, 'total-time top (inclusive)', $total_counts, $denominator, $top);
+        }
 
-        if ($callers_re !== null) {
+        if ($top > 0 && $callers_re !== null) {
             $this->printTable(
                 $output,
                 "callers of frames matching /{$callers_pattern}/",
@@ -205,7 +245,7 @@ final class AnalyzeCommand extends Command
                 $top,
             );
         }
-        if ($callees_re !== null) {
+        if ($top > 0 && $callees_re !== null) {
             $this->printTable(
                 $output,
                 "callees of frames matching /{$callees_pattern}/",
@@ -216,6 +256,39 @@ final class AnalyzeCommand extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * Render the most recent samples' call stacks. Each frame is printed on
+     * its own line in phpspy depth order — depth 0 (the leaf, i.e. the
+     * actual current execution position) at the top of each stack — so the
+     * line a glance lands on is the one that matters for "where am I now?".
+     *
+     * @param list<list<string>> $tail
+     */
+    private function printTail(OutputInterface $output, array $tail): void
+    {
+        $output->writeln('');
+        $output->writeln('<comment># last ' . count($tail) . ' sample(s)</comment>');
+        if ($tail === []) {
+            $output->writeln('  (no samples)');
+            return;
+        }
+        $count = count($tail);
+        foreach ($tail as $i => $stack) {
+            // tail is in chronological order (oldest first, newest last) so
+            // the line a glance lands on at the bottom of the output is
+            // always the most recent sample. Label each header by how many
+            // samples ago it was, using "(now)" for the latest entry.
+            $offset = $count - $i - 1;
+            $label = $count === 1
+                ? '(now)'
+                : ($offset === 0 ? '(now)' : sprintf('(%d ago)', $offset));
+            $output->writeln("  ── sample {$label} ──");
+            foreach ($stack as $depth => $frame) {
+                $output->writeln(sprintf('  [%2d] %s', $depth, $frame));
+            }
+        }
     }
 
     private function writeSummary(
