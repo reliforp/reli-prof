@@ -125,6 +125,27 @@ final class ExploreTui
     private bool $help_open = false;
     private bool $running = true;
 
+    /**
+     * Sandwich-flame popup overlay state.
+     *
+     * The popup shows a speedscope-style flame view (callers stacked
+     * above the focus, callees stacked below) computed from the full
+     * sample stacks rather than the 1-level aggregated callers/callees
+     * tables. Built lazily on first open via {@see SandwichBuilder} and
+     * cached until the focus / no-line / match filter changes.
+     *
+     * @var array{
+     *   focus_count:int,
+     *   callers:array<int,array{count:int,children:array}>,
+     *   callees:array<int,array{count:int,children:array}>,
+     * }|null
+     */
+    private ?array $sandwich_cache = null;
+    private ?int $sandwich_cache_focus_id = null;
+    private ?bool $sandwich_cache_no_line = null;
+    private ?string $sandwich_cache_match_re = null;
+    private bool $sandwich_popup_open = false;
+
     public function __construct(TraceModel $model, Terminal $term, Keymap $keymap)
     {
         $this->model = $model;
@@ -220,6 +241,9 @@ final class ExploreTui
         $buf .= $this->renderFooter($state, $cols);
         $buf .= $this->renderStatus($state, $cols);
 
+        if ($this->sandwich_popup_open) {
+            $buf .= $this->renderSandwichFlameOverlay($cols, $rows);
+        }
         if ($this->help_open) {
             $buf .= $this->renderHelpOverlay($cols, $rows);
         }
@@ -905,6 +929,7 @@ final class ExploreTui
             '  n            toggle no-line grouping',
             '  o            toggle overview sidebar',
             '  F            toggle horizontal mini-flame strip',
+            '  > / <        sandwich-flame popup at current focus',
             '  ?            this help',
             '  q / Ctrl-C   quit',
             '── press any key ──',
@@ -930,6 +955,229 @@ final class ExploreTui
             );
         }
         return $out;
+    }
+
+    /**
+     * Full-screen flame-chart overlay rooted at the current focus.
+     *
+     * Layout: a horizontal title bar at the top, the caller tree growing
+     * upward from the focus row, the focus bar in the middle, the callee
+     * tree growing downward, and a footer hint at the bottom. Bar widths
+     * are proportional to sample counts of the focus, so a child taking
+     * half its parent's bar means half of the samples that flowed
+     * through the parent then went into that child.
+     *
+     * Rendered with ANSI cursor positioning so it overlays whatever the
+     * normal body painted (each cell is filled, no holes).
+     */
+    private function renderSandwichFlameOverlay(int $cols, int $rows): string
+    {
+        $tree = $this->ensureSandwichTree();
+        if ($tree === null) {
+            return '';
+        }
+        $state = $this->currentState();
+        if ($cols < 30 || $rows < 8) {
+            return '';
+        }
+
+        // 1 row title + 1 row focus + 1 row footer = 3 reserved.
+        $tree_rows = $rows - 3;
+        if ($tree_rows < 2) {
+            return '';
+        }
+        $caller_rows = (int)floor($tree_rows / 2);
+        $callee_rows = $tree_rows - $caller_rows;
+        $inner_w = $cols;
+        $focus_count = max(1, $tree['focus_count']);
+
+        $caller_layout = self::layoutFlameTree(
+            $tree['callers'],
+            $focus_count,
+            $inner_w,
+            $caller_rows,
+        );
+        $callee_layout = self::layoutFlameTree(
+            $tree['callees'],
+            $focus_count,
+            $inner_w,
+            $callee_rows,
+        );
+
+        $no_line = $this->opts->no_line;
+        $lines = [];
+
+        $title = sprintf(
+            ' sandwich flame — %s   (%s samples)   [any key closes] ',
+            $state->focus_label ?? '<none>',
+            number_format($focus_count),
+        );
+        $lines[] = "\e[1;7m" . self::padOrShorten($title, $inner_w) . "\e[0m";
+
+        // Caller depths: top of popup is the deepest visible depth so the
+        // user reads downward toward the focus row, the way a stack
+        // naturally piles up from root to leaf.
+        for ($vis = 0; $vis < $caller_rows; $vis++) {
+            $depth = $caller_rows - $vis;
+            $bars = $caller_layout[$depth] ?? [];
+            $lines[] = $this->renderFlameRow($bars, $inner_w, $no_line);
+        }
+
+        // Focus bar — distinct from regular bars so the eye anchors on it.
+        $focus_text = ' ▶ ' . ($state->focus_label ?? '<none>');
+        $lines[] = "\e[1;7;33m" . self::padOrShorten($focus_text, $inner_w) . "\e[0m";
+
+        // Callee depths: depth 1 directly under the focus, deeper farther
+        // down — same "stack flowing toward leaf" reading order.
+        for ($vis = 0; $vis < $callee_rows; $vis++) {
+            $depth = $vis + 1;
+            $bars = $callee_layout[$depth] ?? [];
+            $lines[] = $this->renderFlameRow($bars, $inner_w, $no_line);
+        }
+
+        $footer = ' callers above · callees below · widths ∝ samples through focus ';
+        $lines[] = "\e[2;7m" . self::padOrShorten($footer, $inner_w) . "\e[0m";
+
+        $out = '';
+        foreach ($lines as $i => $line) {
+            $out .= sprintf("\e[%d;1H", $i + 1) . $line;
+        }
+        return $out;
+    }
+
+    /**
+     * Render one row of the flame chart. Bars are drawn in reverse
+     * video with alternating dim/bright so adjacent frames stay visually
+     * distinct. Labels are written into bars wide enough to hold them
+     * (≥ 4 cells); narrower bars become anonymous solid stripes you can
+     * still navigate to via overview/sandwich panes.
+     *
+     * @param list<array{x:int, w:int, key_id:int, count:int}> $bars
+     */
+    private function renderFlameRow(array $bars, int $width, bool $no_line): string
+    {
+        if ($bars === []) {
+            return str_repeat(' ', $width);
+        }
+        usort($bars, fn(array $a, array $b): int => $a['x'] <=> $b['x']);
+
+        $out = '';
+        $cur = 0;
+        foreach ($bars as $i => $bar) {
+            if ($bar['w'] < 1) {
+                continue;
+            }
+            if ($cur < $bar['x']) {
+                $out .= str_repeat(' ', $bar['x'] - $cur);
+                $cur = $bar['x'];
+            }
+            $w = $bar['w'];
+            if ($w >= 4) {
+                $label = Aggregator::labelFor($this->model, $bar['key_id'], $no_line);
+                // Strip "file:line" tail when present so the function
+                // name fits even in cramped bars.
+                $space_pos = strpos($label, ' ');
+                $short = $space_pos !== false
+                    ? substr($label, 0, $space_pos)
+                    : $label;
+                $cell = ' ' . self::shorten($short, $w - 1);
+            } else {
+                $cell = '';
+            }
+            $cell = self::padOrShorten($cell, $w);
+            $style = ($i % 2) === 1 ? "\e[7;2m" : "\e[7m";
+            $out .= $style . $cell . "\e[0m";
+            $cur += $w;
+        }
+        if ($cur < $width) {
+            $out .= str_repeat(' ', $width - $cur);
+        }
+        return $out;
+    }
+
+    /**
+     * Recursive layout pass. Walks the sandwich tree top-down and
+     * allocates each child a width proportional to (child.count /
+     * parent.count) of the parent's width. Children whose width
+     * rounds to zero are dropped — they'd be invisible anyway and
+     * stealing a pixel from a larger sibling would distort the chart.
+     *
+     * @param  array<int, array{count:int, children:array}> $nodes
+     * @return array<int, list<array{x:int, w:int, key_id:int, count:int}>>
+     */
+    private static function layoutFlameTree(
+        array $nodes,
+        int $denom,
+        int $width,
+        int $max_depth,
+    ): array {
+        /** @var array<int, list<array{x:int, w:int, key_id:int, count:int}>> $rows */
+        $rows = [];
+        self::layoutFlameNodes($nodes, 1, 0, $width, $denom, $max_depth, $rows);
+        return $rows;
+    }
+
+    /**
+     * @param array<int, array{count:int, children:array}>                  $nodes
+     * @param array<int, list<array{x:int, w:int, key_id:int, count:int}>>  $rows
+     */
+    private static function layoutFlameNodes(
+        array $nodes,
+        int $depth,
+        int $x,
+        int $width,
+        int $denom,
+        int $max_depth,
+        array &$rows,
+    ): void {
+        if ($depth > $max_depth || $width < 1 || $denom <= 0 || $nodes === []) {
+            return;
+        }
+        // Largest first so the eye lands on the dominant call path.
+        uasort(
+            $nodes,
+            /** @param array{count:int, children:array} $a
+             *  @param array{count:int, children:array} $b */
+            fn(array $a, array $b): int => $b['count'] <=> $a['count'],
+        );
+
+        $cur_x = $x;
+        $remaining = $width;
+        foreach ($nodes as $kid => $node) {
+            if ($remaining < 1) {
+                break;
+            }
+            $w = (int)floor($node['count'] / $denom * $width);
+            if ($w < 1) {
+                continue;
+            }
+            if ($w > $remaining) {
+                $w = $remaining;
+            }
+            if (!isset($rows[$depth])) {
+                $rows[$depth] = [];
+            }
+            $rows[$depth][] = [
+                'x' => $cur_x,
+                'w' => $w,
+                'key_id' => $kid,
+                'count' => $node['count'],
+            ];
+            // Recurse with this node as the new root: child widths are
+            // relative to ITS count and footprint, which is the property
+            // that gives flame charts their nesting semantics.
+            self::layoutFlameNodes(
+                $node['children'],
+                $depth + 1,
+                $cur_x,
+                $w,
+                $node['count'],
+                $max_depth,
+                $rows,
+            );
+            $cur_x += $w;
+            $remaining -= $w;
+        }
     }
 
     // ---------- aggregation caches ----------
@@ -1035,9 +1283,47 @@ final class ExploreTui
         $this->list_cache = null;
         $this->callers_cache = null;
         $this->callees_cache = null;
+        // The sandwich-flame popup cache is keyed by focus / no-line /
+        // match-re, all of which are checked at access time, so a stale
+        // entry will simply be discarded on the next ensureSandwichTree()
+        // call. Nothing to bust here.
         if ($include_overview) {
             $this->overview_cache = null;
         }
+    }
+
+    /**
+     * Build (or return cached) sandwich flame tree for the current focus.
+     *
+     * @return array{
+     *   focus_count:int,
+     *   callers:array<int,array{count:int,children:array}>,
+     *   callees:array<int,array{count:int,children:array}>,
+     * }|null
+     */
+    private function ensureSandwichTree(): ?array
+    {
+        $state = $this->currentState();
+        if ($state->focus_id === null) {
+            return null;
+        }
+        if (
+            $this->sandwich_cache !== null
+            && $this->sandwich_cache_focus_id === $state->focus_id
+            && $this->sandwich_cache_no_line === $this->opts->no_line
+            && $this->sandwich_cache_match_re === $this->opts->match_re
+        ) {
+            return $this->sandwich_cache;
+        }
+        $this->sandwich_cache = SandwichBuilder::build(
+            $this->model,
+            $state->focus_id,
+            $this->opts,
+        );
+        $this->sandwich_cache_focus_id = $state->focus_id;
+        $this->sandwich_cache_no_line = $this->opts->no_line;
+        $this->sandwich_cache_match_re = $this->opts->match_re;
+        return $this->sandwich_cache;
     }
 
     /**
@@ -1086,6 +1372,10 @@ final class ExploreTui
     {
         if ($this->help_open) {
             $this->help_open = false;
+            return;
+        }
+        if ($this->sandwich_popup_open) {
+            $this->sandwich_popup_open = false;
             return;
         }
         if ($this->prompt_label !== null) {
@@ -1160,6 +1450,14 @@ final class ExploreTui
             case Keymap::ACTION_TOGGLE_MINI_FLAME:
                 $this->mini_flame_enabled = !$this->mini_flame_enabled;
                 $this->status = 'mini-flame strip: ' . ($this->mini_flame_enabled ? 'on' : 'off');
+                return;
+
+            case Keymap::ACTION_OPEN_SANDWICH_FLAME:
+                if ($state->mode !== ExploreMode::Sandwich || $state->focus_id === null) {
+                    $this->status = 'sandwich flame: focus a frame first';
+                    return;
+                }
+                $this->sandwich_popup_open = true;
                 return;
 
             case Keymap::ACTION_CALLERS:
