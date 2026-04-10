@@ -23,7 +23,12 @@ namespace Reli\Command\Rbt\Explore;
  * Read strategy: `stty min 1 time 1` returns at least one byte immediately
  * and any follow-up bytes within ~100ms. That captures multi-byte escape
  * sequences (arrow keys, PgUp/Dn, ...) in a single fread, while still
- * delivering single keystrokes without latency.
+ * delivering single keystrokes without noticeable latency.
+ *
+ * stty is invoked with `< /dev/tty` so it always operates on the terminal
+ * — important when PHP's own stdin has been redirected away from a tty
+ * (Docker without -it, IDE task runners, piped input, ...). Without that
+ * redirect, stty silently no-ops and the TUI appears to ignore every key.
  */
 final class Terminal
 {
@@ -56,8 +61,26 @@ final class Terminal
         }
         $this->tty_in = $in;
         $this->tty_out = $out;
+        // Disable PHP's stream-level read buffering so single-keystroke
+        // reads aren't held back waiting to fill an 8 KB buffer.
+        @stream_set_read_buffer($this->tty_in, 0);
+        @stream_set_write_buffer($this->tty_out, 0);
 
         $this->stty_orig = $this->captureStty();
+        if ($this->stty_orig === null) {
+            // Clean up the resources we opened so leave() doesn't try to
+            // restore a state we never captured.
+            fclose($this->tty_in);
+            fclose($this->tty_out);
+            $this->tty_in = null;
+            $this->tty_out = null;
+            throw new \RuntimeException(
+                'rbt:explore could not configure the terminal: '
+                . 'stty -g < /dev/tty failed. Run from an interactive '
+                . 'terminal (not under nohup, a CI runner, or a shell whose '
+                . 'stdin is redirected).'
+            );
+        }
         $this->applyStty('-icanon -echo min 1 time 1');
 
         // Alt screen on, hide cursor.
@@ -94,32 +117,31 @@ final class Terminal
 
     /**
      * Read one logical key (single byte or full escape sequence).
+     *
+     * In raw mode with VMIN=1, VTIME=1, fread blocks until at least one
+     * byte arrives, then waits ~100ms for any follow-up bytes — long
+     * enough to deliver a multi-byte escape sequence (`\e[A`, ...) in
+     * one read, short enough to feel instant for single keystrokes.
+     *
+     * Returns an empty string only when the underlying read fails or
+     * the resource is closed; the caller may treat that as "try again".
      */
     public function readKey(): string
     {
         if ($this->tty_in === null) {
             throw new \RuntimeException('Terminal not entered.');
         }
-        $bytes = fread($this->tty_in, 64);
+        $bytes = @fread($this->tty_in, 64);
         return $bytes === false ? '' : $bytes;
     }
 
     /**
-     * Block until input is readable; return false on a recoverable
-     * interrupt so the caller can re-poll (e.g. after SIGWINCH).
+     * Block until a key is available and return it. Provided as a
+     * separate entry point so future versions can interleave SIGWINCH
+     * handling or polling without changing the call site.
      */
     public function pollKey(): string
     {
-        if ($this->tty_in === null) {
-            throw new \RuntimeException('Terminal not entered.');
-        }
-        $read = [$this->tty_in];
-        $write = null;
-        $except = null;
-        $n = @stream_select($read, $write, $except, null);
-        if ($n === false) {
-            return '';
-        }
         return $this->readKey();
     }
 
@@ -162,15 +184,16 @@ final class Terminal
 
     private function captureStty(): ?string
     {
-        $out = @shell_exec('stty -g 2>/dev/null');
+        $out = @shell_exec('stty -g < /dev/tty 2>/dev/null');
         if ($out === null || $out === false) {
             return null;
         }
-        return trim($out);
+        $trimmed = trim($out);
+        return $trimmed === '' ? null : $trimmed;
     }
 
     private function applyStty(string $args): void
     {
-        @shell_exec('stty ' . $args . ' 2>/dev/null');
+        @shell_exec('stty ' . $args . ' < /dev/tty 2>/dev/null');
     }
 }
