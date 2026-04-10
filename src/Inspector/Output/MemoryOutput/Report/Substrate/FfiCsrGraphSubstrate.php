@@ -77,6 +77,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private array $classDictReverse = [];
     private \FFI\CData $nodeClassIds; // int16_t[nodeCount], -1 = no class
 
+    // Tree-edge link_name index: an int16 per child CSR slot (-1 = no
+    // tree edge) plus a small interned dict. Built during loadEdgesFfi
+    // so report passes get O(1) link_name lookups without per-row SQL.
+    /** @var list<string> link_id → link_name */
+    private array $linkDict = [];
+    /** @var array<string, int> link_name → link_id */
+    private array $linkDictReverse = [];
+    private ?\FFI\CData $treeLinkIds = null;     // int16_t[nodeCount]
+    private ?\FFI\CData $treeParentIdx = null;   // int32_t[nodeCount], -1 = no tree parent
+
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
 
@@ -191,6 +201,47 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             return null;
         }
         return $this->classDict[$classId] ?? null;
+    }
+
+    #[\Override]
+    public function getTreeLinkName(int $child_node_id): ?string
+    {
+        if ($this->treeLinkIds === null) {
+            return null;
+        }
+        $idx = $this->nodeIdToIndex($child_node_id);
+        if ($idx < 0) {
+            return null;
+        }
+        $link_id = (int)$this->treeLinkIds[$idx];
+        if ($link_id < 0) {
+            return null;
+        }
+        return $this->linkDict[$link_id] ?? null;
+    }
+
+    #[\Override]
+    public function getTreeParentNodeId(int $child_node_id): ?int
+    {
+        if ($this->treeParentIdx === null) {
+            return null;
+        }
+        $idx = $this->nodeIdToIndex($child_node_id);
+        if ($idx < 0) {
+            return null;
+        }
+        $parent_idx = (int)$this->treeParentIdx[$idx];
+        if ($parent_idx < 0) {
+            return null;
+        }
+        $parent_id = (int)$this->indexToNodeFfi[$parent_idx];
+        return $parent_id === -1 ? null : $parent_id;
+    }
+
+    #[\Override]
+    public function hasTreeLinkIndex(): bool
+    {
+        return $this->treeLinkIds !== null;
     }
 
     #[\Override]
@@ -479,6 +530,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $stageChildIdx = FFIHelper::new("int32_t[{$edgeCount}]");
         $stageFlags = FFIHelper::new("int8_t[{$edgeCount}]");
 
+        // Tree-edge link_name index: int16 per child slot, -1 = no
+        // tree edge. Initialised below to -1 in one pass over the
+        // CSR slot space, then filled as we walk tree edges.
+        $this->treeLinkIds = FFIHelper::new("int16_t[{$nc}]");
+        $this->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        for ($k = 0; $k < $nc; $k++) {
+            $this->treeLinkIds[$k] = -1;
+            $this->treeParentIdx[$k] = -1;
+        }
+
         $treeDeg = FFIHelper::new("int32_t[{$nc}]");
         $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
         $allDeg = FFIHelper::new("int32_t[{$nc}]");
@@ -490,9 +551,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $allCount = 0;
         $strongAllCount = 0;
 
-        // Single SQL pass — stage every edge into FFI and tally degrees.
+        // Single SQL pass — stage every edge into FFI, tally degrees,
+        // and populate the tree-edge link_name index inline so report
+        // passes can answer link_name lookups in memory afterwards.
         $stmt = $db->query(
-            "SELECT parent_node_id, child_node_id, is_tree, strength"
+            "SELECT parent_node_id, child_node_id, link_name, is_tree, strength"
             . " FROM context_edges WHERE run_id = {$run_id}"
         );
         $i = 0;
@@ -500,8 +563,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $parentIsRoot = $r[0] === null;
             $parent = $parentIsRoot ? -1 : (int)$r[0];
             $child = (int)$r[1];
-            $is_tree = (int)$r[2];
-            $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
+            $link_name = (string)$r[2];
+            $is_tree = (int)$r[3];
+            $is_strong = ((string)($r[4] ?? 'strong')) === 'strong';
 
             $pi = $this->nodeIdToIndex($parent);
             $ci = $this->nodeIdToIndex($child);
@@ -521,6 +585,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 if ($parentIsRoot) {
                     $this->roots[] = $child;
                 }
+                // Tree edges are unique per child by definition, so a
+                // direct write here is safe.
+                if (!isset($this->linkDictReverse[$link_name])) {
+                    $this->linkDictReverse[$link_name] = count($this->linkDict);
+                    $this->linkDict[] = $link_name;
+                }
+                $this->treeLinkIds[$ci] = $this->linkDictReverse[$link_name];
+                $this->treeParentIdx[$ci] = $pi;
             }
             if (!$parentIsRoot) {
                 $allDeg[$pi] = $allDeg[$pi] + 1;

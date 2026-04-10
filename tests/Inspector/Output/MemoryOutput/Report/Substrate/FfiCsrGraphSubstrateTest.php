@@ -405,6 +405,68 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
         $this->assertSame([-1], $substrate->getAllParents(1));
     }
 
+    public function testGetTreeLinkNameAndParentReturnInternedValues(): void
+    {
+        $db = $this->openManualDb();
+
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'a'), (1, 2, 'a'), (1, 3, 'a')");
+        $db->exec("INSERT INTO context_node_locations
+            (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 1, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 2, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 3, 0, 10, 'ZendObjectMemoryLocation', 'C')");
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'objects_store', 1, 'strong'),
+            (1,    1, 2, 'object_properties', 1, 'strong'),
+            (1,    2, 3, 'name', 1, 'strong')");
+
+        $substrate = FfiCsrGraphSubstrate::loadFromDb($db, 1);
+
+        $this->assertTrue($substrate->hasTreeLinkIndex());
+        $this->assertSame('objects_store', $substrate->getTreeLinkName(1));
+        $this->assertSame('object_properties', $substrate->getTreeLinkName(2));
+        $this->assertSame('name', $substrate->getTreeLinkName(3));
+        $this->assertNull($substrate->getTreeLinkName(999));
+
+        // The synthetic root has no parent.
+        $this->assertNull($substrate->getTreeParentNodeId(1));
+        $this->assertSame(1, $substrate->getTreeParentNodeId(2));
+        $this->assertSame(2, $substrate->getTreeParentNodeId(3));
+    }
+
+    public function testTreeLinkIndexUsesInternDictForRepeats(): void
+    {
+        $db = $this->openManualDb();
+
+        // Many siblings sharing a single link_name string.
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'a'), (1, 2, 'a'), (1, 3, 'a'), (1, 4, 'a'), (1, 5, 'a')");
+        $db->exec("INSERT INTO context_node_locations
+            (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 1, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 2, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 3, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 4, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 5, 0, 10, 'ZendObjectMemoryLocation', 'C')");
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'r', 1, 'strong'),
+            (1,    1, 2, 'array_elements', 1, 'strong'),
+            (1,    1, 3, 'array_elements', 1, 'strong'),
+            (1,    1, 4, 'array_elements', 1, 'strong'),
+            (1,    1, 5, 'array_elements', 1, 'strong')");
+
+        $substrate = FfiCsrGraphSubstrate::loadFromDb($db, 1);
+
+        $this->assertSame('array_elements', $substrate->getTreeLinkName(2));
+        $this->assertSame('array_elements', $substrate->getTreeLinkName(3));
+        $this->assertSame('array_elements', $substrate->getTreeLinkName(4));
+        $this->assertSame('array_elements', $substrate->getTreeLinkName(5));
+        $this->assertSame('r', $substrate->getTreeLinkName(1));
+    }
+
     public function testIterateAllParentsMatchesGetAllParents(): void
     {
         $db = $this->openManualDb();

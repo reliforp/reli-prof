@@ -57,11 +57,17 @@ final class LinkNameResolver
     /**
      * @param int $max_cache_entries soft cap on entries the lazy cache will
      *                               retain. Defaults to 1M, ~100 MB worst-case.
+     * @param ?GraphSubstrate $substrate when supplied AND its tree-edge link
+     *                                   index has been built, lookups skip
+     *                                   SQL entirely and answer in O(1) from
+     *                                   the substrate. The 4 N+1 passes get
+     *                                   this for free without code changes.
      */
     public function __construct(
         private \PDO $db,
         private int $run_id,
         private int $max_cache_entries = 1_000_000,
+        private ?GraphSubstrate $substrate = null,
     ) {
     }
 
@@ -115,6 +121,20 @@ final class LinkNameResolver
      */
     public function lookupMany(iterable $child_node_ids): array
     {
+        // Substrate fast path: walk the supplied ids and answer each in
+        // O(1) from the in-memory index — no chunked IN, no SQL at all.
+        if ($this->substrate !== null && $this->substrate->hasTreeLinkIndex()) {
+            /** @var array<int, string> $result */
+            $result = [];
+            foreach ($child_node_ids as $id) {
+                $name = $this->substrate->getTreeLinkName($id);
+                if ($name !== null) {
+                    $result[$id] = $name;
+                }
+            }
+            return $result;
+        }
+
         /** @var array<int, true> dedupe + missing-id collection */
         $missing = [];
         /** @var array<int, string> $result */
@@ -184,6 +204,11 @@ final class LinkNameResolver
      */
     public function lookup(int $child_node_id): ?string
     {
+        // Substrate fast path: O(1) in-memory hit, no SQL.
+        if ($this->substrate !== null && $this->substrate->hasTreeLinkIndex()) {
+            return $this->substrate->getTreeLinkName($child_node_id);
+        }
+
         if (array_key_exists($child_node_id, $this->link_cache)) {
             return $this->link_cache[$child_node_id];
         }
@@ -203,6 +228,10 @@ final class LinkNameResolver
      */
     public function getTreeParent(int $child_node_id): ?int
     {
+        if ($this->substrate !== null && $this->substrate->hasTreeLinkIndex()) {
+            return $this->substrate->getTreeParentNodeId($child_node_id);
+        }
+
         if (array_key_exists($child_node_id, $this->link_cache)) {
             return $this->tree_parents[$child_node_id] ?? null;
         }

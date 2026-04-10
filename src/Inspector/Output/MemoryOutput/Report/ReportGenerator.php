@@ -110,23 +110,26 @@ final class ReportGenerator
             // dominate PerPropertyMemory / Ownership / StructuralDedup /
             // PropertyScaling / NonTreeEdgePass.
             //
-            // Materialising the entire tree-edge table is fastest but costs
-            // memory proportional to edge count. The chosen mode (CLI flag
-            // or auto-heuristic) decides between eager bulk read and bounded
-            // lazy caching:
-            //   - Auto:  bulk read up to ~500K edges (~50 MB worst case),
-            //            lazy beyond that.
-            //   - Eager: always bulk read.
-            //   - Lazy:  never bulk read; per-edge prepared statement with a
-            //            bounded shared cache, NonTreeEdgePass keeps its
-            //            local sweep.
-            $link_resolver = new LinkNameResolver($db, $run_id);
+            // The substrate now carries a tree-edge link_name index built
+            // for free during loadEdgesFfi/loadEdges, so the resolver
+            // delegates to it and answers every lookup in O(1) memory —
+            // the legacy eager/lazy paths are kept as fallbacks for code
+            // paths that don't have a substrate (Phase 2 SQL passes).
+            $link_resolver = new LinkNameResolver(
+                db: $db,
+                run_id: $run_id,
+                substrate: $substrate,
+            );
             $eager = match ($link_cache_mode) {
                 LinkCacheMode::Eager => true,
                 LinkCacheMode::Lazy => false,
                 LinkCacheMode::Auto => $edge_count > 0 && $edge_count <= 500_000,
             };
-            if ($eager) {
+            // Substrate-backed lookups are always O(1) regardless, but
+            // when somebody runs --link-cache=eager explicitly we still
+            // honour it for the no-substrate code paths inside the
+            // resolver itself.
+            if ($eager && !$substrate->hasTreeLinkIndex()) {
                 $link_resolver->loadAll();
             }
 

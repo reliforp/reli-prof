@@ -27,6 +27,23 @@ class GraphSubstrate
     /** @var array<int, list<int>> child_id => [parent_id, ...] (all edges) */
     public array $all_parents = [];
 
+    /**
+     * Tree-edge link_name index — child_node_id → link_name. Populated
+     * during {@see loadEdges()} so report passes can answer
+     * "what's the link_name of this child?" without per-row SQL.
+     *
+     * @var array<int, string>
+     */
+    public array $tree_link_names = [];
+
+    /**
+     * Tree-edge parent index — child_node_id → parent_node_id (or -1
+     * for the synthetic root). Populated during {@see loadEdges()}.
+     *
+     * @var array<int, int>
+     */
+    public array $tree_parents = [];
+
     /** @var array<int, list<int>> parent_id => [child_id, ...] (strong tree edges only) */
     public array $strong_children = [];
 
@@ -377,7 +394,7 @@ class GraphSubstrate
     protected function loadEdges(\PDO $db, int $run_id): void
     {
         $stmt = $db->query(
-            "SELECT parent_node_id, child_node_id, is_tree, strength"
+            "SELECT parent_node_id, child_node_id, link_name, is_tree, strength"
             . " FROM context_edges WHERE run_id = {$run_id}"
         );
 
@@ -386,8 +403,9 @@ class GraphSubstrate
             $edge_count++;
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
-            $is_tree = (int)$r[2];
-            $strength = (string)($r[3] ?? 'strong');
+            $link_name = (string)$r[2];
+            $is_tree = (int)$r[3];
+            $strength = (string)($r[4] ?? 'strong');
             $is_strong = $strength === 'strong';
 
             if ($is_tree) {
@@ -398,6 +416,11 @@ class GraphSubstrate
                 if ($parent === -1) {
                     $this->roots[] = $child;
                 }
+                // Tree edges are unique per child by definition, so a
+                // direct write here is safe and gives report passes an
+                // O(1) link_name lookup without any extra SQL.
+                $this->tree_link_names[$child] = $link_name;
+                $this->tree_parents[$child] = $parent;
             }
             if ($parent !== -1) {
                 $this->all_children[$parent][] = $child;
@@ -408,6 +431,40 @@ class GraphSubstrate
             $this->all_parents[$child][] = $parent;
         }
         $this->edge_count = $edge_count;
+    }
+
+    /**
+     * Resolve the tree-edge link_name for a child node.
+     *
+     * Returns null when the node has no tree edge in the loaded run.
+     * O(1) — backed by the {@see self::$tree_link_names} index built
+     * during {@see self::loadEdges()}.
+     */
+    public function getTreeLinkName(int $child_node_id): ?string
+    {
+        return $this->tree_link_names[$child_node_id] ?? null;
+    }
+
+    /**
+     * Resolve the tree-edge parent for a child node, or null when
+     * there is no parent (root) or no tree edge for this child.
+     */
+    public function getTreeParentNodeId(int $child_node_id): ?int
+    {
+        if (!isset($this->tree_parents[$child_node_id])) {
+            return null;
+        }
+        $parent = $this->tree_parents[$child_node_id];
+        return $parent === -1 ? null : $parent;
+    }
+
+    /**
+     * Whether the substrate carries a tree-edge link_name index that
+     * report passes can use instead of querying the DB themselves.
+     */
+    public function hasTreeLinkIndex(): bool
+    {
+        return $this->tree_link_names !== [];
     }
 
     protected function computeSubtreeSizes(): void
