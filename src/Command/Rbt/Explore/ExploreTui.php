@@ -503,7 +503,12 @@ final class ExploreTui
         $mode_label = match ($state->mode) {
             ExploreMode::ListSelf  => 'self-time top',
             ExploreMode::ListTotal => 'total-time top',
-            ExploreMode::Sandwich  => 'sandwich (focus drilldown)',
+            ExploreMode::Sandwich  => match ($state->sandwich_view) {
+                SandwichView::Panes       => 'sandwich · panes (caller/callee drilldown)',
+                SandwichView::Flame       => 'sandwich · flame (bidirectional flame chart)',
+                SandwichView::TreeCallees => 'sandwich · callee tree (toward leaves)',
+                SandwichView::TreeCallers => 'sandwich · caller tree (toward roots)',
+            },
         };
         $line2 = sprintf('mode: %s   history: %d back', $mode_label, $hist);
         $line3 = sprintf(
@@ -891,15 +896,26 @@ final class ExploreTui
         if ($state->mode === ExploreMode::Sandwich) {
             $follow = $this->overview_follow ? '[f*]' : '[f]';
             $flame = $this->mini_flame_enabled ? '[F*]' : '[F]';
-            $view_label = match ($state->sandwich_view) {
-                SandwichView::Panes       => 'panes',
-                SandwichView::Flame       => 'flame',
-                SandwichView::TreeCallees => 'tree↓',
-                SandwichView::TreeCallers => 'tree↑',
+
+            // Per-view operation hints. Each view binds the navigation
+            // keys to a different action so the footer should explain
+            // what they currently do — generic "[↑↓] move" was true
+            // but unhelpful when the same key meant a different thing
+            // depending on which sandwich_view was active.
+            $view_keys = match ($state->sandwich_view) {
+                SandwichView::Panes
+                    => '[Tab] pane  [↑↓] sel  [←/→] caller/callee  [Enter] focus',
+                SandwichView::Flame
+                    => '[↑↓] depth  [←/→] siblings  [Enter] focus',
+                SandwichView::TreeCallees,
+                SandwichView::TreeCallers
+                    => '[↑↓] scroll  [←/→] fold  [H/L] fold-rec  [Enter] focus',
             };
-            $footer = "[{$view_label}]  [P/S/>/<] view  [Tab] pane  [↑↓] move  [Enter] focus  "
-                . '[u] back  [s/t/O] self/total/overview  ' . $follow . ' follow  '
-                . $flame . ' flame  [/] filter  [m] match  [n] no-line  [o] sidebar  '
+
+            $footer = $view_keys
+                . '  [P/S/>/<] view  [u] back  [s/t/O] self/total/overview  '
+                . $follow . ' follow  ' . $flame . ' flame  '
+                . '[/] filter  [m] match  [n] no-line  [o] sidebar  '
                 . '[?] help  [q] quit';
         } else {
             $footer = '[↑↓] sel  [Enter] focus  [s/t/O] self/total/overview  '
@@ -2361,8 +2377,14 @@ final class ExploreTui
 
         if ($recursive) {
             $prefix = $path . '/';
+            // PHP coerces purely-numeric string array keys to int, so a
+            // depth-1 path like "42" comes back from array_keys() as
+            // the integer 42. Cast to string before str_starts_with to
+            // avoid the TypeError; the unset still uses the original
+            // (possibly int) key, which is fine since PHP normalises
+            // both lookups.
             foreach (array_keys($this->tree_folded) as $folded_path) {
-                if (str_starts_with($folded_path, $prefix)) {
+                if (str_starts_with((string)$folded_path, $prefix)) {
                     unset($this->tree_folded[$folded_path]);
                 }
             }
