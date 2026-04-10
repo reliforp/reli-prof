@@ -267,29 +267,75 @@ final class ExploreTui
         /** @var list<bool> pixel_index → is_focus */
         $pixel_focus = array_fill(0, $total_pixels, false);
 
-        // Walk frames in order, allocating subpixels proportionally.
-        // Use round() so the cumulative drift stays bounded; clamp to 1
-        // so any non-zero frame gets at least one half-cell line.
-        $pos = 0;
-        foreach ($rows as $i => $row) {
-            if ($pos >= $total_pixels) {
-                break;
+        // Pre-compute the cursor row's index in the sorted overview so
+        // we know whether the natural layout will reach it before
+        // running out of pixels.
+        $cursor_row_idx = null;
+        if ($highlight_id !== null) {
+            foreach ($rows as $i => [, $key_id, ]) {
+                if ($key_id === $highlight_id) {
+                    $cursor_row_idx = $i;
+                    break;
+                }
             }
-            [$count, $key_id, ] = $row;
+        }
+
+        // Allocate widths in *virtual* (unbounded) pixel space first so
+        // we can compute the cursor row's natural position even when it
+        // ends up beyond the visible strip.
+        $virtual_widths = [];
+        $virtual_total = 0;
+        foreach ($rows as $i => [$count, , ]) {
             $w = (int)round($count / $total * $total_pixels);
             if ($w === 0 && $count > 0) {
                 $w = 1;
             }
+            $virtual_widths[$i] = $w;
+            $virtual_total += $w;
+        }
+
+        // Walk frames in order, allocating subpixels proportionally.
+        // The break at $total_pixels truncates the long tail.
+        $pos = 0;
+        $cursor_rendered_in_strip = false;
+        foreach ($rows as $i => [, $key_id, ]) {
+            if ($pos >= $total_pixels) {
+                break;
+            }
+            $w = $virtual_widths[$i];
             if ($w === 0) {
                 continue;
             }
             $end = min($pos + $w, $total_pixels);
-            $is_highlight = $key_id === $highlight_id;
+            $is_highlight = $i === $cursor_row_idx;
             for ($p = $pos; $p < $end; $p++) {
                 $pixel_frame[$p] = $i;
                 $pixel_focus[$p] = $is_highlight;
             }
+            if ($is_highlight) {
+                $cursor_rendered_in_strip = true;
+            }
             $pos = $end;
+        }
+
+        // If the cursor row's natural position lies past the visible
+        // strip (typical for callers/callees on aggregator functions
+        // with low self-time), drop a single-pixel marker at the
+        // rank-proportional position so the highlight at least moves
+        // as the user navigates instead of staying glued to the focus.
+        if ($cursor_row_idx !== null && !$cursor_rendered_in_strip && $virtual_total > 0) {
+            $virtual_start = 0;
+            for ($i = 0; $i < $cursor_row_idx; $i++) {
+                $virtual_start += $virtual_widths[$i] ?? 0;
+            }
+            $marker_pixel = (int)floor($virtual_start / $virtual_total * $total_pixels);
+            if ($marker_pixel >= $total_pixels) {
+                $marker_pixel = $total_pixels - 1;
+            }
+            if ($marker_pixel < 0) {
+                $marker_pixel = 0;
+            }
+            $pixel_focus[$marker_pixel] = true;
         }
 
         // Render cells. State (focus, dim) is sticky across cells; only
