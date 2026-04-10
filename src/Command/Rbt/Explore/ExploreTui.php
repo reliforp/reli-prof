@@ -58,6 +58,8 @@ final class ExploreTui
     private int $callers_top_row = 0;
     private int $callees_selected = 0;
     private int $callees_top_row = 0;
+    private int $overview_selected = 0;
+    private int $overview_top_row = 0;
 
     /**
      * Per-pane caches. Each cache is
@@ -324,7 +326,7 @@ final class ExploreTui
             $this->callers_top_row,
             $caller_visible,
             $width,
-            $state->callers_active,
+            $state->active_pane === ActivePane::Callers,
         );
         $banner_lines = $this->renderFocusBannerLines($state, $width);
         $callee_lines = $this->renderPaneLines(
@@ -335,7 +337,7 @@ final class ExploreTui
             $this->callees_top_row,
             $callee_visible,
             $width,
-            !$state->callers_active,
+            $state->active_pane === ActivePane::Callees,
         );
 
         $out = [];
@@ -474,8 +476,11 @@ final class ExploreTui
         $denom = max(1, $cache['matched_samples']);
         $focus_no_line_id = $this->getCurrentFocusNoLineId();
 
-        // Determine which row matches the focus and auto-scroll to keep
-        // it centered in the visible area.
+        $state = $this->currentState();
+        $is_active = $state->mode === ExploreMode::Sandwich
+            && $state->active_pane === ActivePane::Overview;
+
+        // Find the row matching the current focus (for the diamond marker).
         $focus_idx = null;
         if ($focus_no_line_id !== null) {
             foreach ($rows as $i => [, $key_id, ]) {
@@ -486,14 +491,43 @@ final class ExploreTui
             }
         }
         $visible = max(0, $body_rows - 1); // header takes 1 line
-        $top_row = 0;
-        if ($focus_idx !== null && $visible > 0) {
-            $top_row = max(0, $focus_idx - intdiv($visible, 2));
-            $top_row = min($top_row, max(0, count($rows) - $visible));
+
+        // When the overview is active, the user is driving scroll manually.
+        // When not active, auto-scroll keeps the focus row centered so the
+        // sidebar always shows "you are here".
+        if ($is_active) {
+            $this->clampSelection(
+                $this->overview_selected,
+                $this->overview_top_row,
+                count($rows),
+                $visible,
+            );
+            $top_row = $this->overview_top_row;
+        } else {
+            $top_row = 0;
+            if ($focus_idx !== null && $visible > 0) {
+                $top_row = max(0, $focus_idx - intdiv($visible, 2));
+                $top_row = min($top_row, max(0, count($rows) - $visible));
+            }
+            // Mirror the auto-scroll position into overview_top_row so the
+            // first time the user activates this pane the selection lands
+            // somewhere visible (and ideally on the focus row).
+            $this->overview_top_row = $top_row;
+            if ($focus_idx !== null) {
+                $this->overview_selected = $focus_idx;
+            }
         }
 
-        $header = self::padOrShorten('── overview (self) ──', $width);
-        $out = ["\e[2m" . $header . "\e[22m"];
+        $marker_active = $is_active ? '▶' : ' ';
+        $title = $is_active
+            ? sprintf('%s ── overview (self) ──', $marker_active)
+            : '── overview (self) ──';
+        $header_line = self::padOrShorten($title, $width);
+        $out = [
+            $is_active
+                ? "\e[1m" . $header_line . "\e[22m"
+                : "\e[2m" . $header_line . "\e[22m",
+        ];
 
         for ($i = 0; $i < $visible; $i++) {
             $idx = $top_row + $i;
@@ -504,9 +538,12 @@ final class ExploreTui
             [$count, $key_id, $label] = $rows[$idx];
             $pct = ($count / $denom) * 100;
             $is_focus = $focus_idx !== null && $idx === $focus_idx;
-            $marker = $is_focus ? '◆' : ' ';
-            // Label gets whatever's left after marker (1) + space (1) +
-            // pct (5) + space (1) = 8 chars of overhead.
+            $is_sel = $is_active && $idx === $this->overview_selected;
+            // Selection cursor takes precedence over the focus marker
+            // since "what I'm pointing at" matters more during navigation.
+            $marker = $is_sel
+                ? '>'
+                : ($is_focus ? '◆' : ' ');
             $label_room = max(1, $width - 8);
             $line = sprintf(
                 '%s %s %5.1f%%',
@@ -515,8 +552,12 @@ final class ExploreTui
                 $pct,
             );
             $line = self::padOrShorten($line, $width);
-            if ($is_focus) {
+            if ($is_sel) {
                 $line = "\e[7m" . $line . "\e[27m";
+            } elseif ($is_focus) {
+                // Bold the focus row even when not active so the eye can
+                // find it instantly.
+                $line = "\e[1m" . $line . "\e[22m";
             }
             $out[] = $line;
         }
@@ -540,10 +581,11 @@ final class ExploreTui
     private function renderFooter(ViewState $state, int $cols): string
     {
         if ($state->mode === ExploreMode::Sandwich) {
-            $footer = '[Tab] toggle pane  [↑↓] sel  [Enter] focus  [←/→] callers/callees  '
-                . '[u] back  [s/t] self/total  [/] filter  [m] match  [n] no-line  [o] overview  [?] help  [q] quit';
+            $footer = '[Tab] cycle pane  [↑↓] sel  [Enter] focus  [←/→] callers/callees  '
+                . '[u] back  [s/t/O] self/total/overview  [/] filter  [m] match  '
+                . '[n] no-line  [o] sidebar  [?] help  [q] quit';
         } else {
-            $footer = '[↑↓] sel  [Enter] focus  [s] self  [t] total  '
+            $footer = '[↑↓] sel  [Enter] focus  [s/t/O] self/total/overview  '
                 . '[/] filter  [m] match  [n] no-line  [?] help  [q] quit';
         }
         return self::shorten($footer, $cols) . "\n";
@@ -594,12 +636,13 @@ final class ExploreTui
             '  PgUp / PgDn  page up / down',
             '  g / G        first / last row',
             '  Enter        focus selected row → sandwich view',
-            '  Tab          toggle active pane (sandwich)',
+            '  Tab          cycle active pane: callers → callees → overview',
             '  ← / h        focus callers pane',
             '  → / l        focus callees pane',
             '  u / Bksp     pop focus history',
             '  s            self-time top (clears focus)',
             '  t            total-time top (clears focus)',
+            '  O            fullscreen overview (no-line self top)',
             '  /            filter visible rows (PCRE)',
             '  m            global sample match (PCRE)',
             '  n            toggle no-line grouping',
@@ -824,19 +867,22 @@ final class ExploreTui
 
             case Keymap::ACTION_TOGGLE_PANE:
                 if ($state->mode === ExploreMode::Sandwich) {
-                    $this->stack[count($this->stack) - 1] = $state->withCallersActive(!$state->callers_active);
+                    $this->stack[count($this->stack) - 1]
+                        = $state->withActivePane($state->active_pane->next());
                 }
                 return;
 
             case Keymap::ACTION_CALLERS:
                 if ($state->mode === ExploreMode::Sandwich) {
-                    $this->stack[count($this->stack) - 1] = $state->withCallersActive(true);
+                    $this->stack[count($this->stack) - 1]
+                        = $state->withActivePane(ActivePane::Callers);
                 }
                 return;
 
             case Keymap::ACTION_CALLEES:
                 if ($state->mode === ExploreMode::Sandwich) {
-                    $this->stack[count($this->stack) - 1] = $state->withCallersActive(false);
+                    $this->stack[count($this->stack) - 1]
+                        = $state->withActivePane(ActivePane::Callees);
                 }
                 return;
 
@@ -850,6 +896,18 @@ final class ExploreTui
 
             case Keymap::ACTION_VIEW_TOTAL:
                 $this->resetTo(ExploreMode::ListTotal);
+                return;
+
+            case Keymap::ACTION_VIEW_OVERVIEW:
+                // Fullscreen "overview as a list view": ListSelf with
+                // no-line forced on. Same content as the sidebar but
+                // gets the whole window so labels aren't truncated and
+                // there's room to navigate the long tail.
+                if (!$this->opts->no_line) {
+                    $this->opts = $this->opts->withNoLine(true);
+                }
+                $this->resetTo(ExploreMode::ListSelf);
+                $this->status = 'overview (no-line self-time top)';
                 return;
 
             case Keymap::ACTION_FILTER_VIEW:
@@ -962,11 +1020,11 @@ final class ExploreTui
             $this->list_selected += $delta;
             return;
         }
-        if ($state->callers_active) {
-            $this->callers_selected += $delta;
-        } else {
-            $this->callees_selected += $delta;
-        }
+        match ($state->active_pane) {
+            ActivePane::Callers  => $this->callers_selected += $delta,
+            ActivePane::Callees  => $this->callees_selected += $delta,
+            ActivePane::Overview => $this->overview_selected += $delta,
+        };
     }
 
     private function setSelection(int $value): void
@@ -979,16 +1037,25 @@ final class ExploreTui
             $this->list_top_row = 0;
             return;
         }
-        if ($state->callers_active) {
-            $this->callers_selected = $value === PHP_INT_MAX
-                ? max(0, count($this->ensureCallers()['rows']) - 1)
-                : $value;
-            $this->callers_top_row = 0;
-        } else {
-            $this->callees_selected = $value === PHP_INT_MAX
-                ? max(0, count($this->ensureCallees()['rows']) - 1)
-                : $value;
-            $this->callees_top_row = 0;
+        switch ($state->active_pane) {
+            case ActivePane::Callers:
+                $this->callers_selected = $value === PHP_INT_MAX
+                    ? max(0, count($this->ensureCallers()['rows']) - 1)
+                    : $value;
+                $this->callers_top_row = 0;
+                return;
+            case ActivePane::Callees:
+                $this->callees_selected = $value === PHP_INT_MAX
+                    ? max(0, count($this->ensureCallees()['rows']) - 1)
+                    : $value;
+                $this->callees_top_row = 0;
+                return;
+            case ActivePane::Overview:
+                $this->overview_selected = $value === PHP_INT_MAX
+                    ? max(0, count($this->ensureOverview()['rows']) - 1)
+                    : $value;
+                $this->overview_top_row = 0;
+                return;
         }
     }
 
@@ -1015,7 +1082,7 @@ final class ExploreTui
                 mode: ExploreMode::Sandwich,
                 focus_id: $key_id,
                 focus_label: $label,
-                callers_active: true,
+                active_pane: ActivePane::Callers,
             );
             $this->resetScrolls();
             $this->invalidate();
@@ -1023,12 +1090,28 @@ final class ExploreTui
         }
 
         // Sandwich → Sandwich: promote the active pane's selected row.
-        if ($state->callers_active) {
-            $rows = $this->applyViewFilter($this->ensureCallers()['rows'], $state->view_filter);
-            $idx = $this->callers_selected;
-        } else {
-            $rows = $this->applyViewFilter($this->ensureCallees()['rows'], $state->view_filter);
-            $idx = $this->callees_selected;
+        $rows = [];
+        $idx = 0;
+        switch ($state->active_pane) {
+            case ActivePane::Callers:
+                $rows = $this->applyViewFilter($this->ensureCallers()['rows'], $state->view_filter);
+                $idx = $this->callers_selected;
+                break;
+            case ActivePane::Callees:
+                $rows = $this->applyViewFilter($this->ensureCallees()['rows'], $state->view_filter);
+                $idx = $this->callees_selected;
+                break;
+            case ActivePane::Overview:
+                // The overview is always in no-line space; force no-line
+                // on so the focus_id we save matches the same id space
+                // the rest of the explorer reads.
+                if (!$this->opts->no_line) {
+                    $this->opts = $this->opts->withNoLine(true);
+                    $this->invalidate();
+                }
+                $rows = $this->ensureOverview()['rows'];
+                $idx = $this->overview_selected;
+                break;
         }
         if (!isset($rows[$idx])) {
             return;
@@ -1042,7 +1125,7 @@ final class ExploreTui
             mode: ExploreMode::Sandwich,
             focus_id: $key_id,
             focus_label: $label,
-            callers_active: $state->callers_active,
+            active_pane: $state->active_pane,
         );
         $this->resetScrolls();
         $this->invalidate();
@@ -1074,6 +1157,8 @@ final class ExploreTui
         $this->callers_top_row = 0;
         $this->callees_selected = 0;
         $this->callees_top_row = 0;
+        $this->overview_selected = 0;
+        $this->overview_top_row = 0;
     }
 
     /**
@@ -1121,7 +1206,7 @@ final class ExploreTui
             focus_id: $new_id,
             focus_label: $new_label,
             view_filter: $state->view_filter,
-            callers_active: $state->callers_active,
+            active_pane: $state->active_pane,
         );
     }
 

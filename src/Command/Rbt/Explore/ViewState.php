@@ -21,10 +21,10 @@ namespace Reli\Command\Rbt\Explore;
  *                     focused on, or null for unfocused list views.
  * - $focus_label      Display label captured at focus time.
  * - $view_filter      PCRE applied to row labels at render time. In
- *                     sandwich mode the same filter is applied to both
+ *                     sandwich mode the same filter is applied to all
  *                     panes; in list mode it filters the list rows.
- * - $callers_active   Sandwich-only. Which side pane is currently
- *                     receiving navigation keystrokes.
+ * - $active_pane      Sandwich-only. Which pane is currently receiving
+ *                     navigation keystrokes (callers / callees / overview).
  */
 final class ViewState
 {
@@ -33,7 +33,7 @@ final class ViewState
         public readonly ?int $focus_id = null,
         public readonly ?string $focus_label = null,
         public readonly ?string $view_filter = null,
-        public readonly bool $callers_active = true,
+        public readonly ActivePane $active_pane = ActivePane::Callers,
     ) {
     }
 
@@ -44,7 +44,7 @@ final class ViewState
             $this->focus_id,
             $this->focus_label,
             $this->view_filter,
-            $this->callers_active,
+            $this->active_pane,
         );
     }
 
@@ -55,18 +55,18 @@ final class ViewState
             $this->focus_id,
             $this->focus_label,
             $filter,
-            $this->callers_active,
+            $this->active_pane,
         );
     }
 
-    public function withCallersActive(bool $callers_active): self
+    public function withActivePane(ActivePane $active_pane): self
     {
         return new self(
             $this->mode,
             $this->focus_id,
             $this->focus_label,
             $this->view_filter,
-            $callers_active,
+            $active_pane,
         );
     }
 }
