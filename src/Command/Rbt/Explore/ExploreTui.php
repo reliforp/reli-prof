@@ -483,7 +483,7 @@ final class ExploreTui
         $cache = $this->ensureOverview();
         $rows = $cache['rows'];
         $denom = max(1, $cache['matched_samples']);
-        $focus_no_line_id = $this->getCurrentFocusNoLineId();
+        $focus_no_line_id = $this->getCurrentFocusKeyId();
 
         $state = $this->currentState();
         $is_active = $state->mode === ExploreMode::Sandwich
@@ -595,18 +595,12 @@ final class ExploreTui
         $this->status = "overview: {$sort}-time";
     }
 
-    private function getCurrentFocusNoLineId(): ?int
+    private function getCurrentFocusKeyId(): ?int
     {
-        $state = $this->currentState();
-        if ($state->focus_id === null) {
-            return null;
-        }
-        // The overview is always in no-line space; project the focus
-        // into the same space so we can match by id.
-        if ($this->opts->no_line) {
-            return $state->focus_id;
-        }
-        return $this->model->no_line_map[$state->focus_id] ?? null;
+        // The overview now follows the global no-line setting, so its
+        // row keys live in the same id space as the focus_id we have.
+        // No projection needed.
+        return $this->currentState()->focus_id;
     }
 
     private function renderFooter(ViewState $state, int $cols): string
@@ -757,10 +751,12 @@ final class ExploreTui
     }
 
     /**
-     * Self-time or total-time top in no-line space — the data behind the
-     * overview sidebar. Independent of the user's no-line toggle so the
-     * sidebar is a stable "where am I in the big picture" view; the sort
-     * flavour is controlled by {@see self::$overview_sort}.
+     * Self-time or total-time top — the data behind the overview sidebar.
+     *
+     * Follows the user's global `no-line` setting (toggled with `n`) so
+     * the sidebar always shows results in the same id space the rest of
+     * the explorer is reading. Sort flavour is controlled by
+     * {@see self::$overview_sort}.
      *
      * @return array{matched_samples:int, rows:list<array{int,int,string}>}
      */
@@ -769,11 +765,10 @@ final class ExploreTui
         if ($this->overview_cache !== null) {
             return $this->overview_cache;
         }
-        $opts = $this->opts->withNoLine(true);
         $view = $this->overview_sort === 'total'
-            ? Aggregator::totalTime($this->model, $opts)
-            : Aggregator::selfTime($this->model, $opts);
-        return $this->overview_cache = $this->buildCache($view, no_line: true);
+            ? Aggregator::totalTime($this->model, $this->opts)
+            : Aggregator::selfTime($this->model, $this->opts);
+        return $this->overview_cache = $this->buildCache($view, $this->opts->no_line);
     }
 
     /**
@@ -1013,10 +1008,12 @@ final class ExploreTui
             case Keymap::ACTION_NO_LINE:
                 $this->opts = $this->opts->withNoLine(!$this->opts->no_line);
                 $this->refocusForNoLineToggle();
-                // The overview is always built with no_line=true, so its
-                // content survives this toggle untouched.
-                $this->invalidate();
-                $this->resetScrolls();
+                // The overview now follows the global no-line setting,
+                // so its content (and therefore its row indices) shifts
+                // with this toggle — bust the cache and reset its
+                // cursor along with everything else.
+                $this->invalidate(include_overview: true);
+                $this->resetScrolls(include_overview: true);
                 $this->status = 'no-line: ' . ($this->opts->no_line ? 'on' : 'off');
                 return;
 
@@ -1177,17 +1174,6 @@ final class ExploreTui
             $this->status = 'cannot focus synthetic <root>/<leaf>';
             return;
         }
-        // The overview is in no-line space. If the user is currently in
-        // line-aware mode, translate the no-line id we just selected into
-        // its most-frequent line-aware variant before saving — that way
-        // the focus_id ends up in the same id space the rest of the
-        // explorer reads, *without* flipping the user's no-line setting.
-        if ($state->active_pane === ActivePane::Overview && !$this->opts->no_line) {
-            $resolved = $this->resolveNoLineToLineFocus($key_id);
-            if ($resolved !== null) {
-                [$key_id, $label] = $resolved;
-            }
-        }
         $this->stack[] = new ViewState(
             mode: ExploreMode::Sandwich,
             focus_id: $key_id,
@@ -1196,45 +1182,6 @@ final class ExploreTui
         );
         $this->resetScrolls();
         $this->invalidate();
-    }
-
-    /**
-     * Find the most-frequent line-aware frame whose no-line projection
-     * matches `$no_line_id`. Returns `[line_aware_id, line_aware_label]`
-     * or null if nothing maps. Used to translate an overview pick into a
-     * line-aware focus when the user has no-line off.
-     *
-     * @return array{int, string}|null
-     */
-    private function resolveNoLineToLineFocus(int $no_line_id): ?array
-    {
-        $counts = [];
-        foreach ($this->model->samples as $stack) {
-            foreach ($stack as $fid) {
-                if (($this->model->no_line_map[$fid] ?? -1) === $no_line_id) {
-                    $counts[$fid] = ($counts[$fid] ?? 0) + 1;
-                }
-            }
-        }
-        if ($counts === []) {
-            return null;
-        }
-        $best_id = null;
-        $best_count = -1;
-        foreach ($counts as $fid => $c) {
-            if ($c > $best_count) {
-                $best_count = $c;
-                $best_id = $fid;
-            }
-        }
-        if ($best_id === null) {
-            return null;
-        }
-        $label = $this->model->frame_keys[$best_id] ?? null;
-        if ($label === null) {
-            return null;
-        }
-        return [$best_id, $label];
     }
 
     private function popFocus(): void
