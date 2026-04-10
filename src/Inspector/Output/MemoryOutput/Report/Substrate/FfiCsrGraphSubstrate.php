@@ -646,6 +646,21 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $allCount = 0;
         $strongAllCount = 0;
 
+        // Localise everything the inner row loop touches. Property
+        // access on $this and method dispatch on $this->nodeIdToIndex
+        // each cost ~50-100 ns per call, and the loop runs 5M+ times
+        // on big captures. The two nodeIdToIndex calls per row alone
+        // were ~10M method dispatches before this.
+        $directMap = $this->nodeToIndexDirect;
+        $directOffset = $this->directIndexOffset;
+        $directSize = $this->directIndexSize;
+        $phpMap = $this->nodeToIndexPhp;
+        $treeLinkIds = $this->treeLinkIds;
+        $treeParentIdx = $this->treeParentIdx;
+        $linkDictReverse = &$this->linkDictReverse;
+        $linkDict = &$this->linkDict;
+        $roots = &$this->roots;
+
         // Single SQL pass — stage every edge into FFI, tally degrees,
         // and populate the tree-edge link_name index inline so report
         // passes can answer link_name lookups in memory afterwards.
@@ -662,8 +677,21 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $is_tree = (int)$r[3];
             $is_strong = ((string)($r[4] ?? 'strong')) === 'strong';
 
-            $pi = $this->nodeIdToIndex($parent);
-            $ci = $this->nodeIdToIndex($child);
+            // Inlined nodeIdToIndex (both parent and child) — see the
+            // localisation block above for why this matters.
+            if ($directMap !== null) {
+                $slot = $parent + $directOffset;
+                $pi = ($slot < 0 || $slot >= $directSize)
+                    ? -1
+                    : (int)$directMap[$slot];
+                $slot = $child + $directOffset;
+                $ci = ($slot < 0 || $slot >= $directSize)
+                    ? -1
+                    : (int)$directMap[$slot];
+            } else {
+                $pi = $phpMap[$parent] ?? -1;
+                $ci = $phpMap[$child] ?? -1;
+            }
 
             $stageParentIdx[$i] = $pi;
             $stageChildIdx[$i] = $ci;
@@ -678,16 +706,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $strongTreeCount++;
                 }
                 if ($parentIsRoot) {
-                    $this->roots[] = $child;
+                    $roots[] = $child;
                 }
                 // Tree edges are unique per child by definition, so a
                 // direct write here is safe.
-                if (!isset($this->linkDictReverse[$link_name])) {
-                    $this->linkDictReverse[$link_name] = count($this->linkDict);
-                    $this->linkDict[] = $link_name;
+                if (!isset($linkDictReverse[$link_name])) {
+                    $linkDictReverse[$link_name] = count($linkDict);
+                    $linkDict[] = $link_name;
                 }
-                $this->treeLinkIds[$ci] = $this->linkDictReverse[$link_name];
-                $this->treeParentIdx[$ci] = $pi;
+                $treeLinkIds[$ci] = $linkDictReverse[$link_name];
+                $treeParentIdx[$ci] = $pi;
             }
             if (!$parentIsRoot) {
                 $allDeg[$pi] = $allDeg[$pi] + 1;
@@ -700,6 +728,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $revDeg[$ci] = $revDeg[$ci] + 1;
         }
         $stmt->closeCursor();
+        unset($linkDictReverse, $linkDict, $roots);
 
         // Build offsets via prefix sum.
         $this->treeOffsets[0] = 0;
