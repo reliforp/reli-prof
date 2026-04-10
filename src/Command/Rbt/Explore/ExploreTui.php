@@ -929,7 +929,7 @@ final class ExploreTui
             '  n            toggle no-line grouping',
             '  o            toggle overview sidebar',
             '  F            toggle horizontal mini-flame strip',
-            '  > / <        sandwich-flame popup at current focus',
+            '  S            sandwich-flame popup (callers + callees) at focus',
             '  ?            this help',
             '  q / Ctrl-C   quit',
             '── press any key ──',
