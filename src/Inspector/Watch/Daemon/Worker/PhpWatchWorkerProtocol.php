@@ -17,6 +17,7 @@ use Amp\Sync\Channel;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchAttachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchSettingsMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
 
@@ -49,6 +50,12 @@ final class PhpWatchWorkerProtocol implements PhpWatchWorkerProtocolInterface
 
     #[\Override]
     public function sendTrigger(WatchTriggerMessage $message): void
+    {
+        $this->channel->send($message);
+    }
+
+    #[\Override]
+    public function sendTraceNotify(WatchTraceNotifyMessage $message): void
     {
         $this->channel->send($message);
     }

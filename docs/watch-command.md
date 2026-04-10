@@ -176,6 +176,8 @@ reli inspector:watch -p <pid> --cpu-usage=80 --cpu-sustain=5
 
 Note: the first poll always returns null (needs two samples to compute delta), so the trigger never fires on the very first poll.
 
+**Sampling window:** CPU% is calculated over a minimum 0.5-second window regardless of `--poll-interval` or `--trace-interval`. When tracing at 10ms intervals, the CPU% still reflects the average over the last 0.5s, preventing noisy readings from causing premature exit transitions.
+
 ### Combining Triggers
 
 Multiple triggers can be active simultaneously. When multiple triggers fire in the same poll cycle, actions execute **once** with a merged event:
@@ -269,6 +271,8 @@ Output files: `<output-dir>/watch-trace-<pid>-<timestamp>.rbt`
 During continuous tracing, the poll interval automatically switches to `--trace-interval` (default: 10ms) for higher sampling resolution. When tracing stops, it reverts to `--poll-interval`.
 
 The trace session can coexist with other actions — memory dumps, log events, and exec commands continue to work during tracing.
+
+In **daemon mode**, each worker manages its own trace session locally. Trace files are written to `--action-output-dir` with per-PID filenames. The controller receives notifications when traces start and stop.
 
 ### Event Log (`--action=log`)
 

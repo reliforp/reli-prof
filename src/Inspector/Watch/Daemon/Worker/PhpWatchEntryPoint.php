@@ -16,11 +16,15 @@ namespace Reli\Inspector\Watch\Daemon\Worker;
 use Reli\Inspector\Watch\CooldownManager;
 use Reli\Inspector\Watch\CpuUsageReader;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\RssReader;
+use Reli\Inspector\Watch\TraceSession;
+use Reli\Inspector\Watch\TriggerPhase;
+use Reli\Inspector\Watch\TriggerStateTracker;
 use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\VariableSpec;
 use Reli\Inspector\Watch\Trigger\CpuUsageTrigger;
@@ -34,6 +38,7 @@ use Reli\Inspector\Watch\Trigger\TriggerInterface;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Amphp\WorkerEntryPointInterface;
+use Reli\Lib\Directory\AppDirectory;
 use Reli\Lib\Log\Log;
 use Reli\Lib\Loop\LoopCondition\InfiniteLoopCondition;
 use Reli\Lib\Loop\LoopCondition\LoopConditionInterface;
@@ -92,6 +97,11 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
             }
         }
 
+        // Determine if continuous tracing is requested
+        $has_continuous_trace = \in_array('trace', $watch_settings->on_enter_actions, true);
+        // When tracing, always read call traces regardless of trigger requirements
+        $needs_call_trace_for_triggers = $needs_call_trace;
+
         // Worker handles cooldown/backoff per-process.
         // Global max_triggers is enforced by the controller (not here),
         // since it must be a single counter across all workers.
@@ -104,6 +114,17 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         );
 
         $poll_sleep_us = $watch_settings->poll_interval_ms * 1000;
+        $trace_sleep_us = $watch_settings->trace_interval_ms * 1000;
+
+        // Lifecycle state tracking for on-enter/on-exit
+        $has_lifecycle = count($watch_settings->on_enter_actions) > 0
+            || count($watch_settings->on_exit_actions) > 0;
+        $state_tracker = new TriggerStateTracker();
+
+        // Ensure output directory exists for trace files
+        if ($has_continuous_trace) {
+            AppDirectory::ensureDirectoryExists($watch_settings->action_output_dir);
+        }
 
         while ($this->loop_condition->shouldContinue()) {
             $attach_message = $this->protocol->receiveAttach();
@@ -125,6 +146,14 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
             $consecutive_failures = 0;
             $max_consecutive_failures = 10;
 
+            // Per-process trace session (worker-local .rbt file)
+            $trace_session = $has_continuous_trace
+                ? new TraceSession(
+                    $watch_settings->action_output_dir,
+                    $watch_settings->trace_interval_ms * 1000,
+                )
+                : null;
+
             // Prime CPU reader for this process
             if ($needs_cpu) {
                 $this->cpu_usage_reader->read($descriptor->pid);
@@ -132,6 +161,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
 
             try {
                 while ($this->loop_condition->shouldContinue()) {
+                    $loop_start = \hrtime(true);
                     $now = microtime(true);
                     $call_trace = null;
                     $rss_bytes = null;
@@ -145,7 +175,8 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                             $descriptor->eg_address,
                         );
 
-                        if ($needs_call_trace) {
+                        // Read call trace if triggers need it OR tracing is active
+                        if ($needs_call_trace_for_triggers || ($trace_session?->isActive() ?? false)) {
                             $call_trace = $this->call_trace_reader
                                 ->readCallTrace(
                                     $descriptor->pid,
@@ -186,7 +217,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                             break;
                         }
                         $previous_context = null;
-                        usleep($poll_sleep_us);
+                        $this->dynamicSleep($loop_start, ($trace_session?->isActive() ?? false) ? $trace_sleep_us : $poll_sleep_us);
                         continue;
                     }
                     $consecutive_failures = 0;
@@ -205,9 +236,45 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         cpu_usage_percent: $cpu_percent,
                     );
 
-                    // Evaluate triggers (with cooldown/rate limiting in worker)
+                    // Record trace sample if continuous tracing is active
+                    if ($trace_session?->isActive() && $call_trace !== null) {
+                        $trace_session->recordSample($call_trace);
+                    }
+
+                    // Evaluate triggers with lifecycle tracking
                     foreach ($triggers as $trigger) {
                         $event = $trigger->evaluate($context);
+                        $is_active = $event !== null;
+
+                        if ($has_lifecycle) {
+                            $phase = $state_tracker->update($trigger->name(), $is_active);
+
+                            if ($phase === TriggerPhase::ENTER) {
+                                // Start continuous trace on enter
+                                if ($trace_session !== null && $event !== null) {
+                                    $trace_session->start($descriptor->pid, $now);
+                                    $this->protocol->sendTraceNotify(new WatchTraceNotifyMessage(
+                                        pid: $descriptor->pid,
+                                        started: true,
+                                        trace_path: $trace_session->getCurrentPath(),
+                                    ));
+                                }
+                            } elseif ($phase === TriggerPhase::EXIT) {
+                                // Stop continuous trace on exit
+                                if ($trace_session?->isActive()) {
+                                    $path = $trace_session->getCurrentPath();
+                                    $trace_session->stop();
+                                    $this->protocol->sendTraceNotify(new WatchTraceNotifyMessage(
+                                        pid: $descriptor->pid,
+                                        started: false,
+                                        trace_path: $path,
+                                    ));
+                                }
+                                $cooldown->recordClear($trigger->name());
+                                continue;
+                            }
+                        }
+
                         if ($event === null) {
                             $cooldown->recordClear($trigger->name());
                             continue;
@@ -228,7 +295,12 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                     }
 
                     $previous_context = $context;
-                    usleep($poll_sleep_us);
+
+                    // Dynamic sleep: trace_interval when tracing, poll_interval otherwise
+                    $this->dynamicSleep(
+                        $loop_start,
+                        ($trace_session?->isActive() ?? false) ? $trace_sleep_us : $poll_sleep_us,
+                    );
                 }
             } catch (\Throwable $e) {
                 Log::debug('watch worker: exception', [
@@ -237,11 +309,37 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                 ]);
             }
 
+            // Stop trace session on detach
+            if ($trace_session?->isActive()) {
+                $path = $trace_session->getCurrentPath();
+                $trace_session->stop();
+                $this->protocol->sendTraceNotify(new WatchTraceNotifyMessage(
+                    pid: $descriptor->pid,
+                    started: false,
+                    trace_path: $path,
+                ));
+            }
+
             if ($needs_cpu) {
                 $this->cpu_usage_reader->clear($descriptor->pid);
             }
             $this->protocol->sendDetach(new WatchDetachMessage($descriptor->pid));
             Log::debug('watch worker: detached', ['pid' => $descriptor->pid]);
+        }
+    }
+
+    /**
+     * Sleep for the remaining interval, accounting for elapsed time.
+     *
+     * @param int $start hrtime(true) at loop start
+     * @param int $interval_us target interval in microseconds
+     */
+    private function dynamicSleep(int $start, int $interval_us): void
+    {
+        $elapsed_us = (int)((\hrtime(true) - $start) / 1000);
+        $wait = $interval_us - $elapsed_us;
+        if ($wait > 0) {
+            \usleep($wait);
         }
     }
 

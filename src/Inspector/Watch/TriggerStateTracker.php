@@ -55,4 +55,26 @@ final class TriggerStateTracker
     {
         return \in_array(true, $this->states, true);
     }
+
+    /**
+     * Clear all state entries matching a key prefix.
+     *
+     * Used in daemon mode to clean up all trigger states for a PID
+     * (where keys are "pid:trigger_name").
+     *
+     * @return list<string> keys that transitioned from active to cleared
+     */
+    public function clearPrefix(string $prefix): array
+    {
+        $cleared = [];
+        foreach ($this->states as $key => $active) {
+            if (\str_starts_with($key, $prefix)) {
+                if ($active) {
+                    $cleared[] = $key;
+                }
+                unset($this->states[$key]);
+            }
+        }
+        return $cleared;
+    }
 }

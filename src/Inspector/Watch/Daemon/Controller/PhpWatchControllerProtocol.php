@@ -17,6 +17,7 @@ use Amp\Sync\Channel;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchAttachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchSettingsMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchControllerProtocolInterface;
 
@@ -46,9 +47,9 @@ final class PhpWatchControllerProtocol implements PhpWatchControllerProtocolInte
     }
 
     #[\Override]
-    public function receiveTriggerOrDetach(): WatchTriggerMessage|WatchDetachMessage
+    public function receiveMessage(): WatchTriggerMessage|WatchDetachMessage|WatchTraceNotifyMessage
     {
-        /** @var WatchTriggerMessage|WatchDetachMessage */
+        /** @var WatchTriggerMessage|WatchDetachMessage|WatchTraceNotifyMessage */
         return $this->channel->receive();
     }
 }

@@ -19,6 +19,7 @@ use Reli\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
 use Reli\Inspector\Watch\Daemon\Context\PhpWatchContextCreator;
 use Reli\Inspector\Watch\Daemon\Controller\PhpWatchControllerInterface;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
 use Reli\Inspector\RetryingLoopProvider;
@@ -815,12 +816,21 @@ final class WatchCommand extends Command
                     &$exhausted_pids,
                 ) {
                     while (1) {
-                        $result = $worker->receiveTriggerOrDetach();
-                        if ($result instanceof WatchTriggerMessage) {
+                        $result = $worker->receiveMessage();
+                        if ($result instanceof WatchTraceNotifyMessage) {
+                            if (!$quiet) {
+                                $label = $result->started ? 'TRACE STARTED' : 'TRACE STOPPED';
+                                $output->writeln(sprintf(
+                                    '<info>[%s] PID=%d | %s</info>',
+                                    $label,
+                                    $result->pid,
+                                    $result->trace_path ?? '',
+                                ));
+                            }
+                        } elseif ($result instanceof WatchTriggerMessage) {
                             $global_trigger_count++;
 
                             if ($max_triggers > 0 && $global_trigger_count > $max_triggers) {
-                                // Silently drop — already past limit
                                 continue;
                             }
 
@@ -837,7 +847,8 @@ final class WatchCommand extends Command
 
                             $process = new \Reli\Lib\Process\ProcessSpecifier($result->pid);
 
-                            // Lifecycle handling for daemon mode
+                            // Lifecycle handling for one-shot on-enter actions (log, exec, etc.)
+                            // Continuous trace is handled worker-side.
                             if ($has_daemon_lifecycle) {
                                 $state_key = $result->pid . ':' . $result->event->trigger_name;
                                 $phase = $daemon_state_tracker->update($state_key, true);
@@ -871,7 +882,6 @@ final class WatchCommand extends Command
                                 $action->execute($result->event, $process, $context);
                             }
 
-                            // Cancel all workers when global limit reached
                             if ($max_triggers > 0 && $global_trigger_count >= $max_triggers) {
                                 if (!$quiet) {
                                     $output->writeln(sprintf(
@@ -885,36 +895,35 @@ final class WatchCommand extends Command
                                 return;
                             }
                         } else {
-                            // Process detached — fire on-exit if lifecycle is active
+                            // WatchDetachMessage — fire on-exit for one-shot actions
                             if ($has_daemon_lifecycle) {
-                                // Mark all triggers for this PID as inactive
-                                foreach ($triggers as $trigger) {
-                                    $state_key = $result->pid . ':' . $trigger->name();
-                                    $phase = $daemon_state_tracker->update($state_key, false);
-                                    if ($phase === TriggerPhase::EXIT) {
-                                        $exit_event = new TriggerEvent(
-                                            trigger_name: $trigger->name(),
-                                            description: 'process detached',
-                                            timestamp: \microtime(true),
-                                        );
-                                        $exit_context = new WatchContext(
-                                            pid: $result->pid,
-                                            heap_stats: new HeapStats(0, 0, 0, 0),
-                                            call_trace: null,
-                                            timestamp: \microtime(true),
-                                            previous: null,
-                                        );
-                                        $process = new \Reli\Lib\Process\ProcessSpecifier($result->pid);
-                                        if (!$quiet) {
-                                            $output->writeln(sprintf(
-                                                '<info>[EXIT] PID=%d | trigger=%s | process detached</info>',
-                                                $result->pid,
-                                                $trigger->name(),
-                                            ));
-                                        }
-                                        foreach ($on_exit_actions as $action) {
-                                            $action->execute($exit_event, $process, $exit_context);
-                                        }
+                                $cleared = $daemon_state_tracker->clearPrefix($result->pid . ':');
+                                if (count($cleared) > 0) {
+                                    $exit_event = new TriggerEvent(
+                                        trigger_name: implode('+', array_map(
+                                            fn (string $k) => explode(':', $k, 2)[1] ?? $k,
+                                            $cleared,
+                                        )),
+                                        description: 'process detached',
+                                        timestamp: \microtime(true),
+                                    );
+                                    $exit_context = new WatchContext(
+                                        pid: $result->pid,
+                                        heap_stats: new HeapStats(0, 0, 0, 0),
+                                        call_trace: null,
+                                        timestamp: \microtime(true),
+                                        previous: null,
+                                    );
+                                    $process = new \Reli\Lib\Process\ProcessSpecifier($result->pid);
+                                    if (!$quiet) {
+                                        $output->writeln(sprintf(
+                                            '<info>[EXIT] PID=%d | %s | process detached</info>',
+                                            $result->pid,
+                                            $exit_event->trigger_name,
+                                        ));
+                                    }
+                                    foreach ($on_exit_actions as $action) {
+                                        $action->execute($exit_event, $process, $exit_context);
                                     }
                                 }
                             }

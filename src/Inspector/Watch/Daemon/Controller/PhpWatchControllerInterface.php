@@ -17,6 +17,7 @@ use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 
 interface PhpWatchControllerInterface
@@ -35,5 +36,5 @@ interface PhpWatchControllerInterface
         \Reli\Inspector\Watch\Daemon\Searcher\WatchTargetDescriptor $process_descriptor,
     ): void;
 
-    public function receiveTriggerOrDetach(): WatchTriggerMessage|WatchDetachMessage;
+    public function receiveMessage(): WatchTriggerMessage|WatchDetachMessage|WatchTraceNotifyMessage;
 }

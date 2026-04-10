@@ -217,16 +217,22 @@ switches from `--poll-interval` (default 1s) to `--trace-interval`
 normally during tracing. Other triggers evaluate at the same frequency.
 Memory dumps (which ptrace-stop the target) naturally pause tracing.
 
-**Daemon mode:** Continuous tracing is single-process mode only (v1).
-One-shot `trace-once` and lifecycle actions (log, exec) work in daemon mode.
+**CPU sampling window stability:** CpuUsageReader uses a minimum 0.5s
+sampling window regardless of poll frequency. When tracing at 10ms, the
+CPU% is still averaged over 0.5s, preventing noisy exit transitions.
+
+**Daemon mode:** Each worker manages its own TraceSession locally.
+Workers detect trigger state transitions via TriggerStateTracker and
+start/stop traces autonomously. `WatchTraceNotifyMessage` notifies the
+controller for logging purposes; no trace data flows through the channel.
 
 ## Action System
 
 | Action | Type | Single-Process | Daemon |
 |--------|------|---------------|--------|
 | trace-once | one-shot | TraceAction (reads or reuses from context) | DaemonTraceAction (from WatchTriggerMessage) |
-| trace | stateful | ContinuousTraceAction → TraceSession.start() | not supported (v1) |
-| stop-trace | stateful | StopTraceAction → TraceSession.stop() | not supported (v1) |
+| trace | stateful | ContinuousTraceAction → TraceSession.start() | Worker-local TraceSession |
+| stop-trace | stateful | StopTraceAction → TraceSession.stop() | Worker-local TraceSession.stop() |
 | log | one-shot | LogAction (stderr or file) | LogAction (same) |
 | exec | one-shot | ExecAction (fire-and-forget, /dev/null) | ExecAction (same) |
 | memory-dump | one-shot | MemoryDumpAction (MemoryDumper) | DaemonMemoryDumpAction (MemoryDumper + WatchContext addresses) |
@@ -260,19 +266,26 @@ the restart-resilient mechanisms instead.
 Controller                          Worker (subprocess)
 ─────────                           ──────
 sendSettings(WatchSettings)    →    receiveSettings()
-                                      ↓ build triggers + cooldown
+                                      ↓ build triggers + cooldown + state tracker
 sendAttach(WatchTargetDescriptor) → receiveAttach()
                                       ↓ poll loop:
                                       │  HeapStatsReader.read()
-                                      │  CallTraceReader (if needed)
-                                      │  hasException() (if needed)
+                                      │  CpuUsageReader.read() (if needed)
+                                      │  CallTraceReader (if needed OR tracing)
                                       │  readVariables() (if needed)
-                                      │  trigger.evaluate()
+                                      │  TraceSession.recordSample() (if tracing)
+                                      │  trigger.evaluate() + state tracking
+                                      │  on ENTER: TraceSession.start()
+receiveMessage()               ←       sendTraceNotify(STARTED)
+                                      │  on EXIT: TraceSession.stop()
+receiveMessage()               ←       sendTraceNotify(STOPPED)
                                       │  cooldown check
                                       │  if fired:
-receiveTriggerOrDetach()       ←       sendTrigger(WatchTriggerMessage)
+receiveMessage()               ←       sendTrigger(WatchTriggerMessage)
+                                      │  dynamic sleep (trace/poll interval)
                                       ↓ on process exit:
-receiveTriggerOrDetach()       ←       sendDetach(WatchDetachMessage)
+                                      │  TraceSession.stop() if active
+receiveMessage()               ←       sendDetach(WatchDetachMessage)
 ```
 
 Worker handles per-process cooldown/backoff internally.
