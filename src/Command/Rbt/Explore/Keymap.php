@@ -44,6 +44,7 @@ final class Keymap
     public const ACTION_FILTER_VIEW   = 'filter_view';
     public const ACTION_FILTER_MATCH  = 'filter_match';
     public const ACTION_NO_LINE       = 'no_line';
+    public const ACTION_TOGGLE_OVERVIEW = 'toggle_overview';
     public const ACTION_HELP          = 'help';
     public const ACTION_QUIT          = 'quit';
 
@@ -86,6 +87,7 @@ final class Keymap
             self::ACTION_FILTER_VIEW   => ['/'],
             self::ACTION_FILTER_MATCH  => ['m'],
             self::ACTION_NO_LINE       => ['n'],
+            self::ACTION_TOGGLE_OVERVIEW => ['o'],
             self::ACTION_HELP          => ['?'],
             self::ACTION_QUIT          => ['q', "\x03"],
         ]);

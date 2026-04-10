@@ -74,6 +74,21 @@ final class ExploreTui
     /** @var array{matched_samples:int, rows:list<array{int,int,string}>}|null */
     private ?array $callees_cache = null;
 
+    /**
+     * Self-time top in no-line space, used by the overview sidebar.
+     * Always grouped by function name regardless of $opts->no_line so
+     * the sidebar shows a stable "where am I in the big picture" view.
+     *
+     * @var array{matched_samples:int, rows:list<array{int,int,string}>}|null
+     */
+    private ?array $overview_cache = null;
+
+    /**
+     * Tri-state: null = auto (show on wide terminals), true = forced on,
+     * false = forced off. Toggled with the `o` keybinding.
+     */
+    private ?bool $sidebar_override = null;
+
     private string $status = '';
 
     /** Modal text input state (filter prompts). */
@@ -132,9 +147,6 @@ final class ExploreTui
 
         $state = $this->currentState();
 
-        $buf = "\e[H\e[2J"; // home + clear
-        $buf .= $this->renderHeader($state, $cols);
-
         // Body height is everything except header (4 lines), footer (1),
         // and status (1) — 6 fixed lines.
         $body_rows = $rows - 6;
@@ -142,10 +154,35 @@ final class ExploreTui
             $body_rows = 3;
         }
 
+        // Sidebar is only shown for sandwich (the mode that benefits
+        // from a "you are here" overview); the list views already are
+        // the overview.
+        $show_sidebar = $state->mode === ExploreMode::Sandwich
+            && $this->shouldShowSidebar($cols);
+        $sidebar_width = $show_sidebar ? $this->computeSidebarWidth($cols) : 0;
+        $separator_width = $show_sidebar ? 1 : 0;
+        $body_width = $cols - $sidebar_width - $separator_width;
+
+        $buf = "\e[H\e[2J"; // home + clear
+        $buf .= $this->renderHeader($state, $cols);
+
         if ($state->mode === ExploreMode::Sandwich) {
-            $buf .= $this->renderSandwich($state, $cols, $body_rows);
+            $body_lines = $this->renderSandwichLines($state, $body_width, $body_rows);
         } else {
-            $buf .= $this->renderList($state, $cols, $body_rows);
+            $body_lines = $this->renderListLines($state, $body_width, $body_rows);
+        }
+
+        if ($show_sidebar) {
+            $sidebar_lines = $this->renderOverviewLines($sidebar_width, $body_rows);
+            for ($i = 0; $i < $body_rows; $i++) {
+                $sl = $sidebar_lines[$i] ?? str_repeat(' ', $sidebar_width);
+                $bl = $body_lines[$i] ?? '';
+                $buf .= $sl . "\e[2m│\e[22m" . $bl . "\n";
+            }
+        } else {
+            for ($i = 0; $i < $body_rows; $i++) {
+                $buf .= ($body_lines[$i] ?? '') . "\n";
+            }
         }
 
         $buf .= $this->renderFooter($state, $cols);
@@ -156,6 +193,33 @@ final class ExploreTui
         }
 
         $this->term->write($buf);
+    }
+
+    private function shouldShowSidebar(int $cols): bool
+    {
+        // Hard floor: a sidebar on a 80-col terminal would crush both
+        // panes to nothing. 100 cols is the minimum where it pays.
+        if ($cols < 100) {
+            return false;
+        }
+        if ($this->sidebar_override !== null) {
+            return $this->sidebar_override;
+        }
+        return $cols >= 120;
+    }
+
+    private function computeSidebarWidth(int $cols): int
+    {
+        // Adaptive: ~25% of width, clamped to a useful range so labels
+        // get enough room without starving the sandwich panes.
+        $width = (int)($cols * 0.28);
+        if ($width < 30) {
+            $width = 30;
+        }
+        if ($width > 50) {
+            $width = 50;
+        }
+        return $width;
     }
 
     private function renderHeader(ViewState $state, int $cols): string
@@ -188,7 +252,10 @@ final class ExploreTui
         return $out;
     }
 
-    private function renderList(ViewState $state, int $cols, int $body_rows): string
+    /**
+     * @return list<string> exactly $body_rows lines, padded as needed
+     */
+    private function renderListLines(ViewState $state, int $width, int $body_rows): array
     {
         $cache = $this->ensureList();
         $rows_data = $this->applyViewFilter($cache['rows'], $state->view_filter);
@@ -196,33 +263,38 @@ final class ExploreTui
 
         $this->clampSelection($this->list_selected, $this->list_top_row, count($rows_data), $body_rows - 1);
 
-        $out = '';
-        $out .= $this->styleTableHeader(self::shorten(
+        $out = [];
+        $out[] = $this->styleTableHeader(self::padOrShorten(
             sprintf('  %9s  %6s  %s', 'count', 'pct', 'frame'),
-            $cols,
-        )) . "\n";
+            $width,
+        ));
 
-        $visible = $body_rows - 1; // minus header line
+        $visible = $body_rows - 1;
         for ($i = 0; $i < $visible; $i++) {
             $idx = $this->list_top_row + $i;
             if (!isset($rows_data[$idx])) {
-                $out .= "\n";
+                $out[] = str_repeat(' ', $width);
                 continue;
             }
             [$count, , $label] = $rows_data[$idx];
             $pct = ($count / $denom) * 100;
             $marker = $idx === $this->list_selected ? '> ' : '  ';
-            $line = sprintf('%s%9s  %5.1f%%  %s', $marker, number_format($count), $pct, $label);
-            $line = self::shorten($line, $cols);
+            $line = self::padOrShorten(
+                sprintf('%s%9s  %5.1f%%  %s', $marker, number_format($count), $pct, $label),
+                $width,
+            );
             if ($idx === $this->list_selected) {
                 $line = "\e[7m" . $line . "\e[27m";
             }
-            $out .= $line . "\n";
+            $out[] = $line;
         }
         return $out;
     }
 
-    private function renderSandwich(ViewState $state, int $cols, int $body_rows): string
+    /**
+     * @return list<string> exactly $body_rows lines, padded as needed
+     */
+    private function renderSandwichLines(ViewState $state, int $width, int $body_rows): array
     {
         $callers = $this->ensureCallers();
         $callees = $this->ensureCallees();
@@ -238,126 +310,238 @@ final class ExploreTui
         $available = max(0, $body_rows - $banner_rows);
         $caller_body = (int)floor($available / 2);
         $callee_body = $available - $caller_body;
-
-        // Pane heights include the header line each.
         $caller_visible = max(0, $caller_body - 1);
         $callee_visible = max(0, $callee_body - 1);
 
-        $this->clampSelection(
-            $this->callers_selected,
-            $this->callers_top_row,
-            count($caller_rows),
-            $caller_visible,
-        );
-        $this->clampSelection(
-            $this->callees_selected,
-            $this->callees_top_row,
-            count($callee_rows),
-            $callee_visible,
-        );
+        $this->clampSelection($this->callers_selected, $this->callers_top_row, count($caller_rows), $caller_visible);
+        $this->clampSelection($this->callees_selected, $this->callees_top_row, count($callee_rows), $callee_visible);
 
-        $out = '';
-        $out .= $this->renderPane(
+        $caller_lines = $this->renderPaneLines(
             'callers',
             $caller_rows,
             $caller_denom,
             $this->callers_selected,
             $this->callers_top_row,
             $caller_visible,
-            $cols,
+            $width,
             $state->callers_active,
         );
-        $out .= $this->renderFocusBanner($state, $cols);
-        $out .= $this->renderPane(
+        $banner_lines = $this->renderFocusBannerLines($state, $width);
+        $callee_lines = $this->renderPaneLines(
             'callees',
             $callee_rows,
             $callee_denom,
             $this->callees_selected,
             $this->callees_top_row,
             $callee_visible,
-            $cols,
+            $width,
             !$state->callers_active,
         );
+
+        $out = [];
+        foreach ($caller_lines as $line) {
+            $out[] = $line;
+        }
+        foreach ($banner_lines as $line) {
+            $out[] = $line;
+        }
+        foreach ($callee_lines as $line) {
+            $out[] = $line;
+        }
+        // Pad to body_rows if we somehow came up short.
+        while (count($out) < $body_rows) {
+            $out[] = str_repeat(' ', $width);
+        }
         return $out;
     }
 
     /**
-     * @param list<array{int, int, string}> $rows
+     * @param  list<array{int, int, string}> $rows
+     * @return list<string>                  pane header + visible rows
      */
-    private function renderPane(
+    private function renderPaneLines(
         string $title,
         array $rows,
         int $denom,
         int $selected,
         int $top_row,
         int $visible,
-        int $cols,
+        int $width,
         bool $active,
-    ): string {
+    ): array {
         $marker = $active ? '▶' : ' ';
         $count_label = sprintf('%s (%d)', $title, count($rows));
         $header = sprintf('%s ── %s ', $marker, $count_label);
-        $pad_len = max(0, $cols - mb_strlen($header));
+        $pad_len = max(0, $width - mb_strlen($header));
         $header .= str_repeat('─', $pad_len);
-        $header = self::shorten($header, $cols);
-        if ($active) {
-            $header = "\e[1m" . $header . "\e[22m";
-        } else {
-            $header = "\e[2m" . $header . "\e[22m";
-        }
-        $out = $header . "\n";
+        $header = self::padOrShorten($header, $width);
+        $header = $active
+            ? "\e[1m" . $header . "\e[22m"
+            : "\e[2m" . $header . "\e[22m";
+        $out = [$header];
 
         if ($visible === 0) {
             return $out;
         }
-
         if ($rows === []) {
-            $out .= self::shorten('  (no entries)', $cols) . "\n";
+            $out[] = self::padOrShorten('  (no entries)', $width);
             for ($i = 1; $i < $visible; $i++) {
-                $out .= "\n";
+                $out[] = str_repeat(' ', $width);
             }
             return $out;
         }
-
         for ($i = 0; $i < $visible; $i++) {
             $idx = $top_row + $i;
             if (!isset($rows[$idx])) {
-                $out .= "\n";
+                $out[] = str_repeat(' ', $width);
                 continue;
             }
             [$count, , $label] = $rows[$idx];
             $pct = ($count / $denom) * 100;
             $is_sel = $active && $idx === $selected;
             $sel_mark = $is_sel ? '> ' : '  ';
-            $line = sprintf('%s%9s  %5.1f%%  %s', $sel_mark, number_format($count), $pct, $label);
-            $line = self::shorten($line, $cols);
+            $line = self::padOrShorten(
+                sprintf('%s%9s  %5.1f%%  %s', $sel_mark, number_format($count), $pct, $label),
+                $width,
+            );
             if ($is_sel) {
                 $line = "\e[7m" . $line . "\e[27m";
             }
-            $out .= $line . "\n";
+            $out[] = $line;
         }
         return $out;
     }
 
-    private function renderFocusBanner(ViewState $state, int $cols): string
+    /**
+     * @return list<string> three lines: top border, content, bottom border
+     */
+    private function renderFocusBannerLines(ViewState $state, int $width): array
     {
         $label = $state->focus_label ?? '<none>';
-        $top = '┌' . str_repeat('─', max(0, $cols - 2)) . '┐';
-        $bottom = '└' . str_repeat('─', max(0, $cols - 2)) . '┘';
-        $inner = '│ focus: ' . self::shorten($label, $cols - 12) . ' ';
-        $pad_len = max(0, $cols - mb_strlen($inner) - 1);
-        $inner .= str_repeat(' ', $pad_len) . '│';
-        $top = "\e[1m" . self::shorten($top, $cols) . "\e[22m";
-        $bottom = "\e[1m" . self::shorten($bottom, $cols) . "\e[22m";
-        $inner = "\e[1m" . self::shorten($inner, $cols) . "\e[22m";
-        return $top . "\n" . $inner . "\n" . $bottom . "\n";
+        $stats = $this->lookupFocusSelfStats($state);
+        $stats_text = $stats !== null
+            ? sprintf(' — %s (%5.1f%%)', number_format($stats['count']), $stats['pct'])
+            : '';
+
+        $top = '┌' . str_repeat('─', max(0, $width - 2)) . '┐';
+        $bottom = '└' . str_repeat('─', max(0, $width - 2)) . '┘';
+
+        $left = '│ focus: ';
+        $right = $stats_text . ' │';
+        $label_room = max(0, $width - mb_strlen($left) - mb_strlen($right));
+        $label_short = self::shorten($label, $label_room);
+        $inner = $left . $label_short;
+        $padding = max(0, $width - mb_strlen($inner) - mb_strlen($right));
+        $inner .= str_repeat(' ', $padding) . $right;
+        $inner = self::padOrShorten($inner, $width);
+
+        return [
+            "\e[1m" . self::padOrShorten($top, $width) . "\e[22m",
+            "\e[1m" . $inner . "\e[22m",
+            "\e[1m" . self::padOrShorten($bottom, $width) . "\e[22m",
+        ];
+    }
+
+    /**
+     * Look up the focus's self-time count and pct of total samples.
+     *
+     * @return array{count:int, pct:float}|null
+     */
+    private function lookupFocusSelfStats(ViewState $state): ?array
+    {
+        if ($state->focus_id === null) {
+            return null;
+        }
+        // Find a row in the list cache (= self/total top with current opts)
+        // whose key_id matches the focus.
+        $cache = $this->ensureList();
+        foreach ($cache['rows'] as [$count, $key_id, $label]) {
+            if ($key_id === $state->focus_id) {
+                $denom = max(1, $cache['matched_samples']);
+                return ['count' => $count, 'pct' => $count / $denom * 100];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return list<string> exactly $body_rows lines for the left sidebar
+     */
+    private function renderOverviewLines(int $width, int $body_rows): array
+    {
+        $cache = $this->ensureOverview();
+        $rows = $cache['rows'];
+        $denom = max(1, $cache['matched_samples']);
+        $focus_no_line_id = $this->getCurrentFocusNoLineId();
+
+        // Determine which row matches the focus and auto-scroll to keep
+        // it centered in the visible area.
+        $focus_idx = null;
+        if ($focus_no_line_id !== null) {
+            foreach ($rows as $i => [, $key_id, ]) {
+                if ($key_id === $focus_no_line_id) {
+                    $focus_idx = $i;
+                    break;
+                }
+            }
+        }
+        $visible = max(0, $body_rows - 1); // header takes 1 line
+        $top_row = 0;
+        if ($focus_idx !== null && $visible > 0) {
+            $top_row = max(0, $focus_idx - intdiv($visible, 2));
+            $top_row = min($top_row, max(0, count($rows) - $visible));
+        }
+
+        $header = self::padOrShorten('── overview (self) ──', $width);
+        $out = ["\e[2m" . $header . "\e[22m"];
+
+        for ($i = 0; $i < $visible; $i++) {
+            $idx = $top_row + $i;
+            if (!isset($rows[$idx])) {
+                $out[] = str_repeat(' ', $width);
+                continue;
+            }
+            [$count, $key_id, $label] = $rows[$idx];
+            $pct = ($count / $denom) * 100;
+            $is_focus = $focus_idx !== null && $idx === $focus_idx;
+            $marker = $is_focus ? '◆' : ' ';
+            // Label gets whatever's left after marker (1) + space (1) +
+            // pct (5) + space (1) = 8 chars of overhead.
+            $label_room = max(1, $width - 8);
+            $line = sprintf(
+                '%s %s %5.1f%%',
+                $marker,
+                self::padOrShorten($label, $label_room),
+                $pct,
+            );
+            $line = self::padOrShorten($line, $width);
+            if ($is_focus) {
+                $line = "\e[7m" . $line . "\e[27m";
+            }
+            $out[] = $line;
+        }
+        return $out;
+    }
+
+    private function getCurrentFocusNoLineId(): ?int
+    {
+        $state = $this->currentState();
+        if ($state->focus_id === null) {
+            return null;
+        }
+        // The overview is always in no-line space; project the focus
+        // into the same space so we can match by id.
+        if ($this->opts->no_line) {
+            return $state->focus_id;
+        }
+        return $this->model->no_line_map[$state->focus_id] ?? null;
     }
 
     private function renderFooter(ViewState $state, int $cols): string
     {
         if ($state->mode === ExploreMode::Sandwich) {
             $footer = '[Tab] toggle pane  [↑↓] sel  [Enter] focus  [←/→] callers/callees  '
-                . '[u] back  [s] self  [t] total  [/] filter  [m] match  [n] no-line  [?] help  [q] quit';
+                . '[u] back  [s/t] self/total  [/] filter  [m] match  [n] no-line  [o] overview  [?] help  [q] quit';
         } else {
             $footer = '[↑↓] sel  [Enter] focus  [s] self  [t] total  '
                 . '[/] filter  [m] match  [n] no-line  [?] help  [q] quit';
@@ -419,6 +603,7 @@ final class ExploreTui
             '  /            filter visible rows (PCRE)',
             '  m            global sample match (PCRE)',
             '  n            toggle no-line grouping',
+            '  o            toggle overview sidebar',
             '  ?            this help',
             '  q / Ctrl-C   quit',
             '── press any key ──',
@@ -460,7 +645,7 @@ final class ExploreTui
         $view = $state->mode === ExploreMode::ListTotal
             ? Aggregator::totalTime($this->model, $this->opts)
             : Aggregator::selfTime($this->model, $this->opts);
-        return $this->list_cache = $this->buildCache($view);
+        return $this->list_cache = $this->buildCache($view, $this->opts->no_line);
     }
 
     /**
@@ -476,7 +661,7 @@ final class ExploreTui
             return $this->callers_cache = ['matched_samples' => 0, 'rows' => []];
         }
         $view = Aggregator::callersOf($this->model, $state->focus_id, $this->opts);
-        return $this->callers_cache = $this->buildCache($view);
+        return $this->callers_cache = $this->buildCache($view, $this->opts->no_line);
     }
 
     /**
@@ -492,20 +677,37 @@ final class ExploreTui
             return $this->callees_cache = ['matched_samples' => 0, 'rows' => []];
         }
         $view = Aggregator::calleesOf($this->model, $state->focus_id, $this->opts);
-        return $this->callees_cache = $this->buildCache($view);
+        return $this->callees_cache = $this->buildCache($view, $this->opts->no_line);
+    }
+
+    /**
+     * Self-time top in no-line space — the data behind the overview
+     * sidebar. Independent of the user's no-line toggle so the sidebar
+     * is a stable "where am I in the big picture" view.
+     *
+     * @return array{matched_samples:int, rows:list<array{int,int,string}>}
+     */
+    private function ensureOverview(): array
+    {
+        if ($this->overview_cache !== null) {
+            return $this->overview_cache;
+        }
+        $opts = $this->opts->withNoLine(true);
+        $view = Aggregator::selfTime($this->model, $opts);
+        return $this->overview_cache = $this->buildCache($view, no_line: true);
     }
 
     /**
      * @param array{counts: array<int, int>, matched_samples: int} $view
      * @return array{matched_samples:int, rows:list<array{int,int,string}>}
      */
-    private function buildCache(array $view): array
+    private function buildCache(array $view, bool $no_line): array
     {
         $counts = $view['counts'];
         arsort($counts);
         $rows = [];
         foreach ($counts as $key_id => $count) {
-            $label = Aggregator::labelFor($this->model, $key_id, $this->opts->no_line);
+            $label = Aggregator::labelFor($this->model, $key_id, $no_line);
             $rows[] = [$count, $key_id, $label];
         }
         return [
@@ -519,6 +721,7 @@ final class ExploreTui
         $this->list_cache = null;
         $this->callers_cache = null;
         $this->callees_cache = null;
+        $this->overview_cache = null;
     }
 
     /**
@@ -694,6 +897,17 @@ final class ExploreTui
                 $this->invalidate();
                 $this->resetScrolls();
                 $this->status = 'no-line: ' . ($this->opts->no_line ? 'on' : 'off');
+                return;
+
+            case Keymap::ACTION_TOGGLE_OVERVIEW:
+                // Promote whatever the auto-rule currently says to the
+                // explicit override, then flip it. After this any further
+                // toggles cycle the explicit value rather than re-engaging
+                // auto.
+                [$cols, ] = $this->term->size();
+                $current = $this->sidebar_override ?? ($cols >= 120);
+                $this->sidebar_override = !$current;
+                $this->status = 'overview: ' . ($this->sidebar_override ? 'on' : 'off');
                 return;
         }
     }
@@ -928,5 +1142,20 @@ final class ExploreTui
             return mb_substr($s, 0, $width);
         }
         return mb_substr($s, 0, $width - 1) . '…';
+    }
+
+    /**
+     * Truncate to width and right-pad with spaces so the line occupies
+     * exactly $width display columns. Used everywhere a column-aligned
+     * region (sidebar / sandwich pane) needs predictable widths.
+     */
+    private static function padOrShorten(string $s, int $width): string
+    {
+        $shortened = self::shorten($s, $width);
+        $len = mb_strlen($shortened);
+        if ($len < $width) {
+            $shortened .= str_repeat(' ', $width - $len);
+        }
+        return $shortened;
     }
 }
