@@ -35,4 +35,13 @@ enum ActivePane: string
             self::Overview => self::Callers,
         };
     }
+
+    public function prev(): self
+    {
+        return match ($this) {
+            self::Callers => self::Overview,
+            self::Callees => self::Callers,
+            self::Overview => self::Callees,
+        };
+    }
 }

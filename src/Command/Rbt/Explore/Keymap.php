@@ -38,7 +38,9 @@ final class Keymap
     public const ACTION_CALLERS       = 'callers';
     public const ACTION_CALLEES       = 'callees';
     public const ACTION_TOGGLE_PANE   = 'toggle_pane';
+    public const ACTION_TOGGLE_PANE_REVERSE = 'toggle_pane_reverse';
     public const ACTION_BACK          = 'back';
+    public const ACTION_FOLLOW_OVERVIEW = 'follow_overview';
     public const ACTION_VIEW_SELF     = 'view_self';
     public const ACTION_VIEW_TOTAL    = 'view_total';
     public const ACTION_FILTER_VIEW   = 'filter_view';
@@ -82,6 +84,8 @@ final class Keymap
             self::ACTION_CALLERS       => ["\e[D", 'h'],
             self::ACTION_CALLEES       => ["\e[C", 'l'],
             self::ACTION_TOGGLE_PANE   => ["\t"],
+            self::ACTION_TOGGLE_PANE_REVERSE => ["\e[Z"],
+            self::ACTION_FOLLOW_OVERVIEW => ['f'],
             self::ACTION_BACK          => ['u', "\x7f", "\b"],
             self::ACTION_VIEW_SELF     => ['s'],
             self::ACTION_VIEW_TOTAL    => ['t'],

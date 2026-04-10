@@ -36,7 +36,13 @@ class KeymapTest extends BaseTestCase
     {
         $km = Keymap::default();
         $this->assertNull($km->resolve('Z'));
-        $this->assertNull($km->resolve("\e[Z"));
+        $this->assertNull($km->resolve("\e[X"));
+    }
+
+    public function testShiftTabResolvesToReversePaneCycle(): void
+    {
+        $km = Keymap::default();
+        $this->assertSame(Keymap::ACTION_TOGGLE_PANE_REVERSE, $km->resolve("\e[Z"));
     }
 
     public function testFromJsonFileOverridesAndKeepsDefaults(): void

@@ -95,6 +95,13 @@ final class ExploreTui
     private string $overview_sort = 'self';
 
     /**
+     * When on, moving the overview cursor with ↑↓ also replaces the
+     * current sandwich state's focus inline (no history push). Toggled
+     * with `f`. Off by default to keep history "checkpoint" semantics.
+     */
+    private bool $overview_follow = false;
+
+    /**
      * Tri-state: null = auto (show on wide terminals), true = forced on,
      * false = forced off. Toggled with the `o` keybinding.
      */
@@ -606,9 +613,10 @@ final class ExploreTui
     private function renderFooter(ViewState $state, int $cols): string
     {
         if ($state->mode === ExploreMode::Sandwich) {
-            $footer = '[Tab] cycle pane  [↑↓] sel  [Enter] focus  [←/→] callers/callees  '
-                . '[u] back  [s/t/O] self/total/overview  [/] filter  [m] match  '
-                . '[n] no-line  [o] sidebar  [?] help  [q] quit';
+            $follow = $this->overview_follow ? '[f*]' : '[f]';
+            $footer = '[Tab/⇧Tab] cycle pane  [↑↓] sel  [Enter] focus  [←/→] callers/callees  '
+                . '[u] back  [s/t/O] self/total/overview  ' . $follow . ' follow  '
+                . '[/] filter  [m] match  [n] no-line  [o] sidebar  [?] help  [q] quit';
         } else {
             $footer = '[↑↓] sel  [Enter] focus  [s/t/O] self/total/overview  '
                 . '[/] filter  [m] match  [n] no-line  [?] help  [q] quit';
@@ -662,9 +670,11 @@ final class ExploreTui
             '  g / G        first / last row',
             '  Enter        focus selected row → sandwich view',
             '  Tab          cycle active pane: callers → callees → overview',
+            '  Shift+Tab    cycle the other way',
             '  ← / h        focus callers pane',
             '  → / l        focus callees pane',
-            '  u / Bksp     pop focus history',
+            '  u / Bksp     pop focus history (also restores overview cursor)',
+            '  f            toggle overview live-follow (cursor = focus)',
             '  s            sandwich: focus overview, sort by self-time',
             '               list:     switch to self-time list',
             '  t            sandwich: focus overview, sort by total-time',
@@ -914,6 +924,18 @@ final class ExploreTui
                 }
                 return;
 
+            case Keymap::ACTION_TOGGLE_PANE_REVERSE:
+                if ($state->mode === ExploreMode::Sandwich) {
+                    $this->stack[count($this->stack) - 1]
+                        = $state->withActivePane($state->active_pane->prev());
+                }
+                return;
+
+            case Keymap::ACTION_FOLLOW_OVERVIEW:
+                $this->overview_follow = !$this->overview_follow;
+                $this->status = 'overview follow: ' . ($this->overview_follow ? 'on' : 'off');
+                return;
+
             case Keymap::ACTION_CALLERS:
                 if ($state->mode === ExploreMode::Sandwich) {
                     $this->stack[count($this->stack) - 1]
@@ -1085,6 +1107,9 @@ final class ExploreTui
             ActivePane::Callees  => $this->callees_selected += $delta,
             ActivePane::Overview => $this->overview_selected += $delta,
         };
+        if ($state->active_pane === ActivePane::Overview && $this->overview_follow) {
+            $this->liveFollowOverviewFocus();
+        }
     }
 
     private function setSelection(int $value): void
@@ -1115,14 +1140,68 @@ final class ExploreTui
                     ? max(0, count($this->ensureOverview()['rows']) - 1)
                     : $value;
                 $this->overview_top_row = 0;
+                if ($this->overview_follow) {
+                    $this->liveFollowOverviewFocus();
+                }
                 return;
         }
+    }
+
+    /**
+     * Replace the current sandwich state's focus with whatever the
+     * overview cursor is currently pointing at — without pushing a new
+     * state on the history stack.
+     *
+     * Used by the `f` "follow" mode so navigating the overview previews
+     * each row inline. The history stack stays untouched, so `Enter`
+     * still acts as a "checkpoint" the user can return to via `u`.
+     */
+    private function liveFollowOverviewFocus(): void
+    {
+        $state = $this->currentState();
+        if ($state->mode !== ExploreMode::Sandwich) {
+            return;
+        }
+        // Clamp the cursor first so we don't try to read past the end.
+        $rows = $this->ensureOverview()['rows'];
+        if ($rows === []) {
+            return;
+        }
+        if ($this->overview_selected < 0) {
+            $this->overview_selected = 0;
+        }
+        if ($this->overview_selected >= count($rows)) {
+            $this->overview_selected = count($rows) - 1;
+        }
+        [, $key_id, $label] = $rows[$this->overview_selected];
+        if ($key_id < 0) {
+            return; // synthetic <root>/<leaf>, skip
+        }
+        if ($state->focus_id === $key_id) {
+            return; // no-op
+        }
+        // Replace the top state in place — this is the key bit that
+        // makes follow mode not pollute the history stack.
+        $this->stack[count($this->stack) - 1] = $state->withFocus($key_id, $label);
+        // Callers/callees content is now stale; reset their scrolls
+        // and bust their caches. Overview cursor stays put because the
+        // user just moved it.
+        $this->callers_cache = null;
+        $this->callees_cache = null;
+        $this->callers_selected = 0;
+        $this->callers_top_row = 0;
+        $this->callees_selected = 0;
+        $this->callees_top_row = 0;
     }
 
     /**
      * Promote the active pane's selected row to a new focus and push a
      * new sandwich state on the stack. The same pane stays active so
      * the user can keep climbing in one direction.
+     *
+     * Snapshots the overview cursor into the *outgoing* state before
+     * pushing so `popFocus` can restore it later — the user shouldn't
+     * have to re-find their place in the overview after drilling down.
      */
     private function focusSelected(): void
     {
@@ -1174,11 +1253,20 @@ final class ExploreTui
             $this->status = 'cannot focus synthetic <root>/<leaf>';
             return;
         }
+        // Snapshot the current overview cursor into the *outgoing* state
+        // before pushing the new one. popFocus will restore it on the
+        // way back so the user doesn't lose their place in the sidebar.
+        $this->stack[count($this->stack) - 1] = $state->withOverviewCursor(
+            $this->overview_selected,
+            $this->overview_top_row,
+        );
         $this->stack[] = new ViewState(
             mode: ExploreMode::Sandwich,
             focus_id: $key_id,
             focus_label: $label,
             active_pane: $state->active_pane,
+            overview_selected: $this->overview_selected,
+            overview_top_row: $this->overview_top_row,
         );
         $this->resetScrolls();
         $this->invalidate();
@@ -1193,6 +1281,13 @@ final class ExploreTui
         array_pop($this->stack);
         $this->resetScrolls();
         $this->invalidate();
+        // Restore the overview cursor from whatever the now-top state
+        // saved when it was pushed (or 0 for fresh states), so `u`
+        // returns the user to where they were *in the overview* too,
+        // not just to the previous focus.
+        $restored = $this->currentState();
+        $this->overview_selected = $restored->overview_selected;
+        $this->overview_top_row = $restored->overview_top_row;
     }
 
     private function resetTo(ExploreMode $mode): void
