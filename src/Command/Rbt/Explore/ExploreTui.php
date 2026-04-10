@@ -157,6 +157,17 @@ final class ExploreTui
      */
     private ?string $tree_popup_direction = null;
 
+    /**
+     * Scroll offset and selected row inside the tree popup. The popup
+     * builds the FULL tree (bounded by a soft cap) into a flat line
+     * list and tracks both the cursor and the top-of-window separately
+     * so cursor moves auto-scroll the visible window the same way the
+     * regular list / pane scrolls do. Reset whenever the popup opens
+     * or its underlying focus / direction / no-line / match-re changes.
+     */
+    private int $tree_popup_top_row = 0;
+    private int $tree_popup_cursor_row = 0;
+
     public function __construct(TraceModel $model, Terminal $term, Keymap $keymap)
     {
         $this->model = $model;
@@ -948,8 +959,8 @@ final class ExploreTui
             '  o            toggle overview sidebar',
             '  F            toggle horizontal mini-flame strip',
             '  S            sandwich-flame popup (callers + callees) at focus',
-            '  >            callee tree popup (% bars + full labels)',
-            '  <            caller tree popup (% bars + full labels)',
+            '  >            callee tree popup (scroll + Enter focuses)',
+            '  <            caller tree popup (scroll + Enter focuses)',
             '  ?            this help',
             '  q / Ctrl-C   quit',
             '── press any key ──',
@@ -1201,6 +1212,15 @@ final class ExploreTui
     }
 
     /**
+     * Soft cap on the total number of rows the tree popup will build.
+     * Real focus trees can have thousands of nodes; capping the walk
+     * keeps the worst case bounded so a key press never has to chew
+     * through millions of nodes. Tail beyond the cap is silently
+     * truncated.
+     */
+    private const TREE_POPUP_MAX_LINES = 5000;
+
+    /**
      * Indented-tree popup overlay rooted at the current focus.
      *
      * The flame popup is great for "where is the mass" but loses
@@ -1212,6 +1232,10 @@ final class ExploreTui
      *
      * Reuses {@see ensureSandwichTree} so opening this after the
      * S popup (or vice versa) on the same focus is free.
+     *
+     * Pager-style modal: ↑/↓/PgUp/PgDn/Home/End scroll, Enter focuses
+     * the cursor row's frame (pushing a new sandwich state), q/Esc
+     * close. Other keys also close so the user can never get stuck.
      *
      * @param 'callees'|'callers' $direction
      */
@@ -1227,17 +1251,8 @@ final class ExploreTui
         }
 
         $focus_count = max(1, $tree['focus_count']);
-        $children = $direction === 'callees' ? $tree['callees'] : $tree['callers'];
-
-        $title = sprintf(
-            ' %s tree — %s   (%s samples)   [any key closes] ',
-            $direction === 'callees' ? 'callee' : 'caller',
-            $state->focus_label ?? '<none>',
-            number_format($focus_count),
-        );
-
-        $lines = [];
-        $lines[] = "\e[1;7m" . self::padOrShorten($title, $cols) . "\e[0m";
+        $entries = $this->buildTreePopupLines($direction, $cols);
+        $total = count($entries);
 
         // 2 rows reserved (title + footer); the rest are tree rows.
         $body_rows = $rows - 2;
@@ -1245,24 +1260,66 @@ final class ExploreTui
             $body_rows = 1;
         }
 
-        $tree_lines = [];
-        $this->walkTreeForOverlay(
-            $children,
-            $focus_count,
-            '',
-            $cols,
-            $body_rows,
-            $tree_lines,
-            $this->opts->no_line,
-        );
-
-        for ($i = 0; $i < $body_rows; $i++) {
-            $lines[] = self::padOrShorten($tree_lines[$i] ?? '', $cols);
+        // Clamp cursor + auto-scroll the visible window so the cursor
+        // is always on screen. This mirrors clampSelection() for the
+        // regular panes; inlined here to avoid mutating instance refs
+        // that the regular dispatch path expects to own.
+        if ($total === 0) {
+            $this->tree_popup_cursor_row = 0;
+            $this->tree_popup_top_row = 0;
+        } else {
+            if ($this->tree_popup_cursor_row < 0) {
+                $this->tree_popup_cursor_row = 0;
+            }
+            if ($this->tree_popup_cursor_row >= $total) {
+                $this->tree_popup_cursor_row = $total - 1;
+            }
+            if ($this->tree_popup_cursor_row < $this->tree_popup_top_row) {
+                $this->tree_popup_top_row = $this->tree_popup_cursor_row;
+            }
+            if ($this->tree_popup_cursor_row >= $this->tree_popup_top_row + $body_rows) {
+                $this->tree_popup_top_row = $this->tree_popup_cursor_row - $body_rows + 1;
+            }
+            if ($this->tree_popup_top_row < 0) {
+                $this->tree_popup_top_row = 0;
+            }
+            $max_top = max(0, $total - $body_rows);
+            if ($this->tree_popup_top_row > $max_top) {
+                $this->tree_popup_top_row = $max_top;
+            }
         }
 
-        $footer = $direction === 'callees'
-            ? ' walks toward leaves · indent = call depth · % is share of focus '
-            : ' walks toward roots · indent = ancestry depth · % is share of focus ';
+        $title_text = sprintf(
+            ' %s tree — %s   (%s samples) ',
+            $direction === 'callees' ? 'callee' : 'caller',
+            $state->focus_label ?? '<none>',
+            number_format($focus_count),
+        );
+
+        $lines = [];
+        $lines[] = "\e[1;7m" . self::padOrShorten($title_text, $cols) . "\e[0m";
+
+        for ($i = 0; $i < $body_rows; $i++) {
+            $row_idx = $this->tree_popup_top_row + $i;
+            if (!isset($entries[$row_idx])) {
+                $lines[] = str_repeat(' ', $cols);
+                continue;
+            }
+            $line = self::padOrShorten($entries[$row_idx]['text'], $cols);
+            if ($row_idx === $this->tree_popup_cursor_row) {
+                $line = "\e[7m" . $line . "\e[27m";
+            }
+            $lines[] = $line;
+        }
+
+        $position = $total > 0
+            ? sprintf('%d/%d', $this->tree_popup_cursor_row + 1, $total)
+            : '0/0';
+        $footer = sprintf(
+            ' %s · %s · ↑↓ scroll · Enter = focus · q/Esc close ',
+            $direction === 'callees' ? 'toward leaves' : 'toward roots',
+            $position,
+        );
         $lines[] = "\e[2;7m" . self::padOrShorten($footer, $cols) . "\e[0m";
 
         $out = '';
@@ -1273,15 +1330,43 @@ final class ExploreTui
     }
 
     /**
-     * DFS-walk the sandwich tree producing one indented line per node.
-     * Stops once $max_lines lines have been emitted (the popup just
-     * truncates the long tail; v1 has no scrolling).
+     * Build the full flat line list for the tree popup. Each entry
+     * carries the rendered text plus the key_id of the frame so the
+     * dispatch handler can re-focus on the cursor row's frame.
+     *
+     * @param 'callees'|'callers' $direction
+     * @return list<array{text:string, key_id:int}>
+     */
+    private function buildTreePopupLines(string $direction, int $width): array
+    {
+        $tree = $this->ensureSandwichTree();
+        if ($tree === null) {
+            return [];
+        }
+        $children = $direction === 'callees' ? $tree['callees'] : $tree['callers'];
+        $denom = max(1, $tree['focus_count']);
+        $entries = [];
+        $this->walkTreeForOverlay(
+            $children,
+            $denom,
+            '',
+            $width,
+            self::TREE_POPUP_MAX_LINES,
+            $entries,
+            $this->opts->no_line,
+        );
+        return $entries;
+    }
+
+    /**
+     * DFS-walk the sandwich tree producing one indented entry per node.
+     * Stops once $max_lines entries have been emitted.
      *
      * Each row layout:
      *   {prefix}{connector}{braille_bar} {pct%} {label} ({count})
      *
      * @param array<int, array{count:int, children:array}> $nodes
-     * @param list<string>                                 $lines
+     * @param list<array{text:string, key_id:int}>         $entries
      */
     private function walkTreeForOverlay(
         array $nodes,
@@ -1289,10 +1374,10 @@ final class ExploreTui
         string $prefix,
         int $width,
         int $max_lines,
-        array &$lines,
+        array &$entries,
         bool $no_line,
     ): void {
-        if ($nodes === [] || count($lines) >= $max_lines) {
+        if ($nodes === [] || count($entries) >= $max_lines) {
             return;
         }
         // Largest first so the dominant branch is the first thing the
@@ -1305,13 +1390,13 @@ final class ExploreTui
             fn(array $a, array $b): int => $b['count'] <=> $a['count'],
         );
 
-        $entries = array_keys($nodes);
-        $n = count($entries);
+        $kids = array_keys($nodes);
+        $n = count($kids);
         for ($i = 0; $i < $n; $i++) {
-            if (count($lines) >= $max_lines) {
+            if (count($entries) >= $max_lines) {
                 return;
             }
-            $kid = $entries[$i];
+            $kid = $kids[$i];
             /** @var array{count:int, children:array} $node */
             $node = $nodes[$kid];
             $is_last = ($i === $n - 1);
@@ -1330,8 +1415,8 @@ final class ExploreTui
             );
             $tail = sprintf(' (%s)', number_format($node['count']));
             $room = max(1, $width - mb_strlen($head) - mb_strlen($tail));
-            $line = $head . self::shorten($label, $room) . $tail;
-            $lines[] = $line;
+            $text = $head . self::shorten($label, $room) . $tail;
+            $entries[] = ['text' => $text, 'key_id' => $kid];
 
             $next_prefix = $prefix . ($is_last ? '   ' : '│  ');
             $this->walkTreeForOverlay(
@@ -1340,10 +1425,123 @@ final class ExploreTui
                 $next_prefix,
                 $width,
                 $max_lines,
-                $lines,
+                $entries,
                 $no_line,
             );
         }
+    }
+
+    /**
+     * Open the tree popup in the given direction, resetting the
+     * scroll/cursor whenever the direction changes (so the user
+     * always lands at the top of a fresh tree).
+     *
+     * @param 'callees'|'callers' $direction
+     */
+    private function openTreePopup(string $direction): void
+    {
+        if ($this->tree_popup_direction !== $direction) {
+            $this->tree_popup_top_row = 0;
+            $this->tree_popup_cursor_row = 0;
+        }
+        $this->tree_popup_direction = $direction;
+    }
+
+    /**
+     * Pager-style modal dispatch for the tree popup. Navigation keys
+     * scroll the cursor inside the popup; Enter promotes the cursor
+     * row's frame to a new sandwich focus; q/Esc/Ctrl-C close. Any
+     * other key also closes so users never get stuck.
+     */
+    private function dispatchTreePopup(string $key): void
+    {
+        if ($key === "\e" || $key === "\x03") {
+            $this->tree_popup_direction = null;
+            return;
+        }
+        $action = $this->keymap->resolve($key);
+        switch ($action) {
+            case Keymap::ACTION_UP:
+                $this->tree_popup_cursor_row--;
+                return;
+            case Keymap::ACTION_DOWN:
+                $this->tree_popup_cursor_row++;
+                return;
+            case Keymap::ACTION_PAGE_UP:
+                $this->tree_popup_cursor_row -= 10;
+                return;
+            case Keymap::ACTION_PAGE_DOWN:
+                $this->tree_popup_cursor_row += 10;
+                return;
+            case Keymap::ACTION_HOME:
+                $this->tree_popup_cursor_row = 0;
+                return;
+            case Keymap::ACTION_END:
+                $this->tree_popup_cursor_row = PHP_INT_MAX;
+                return;
+            case Keymap::ACTION_FOCUS_ENTER:
+                $this->focusTreePopupCursor();
+                return;
+            case Keymap::ACTION_OPEN_CALLEE_TREE:
+                $this->openTreePopup('callees');
+                return;
+            case Keymap::ACTION_OPEN_CALLER_TREE:
+                $this->openTreePopup('callers');
+                return;
+            default:
+                $this->tree_popup_direction = null;
+                return;
+        }
+    }
+
+    /**
+     * Promote the cursor row's frame in the tree popup to a new
+     * sandwich focus and close the popup. Mirrors focusSelected() for
+     * the regular panes.
+     */
+    private function focusTreePopupCursor(): void
+    {
+        $direction = $this->tree_popup_direction;
+        if ($direction === null) {
+            return;
+        }
+        $entries = $this->buildTreePopupLines($direction, 4096);
+        if ($entries === []) {
+            $this->status = 'tree popup: empty tree';
+            return;
+        }
+        $cursor = $this->tree_popup_cursor_row;
+        if ($cursor < 0) {
+            $cursor = 0;
+        }
+        if ($cursor >= count($entries)) {
+            $cursor = count($entries) - 1;
+        }
+        $kid = $entries[$cursor]['key_id'];
+        if ($kid < 0) {
+            $this->status = 'cannot focus synthetic <root>/<leaf>';
+            return;
+        }
+        $label = Aggregator::labelFor($this->model, $kid, $this->opts->no_line);
+
+        $state = $this->currentState();
+        $this->stack[count($this->stack) - 1] = $state->withOverviewCursor(
+            $this->overview_selected,
+            $this->overview_top_row,
+        );
+        $this->stack[] = new ViewState(
+            mode: ExploreMode::Sandwich,
+            focus_id: $kid,
+            focus_label: $label,
+            active_pane: $state->active_pane,
+            overview_selected: $this->overview_selected,
+            overview_top_row: $this->overview_top_row,
+        );
+        $this->resetScrolls();
+        $this->invalidate();
+        $this->tree_popup_direction = null;
+        $this->tree_popup_top_row = 0;
+        $this->tree_popup_cursor_row = 0;
     }
 
     /**
@@ -1574,7 +1772,7 @@ final class ExploreTui
             return;
         }
         if ($this->tree_popup_direction !== null) {
-            $this->tree_popup_direction = null;
+            $this->dispatchTreePopup($key);
             return;
         }
         if ($this->prompt_label !== null) {
@@ -1664,7 +1862,7 @@ final class ExploreTui
                     $this->status = 'callee tree: focus a frame first';
                     return;
                 }
-                $this->tree_popup_direction = 'callees';
+                $this->openTreePopup('callees');
                 return;
 
             case Keymap::ACTION_OPEN_CALLER_TREE:
@@ -1672,7 +1870,7 @@ final class ExploreTui
                     $this->status = 'caller tree: focus a frame first';
                     return;
                 }
-                $this->tree_popup_direction = 'callers';
+                $this->openTreePopup('callers');
                 return;
 
             case Keymap::ACTION_CALLERS:
