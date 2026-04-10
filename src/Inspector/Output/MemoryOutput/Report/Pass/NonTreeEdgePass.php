@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class NonTreeEdgePass implements PassInterface
@@ -27,6 +28,7 @@ final class NonTreeEdgePass implements PassInterface
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
+        private ?LinkNameResolver $link_resolver = null,
     ) {
     }
 
@@ -598,6 +600,16 @@ final class NonTreeEdgePass implements PassInterface
      */
     private function loadTreeParentsAndLinks(): array
     {
+        // When the shared resolver has already materialised every tree edge
+        // (small/medium graphs) reuse its maps for free; otherwise fall back
+        // to a single local sweep to keep memory bounded on huge graphs.
+        if ($this->link_resolver !== null && $this->link_resolver->isFullyLoaded()) {
+            return [
+                $this->link_resolver->getTreeParentMap(),
+                $this->link_resolver->getTreeLinkMap(),
+            ];
+        }
+
         $tree_parents = [];
         $tree_links = [];
 

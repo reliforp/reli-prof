@@ -34,6 +34,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopArraysPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopStringsPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TypeBreakdownPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 
 final class ReportGenerator
 {
@@ -50,7 +52,13 @@ final class ReportGenerator
         int $run_id = 1,
         bool $full_analysis = false,
         ?bool $ffi_csr = null,
+        LinkCacheMode $link_cache_mode = LinkCacheMode::Auto,
     ): ReportResult {
+        // Make sure the indexes report passes need exist on this database,
+        // even if it was captured by an older Reli version. CREATE INDEX
+        // IF NOT EXISTS is a no-op when the index already exists.
+        $this->ensureReportIndexes($db);
+
         $meta = $this->loadMeta($db, $run_id);
         $node_count = (int)($meta['node_count'] ?? 0);
         $edge_count = (int)($meta['edge_count'] ?? 0);
@@ -98,16 +106,48 @@ final class ReportGenerator
             $substrate = GraphSubstrate::createFromDb($db, $run_id, $ffi_csr);
             $meta['scc_count'] = count($substrate->getSccProfiles());
 
+            // Shared resolver replaces the per-edge SQL N+1 that used to
+            // dominate PerPropertyMemory / Ownership / StructuralDedup /
+            // PropertyScaling / NonTreeEdgePass.
+            //
+            // Materialising the entire tree-edge table is fastest but costs
+            // memory proportional to edge count. The chosen mode (CLI flag
+            // or auto-heuristic) decides between eager bulk read and bounded
+            // lazy caching:
+            //   - Auto:  bulk read up to ~500K edges (~50 MB worst case),
+            //            lazy beyond that.
+            //   - Eager: always bulk read.
+            //   - Lazy:  never bulk read; per-edge prepared statement with a
+            //            bounded shared cache, NonTreeEdgePass keeps its
+            //            local sweep.
+            $link_resolver = new LinkNameResolver($db, $run_id);
+            $eager = match ($link_cache_mode) {
+                LinkCacheMode::Eager => true,
+                LinkCacheMode::Lazy => false,
+                LinkCacheMode::Auto => $edge_count > 0 && $edge_count <= 500_000,
+            };
+            if ($eager) {
+                $link_resolver->loadAll();
+            }
+
             $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(
-                new PropertyScalingPass($db, $run_id, $class_objects, $substrate)
+                new PropertyScalingPass($db, $run_id, $class_objects, $substrate, $link_resolver)
             ));
-            $findings = array_merge($findings, $this->runPass(new PerPropertyMemoryPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new OwnershipPatternPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(
+                new PerPropertyMemoryPass($substrate, $db, $run_id, $link_resolver)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new OwnershipPatternPass($substrate, $db, $run_id, $link_resolver)
+            ));
             $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
             $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
-            $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id, $substrate)));
-            $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id, $substrate)));
+            $findings = array_merge($findings, $this->runPass(
+                new NonTreeEdgePass($db, $run_id, $substrate, $link_resolver)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new StructuralDedupPass($db, $run_id, $substrate, $link_resolver)
+            ));
             $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
             $findings = array_merge($findings, $this->runPass(
                 new ChokePointPass($substrate, $db, $run_id, $heap_usage)
@@ -197,6 +237,27 @@ final class ReportGenerator
             return $pass->analyze();
         } catch (\Throwable) {
             return [];
+        }
+    }
+
+    /**
+     * Backfill any indexes the report passes rely on, so databases
+     * captured by an older Reli build still benefit on the very next
+     * report run. CREATE INDEX IF NOT EXISTS is a no-op once the
+     * index exists; on the first run it does a single sequential
+     * scan + sort, paid back many times over by the queries that
+     * follow. Failures are tolerated (read-only DBs, etc.) and just
+     * leave the report on the unindexed path.
+     */
+    private function ensureReportIndexes(\PDO $db): void
+    {
+        try {
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_tree_strength_link'
+                . ' ON context_edges(run_id, is_tree, strength, link_name)'
+            );
+        } catch (\PDOException) {
+            // Read-only DB, missing privileges, etc. — best effort.
         }
     }
 

@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 /**
@@ -32,6 +33,7 @@ final class PerPropertyMemoryPass implements PassInterface
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
+        private ?LinkNameResolver $link_resolver = null,
     ) {
     }
 
@@ -43,12 +45,7 @@ final class PerPropertyMemoryPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        // On-demand link_name lookup (avoids loading all tree edges)
-        $link_stmt = $this->db->prepare(
-            "SELECT link_name FROM context_edges"
-            . " WHERE child_node_id = ? AND is_tree = 1"
-            . " AND run_id = {$this->run_id} LIMIT 1"
-        );
+        $resolver = $this->link_resolver ?? new LinkNameResolver($this->db, $this->run_id);
 
         // For each object node (has class_name), find object_properties child,
         // then aggregate property link → value size
@@ -62,13 +59,13 @@ final class PerPropertyMemoryPass implements PassInterface
         foreach ($this->substrate->iterateNodeClasses() as $node_id => $class_name) {
             // Find the object_properties child
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                $link = $this->lookupLinkName($link_stmt, $child);
+                $link = $resolver->lookup($child);
                 if ($link !== 'object_properties') {
                     continue;
                 }
                 // child is ObjectPropertiesContext — iterate its children
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
+                    $prop_name = $resolver->lookup($prop_child);
                     if ($prop_name === null) {
                         continue;
                     }
@@ -134,20 +131,5 @@ final class PerPropertyMemoryPass implements PassInterface
         }
 
         return $findings;
-    }
-
-    /**
-     * Load link_name for each child_node_id (tree edges only).
-     * @return array<int, string> child_node_id => link_name
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
-     */
-    /**
-     * @psalm-suppress MixedAssignment
-     */
-    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
-    {
-        $stmt->execute([$child_node_id]);
-        $val = $stmt->fetchColumn();
-        return $val !== false ? (string)$val : null;
     }
 }

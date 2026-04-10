@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class PropertyScalingPass implements PassInterface
@@ -29,6 +30,7 @@ final class PropertyScalingPass implements PassInterface
         private int $run_id,
         private array $class_objects_summary,
         private ?GraphSubstrate $substrate = null,
+        private ?LinkNameResolver $link_resolver = null,
     ) {
     }
 
@@ -194,8 +196,7 @@ final class PropertyScalingPass implements PassInterface
         assert($this->substrate !== null);
         $use_retained = $this->substrate->hasSubtreeSizes();
 
-        // On-demand link_name lookup (avoids loading all 2M+ edges)
-        $link_stmt = $this->createLinkNameStmt();
+        $resolver = $this->link_resolver ?? new LinkNameResolver($this->db, $this->run_id);
 
         // For each object of dominant_class, walk children to find
         // object_properties → property children
@@ -211,14 +212,14 @@ final class PropertyScalingPass implements PassInterface
                 continue;
             }
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($this->lookupLinkName($link_stmt, $child) ?? '') !== 'object_properties') {
+                if (($resolver->lookup($child) ?? '') !== 'object_properties') {
                     continue;
                 }
                 // child = ObjectPropertiesContext
                 // Deduplicate property children by canonical
                 $seen_prop_canonicals = [];
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
+                    $prop_name = $resolver->lookup($prop_child);
                     if ($prop_name === null) {
                         continue;
                     }
@@ -341,33 +342,6 @@ final class PropertyScalingPass implements PassInterface
             ];
         }
         return $results;
-    }
-
-    /**
-     * Load link_name for each child_node_id (tree edges).
-     * @return array<int, string>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
-     */
-    /**
-     * Create a prepared statement for on-demand link_name lookup.
-     */
-    private function createLinkNameStmt(): \PDOStatement
-    {
-        return $this->db->prepare(
-            "SELECT link_name FROM context_edges"
-            . " WHERE child_node_id = ? AND is_tree = 1"
-            . " AND run_id = {$this->run_id} LIMIT 1"
-        );
-    }
-
-    /**
-     * @psalm-suppress MixedAssignment
-     */
-    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
-    {
-        $stmt->execute([$child_node_id]);
-        $val = $stmt->fetchColumn();
-        return $val !== false ? (string)$val : null;
     }
 
     /**

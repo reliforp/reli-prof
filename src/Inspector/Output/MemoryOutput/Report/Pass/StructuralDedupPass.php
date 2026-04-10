@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class StructuralDedupPass implements PassInterface
@@ -25,6 +26,7 @@ final class StructuralDedupPass implements PassInterface
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
+        private ?LinkNameResolver $link_resolver = null,
     ) {
     }
 
@@ -129,11 +131,7 @@ final class StructuralDedupPass implements PassInterface
     {
         assert($this->substrate !== null);
 
-        $link_stmt = $this->db->prepare(
-            "SELECT link_name FROM context_edges"
-            . " WHERE child_node_id = ? AND is_tree = 1"
-            . " AND run_id = {$this->run_id} LIMIT 1"
-        );
+        $resolver = $this->link_resolver ?? new LinkNameResolver($this->db, $this->run_id);
 
         /** @var array<string, array{class: string, size: int, props: string, count: int, total_size: int, example_id: int}> */
         $shape_groups = [];
@@ -150,10 +148,10 @@ final class StructuralDedupPass implements PassInterface
             $props = [];
             $has_dynamic_props = false;
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                $child_link = $this->lookupLinkName($link_stmt, $child);
+                $child_link = $resolver->lookup($child);
                 if ($child_link === 'object_properties') {
                     foreach ($this->substrate->getChildren($child) as $prop_child) {
-                        $prop_name = $this->lookupLinkName($link_stmt, $prop_child);
+                        $prop_name = $resolver->lookup($prop_child);
                         if ($prop_name !== null) {
                             $props[] = $prop_name;
                         }
@@ -245,17 +243,5 @@ final class StructuralDedupPass implements PassInterface
         unset($rows);
 
         return array_values($shape_groups);
-    }
-
-    /**
-     * @return array<int, string>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
-     */
-    /** @psalm-suppress MixedAssignment */
-    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
-    {
-        $stmt->execute([$child_node_id]);
-        $val = $stmt->fetchColumn();
-        return $val !== false ? (string)$val : null;
     }
 }

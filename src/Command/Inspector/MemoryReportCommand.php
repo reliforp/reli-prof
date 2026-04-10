@@ -16,6 +16,7 @@ namespace Reli\Command\Inspector;
 use Reli\Inspector\Output\MemoryOutput\Report\Formatter\JsonReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Formatter\TextReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
 use Reli\Lib\Log\Log;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -82,6 +83,15 @@ final class MemoryReportCommand extends Command
             InputOption::VALUE_NEGATABLE,
             'force FFI CSR graph substrate (default: auto; --ffi-csr to force on, --no-ffi-csr to force off)',
         );
+        $this->addOption(
+            'link-cache',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'tree-edge link cache strategy: auto (default; bulk-read small graphs, lazy on huge ones),'
+            . ' eager (always bulk-read; faster, more memory),'
+            . ' lazy (per-edge with bounded cache; slower, flat memory)',
+            'auto',
+        );
     }
 
     #[\Override]
@@ -117,8 +127,25 @@ final class MemoryReportCommand extends Command
         /** @var bool|null $ffi_csr */
         $ffi_csr = $input->getOption('ffi-csr');
 
+        /** @var string $link_cache_raw */
+        $link_cache_raw = $input->getOption('link-cache');
+        $link_cache_mode = LinkCacheMode::tryFrom($link_cache_raw);
+        if ($link_cache_mode === null) {
+            $output->writeln(sprintf(
+                '<error>Unsupported --link-cache value: %s (supported: auto, eager, lazy)</error>',
+                $link_cache_raw,
+            ));
+            return 1;
+        }
+
         $generator = new ReportGenerator();
-        $result = $generator->generateFromDb($db, $run_id, $full_analysis, $ffi_csr);
+        $result = $generator->generateFromDb(
+            $db,
+            $run_id,
+            $full_analysis,
+            $ffi_csr,
+            $link_cache_mode,
+        );
 
         $formatter = match ($format) {
             'report' => new TextReportFormatter(),

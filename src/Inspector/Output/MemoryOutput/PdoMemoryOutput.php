@@ -249,6 +249,14 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             'CREATE INDEX IF NOT EXISTS idx_context_edges_run_strength'
             . ' ON context_edges(run_id, strength)'
         );
+        // Covers the NonTreeEdgePass aggregations:
+        //   WHERE run_id = ? AND is_tree = 0 AND strength = 'strong'
+        //   GROUP BY link_name
+        // and the per-link drilldown queries it issues per finding.
+        $db->exec(
+            'CREATE INDEX IF NOT EXISTS idx_context_edges_run_tree_strength_link'
+            . ' ON context_edges(run_id, is_tree, strength, link_name)'
+        );
         $db->exec(
             'CREATE INDEX IF NOT EXISTS idx_context_nodes_canonical'
             . ' ON context_nodes(run_id, canonical_node_id)'
