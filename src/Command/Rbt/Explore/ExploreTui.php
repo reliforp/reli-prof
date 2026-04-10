@@ -1315,32 +1315,31 @@ final class ExploreTui
             return;
         }
         usort($bars, fn(array $a, array $b): int => $a['x'] <=> $b['x']);
+
+        // Use the same right-inclusive lookup the row mover uses so
+        // boundary cursors agree on which bar they're "on" — otherwise
+        // ↑↓ and ←→ disagree about the current bar at boundaries and
+        // ←→ feels unpredictable.
+        $current = $this->findBarAtX($bars, $this->flame_cursor_x);
+        if ($current === null) {
+            $current = $this->findNearestBar($bars, $this->flame_cursor_x);
+        }
+        if ($current === null) {
+            return;
+        }
         $current_idx = -1;
         foreach ($bars as $i => $bar) {
             if (
-                $this->flame_cursor_x >= $bar['x']
-                && $this->flame_cursor_x < $bar['x'] + $bar['w']
+                $bar['x'] === $current['x']
+                && $bar['w'] === $current['w']
+                && $bar['key_id'] === $current['key_id']
             ) {
                 $current_idx = $i;
                 break;
             }
         }
         if ($current_idx === -1) {
-            // Cursor isn't on any bar (gap). Snap to nearest first.
-            $nearest = $this->findNearestBar($bars, $this->flame_cursor_x);
-            if ($nearest === null) {
-                return;
-            }
-            foreach ($bars as $i => $bar) {
-                if (
-                    $bar['x'] === $nearest['x']
-                    && $bar['w'] === $nearest['w']
-                    && $bar['key_id'] === $nearest['key_id']
-                ) {
-                    $current_idx = $i;
-                    break;
-                }
-            }
+            return;
         }
         $new_idx = $current_idx + $direction;
         if ($new_idx < 0 || $new_idx >= count($bars)) {
@@ -1526,13 +1525,23 @@ final class ExploreTui
     }
 
     /**
+     * Look up the bar at column $x. The interval is right-INCLUSIVE
+     * (`<= bar['x'] + bar['w']`) so that at a shared boundary the
+     * left bar wins. The bar list arrives in layout order
+     * (left-to-right == count-descending), so iteration picks the
+     * left = larger bar at any tie. Without this, descending from
+     * the centre of a parent bar into its children drifted right
+     * whenever the largest child took up exactly half the parent —
+     * a common case (e.g. one dominant call path) — and the cursor
+     * would land on the second-largest sibling instead of the first.
+     *
      * @param  list<array{x:int, w:int, key_id:int, count:int}> $bars
      * @return array{x:int, w:int, key_id:int, count:int}|null
      */
     private function findBarAtX(array $bars, int $x): ?array
     {
         foreach ($bars as $bar) {
-            if ($x >= $bar['x'] && $x < $bar['x'] + $bar['w']) {
+            if ($x >= $bar['x'] && $x <= $bar['x'] + $bar['w']) {
                 return $bar;
             }
         }
