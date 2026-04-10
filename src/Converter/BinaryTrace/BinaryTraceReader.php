@@ -101,27 +101,33 @@ final class BinaryTraceReader
                     }
                     $pending = $result;
                 } elseif (is_array($result)) {
-                    if ($pending !== null) {
-                        $pending = new BinaryTraceSample(
-                            $pending->trace,
-                            $pending->timestamp_delta_us,
-                            $pending->accumulated_timestamp_us,
-                            $pending->pid,
-                            $result,
+                    if ($pending === null) {
+                        throw new BinaryTraceException(
+                            'SAMPLE_ANNOTATION without a preceding sample'
                         );
                     }
+                    $pending = new BinaryTraceSample(
+                        $pending->trace,
+                        $pending->timestamp_delta_us,
+                        $pending->accumulated_timestamp_us,
+                        $pending->pid,
+                        $result,
+                    );
                 } elseif ($result === 'repeat') {
                     if ($pending !== null) {
                         $last_completed = $pending;
                         yield $pending;
                         $pending = null;
                     }
-                    if ($last_completed !== null) {
-                        for ($i = 0; $i < $this->pending_repeat_count; $i++) {
-                            $this->repeat_buffer[] = $last_completed;
-                        }
-                        $this->pending_repeat_count = 0;
+                    if ($last_completed === null) {
+                        throw new BinaryTraceException(
+                            'REPEAT_SAMPLE without a preceding completed sample'
+                        );
                     }
+                    for ($i = 0; $i < $this->pending_repeat_count; $i++) {
+                        $this->repeat_buffer[] = $last_completed;
+                    }
+                    $this->pending_repeat_count = 0;
                 } elseif ($result === 'new_segment') {
                     if ($pending !== null) {
                         $last_completed = $pending;
@@ -288,16 +294,19 @@ final class BinaryTraceReader
                 }
                 $pending = $result;
             } elseif (is_array($result)) {
-                // SAMPLE_ANNOTATION: attach to pending sample
-                if ($pending !== null) {
-                    $pending = new BinaryTraceSample(
-                        $pending->trace,
-                        $pending->timestamp_delta_us,
-                        $pending->accumulated_timestamp_us,
-                        $pending->pid,
-                        $result,
+                // SAMPLE_ANNOTATION: must follow a pending sample
+                if ($pending === null) {
+                    throw new BinaryTraceException(
+                        'SAMPLE_ANNOTATION without a preceding sample'
                     );
                 }
+                $pending = new BinaryTraceSample(
+                    $pending->trace,
+                    $pending->timestamp_delta_us,
+                    $pending->accumulated_timestamp_us,
+                    $pending->pid,
+                    $result,
+                );
             } elseif ($result === 'repeat') {
                 // REPEAT_SAMPLE: pending becomes completed, then repeat it
                 if ($pending !== null) {
