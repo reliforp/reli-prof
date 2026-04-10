@@ -257,9 +257,15 @@ final class ReportGenerator
     private function ensureReportIndexes(\PDO $db): void
     {
         try {
+            // The 4-col version was the original NonTreeEdgePass index;
+            // it's now superseded by a 6-col covering variant that lets
+            // the shared_rows aggregation finish without ever leaving
+            // the index. Drop the old one so old captures don't carry
+            // both indexes side by side.
+            $db->exec('DROP INDEX IF EXISTS idx_context_edges_run_tree_strength_link');
             $db->exec(
-                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_tree_strength_link'
-                . ' ON context_edges(run_id, is_tree, strength, link_name)'
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_tree_strength_link_child_parent'
+                . ' ON context_edges(run_id, is_tree, strength, link_name, child_node_id, parent_node_id)'
             );
             // Required by TopStringsPass top-N scan to avoid sorting tens of
             // millions of ZendStringMemoryLocation rows on huge dumps.

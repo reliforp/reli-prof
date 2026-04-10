@@ -467,6 +467,26 @@ class GraphSubstrate
         return $this->tree_link_names !== [];
     }
 
+    /**
+     * Yield every child_node_id whose tree-edge link_name equals
+     * `$link_name`. Lets passes that used to issue
+     *
+     *   SELECT child_node_id FROM context_edges
+     *   WHERE is_tree = 1 AND link_name = ?
+     *
+     * walk the in-memory tree link index instead. Order is unspecified.
+     *
+     * @return iterable<int>
+     */
+    public function iterateTreeChildrenByLinkName(string $link_name): iterable
+    {
+        foreach ($this->tree_link_names as $child_id => $name) {
+            if ($name === $link_name) {
+                yield $child_id;
+            }
+        }
+    }
+
     protected function computeSubtreeSizes(): void
     {
         $stack = [];

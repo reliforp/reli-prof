@@ -263,25 +263,20 @@ final class TopArraysPass implements PassInterface
     }
 
     /**
-     * @return array<int, string>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
-     */
-    /**
-     * Load only nodes that are linked as 'array_elements' (not all link_names).
+     * Set of every child node whose tree-edge link_name is 'array_elements'.
+     *
+     * Reads the substrate's in-memory tree-edge link index instead of
+     * issuing a SELECT against context_edges — on huge dumps the SQL
+     * fetch loop here used to dominate the pass.
+     *
      * @return array<int, true> child_node_id => true
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function loadArrayElementNodes(): array
     {
-        $stmt = $this->db->query(
-            "SELECT child_node_id FROM context_edges"
-            . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-            . " AND link_name = 'array_elements'"
-        );
-
+        assert($this->substrate !== null);
         $set = [];
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $set[(int)$r[0]] = true;
+        foreach ($this->substrate->iterateTreeChildrenByLinkName('array_elements') as $child_id) {
+            $set[$child_id] = true;
         }
         return $set;
     }

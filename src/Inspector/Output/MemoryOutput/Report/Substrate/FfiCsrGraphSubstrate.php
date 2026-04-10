@@ -244,6 +244,27 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         return $this->treeLinkIds !== null;
     }
 
+    /**
+     * @return iterable<int>
+     */
+    #[\Override]
+    public function iterateTreeChildrenByLinkName(string $link_name): iterable
+    {
+        if ($this->treeLinkIds === null) {
+            return;
+        }
+        $link_id = $this->linkDictReverse[$link_name] ?? null;
+        if ($link_id === null) {
+            return;
+        }
+        $n = $this->nodeCount;
+        for ($i = 0; $i < $n; $i++) {
+            if ((int)$this->treeLinkIds[$i] === $link_id) {
+                yield (int)$this->indexToNodeFfi[$i];
+            }
+        }
+    }
+
     #[\Override]
     public function hasSubtreeSizes(): bool
     {
