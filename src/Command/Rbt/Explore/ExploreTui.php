@@ -102,6 +102,12 @@ final class ExploreTui
     private bool $overview_follow = false;
 
     /**
+     * Off by default — the horizontal mini-flame strip is interesting
+     * but not always useful, so it has to be opted in with `F`.
+     */
+    private bool $mini_flame_enabled = false;
+
+    /**
      * Tri-state: null = auto (show on wide terminals), true = forced on,
      * false = forced off. Toggled with the `o` keybinding.
      */
@@ -166,10 +172,12 @@ final class ExploreTui
         $state = $this->currentState();
 
         // Body height is everything except header (4 lines), footer (1),
-        // and status (1) — 6 fixed lines. Sandwich mode also consumes
-        // an extra line for the horizontal mini-flame strip.
-        $mini_flame_rows = $state->mode === ExploreMode::Sandwich ? 1 : 0;
-        $body_rows = $rows - 6 - $mini_flame_rows;
+        // and status (1) — 6 fixed lines. The mini-flame strip is
+        // opt-in (toggle with `F`) and only meaningful in sandwich mode;
+        // when on, it consumes one extra line.
+        $show_mini_flame = $state->mode === ExploreMode::Sandwich
+            && $this->mini_flame_enabled;
+        $body_rows = $rows - 6 - ($show_mini_flame ? 1 : 0);
         if ($body_rows < 3) {
             $body_rows = 3;
         }
@@ -187,7 +195,9 @@ final class ExploreTui
         $buf .= $this->renderHeader($state, $cols);
 
         if ($state->mode === ExploreMode::Sandwich) {
-            $buf .= $this->renderMiniFlame($cols) . "\n";
+            if ($show_mini_flame) {
+                $buf .= $this->renderMiniFlame($cols) . "\n";
+            }
             $body_lines = $this->renderSandwichLines($state, $body_width, $body_rows);
         } else {
             $body_lines = $this->renderListLines($state, $body_width, $body_rows);
@@ -725,9 +735,11 @@ final class ExploreTui
     {
         if ($state->mode === ExploreMode::Sandwich) {
             $follow = $this->overview_follow ? '[f*]' : '[f]';
+            $flame = $this->mini_flame_enabled ? '[F*]' : '[F]';
             $footer = '[Tab/⇧Tab] cycle pane  [↑↓] sel  [Enter] focus  [←/→] callers/callees  '
                 . '[u] back  [s/t/O] self/total/overview  ' . $follow . ' follow  '
-                . '[/] filter  [m] match  [n] no-line  [o] sidebar  [?] help  [q] quit';
+                . $flame . ' flame  [/] filter  [m] match  [n] no-line  [o] sidebar  '
+                . '[?] help  [q] quit';
         } else {
             $footer = '[↑↓] sel  [Enter] focus  [s/t/O] self/total/overview  '
                 . '[/] filter  [m] match  [n] no-line  [?] help  [q] quit';
@@ -795,6 +807,7 @@ final class ExploreTui
             '  m            global sample match (PCRE)',
             '  n            toggle no-line grouping',
             '  o            toggle overview sidebar',
+            '  F            toggle horizontal mini-flame strip',
             '  ?            this help',
             '  q / Ctrl-C   quit',
             '── press any key ──',
@@ -1045,6 +1058,11 @@ final class ExploreTui
             case Keymap::ACTION_FOLLOW_OVERVIEW:
                 $this->overview_follow = !$this->overview_follow;
                 $this->status = 'overview follow: ' . ($this->overview_follow ? 'on' : 'off');
+                return;
+
+            case Keymap::ACTION_TOGGLE_MINI_FLAME:
+                $this->mini_flame_enabled = !$this->mini_flame_enabled;
+                $this->status = 'mini-flame strip: ' . ($this->mini_flame_enabled ? 'on' : 'off');
                 return;
 
             case Keymap::ACTION_CALLERS:
