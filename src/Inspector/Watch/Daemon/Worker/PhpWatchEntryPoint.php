@@ -166,6 +166,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                     $now = microtime(true);
                     $call_trace = null;
                     $rss_bytes = null;
+                    $cpu_percent = null;
 
                     // Read process state. Skip poll on failure
                     // (target may be between requests).
@@ -218,7 +219,8 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                             break;
                         }
                         $previous_context = null;
-                        $this->dynamicSleep($loop_start, ($trace_session?->isActive() ?? false) ? $trace_sleep_us : $poll_sleep_us);
+                        $tracing = $trace_session?->isActive() ?? false;
+                        $this->dynamicSleep($loop_start, $tracing ? $trace_sleep_us : $poll_sleep_us);
                         continue;
                     }
                     $consecutive_failures = 0;

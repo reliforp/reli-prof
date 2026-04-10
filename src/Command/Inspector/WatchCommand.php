@@ -443,7 +443,8 @@ final class WatchCommand extends Command
                     // Target may be between requests or temporarily
                     // unreadable. Skip this poll, try next cycle.
                     $previous_context = null;
-                    $this->dynamicSleep($loop_start, $trace_session->isActive() ? $trace_interval_ns : $poll_interval_ns);
+                    $sleep_ns = $trace_session->isActive() ? $trace_interval_ns : $poll_interval_ns;
+                    $this->dynamicSleep($loop_start, $sleep_ns);
                     return true;
                 }
 

@@ -102,7 +102,7 @@ final class CpuUsageReader
             return null;
         }
 
-        $percent = ($dticks / $this->clk_tck) / $dt * 100.0;
+        $percent = ((float)$dticks / (float)$this->clk_tck) / $dt * 100.0;
         $this->baseline[$pid] = ['ticks' => $total_ticks, 'time' => $now];
         $this->last_percent[$pid] = $percent;
         return $percent;

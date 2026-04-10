@@ -28,8 +28,6 @@ use Reli\Inspector\Watch\Action\TraceAction;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
-/** @phpstan-import-type PhpVersionString from \Reli\Lib\PhpInternals\ZendTypeReader */
-
 final class ActionFactory
 {
     public function __construct(
@@ -150,6 +148,7 @@ final class ActionFactory
     /**
      * Build on-enter lifecycle actions for single-process mode.
      *
+     * @param list<string> $action_names
      * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
      * @return list<ActionInterface>
      */
@@ -191,6 +190,7 @@ final class ActionFactory
     /**
      * Build on-enter / on-exit lifecycle actions for daemon mode.
      *
+     * @param list<string> $action_names
      * @return list<ActionInterface>
      */
     public function buildDaemonLifecycleActions(

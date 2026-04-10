@@ -53,7 +53,7 @@ final class TraceSession
         }
 
         $date = \date('Ymd-His', (int)$timestamp);
-        $ms = \sprintf('%03d', (int)(($timestamp - \floor($timestamp)) * 1000));
+        $ms = \sprintf('%03d', (int)(($timestamp - \floor($timestamp)) * 1000.0));
         $this->current_path = \sprintf(
             '%s/watch-trace-%d-%s.%s.rbt',
             $this->output_dir,
