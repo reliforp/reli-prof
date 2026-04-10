@@ -236,7 +236,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             if ($start < $end) {
                 $parents = [];
                 for ($j = $start; $j < $end; $j++) {
-                    $parents[] = (int)$this->revEdges[$j];
+                    // revEdges stores CSR indices (matching the rest of the
+                    // CSR arrays); translate back to node_ids on the way out.
+                    $parents[] = (int)$this->indexToNodeFfi[(int)$this->revEdges[$j]];
                 }
                 yield (int)$this->indexToNodeFfi[$i] => $parents;
             }
@@ -418,18 +420,65 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     /**
-     * Load edges from DB into CSR arrays using cursor streaming.
-     * Two cursor passes avoid loading all edges into a PHP array.
+     * Load edges from DB into CSR arrays via a single SQL pass.
+     *
+     * The previous implementation issued the same SELECT twice — once
+     * to count degrees, once to fill the CSR arrays. ~70% of the
+     * function's runtime sat inside PDOStatement::fetch on huge dumps,
+     * almost all of it from the redundant second scan. We now stage
+     * every edge into compact FFI int arrays during the SQL pass and
+     * walk *those* for the CSR fill, eliminating the second SQL
+     * round-trip entirely. The staging buffer costs ~9 bytes per edge
+     * (parent index int32 + child index int32 + flags int8) and is
+     * freed before the function returns.
+     *
+     * Also fixes a long-standing bug in the rev-edges build: the old
+     * code stored the *raw* parent value (which could be -1 for root
+     * edges) into revEdges, but csrSlice reads each entry as a CSR
+     * index and dereferences indexToNodeFfi[entry]. That meant
+     * getAllParents() returned garbage for non-root nodes and crashed
+     * with "C array index out of bounds" the moment anyone asked for
+     * the parents of a real root. Storing the parent's CSR index $pi
+     * (already computed) makes csrSlice's contract hold and the
+     * function actually works.
      *
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
      */
     private function loadEdgesFfi(\PDO $db, int $run_id): void
     {
         $nc = $this->nodeCount;
-        $edge_query = "SELECT parent_node_id, child_node_id, is_tree, strength"
-            . " FROM context_edges WHERE run_id = {$run_id}";
+        $rootParentIdx = $this->nodeIdToIndex(-1);
 
-        // Pass 1 (cursor): count degrees and collect roots
+        // Get an exact edge count up front so the staging arrays can
+        // be sized in one allocation. COUNT(*) is fast on the
+        // (run_id, *) indexed table and pays back many times over by
+        // letting the second pass walk an in-memory FFI buffer.
+        $edgeCount = (int)$db->query(
+            "SELECT count(*) FROM context_edges WHERE run_id = {$run_id}"
+        )->fetchColumn();
+        $this->edge_count = $edgeCount;
+
+        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+
+        if ($edgeCount === 0) {
+            $this->treeEdges = FFIHelper::new("int32_t[1]");
+            $this->strongTreeEdges = FFIHelper::new("int32_t[1]");
+            $this->allEdges = FFIHelper::new("int32_t[1]");
+            $this->strongAllEdges = FFIHelper::new("int32_t[1]");
+            $this->revEdges = FFIHelper::new("int32_t[1]");
+            return;
+        }
+
+        // Staging buffer: written during the SQL pass, read during the
+        // CSR fill pass. Flags layout: bit 0 = is_tree, bit 1 = is_strong.
+        $stageParentIdx = FFIHelper::new("int32_t[{$edgeCount}]");
+        $stageChildIdx = FFIHelper::new("int32_t[{$edgeCount}]");
+        $stageFlags = FFIHelper::new("int8_t[{$edgeCount}]");
+
         $treeDeg = FFIHelper::new("int32_t[{$nc}]");
         $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
         $allDeg = FFIHelper::new("int32_t[{$nc}]");
@@ -440,18 +489,27 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $strongTreeCount = 0;
         $allCount = 0;
         $strongAllCount = 0;
-        $edgeCount = 0;
 
-        $stmt = $db->query($edge_query);
+        // Single SQL pass — stage every edge into FFI and tally degrees.
+        $stmt = $db->query(
+            "SELECT parent_node_id, child_node_id, is_tree, strength"
+            . " FROM context_edges WHERE run_id = {$run_id}"
+        );
+        $i = 0;
         while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $edgeCount++;
-            $parent = $r[0] === null ? -1 : (int)$r[0];
+            $parentIsRoot = $r[0] === null;
+            $parent = $parentIsRoot ? -1 : (int)$r[0];
             $child = (int)$r[1];
             $is_tree = (int)$r[2];
             $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
 
             $pi = $this->nodeIdToIndex($parent);
             $ci = $this->nodeIdToIndex($child);
+
+            $stageParentIdx[$i] = $pi;
+            $stageChildIdx[$i] = $ci;
+            $stageFlags[$i] = $is_tree | ($is_strong ? 2 : 0);
+            $i++;
 
             if ($is_tree) {
                 $treeDeg[$pi] = $treeDeg[$pi] + 1;
@@ -460,11 +518,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
                     $strongTreeCount++;
                 }
-                if ($parent === -1) {
+                if ($parentIsRoot) {
                     $this->roots[] = $child;
                 }
             }
-            if ($parent !== -1) {
+            if (!$parentIsRoot) {
                 $allDeg[$pi] = $allDeg[$pi] + 1;
                 $allCount++;
                 if ($is_strong) {
@@ -475,61 +533,51 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $revDeg[$ci] = $revDeg[$ci] + 1;
         }
         $stmt->closeCursor();
-        $this->edge_count = $edgeCount;
 
-        // Build offsets via prefix sum
-        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-
+        // Build offsets via prefix sum.
         $this->treeOffsets[0] = 0;
         $this->strongTreeOffsets[0] = 0;
         $this->allOffsets[0] = 0;
         $this->strongAllOffsets[0] = 0;
         $this->revOffsets[0] = 0;
 
-        for ($i = 0; $i < $nc; $i++) {
-            $this->treeOffsets[$i + 1] = $this->treeOffsets[$i] + $treeDeg[$i];
-            $this->strongTreeOffsets[$i + 1] = $this->strongTreeOffsets[$i] + $strongTreeDeg[$i];
-            $this->allOffsets[$i + 1] = $this->allOffsets[$i] + $allDeg[$i];
-            $this->strongAllOffsets[$i + 1] = $this->strongAllOffsets[$i] + $strongAllDeg[$i];
-            $this->revOffsets[$i + 1] = $this->revOffsets[$i] + $revDeg[$i];
+        for ($k = 0; $k < $nc; $k++) {
+            $this->treeOffsets[$k + 1] = $this->treeOffsets[$k] + $treeDeg[$k];
+            $this->strongTreeOffsets[$k + 1] = $this->strongTreeOffsets[$k] + $strongTreeDeg[$k];
+            $this->allOffsets[$k + 1] = $this->allOffsets[$k] + $allDeg[$k];
+            $this->strongAllOffsets[$k + 1] = $this->strongAllOffsets[$k] + $strongAllDeg[$k];
+            $this->revOffsets[$k + 1] = $this->revOffsets[$k] + $revDeg[$k];
         }
         unset($treeDeg, $strongTreeDeg, $allDeg, $strongAllDeg, $revDeg);
 
-        // Allocate edge arrays
         $this->treeEdges = FFIHelper::new("int32_t[" . max($treeCount, 1) . "]");
         $this->strongTreeEdges = FFIHelper::new("int32_t[" . max($strongTreeCount, 1) . "]");
         $this->allEdges = FFIHelper::new("int32_t[" . max($allCount, 1) . "]");
         $this->strongAllEdges = FFIHelper::new("int32_t[" . max($strongAllCount, 1) . "]");
-        $this->revEdges = FFIHelper::new("int32_t[" . max($edgeCount, 1) . "]");
+        $this->revEdges = FFIHelper::new("int32_t[{$edgeCount}]");
 
-        // Write positions (FFI)
+        // Write positions, seeded from the offsets we just computed.
         $treeP = FFIHelper::new("int32_t[{$nc}]");
         $streeP = FFIHelper::new("int32_t[{$nc}]");
         $allP = FFIHelper::new("int32_t[{$nc}]");
         $sallP = FFIHelper::new("int32_t[{$nc}]");
         $revP = FFIHelper::new("int32_t[{$nc}]");
-        for ($i = 0; $i < $nc; $i++) {
-            $treeP[$i] = $this->treeOffsets[$i];
-            $streeP[$i] = $this->strongTreeOffsets[$i];
-            $allP[$i] = $this->allOffsets[$i];
-            $sallP[$i] = $this->strongAllOffsets[$i];
-            $revP[$i] = $this->revOffsets[$i];
+        for ($k = 0; $k < $nc; $k++) {
+            $treeP[$k] = $this->treeOffsets[$k];
+            $streeP[$k] = $this->strongTreeOffsets[$k];
+            $allP[$k] = $this->allOffsets[$k];
+            $sallP[$k] = $this->strongAllOffsets[$k];
+            $revP[$k] = $this->revOffsets[$k];
         }
 
-        // Pass 2 (cursor): fill CSR arrays
-        $stmt = $db->query($edge_query);
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $parent = $r[0] === null ? -1 : (int)$r[0];
-            $child = (int)$r[1];
-            $is_tree = (int)$r[2];
-            $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
-
-            $pi = $this->nodeIdToIndex($parent);
-            $ci = $this->nodeIdToIndex($child);
+        // Second pass: walk the staged edges and place them into the
+        // CSR arrays. No SQL.
+        for ($k = 0; $k < $edgeCount; $k++) {
+            $pi = (int)$stageParentIdx[$k];
+            $ci = (int)$stageChildIdx[$k];
+            $flags = (int)$stageFlags[$k];
+            $is_tree = ($flags & 1) !== 0;
+            $is_strong = ($flags & 2) !== 0;
 
             if ($is_tree) {
                 $p = (int)$treeP[$pi];
@@ -541,7 +589,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $streeP[$pi] = $p + 1;
                 }
             }
-            if ($parent !== -1) {
+            if ($pi !== $rootParentIdx) {
                 $p = (int)$allP[$pi];
                 $this->allEdges[$p] = $ci;
                 $allP[$pi] = $p + 1;
@@ -551,12 +599,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $sallP[$pi] = $p + 1;
                 }
             }
+            // revEdges stores the parent's CSR index (matching the
+            // contract csrSlice expects). The previous code stored
+            // the raw parent value here, which corrupted getAllParents
+            // for every non-root node and crashed on the actual root.
             $p = (int)$revP[$ci];
-            $this->revEdges[$p] = $parent;
+            $this->revEdges[$p] = $pi;
             $revP[$ci] = $p + 1;
         }
-        $stmt->closeCursor();
         unset($treeP, $streeP, $allP, $sallP, $revP);
+        unset($stageParentIdx, $stageChildIdx, $stageFlags);
     }
 
     /**
@@ -787,18 +839,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 }
             }
 
+            $rootParentIdx = $this->nodeIdToIndex(-1);
             $ext_in = 0;
             $ext_out = 0;
             foreach ($scc_indices as $idx) {
-                // Reverse edges (parents)
+                // Reverse edges (parents) — revEdges holds CSR indices.
                 $rStart = (int)$this->revOffsets[$idx];
                 $rEnd = (int)$this->revOffsets[$idx + 1];
                 for ($j = $rStart; $j < $rEnd; $j++) {
-                    $parentNodeId = (int)$this->revEdges[$j];
-                    if ($parentNodeId === -1) {
+                    $parentIdx = (int)$this->revEdges[$j];
+                    if ($parentIdx === $rootParentIdx) {
                         continue;
                     }
-                    $parentIdx = $this->nodeIdToIndex($parentNodeId);
                     if (!isset($scc_set[$parentIdx])) {
                         $ext_in++;
                     }

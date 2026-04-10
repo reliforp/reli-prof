@@ -374,6 +374,112 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
         return $db;
     }
 
+    public function testGetAllParentsReturnsRealParentNodeIds(): void
+    {
+        $db = $this->openManualDb();
+
+        // Linear chain: NULL -> 1 -> 2 -> 3
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'a'), (1, 2, 'a'), (1, 3, 'a')");
+        $db->exec("INSERT INTO context_node_locations
+            (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 1, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 2, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 3, 0, 10, 'ZendObjectMemoryLocation', 'C')");
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'r', 1, 'strong'),
+            (1,    1, 2, 'l', 1, 'strong'),
+            (1,    2, 3, 'l', 1, 'strong')");
+
+        $substrate = FfiCsrGraphSubstrate::loadFromDb($db, 1);
+
+        // The previous implementation stored raw parent node_ids in
+        // revEdges and read them back through indexToNodeFfi as if
+        // they were CSR indices, so non-root nodes silently returned
+        // wrong parents and the actual root crashed with an FFI
+        // out-of-bounds. Pin both behaviours.
+        $this->assertSame([1], $substrate->getAllParents(2));
+        $this->assertSame([2], $substrate->getAllParents(3));
+        // Root parent slot is the synthetic -1 sentinel.
+        $this->assertSame([-1], $substrate->getAllParents(1));
+    }
+
+    public function testIterateAllParentsMatchesGetAllParents(): void
+    {
+        $db = $this->openManualDb();
+
+        // Diamond: 1 -> {2, 3} -> 4 (4 has two parents)
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'a'), (1, 2, 'a'), (1, 3, 'a'), (1, 4, 'a')");
+        $db->exec("INSERT INTO context_node_locations
+            (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 1, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 2, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 3, 0, 10, 'ZendObjectMemoryLocation', 'C'),
+            (1, 4, 0, 10, 'ZendObjectMemoryLocation', 'C')");
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'r', 1, 'strong'),
+            (1,    1, 2, 'a', 1, 'strong'),
+            (1,    1, 3, 'b', 1, 'strong'),
+            (1,    2, 4, 'c', 1, 'strong'),
+            (1,    3, 4, 'd', 0, 'strong')");
+
+        $substrate = FfiCsrGraphSubstrate::loadFromDb($db, 1);
+
+        $parents_via_iterator = [];
+        foreach ($substrate->iterateAllParents() as $child => $parents) {
+            sort($parents);
+            $parents_via_iterator[$child] = $parents;
+        }
+        $this->assertSame([1], $parents_via_iterator[2] ?? null);
+        $this->assertSame([1], $parents_via_iterator[3] ?? null);
+        $this->assertSame([2, 3], $parents_via_iterator[4] ?? null);
+
+        $direct_parents_4 = $substrate->getAllParents(4);
+        sort($direct_parents_4);
+        $this->assertSame([2, 3], $direct_parents_4);
+    }
+
+    private function openManualDb(): \PDO
+    {
+        $db = new \PDO('sqlite::memory:');
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $db->exec('
+            CREATE TABLE context_nodes (
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                canonical_node_id INTEGER,
+                PRIMARY KEY (run_id, node_id)
+            )');
+        $db->exec("
+            CREATE TABLE context_edges (
+                run_id INTEGER NOT NULL,
+                parent_node_id INTEGER,
+                child_node_id INTEGER NOT NULL,
+                link_name TEXT NOT NULL,
+                is_tree INTEGER NOT NULL,
+                strength TEXT NOT NULL DEFAULT 'strong'
+            )");
+        $db->exec('
+            CREATE TABLE context_node_locations (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL,
+                node_id INTEGER NOT NULL,
+                address BIGINT,
+                size BIGINT,
+                location_type TEXT NOT NULL,
+                class_name TEXT,
+                string_value TEXT,
+                refcount BIGINT,
+                type_info BIGINT,
+                region TEXT
+            )');
+        return $db;
+    }
+
     private function buildDb(ReferenceContext $top): void
     {
         $result = new MemoryAnalysisResult([], $top);
