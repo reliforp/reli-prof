@@ -36,20 +36,17 @@ final class BlameAllocationPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        // Assign each node to its root owner via BFS
+        // Assign each node to its root owner via BFS. The root's
+        // link_name now comes from the substrate's tree-link index
+        // (built once during loadEdges) instead of a per-root prepared
+        // statement execute — that N+1 was 60% of total report time
+        // on a 15 GB dump.
         $node_root_owner = [];
         $root_link_names = [];
 
-        $link_stmt = $this->db->prepare(
-            "SELECT link_name FROM context_edges WHERE child_node_id = ?"
-            . " AND is_tree = 1 AND parent_node_id IS NULL AND run_id = {$this->run_id} LIMIT 1"
-        );
-
         foreach ($this->substrate->getRoots() as $root) {
-            $link_stmt->execute([$root]);
-            /** @var array{0: string}|false $r */
-            $r = $link_stmt->fetch(\PDO::FETCH_NUM);
-            $root_link_names[$root] = $r !== false ? (string)$r[0] : "root_{$root}";
+            $link_name = $this->substrate->getTreeLinkName($root);
+            $root_link_names[$root] = $link_name ?? "root_{$root}";
 
             $queue = [$root];
             $qi = 0;

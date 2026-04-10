@@ -102,10 +102,11 @@ final class ExploreTui
     private bool $overview_follow = false;
 
     /**
-     * Off by default — the horizontal mini-flame strip is interesting
-     * but not always useful, so it has to be opted in with `F`.
+     * On by default — the Braille mini-flame strip is the most direct
+     * "where am I in the global picture" affordance the explorer has.
+     * Toggleable with `F` for users who'd rather get the body row back.
      */
-    private bool $mini_flame_enabled = false;
+    private bool $mini_flame_enabled = true;
 
     /**
      * Tri-state: null = auto (show on wide terminals), true = forced on,
@@ -233,8 +234,11 @@ final class ExploreTui
      * as a thin half-cell line instead of disappearing entirely.
      *
      * Adjacent frames alternate dim/bright so block boundaries pop
-     * without needing labels. The current focus's pixels (if any) are
-     * rendered in reverse video for instant "you are here" feedback.
+     * without needing labels. The pixels of whichever frame is under
+     * the active pane's cursor right now are rendered in reverse video,
+     * so as the user navigates ↑↓ the strip continuously says "this
+     * row is THIS big in the global picture" — useful for the "is
+     * this big enough to be worth a detour?" decision.
      *
      * No text inside the strip — labels live in the sidebar.
      */
@@ -254,7 +258,7 @@ final class ExploreTui
             return str_repeat(' ', $width);
         }
 
-        $focus_id = $this->getCurrentFocusKeyId();
+        $highlight_id = $this->getCursorKeyId() ?? $this->getCurrentFocusKeyId();
 
         // 2 horizontal sub-pixels per terminal cell.
         $total_pixels = $width * 2;
@@ -280,10 +284,10 @@ final class ExploreTui
                 continue;
             }
             $end = min($pos + $w, $total_pixels);
-            $is_focus = $key_id === $focus_id;
+            $is_highlight = $key_id === $highlight_id;
             for ($p = $pos; $p < $end; $p++) {
                 $pixel_frame[$p] = $i;
-                $pixel_focus[$p] = $is_focus;
+                $pixel_focus[$p] = $is_highlight;
             }
             $pos = $end;
         }
@@ -737,6 +741,45 @@ final class ExploreTui
         // row keys live in the same id space as the focus_id we have.
         // No projection needed.
         return $this->currentState()->focus_id;
+    }
+
+    /**
+     * Key id under the active pane's cursor right now (not the focus).
+     * Used to drive the mini-flame highlight so the strip shows
+     * "how big is the row I'm currently hovering on" while the user
+     * navigates, separately from where they've actually drilled in.
+     */
+    private function getCursorKeyId(): ?int
+    {
+        $state = $this->currentState();
+        if ($state->mode !== ExploreMode::Sandwich) {
+            return null;
+        }
+        switch ($state->active_pane) {
+            case ActivePane::Callers:
+                $rows = $this->applyViewFilter(
+                    $this->ensureCallers()['rows'],
+                    $state->view_filter,
+                );
+                $idx = $this->callers_selected;
+                break;
+            case ActivePane::Callees:
+                $rows = $this->applyViewFilter(
+                    $this->ensureCallees()['rows'],
+                    $state->view_filter,
+                );
+                $idx = $this->callees_selected;
+                break;
+            case ActivePane::Overview:
+                $rows = $this->ensureOverview()['rows'];
+                $idx = $this->overview_selected;
+                break;
+        }
+        if (!isset($rows[$idx])) {
+            return null;
+        }
+        [, $key_id, ] = $rows[$idx];
+        return $key_id < 0 ? null : $key_id;
     }
 
     private function renderFooter(ViewState $state, int $cols): string
