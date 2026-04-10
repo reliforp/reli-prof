@@ -23,13 +23,18 @@ WatchCommand::execute()
   └── LoopBuilder middleware chain:
        ├── HeapStatsReader::read()              (always, Tier 1)
        ├── RssReader::read()                    (if RssUsageTrigger)
-       ├── CallTraceReader::readCallTrace()     (if Tier 2 trigger)
+       ├── CpuUsageReader::read()               (if CpuUsageTrigger)
+       ├── CallTraceReader::readCallTrace()     (if Tier 2 trigger OR tracing)
        ├── HeapStatsReader::hasException()      (if ExceptionDetectionTrigger)
        ├── VariableReader::readVariables()      (if VariableValueTrigger)
        ├── WatchContext construction
+       ├── TraceSession::recordSample()         (if tracing active)
+       ├── TriggerStateTracker phase detection
+       ├── on-enter / on-exit action execution
        ├── Trigger evaluation → merged TriggerEvent
        ├── CooldownManager check
-       └── Action execution (once per poll, not per trigger)
+       ├── Regular action execution (once per poll, not per trigger)
+       └── Dynamic sleep (poll_interval or trace_interval)
 ```
 
 ### Daemon Mode
@@ -57,12 +62,22 @@ WatchCommand::executeDaemonMode()
 
 | Tier | What's Read | Cost | Triggers |
 |------|-------------|------|----------|
-| 1 | ZendMmHeap stats only | < 1ms | MemoryLimit, GrowthRate, PeakWatch, RssUsage |
+| 1 | ZendMmHeap stats only | < 1ms | MemoryLimit, GrowthRate, PeakWatch, RssUsage, CpuUsage |
 | 2 | + Call trace | ~ms | FunctionDetection, TraceDepth |
 | 3 | + EG exception, variables | ~10ms | ExceptionDetection, VariableValue |
 
-Only reads what the active triggers require. `needs_call_trace` and
-`needs_exception_check` are computed at startup from trigger types.
+Only reads what the active triggers require. `needs_call_trace`,
+`needs_cpu`, and `needs_exception_check` are computed at startup
+from trigger types.
+
+### CpuUsageTrigger
+
+Reads `/proc/[pid]/stat` utime+stime fields. Computes delta CPU% between
+polls using `SC_CLK_TCK`. First poll always returns null (needs two samples).
+
+Supports hysteresis (separate enter/exit thresholds) and sustain duration
+(must stay above threshold for N seconds before entering). Internal state
+machine: INACTIVE → (cpu >= enter for sustain_s) → ACTIVE → (cpu < exit) → INACTIVE.
 
 ### Event Merging
 
@@ -161,14 +176,60 @@ root name + list of `['[]', key]` or `['->', prop]` segments.
    `frameMatchesFunction()` with strict exact match on
    `ZendFunction::getFullyQualifiedFunctionName()`.
 
+## Trigger State Tracking (on-enter / on-exit)
+
+`TriggerStateTracker` wraps trigger evaluation to detect state transitions:
+
+```
+TriggerPhase (enum):
+  ENTER   — was inactive, now active   → execute --on-enter actions
+  EXIT    — was active, now inactive   → execute --on-exit actions
+  ACTIVE  — still active               → execute --action with cooldown
+  null    — still inactive             → no action
+
+Poll loop:
+  for each trigger:
+    event = trigger.evaluate(context)
+    phase = state_tracker.update(trigger.name, event !== null)
+    ENTER  → on-enter actions (once, no cooldown)
+    EXIT   → on-exit actions (once) + cooldown.recordClear
+    ACTIVE → regular --action (with cooldown)
+```
+
+This preserves full backward compatibility. Without `--on-enter`/`--on-exit`,
+the existing `--action` behavior is unchanged.
+
+### Continuous Tracing (TraceSession)
+
+`TraceSession` manages the lifecycle of `.rbt` trace recording:
+
+```
+ContinuousTraceAction (on-enter) → TraceSession.start()
+Poll loop: if session.isActive() → session.recordSample(call_trace)
+StopTraceAction (on-exit) → TraceSession.stop() → finalize .rbt
+```
+
+**Dynamic poll interval:** When trace session is active, the poll loop
+switches from `--poll-interval` (default 1s) to `--trace-interval`
+(default 10ms) for higher sampling resolution.
+
+**Interaction with other actions:** The watch monitoring loop continues
+normally during tracing. Other triggers evaluate at the same frequency.
+Memory dumps (which ptrace-stop the target) naturally pause tracing.
+
+**Daemon mode:** Continuous tracing is single-process mode only (v1).
+One-shot `trace-once` and lifecycle actions (log, exec) work in daemon mode.
+
 ## Action System
 
-| Action | Single-Process | Daemon |
-|--------|---------------|--------|
-| trace | TraceAction (reads or reuses from context) | DaemonTraceAction (from WatchTriggerMessage) |
-| log | LogAction (stderr or file) | LogAction (same) |
-| exec | ExecAction (fire-and-forget, /dev/null) | ExecAction (same) |
-| memory-dump | MemoryDumpAction (MemoryDumper) | DaemonMemoryDumpAction (MemoryDumper + WatchContext addresses) |
+| Action | Type | Single-Process | Daemon |
+|--------|------|---------------|--------|
+| trace-once | one-shot | TraceAction (reads or reuses from context) | DaemonTraceAction (from WatchTriggerMessage) |
+| trace | stateful | ContinuousTraceAction → TraceSession.start() | not supported (v1) |
+| stop-trace | stateful | StopTraceAction → TraceSession.stop() | not supported (v1) |
+| log | one-shot | LogAction (stderr or file) | LogAction (same) |
+| exec | one-shot | ExecAction (fire-and-forget, /dev/null) | ExecAction (same) |
+| memory-dump | one-shot | MemoryDumpAction (MemoryDumper) | DaemonMemoryDumpAction (MemoryDumper + WatchContext addresses) |
 
 ### MemoryDumper
 

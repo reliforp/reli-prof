@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch\Daemon\Worker;
 
 use Reli\Inspector\Watch\CooldownManager;
+use Reli\Inspector\Watch\CpuUsageReader;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
@@ -22,6 +23,7 @@ use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\RssReader;
 use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\VariableSpec;
+use Reli\Inspector\Watch\Trigger\CpuUsageTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
@@ -44,6 +46,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
     public function __construct(
         private HeapStatsReader $heap_stats_reader,
         private RssReader $rss_reader,
+        private CpuUsageReader $cpu_usage_reader,
         private CallTraceReader $call_trace_reader,
         private VariableReader $variable_reader,
         private PhpWatchWorkerProtocolInterface $protocol,
@@ -67,6 +70,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         $triggers = $this->buildTriggers($watch_settings);
         $needs_call_trace = false;
         $needs_rss = false;
+        $needs_cpu = false;
         /** @var list<VariableSpec> $var_specs */
         $var_specs = [];
         foreach ($triggers as $trigger) {
@@ -75,6 +79,9 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
             }
             if ($trigger instanceof RssUsageTrigger) {
                 $needs_rss = true;
+            }
+            if ($trigger instanceof CpuUsageTrigger) {
+                $needs_cpu = true;
             }
             if ($trigger instanceof VariableValueTrigger) {
                 $var_specs[] = new VariableSpec(
@@ -118,6 +125,11 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
             $consecutive_failures = 0;
             $max_consecutive_failures = 10;
 
+            // Prime CPU reader for this process
+            if ($needs_cpu) {
+                $this->cpu_usage_reader->read($descriptor->pid);
+            }
+
             try {
                 while ($this->loop_condition->shouldContinue()) {
                     $now = microtime(true);
@@ -159,6 +171,11 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         if ($needs_rss) {
                             $rss_bytes = $this->rss_reader->read($descriptor->pid);
                         }
+
+                        $cpu_percent = null;
+                        if ($needs_cpu) {
+                            $cpu_percent = $this->cpu_usage_reader->read($descriptor->pid);
+                        }
                     } catch (\Throwable) {
                         $consecutive_failures++;
                         if ($consecutive_failures >= $max_consecutive_failures) {
@@ -176,6 +193,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
 
                     assert(isset($heap_stats));
                     assert(isset($variable_values));
+                    assert(isset($cpu_percent));
 
                     $context = new WatchContext(
                         pid: $descriptor->pid,
@@ -185,6 +203,7 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                         previous: $previous_context,
                         variable_values: $variable_values,
                         rss_bytes: $rss_bytes,
+                        cpu_usage_percent: $cpu_percent,
                     );
 
                     // Evaluate triggers (with cooldown/rate limiting in worker)
@@ -219,6 +238,9 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                 ]);
             }
 
+            if ($needs_cpu) {
+                $this->cpu_usage_reader->clear($descriptor->pid);
+            }
             $this->protocol->sendDetach(new WatchDetachMessage($descriptor->pid));
             Log::debug('watch worker: detached', ['pid' => $descriptor->pid]);
         }
@@ -243,6 +265,13 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
         }
         if ($settings->rss_usage_bytes !== null) {
             $triggers[] = new RssUsageTrigger($settings->rss_usage_bytes);
+        }
+        if ($settings->cpu_usage_percent !== null) {
+            $triggers[] = new CpuUsageTrigger(
+                enter_percent: $settings->cpu_usage_percent,
+                exit_percent: $settings->cpu_usage_exit_percent ?? $settings->cpu_usage_percent,
+                sustain_seconds: $settings->cpu_sustain_seconds,
+            );
         }
         if ($settings->watch_function !== null) {
             $triggers[] = new FunctionDetectionTrigger($settings->watch_function);

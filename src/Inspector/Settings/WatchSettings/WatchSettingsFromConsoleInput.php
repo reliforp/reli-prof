@@ -72,13 +72,48 @@ final class WatchSettingsFromConsoleInput
                     . ' (format: scope::name:op:value,'
                     . ' e.g. global::cache:count_gt:10000)',
             )
+            // CPU trigger options
+            ->addOption(
+                'cpu-usage',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'trigger when process CPU usage exceeds percent (e.g., 80)',
+            )
+            ->addOption(
+                'cpu-usage-exit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'CPU percent below which the trigger exits'
+                    . ' (hysteresis, default: same as --cpu-usage)',
+            )
+            ->addOption(
+                'cpu-sustain',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'seconds the CPU must stay above threshold before entering (default: 0)',
+            )
             // Action options
             ->addOption(
                 'action',
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
-                'actions to execute on trigger (memory-dump, trace, log, exec)',
+                'actions to execute while active with cooldown'
+                    . ' (memory-dump, trace-once, log, exec)',
                 ['memory-dump'],
+            )
+            ->addOption(
+                'on-enter',
+                null,
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'actions on enter transition (trace, trace-once, memory-dump, log, exec)',
+                [],
+            )
+            ->addOption(
+                'on-exit',
+                null,
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'actions on exit transition (stop-trace, trace-once, memory-dump, log, exec)',
+                [],
             )
             ->addOption(
                 'action-exec-command',
@@ -162,6 +197,12 @@ final class WatchSettingsFromConsoleInput
                 'status summary interval in seconds for daemon mode (default: 60)',
             )
             ->addOption(
+                'trace-interval',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'sampling interval in ms during continuous tracing (default: 10)',
+            )
+            ->addOption(
                 'include-binary',
                 null,
                 InputOption::VALUE_NONE,
@@ -199,6 +240,13 @@ final class WatchSettingsFromConsoleInput
         $trace_depth_str = NullableCast::toString($input->getOption('trace-depth-limit'));
         $trace_depth_limit = $trace_depth_str !== null ? (int)$trace_depth_str : null;
 
+        $cpu_usage_str = NullableCast::toString($input->getOption('cpu-usage'));
+        $cpu_usage_percent = $cpu_usage_str !== null ? (float)$cpu_usage_str : null;
+        $cpu_exit_str = NullableCast::toString($input->getOption('cpu-usage-exit'));
+        $cpu_usage_exit_percent = $cpu_exit_str !== null ? (float)$cpu_exit_str : $cpu_usage_percent;
+        $cpu_sustain_str = NullableCast::toString($input->getOption('cpu-sustain'));
+        $cpu_sustain_seconds = $cpu_sustain_str !== null ? (float)$cpu_sustain_str : 0.0;
+
         $poll_interval = (int)($input->getOption('poll-interval') ?? WatchSettings::POLL_INTERVAL_MS_DEFAULT);
         $poll_interval = max($poll_interval, 100);
 
@@ -209,6 +257,16 @@ final class WatchSettingsFromConsoleInput
 
         /** @var list<string> $actions */
         $actions = $input->getOption('action');
+        // Map legacy 'trace' action name to 'trace-once' for backward compat
+        $actions = \array_map(
+            fn (string $a): string => $a === 'trace' ? 'trace-once' : $a,
+            $actions,
+        );
+
+        /** @var list<string> $on_enter_actions */
+        $on_enter_actions = $input->getOption('on-enter');
+        /** @var list<string> $on_exit_actions */
+        $on_exit_actions = $input->getOption('on-exit');
 
         // --oneshot=N is an alias for --max-triggers=N
         $max_triggers_raw = (string)(
@@ -264,6 +322,15 @@ final class WatchSettingsFromConsoleInput
             memory_output_format: NullableCast::toString($input->getOption('memory-output-format')),
             include_binary: (bool)$input->getOption('include-binary'),
             memory_limit: NullableCast::toString($input->getOption('memory-limit')),
+            cpu_usage_percent: $cpu_usage_percent,
+            cpu_usage_exit_percent: $cpu_usage_exit_percent,
+            cpu_sustain_seconds: $cpu_sustain_seconds,
+            on_enter_actions: $on_enter_actions,
+            on_exit_actions: $on_exit_actions,
+            trace_interval_ms: (int)(
+                $input->getOption('trace-interval')
+                ?? WatchSettings::TRACE_INTERVAL_MS_DEFAULT
+            ),
         );
     }
 

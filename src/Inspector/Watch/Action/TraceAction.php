@@ -41,7 +41,7 @@ final class TraceAction implements ActionInterface
     #[\Override]
     public function name(): string
     {
-        return 'trace';
+        return 'trace-once';
     }
 
     #[\Override]

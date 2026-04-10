@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch;
 
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
+use Reli\Inspector\Watch\Trigger\CpuUsageTrigger;
 use Reli\Inspector\Watch\Trigger\FunctionDetectionTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryGrowthRateTrigger;
 use Reli\Inspector\Watch\Trigger\MemoryUsageTrigger;
@@ -50,6 +51,13 @@ final class TriggerFactory
         if ($settings->rss_usage_bytes !== null) {
             $triggers[] = new RssUsageTrigger(
                 $settings->rss_usage_bytes,
+            );
+        }
+        if ($settings->cpu_usage_percent !== null) {
+            $triggers[] = new CpuUsageTrigger(
+                enter_percent: $settings->cpu_usage_percent,
+                exit_percent: $settings->cpu_usage_exit_percent ?? $settings->cpu_usage_percent,
+                sustain_seconds: $settings->cpu_sustain_seconds,
             );
         }
 
