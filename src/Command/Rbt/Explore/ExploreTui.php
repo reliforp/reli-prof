@@ -160,6 +160,17 @@ final class ExploreTui
     private int $flame_cursor_x = -1;
 
     /**
+     * Whether sandwich-flame body labels are aligned to the right
+     * edge of each bar instead of the default left edge. Toggled with
+     * `A` while in any sandwich view (the toggle is only meaningful
+     * for the flame body, but it's harmless elsewhere). Right-align
+     * makes the label sit next to its bar's "ownership boundary"
+     * which can help separate siblings visually when narrow bars
+     * pile up.
+     */
+    private bool $flame_label_right_align = false;
+
+    /**
      * Cursor + scroll state for the SandwichView::TreeCallees /
      * TreeCallers bodies. The body builds the full sandwich tree into
      * a flat indented line list (capped at TREE_BODY_MAX_LINES) and
@@ -992,6 +1003,7 @@ final class ExploreTui
             '               (mode keys carry the cursor frame across as the new focus)',
             '  ← / →        tree: fold / unfold cursor subtree',
             '  H / L        tree: fold / unfold cursor subtree recursively',
+            '  A            flame: toggle bar label alignment (left ⇄ right)',
             '  ?            this help',
             '  q / Ctrl-C   quit',
             '── press any key ──',
@@ -1075,9 +1087,16 @@ final class ExploreTui
 
         for ($vis = 0; $vis < $total_visual; $vis++) {
             if ($vis === $focus_visual) {
-                $focus_text = ' ▶ ' . ($state->focus_label ?? '<none>');
+                $focus_label = $state->focus_label ?? '<none>';
+                if ($this->flame_label_right_align) {
+                    $focus_text = self::shorten($focus_label, $inner_w - 4) . ' ◀ ';
+                    $pad_len = max(0, $inner_w - mb_strlen($focus_text));
+                    $padded = str_repeat(' ', $pad_len) . $focus_text;
+                } else {
+                    $focus_text = ' ▶ ' . $focus_label;
+                    $padded = self::padOrShorten($focus_text, $inner_w);
+                }
                 $is_cursor_row = $this->flame_cursor_visual_row === $vis;
-                $padded = self::padOrShorten($focus_text, $inner_w);
                 // Cursor takes precedence over the regular yellow focus
                 // banner so the user can see where the cursor is even
                 // when it's parked on the focus bar.
@@ -1168,7 +1187,18 @@ final class ExploreTui
                 $short = $space_pos !== false
                     ? substr($label, 0, $space_pos)
                     : $label;
-                $cell = ' ' . self::shorten($short, $w - 1);
+                $short = self::shorten($short, $w - 1);
+                if ($this->flame_label_right_align) {
+                    // Right-align: pad on the LEFT with spaces so the
+                    // label sits flush against the bar's right edge
+                    // (with a 1-cell trailing margin so adjacent bars
+                    // don't visually fuse). Anchors each label next
+                    // to its own bar's "ownership boundary".
+                    $pad_len = max(0, $w - mb_strlen($short) - 1);
+                    $cell = str_repeat(' ', $pad_len) . $short . ' ';
+                } else {
+                    $cell = ' ' . $short;
+                }
             } else {
                 $cell = '';
             }
@@ -2660,6 +2690,12 @@ final class ExploreTui
 
             case Keymap::ACTION_TREE_UNFOLD_RECURSIVE:
                 $this->unfoldTreeAtCursor(true);
+                return;
+
+            case Keymap::ACTION_TOGGLE_FLAME_LABEL_ALIGN:
+                $this->flame_label_right_align = !$this->flame_label_right_align;
+                $this->status = 'flame label align: '
+                    . ($this->flame_label_right_align ? 'right' : 'left');
                 return;
 
             case Keymap::ACTION_CALLERS:
