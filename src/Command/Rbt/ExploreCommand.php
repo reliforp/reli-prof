@@ -40,7 +40,7 @@ final class ExploreCommand extends Command
             ->setDescription('Interactive TUI explorer for binary traces (.rbt)')
             ->addArgument(
                 'trace',
-                InputArgument::REQUIRED,
+                InputArgument::OPTIONAL,
                 'path to a .rbt file (gzip auto-detected)',
             )
             ->addOption(
@@ -49,14 +49,34 @@ final class ExploreCommand extends Command
                 InputOption::VALUE_REQUIRED,
                 'path to a JSON keymap file overriding the defaults',
             )
+            ->addOption(
+                'diagnose',
+                null,
+                InputOption::VALUE_NONE,
+                'run a terminal self-test (no trace required): enter raw mode'
+                . ' and dump every received key sequence as hex until you press q.'
+                . ' Use this if the TUI seems to ignore keys to verify whether'
+                . ' bytes are reaching PHP at all',
+            )
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        /** @var string $path */
+        if ((bool) $input->getOption('diagnose')) {
+            return $this->runDiagnose($output);
+        }
+
+        /** @var string|null $path */
         $path = $input->getArgument('trace');
+        if ($path === null || $path === '') {
+            $output->writeln(
+                '<error>Missing trace file argument'
+                . ' (use --diagnose to run a terminal self-test instead).</error>'
+            );
+            return 1;
+        }
         if (!is_file($path)) {
             $output->writeln("<error>Trace file not found: {$path}</error>");
             return 1;
@@ -81,6 +101,64 @@ final class ExploreCommand extends Command
         $tui = new ExploreTui($model, $term, $keymap);
         $tui->run();
 
+        return 0;
+    }
+
+    /**
+     * Terminal self-test: enter raw mode, print every captured key
+     * sequence as a hex dump, exit on `q`. Bypasses the TUI loop so
+     * you can verify in isolation whether the keyboard plumbing is
+     * working — answers "is stty applied?", "is fgetc returning per
+     * keystroke?", and "what bytes is my terminal actually sending?".
+     */
+    private function runDiagnose(OutputInterface $output): int
+    {
+        $output->writeln('<info>rbt:explore diagnose mode</info>');
+        $output->writeln('Press keys to see what bytes reach PHP. Press <comment>q</comment> to quit.');
+        $output->writeln('If nothing is reported when you press keys, the terminal is likely not in raw mode.');
+        $output->writeln('');
+
+        $term = new Terminal();
+        try {
+            $term->enter();
+        } catch (\RuntimeException $e) {
+            $output->writeln('<error>' . $e->getMessage() . '</error>');
+            return 1;
+        }
+
+        try {
+            // Use stdout (not the alt screen) for the diagnose dump so
+            // the user can scroll the history afterwards. The Terminal
+            // helper enters the alt screen on its own; we just leave it
+            // enabled and write through it.
+            while (true) {
+                $key = $term->readKey();
+                if ($key === '') {
+                    continue;
+                }
+                $hex = strtoupper(bin2hex($key));
+                $printable = preg_replace_callback(
+                    '/[^\x20-\x7e]/',
+                    static fn(array $m): string => sprintf('\\x%02X', ord($m[0])),
+                    $key,
+                );
+                $term->write(sprintf(
+                    "got %2d byte%s  hex=%-16s repr=%s\r\n",
+                    strlen($key),
+                    strlen($key) === 1 ? ' ' : 's',
+                    $hex,
+                    $printable,
+                ));
+                if ($key === 'q') {
+                    $term->write("(q pressed — exiting)\r\n");
+                    break;
+                }
+            }
+        } finally {
+            $term->leave();
+        }
+
+        $output->writeln('<info>diagnose finished</info>');
         return 0;
     }
 }

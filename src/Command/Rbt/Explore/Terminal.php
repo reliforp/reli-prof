@@ -20,15 +20,21 @@ namespace Reli\Command\Rbt\Explore;
  * terminal into raw mode + alt screen on `enter()`, and *always* restores
  * the original state on shutdown — even on uncaught exceptions or signals.
  *
- * Read strategy: `stty min 1 time 1` returns at least one byte immediately
- * and any follow-up bytes within ~100ms. That captures multi-byte escape
- * sequences (arrow keys, PgUp/Dn, ...) in a single fread, while still
- * delivering single keystrokes without noticeable latency.
+ * stty is invoked with `< /dev/tty` so it always operates on the terminal,
+ * not on whatever happens to be PHP's current stdin (Docker without -it,
+ * IDE task runners, redirected stdin, ...).
  *
- * stty is invoked with `< /dev/tty` so it always operates on the terminal
- * — important when PHP's own stdin has been redirected away from a tty
- * (Docker without -it, IDE task runners, piped input, ...). Without that
- * redirect, stty silently no-ops and the TUI appears to ignore every key.
+ * Read strategy: PHP `fread(stream, N)` ultimately calls libc `fread()`,
+ * which loops calling `read()` until it has the requested N bytes. On a
+ * raw-mode tty that means `fread(64)` blocks waiting for the user to
+ * press 64 keys before it returns anything. To get one keystroke per
+ * call we have to (a) disable PHP's stream-level chunk buffering with
+ * `stream_set_read_buffer(0)` so php_stream_read passes our exact
+ * requested size through to libc, and (b) read one byte at a time with
+ * `fgetc`, which drives libc fread with size 1 — a single `read()`
+ * syscall returning the available byte. Multi-byte escape sequences
+ * (arrow keys etc) are then drained with the stream switched to
+ * non-blocking so the loop stops as soon as the kernel buffer is empty.
  */
 final class Terminal
 {
@@ -81,7 +87,11 @@ final class Terminal
                 . 'stdin is redirected).'
             );
         }
-        $this->applyStty('-icanon -echo min 1 time 1');
+        // min 1 time 0: block until at least one byte is available with no
+        // inter-byte timer. We compose multi-byte sequences ourselves via
+        // a non-blocking drain so we don't pay the 100 ms inter-byte delay
+        // that `time 1` would add to every single keystroke.
+        $this->applyStty('-icanon -echo min 1 time 0');
 
         // Alt screen on, hide cursor.
         $this->write("\e[?1049h\e[?25l");
@@ -118,10 +128,12 @@ final class Terminal
     /**
      * Read one logical key (single byte or full escape sequence).
      *
-     * In raw mode with VMIN=1, VTIME=1, fread blocks until at least one
-     * byte arrives, then waits ~100ms for any follow-up bytes — long
-     * enough to deliver a multi-byte escape sequence (`\e[A`, ...) in
-     * one read, short enough to feel instant for single keystrokes.
+     * fgetc reads exactly one byte at a time, which drives libc fread
+     * with size 1 — a single read() syscall returning the available
+     * byte (kernel honours VMIN=1). After an ESC byte we switch the
+     * stream to non-blocking and drain whatever else the kernel has
+     * already queued so multi-byte sequences (arrow keys etc) come
+     * back as one logical token.
      *
      * Returns an empty string only when the underlying read fails or
      * the resource is closed; the caller may treat that as "try again".
@@ -131,8 +143,33 @@ final class Terminal
         if ($this->tty_in === null) {
             throw new \RuntimeException('Terminal not entered.');
         }
-        $bytes = @fread($this->tty_in, 64);
-        return $bytes === false ? '' : $bytes;
+
+        $first = @fgetc($this->tty_in);
+        if ($first === false || $first === '') {
+            return '';
+        }
+
+        if ($first !== "\e") {
+            return $first;
+        }
+
+        // Drain the rest of the escape sequence without blocking on the
+        // next keystroke. Most terminals deliver "\e[A" / "\e[5~" / etc
+        // as a single tty write so the trailing bytes are usually already
+        // in libc's buffer by the time we get here; if they aren't, we
+        // simply return the bytes we have and let the keymap try to
+        // resolve a partial sequence (which it will refuse and ignore).
+        @stream_set_blocking($this->tty_in, false);
+        $bytes = $first;
+        for ($i = 0; $i < 8; $i++) {
+            $next = @fgetc($this->tty_in);
+            if ($next === false || $next === '') {
+                break;
+            }
+            $bytes .= $next;
+        }
+        @stream_set_blocking($this->tty_in, true);
+        return $bytes;
     }
 
     /**
