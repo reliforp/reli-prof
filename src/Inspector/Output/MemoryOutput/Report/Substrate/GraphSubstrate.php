@@ -120,12 +120,14 @@ class GraphSubstrate
      * For smaller graphs, uses PHP arrays (faster for small datasets).
      *
      * @param bool|null $forceFfiCsr true=force on, false=force off, null=auto
-     * @param int $bulk_fetch_chunk Reserved / no-op. The chunked-fetch
-     *   experiment regressed badly because neither context_nodes nor
-     *   context_edges has an index that lets SQLite use rowid as a
-     *   range key, so each chunk degenerated into a full table scan.
-     *   Kept in the signature so the CLI flag remains accepted while
-     *   we look for a working chunking strategy.
+     * @param int $bulk_fetch_chunk Rows per chunked fetchAll inside
+     *   the FFI substrate loaders. 0 disables chunking entirely
+     *   (legacy per-row cursor scan, lowest peak memory). The
+     *   chunked path uses index-friendly pagination keys
+     *   (`(run_id, node_id)` covering index on context_nodes,
+     *   `(run_id, id)` index on context_edges) — both are installed
+     *   lazily by ReportGenerator::ensureReportIndexes. The PHP-array
+     *   fallback substrate ignores the parameter.
      */
     public static function createFromDb(
         \PDO $db,
@@ -146,7 +148,7 @@ class GraphSubstrate
         }
 
         if ($useFfi && extension_loaded('ffi')) {
-            return FfiCsrGraphSubstrate::loadFromDb($db, $run_id);
+            return FfiCsrGraphSubstrate::loadFromDb($db, $run_id, $bulk_fetch_chunk);
         }
         return self::loadFromDb($db, $run_id);
     }

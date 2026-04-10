@@ -96,9 +96,14 @@ final class MemoryReportCommand extends Command
             'substrate-bulk-fetch-chunk',
             null,
             InputOption::VALUE_REQUIRED,
-            'reserved (currently no-op): rows per chunked fetchAll when loading the substrate.'
-            . ' The chunked path regressed badly on real captures and was reverted; flag is'
-            . ' kept so existing scripts keep working until a working strategy lands.',
+            'rows per chunked fetchAll when loading the substrate from SQLite.'
+            . ' Larger values trade memory for speed (fewer PHP/PDO round trips).'
+            . ' 0 (default) disables chunking and falls back to the legacy per-row cursor scan.'
+            . ' Chunking uses index-friendly pagination keys (`(run_id, node_id)` covering index'
+            . ' on context_nodes, `(run_id, id)` index on context_edges); both are installed'
+            . ' lazily on the first report run. Dumps captured before the schema change that'
+            . ' introduced the `id` column on context_edges fall back to per-row for the'
+            . ' edges loader automatically.',
             '0',
         );
     }
