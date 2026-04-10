@@ -120,9 +120,16 @@ class GraphSubstrate
      * For smaller graphs, uses PHP arrays (faster for small datasets).
      *
      * @param bool|null $forceFfiCsr true=force on, false=force off, null=auto
+     * @param int $bulk_fetch_chunk rows per chunked fetchAll inside the
+     *   FFI substrate loaders. 0 means "no chunking, single fetchAll"
+     *   (max speed, max memory). The PHP-array fallback ignores it.
      */
-    public static function createFromDb(\PDO $db, int $run_id, ?bool $forceFfiCsr = null): self
-    {
+    public static function createFromDb(
+        \PDO $db,
+        int $run_id,
+        ?bool $forceFfiCsr = null,
+        int $bulk_fetch_chunk = 200000,
+    ): self {
         if ($forceFfiCsr === false) {
             return self::loadFromDb($db, $run_id);
         }
@@ -136,7 +143,7 @@ class GraphSubstrate
         }
 
         if ($useFfi && extension_loaded('ffi')) {
-            return FfiCsrGraphSubstrate::loadFromDb($db, $run_id);
+            return FfiCsrGraphSubstrate::loadFromDb($db, $run_id, $bulk_fetch_chunk);
         }
         return self::loadFromDb($db, $run_id);
     }

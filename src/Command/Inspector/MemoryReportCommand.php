@@ -92,6 +92,16 @@ final class MemoryReportCommand extends Command
             . ' lazy (per-edge with bounded cache; slower, flat memory)',
             'auto',
         );
+        $this->addOption(
+            'substrate-bulk-fetch-chunk',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'rows per chunked fetchAll when loading the substrate from SQLite.'
+            . ' Larger values trade memory for speed (fewer PHP/PDO round trips).'
+            . ' 0 means "no chunking, single fetchAll" (max speed, max memory).'
+            . ' Default 200000 keeps per-chunk peak under ~80 MB.',
+            '200000',
+        );
     }
 
     #[\Override]
@@ -138,6 +148,17 @@ final class MemoryReportCommand extends Command
             return 1;
         }
 
+        /** @var string $bulk_fetch_chunk_raw */
+        $bulk_fetch_chunk_raw = $input->getOption('substrate-bulk-fetch-chunk');
+        if (!ctype_digit($bulk_fetch_chunk_raw)) {
+            $output->writeln(sprintf(
+                '<error>Invalid --substrate-bulk-fetch-chunk value: %s (must be a non-negative integer)</error>',
+                $bulk_fetch_chunk_raw,
+            ));
+            return 1;
+        }
+        $bulk_fetch_chunk = (int)$bulk_fetch_chunk_raw;
+
         $generator = new ReportGenerator();
         $result = $generator->generateFromDb(
             $db,
@@ -145,6 +166,7 @@ final class MemoryReportCommand extends Command
             $full_analysis,
             $ffi_csr,
             $link_cache_mode,
+            $bulk_fetch_chunk,
         );
 
         $formatter = match ($format) {

@@ -46,6 +46,9 @@ final class ReportGenerator
      */
     /**
      * @param bool|null $ffi_csr true=force on, false=force off, null=auto
+     * @param int $bulk_fetch_chunk rows per chunked fetchAll inside the
+     *   substrate loaders. 0 disables chunking (single fetchAll, max
+     *   memory). Plumbed through to {@see GraphSubstrate::createFromDb}.
      */
     public function generateFromDb(
         \PDO $db,
@@ -53,6 +56,7 @@ final class ReportGenerator
         bool $full_analysis = false,
         ?bool $ffi_csr = null,
         LinkCacheMode $link_cache_mode = LinkCacheMode::Auto,
+        int $bulk_fetch_chunk = 200000,
     ): ReportResult {
         // Make sure the indexes report passes need exist on this database,
         // even if it was captured by an older Reli version. CREATE INDEX
@@ -113,7 +117,7 @@ final class ReportGenerator
 
         // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
         if ($run_phase3) {
-            $substrate = GraphSubstrate::createFromDb($db, $run_id, $ffi_csr);
+            $substrate = GraphSubstrate::createFromDb($db, $run_id, $ffi_csr, $bulk_fetch_chunk);
             $meta['scc_count'] = count($substrate->getSccProfiles());
 
             // CallStackPass deferred from Phase 2: now that the
