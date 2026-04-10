@@ -146,6 +146,17 @@ final class ExploreTui
     private ?string $sandwich_cache_match_re = null;
     private bool $sandwich_popup_open = false;
 
+    /**
+     * Indented-tree popup direction. null = closed; 'callees' walks the
+     * focus's callee tree (toward leaves), 'callers' walks the caller
+     * tree (toward roots). Reuses {@see ensureSandwichTree} for data,
+     * so opening either of these is free if the sandwich-flame popup
+     * was already opened on the same focus (and vice versa).
+     *
+     * @var 'callees'|'callers'|null
+     */
+    private ?string $tree_popup_direction = null;
+
     public function __construct(TraceModel $model, Terminal $term, Keymap $keymap)
     {
         $this->model = $model;
@@ -243,6 +254,13 @@ final class ExploreTui
 
         if ($this->sandwich_popup_open) {
             $buf .= $this->renderSandwichFlameOverlay($cols, $rows);
+        }
+        if ($this->tree_popup_direction !== null) {
+            $buf .= $this->renderTreePopupOverlay(
+                $cols,
+                $rows,
+                $this->tree_popup_direction,
+            );
         }
         if ($this->help_open) {
             $buf .= $this->renderHelpOverlay($cols, $rows);
@@ -930,6 +948,8 @@ final class ExploreTui
             '  o            toggle overview sidebar',
             '  F            toggle horizontal mini-flame strip',
             '  S            sandwich-flame popup (callers + callees) at focus',
+            '  >            callee tree popup (% bars + full labels)',
+            '  <            caller tree popup (% bars + full labels)',
             '  ?            this help',
             '  q / Ctrl-C   quit',
             '── press any key ──',
@@ -1180,6 +1200,181 @@ final class ExploreTui
         }
     }
 
+    /**
+     * Indented-tree popup overlay rooted at the current focus.
+     *
+     * The flame popup is great for "where is the mass" but loses
+     * frame names in narrow bars; this view is the inverse — full,
+     * readable labels at the cost of needing to scroll vertically
+     * to see the long tail. Each row carries a Braille percentage bar
+     * and the share-of-focus number, so the relative size of nested
+     * frames is still legible at a glance.
+     *
+     * Reuses {@see ensureSandwichTree} so opening this after the
+     * S popup (or vice versa) on the same focus is free.
+     *
+     * @param 'callees'|'callers' $direction
+     */
+    private function renderTreePopupOverlay(int $cols, int $rows, string $direction): string
+    {
+        $tree = $this->ensureSandwichTree();
+        if ($tree === null) {
+            return '';
+        }
+        $state = $this->currentState();
+        if ($cols < 30 || $rows < 6) {
+            return '';
+        }
+
+        $focus_count = max(1, $tree['focus_count']);
+        $children = $direction === 'callees' ? $tree['callees'] : $tree['callers'];
+
+        $title = sprintf(
+            ' %s tree — %s   (%s samples)   [any key closes] ',
+            $direction === 'callees' ? 'callee' : 'caller',
+            $state->focus_label ?? '<none>',
+            number_format($focus_count),
+        );
+
+        $lines = [];
+        $lines[] = "\e[1;7m" . self::padOrShorten($title, $cols) . "\e[0m";
+
+        // 2 rows reserved (title + footer); the rest are tree rows.
+        $body_rows = $rows - 2;
+        if ($body_rows < 1) {
+            $body_rows = 1;
+        }
+
+        $tree_lines = [];
+        $this->walkTreeForOverlay(
+            $children,
+            $focus_count,
+            '',
+            $cols,
+            $body_rows,
+            $tree_lines,
+            $this->opts->no_line,
+        );
+
+        for ($i = 0; $i < $body_rows; $i++) {
+            $lines[] = self::padOrShorten($tree_lines[$i] ?? '', $cols);
+        }
+
+        $footer = $direction === 'callees'
+            ? ' walks toward leaves · indent = call depth · % is share of focus '
+            : ' walks toward roots · indent = ancestry depth · % is share of focus ';
+        $lines[] = "\e[2;7m" . self::padOrShorten($footer, $cols) . "\e[0m";
+
+        $out = '';
+        foreach ($lines as $i => $line) {
+            $out .= sprintf("\e[%d;1H", $i + 1) . $line;
+        }
+        return $out;
+    }
+
+    /**
+     * DFS-walk the sandwich tree producing one indented line per node.
+     * Stops once $max_lines lines have been emitted (the popup just
+     * truncates the long tail; v1 has no scrolling).
+     *
+     * Each row layout:
+     *   {prefix}{connector}{braille_bar} {pct%} {label} ({count})
+     *
+     * @param array<int, array{count:int, children:array}> $nodes
+     * @param list<string>                                 $lines
+     */
+    private function walkTreeForOverlay(
+        array $nodes,
+        int $denom,
+        string $prefix,
+        int $width,
+        int $max_lines,
+        array &$lines,
+        bool $no_line,
+    ): void {
+        if ($nodes === [] || count($lines) >= $max_lines) {
+            return;
+        }
+        // Largest first so the dominant branch is the first thing the
+        // user reads on each level — same convention the flame popup
+        // and overview both use.
+        uasort(
+            $nodes,
+            /** @param array{count:int, children:array} $a
+             *  @param array{count:int, children:array} $b */
+            fn(array $a, array $b): int => $b['count'] <=> $a['count'],
+        );
+
+        $entries = array_keys($nodes);
+        $n = count($entries);
+        for ($i = 0; $i < $n; $i++) {
+            if (count($lines) >= $max_lines) {
+                return;
+            }
+            $kid = $entries[$i];
+            /** @var array{count:int, children:array} $node */
+            $node = $nodes[$kid];
+            $is_last = ($i === $n - 1);
+            $connector = $is_last ? '└─ ' : '├─ ';
+
+            $ratio = $node['count'] / $denom;
+            $bar = self::brailleHBar($ratio, 6);
+            $label = Aggregator::labelFor($this->model, $kid, $no_line);
+
+            $head = sprintf(
+                '%s%s%s %5.1f%% ',
+                $prefix,
+                $connector,
+                $bar,
+                $ratio * 100.0,
+            );
+            $tail = sprintf(' (%s)', number_format($node['count']));
+            $room = max(1, $width - mb_strlen($head) - mb_strlen($tail));
+            $line = $head . self::shorten($label, $room) . $tail;
+            $lines[] = $line;
+
+            $next_prefix = $prefix . ($is_last ? '   ' : '│  ');
+            $this->walkTreeForOverlay(
+                $node['children'],
+                $denom,
+                $next_prefix,
+                $width,
+                $max_lines,
+                $lines,
+                $no_line,
+            );
+        }
+    }
+
+    /**
+     * Render a horizontal Braille bar of $cells width representing
+     * $ratio in [0..1]. Each cell carries 2 horizontal sub-pixels so
+     * the smallest visible step is 1/(2*$cells) of the bar.
+     */
+    private static function brailleHBar(float $ratio, int $cells): string
+    {
+        if ($ratio < 0) {
+            $ratio = 0;
+        }
+        if ($ratio > 1) {
+            $ratio = 1;
+        }
+        $sub = (int)round($ratio * $cells * 2);
+        $out = '';
+        for ($c = 0; $c < $cells; $c++) {
+            $left_p = $c * 2 < $sub;
+            $right_p = $c * 2 + 1 < $sub;
+            if ($left_p && $right_p) {
+                $out .= '⣿';
+            } elseif ($left_p) {
+                $out .= '⡇';
+            } else {
+                $out .= ' ';
+            }
+        }
+        return $out;
+    }
+
     // ---------- aggregation caches ----------
 
     /**
@@ -1378,6 +1573,10 @@ final class ExploreTui
             $this->sandwich_popup_open = false;
             return;
         }
+        if ($this->tree_popup_direction !== null) {
+            $this->tree_popup_direction = null;
+            return;
+        }
         if ($this->prompt_label !== null) {
             $this->dispatchPrompt($key);
             return;
@@ -1458,6 +1657,22 @@ final class ExploreTui
                     return;
                 }
                 $this->sandwich_popup_open = true;
+                return;
+
+            case Keymap::ACTION_OPEN_CALLEE_TREE:
+                if ($state->mode !== ExploreMode::Sandwich || $state->focus_id === null) {
+                    $this->status = 'callee tree: focus a frame first';
+                    return;
+                }
+                $this->tree_popup_direction = 'callees';
+                return;
+
+            case Keymap::ACTION_OPEN_CALLER_TREE:
+                if ($state->mode !== ExploreMode::Sandwich || $state->focus_id === null) {
+                    $this->status = 'caller tree: focus a frame first';
+                    return;
+                }
+                $this->tree_popup_direction = 'callers';
                 return;
 
             case Keymap::ACTION_CALLERS:
