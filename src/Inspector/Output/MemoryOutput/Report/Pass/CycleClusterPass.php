@@ -64,21 +64,13 @@ final class CycleClusterPass implements PassInterface
         }
         usort($groups_sorted, fn($a, $b) => $b['total'] <=> $a['total']);
 
-        // Only the first ~10 cycle groups become findings, and within
-        // each group only the *example* (first) profile's nodes are
-        // ever passed to findBackReference. The previous version loaded
-        // link_names for every node in every SCC profile (potentially
-        // millions on huge dumps) and then discarded 99% of them. We now
-        // narrow the load to just the example nodes of the top groups.
+        // findBackReference uses link_names for at most one child per cycle
+        // — the first non-tree intra-SCC edge it walks into. The previous
+        // version pre-loaded link_names for every node in every example SCC
+        // (millions on huge dumps) just to actually consult ten of them.
+        // We now look them up on demand from the shared LinkNameResolver
+        // inside findBackReference itself.
         $top_groups = array_slice($groups_sorted, 0, 10);
-        $needed_node_ids = [];
-        foreach ($top_groups as $g) {
-            $example = $g['group'][0];
-            foreach ($example['nodes'] as $nid) {
-                $needed_node_ids[$nid] = true;
-            }
-        }
-        $link_names = $this->loadLinkNamesForNodes(array_keys($needed_node_ids));
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
         // Prepared statements for on-demand path lookup (max ~20 rows per path)
@@ -104,10 +96,7 @@ final class CycleClusterPass implements PassInterface
             );
 
             // Find back-reference (non-tree edge within SCC)
-            $back_ref = $this->findBackReference(
-                $example['nodes'],
-                $link_names,
-            );
+            $back_ref = $this->findBackReference($example['nodes']);
 
             // Compute retained size (shallow + downstream)
             $retained = $this->computeRetained($example['nodes']);
@@ -478,32 +467,36 @@ final class CycleClusterPass implements PassInterface
     /**
      * Find the non-tree edge within an SCC (the back-reference).
      * @param list<int> $nodes
-     * @param array<int, string> $link_names
      */
-    private function findBackReference(
-        array $nodes,
-        array $link_names,
-    ): string {
+    private function findBackReference(array $nodes): string
+    {
         $scc_set = array_flip($nodes);
+        $resolver = $this->link_resolver;
 
         foreach ($nodes as $node) {
+            // Build a quick set of tree-edge children so we can answer
+            // "is this a non-tree edge?" without scanning a list inside
+            // the inner loop. getChildren() can be large for hub nodes.
+            $tree_children = [];
+            foreach ($this->substrate->getChildren($node) as $tc) {
+                $tree_children[$tc] = true;
+            }
+
             // Check all_children for edges that go to another SCC member
             foreach ($this->substrate->getAllChildren($node) as $child) {
                 if (!isset($scc_set[$child])) {
                     continue;
                 }
-                // Is this a non-tree edge? (tree edge would be in $children)
-                $is_tree = in_array(
-                    $child,
-                    $this->substrate->getChildren($node),
-                    true
-                );
-                if ($is_tree) {
-                    continue;
+                if (isset($tree_children[$child])) {
+                    continue; // tree edge — not a back-ref
                 }
 
-                // Found a non-tree edge within SCC
-                $link = $link_names[$child] ?? '?';
+                // Found a non-tree edge within SCC. The link_name is only
+                // needed *here*, so we look it up on demand instead of
+                // pre-loading every example node's link_name upfront.
+                $link = $resolver !== null
+                    ? ($resolver->lookup($child) ?? '?')
+                    : ($this->lookupSingleLinkName($child) ?? '?');
                 $src_class = $this->substrate->getNodeClass($node);
                 $tgt_class = $this->substrate->getNodeClass($child);
 
@@ -633,37 +626,19 @@ final class CycleClusterPass implements PassInterface
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     /**
-     * Load link_names for the given node IDs.
-     *
-     * Routed through the shared {@see LinkNameResolver} when one is
-     * available so cross-pass cache hits and the eager fully-loaded
-     * mode both apply transparently. Falls back to a chunked IN
-     * query if no resolver was injected (e.g. unit tests).
-     *
-     * @param  list<int>          $node_ids
-     * @return array<int, string>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     * Single tree-edge link_name lookup used as the fallback path when
+     * no LinkNameResolver was injected (e.g. in unit tests). The
+     * production wiring always supplies the shared resolver.
      */
-    private function loadLinkNamesForNodes(array $node_ids): array
+    private function lookupSingleLinkName(int $child_node_id): ?string
     {
-        if ($node_ids === []) {
-            return [];
-        }
-        if ($this->link_resolver !== null) {
-            return $this->link_resolver->lookupMany($node_ids);
-        }
-        $map = [];
-        foreach (array_chunk($node_ids, 900) as $chunk) {
-            $placeholders = implode(',', $chunk);
-            $stmt = $this->db->query(
-                "SELECT child_node_id, link_name FROM context_edges"
-                . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-                . " AND child_node_id IN ({$placeholders})"
-            );
-            while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-                $map[(int)$r[0]] = (string)$r[1];
-            }
-        }
-        return $map;
+        $stmt = $this->db->prepare(
+            "SELECT link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
+        );
+        $stmt->execute([$child_node_id]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? (string)$val : null;
     }
 }
