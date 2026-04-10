@@ -176,6 +176,73 @@ class LinkNameResolverTest extends BaseTestCase
         $this->assertTrue($resolver->isFullyLoaded());
     }
 
+    public function testLookupManyReturnsKnownEntriesAndCachesMisses(): void
+    {
+        $resolver = new LinkNameResolver($this->db, 1);
+
+        $result = $resolver->lookupMany([10, 11, 13, 999]);
+
+        $this->assertSame(
+            [
+                10 => 'foo',
+                11 => 'bar',
+                13 => 'root_link',
+            ],
+            $result,
+        );
+
+        // After the bulk fetch, the unknown id must be cached as a miss
+        // so a follow-up lookup() does not re-query the database.
+        $this->db->exec('DELETE FROM context_edges');
+        $this->assertNull($resolver->lookup(999));
+        // And resolved entries are still served from the cache.
+        $this->assertSame('foo', $resolver->lookup(10));
+        $this->assertSame(1, $resolver->getTreeParent(10));
+    }
+
+    public function testLookupManyServesCachedAndDbBackedEntriesTogether(): void
+    {
+        $resolver = new LinkNameResolver($this->db, 1);
+        // Pre-warm one entry via lookup().
+        $this->assertSame('foo', $resolver->lookup(10));
+
+        $result = $resolver->lookupMany([10, 11, 12]);
+        $this->assertSame(
+            [
+                10 => 'foo',                  // from cache
+                11 => 'bar',                  // from db
+                12 => 'object_properties',    // from db
+            ],
+            $result,
+        );
+    }
+
+    public function testLookupManyAfterLoadAllUsesCacheOnly(): void
+    {
+        $resolver = new LinkNameResolver($this->db, 1);
+        $resolver->loadAll();
+
+        // Drop everything; lookupMany must still answer from the cache.
+        $this->db->exec('DELETE FROM context_edges');
+
+        $result = $resolver->lookupMany([10, 11, 12, 13, 999]);
+        $this->assertSame(
+            [
+                10 => 'foo',
+                11 => 'bar',
+                12 => 'object_properties',
+                13 => 'root_link',
+            ],
+            $result,
+        );
+    }
+
+    public function testLookupManyOnEmptyInputReturnsEmpty(): void
+    {
+        $resolver = new LinkNameResolver($this->db, 1);
+        $this->assertSame([], $resolver->lookupMany([]));
+    }
+
     public function testCacheCapStopsGrowingButStillResolves(): void
     {
         // Cap the cache at 1 entry. The first lookup populates it; the second

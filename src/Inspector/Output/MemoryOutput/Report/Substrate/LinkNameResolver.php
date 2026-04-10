@@ -101,6 +101,83 @@ final class LinkNameResolver
     }
 
     /**
+     * Resolve a batch of tree-edge link names in one shot.
+     *
+     * Cached entries are returned immediately. The remaining ids are
+     * fetched in a single chunked `IN (...)` query (chunk size 900,
+     * comfortably under SQLite's default 1000-arg expression limit) and
+     * recorded in the cache up to its soft cap. Cache-bypass behaviour
+     * once the cap is reached matches {@see self::lookup()}.
+     *
+     * @param  iterable<int>     $child_node_ids
+     * @return array<int, string> child_node_id => link_name (only resolved entries)
+     * @psalm-suppress MixedAssignment
+     */
+    public function lookupMany(iterable $child_node_ids): array
+    {
+        /** @var array<int, true> dedupe + missing-id collection */
+        $missing = [];
+        /** @var array<int, string> $result */
+        $result = [];
+        foreach ($child_node_ids as $id) {
+            if (array_key_exists($id, $this->link_cache)) {
+                $cached = $this->link_cache[$id];
+                if ($cached !== null) {
+                    $result[$id] = $cached;
+                }
+                continue;
+            }
+            if ($this->fully_loaded) {
+                // Authoritative miss: record null so we never re-query.
+                $this->link_cache[$id] = null;
+                continue;
+            }
+            $missing[$id] = true;
+        }
+
+        if ($missing === []) {
+            return $result;
+        }
+
+        // Chunked IN — keeps the SQL size bounded and lets SQLite use
+        // the (run_id, child_node_id) index for each batch.
+        $missing_ids = array_keys($missing);
+        foreach (array_chunk($missing_ids, 900) as $chunk) {
+            $placeholders = implode(',', $chunk);
+            $stmt = $this->db->query(
+                "SELECT parent_node_id, child_node_id, link_name"
+                . " FROM context_edges"
+                . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
+                . " AND child_node_id IN ({$placeholders})"
+            );
+            while (($row = $stmt->fetch(\PDO::FETCH_NUM)) !== false) {
+                $child_id = (int)$row[1];
+                $link_name = (string)$row[2];
+                $result[$child_id] = $link_name;
+                if (count($this->link_cache) < $this->max_cache_entries) {
+                    $this->link_cache[$child_id] = $link_name;
+                    if ($row[0] !== null) {
+                        $this->tree_parents[$child_id] = (int)$row[0];
+                    }
+                }
+                unset($missing[$child_id]);
+            }
+        }
+        // Any ids still in $missing have no tree edge — record nulls so
+        // future lookups are O(1).
+        if ($missing !== [] && count($this->link_cache) < $this->max_cache_entries) {
+            foreach (array_keys($missing) as $id) {
+                if (count($this->link_cache) >= $this->max_cache_entries) {
+                    break;
+                }
+                $this->link_cache[$id] = null;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * Resolve the tree-edge `link_name` for a child node.
      *
      * Returns `null` if no tree edge points to this child.

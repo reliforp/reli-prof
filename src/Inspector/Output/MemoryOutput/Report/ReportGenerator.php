@@ -130,7 +130,9 @@ final class ReportGenerator
                 $link_resolver->loadAll();
             }
 
-            $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate, $db, $run_id)));
+            $findings = array_merge($findings, $this->runPass(
+                new CycleClusterPass($substrate, $db, $run_id, $link_resolver)
+            ));
             $findings = array_merge($findings, $this->runPass(
                 new PropertyScalingPass($db, $run_id, $class_objects, $substrate, $link_resolver)
             ));

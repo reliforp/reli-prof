@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
@@ -27,6 +28,7 @@ final class CycleClusterPass implements PassInterface
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
+        private ?LinkNameResolver $link_resolver = null,
     ) {
     }
 
@@ -62,18 +64,21 @@ final class CycleClusterPass implements PassInterface
         }
         usort($groups_sorted, fn($a, $b) => $b['total'] <=> $a['total']);
 
-        // Collect all SCC node IDs for targeted metadata loading
-        $scc_node_ids = [];
-        foreach ($groups_sorted as $g) {
-            foreach ($g['group'] as $profile) {
-                foreach ($profile['nodes'] as $nid) {
-                    $scc_node_ids[$nid] = true;
-                }
+        // Only the first ~10 cycle groups become findings, and within
+        // each group only the *example* (first) profile's nodes are
+        // ever passed to findBackReference. The previous version loaded
+        // link_names for every node in every SCC profile (potentially
+        // millions on huge dumps) and then discarded 99% of them. We now
+        // narrow the load to just the example nodes of the top groups.
+        $top_groups = array_slice($groups_sorted, 0, 10);
+        $needed_node_ids = [];
+        foreach ($top_groups as $g) {
+            $example = $g['group'][0];
+            foreach ($example['nodes'] as $nid) {
+                $needed_node_ids[$nid] = true;
             }
         }
-
-        // Load link_names only for SCC nodes (not all 2M+ edges)
-        $link_names = $this->loadLinkNamesForNodes(array_keys($scc_node_ids));
+        $link_names = $this->loadLinkNamesForNodes(array_keys($needed_node_ids));
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
         // Prepared statements for on-demand path lookup (max ~20 rows per path)
@@ -88,7 +93,7 @@ final class CycleClusterPass implements PassInterface
         );
 
         $findings = [];
-        foreach (array_slice($groups_sorted, 0, 10) as $g) {
+        foreach ($top_groups as $g) {
             $group = $g['group'];
             $example = $group[0];
             $count = count($group);
@@ -628,9 +633,14 @@ final class CycleClusterPass implements PassInterface
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     /**
-     * Load link_names only for the given node IDs.
+     * Load link_names for the given node IDs.
      *
-     * @param list<int> $node_ids
+     * Routed through the shared {@see LinkNameResolver} when one is
+     * available so cross-pass cache hits and the eager fully-loaded
+     * mode both apply transparently. Falls back to a chunked IN
+     * query if no resolver was injected (e.g. unit tests).
+     *
+     * @param  list<int>          $node_ids
      * @return array<int, string>
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
@@ -639,8 +649,11 @@ final class CycleClusterPass implements PassInterface
         if ($node_ids === []) {
             return [];
         }
+        if ($this->link_resolver !== null) {
+            return $this->link_resolver->lookupMany($node_ids);
+        }
         $map = [];
-        foreach (array_chunk($node_ids, 500) as $chunk) {
+        foreach (array_chunk($node_ids, 900) as $chunk) {
             $placeholders = implode(',', $chunk);
             $stmt = $this->db->query(
                 "SELECT child_node_id, link_name FROM context_edges"
