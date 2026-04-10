@@ -77,13 +77,22 @@ final class ExploreTui
     private ?array $callees_cache = null;
 
     /**
-     * Self-time top in no-line space, used by the overview sidebar.
-     * Always grouped by function name regardless of $opts->no_line so
-     * the sidebar shows a stable "where am I in the big picture" view.
+     * Self-time or total-time top in no-line space, used by the overview
+     * sidebar. Always grouped by function name regardless of $opts->no_line
+     * so the sidebar shows a stable "where am I in the big picture" view.
+     * Sort flavour is controlled by {@see self::$overview_sort}.
      *
      * @var array{matched_samples:int, rows:list<array{int,int,string}>}|null
      */
     private ?array $overview_cache = null;
+
+    /**
+     * Whether the overview pane is sorted by self-time or total-time.
+     * Toggled with `s` / `t` while in sandwich mode.
+     *
+     * @var 'self'|'total'
+     */
+    private string $overview_sort = 'self';
 
     /**
      * Tri-state: null = auto (show on wide terminals), true = forced on,
@@ -519,9 +528,10 @@ final class ExploreTui
         }
 
         $marker_active = $is_active ? '▶' : ' ';
+        $sort_label = $this->overview_sort;
         $title = $is_active
-            ? sprintf('%s ── overview (self) ──', $marker_active)
-            : '── overview (self) ──';
+            ? sprintf('%s ── overview (%s) ──', $marker_active, $sort_label)
+            : sprintf('── overview (%s) ──', $sort_label);
         $header_line = self::padOrShorten($title, $width);
         $out = [
             $is_active
@@ -562,6 +572,27 @@ final class ExploreTui
             $out[] = $line;
         }
         return $out;
+    }
+
+    /**
+     * Switch the overview pane between self-time and total-time sort.
+     * No-op when the requested sort already matches; otherwise the
+     * cache is busted and the cursor returns to the top because the
+     * row order has changed under it.
+     *
+     * @param 'self'|'total' $sort
+     */
+    private function setOverviewSort(string $sort): void
+    {
+        if ($this->overview_sort === $sort) {
+            $this->status = "overview: {$sort}-time (already)";
+            return;
+        }
+        $this->overview_sort = $sort;
+        $this->overview_cache = null;
+        $this->overview_selected = 0;
+        $this->overview_top_row = 0;
+        $this->status = "overview: {$sort}-time";
     }
 
     private function getCurrentFocusNoLineId(): ?int
@@ -640,8 +671,10 @@ final class ExploreTui
             '  ← / h        focus callers pane',
             '  → / l        focus callees pane',
             '  u / Bksp     pop focus history',
-            '  s            self-time top (clears focus)',
-            '  t            total-time top (clears focus)',
+            '  s            sandwich: focus overview, sort by self-time',
+            '               list:     switch to self-time list',
+            '  t            sandwich: focus overview, sort by total-time',
+            '               list:     switch to total-time list',
             '  O            fullscreen overview (no-line self top)',
             '  /            filter visible rows (PCRE)',
             '  m            global sample match (PCRE)',
@@ -724,9 +757,10 @@ final class ExploreTui
     }
 
     /**
-     * Self-time top in no-line space — the data behind the overview
-     * sidebar. Independent of the user's no-line toggle so the sidebar
-     * is a stable "where am I in the big picture" view.
+     * Self-time or total-time top in no-line space — the data behind the
+     * overview sidebar. Independent of the user's no-line toggle so the
+     * sidebar is a stable "where am I in the big picture" view; the sort
+     * flavour is controlled by {@see self::$overview_sort}.
      *
      * @return array{matched_samples:int, rows:list<array{int,int,string}>}
      */
@@ -736,7 +770,9 @@ final class ExploreTui
             return $this->overview_cache;
         }
         $opts = $this->opts->withNoLine(true);
-        $view = Aggregator::selfTime($this->model, $opts);
+        $view = $this->overview_sort === 'total'
+            ? Aggregator::totalTime($this->model, $opts)
+            : Aggregator::selfTime($this->model, $opts);
         return $this->overview_cache = $this->buildCache($view, no_line: true);
     }
 
@@ -759,12 +795,23 @@ final class ExploreTui
         ];
     }
 
-    private function invalidate(): void
+    /**
+     * Drop the per-pane aggregator caches.
+     *
+     * The overview cache is preserved by default because it's invariant
+     * across focus changes (it depends only on the model + global match
+     * + the overview sort, not on the current sandwich focus or no-line
+     * setting). Pass `include_overview: true` for events that *do*
+     * change overview content (match filter, overview sort flip).
+     */
+    private function invalidate(bool $include_overview = false): void
     {
         $this->list_cache = null;
         $this->callers_cache = null;
         $this->callees_cache = null;
-        $this->overview_cache = null;
+        if ($include_overview) {
+            $this->overview_cache = null;
+        }
     }
 
     /**
@@ -891,10 +938,22 @@ final class ExploreTui
                 return;
 
             case Keymap::ACTION_VIEW_SELF:
+                if ($state->mode === ExploreMode::Sandwich) {
+                    $this->setOverviewSort('self');
+                    $this->stack[count($this->stack) - 1]
+                        = $state->withActivePane(ActivePane::Overview);
+                    return;
+                }
                 $this->resetTo(ExploreMode::ListSelf);
                 return;
 
             case Keymap::ACTION_VIEW_TOTAL:
+                if ($state->mode === ExploreMode::Sandwich) {
+                    $this->setOverviewSort('total');
+                    $this->stack[count($this->stack) - 1]
+                        = $state->withActivePane(ActivePane::Overview);
+                    return;
+                }
                 $this->resetTo(ExploreMode::ListTotal);
                 return;
 
@@ -943,8 +1002,10 @@ final class ExploreTui
                             $this->opts = $this->opts->withMatch($re);
                             $this->status = "global match: {$value}";
                         }
-                        $this->resetScrolls();
-                        $this->invalidate();
+                        // The match filter changes overview content too,
+                        // so reset its scroll and bust its cache.
+                        $this->resetScrolls(include_overview: true);
+                        $this->invalidate(include_overview: true);
                     },
                 );
                 return;
@@ -952,6 +1013,8 @@ final class ExploreTui
             case Keymap::ACTION_NO_LINE:
                 $this->opts = $this->opts->withNoLine(!$this->opts->no_line);
                 $this->refocusForNoLineToggle();
+                // The overview is always built with no_line=true, so its
+                // content survives this toggle untouched.
                 $this->invalidate();
                 $this->resetScrolls();
                 $this->status = 'no-line: ' . ($this->opts->no_line ? 'on' : 'off');
@@ -1149,7 +1212,14 @@ final class ExploreTui
         $this->invalidate();
     }
 
-    private function resetScrolls(): void
+    /**
+     * Reset cursor + scroll position for the list / callers / callees
+     * panes. The overview pane is preserved by default — focus changes
+     * shouldn't lose the user's place in the big-picture map. Pass
+     * `include_overview: true` only for events that genuinely make the
+     * overview's row indices stale (sort flip, match filter, etc).
+     */
+    private function resetScrolls(bool $include_overview = false): void
     {
         $this->list_selected = 0;
         $this->list_top_row = 0;
@@ -1157,8 +1227,10 @@ final class ExploreTui
         $this->callers_top_row = 0;
         $this->callees_selected = 0;
         $this->callees_top_row = 0;
-        $this->overview_selected = 0;
-        $this->overview_top_row = 0;
+        if ($include_overview) {
+            $this->overview_selected = 0;
+            $this->overview_top_row = 0;
+        }
     }
 
     /**
