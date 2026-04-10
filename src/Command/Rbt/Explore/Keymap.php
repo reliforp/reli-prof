@@ -53,6 +53,8 @@ final class Keymap
     public const ACTION_VIEW_FLAME        = 'view_flame';
     public const ACTION_VIEW_TREE_CALLEES = 'view_tree_callees';
     public const ACTION_VIEW_TREE_CALLERS = 'view_tree_callers';
+    public const ACTION_TREE_FOLD_RECURSIVE   = 'tree_fold_recursive';
+    public const ACTION_TREE_UNFOLD_RECURSIVE = 'tree_unfold_recursive';
     public const ACTION_HELP          = 'help';
     public const ACTION_QUIT          = 'quit';
 
@@ -104,6 +106,8 @@ final class Keymap
             self::ACTION_VIEW_FLAME        => ['S'],
             self::ACTION_VIEW_TREE_CALLEES => ['>'],
             self::ACTION_VIEW_TREE_CALLERS => ['<'],
+            self::ACTION_TREE_FOLD_RECURSIVE   => ['H'],
+            self::ACTION_TREE_UNFOLD_RECURSIVE => ['L'],
             self::ACTION_HELP          => ['?'],
             self::ACTION_QUIT          => ['q', "\x03"],
         ]);

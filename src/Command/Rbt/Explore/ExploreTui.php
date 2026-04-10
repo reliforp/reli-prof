@@ -169,6 +169,19 @@ final class ExploreTui
     private int $tree_top_row = 0;
     private int $tree_cursor_row = 0;
 
+    /**
+     * Set of folded subtree paths inside the tree body. Each path is
+     * the cursor row's chain of key_ids from depth-1 to the row's
+     * depth, joined with '/'. The walker skips recursing into a node
+     * whose path is in this set, so its children disappear from the
+     * flat line list. Reset whenever the focus / view changes (the
+     * fold state is meaningful only for one specific tree direction
+     * of one specific focus, so it'd be misleading to carry it over).
+     *
+     * @var array<string, true>
+     */
+    private array $tree_folded = [];
+
     public function __construct(TraceModel $model, Terminal $term, Keymap $keymap)
     {
         $this->model = $model;
@@ -961,6 +974,8 @@ final class ExploreTui
             '  >            callee tree view (scroll + Enter focuses)',
             '  <            caller tree view (scroll + Enter focuses)',
             '               (mode keys carry the cursor frame across as the new focus)',
+            '  ← / →        tree: fold / unfold cursor subtree',
+            '  H / L        tree: fold / unfold cursor subtree recursively',
             '  ?            this help',
             '  q / Ctrl-C   quit',
             '── press any key ──',
@@ -1405,6 +1420,11 @@ final class ExploreTui
         $this->flame_cursor_x = -1;
         $this->tree_top_row = 0;
         $this->tree_cursor_row = 0;
+        // The fold state is per-(focus, direction) — clearing it here
+        // covers both "switching focus" and "switching tree direction
+        // on the same focus" since the underlying tree shape changes
+        // in either case and the old paths become meaningless.
+        $this->tree_folded = [];
     }
 
     /**
@@ -1756,10 +1776,19 @@ final class ExploreTui
      * Stops once $max_lines entries have been emitted.
      *
      * Each row layout:
-     *   {prefix}{connector}{braille_bar} {pct%} {label} ({count})
+     *   {prefix}{connector}{fold_marker}{braille_bar} {pct%} {label} ({count})
      *
-     * @param array<int, array{count:int, children:array}> $nodes
-     * @param list<array{text:string, key_id:int}>         $entries
+     * The fold marker is `▶ ` for a folded subtree, `▼ ` for an
+     * unfolded node with children, and `  ` (2 spaces) for a leaf —
+     * keeping every row the same width regardless of state.
+     *
+     * The current path (slash-joined chain of key_ids from depth-1
+     * down) is propagated through the recursion so the fold-state
+     * lookup and the per-entry path tag are both available without
+     * a second walk.
+     *
+     * @param array<int, array{count:int, children:array}>          $nodes
+     * @param list<array{text:string, key_id:int, path:string}>     $entries
      */
     private function walkTreeForBody(
         array $nodes,
@@ -1769,6 +1798,7 @@ final class ExploreTui
         int $max_lines,
         array &$entries,
         bool $no_line,
+        string $current_path = '',
     ): void {
         if ($nodes === [] || count($entries) >= $max_lines) {
             return;
@@ -1795,21 +1825,39 @@ final class ExploreTui
             $is_last = ($i === $n - 1);
             $connector = $is_last ? '└─ ' : '├─ ';
 
+            $node_path = $current_path === ''
+                ? (string)$kid
+                : $current_path . '/' . $kid;
+            $has_children = $node['children'] !== [];
+            $is_folded = isset($this->tree_folded[$node_path]);
+            $marker = $has_children
+                ? ($is_folded ? '▶ ' : '▼ ')
+                : '  ';
+
             $ratio = $node['count'] / $denom;
             $bar = self::brailleHBar($ratio, 6);
             $label = Aggregator::labelFor($this->model, $kid, $no_line);
 
             $head = sprintf(
-                '%s%s%s %5.1f%% ',
+                '%s%s%s%s %5.1f%% ',
                 $prefix,
                 $connector,
+                $marker,
                 $bar,
                 $ratio * 100.0,
             );
             $tail = sprintf(' (%s)', number_format($node['count']));
             $room = max(1, $width - mb_strlen($head) - mb_strlen($tail));
             $text = $head . self::shorten($label, $room) . $tail;
-            $entries[] = ['text' => $text, 'key_id' => $kid];
+            $entries[] = [
+                'text' => $text,
+                'key_id' => $kid,
+                'path' => $node_path,
+            ];
+
+            if ($is_folded || !$has_children) {
+                continue;
+            }
 
             $next_prefix = $prefix . ($is_last ? '   ' : '│  ');
             $this->walkTreeForBody(
@@ -1820,6 +1868,7 @@ final class ExploreTui
                 $max_lines,
                 $entries,
                 $no_line,
+                $node_path,
             );
         }
     }
@@ -2169,7 +2218,8 @@ final class ExploreTui
      * View-aware ←/→ dispatcher. In panes view (and list mode) these
      * keys still mean "switch active pane", matching the original
      * keybinding. In flame view they move the cursor between sibling
-     * bars; in tree view they're a no-op (the tree is one-dimensional).
+     * bars; in tree view they fold (←) / unfold (→) the cursor row's
+     * subtree.
      */
     private function dispatchLeftRight(int $direction): void
     {
@@ -2184,10 +2234,172 @@ final class ExploreTui
             $this->moveFlameCursorSibling($direction);
             return;
         }
+        if (
+            $state->sandwich_view === SandwichView::TreeCallees
+            || $state->sandwich_view === SandwichView::TreeCallers
+        ) {
+            if ($state->active_pane === ActivePane::Overview) {
+                return;
+            }
+            if ($direction < 0) {
+                $this->foldTreeAtCursor(false);
+            } else {
+                $this->unfoldTreeAtCursor(false);
+            }
+            return;
+        }
         if ($state->sandwich_view === SandwichView::Panes) {
             $this->stack[count($this->stack) - 1]
                 = $state->withActivePane($direction < 0 ? ActivePane::Callers : ActivePane::Callees);
             return;
+        }
+    }
+
+    /**
+     * Mark the cursor row's subtree as folded. With $recursive=true,
+     * also marks every descendant subtree as folded so unfolding the
+     * cursor later only reveals immediate children — useful when you
+     * want to fully collapse a branch.
+     *
+     * Cursor stays on the same node since folding only affects
+     * descendants — the cursor row itself is still in the entries list
+     * at the same logical position (its row index may shift forward
+     * if there were folded entries above the cursor, but the helper
+     * leaves $tree_cursor_row alone for the simple case; the next
+     * render's clamp pass will sort out the resulting position).
+     */
+    private function foldTreeAtCursor(bool $recursive): void
+    {
+        $state = $this->currentState();
+        if ($state->mode !== ExploreMode::Sandwich) {
+            return;
+        }
+        if (
+            $state->sandwich_view !== SandwichView::TreeCallees
+            && $state->sandwich_view !== SandwichView::TreeCallers
+        ) {
+            return;
+        }
+        $direction = $state->sandwich_view === SandwichView::TreeCallees
+            ? 'callees'
+            : 'callers';
+        $entries = $this->buildSandwichTreeLines($direction, 4096);
+        if ($entries === []) {
+            return;
+        }
+        $cursor = $this->tree_cursor_row;
+        if ($cursor < 0 || $cursor >= count($entries)) {
+            return;
+        }
+        $path = $entries[$cursor]['path'];
+        if ($path === '') {
+            return;
+        }
+        $this->tree_folded[$path] = true;
+
+        if ($recursive) {
+            // Mark every descendant of $path too. Walking the raw
+            // sandwich tree (rather than re-walking the entries list,
+            // which would already exclude the folded subtree) gives
+            // us the full descendant set in one pass.
+            $tree = $this->ensureSandwichTree();
+            if ($tree !== null) {
+                $children = $direction === 'callees'
+                    ? $tree['callees']
+                    : $tree['callers'];
+                $sub = $this->findTreeNodeByPath($children, $path);
+                if ($sub !== null && $sub['children'] !== []) {
+                    $this->collectAllPaths($sub['children'], $path, $this->tree_folded);
+                }
+            }
+        }
+    }
+
+    /**
+     * Unfold the cursor row's subtree (one level — children become
+     * visible but their own children inherit whatever fold state
+     * they previously had). With $recursive=true, also clears every
+     * descendant fold entry, fully expanding the subtree.
+     */
+    private function unfoldTreeAtCursor(bool $recursive): void
+    {
+        $state = $this->currentState();
+        if ($state->mode !== ExploreMode::Sandwich) {
+            return;
+        }
+        if (
+            $state->sandwich_view !== SandwichView::TreeCallees
+            && $state->sandwich_view !== SandwichView::TreeCallers
+        ) {
+            return;
+        }
+        $direction = $state->sandwich_view === SandwichView::TreeCallees
+            ? 'callees'
+            : 'callers';
+        $entries = $this->buildSandwichTreeLines($direction, 4096);
+        if ($entries === []) {
+            return;
+        }
+        $cursor = $this->tree_cursor_row;
+        if ($cursor < 0 || $cursor >= count($entries)) {
+            return;
+        }
+        $path = $entries[$cursor]['path'];
+        if ($path === '') {
+            return;
+        }
+        unset($this->tree_folded[$path]);
+
+        if ($recursive) {
+            $prefix = $path . '/';
+            foreach (array_keys($this->tree_folded) as $folded_path) {
+                if (str_starts_with($folded_path, $prefix)) {
+                    unset($this->tree_folded[$folded_path]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Walk the raw sandwich tree to find the node at $path.
+     *
+     * @param  array<int, array{count:int, children:array}> $nodes
+     * @return array{count:int, children:array}|null
+     */
+    private function findTreeNodeByPath(array $nodes, string $path): ?array
+    {
+        $segments = explode('/', $path);
+        $cur_nodes = $nodes;
+        $found = null;
+        foreach ($segments as $seg) {
+            $kid = (int)$seg;
+            if (!isset($cur_nodes[$kid])) {
+                return null;
+            }
+            /** @var array{count:int, children:array} $node */
+            $node = $cur_nodes[$kid];
+            $found = $node;
+            $cur_nodes = $node['children'];
+        }
+        return $found;
+    }
+
+    /**
+     * Collect every descendant path of $base_path into $into. Used
+     * by recursive fold (where we want to mark every descendant
+     * subtree as folded too).
+     *
+     * @param array<int, array{count:int, children:array}> $nodes
+     * @param array<string, true>                          $into
+     */
+    private function collectAllPaths(array $nodes, string $base_path, array &$into): void
+    {
+        foreach ($nodes as $kid => $node) {
+            $node_path = $base_path . '/' . $kid;
+            if ($node['children'] !== []) {
+                $into[$node_path] = true;
+                $this->collectAllPaths($node['children'], $node_path, $into);
+            }
         }
     }
 
@@ -2409,6 +2621,14 @@ final class ExploreTui
 
             case Keymap::ACTION_VIEW_TREE_CALLERS:
                 $this->switchSandwichView(SandwichView::TreeCallers);
+                return;
+
+            case Keymap::ACTION_TREE_FOLD_RECURSIVE:
+                $this->foldTreeAtCursor(true);
+                return;
+
+            case Keymap::ACTION_TREE_UNFOLD_RECURSIVE:
+                $this->unfoldTreeAtCursor(true);
                 return;
 
             case Keymap::ACTION_CALLERS:
