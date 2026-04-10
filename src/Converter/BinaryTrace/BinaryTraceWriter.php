@@ -42,7 +42,10 @@ final class BinaryTraceWriter
     private int $last_checkpoint_samples = 0;
 
     // Run-length state for compact (no-timestamp) samples.
+    // Tracks the completed sample (stack_id + annotations).
     private ?int $pending_compact_stack_id = null;
+    /** @var array<string, string>|null */
+    private ?array $pending_annotations = null;
     private int $pending_run_count = 0;
 
     /** @var resource */
@@ -103,8 +106,24 @@ final class BinaryTraceWriter
      */
     public function writeTrace(ParsedCallTrace $trace, int $timestamp_delta_us = 0): int
     {
+        return $this->writeAnnotatedTrace($trace, $timestamp_delta_us);
+    }
+
+    /**
+     * Write a trace sample with optional annotations.
+     * In compact (no-timestamp) mode, consecutive identical samples
+     * (same stack + same annotations) are run-length encoded.
+     *
+     * @param array<string, string>|null $annotations
+     * @return int The stack_id used for this sample
+     */
+    public function writeAnnotatedTrace(
+        ParsedCallTrace $trace,
+        int $timestamp_delta_us = 0,
+        ?array $annotations = null,
+    ): int {
         $stack_id = $this->defineTrace($trace);
-        $this->writeSample($stack_id, $timestamp_delta_us);
+        $this->writeSample($stack_id, $timestamp_delta_us, $annotations);
 
         return $stack_id;
     }
@@ -148,6 +167,22 @@ final class BinaryTraceWriter
         }
         $this->writeEvent(EventType::PID_SAMPLE, $payload);
         $this->sample_count++;
+    }
+
+    /**
+     * Emit a SAMPLE_ANNOTATION event directly.
+     * Internal use only — callers should use writeAnnotatedTrace().
+     *
+     * @param array<string, string> $annotations
+     */
+    private function emitAnnotation(array $annotations): void
+    {
+        $payload = Varint::encode(count($annotations));
+        foreach ($annotations as $key => $value) {
+            $payload .= Varint::encode($this->internString($key));
+            $payload .= Varint::encode($this->internString($value));
+        }
+        $this->writeEvent(EventType::SAMPLE_ANNOTATION, $payload);
     }
 
     /**
@@ -334,22 +369,37 @@ final class BinaryTraceWriter
         $this->writeEvent(EventType::STACK_DEF, $payload);
     }
 
-    private function writeSample(int $stack_id, int $timestamp_delta_us): void
-    {
+    /**
+     * @param array<string, string>|null $annotations
+     */
+    private function writeSample(
+        int $stack_id,
+        int $timestamp_delta_us,
+        ?array $annotations = null,
+    ): void {
         if (($this->flags & self::FLAG_HAS_TIMESTAMPS) !== 0) {
+            // Timestamped: no RLE, write immediately
             $payload = Varint::encode($stack_id)
                 . Varint::encode($timestamp_delta_us);
             $this->writeEvent(EventType::SAMPLE, $payload);
+            if ($annotations !== null && $annotations !== []) {
+                $this->emitAnnotation($annotations);
+            }
             $this->sample_count++;
             return;
         }
 
         // Compact (no-timestamp) path with run-length encoding.
-        if ($this->pending_compact_stack_id === $stack_id) {
+        // The run key is (stack_id, annotations) — the completed sample.
+        if (
+            $this->pending_compact_stack_id === $stack_id
+            && $this->pending_annotations === $annotations
+        ) {
             $this->pending_run_count++;
         } else {
             $this->flushPendingRun();
             $this->pending_compact_stack_id = $stack_id;
+            $this->pending_annotations = $annotations;
             $this->pending_run_count = 1;
         }
         $this->sample_count++;
@@ -365,22 +415,32 @@ final class BinaryTraceWriter
         }
 
         $stack_id = $this->pending_compact_stack_id;
+        $annotations = $this->pending_annotations;
         $count = $this->pending_run_count;
 
+        // Emit the first completed sample: COMPACT_SAMPLE + optional ANNOTATION
         fwrite($this->stream, chr(EventType::COMPACT_SAMPLE->value));
         fwrite($this->stream, Varint::encode($stack_id));
+        if ($annotations !== null && $annotations !== []) {
+            $this->emitAnnotation($annotations);
+        }
 
-        // REPEAT for runs of 3+ (no gain at 2)
+        // REPEAT for runs of 3+ (repeats the completed sample including annotations)
         $remaining = $count - 1;
         if ($remaining >= 2) {
             fwrite($this->stream, chr(EventType::REPEAT_SAMPLE->value));
             fwrite($this->stream, Varint::encode($remaining));
         } elseif ($remaining === 1) {
+            // Run of 2: emit a second completed sample
             fwrite($this->stream, chr(EventType::COMPACT_SAMPLE->value));
             fwrite($this->stream, Varint::encode($stack_id));
+            if ($annotations !== null && $annotations !== []) {
+                $this->emitAnnotation($annotations);
+            }
         }
 
         $this->pending_compact_stack_id = null;
+        $this->pending_annotations = null;
         $this->pending_run_count = 0;
     }
 

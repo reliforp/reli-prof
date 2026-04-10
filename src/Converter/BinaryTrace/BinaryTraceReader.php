@@ -37,6 +37,7 @@ final class BinaryTraceReader
 
     /** @var list<BinaryTraceSample> buffered repeat expansion */
     private array $repeat_buffer = [];
+    private int $pending_repeat_count = 0;
 
     /**
      * Read header and yield BinaryTraceSample for each SAMPLE event.
@@ -69,10 +70,20 @@ final class BinaryTraceReader
         }
         $this->resetSegmentState();
 
-        while (!feof($stream) || $this->repeat_buffer !== []) {
-            // Drain any buffered repeat expansion first
+        /** @var BinaryTraceSample|null $pending */
+        $pending = null;
+        /** @var BinaryTraceSample|null $last_completed */
+        $last_completed = null;
+
+        while (!feof($stream) || $this->repeat_buffer !== [] || $pending !== null) {
             if ($this->repeat_buffer !== []) {
+                if ($pending !== null) {
+                    $last_completed = $pending;
+                    yield $pending;
+                    $pending = null;
+                }
                 foreach ($this->repeat_buffer as $buffered) {
+                    $last_completed = $buffered;
                     yield $buffered;
                 }
                 $this->repeat_buffer = [];
@@ -84,19 +95,64 @@ final class BinaryTraceReader
                     break; // EOF
                 }
                 if ($result instanceof BinaryTraceSample) {
-                    yield $result;
-                }
-                if ($result === 'new_segment') {
-                    // Already handled in readOneEvent
+                    if ($pending !== null) {
+                        $last_completed = $pending;
+                        yield $pending;
+                    }
+                    $pending = $result;
+                } elseif (is_array($result)) {
+                    if ($pending === null) {
+                        throw new BinaryTraceException(
+                            'SAMPLE_ANNOTATION without a preceding sample'
+                        );
+                    }
+                    $pending = new BinaryTraceSample(
+                        $pending->trace,
+                        $pending->timestamp_delta_us,
+                        $pending->accumulated_timestamp_us,
+                        $pending->pid,
+                        $result,
+                    );
+                } elseif ($result === 'repeat') {
+                    if ($pending !== null) {
+                        $last_completed = $pending;
+                        yield $pending;
+                        $pending = null;
+                    }
+                    if ($last_completed === null) {
+                        throw new BinaryTraceException(
+                            'REPEAT_SAMPLE without a preceding completed sample'
+                        );
+                    }
+                    for ($i = 0; $i < $this->pending_repeat_count; $i++) {
+                        $this->repeat_buffer[] = $last_completed;
+                    }
+                    $this->pending_repeat_count = 0;
+                } elseif ($result === 'new_segment') {
+                    if ($pending !== null) {
+                        $last_completed = $pending;
+                        yield $pending;
+                        $pending = null;
+                    }
+                    $last_completed = null;
+                    $this->resetSegmentState();
                     continue;
                 }
             } catch (BinaryTraceException) {
-                // Error in current segment - scan for next segment
+                if ($pending !== null) {
+                    yield $pending;
+                    $pending = null;
+                }
+                $last_completed = null;
                 if (!$this->scanForMagic($stream)) {
                     break;
                 }
                 $this->resetSegmentState();
             }
+        }
+
+        if ($pending !== null) {
+            yield $pending;
         }
     }
 
@@ -206,10 +262,21 @@ final class BinaryTraceReader
      */
     private function readEvents($stream): iterable
     {
-        while (!feof($stream) || $this->repeat_buffer !== []) {
+        /** @var BinaryTraceSample|null $pending — sample awaiting possible annotation */
+        $pending = null;
+        /** @var BinaryTraceSample|null $last_completed — last yielded completed sample (for REPEAT) */
+        $last_completed = null;
+
+        while (!feof($stream) || $this->repeat_buffer !== [] || $pending !== null) {
             // Drain any buffered repeat expansion first
             if ($this->repeat_buffer !== []) {
+                if ($pending !== null) {
+                    $last_completed = $pending;
+                    yield $pending;
+                    $pending = null;
+                }
                 foreach ($this->repeat_buffer as $buffered) {
+                    $last_completed = $buffered;
                     yield $buffered;
                 }
                 $this->repeat_buffer = [];
@@ -220,9 +287,57 @@ final class BinaryTraceReader
                 break; // EOF
             }
             if ($result instanceof BinaryTraceSample) {
-                yield $result;
+                // Yield the previous pending sample as completed
+                if ($pending !== null) {
+                    $last_completed = $pending;
+                    yield $pending;
+                }
+                $pending = $result;
+            } elseif (is_array($result)) {
+                // SAMPLE_ANNOTATION: must follow a pending sample
+                if ($pending === null) {
+                    throw new BinaryTraceException(
+                        'SAMPLE_ANNOTATION without a preceding sample'
+                    );
+                }
+                $pending = new BinaryTraceSample(
+                    $pending->trace,
+                    $pending->timestamp_delta_us,
+                    $pending->accumulated_timestamp_us,
+                    $pending->pid,
+                    $result,
+                );
+            } elseif ($result === 'repeat') {
+                // REPEAT_SAMPLE: pending becomes completed, then repeat it
+                if ($pending !== null) {
+                    $last_completed = $pending;
+                    yield $pending;
+                    $pending = null;
+                }
+                if ($last_completed === null) {
+                    throw new BinaryTraceException(
+                        'REPEAT_SAMPLE without a preceding completed sample'
+                    );
+                }
+                for ($i = 0; $i < $this->pending_repeat_count; $i++) {
+                    $this->repeat_buffer[] = $last_completed;
+                }
+                $this->pending_repeat_count = 0;
+            } elseif ($result === 'new_segment') {
+                if ($pending !== null) {
+                    $last_completed = $pending;
+                    yield $pending;
+                    $pending = null;
+                }
+                $last_completed = null;
+                $this->resetSegmentState();
             }
-            // 'new_segment' and null (non-sample events) just continue
+            // null (non-sample events like FRAME_DEF, CHECKPOINT) just continue
+        }
+
+        // Yield final pending sample
+        if ($pending !== null) {
+            yield $pending;
         }
     }
 
@@ -230,13 +345,14 @@ final class BinaryTraceReader
      * Read and handle a single event.
      *
      * @param resource $stream
-     * @return BinaryTraceSample|string|null|false
+     * @return BinaryTraceSample|array<string, string>|string|null|false
      *         BinaryTraceSample for SAMPLE events,
+     *         array for SAMPLE_ANNOTATION (key-value pairs),
      *         'new_segment' when a new segment header is detected,
      *         null for non-sample events (FRAME_DEF, STACK_DEF, CHECKPOINT),
      *         false for EOF
      */
-    private function readOneEvent($stream): BinaryTraceSample|string|null|false
+    private function readOneEvent($stream): BinaryTraceSample|array|string|null|false
     {
         $type_byte = fread($stream, 1);
         if ($type_byte === '' || $type_byte === false) {
@@ -254,7 +370,7 @@ final class BinaryTraceReader
             if ($rest !== false && strlen($rest) === 3 && $type_byte . $rest === BinaryTraceWriter::MAGIC) {
                 $remaining = $this->readExact($stream, 12);
                 $this->parseHeaderBytes(BinaryTraceWriter::MAGIC . $remaining);
-                $this->resetSegmentState();
+                // Don't reset here — readEvents flushes pending sample first
                 return 'new_segment';
             }
             throw new BinaryTraceException(
@@ -270,19 +386,10 @@ final class BinaryTraceReader
         }
 
         // REPEAT_SAMPLE has no payload_length — just [event_type][count: varint]
-        // Expands to count copies of the last sample's stack, buffered for yield.
+        // Returns 'repeat'; readEvents populates repeat_buffer from last_completed.
         if ($type_int === EventType::REPEAT_SAMPLE->value) {
-            $count = Varint::decodeFromStream($stream);
-            if ($this->last_sample_stack_id === null) {
-                throw new BinaryTraceException(
-                    'REPEAT_SAMPLE without a preceding sample'
-                );
-            }
-            $sample = $this->resolveStack($this->last_sample_stack_id);
-            for ($i = 0; $i < $count; $i++) {
-                $this->repeat_buffer[] = $sample;
-            }
-            return null; // readEvents will drain repeat_buffer
+            $this->pending_repeat_count = Varint::decodeFromStream($stream);
+            return 'repeat';
         }
 
         $payload_length = Varint::decodeFromStream($stream);
@@ -313,19 +420,18 @@ final class BinaryTraceReader
                 return $this->handleSample($payload);
             case EventType::PID_SAMPLE:
                 return $this->handlePidSample($payload);
+            case EventType::SAMPLE_ANNOTATION:
+                return $this->handleSampleAnnotation($payload);
             case EventType::METADATA:
                 $this->handleMetadata($payload);
                 return null;
             case EventType::CHECKPOINT:
                 return null;
             case EventType::SEGMENT_END:
-                // Try to read next segment header; reset state only
-                // when a new segment actually starts. This preserves
-                // metadata/state for callers inspecting the last segment.
-                if ($this->tryReadHeader($stream)) {
-                    $this->resetSegmentState();
-                }
-                return null;
+                // Don't reset here — readEvents flushes pending sample first,
+                // then resets state when it processes 'new_segment'.
+                $has_next = $this->tryReadHeader($stream);
+                return $has_next ? 'new_segment' : null;
         }
     }
 
@@ -509,6 +615,26 @@ final class BinaryTraceReader
         }
 
         return $this->resolveStack($stack_id, $timestamp_delta_us, $pid);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function handleSampleAnnotation(string $payload): array
+    {
+        $offset = 0;
+        [$count, $consumed] = Varint::decode($payload, $offset);
+        $offset += $consumed;
+
+        $annotations = [];
+        for ($i = 0; $i < $count; $i++) {
+            [$key_sid, $consumed] = Varint::decode($payload, $offset);
+            $offset += $consumed;
+            [$value_sid, $consumed] = Varint::decode($payload, $offset);
+            $offset += $consumed;
+            $annotations[$this->resolveString($key_sid)] = $this->resolveString($value_sid);
+        }
+        return $annotations;
     }
 
     private function handleMetadata(string $payload): void

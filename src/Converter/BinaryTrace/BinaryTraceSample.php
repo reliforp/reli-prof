@@ -18,11 +18,16 @@ use Reli\Converter\ParsedCallTrace;
 /** @psalm-immutable */
 final class BinaryTraceSample
 {
+    /**
+     * @param array<string, string>|null $annotations Key-value pairs from
+     *        SAMPLE_ANNOTATION events following this sample.
+     */
     public function __construct(
         public ParsedCallTrace $trace,
         public ?int $timestamp_delta_us = null,
         public ?int $accumulated_timestamp_us = null,
         public ?int $pid = null,
+        public ?array $annotations = null,
     ) {
     }
 }

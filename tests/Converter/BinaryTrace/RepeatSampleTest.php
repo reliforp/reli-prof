@@ -169,7 +169,7 @@ final class RepeatSampleTest extends BaseTestCase
 
         $reader = new BinaryTraceReader();
         $this->expectException(BinaryTraceException::class);
-        $this->expectExceptionMessage('REPEAT_SAMPLE without a preceding sample');
+        $this->expectExceptionMessage('REPEAT_SAMPLE without a preceding completed sample');
         iterator_to_array($reader->read($stream));
         fclose($stream);
     }
