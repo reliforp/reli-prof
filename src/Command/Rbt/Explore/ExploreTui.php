@@ -227,14 +227,16 @@ final class ExploreTui
     }
 
     /**
-     * 1-line horizontal "mini flame": every overview frame gets a block
-     * proportional to its share of the total, in sorted order. The
-     * current focus's block (if any) is highlighted, alternating dim
-     * shading separates adjacent blocks, and the function name (no
-     * file:line) is centered inside each block. The whole strip adds
-     * up to exactly `$width` columns.
+     * 1-line horizontal "mini flame" rendered as a Braille subpixel
+     * histogram. Each Braille cell encodes 2 horizontal sub-pixels
+     * (`width=80` → 160 subpixels), so even small frames stay visible
+     * as a thin half-cell line instead of disappearing entirely.
      *
-     * Returns the line as a single styled string ready to print.
+     * Adjacent frames alternate dim/bright so block boundaries pop
+     * without needing labels. The current focus's pixels (if any) are
+     * rendered in reverse video for instant "you are here" feedback.
+     *
+     * No text inside the strip — labels live in the sidebar.
      */
     private function renderMiniFlame(int $width): string
     {
@@ -253,76 +255,82 @@ final class ExploreTui
         }
 
         $focus_id = $this->getCurrentFocusKeyId();
-        $line = '';
-        $col = 0;
-        $alt = false;
-        $rendered_focus = false;
 
-        foreach ($rows as $row) {
-            if ($col >= $width) {
+        // 2 horizontal sub-pixels per terminal cell.
+        $total_pixels = $width * 2;
+        /** @var list<int> pixel_index → frame_index, -1 = unallocated */
+        $pixel_frame = array_fill(0, $total_pixels, -1);
+        /** @var list<bool> pixel_index → is_focus */
+        $pixel_focus = array_fill(0, $total_pixels, false);
+
+        // Walk frames in order, allocating subpixels proportionally.
+        // Use round() so the cumulative drift stays bounded; clamp to 1
+        // so any non-zero frame gets at least one half-cell line.
+        $pos = 0;
+        foreach ($rows as $i => $row) {
+            if ($pos >= $total_pixels) {
                 break;
             }
-            [$count, $key_id, $label] = $row;
-            $remaining = $width - $col;
-            $w = (int)floor($count / $total * $width);
+            [$count, $key_id, ] = $row;
+            $w = (int)round($count / $total * $total_pixels);
+            if ($w === 0 && $count > 0) {
+                $w = 1;
+            }
             if ($w === 0) {
                 continue;
             }
-            if ($w > $remaining) {
-                $w = $remaining;
-            }
-
+            $end = min($pos + $w, $total_pixels);
             $is_focus = $key_id === $focus_id;
-            $name = self::stripFileLine($label);
-            $inner = mb_strlen($name) > $w
-                ? mb_substr($name, 0, max(1, $w - 1)) . '…'
-                : $name;
-            $inner = self::centerPad($inner, $w);
-
-            if ($is_focus) {
-                $block = "\e[7;1m" . $inner . "\e[22;27m";
-                $rendered_focus = true;
-            } elseif ($alt) {
-                $block = "\e[2m" . $inner . "\e[22m";
-            } else {
-                $block = $inner;
+            for ($p = $pos; $p < $end; $p++) {
+                $pixel_frame[$p] = $i;
+                $pixel_focus[$p] = $is_focus;
             }
-            $line .= $block;
-            $col += $w;
-            $alt = !$alt;
+            $pos = $end;
         }
 
-        if ($col < $width) {
-            $line .= str_repeat(' ', $width - $col);
-        }
+        // Render cells. State (focus, dim) is sticky across cells; only
+        // emit ANSI sequences when it actually changes.
+        $line = '';
+        $current_focus = false;
+        $current_dim = false;
+        for ($c = 0; $c < $width; $c++) {
+            $left_p = $c * 2;
+            $right_p = $left_p + 1;
+            $left_f = $pixel_frame[$left_p];
+            $right_f = $pixel_frame[$right_p];
 
-        // If the focus has a count too small to claim its own block,
-        // mark its existence by appending a small caret pinned to the
-        // right edge so the user still gets feedback.
-        if (!$rendered_focus && $focus_id !== null) {
-            // No-op for now: the diamond on the sidebar already covers
-            // this case, and writing into the strip after-the-fact would
-            // shift columns.
+            if ($left_f >= 0 && $right_f >= 0) {
+                $char = '⣿';
+            } elseif ($left_f >= 0) {
+                $char = '⡇';
+            } elseif ($right_f >= 0) {
+                $char = '⢸';
+            } else {
+                $char = ' ';
+            }
+
+            $primary_f = $left_f >= 0 ? $left_f : $right_f;
+            $is_dim = $primary_f >= 0 && ($primary_f % 2 === 1);
+            $is_focus = $pixel_focus[$left_p] || $pixel_focus[$right_p];
+
+            if ($is_focus !== $current_focus || $is_dim !== $current_dim) {
+                $line .= "\e[0m";
+                if ($is_focus) {
+                    $line .= "\e[7m";
+                }
+                if ($is_dim) {
+                    $line .= "\e[2m";
+                }
+                $current_focus = $is_focus;
+                $current_dim = $is_dim;
+            }
+            $line .= $char;
+        }
+        if ($current_focus || $current_dim) {
+            $line .= "\e[0m";
         }
 
         return $line;
-    }
-
-    private static function stripFileLine(string $label): string
-    {
-        $space_pos = mb_strpos($label, ' ');
-        return $space_pos === false ? $label : mb_substr($label, 0, $space_pos);
-    }
-
-    private static function centerPad(string $s, int $width): string
-    {
-        $len = mb_strlen($s);
-        if ($len >= $width) {
-            return mb_substr($s, 0, $width);
-        }
-        $left = (int)(($width - $len) / 2);
-        $right = $width - $len - $left;
-        return str_repeat(' ', $left) . $s . str_repeat(' ', $right);
     }
 
     private function shouldShowSidebar(int $cols): bool
