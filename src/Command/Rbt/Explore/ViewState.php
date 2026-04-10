@@ -17,6 +17,9 @@ namespace Reli\Command\Rbt\Explore;
  * One frame in the explorer's focus history stack.
  *
  * - $mode               ExploreMode for this state.
+ * - $sandwich_view      Sandwich-only display variant: panes / flame /
+ *                       tree_callees / tree_callers. Ignored for list
+ *                       modes.
  * - $focus_id           Frame id (line- or no-line-space) the sandwich is
  *                       focused on, or null for unfocused list views.
  * - $focus_label        Display label captured at focus time.
@@ -36,6 +39,7 @@ final class ViewState
 {
     public function __construct(
         public readonly ExploreMode $mode,
+        public readonly SandwichView $sandwich_view = SandwichView::Panes,
         public readonly ?int $focus_id = null,
         public readonly ?string $focus_label = null,
         public readonly ?string $view_filter = null,
@@ -49,6 +53,21 @@ final class ViewState
     {
         return new self(
             $mode,
+            $this->sandwich_view,
+            $this->focus_id,
+            $this->focus_label,
+            $this->view_filter,
+            $this->active_pane,
+            $this->overview_selected,
+            $this->overview_top_row,
+        );
+    }
+
+    public function withSandwichView(SandwichView $sandwich_view): self
+    {
+        return new self(
+            $this->mode,
+            $sandwich_view,
             $this->focus_id,
             $this->focus_label,
             $this->view_filter,
@@ -62,6 +81,7 @@ final class ViewState
     {
         return new self(
             $this->mode,
+            $this->sandwich_view,
             $this->focus_id,
             $this->focus_label,
             $filter,
@@ -75,6 +95,7 @@ final class ViewState
     {
         return new self(
             $this->mode,
+            $this->sandwich_view,
             $this->focus_id,
             $this->focus_label,
             $this->view_filter,
@@ -88,6 +109,7 @@ final class ViewState
     {
         return new self(
             $this->mode,
+            $this->sandwich_view,
             $this->focus_id,
             $this->focus_label,
             $this->view_filter,
@@ -101,6 +123,7 @@ final class ViewState
     {
         return new self(
             $this->mode,
+            $this->sandwich_view,
             $focus_id,
             $focus_label,
             $this->view_filter,

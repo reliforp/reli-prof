@@ -49,9 +49,10 @@ final class Keymap
     public const ACTION_TOGGLE_OVERVIEW = 'toggle_overview';
     public const ACTION_VIEW_OVERVIEW = 'view_overview';
     public const ACTION_TOGGLE_MINI_FLAME = 'toggle_mini_flame';
-    public const ACTION_OPEN_SANDWICH_FLAME = 'open_sandwich_flame';
-    public const ACTION_OPEN_CALLEE_TREE = 'open_callee_tree';
-    public const ACTION_OPEN_CALLER_TREE = 'open_caller_tree';
+    public const ACTION_VIEW_PANES        = 'view_panes';
+    public const ACTION_VIEW_FLAME        = 'view_flame';
+    public const ACTION_VIEW_TREE_CALLEES = 'view_tree_callees';
+    public const ACTION_VIEW_TREE_CALLERS = 'view_tree_callers';
     public const ACTION_HELP          = 'help';
     public const ACTION_QUIT          = 'quit';
 
@@ -99,9 +100,10 @@ final class Keymap
             self::ACTION_TOGGLE_OVERVIEW => ['o'],
             self::ACTION_VIEW_OVERVIEW => ['O'],
             self::ACTION_TOGGLE_MINI_FLAME => ['F'],
-            self::ACTION_OPEN_SANDWICH_FLAME => ['S'],
-            self::ACTION_OPEN_CALLEE_TREE  => ['>'],
-            self::ACTION_OPEN_CALLER_TREE  => ['<'],
+            self::ACTION_VIEW_PANES        => ['P'],
+            self::ACTION_VIEW_FLAME        => ['S'],
+            self::ACTION_VIEW_TREE_CALLEES => ['>'],
+            self::ACTION_VIEW_TREE_CALLERS => ['<'],
             self::ACTION_HELP          => ['?'],
             self::ACTION_QUIT          => ['q', "\x03"],
         ]);
