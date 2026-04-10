@@ -60,26 +60,41 @@ final class NodeLabeler
         }
         $this->loaded = true;
 
-        // Load function_name and lineno from CallFrameContext nodes
+        // Single index range scan over (run_id, key) for both keys we
+        // care about, then group by node_id in PHP. The previous
+        // version did a self-LEFT-JOIN of context_node_attributes,
+        // which without a (run_id, key) index degenerated into a full
+        // attribute table scan and showed up at ~5% of total report
+        // runtime on big captures. ReportGenerator::ensureReportIndexes
+        // installs the matching `(run_id, key, node_id)` index lazily
+        // so this query is a clean index seek on every modern run.
         $rows = $this->db->query("
-            SELECT
-                a_fn.node_id,
-                a_fn.value as function_name,
-                a_ln.value as lineno
-            FROM context_node_attributes a_fn
-            LEFT JOIN context_node_attributes a_ln
-                ON a_ln.node_id = a_fn.node_id
-                AND a_ln.run_id = a_fn.run_id
-                AND a_ln.key = 'lineno'
-            WHERE a_fn.run_id = {$this->run_id}
-                AND a_fn.key = 'function_name'
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+            SELECT node_id, \"key\", value
+            FROM context_node_attributes
+            WHERE run_id = {$this->run_id}
+                AND \"key\" IN ('function_name', 'lineno')
+        ")->fetchAll(\PDO::FETCH_NUM);
 
+        /** @var array<int, array{function_name?:string, lineno?:string}> $by_node */
+        $by_node = [];
         foreach ($rows as $row) {
-            $fn = $row['function_name'] ?? '';
-            $ln = $row['lineno'] ?? '';
-            $label = $ln !== '' ? "{$fn}:{$ln}" : $fn;
-            $this->frame_labels[(int)$row['node_id']] = $label;
+            $node_id = (int)$row[0];
+            $key = (string)$row[1];
+            $value = $row[2] === null ? '' : (string)$row[2];
+            if ($key === 'function_name') {
+                $by_node[$node_id]['function_name'] = $value;
+            } elseif ($key === 'lineno') {
+                $by_node[$node_id]['lineno'] = $value;
+            }
+        }
+
+        foreach ($by_node as $node_id => $kvs) {
+            $fn = $kvs['function_name'] ?? '';
+            if ($fn === '') {
+                continue;
+            }
+            $ln = $kvs['lineno'] ?? '';
+            $this->frame_labels[$node_id] = $ln !== '' ? "{$fn}:{$ln}" : $fn;
         }
     }
 }

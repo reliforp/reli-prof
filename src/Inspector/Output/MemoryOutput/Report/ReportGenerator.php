@@ -293,6 +293,16 @@ final class ReportGenerator
                 'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_type_size'
                 . ' ON context_node_locations(run_id, location_type, size)'
             );
+            // NodeLabeler::ensureLoaded filters by (run_id, key) when
+            // it pulls function_name / lineno attrs for CallFrame
+            // labels. Without this index that lookup falls back to a
+            // run_id-only index range scan that walks every attribute
+            // row in the run, which on big captures showed up as ~5%
+            // of total report runtime in PDOStatement::fetchAll.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_attributes_run_key_node'
+                . ' ON context_node_attributes(run_id, key, node_id)'
+            );
         } catch (\PDOException) {
             // Read-only DB, missing privileges, etc. — best effort.
         }
