@@ -166,8 +166,10 @@ final class ExploreTui
         $state = $this->currentState();
 
         // Body height is everything except header (4 lines), footer (1),
-        // and status (1) — 6 fixed lines.
-        $body_rows = $rows - 6;
+        // and status (1) — 6 fixed lines. Sandwich mode also consumes
+        // an extra line for the horizontal mini-flame strip.
+        $mini_flame_rows = $state->mode === ExploreMode::Sandwich ? 1 : 0;
+        $body_rows = $rows - 6 - $mini_flame_rows;
         if ($body_rows < 3) {
             $body_rows = 3;
         }
@@ -185,6 +187,7 @@ final class ExploreTui
         $buf .= $this->renderHeader($state, $cols);
 
         if ($state->mode === ExploreMode::Sandwich) {
+            $buf .= $this->renderMiniFlame($cols) . "\n";
             $body_lines = $this->renderSandwichLines($state, $body_width, $body_rows);
         } else {
             $body_lines = $this->renderListLines($state, $body_width, $body_rows);
@@ -211,6 +214,105 @@ final class ExploreTui
         }
 
         $this->term->write($buf);
+    }
+
+    /**
+     * 1-line horizontal "mini flame": every overview frame gets a block
+     * proportional to its share of the total, in sorted order. The
+     * current focus's block (if any) is highlighted, alternating dim
+     * shading separates adjacent blocks, and the function name (no
+     * file:line) is centered inside each block. The whole strip adds
+     * up to exactly `$width` columns.
+     *
+     * Returns the line as a single styled string ready to print.
+     */
+    private function renderMiniFlame(int $width): string
+    {
+        $cache = $this->ensureOverview();
+        $rows = $cache['rows'];
+        if ($rows === [] || $width <= 0) {
+            return str_repeat(' ', max(0, $width));
+        }
+
+        $total = 0;
+        foreach ($rows as [$count, , ]) {
+            $total += $count;
+        }
+        if ($total === 0) {
+            return str_repeat(' ', $width);
+        }
+
+        $focus_id = $this->getCurrentFocusKeyId();
+        $line = '';
+        $col = 0;
+        $alt = false;
+        $rendered_focus = false;
+
+        foreach ($rows as $row) {
+            if ($col >= $width) {
+                break;
+            }
+            [$count, $key_id, $label] = $row;
+            $remaining = $width - $col;
+            $w = (int)floor($count / $total * $width);
+            if ($w === 0) {
+                continue;
+            }
+            if ($w > $remaining) {
+                $w = $remaining;
+            }
+
+            $is_focus = $key_id === $focus_id;
+            $name = self::stripFileLine($label);
+            $inner = mb_strlen($name) > $w
+                ? mb_substr($name, 0, max(1, $w - 1)) . '…'
+                : $name;
+            $inner = self::centerPad($inner, $w);
+
+            if ($is_focus) {
+                $block = "\e[7;1m" . $inner . "\e[22;27m";
+                $rendered_focus = true;
+            } elseif ($alt) {
+                $block = "\e[2m" . $inner . "\e[22m";
+            } else {
+                $block = $inner;
+            }
+            $line .= $block;
+            $col += $w;
+            $alt = !$alt;
+        }
+
+        if ($col < $width) {
+            $line .= str_repeat(' ', $width - $col);
+        }
+
+        // If the focus has a count too small to claim its own block,
+        // mark its existence by appending a small caret pinned to the
+        // right edge so the user still gets feedback.
+        if (!$rendered_focus && $focus_id !== null) {
+            // No-op for now: the diamond on the sidebar already covers
+            // this case, and writing into the strip after-the-fact would
+            // shift columns.
+        }
+
+        return $line;
+    }
+
+    private static function stripFileLine(string $label): string
+    {
+        $space_pos = mb_strpos($label, ' ');
+        return $space_pos === false ? $label : mb_substr($label, 0, $space_pos);
+    }
+
+    private static function centerPad(string $s, int $width): string
+    {
+        $len = mb_strlen($s);
+        if ($len >= $width) {
+            return mb_substr($s, 0, $width);
+        }
+        $left = (int)(($width - $len) / 2);
+        $right = $width - $len - $left;
+        return str_repeat(' ', $left) . $s . str_repeat(' ', $right);
     }
 
     private function shouldShowSidebar(int $cols): bool
@@ -278,12 +380,13 @@ final class ExploreTui
         $cache = $this->ensureList();
         $rows_data = $this->applyViewFilter($cache['rows'], $state->view_filter);
         $denom = max(1, $cache['matched_samples']);
+        $max_count = max(1, self::maxRowCount($rows_data));
 
         $this->clampSelection($this->list_selected, $this->list_top_row, count($rows_data), $body_rows - 1);
 
         $out = [];
         $out[] = $this->styleTableHeader(self::padOrShorten(
-            sprintf('  %9s  %6s  %s', 'count', 'pct', 'frame'),
+            sprintf('   %9s  %6s  %s', 'count', 'pct', 'frame'),
             $width,
         ));
 
@@ -296,9 +399,10 @@ final class ExploreTui
             }
             [$count, , $label] = $rows_data[$idx];
             $pct = ($count / $denom) * 100;
-            $marker = $idx === $this->list_selected ? '> ' : '  ';
+            $marker = $idx === $this->list_selected ? '>' : ' ';
+            $bar = self::barChar($count / $max_count);
             $line = self::padOrShorten(
-                sprintf('%s%9s  %5.1f%%  %s', $marker, number_format($count), $pct, $label),
+                sprintf('%s%s %9s  %5.1f%%  %s', $marker, $bar, number_format($count), $pct, $label),
                 $width,
             );
             if ($idx === $this->list_selected) {
@@ -408,6 +512,8 @@ final class ExploreTui
             }
             return $out;
         }
+
+        $max_count = max(1, self::maxRowCount($rows));
         for ($i = 0; $i < $visible; $i++) {
             $idx = $top_row + $i;
             if (!isset($rows[$idx])) {
@@ -417,9 +523,10 @@ final class ExploreTui
             [$count, , $label] = $rows[$idx];
             $pct = ($count / $denom) * 100;
             $is_sel = $active && $idx === $selected;
-            $sel_mark = $is_sel ? '> ' : '  ';
+            $sel_mark = $is_sel ? '>' : ' ';
+            $bar = self::barChar($count / $max_count);
             $line = self::padOrShorten(
-                sprintf('%s%9s  %5.1f%%  %s', $sel_mark, number_format($count), $pct, $label),
+                sprintf('%s%s %9s  %5.1f%%  %s', $sel_mark, $bar, number_format($count), $pct, $label),
                 $width,
             );
             if ($is_sel) {
@@ -546,6 +653,7 @@ final class ExploreTui
                 : "\e[2m" . $header_line . "\e[22m",
         ];
 
+        $max_count = max(1, self::maxRowCount($rows));
         for ($i = 0; $i < $visible; $i++) {
             $idx = $top_row + $i;
             if (!isset($rows[$idx])) {
@@ -561,10 +669,13 @@ final class ExploreTui
             $marker = $is_sel
                 ? '>'
                 : ($is_focus ? '◆' : ' ');
-            $label_room = max(1, $width - 8);
+            $bar = self::barChar($count / $max_count);
+            // marker(1) + bar(1) + space(1) + pct(5) + space(1) = 9 overhead
+            $label_room = max(1, $width - 9);
             $line = sprintf(
-                '%s %s %5.1f%%',
+                '%s%s %s %5.1f%%',
                 $marker,
+                $bar,
                 self::padOrShorten($label, $label_room),
                 $pct,
             );
@@ -1370,6 +1481,57 @@ final class ExploreTui
     private function currentState(): ViewState
     {
         return $this->stack[count($this->stack) - 1];
+    }
+
+    /**
+     * Pick a 1-character vertical block representing $ratio in [0..1].
+     * Used as a sparkline-style data bar at the start of each row to
+     * give an at-a-glance feel for relative sizes within a pane.
+     */
+    private static function barChar(float $ratio): string
+    {
+        if ($ratio <= 0) {
+            return ' ';
+        }
+        if ($ratio < 0.125) {
+            return '▁';
+        }
+        if ($ratio < 0.250) {
+            return '▂';
+        }
+        if ($ratio < 0.375) {
+            return '▃';
+        }
+        if ($ratio < 0.500) {
+            return '▄';
+        }
+        if ($ratio < 0.625) {
+            return '▅';
+        }
+        if ($ratio < 0.750) {
+            return '▆';
+        }
+        if ($ratio < 0.875) {
+            return '▇';
+        }
+        return '█';
+    }
+
+    /**
+     * Greatest count among a list of cached pane rows. Used to scale
+     * the per-row bar so the visually-largest row is always full block.
+     *
+     * @param list<array{int, int, string}> $rows
+     */
+    private static function maxRowCount(array $rows): int
+    {
+        $max = 0;
+        foreach ($rows as [$count, , ]) {
+            if ($count > $max) {
+                $max = $count;
+            }
+        }
+        return $max;
     }
 
     private static function shorten(string $s, int $width): string
