@@ -180,10 +180,9 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
     {
         $settings = (new WatchSettingsFromConsoleInput())
             ->createSettings($this->makeInput([
-                'action' => ['trace', 'log'],
+                'action' => ['trace-once', 'log'],
             ]));
 
-        // 'trace' is mapped to 'trace-once' for backward compatibility
         $this->assertSame(['trace-once', 'log'], $settings->actions);
     }
 

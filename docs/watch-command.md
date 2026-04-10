@@ -253,7 +253,7 @@ Outputs the call trace at the moment the trigger fires (one-shot).
 reli inspector:watch -p <pid> --watch-function="sleep" --action=trace-once
 ```
 
-> For backward compatibility, `--action=trace` is mapped to `trace-once`.
+`trace` in `--action` means `trace-once` (one-shot). For continuous recording, use `--on-enter=trace` with `--on-exit=stop-trace`.
 
 ### Continuous Trace (`--on-enter=trace` / `--on-exit=stop-trace`)
 

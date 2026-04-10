@@ -257,11 +257,6 @@ final class WatchSettingsFromConsoleInput
 
         /** @var list<string> $actions */
         $actions = $input->getOption('action');
-        // Map legacy 'trace' action name to 'trace-once' for backward compat
-        $actions = \array_map(
-            fn (string $a): string => $a === 'trace' ? 'trace-once' : $a,
-            $actions,
-        );
 
         /** @var list<string> $on_enter_actions */
         $on_enter_actions = $input->getOption('on-enter');

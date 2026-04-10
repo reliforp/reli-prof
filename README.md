@@ -377,7 +377,7 @@ Options:
 ./reli inspector:watch --target-regex="php-fpm" --memory-usage=512M --action=log
 
 # Watch for a specific function in the call stack
-./reli inspector:watch -p <pid> --watch-function="App\Service::process" --action=trace
+./reli inspector:watch -p <pid> --watch-function="App\Service::process" --action=trace-once
 
 # Monitor a PHP variable
 ./reli inspector:watch -p <pid> --watch-var='global::$cache:count_gt:10000'

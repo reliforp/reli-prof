@@ -111,7 +111,6 @@ final class ActionFactory
 
         foreach ($settings->actions as $action_name) {
             switch ($action_name) {
-                case 'trace':
                 case 'trace-once':
                     $actions[] = new DaemonTraceAction($trace_output);
                     break;
@@ -236,7 +235,7 @@ final class ActionFactory
         DiskUsageTracker $disk_tracker,
     ): ?ActionInterface {
         return match ($action_name) {
-            'trace', 'trace-once' => new TraceAction(
+            'trace-once' => new TraceAction(
                 $this->call_trace_reader,
                 $trace_output,
                 $php_version,

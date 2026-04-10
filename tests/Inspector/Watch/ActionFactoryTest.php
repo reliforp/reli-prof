@@ -86,7 +86,7 @@ class ActionFactoryTest extends BaseTestCase
         $output = Mockery::mock(TraceOutput::class);
 
         $actions = $factory->buildDaemonActions(
-            $this->makeSettings(['actions' => ['trace']]),
+            $this->makeSettings(['actions' => ['trace-once']]),
             $output,
             new DiskUsageTracker(1024 * 1024 * 1024),
         );
@@ -144,7 +144,7 @@ class ActionFactoryTest extends BaseTestCase
 
         $actions = $factory->buildDaemonActions(
             $this->makeSettings([
-                'actions' => ['trace', 'log', 'exec'],
+                'actions' => ['trace-once', 'log', 'exec'],
                 'action_exec_command' => 'curl http://localhost',
             ]),
             $output,
