@@ -167,6 +167,12 @@ final class WatchCommand extends Command
             $process_specifier,
             $target_php_settings,
         );
+        // psalm loses track of the narrowed template parameter after reassignment
+        // in the closure's use clause. Capture into a fresh variable so the
+        // narrowed type `TargetPhpSettings<value-of<ALL_SUPPORTED_VERSIONS>>`
+        // flows into the poll loop closure.
+        /** @var \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $narrowed_target_php_settings */
+        $narrowed_target_php_settings = $target_php_settings;
 
         $eg_address = $this->retrying_loop_provider->do(
             try: fn () => $this->php_globals_finder->findExecutorGlobals(
@@ -338,7 +344,7 @@ final class WatchCommand extends Command
         $this->loop_provider->getMainLoop(
             function () use (
                 $process_specifier,
-                $target_php_settings,
+                $narrowed_target_php_settings,
                 $eg_address,
                 $sg_address,
                 $cg_address,
@@ -400,7 +406,7 @@ final class WatchCommand extends Command
 
                     $heap_stats = $this->heap_stats_reader->read(
                         $process_specifier,
-                        $target_php_settings,
+                        $narrowed_target_php_settings,
                         $eg_address,
                     );
 
@@ -424,7 +430,7 @@ final class WatchCommand extends Command
                             ->readVariables(
                                 $var_specs,
                                 $process_specifier,
-                                $target_php_settings,
+                                $narrowed_target_php_settings,
                                 $eg_address,
                                 $cg_address,
                             );
@@ -922,7 +928,7 @@ final class WatchCommand extends Command
                                 $cancellation->cancel();
                                 return;
                             }
-                        } else {
+                        } elseif ($result instanceof WatchDetachMessage) {
                             // WatchDetachMessage — fire on-exit for one-shot actions
                             if ($has_daemon_lifecycle) {
                                 $cleared = $daemon_state_tracker->clearPrefix($result->pid . ':');

@@ -21,7 +21,7 @@ use Reli\Inspector\Watch\TriggerEvent;
  * This allows the controller to execute on-exit one-shot actions (log, exec)
  * at the moment the condition is no longer met, not just on process detach.
  */
-final class WatchTriggerExitMessage
+final class WatchTriggerExitMessage implements WatchWorkerMessage
 {
     public function __construct(
         public readonly int $pid,

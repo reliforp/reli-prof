@@ -19,7 +19,7 @@ namespace Reli\Inspector\Watch\Daemon\Protocol\Message;
  * Sent when the worker autonomously starts or stops a continuous trace
  * session based on trigger state transitions.
  */
-final class WatchTraceNotifyMessage
+final class WatchTraceNotifyMessage implements WatchWorkerMessage
 {
     public function __construct(
         public readonly int $pid,

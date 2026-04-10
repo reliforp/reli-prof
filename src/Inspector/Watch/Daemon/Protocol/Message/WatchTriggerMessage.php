@@ -17,7 +17,7 @@ use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
-final class WatchTriggerMessage
+final class WatchTriggerMessage implements WatchWorkerMessage
 {
     public function __construct(
         public readonly int $pid,

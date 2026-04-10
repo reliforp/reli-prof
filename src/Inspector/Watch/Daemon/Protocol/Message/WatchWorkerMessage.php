@@ -13,10 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Daemon\Protocol\Message;
 
-final class WatchDetachMessage implements WatchWorkerMessage
+/**
+ * Marker interface for all messages sent from watch worker to controller.
+ *
+ * Implemented by WatchTriggerMessage, WatchTriggerExitMessage,
+ * WatchTraceNotifyMessage, and WatchDetachMessage.
+ */
+interface WatchWorkerMessage
 {
-    public function __construct(
-        public readonly int $pid,
-    ) {
-    }
 }
