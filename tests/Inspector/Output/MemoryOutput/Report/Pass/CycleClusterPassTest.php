@@ -199,6 +199,7 @@ class CycleClusterPassTest extends BaseTestCase
         ');
         $db->exec("
             CREATE TABLE IF NOT EXISTS context_edges (
+                id INTEGER PRIMARY KEY,
                 run_id INTEGER NOT NULL,
                 parent_node_id INTEGER,
                 child_node_id INTEGER NOT NULL,

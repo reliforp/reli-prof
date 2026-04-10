@@ -98,13 +98,11 @@ final class MemoryReportCommand extends Command
             InputOption::VALUE_REQUIRED,
             'rows per chunked fetchAll when loading the substrate from SQLite.'
             . ' Larger values trade memory for speed (fewer PHP/PDO round trips).'
-            . ' 0 (default) disables chunking and falls back to the legacy per-row cursor scan.'
-            . ' Chunking uses index-friendly pagination keys (`(run_id, node_id)` covering index'
-            . ' on context_nodes, `(run_id, id)` index on context_edges); both are installed'
-            . ' lazily on the first report run. Dumps captured before the schema change that'
-            . ' introduced the `id` column on context_edges fall back to per-row for the'
-            . ' edges loader automatically.',
-            '0',
+            . ' Default 200000 keeps per-chunk peak under ~80 MB on the wide loadEdgesFfi'
+            . ' row layout. The chunked loaders rely on a (run_id, node_id, type) covering'
+            . ' index on context_nodes and a (run_id, id) index on context_edges; both'
+            . ' are installed lazily on the first report run.',
+            '200000',
         );
     }
 

@@ -112,31 +112,25 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private int $nodeSizesSum = 0;
 
     /**
-     * Rows per chunked fetchAll inside the loader paths. 0 disables
-     * chunking entirely (legacy per-row cursor scan). Plumbed in from
-     * GraphSubstrate::createFromDb so the user can size it for their
-     * memory budget via the `--substrate-bulk-fetch-chunk` CLI flag.
+     * Rows per chunked fetchAll inside the loader paths. Plumbed in
+     * from GraphSubstrate::createFromDb so the user can size it for
+     * their memory budget via the `--substrate-bulk-fetch-chunk` CLI
+     * flag. Default keeps per-chunk peak under ~80 MB on the wide
+     * loadEdgesFfi row layout.
      */
-    private int $bulkFetchChunk = 0;
-
-    /**
-     * Detected at load time: whether context_edges has the new
-     * `id INTEGER PRIMARY KEY` column. Old dumps captured before the
-     * schema change don't, and the chunked loadEdgesFfi path falls
-     * back to the per-row cursor scan in that case.
-     */
-    private bool $edgesHaveIdColumn = false;
+    private int $bulkFetchChunk = 200000;
 
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     #[\Override]
     public static function loadFromDb(
         \PDO $db,
         int $run_id,
-        int $bulk_fetch_chunk = 0,
+        int $bulk_fetch_chunk = 200000,
     ): static {
         $substrate = new self();
-        $substrate->bulkFetchChunk = $bulk_fetch_chunk;
-        $substrate->edgesHaveIdColumn = self::detectEdgeIdColumn($db);
+        if ($bulk_fetch_chunk > 0) {
+            $substrate->bulkFetchChunk = $bulk_fetch_chunk;
+        }
         $substrate->loadNodeSizesFfi($db, $run_id);
         $substrate->loadNodeTypesFfi($db, $run_id);
         $substrate->loadEdgesFfi($db, $run_id);
@@ -145,29 +139,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate->computeSubtreeSizesFfi();
         $substrate->computeSccFfi();
         return $substrate;
-    }
-
-    /**
-     * `PRAGMA table_info` to check whether context_edges carries the
-     * new `id INTEGER PRIMARY KEY` column. Read-only on every dump,
-     * fast (a few rows of metadata).
-     *
-     * @psalm-suppress MixedArrayAccess
-     */
-    private static function detectEdgeIdColumn(\PDO $db): bool
-    {
-        try {
-            $rows = $db->query('PRAGMA table_info(context_edges)')
-                ->fetchAll(\PDO::FETCH_ASSOC);
-            foreach ($rows as $row) {
-                if (($row['name'] ?? null) === 'id') {
-                    return true;
-                }
-            }
-        } catch (\PDOException) {
-            // PRAGMA shouldn't fail on a readable DB; be defensive.
-        }
-        return false;
     }
 
     /** @return list<int> */
@@ -603,76 +574,46 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $dict = &$this->nodeTypeDict;
         $chunk = $this->bulkFetchChunk;
 
-        if ($chunk > 0) {
-            // Chunked node_id pagination via the lazy covering index
-            // `(run_id, node_id, type)`. Because the index covers all
-            // three columns SQLite can answer the query as a pure
-            // index range scan — no per-row heap lookups, no scanning
-            // past previously-handled rows.
-            $stmt = $db->prepare(
-                "SELECT node_id, type FROM context_nodes
-                 WHERE run_id = ? AND node_id > ?
-                 ORDER BY node_id
-                 LIMIT {$chunk}"
-            );
-            $last_node_id = PHP_INT_MIN;
-            while (true) {
-                $stmt->execute([$run_id, $last_node_id]);
-                $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
-                if ($rows === []) {
-                    break;
-                }
-                foreach ($rows as $row) {
-                    $node_id = (int)$row[0];
-                    if ($directMap !== null) {
-                        $slot = $node_id + $directOffset;
-                        $idx = ($slot < 0 || $slot >= $directSize)
-                            ? -1
-                            : (int)$directMap[$slot];
-                    } else {
-                        $idx = $phpMap[$node_id] ?? -1;
-                    }
-                    if ($idx >= 0) {
-                        $type = (string)$row[1];
-                        if (!isset($dictReverse[$type])) {
-                            $dictReverse[$type] = count($dict);
-                            $dict[] = $type;
-                        }
-                        $nodeTypeIds[$idx] = $dictReverse[$type];
-                    }
-                    $last_node_id = $node_id;
-                }
-                if (count($rows) < $chunk) {
-                    break;
-                }
-            }
-            unset($dictReverse, $dict);
-            return;
-        }
-
-        // Per-row cursor scan (legacy / chunked-disabled path).
-        $stmt = $db->query(
-            "SELECT node_id, type FROM context_nodes WHERE run_id = {$run_id}"
+        // Chunked node_id pagination via the lazy covering index
+        // `(run_id, node_id, type)`. Because the index covers all
+        // three columns SQLite answers the chunked query as a pure
+        // index range scan — no per-row heap lookups.
+        $stmt = $db->prepare(
+            "SELECT node_id, type FROM context_nodes
+             WHERE run_id = ? AND node_id > ?
+             ORDER BY node_id
+             LIMIT {$chunk}"
         );
-        while (($row = $stmt->fetch(\PDO::FETCH_NUM)) !== false) {
-            $node_id = (int)$row[0];
-            if ($directMap !== null) {
-                $slot = $node_id + $directOffset;
-                $idx = ($slot < 0 || $slot >= $directSize)
-                    ? -1
-                    : (int)$directMap[$slot];
-            } else {
-                $idx = $phpMap[$node_id] ?? -1;
+        $last_node_id = PHP_INT_MIN;
+        while (true) {
+            $stmt->execute([$run_id, $last_node_id]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
+            if ($rows === []) {
+                break;
             }
-            if ($idx < 0) {
-                continue;
+            foreach ($rows as $row) {
+                $node_id = (int)$row[0];
+                if ($directMap !== null) {
+                    $slot = $node_id + $directOffset;
+                    $idx = ($slot < 0 || $slot >= $directSize)
+                        ? -1
+                        : (int)$directMap[$slot];
+                } else {
+                    $idx = $phpMap[$node_id] ?? -1;
+                }
+                if ($idx >= 0) {
+                    $type = (string)$row[1];
+                    if (!isset($dictReverse[$type])) {
+                        $dictReverse[$type] = count($dict);
+                        $dict[] = $type;
+                    }
+                    $nodeTypeIds[$idx] = $dictReverse[$type];
+                }
+                $last_node_id = $node_id;
             }
-            $type = (string)$row[1];
-            if (!isset($dictReverse[$type])) {
-                $dictReverse[$type] = count($dict);
-                $dict[] = $type;
+            if (count($rows) < $chunk) {
+                break;
             }
-            $nodeTypeIds[$idx] = $dictReverse[$type];
         }
         unset($dictReverse, $dict);
     }
@@ -775,105 +716,27 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $linkDict = &$this->linkDict;
         $roots = &$this->roots;
 
-        // Single SQL pass — stage every edge into FFI, tally degrees,
-        // and populate the tree-edge link_name index inline so report
-        // passes can answer link_name lookups in memory afterwards.
-        //
-        // Two paths below:
-        //   1. Chunked id pagination — only when chunk > 0 AND the
-        //      dump was captured with the new schema that includes
-        //      `id INTEGER PRIMARY KEY` AND the (run_id, id) covering
-        //      index. Each chunk runs as an `id > ?` index range
-        //      scan via the new index, so per-chunk SQL cost is O(N).
-        //   2. Per-row cursor scan — fallback for the legacy schema
-        //      and for users who explicitly disable chunking.
-        //
-        // The loop body is duplicated to avoid closure dispatch
-        // overhead at 5M+ edges per dump.
+        // Chunked id pagination via the lazy `(run_id, id)` index.
+        // `id` is the rowid alias from the schema-level
+        // `id INTEGER PRIMARY KEY`, so each chunk runs as an
+        // `id > ?` range scan with O(chunk) cost per round trip.
         $i = 0;
         $chunk = $this->bulkFetchChunk;
-
-        if ($chunk > 0 && $this->edgesHaveIdColumn) {
-            $stmt = $db->prepare(
-                "SELECT parent_node_id, child_node_id, link_name, is_tree, strength, id
-                 FROM context_edges
-                 WHERE run_id = ? AND id > ?
-                 ORDER BY id
-                 LIMIT {$chunk}"
-            );
-            $last_id = 0;
-            while (true) {
-                $stmt->execute([$run_id, $last_id]);
-                $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
-                if ($rows === []) {
-                    break;
-                }
-                foreach ($rows as $r) {
-                    $parentIsRoot = $r[0] === null;
-                    $parent = $parentIsRoot ? -1 : (int)$r[0];
-                    $child = (int)$r[1];
-                    $link_name = (string)$r[2];
-                    $is_tree = (int)$r[3];
-                    $is_strong = ((string)($r[4] ?? 'strong')) === 'strong';
-
-                    if ($directMap !== null) {
-                        $slot = $parent + $directOffset;
-                        $pi = ($slot < 0 || $slot >= $directSize)
-                            ? -1
-                            : (int)$directMap[$slot];
-                        $slot = $child + $directOffset;
-                        $ci = ($slot < 0 || $slot >= $directSize)
-                            ? -1
-                            : (int)$directMap[$slot];
-                    } else {
-                        $pi = $phpMap[$parent] ?? -1;
-                        $ci = $phpMap[$child] ?? -1;
-                    }
-
-                    $stageParentIdx[$i] = $pi;
-                    $stageChildIdx[$i] = $ci;
-                    $stageFlags[$i] = $is_tree | ($is_strong ? 2 : 0);
-                    $i++;
-
-                    if ($is_tree) {
-                        $treeDeg[$pi] = $treeDeg[$pi] + 1;
-                        $treeCount++;
-                        if ($is_strong) {
-                            $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
-                            $strongTreeCount++;
-                        }
-                        if ($parentIsRoot) {
-                            $roots[] = $child;
-                        }
-                        if (!isset($linkDictReverse[$link_name])) {
-                            $linkDictReverse[$link_name] = count($linkDict);
-                            $linkDict[] = $link_name;
-                        }
-                        $treeLinkIds[$ci] = $linkDictReverse[$link_name];
-                        $treeParentIdx[$ci] = $pi;
-                    }
-                    if (!$parentIsRoot) {
-                        $allDeg[$pi] = $allDeg[$pi] + 1;
-                        $allCount++;
-                        if ($is_strong) {
-                            $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
-                            $strongAllCount++;
-                        }
-                    }
-                    $revDeg[$ci] = $revDeg[$ci] + 1;
-                    $last_id = (int)$r[5];
-                }
-                if (count($rows) < $chunk) {
-                    break;
-                }
+        $stmt = $db->prepare(
+            "SELECT parent_node_id, child_node_id, link_name, is_tree, strength, id
+             FROM context_edges
+             WHERE run_id = ? AND id > ?
+             ORDER BY id
+             LIMIT {$chunk}"
+        );
+        $last_id = 0;
+        while (true) {
+            $stmt->execute([$run_id, $last_id]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
+            if ($rows === []) {
+                break;
             }
-            unset($linkDictReverse, $linkDict, $roots);
-        } else {
-            $stmt = $db->query(
-                "SELECT parent_node_id, child_node_id, link_name, is_tree, strength"
-                . " FROM context_edges WHERE run_id = {$run_id}"
-            );
-            while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+            foreach ($rows as $r) {
                 $parentIsRoot = $r[0] === null;
                 $parent = $parentIsRoot ? -1 : (int)$r[0];
                 $child = (int)$r[1];
@@ -926,10 +789,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                 }
                 $revDeg[$ci] = $revDeg[$ci] + 1;
+                $last_id = (int)$r[5];
             }
-            $stmt->closeCursor();
-            unset($linkDictReverse, $linkDict, $roots);
+            if (count($rows) < $chunk) {
+                break;
+            }
         }
+        unset($linkDictReverse, $linkDict, $roots);
 
         // Build offsets via prefix sum.
         $this->treeOffsets[0] = 0;

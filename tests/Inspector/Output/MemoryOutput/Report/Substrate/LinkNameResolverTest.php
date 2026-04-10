@@ -26,6 +26,7 @@ class LinkNameResolverTest extends BaseTestCase
         $this->db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $this->db->exec(<<<'SQL'
             CREATE TABLE context_edges (
+                id INTEGER PRIMARY KEY,
                 run_id INTEGER NOT NULL,
                 parent_node_id INTEGER,
                 child_node_id INTEGER NOT NULL,

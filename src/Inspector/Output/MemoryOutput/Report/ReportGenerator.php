@@ -311,28 +311,20 @@ final class ReportGenerator
             // chunked loadNodeTypesFfi: paginating by node_id needs
             // an index that includes `type` so SQLite can answer the
             // query from the index alone, without a per-row heap
-            // lookup. Without it the chunked path is slower than the
-            // original full-table cursor scan because the per-row
-            // lookups dominate the bulk-fetch wins.
+            // lookup.
             $db->exec(
                 'CREATE INDEX IF NOT EXISTS idx_context_nodes_run_node_type'
                 . ' ON context_nodes(run_id, node_id, type)'
             );
             // (run_id, id) on context_edges for the chunked
-            // loadEdgesFfi. Only meaningful on dumps captured with
-            // the new schema that includes the `id INTEGER PRIMARY
-            // KEY` column. CREATE INDEX silently fails on dumps
-            // without it; the substrate loader detects the schema
-            // capability and only takes the chunked path when the
-            // column actually exists.
-            try {
-                $db->exec(
-                    'CREATE INDEX IF NOT EXISTS idx_context_edges_run_id'
-                    . ' ON context_edges(run_id, id)'
-                );
-            } catch (\PDOException) {
-                // Old dump without the id column — ignore.
-            }
+            // loadEdgesFfi. Requires the `id INTEGER PRIMARY KEY`
+            // column added by the matching schema change in
+            // PdoMemoryOutput; dumps captured with older schemas
+            // need to be re-analysed before the report can run.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_id'
+                . ' ON context_edges(run_id, id)'
+            );
         } catch (\PDOException) {
             // Read-only DB, missing privileges, etc. — best effort.
         }
