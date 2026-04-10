@@ -147,6 +147,20 @@ final class ExploreTui
     private bool $sandwich_popup_open = false;
 
     /**
+     * Cursor state for the sandwich-flame popup. The cursor is a single
+     * highlighted bar identified by its visual row in the popup tree
+     * area and a column position; navigation moves it row-by-row
+     * (auto-snapping x to whichever bar contains the cursor's column at
+     * the new row) or sibling-by-sibling within a row.
+     *
+     * Both fields are reset to "centred on the focus bar" on every
+     * popup open via openSandwichPopup() so the user always lands on
+     * the focus row regardless of where they were last time.
+     */
+    private int $sandwich_cursor_visual_row = 0;
+    private int $sandwich_cursor_x = 0;
+
+    /**
      * Indented-tree popup direction. null = closed; 'callees' walks the
      * focus's callee tree (toward leaves), 'callers' walks the caller
      * tree (toward roots). Reuses {@see ensureSandwichTree} for data,
@@ -958,7 +972,7 @@ final class ExploreTui
             '  n            toggle no-line grouping',
             '  o            toggle overview sidebar',
             '  F            toggle horizontal mini-flame strip',
-            '  S            sandwich-flame popup (callers + callees) at focus',
+            '  S            sandwich-flame popup (↑↓ depth, ←→ siblings, Enter focus)',
             '  >            callee tree popup (scroll + Enter focuses)',
             '  <            caller tree popup (scroll + Enter focuses)',
             '  ?            this help',
@@ -998,75 +1012,75 @@ final class ExploreTui
      * half its parent's bar means half of the samples that flowed
      * through the parent then went into that child.
      *
+     * The cursor (a single highlighted bar) is overlaid on whatever the
+     * regular dim/reverse style would render — see buildSandwichLayout
+     * for the visual_row index and dispatchSandwichPopup for navigation.
+     *
      * Rendered with ANSI cursor positioning so it overlays whatever the
      * normal body painted (each cell is filled, no holes).
      */
     private function renderSandwichFlameOverlay(int $cols, int $rows): string
     {
-        $tree = $this->ensureSandwichTree();
-        if ($tree === null) {
+        $layout = $this->buildSandwichLayout($cols, $rows);
+        if ($layout === null) {
             return '';
         }
         $state = $this->currentState();
-        if ($cols < 30 || $rows < 8) {
-            return '';
-        }
-
-        // 1 row title + 1 row focus + 1 row footer = 3 reserved.
-        $tree_rows = $rows - 3;
-        if ($tree_rows < 2) {
-            return '';
-        }
-        $caller_rows = (int)floor($tree_rows / 2);
-        $callee_rows = $tree_rows - $caller_rows;
-        $inner_w = $cols;
+        $tree = $layout['tree'];
         $focus_count = max(1, $tree['focus_count']);
+        $inner_w = $layout['inner_w'];
 
-        $caller_layout = self::layoutFlameTree(
-            $tree['callers'],
-            $focus_count,
-            $inner_w,
-            $caller_rows,
-        );
-        $callee_layout = self::layoutFlameTree(
-            $tree['callees'],
-            $focus_count,
-            $inner_w,
-            $callee_rows,
-        );
+        // Snap the cursor to a real bar at its current row so the
+        // highlight + Enter both have something to act on. The clamp
+        // also defends against terminal resizes between key presses.
+        $this->clampSandwichCursor($layout);
+        $cursor_bar = $this->findSandwichCursorBar($layout);
 
         $no_line = $this->opts->no_line;
         $lines = [];
 
-        $title = sprintf(
-            ' sandwich flame — %s   (%s samples)   [any key closes] ',
+        $title_text = sprintf(
+            ' sandwich flame — %s   (%s samples) ',
             $state->focus_label ?? '<none>',
             number_format($focus_count),
         );
-        $lines[] = "\e[1;7m" . self::padOrShorten($title, $inner_w) . "\e[0m";
+        $lines[] = "\e[1;7m" . self::padOrShorten($title_text, $inner_w) . "\e[0m";
 
-        // Caller depths: top of popup is the deepest visible depth so the
-        // user reads downward toward the focus row, the way a stack
-        // naturally piles up from root to leaf.
-        for ($vis = 0; $vis < $caller_rows; $vis++) {
-            $depth = $caller_rows - $vis;
-            $bars = $caller_layout[$depth] ?? [];
-            $lines[] = $this->renderFlameRow($bars, $inner_w, $no_line);
+        $total_visual = $layout['total_visual_rows'];
+        $focus_visual = $layout['focus_visual_row'];
+        for ($vis = 0; $vis < $total_visual; $vis++) {
+            if ($vis === $focus_visual) {
+                $focus_text = ' ▶ ' . ($state->focus_label ?? '<none>');
+                $is_cursor_row = $this->sandwich_cursor_visual_row === $vis;
+                $padded = self::padOrShorten($focus_text, $inner_w);
+                // Cursor takes precedence over the regular yellow focus
+                // banner so the user can see where the cursor is even
+                // when it's parked on the focus bar.
+                $lines[] = $is_cursor_row
+                    ? "\e[1;7;46m" . $padded . "\e[0m"
+                    : "\e[1;7;33m" . $padded . "\e[0m";
+                continue;
+            }
+            $bars = $layout['visual_rows'][$vis] ?? [];
+            $cursor_for_row = ($cursor_bar !== null
+                && $this->sandwich_cursor_visual_row === $vis)
+                ? $cursor_bar
+                : null;
+            $lines[] = $this->renderFlameRow($bars, $inner_w, $no_line, $cursor_for_row);
         }
 
-        // Focus bar — distinct from regular bars so the eye anchors on it.
-        $focus_text = ' ▶ ' . ($state->focus_label ?? '<none>');
-        $lines[] = "\e[1;7;33m" . self::padOrShorten($focus_text, $inner_w) . "\e[0m";
-
-        // Callee depths: depth 1 directly under the focus, deeper farther
-        // down — same "stack flowing toward leaf" reading order.
-        for ($vis = 0; $vis < $callee_rows; $vis++) {
-            $depth = $vis + 1;
-            $bars = $callee_layout[$depth] ?? [];
-            $lines[] = $this->renderFlameRow($bars, $inner_w, $no_line);
-        }
-
-        $footer = ' callers above · callees below · widths ∝ samples through focus ';
+        $cursor_label = $cursor_bar !== null
+            ? Aggregator::labelFor($this->model, $cursor_bar['key_id'], $no_line)
+            : '';
+        $cursor_pct = $cursor_bar !== null
+            ? sprintf(' (%.1f%%)', $cursor_bar['count'] / $focus_count * 100.0)
+            : '';
+        $hint = '  ↑↓ depth · ←→ siblings · Enter focus · q close';
+        $cursor_room = max(0, $inner_w - mb_strlen($hint) - mb_strlen($cursor_pct) - 3);
+        $cursor_text = $cursor_label !== ''
+            ? ' ' . self::shorten($cursor_label, $cursor_room) . $cursor_pct
+            : '';
+        $footer = $cursor_text . $hint;
         $lines[] = "\e[2;7m" . self::padOrShorten($footer, $inner_w) . "\e[0m";
 
         $out = '';
@@ -1079,14 +1093,20 @@ final class ExploreTui
     /**
      * Render one row of the flame chart. Bars are drawn in reverse
      * video with alternating dim/bright so adjacent frames stay visually
-     * distinct. Labels are written into bars wide enough to hold them
-     * (≥ 4 cells); narrower bars become anonymous solid stripes you can
-     * still navigate to via overview/sandwich panes.
+     * distinct. The cursor bar (if any) overrides the dim/bright style
+     * with a cyan background so it pops against everything else on the
+     * row. Labels are written into bars wide enough to hold them
+     * (≥ 4 cells); narrower bars become anonymous solid stripes.
      *
      * @param list<array{x:int, w:int, key_id:int, count:int}> $bars
+     * @param array{x:int, w:int, key_id:int, count:int}|null  $cursor_bar
      */
-    private function renderFlameRow(array $bars, int $width, bool $no_line): string
-    {
+    private function renderFlameRow(
+        array $bars,
+        int $width,
+        bool $no_line,
+        ?array $cursor_bar = null,
+    ): string {
         if ($bars === []) {
             return str_repeat(' ', $width);
         }
@@ -1116,7 +1136,15 @@ final class ExploreTui
                 $cell = '';
             }
             $cell = self::padOrShorten($cell, $w);
-            $style = ($i % 2) === 1 ? "\e[7;2m" : "\e[7m";
+            $is_cursor = $cursor_bar !== null
+                && $bar['x'] === $cursor_bar['x']
+                && $bar['w'] === $cursor_bar['w']
+                && $bar['key_id'] === $cursor_bar['key_id'];
+            if ($is_cursor) {
+                $style = "\e[1;7;46m"; // bold reverse cyan — distinct from focus row's yellow
+            } else {
+                $style = ($i % 2) === 1 ? "\e[7;2m" : "\e[7m";
+            }
             $out .= $style . $cell . "\e[0m";
             $cur += $w;
         }
@@ -1124,6 +1152,368 @@ final class ExploreTui
             $out .= str_repeat(' ', $width - $cur);
         }
         return $out;
+    }
+
+    /**
+     * Build the visual_row → bars mapping for the sandwich flame popup
+     * at the current terminal size. Used by both the renderer and the
+     * cursor navigation handlers (so cursor moves can look up "what
+     * bars are at the row I'm trying to move to").
+     *
+     * @return array{
+     *   tree: array{
+     *     focus_count:int,
+     *     callers:array<int,array{count:int,children:array}>,
+     *     callees:array<int,array{count:int,children:array}>,
+     *   },
+     *   visual_rows: array<int, list<array{x:int, w:int, key_id:int, count:int}>>,
+     *   focus_visual_row: int,
+     *   total_visual_rows: int,
+     *   inner_w: int,
+     * }|null
+     */
+    private function buildSandwichLayout(int $cols, int $rows): ?array
+    {
+        $tree = $this->ensureSandwichTree();
+        if ($tree === null) {
+            return null;
+        }
+        if ($cols < 30 || $rows < 8) {
+            return null;
+        }
+        // 1 row title + 1 row focus + 1 row footer = 3 reserved.
+        $tree_rows = $rows - 3;
+        if ($tree_rows < 2) {
+            return null;
+        }
+        $caller_rows = (int)floor($tree_rows / 2);
+        $callee_rows = $tree_rows - $caller_rows;
+        $inner_w = $cols;
+        $focus_count = max(1, $tree['focus_count']);
+
+        $caller_layout = self::layoutFlameTree(
+            $tree['callers'],
+            $focus_count,
+            $inner_w,
+            $caller_rows,
+        );
+        $callee_layout = self::layoutFlameTree(
+            $tree['callees'],
+            $focus_count,
+            $inner_w,
+            $callee_rows,
+        );
+
+        $state = $this->currentState();
+        $focus_id = $state->focus_id ?? -1;
+
+        $visual_rows = [];
+        // Caller depths: deepest at top of popup (visual_row 0), depth 1
+        // immediately above the focus row.
+        for ($vis = 0; $vis < $caller_rows; $vis++) {
+            $depth = $caller_rows - $vis;
+            $visual_rows[$vis] = $caller_layout[$depth] ?? [];
+        }
+        // Focus row: 1 synthetic full-width bar so the cursor can
+        // land on it and Enter is meaningful.
+        $focus_visual_row = $caller_rows;
+        $visual_rows[$focus_visual_row] = [[
+            'x' => 0,
+            'w' => $inner_w,
+            'key_id' => $focus_id,
+            'count' => $focus_count,
+        ]];
+        // Callee depths: depth 1 immediately under focus, deeper below.
+        for ($vis = 0; $vis < $callee_rows; $vis++) {
+            $depth = $vis + 1;
+            $visual_rows[$focus_visual_row + 1 + $vis] = $callee_layout[$depth] ?? [];
+        }
+
+        return [
+            'tree' => $tree,
+            'visual_rows' => $visual_rows,
+            'focus_visual_row' => $focus_visual_row,
+            'total_visual_rows' => $caller_rows + 1 + $callee_rows,
+            'inner_w' => $inner_w,
+        ];
+    }
+
+    /**
+     * Open the sandwich-flame popup, resetting the cursor to the
+     * focus row centre. Centring on the focus is the only sensible
+     * starting position — the user just told us "show me what's
+     * around THIS frame", so the natural place to start is on the
+     * frame itself.
+     */
+    private function openSandwichPopup(): void
+    {
+        if (!$this->sandwich_popup_open) {
+            [$cols, $rows] = $this->term->size();
+            $tree_rows = max(2, $rows - 3);
+            $caller_rows = (int)floor($tree_rows / 2);
+            $this->sandwich_cursor_visual_row = $caller_rows;
+            $this->sandwich_cursor_x = (int)floor($cols / 2);
+        }
+        $this->sandwich_popup_open = true;
+    }
+
+    /**
+     * Pager-style modal dispatch for the sandwich-flame popup. Arrow
+     * keys (or hjkl) move the cursor between depth levels and sibling
+     * bars; Enter promotes the cursor bar's frame to a new sandwich
+     * focus; q/Esc/Ctrl-C/S close. Other keys also close so users
+     * never get stuck inside the modal.
+     */
+    private function dispatchSandwichPopup(string $key): void
+    {
+        if ($key === "\e" || $key === "\x03") {
+            $this->sandwich_popup_open = false;
+            return;
+        }
+        $action = $this->keymap->resolve($key);
+        switch ($action) {
+            case Keymap::ACTION_UP:
+                $this->moveSandwichCursorRow(-1);
+                return;
+            case Keymap::ACTION_DOWN:
+                $this->moveSandwichCursorRow(+1);
+                return;
+            case Keymap::ACTION_CALLERS:
+                // ← / h — sibling left
+                $this->moveSandwichCursorSibling(-1);
+                return;
+            case Keymap::ACTION_CALLEES:
+                // → / l — sibling right
+                $this->moveSandwichCursorSibling(+1);
+                return;
+            case Keymap::ACTION_FOCUS_ENTER:
+                $this->focusSandwichPopupCursor();
+                return;
+            case Keymap::ACTION_OPEN_SANDWICH_FLAME:
+                // S toggles the popup off — same affordance as the help
+                // popup binding (`?`) being a noop while help is open.
+                $this->sandwich_popup_open = false;
+                return;
+            default:
+                $this->sandwich_popup_open = false;
+                return;
+        }
+    }
+
+    /**
+     * Move the cursor one visual row in $dy direction. Uses the
+     * x-preserving snap rule: if the new row contains a bar that
+     * straddles the current cursor x, we land on it (cursor x stays);
+     * otherwise we snap to the nearest bar's centre. The "skip empty
+     * rows" loop handles the case where deeper levels of the tree
+     * stop having any bar wide enough to render — we keep walking
+     * until we hit a row with content or run off the edge.
+     */
+    private function moveSandwichCursorRow(int $dy): void
+    {
+        [$cols, $rows] = $this->term->size();
+        $layout = $this->buildSandwichLayout($cols, $rows);
+        if ($layout === null) {
+            return;
+        }
+        $total = $layout['total_visual_rows'];
+        $row = $this->sandwich_cursor_visual_row + $dy;
+        while ($row >= 0 && $row < $total) {
+            $bars = $layout['visual_rows'][$row] ?? [];
+            if ($bars !== []) {
+                $hit = $this->findBarAtX($bars, $this->sandwich_cursor_x);
+                if ($hit === null) {
+                    $hit = $this->findNearestBar($bars, $this->sandwich_cursor_x);
+                }
+                $this->sandwich_cursor_visual_row = $row;
+                $outside = $hit !== null
+                    && ($this->sandwich_cursor_x < $hit['x']
+                        || $this->sandwich_cursor_x >= $hit['x'] + $hit['w']);
+                if ($outside && $hit !== null) {
+                    $this->sandwich_cursor_x = $hit['x'] + intdiv($hit['w'], 2);
+                }
+                return;
+            }
+            $row += $dy;
+        }
+    }
+
+    /**
+     * Move the cursor to the previous/next bar at the current visual
+     * row. Bars are sorted left-to-right; "next" wraps neither end.
+     */
+    private function moveSandwichCursorSibling(int $direction): void
+    {
+        [$cols, $rows] = $this->term->size();
+        $layout = $this->buildSandwichLayout($cols, $rows);
+        if ($layout === null) {
+            return;
+        }
+        $bars = $layout['visual_rows'][$this->sandwich_cursor_visual_row] ?? [];
+        if ($bars === []) {
+            return;
+        }
+        usort($bars, fn(array $a, array $b): int => $a['x'] <=> $b['x']);
+        $current_idx = -1;
+        foreach ($bars as $i => $bar) {
+            if (
+                $this->sandwich_cursor_x >= $bar['x']
+                && $this->sandwich_cursor_x < $bar['x'] + $bar['w']
+            ) {
+                $current_idx = $i;
+                break;
+            }
+        }
+        if ($current_idx === -1) {
+            // Cursor isn't on any bar (gap). Snap to nearest first.
+            $nearest = $this->findNearestBar($bars, $this->sandwich_cursor_x);
+            if ($nearest === null) {
+                return;
+            }
+            foreach ($bars as $i => $bar) {
+                if (
+                    $bar['x'] === $nearest['x']
+                    && $bar['w'] === $nearest['w']
+                    && $bar['key_id'] === $nearest['key_id']
+                ) {
+                    $current_idx = $i;
+                    break;
+                }
+            }
+        }
+        $new_idx = $current_idx + $direction;
+        if ($new_idx < 0 || $new_idx >= count($bars)) {
+            return;
+        }
+        $new_bar = $bars[$new_idx];
+        $this->sandwich_cursor_x = $new_bar['x'] + intdiv($new_bar['w'], 2);
+    }
+
+    /**
+     * Promote the cursor bar's frame to a new sandwich focus and
+     * close the popup. Mirrors focusSelected() / focusTreePopupCursor.
+     */
+    private function focusSandwichPopupCursor(): void
+    {
+        [$cols, $rows] = $this->term->size();
+        $layout = $this->buildSandwichLayout($cols, $rows);
+        if ($layout === null) {
+            return;
+        }
+        $cursor_bar = $this->findSandwichCursorBar($layout);
+        if ($cursor_bar === null) {
+            return;
+        }
+        $kid = $cursor_bar['key_id'];
+        if ($kid < 0) {
+            return;
+        }
+        $state = $this->currentState();
+        if ($kid === $state->focus_id) {
+            // Cursor on the focus bar itself — re-focusing would be a
+            // no-op history push, so just close.
+            $this->sandwich_popup_open = false;
+            return;
+        }
+        $label = Aggregator::labelFor($this->model, $kid, $this->opts->no_line);
+        $this->stack[count($this->stack) - 1] = $state->withOverviewCursor(
+            $this->overview_selected,
+            $this->overview_top_row,
+        );
+        $this->stack[] = new ViewState(
+            mode: ExploreMode::Sandwich,
+            focus_id: $kid,
+            focus_label: $label,
+            active_pane: $state->active_pane,
+            overview_selected: $this->overview_selected,
+            overview_top_row: $this->overview_top_row,
+        );
+        $this->resetScrolls();
+        $this->invalidate();
+        $this->sandwich_popup_open = false;
+    }
+
+    /**
+     * Defend the cursor against terminal resizes between key presses
+     * by re-snapping it to a real bar at its current row.
+     *
+     * @param array{
+     *   visual_rows: array<int, list<array{x:int, w:int, key_id:int, count:int}>>,
+     *   total_visual_rows: int,
+     *   inner_w: int,
+     *   focus_visual_row: int,
+     *   tree: array,
+     * } $layout
+     */
+    private function clampSandwichCursor(array $layout): void
+    {
+        $total = $layout['total_visual_rows'];
+        if ($total <= 0) {
+            return;
+        }
+        if ($this->sandwich_cursor_visual_row < 0) {
+            $this->sandwich_cursor_visual_row = 0;
+        }
+        if ($this->sandwich_cursor_visual_row >= $total) {
+            $this->sandwich_cursor_visual_row = $total - 1;
+        }
+        $inner_w = $layout['inner_w'];
+        if ($this->sandwich_cursor_x < 0) {
+            $this->sandwich_cursor_x = 0;
+        }
+        if ($this->sandwich_cursor_x >= $inner_w) {
+            $this->sandwich_cursor_x = $inner_w - 1;
+        }
+    }
+
+    /**
+     * @param array{visual_rows: array<int, list<array{x:int, w:int, key_id:int, count:int}>>, ...} $layout
+     * @return array{x:int, w:int, key_id:int, count:int}|null
+     */
+    private function findSandwichCursorBar(array $layout): ?array
+    {
+        $bars = $layout['visual_rows'][$this->sandwich_cursor_visual_row] ?? [];
+        if ($bars === []) {
+            return null;
+        }
+        return $this->findBarAtX($bars, $this->sandwich_cursor_x)
+            ?? $this->findNearestBar($bars, $this->sandwich_cursor_x);
+    }
+
+    /**
+     * @param  list<array{x:int, w:int, key_id:int, count:int}> $bars
+     * @return array{x:int, w:int, key_id:int, count:int}|null
+     */
+    private function findBarAtX(array $bars, int $x): ?array
+    {
+        foreach ($bars as $bar) {
+            if ($x >= $bar['x'] && $x < $bar['x'] + $bar['w']) {
+                return $bar;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param  list<array{x:int, w:int, key_id:int, count:int}> $bars
+     * @return array{x:int, w:int, key_id:int, count:int}|null
+     */
+    private function findNearestBar(array $bars, int $x): ?array
+    {
+        if ($bars === []) {
+            return null;
+        }
+        $best = null;
+        $best_dist = PHP_INT_MAX;
+        foreach ($bars as $bar) {
+            $center = $bar['x'] + intdiv($bar['w'], 2);
+            $dist = abs($center - $x);
+            if ($dist < $best_dist) {
+                $best_dist = $dist;
+                $best = $bar;
+            }
+        }
+        return $best;
     }
 
     /**
@@ -1768,7 +2158,7 @@ final class ExploreTui
             return;
         }
         if ($this->sandwich_popup_open) {
-            $this->sandwich_popup_open = false;
+            $this->dispatchSandwichPopup($key);
             return;
         }
         if ($this->tree_popup_direction !== null) {
@@ -1854,7 +2244,7 @@ final class ExploreTui
                     $this->status = 'sandwich flame: focus a frame first';
                     return;
                 }
-                $this->sandwich_popup_open = true;
+                $this->openSandwichPopup();
                 return;
 
             case Keymap::ACTION_OPEN_CALLEE_TREE:
