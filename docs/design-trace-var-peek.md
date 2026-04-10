@@ -281,12 +281,223 @@ Same for `VariableValueFormatter` once extracted.
   fixture process, assert the output contains the expected `# global::$x = ...`
   line in phpspy mode and a `SAMPLE_ANNOTATION` event in rbt mode.
 
+## Daemon mode
+
+`inspector:daemon` runs N workers in parallel, each of which owns its own
+trace loop against a single target PID. `--trace-var` must work there too —
+otherwise operators have to choose between multi-process coverage and
+per-sample context. This section covers how the same option plugs into the
+daemon without changing the rest of the daemon architecture.
+
+### Where variable reads happen: in each worker
+
+The worker process is the only party with `process_vm_readv` access to the
+target PHP process. All variable reads must therefore happen **inside
+`PhpReaderTraceLoop::run()`** (`src/Inspector/Daemon/Reader/Worker/PhpReaderTraceLoop.php:45`),
+right after `readCallTrace()` returns — exactly the same insertion point as
+in the single-process `GetTraceCommand`.
+
+The controller never touches target memory on the worker's behalf. It only
+consumes the annotations that the worker has already produced.
+
+### Option propagation
+
+`SetSettingsMessage`
+(`src/Inspector/Daemon/Reader/Protocol/Message/SetSettingsMessage.php`)
+already carries `GetTraceSettings` from the controller to each worker at
+start-up. Since `--trace-var`, `--trace-var-every`, and
+`--trace-var-on-function` live on `GetTraceSettings` (per the single-process
+design above), they ride along for free. No new IPC message is required for
+configuration.
+
+The worker parses / holds the specs exactly once in
+`PhpReaderEntryPoint::run()`, then reuses them for every attach cycle.
+
+### Resolving the CG address per target
+
+`TargetProcessDescriptor`
+(`src/Inspector/Daemon/Dispatcher/TargetProcessDescriptor.php`) currently
+holds `eg_address`, `sg_address`, and `php_version` — but **not**
+`cg_address`. `static::` and `func_static::` specs need CG.
+
+`inspector:watch` already hit this problem and solved it by introducing
+`WatchTargetDescriptor` + `WatchDescriptorRetriever`
+(`src/Inspector/Watch/Daemon/Searcher/WatchTargetDescriptor.php`) — a
+parallel descriptor class with a `cg_address` field, populated at discovery
+time by the searcher. We have two options:
+
+1. **Reuse the watch descriptor** — share `WatchTargetDescriptor` /
+   `WatchDescriptorRetriever` between watch daemon and trace daemon. Rename
+   them to something neutral (e.g. `DaemonTargetDescriptorWithCg`) and let
+   both daemons consume them. Lowest code duplication; small refactor of
+   the watch daemon.
+2. **Add `?int $cg_address` to `TargetProcessDescriptor`** — optional field,
+   0/null when the trace command has no var-peek specs, populated only when
+   the trace daemon is launched with `--trace-var` that needs CG. Smallest
+   diff, no class hierarchy shuffling, at the cost of the base type
+   knowing about a feature it doesn't otherwise use.
+
+Recommend **option 2** for this PR. The field is cheap (one int), watch
+daemon continues to use its richer descriptor, and the trace daemon gets
+what it needs with no new class. If a third feature later wants CG on its
+descriptor, option 1 becomes worth the refactor.
+
+Either way, **CG resolution happens in the searcher** (once per newly
+discovered PID, cached), not in the reader worker, so the trace loop does
+not pay the lookup cost per sample.
+
+### Data flow per output format
+
+The daemon has three output modes (see `DaemonCommand::execute`,
+`src/Command/Inspector/DaemonCommand.php:90`). Each needs a slightly
+different plumbing for annotations:
+
+#### (a) Per-worker `rbt` (`-F rbt`) — simplest
+
+The worker writes directly to its own `worker_<pid>.rbt` file via
+`PhpReaderEntryPoint::writeBinaryTrace()`
+(`src/Inspector/Daemon/Reader/Worker/PhpReaderEntryPoint.php:152`).
+We extend that call:
+
+```php
+$this->binary_writer->writeTrace(
+    CallTraceConverter::toParsed($call_trace),
+    $delta_us,
+    $annotations,   // new: already a string→string map
+);
+```
+
+`BinaryTraceWriter::writeTrace()` already accepts `?array $annotations`
+and handles the RLE break case. **Zero IPC changes** — the annotations
+never leave the worker. This is the cleanest path and the one I'd ship
+first.
+
+#### (b) Bundled `rbt-bundled` (`-F rbt-bundled`) — writer extension
+
+Workers send `TraceMessage` to the controller; the controller's
+`writeBundledTrace()`
+(`src/Command/Inspector/DaemonCommand.php:282`) writes `PID_SAMPLE` events
+via `BinaryTraceWriter::writePidTrace()`.
+
+Two changes:
+
+1. **`TraceMessage`**
+   (`src/Inspector/Daemon/Reader/Protocol/Message/TraceMessage.php`) —
+   add `public ?array $annotations = null;` (serializable over the
+   existing AMPHP IPC channel).
+2. **`BinaryTraceWriter::writePidTrace()`**
+   (`src/Converter/BinaryTrace/BinaryTraceWriter.php:193`) — accept
+   `?array $annotations = null` and emit `SAMPLE_ANNOTATION` right after
+   `writePidSample()`. The rbt spec explicitly allows `SAMPLE_ANNOTATION`
+   to follow `PID_SAMPLE` (see `docs/binary-trace-format.md`
+   §SAMPLE_ANNOTATION). `writePidSample()` does not participate in the
+   RLE / run-length path, so the annotation logic is a straight append —
+   no pending-run state to reason about.
+
+Controller-side call becomes:
+
+```php
+$writer->writePidTrace(
+    CallTraceConverter::toParsed($result->trace),
+    $result->pid,
+    $delta_us,
+    $result->annotations,
+);
+```
+
+#### (c) Template (phpspy text) mode — annotations ride on `TraceMessage`
+
+The worker sends `TraceMessage` up; the controller passes
+`$result->trace` into `$trace_output->output(...)`
+(`DaemonCommand::execute`, inside the worker-dispatch async loop around
+line 228). We extend the same call site:
+
+```php
+$trace_output->output($result->trace, $result->annotations);
+```
+
+Since `TraceOutput::output()` already takes an optional `$annotations`
+parameter per the single-process design above, no additional interface
+change is needed for daemon mode — just the `TraceMessage` field
+extension from (b).
+
+### Summary of changes specific to daemon mode
+
+On top of the single-process change list in the previous sections, daemon
+mode adds:
+
+- **`src/Inspector/Daemon/Dispatcher/TargetProcessDescriptor.php`** — add
+  `?int $cg_address = null` (option 2 above).
+- **`src/Inspector/Daemon/Searcher/Worker/ProcessDescriptorRetriever.php`**
+  (or its daemon-searcher equivalent) — resolve CG when the worker pool
+  was started with trace-var specs that need it. Gate the extra lookup on
+  `GetTraceSettings::$needs_cg` so daemons without var-peek pay nothing.
+- **`src/Inspector/Daemon/Reader/Protocol/Message/TraceMessage.php`** — new
+  `?array $annotations` field.
+- **`src/Inspector/Daemon/Reader/Worker/PhpReaderTraceLoop.php`** — accept
+  a `VariableReader` (new constructor arg) and, inside the loop body,
+  call it after `readCallTrace()` then attach the result to the yielded
+  `TraceMessage`. Respect `--trace-var-every` and
+  `--trace-var-on-function` exactly like the single-process command.
+- **`src/Inspector/Daemon/Reader/Worker/PhpReaderEntryPoint.php`** — in
+  the per-worker rbt branch (line 104 area), pass
+  `$message->annotations` through to `writeBinaryTrace()`; extend that
+  helper to forward into `writeTrace()`.
+- **`src/Command/Inspector/DaemonCommand.php`** — in the worker-dispatch
+  async loop, pass `$result->annotations` into `writeBundledTrace()` or
+  `$trace_output->output()` depending on mode.
+- **`src/Converter/BinaryTrace/BinaryTraceWriter.php`** — extend
+  `writePidTrace()` signature and body to emit `SAMPLE_ANNOTATION`
+  when annotations are present.
+- **DI wiring** — `VariableReader` already exists as a shared service; it
+  needs to be added to the worker container so `PhpReaderTraceLoop` can
+  receive it.
+
+### Performance: worker-count multiplier
+
+The single-process analysis puts Tier-3 variable reads at ~2ms overhead per
+poll on a warm cache, dominated by `process_vm_readv`. In daemon mode this
+cost is paid **per attached worker**, not per concurrent target in aggregate
+(workers read in parallel). However:
+
+- Total wall-clock CPU used by the daemon grows roughly linearly with
+  `active_workers × vars_per_sample`. Operators running at 10ms sampling
+  with 8 workers and 5 variables should expect the daemon itself to consume
+  a measurable core fraction. `--trace-var-every` remains the primary
+  throttle.
+- `--trace-var-on-function` becomes disproportionately valuable in daemon
+  mode: only workers whose current target stack contains the gate function
+  pay the `process_vm_readv` cost. For frameworks where the interesting
+  frame is rare (e.g. "only when inside `PDO::execute`"), the total cost
+  across the worker pool can drop by 10×+.
+
+### Annotation reliability during attach/detach
+
+Worker attach/detach is a normal lifecycle event. `VariableReader`
+throwing on a stale frame (e.g. target just exited `local::fn()`) is
+already handled by the per-spec `try { ... } catch (\Throwable) {}` in
+`VariableReader::readVariables()`, so there is no new failure mode
+introduced by running in daemon workers. The annotation set simply
+shrinks for that sample and the trace is emitted normally.
+
+On hard-detach (target process gone), `PhpReaderTraceLoop::run()` already
+terminates the generator; no annotations are produced for the half-read
+sample. The worker then proceeds to the next attach cycle.
+
+### Not in scope for daemon mode (yet)
+
+- **Per-target specs.** Today a single `--trace-var` list applies to every
+  target in the daemon. A future `--trace-var-for=<regex>:<spec>` that
+  scopes specs to PIDs matching a regex (or a function signature) would
+  let operators read `$controller->requestId` on web workers while
+  reading `$job->id` on queue workers. Straightforward extension, deferred
+  to a follow-up PR so this one stays bounded.
+- **Dynamic re-config.** Changing the var-peek spec list at runtime (via a
+  signal or control socket) is nice-to-have, not required. Restarting the
+  daemon is fine for v1.
+
 ## Follow-ups / out of scope
 
-- **Daemon mode**: the same flag should eventually propagate from
-  `inspector:daemon` to its workers so bundled / per-worker rbt output can
-  carry annotations. This is mechanically similar but involves IPC message
-  changes and is deferred to a later PR.
 - **Numeric annotations in rbt**: the current spec stores annotations as
   string pairs. If we later want to store ints natively, that's a
   `SAMPLE_ANNOTATION` v2 event addition (backward compatible via unknown-
