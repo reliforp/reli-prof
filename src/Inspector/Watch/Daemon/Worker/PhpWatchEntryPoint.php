@@ -193,7 +193,6 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
 
                     assert(isset($heap_stats));
                     assert(isset($variable_values));
-                    assert(isset($cpu_percent));
 
                     $context = new WatchContext(
                         pid: $descriptor->pid,
