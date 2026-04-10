@@ -371,7 +371,7 @@ final class PropertyScalingPass implements PassInterface
             . " WHERE cn.run_id = {$this->run_id}"
             . " AND cn.node_id IN ({$placeholders})"
         );
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+        while ($r = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $info[(int)$r['node_id']] = [
                 'type' => (string)($r['type'] ?? ''),
                 'loc_type' => (string)($r['location_type'] ?? ''),
