@@ -42,7 +42,7 @@ class TraceActionTest extends BaseTestCase
             0x2000,
             100,
         );
-        $this->assertSame('trace', $action->name());
+        $this->assertSame('trace-once', $action->name());
     }
 
     public function testReusesTraceFromContext(): void

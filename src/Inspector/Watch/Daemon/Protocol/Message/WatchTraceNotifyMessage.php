@@ -13,10 +13,18 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Daemon\Protocol\Message;
 
-final class WatchDetachMessage implements WatchWorkerMessage
+/**
+ * Notification from worker to controller about trace session lifecycle.
+ *
+ * Sent when the worker autonomously starts or stops a continuous trace
+ * session based on trigger state transitions.
+ */
+final class WatchTraceNotifyMessage implements WatchWorkerMessage
 {
     public function __construct(
         public readonly int $pid,
+        public readonly bool $started,
+        public readonly ?string $trace_path,
     ) {
     }
 }

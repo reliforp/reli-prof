@@ -13,20 +13,19 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Daemon\Protocol\Message;
 
-use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\TriggerEvent;
-use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
-final class WatchTriggerMessage implements WatchWorkerMessage
+/**
+ * Sent from worker to controller when a trigger condition clears (EXIT phase).
+ *
+ * This allows the controller to execute on-exit one-shot actions (log, exec)
+ * at the moment the condition is no longer met, not just on process detach.
+ */
+final class WatchTriggerExitMessage implements WatchWorkerMessage
 {
     public function __construct(
         public readonly int $pid,
         public readonly TriggerEvent $event,
-        public readonly HeapStats $heap_stats,
-        public readonly ?CallTrace $call_trace,
-        public readonly int $eg_address = 0,
-        public readonly int $cg_address = 0,
-        public readonly string $php_version = '',
     ) {
     }
 }

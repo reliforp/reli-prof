@@ -19,6 +19,8 @@ use Reli\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
 use Reli\Inspector\Watch\Daemon\Context\PhpWatchContextCreator;
 use Reli\Inspector\Watch\Daemon\Controller\PhpWatchControllerInterface;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerExitMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
 use Reli\Inspector\RetryingLoopProvider;
@@ -39,13 +41,18 @@ use Revolt\EventLoop;
 use Reli\Inspector\Watch\Action\ActionInterface;
 use Reli\Inspector\Watch\ActionFactory;
 use Reli\Inspector\Watch\CooldownManager;
+use Reli\Inspector\Watch\CpuUsageReader;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\RssReader;
+use Reli\Inspector\Watch\TraceSession;
 use Reli\Inspector\Watch\TriggerFactory;
+use Reli\Inspector\Watch\TriggerPhase;
+use Reli\Inspector\Watch\TriggerStateTracker;
 use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\VariableSpec;
+use Reli\Inspector\Watch\Trigger\CpuUsageTrigger;
 use Reli\Inspector\Watch\Trigger\RssUsageTrigger;
 use Reli\Inspector\Watch\Trigger\TriggerInterface;
 use Reli\Inspector\Watch\Trigger\VariableValueTrigger;
@@ -76,6 +83,7 @@ final class WatchCommand extends Command
         private PhpVersionDetector $php_version_detector,
         private HeapStatsReader $heap_stats_reader,
         private RssReader $rss_reader,
+        private CpuUsageReader $cpu_usage_reader,
         private VariableReader $variable_reader,
         private CallTraceReader $call_trace_reader,
         private TriggerFactory $trigger_factory,
@@ -159,6 +167,12 @@ final class WatchCommand extends Command
             $process_specifier,
             $target_php_settings,
         );
+        // psalm loses track of the narrowed template parameter after reassignment
+        // in the closure's use clause. Capture into a fresh variable so the
+        // narrowed type `TargetPhpSettings<value-of<ALL_SUPPORTED_VERSIONS>>`
+        // flows into the poll loop closure.
+        /** @var \Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $narrowed_target_php_settings */
+        $narrowed_target_php_settings = $target_php_settings;
 
         $eg_address = $this->retrying_loop_provider->do(
             try: fn () => $this->php_globals_finder->findExecutorGlobals(
@@ -183,6 +197,7 @@ final class WatchCommand extends Command
         // Check what each trigger needs
         $needs_call_trace = false;
         $needs_rss = false;
+        $needs_cpu = false;
         /** @var list<VariableSpec> $var_specs */
         $var_specs = [];
         foreach ($triggers as $trigger) {
@@ -192,6 +207,9 @@ final class WatchCommand extends Command
             if ($trigger instanceof RssUsageTrigger) {
                 $needs_rss = true;
             }
+            if ($trigger instanceof CpuUsageTrigger) {
+                $needs_cpu = true;
+            }
             if ($trigger instanceof VariableValueTrigger) {
                 $var_specs[] = new VariableSpec(
                     scope: $trigger->scope,
@@ -200,6 +218,10 @@ final class WatchCommand extends Command
                 );
             }
         }
+
+        // Determine if on-enter/on-exit lifecycle is active
+        $has_lifecycle = count($watch_settings->on_enter_actions) > 0
+            || count($watch_settings->on_exit_actions) > 0;
 
         // Build actions
         $trace_output = $this->trace_output_factory->fromSettingsAndConsoleOutput(
@@ -227,6 +249,40 @@ final class WatchCommand extends Command
             $disk_tracker,
         );
 
+        // Build trace session for continuous tracing
+        $trace_session = new TraceSession(
+            $watch_settings->action_output_dir,
+            $watch_settings->trace_interval_ms * 1000,
+        );
+
+        // Build lifecycle actions (on-enter / on-exit)
+        $on_enter_actions = $this->action_factory->buildLifecycleActions(
+            $watch_settings->on_enter_actions,
+            $watch_settings,
+            $trace_output,
+            $target_php_settings->php_version,
+            $eg_address,
+            $sg_address,
+            $cg_address,
+            $get_trace_settings->depth,
+            $target_php_settings,
+            $disk_tracker,
+            $trace_session,
+        );
+        $on_exit_actions = $this->action_factory->buildLifecycleActions(
+            $watch_settings->on_exit_actions,
+            $watch_settings,
+            $trace_output,
+            $target_php_settings->php_version,
+            $eg_address,
+            $sg_address,
+            $cg_address,
+            $get_trace_settings->depth,
+            $target_php_settings,
+            $disk_tracker,
+            $trace_session,
+        );
+
         // Build cooldown
         // CooldownManager handles per-trigger cooldown/backoff only.
         // Global max-triggers is managed via $action_count above.
@@ -238,6 +294,8 @@ final class WatchCommand extends Command
             max_triggers: 0,
         );
 
+        $state_tracker = new TriggerStateTracker();
+
         $php_version = $target_php_settings->php_version;
         $depth = $get_trace_settings->depth;
         $stop_process = (bool)($input->getOption('stop-process') ?? false);
@@ -247,26 +305,46 @@ final class WatchCommand extends Command
         $poll_count = 0;
         $action_count = 0;
 
+        // Use sleep=0 in middleware; timing is managed inside the closure
+        // to support dynamic interval (poll_interval vs trace_interval).
         $loop_settings = new TraceLoopSettings(
-            sleep_nano_seconds: $watch_settings->poll_interval_ms * 1000 * 1000,
+            sleep_nano_seconds: 0,
             cancel_key: 'q',
             max_retries: 0, // no retry — we handle errors per poll
             stop_process: false,
         );
 
+        $poll_interval_ns = $watch_settings->poll_interval_ms * 1000 * 1000;
+        $trace_interval_ns = $watch_settings->trace_interval_ms * 1000 * 1000;
+
         if (!$quiet) {
+            $action_names = array_map(fn (ActionInterface $a) => $a->name(), $actions);
+            $enter_names = array_map(fn (ActionInterface $a) => $a->name(), $on_enter_actions);
+            $exit_names = array_map(fn (ActionInterface $a) => $a->name(), $on_exit_actions);
+            $all_action_desc = implode(',', $action_names);
+            if (count($enter_names) > 0) {
+                $all_action_desc .= ' on-enter=' . implode(',', $enter_names);
+            }
+            if (count($exit_names) > 0) {
+                $all_action_desc .= ' on-exit=' . implode(',', $exit_names);
+            }
             $output->writeln(sprintf(
-                '<info>[watch] Monitoring PID=%d | triggers=%s | actions=%s</info>',
+                '<info>[watch] Monitoring PID=%d | triggers=%s | %s</info>',
                 $process_specifier->pid,
                 implode(',', array_map(fn (TriggerInterface $t) => $t->name(), $triggers)),
-                implode(',', array_map(fn (ActionInterface $a) => $a->name(), $actions)),
+                $all_action_desc,
             ));
+        }
+
+        // Prime the CPU reader with a first sample (always returns null on first call)
+        if ($needs_cpu) {
+            $this->cpu_usage_reader->read($process_specifier->pid);
         }
 
         $this->loop_provider->getMainLoop(
             function () use (
                 $process_specifier,
-                $target_php_settings,
+                $narrowed_target_php_settings,
                 $eg_address,
                 $sg_address,
                 $cg_address,
@@ -275,18 +353,27 @@ final class WatchCommand extends Command
                 $stop_process,
                 $needs_call_trace,
                 $needs_rss,
+                $needs_cpu,
+                $has_lifecycle,
                 $var_specs,
                 $triggers,
                 $actions,
+                $on_enter_actions,
+                $on_exit_actions,
                 $cooldown,
+                $state_tracker,
+                $trace_session,
                 $disk_tracker,
                 $quiet,
                 $watch_settings,
                 $output,
+                $poll_interval_ns,
+                $trace_interval_ns,
                 &$previous_context,
                 &$poll_count,
                 &$action_count,
             ): bool {
+                $loop_start = \hrtime(true);
                 $poll_count++;
                 $now = microtime(true);
 
@@ -295,6 +382,7 @@ final class WatchCommand extends Command
                     $watch_settings->max_triggers > 0
                     && $action_count >= $watch_settings->max_triggers
                 ) {
+                    $trace_session->stop();
                     return false;
                 }
 
@@ -318,12 +406,13 @@ final class WatchCommand extends Command
 
                     $heap_stats = $this->heap_stats_reader->read(
                         $process_specifier,
-                        $target_php_settings,
+                        $narrowed_target_php_settings,
                         $eg_address,
                     );
 
+                    // Read call trace if triggers need it OR tracing is active
                     $call_trace = null;
-                    if ($needs_call_trace) {
+                    if ($needs_call_trace || $trace_session->isActive()) {
                         $call_trace = $this->call_trace_reader
                             ->readCallTrace(
                                 $process_specifier->pid,
@@ -341,7 +430,7 @@ final class WatchCommand extends Command
                             ->readVariables(
                                 $var_specs,
                                 $process_specifier,
-                                $target_php_settings,
+                                $narrowed_target_php_settings,
                                 $eg_address,
                                 $cg_address,
                             );
@@ -351,10 +440,17 @@ final class WatchCommand extends Command
                     if ($needs_rss) {
                         $rss_bytes = $this->rss_reader->read($process_specifier->pid);
                     }
+
+                    $cpu_percent = null;
+                    if ($needs_cpu) {
+                        $cpu_percent = $this->cpu_usage_reader->read($process_specifier->pid);
+                    }
                 } catch (\Throwable) {
                     // Target may be between requests or temporarily
                     // unreadable. Skip this poll, try next cycle.
                     $previous_context = null;
+                    $sleep_ns = $trace_session->isActive() ? $trace_interval_ns : $poll_interval_ns;
+                    $this->dynamicSleep($loop_start, $sleep_ns);
                     return true;
                 }
 
@@ -366,45 +462,92 @@ final class WatchCommand extends Command
                     previous: $previous_context,
                     variable_values: $variable_values,
                     rss_bytes: $rss_bytes,
+                    cpu_usage_percent: $cpu_percent,
                 );
 
-                // Evaluate triggers — collect all fired events in this poll
+                // Record trace sample if continuous tracing is active
+                if ($trace_session->isActive() && $call_trace !== null) {
+                    $trace_session->recordSample($call_trace);
+                }
+
+                // Evaluate triggers with lifecycle tracking
                 /** @var list<TriggerEvent> $fired_events */
                 $fired_events = [];
                 foreach ($triggers as $trigger) {
                     $event = $trigger->evaluate($context);
+                    $is_active = $event !== null;
+
+                    if ($has_lifecycle) {
+                        $phase = $state_tracker->update($trigger->name(), $is_active);
+
+                        if ($phase === TriggerPhase::ENTER && $event !== null) {
+                            if (!$quiet) {
+                                $output->writeln(sprintf(
+                                    '<info>[ENTER] PID=%d | trigger=%s | %s</info>',
+                                    $process_specifier->pid,
+                                    $event->trigger_name,
+                                    $event->description,
+                                ));
+                            }
+                            foreach ($on_enter_actions as $action) {
+                                $action->execute($event, $process_specifier, $context);
+                            }
+                        } elseif ($phase === TriggerPhase::EXIT) {
+                            $exit_event = new TriggerEvent(
+                                trigger_name: $trigger->name(),
+                                description: 'condition cleared',
+                                timestamp: $now,
+                            );
+                            if (!$quiet) {
+                                $output->writeln(sprintf(
+                                    '<info>[EXIT] PID=%d | trigger=%s | condition cleared</info>',
+                                    $process_specifier->pid,
+                                    $trigger->name(),
+                                ));
+                            }
+                            foreach ($on_exit_actions as $action) {
+                                $action->execute($exit_event, $process_specifier, $context);
+                            }
+                            $cooldown->recordClear($trigger->name());
+                            continue;
+                        }
+                    }
+
                     if ($event === null) {
                         $cooldown->recordClear($trigger->name());
                         continue;
                     }
 
-                    if (!$cooldown->canFire($trigger->name(), $now)) {
-                        if (!$quiet) {
-                            $reason = $cooldown->getSkipReason($trigger->name(), $now);
+                    // Regular action path (fires while active, with cooldown)
+                    if (count($actions) > 0) {
+                        if (!$cooldown->canFire($trigger->name(), $now)) {
+                            if (!$quiet && !$has_lifecycle) {
+                                $reason = $cooldown->getSkipReason($trigger->name(), $now);
+                                $output->writeln(sprintf(
+                                    '<comment>[SKIPPED] PID=%d | trigger=%s | reason=%s</comment>',
+                                    $process_specifier->pid,
+                                    $trigger->name(),
+                                    $reason ?? 'cooldown',
+                                ));
+                            }
+                            continue;
+                        }
+
+                        $cooldown->recordFire($trigger->name(), $now);
+                        $fired_events[] = $event;
+
+                        if (!$quiet && !$has_lifecycle) {
                             $output->writeln(sprintf(
-                                '<comment>[SKIPPED] PID=%d | trigger=%s | reason=%s</comment>',
+                                '<info>[TRIGGERED] PID=%d | trigger=%s | %s</info>',
                                 $process_specifier->pid,
-                                $trigger->name(),
-                                $reason ?? 'cooldown',
+                                $event->trigger_name,
+                                $event->description,
                             ));
                         }
-                        continue;
-                    }
-
-                    $cooldown->recordFire($trigger->name(), $now);
-                    $fired_events[] = $event;
-
-                    if (!$quiet) {
-                        $output->writeln(sprintf(
-                            '<info>[TRIGGERED] PID=%d | trigger=%s | %s</info>',
-                            $process_specifier->pid,
-                            $event->trigger_name,
-                            $event->description,
-                        ));
                     }
                 }
 
-                // Execute actions once per poll (not per trigger)
+                // Execute regular actions once per poll (not per trigger)
                 if (count($fired_events) > 0) {
                     $action_count++;
                     $merged_event = count($fired_events) === 1
@@ -434,8 +577,10 @@ final class WatchCommand extends Command
 
                 // Update status line (single process mode)
                 if (!$quiet && $poll_count % 10 === 0) {
+                    $tracing_indicator = $trace_session->isActive() ? ' | TRACING' : '';
+                    $cpu_indicator = $cpu_percent !== null ? sprintf(' | cpu=%.1f%%', $cpu_percent) : '';
                     $output->write(sprintf(
-                        "\r<info>[watching]</info> PID=%d | mem=%s/%s | polls=%d | triggers=%d | disk=%s",
+                        "\r<info>[watching]</info> PID=%d | mem=%s/%s%s | polls=%d | triggers=%d | disk=%s%s",
                         $process_specifier->pid,
                         HeapStats::humanReadableBytes($heap_stats->size),
                         HeapStats::humanReadableBytes(
@@ -443,18 +588,27 @@ final class WatchCommand extends Command
                                 ? $heap_stats->limit
                                 : $heap_stats->real_size
                         ),
+                        $cpu_indicator,
                         $poll_count,
                         $cooldown->getTotalFires(),
                         HeapStats::humanReadableBytes($disk_tracker->getTotalBytes()),
+                        $tracing_indicator,
                     ));
                 }
 
                 $previous_context = $context;
 
+                // Dynamic sleep: use trace_interval when tracing, poll_interval otherwise
+                $interval_ns = $trace_session->isActive() ? $trace_interval_ns : $poll_interval_ns;
+                $this->dynamicSleep($loop_start, $interval_ns);
+
                 return true;
             },
             $loop_settings,
         )->invoke();
+
+        // Ensure trace session is finalized on exit
+        $trace_session->stop();
 
         if (!$quiet) {
             $output->writeln('');
@@ -462,6 +616,18 @@ final class WatchCommand extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * Sleep for the remaining interval, accounting for elapsed execution time.
+     */
+    private function dynamicSleep(int $start_hrtime_ns, int $interval_ns): void
+    {
+        $elapsed = \hrtime(true) - $start_hrtime_ns;
+        $wait = $interval_ns - $elapsed;
+        if ($wait > 0) {
+            \time_nanosleep(0, (int)$wait);
+        }
     }
 
     /**
@@ -501,6 +667,21 @@ final class WatchCommand extends Command
             $trace_output,
             $disk_tracker,
         );
+
+        // Build daemon lifecycle actions for controller-side one-shot actions (log, exec).
+        // trace/stop-trace are handled worker-side via TraceSession.
+        $on_enter_actions = $this->action_factory->buildDaemonLifecycleActions(
+            $watch_settings->on_enter_actions,
+            $watch_settings,
+            $trace_output,
+        );
+        $on_exit_actions = $this->action_factory->buildDaemonLifecycleActions(
+            $watch_settings->on_exit_actions,
+            $watch_settings,
+            $trace_output,
+        );
+        $has_daemon_lifecycle = count($on_enter_actions) > 0 || count($on_exit_actions) > 0;
+        $daemon_state_tracker = new TriggerStateTracker();
 
         // Per-process cooldown/backoff is handled inside each worker.
         // Global max-triggers is enforced here in the controller as a single counter.
@@ -630,6 +811,10 @@ final class WatchCommand extends Command
                     $idx,
                     $worker,
                     $actions,
+                    $on_enter_actions,
+                    $on_exit_actions,
+                    $has_daemon_lifecycle,
+                    $daemon_state_tracker,
                     $output,
                     $quiet,
                     $max_triggers,
@@ -640,24 +825,47 @@ final class WatchCommand extends Command
                     &$exhausted_pids,
                 ) {
                     while (1) {
-                        $result = $worker->receiveTriggerOrDetach();
-                        if ($result instanceof WatchTriggerMessage) {
+                        $result = $worker->receiveMessage();
+                        if ($result instanceof WatchTraceNotifyMessage) {
+                            if (!$quiet) {
+                                $label = $result->started ? 'TRACE STARTED' : 'TRACE STOPPED';
+                                $output->writeln(sprintf(
+                                    '<info>[%s] PID=%d | %s</info>',
+                                    $label,
+                                    $result->pid,
+                                    $result->trace_path ?? '',
+                                ));
+                            }
+                        } elseif ($result instanceof WatchTriggerExitMessage) {
+                            // Trigger condition cleared — execute on-exit actions
+                            if ($has_daemon_lifecycle) {
+                                $state_key = $result->pid . ':' . $result->event->trigger_name;
+                                $daemon_state_tracker->update($state_key, false);
+                                $exit_context = new WatchContext(
+                                    pid: $result->pid,
+                                    heap_stats: new HeapStats(0, 0, 0, 0),
+                                    call_trace: null,
+                                    timestamp: $result->event->timestamp,
+                                    previous: null,
+                                );
+                                $process = new \Reli\Lib\Process\ProcessSpecifier($result->pid);
+                                if (!$quiet) {
+                                    $output->writeln(sprintf(
+                                        '<info>[EXIT] PID=%d | trigger=%s | %s</info>',
+                                        $result->pid,
+                                        $result->event->trigger_name,
+                                        $result->event->description,
+                                    ));
+                                }
+                                foreach ($on_exit_actions as $action) {
+                                    $action->execute($result->event, $process, $exit_context);
+                                }
+                            }
+                        } elseif ($result instanceof WatchTriggerMessage) {
                             $global_trigger_count++;
 
                             if ($max_triggers > 0 && $global_trigger_count > $max_triggers) {
-                                // Silently drop — already past limit
                                 continue;
-                            }
-
-                            if (!$quiet) {
-                                $output->writeln(sprintf(
-                                    '<info>[TRIGGERED] PID=%d | trigger=%s | %s (%d/%s)</info>',
-                                    $result->pid,
-                                    $result->event->trigger_name,
-                                    $result->event->description,
-                                    $global_trigger_count,
-                                    $max_triggers > 0 ? (string)$max_triggers : 'unlimited',
-                                ));
                             }
 
                             $context = new WatchContext(
@@ -671,15 +879,43 @@ final class WatchCommand extends Command
                                 daemon_php_version: $result->php_version,
                             );
 
-                            foreach ($actions as $action) {
-                                $action->execute(
-                                    $result->event,
-                                    new \Reli\Lib\Process\ProcessSpecifier($result->pid),
-                                    $context,
-                                );
+                            $process = new \Reli\Lib\Process\ProcessSpecifier($result->pid);
+
+                            // Lifecycle handling for one-shot on-enter actions (log, exec, etc.)
+                            // Continuous trace is handled worker-side.
+                            if ($has_daemon_lifecycle) {
+                                $state_key = $result->pid . ':' . $result->event->trigger_name;
+                                $phase = $daemon_state_tracker->update($state_key, true);
+                                if ($phase === TriggerPhase::ENTER) {
+                                    if (!$quiet) {
+                                        $output->writeln(sprintf(
+                                            '<info>[ENTER] PID=%d | trigger=%s | %s</info>',
+                                            $result->pid,
+                                            $result->event->trigger_name,
+                                            $result->event->description,
+                                        ));
+                                    }
+                                    foreach ($on_enter_actions as $action) {
+                                        $action->execute($result->event, $process, $context);
+                                    }
+                                }
                             }
 
-                            // Cancel all workers when global limit reached
+                            if (!$quiet && !$has_daemon_lifecycle) {
+                                $output->writeln(sprintf(
+                                    '<info>[TRIGGERED] PID=%d | trigger=%s | %s (%d/%s)</info>',
+                                    $result->pid,
+                                    $result->event->trigger_name,
+                                    $result->event->description,
+                                    $global_trigger_count,
+                                    $max_triggers > 0 ? (string)$max_triggers : 'unlimited',
+                                ));
+                            }
+
+                            foreach ($actions as $action) {
+                                $action->execute($result->event, $process, $context);
+                            }
+
                             if ($max_triggers > 0 && $global_trigger_count >= $max_triggers) {
                                 if (!$quiet) {
                                     $output->writeln(sprintf(
@@ -692,7 +928,40 @@ final class WatchCommand extends Command
                                 $cancellation->cancel();
                                 return;
                             }
-                        } else {
+                        } elseif ($result instanceof WatchDetachMessage) {
+                            // WatchDetachMessage — fire on-exit for one-shot actions
+                            if ($has_daemon_lifecycle) {
+                                $cleared = $daemon_state_tracker->clearPrefix($result->pid . ':');
+                                if (count($cleared) > 0) {
+                                    $exit_event = new TriggerEvent(
+                                        trigger_name: implode('+', array_map(
+                                            fn (string $k) => explode(':', $k, 2)[1] ?? $k,
+                                            $cleared,
+                                        )),
+                                        description: 'process detached',
+                                        timestamp: \microtime(true),
+                                    );
+                                    $exit_context = new WatchContext(
+                                        pid: $result->pid,
+                                        heap_stats: new HeapStats(0, 0, 0, 0),
+                                        call_trace: null,
+                                        timestamp: \microtime(true),
+                                        previous: null,
+                                    );
+                                    $process = new \Reli\Lib\Process\ProcessSpecifier($result->pid);
+                                    if (!$quiet) {
+                                        $output->writeln(sprintf(
+                                            '<info>[EXIT] PID=%d | %s | process detached</info>',
+                                            $result->pid,
+                                            $exit_event->trigger_name,
+                                        ));
+                                    }
+                                    foreach ($on_exit_actions as $action) {
+                                        $action->execute($exit_event, $process, $exit_context);
+                                    }
+                                }
+                            }
+
                             if (!$quiet) {
                                 $output->writeln(sprintf(
                                     '<comment>[-process] PID=%d detached from worker %d</comment>',

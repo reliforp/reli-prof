@@ -23,13 +23,18 @@ WatchCommand::execute()
   └── LoopBuilder middleware chain:
        ├── HeapStatsReader::read()              (always, Tier 1)
        ├── RssReader::read()                    (if RssUsageTrigger)
-       ├── CallTraceReader::readCallTrace()     (if Tier 2 trigger)
+       ├── CpuUsageReader::read()               (if CpuUsageTrigger)
+       ├── CallTraceReader::readCallTrace()     (if Tier 2 trigger OR tracing)
        ├── HeapStatsReader::hasException()      (if ExceptionDetectionTrigger)
        ├── VariableReader::readVariables()      (if VariableValueTrigger)
        ├── WatchContext construction
+       ├── TraceSession::recordSample()         (if tracing active)
+       ├── TriggerStateTracker phase detection
+       ├── on-enter / on-exit action execution
        ├── Trigger evaluation → merged TriggerEvent
        ├── CooldownManager check
-       └── Action execution (once per poll, not per trigger)
+       ├── Regular action execution (once per poll, not per trigger)
+       └── Dynamic sleep (poll_interval or trace_interval)
 ```
 
 ### Daemon Mode
@@ -57,12 +62,22 @@ WatchCommand::executeDaemonMode()
 
 | Tier | What's Read | Cost | Triggers |
 |------|-------------|------|----------|
-| 1 | ZendMmHeap stats only | < 1ms | MemoryLimit, GrowthRate, PeakWatch, RssUsage |
+| 1 | ZendMmHeap stats only | < 1ms | MemoryLimit, GrowthRate, PeakWatch, RssUsage, CpuUsage |
 | 2 | + Call trace | ~ms | FunctionDetection, TraceDepth |
 | 3 | + EG exception, variables | ~10ms | ExceptionDetection, VariableValue |
 
-Only reads what the active triggers require. `needs_call_trace` and
-`needs_exception_check` are computed at startup from trigger types.
+Only reads what the active triggers require. `needs_call_trace`,
+`needs_cpu`, and `needs_exception_check` are computed at startup
+from trigger types.
+
+### CpuUsageTrigger
+
+Reads `/proc/[pid]/stat` utime+stime fields. Computes delta CPU% between
+polls using `SC_CLK_TCK`. First poll always returns null (needs two samples).
+
+Supports hysteresis (separate enter/exit thresholds) and sustain duration
+(must stay above threshold for N seconds before entering). Internal state
+machine: INACTIVE → (cpu >= enter for sustain_s) → ACTIVE → (cpu < exit) → INACTIVE.
 
 ### Event Merging
 
@@ -161,14 +176,67 @@ root name + list of `['[]', key]` or `['->', prop]` segments.
    `frameMatchesFunction()` with strict exact match on
    `ZendFunction::getFullyQualifiedFunctionName()`.
 
+## Trigger State Tracking (on-enter / on-exit)
+
+`TriggerStateTracker` wraps trigger evaluation to detect state transitions:
+
+```
+TriggerPhase (enum):
+  ENTER   — was inactive, now active   → execute --on-enter actions
+  EXIT    — was active, now inactive   → execute --on-exit actions
+  ACTIVE  — still active               → execute --action with cooldown
+  null    — still inactive             → no action
+
+Poll loop:
+  for each trigger:
+    event = trigger.evaluate(context)
+    phase = state_tracker.update(trigger.name, event !== null)
+    ENTER  → on-enter actions (once, no cooldown)
+    EXIT   → on-exit actions (once) + cooldown.recordClear
+    ACTIVE → regular --action (with cooldown)
+```
+
+This preserves full backward compatibility. Without `--on-enter`/`--on-exit`,
+the existing `--action` behavior is unchanged.
+
+### Continuous Tracing (TraceSession)
+
+`TraceSession` manages the lifecycle of `.rbt` trace recording:
+
+```
+ContinuousTraceAction (on-enter) → TraceSession.start()
+Poll loop: if session.isActive() → session.recordSample(call_trace)
+StopTraceAction (on-exit) → TraceSession.stop() → finalize .rbt
+```
+
+**Dynamic poll interval:** When trace session is active, the poll loop
+switches from `--poll-interval` (default 1s) to `--trace-interval`
+(default 10ms) for higher sampling resolution.
+
+**Interaction with other actions:** The watch monitoring loop continues
+normally during tracing. Other triggers evaluate at the same frequency.
+Memory dumps (which ptrace-stop the target) naturally pause tracing.
+
+**CPU sampling window stability:** CpuUsageReader uses a minimum 0.5s
+sampling window regardless of poll frequency. When tracing at 10ms, the
+CPU% is still averaged over 0.5s, preventing noisy exit transitions.
+
+**Daemon mode:** Each worker manages its own TraceSession locally.
+Workers detect trigger state transitions via TriggerStateTracker and
+start/stop traces autonomously. Two messages flow on EXIT:
+`WatchTraceNotifyMessage` (trace lifecycle) and `WatchTriggerExitMessage`
+(on-exit one-shot actions). No trace sample data flows through the channel.
+
 ## Action System
 
-| Action | Single-Process | Daemon |
-|--------|---------------|--------|
-| trace | TraceAction (reads or reuses from context) | DaemonTraceAction (from WatchTriggerMessage) |
-| log | LogAction (stderr or file) | LogAction (same) |
-| exec | ExecAction (fire-and-forget, /dev/null) | ExecAction (same) |
-| memory-dump | MemoryDumpAction (MemoryDumper) | DaemonMemoryDumpAction (MemoryDumper + WatchContext addresses) |
+| Action | Type | Single-Process | Daemon |
+|--------|------|---------------|--------|
+| trace-once | one-shot | TraceAction (reads or reuses from context) | DaemonTraceAction (from WatchTriggerMessage) |
+| trace | stateful | ContinuousTraceAction → TraceSession.start() | Worker-local TraceSession |
+| stop-trace | stateful | StopTraceAction → TraceSession.stop() | Worker-local TraceSession.stop() |
+| log | one-shot | LogAction (stderr or file) | LogAction (same) |
+| exec | one-shot | ExecAction (fire-and-forget, /dev/null) | ExecAction (same) |
+| memory-dump | one-shot | MemoryDumpAction (MemoryDumper) | DaemonMemoryDumpAction (MemoryDumper + WatchContext addresses) |
 
 ### MemoryDumper
 
@@ -199,23 +267,57 @@ the restart-resilient mechanisms instead.
 Controller                          Worker (subprocess)
 ─────────                           ──────
 sendSettings(WatchSettings)    →    receiveSettings()
-                                      ↓ build triggers + cooldown
+                                      ↓ build triggers + cooldown + state tracker
 sendAttach(WatchTargetDescriptor) → receiveAttach()
                                       ↓ poll loop:
                                       │  HeapStatsReader.read()
-                                      │  CallTraceReader (if needed)
-                                      │  hasException() (if needed)
+                                      │  CpuUsageReader.read() (if needed)
+                                      │  CallTraceReader (if needed OR tracing)
                                       │  readVariables() (if needed)
-                                      │  trigger.evaluate()
-                                      │  cooldown check
-                                      │  if fired:
-receiveTriggerOrDetach()       ←       sendTrigger(WatchTriggerMessage)
+                                      │  TraceSession.recordSample() (if tracing)
+                                      │  trigger.evaluate() + state tracking
+                                      │
+                                      │  on ENTER:
+                                      │    TraceSession.start() (if continuous trace)
+receiveMessage()               ←       sendTraceNotify(STARTED)
+                                      │
+                                      │  on EXIT:
+                                      │    TraceSession.stop() (if tracing)
+receiveMessage()               ←       sendTraceNotify(STOPPED)
+receiveMessage()               ←       sendTriggerExit(WatchTriggerExitMessage)
+  → on-exit actions (log, exec)       │
+                                      │  while ACTIVE (cooldown check):
+receiveMessage()               ←       sendTrigger(WatchTriggerMessage)
+  → on-enter actions (1st time)       │
+  → regular actions                   │
+                                      │  dynamic sleep (trace/poll interval)
                                       ↓ on process exit:
-receiveTriggerOrDetach()       ←       sendDetach(WatchDetachMessage)
+                                      │  TraceSession.stop() if active
+receiveMessage()               ←       sendDetach(WatchDetachMessage)
+  → on-exit for remaining active      │
 ```
+
+### Message Types (Worker → Controller)
+
+| Message | When | Controller action |
+|---------|------|-------------------|
+| `WatchTriggerMessage` | Trigger fires (condition true + cooldown) | Execute on-enter (1st), regular actions |
+| `WatchTriggerExitMessage` | Trigger condition clears | Execute on-exit actions (log, exec) |
+| `WatchTraceNotifyMessage` | Trace session starts or stops | Log notification |
+| `WatchDetachMessage` | Process exits or read failures | Clean up, execute on-exit for any remaining active triggers |
 
 Worker handles per-process cooldown/backoff internally.
 Controller handles global max-triggers counter.
+
+### Responsibility Split
+
+| Concern | Single-process | Daemon |
+|---------|---------------|--------|
+| Trigger evaluation | WatchCommand poll loop | Worker poll loop |
+| State tracking (enter/exit) | TriggerStateTracker in command | TriggerStateTracker in worker |
+| Continuous trace (stateful) | TraceSession in command | TraceSession in worker (local .rbt) |
+| One-shot on-enter/on-exit (log, exec) | Direct execution | Worker sends message → controller executes |
+| Regular actions with cooldown | Direct execution | Worker sends trigger → controller executes |
 
 ### WatchTargetDescriptor vs TargetProcessDescriptor
 

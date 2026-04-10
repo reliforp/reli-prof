@@ -17,6 +17,8 @@ use Amp\Sync\Channel;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchAttachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchSettingsMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerExitMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
 
@@ -27,6 +29,10 @@ final class TestWatchWorkerProtocol implements PhpWatchWorkerProtocolInterface
     public ?WatchDetachMessage $detach_message = null;
     /** @var list<WatchTriggerMessage> */
     public array $triggers = [];
+    /** @var list<WatchTriggerExitMessage> */
+    public array $trigger_exits = [];
+    /** @var list<WatchTraceNotifyMessage> */
+    public array $trace_notifications = [];
 
     public function __construct(
         private WatchSettingsMessage $settings_message,
@@ -54,6 +60,16 @@ final class TestWatchWorkerProtocol implements PhpWatchWorkerProtocolInterface
     public function sendTrigger(WatchTriggerMessage $message): void
     {
         $this->triggers[] = $message;
+    }
+
+    public function sendTriggerExit(WatchTriggerExitMessage $message): void
+    {
+        $this->trigger_exits[] = $message;
+    }
+
+    public function sendTraceNotify(WatchTraceNotifyMessage $message): void
+    {
+        $this->trace_notifications[] = $message;
     }
 
     public function sendDetach(WatchDetachMessage $message): void

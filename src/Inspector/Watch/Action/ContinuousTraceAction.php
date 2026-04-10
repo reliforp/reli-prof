@@ -13,26 +13,30 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Watch\Action;
 
-use Reli\Inspector\Output\TraceOutput\TraceOutput;
+use Reli\Inspector\Watch\TraceSession;
 use Reli\Inspector\Watch\TriggerEvent;
 use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Process\ProcessSpecifier;
 
 /**
- * Trace action for daemon mode.
- * Outputs the call trace already available in WatchContext (received from worker).
+ * Starts a continuous trace recording session.
+ *
+ * Intended for use as an on-enter action. The actual per-sample
+ * recording is driven by the watch poll loop calling
+ * TraceSession::recordSample(). Use StopTraceAction as the
+ * on-exit counterpart.
  */
-final class DaemonTraceAction implements ActionInterface
+final class ContinuousTraceAction implements ActionInterface
 {
     public function __construct(
-        private TraceOutput $trace_output,
+        private TraceSession $trace_session,
     ) {
     }
 
     #[\Override]
     public function name(): string
     {
-        return 'trace-once';
+        return 'trace';
     }
 
     #[\Override]
@@ -41,8 +45,6 @@ final class DaemonTraceAction implements ActionInterface
         ProcessSpecifier $process,
         WatchContext $context,
     ): void {
-        if ($context->call_trace !== null) {
-            $this->trace_output->output($context->call_trace);
-        }
+        $this->trace_session->start($process->pid, $context->timestamp);
     }
 }

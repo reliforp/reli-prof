@@ -14,9 +14,8 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch\Daemon\Protocol;
 
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchAttachMessage;
-use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchSettingsMessage;
-use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchWorkerMessage;
 use Reli\Lib\Amphp\MessageProtocolInterface;
 
 interface PhpWatchControllerProtocolInterface extends MessageProtocolInterface
@@ -25,5 +24,5 @@ interface PhpWatchControllerProtocolInterface extends MessageProtocolInterface
 
     public function sendAttach(WatchAttachMessage $message): void;
 
-    public function receiveTriggerOrDetach(): WatchTriggerMessage|WatchDetachMessage;
+    public function receiveMessage(): WatchWorkerMessage;
 }

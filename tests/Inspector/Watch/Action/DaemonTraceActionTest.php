@@ -29,7 +29,7 @@ class DaemonTraceActionTest extends BaseTestCase
     {
         $trace_output = Mockery::mock(TraceOutput::class);
         $action = new DaemonTraceAction($trace_output);
-        $this->assertSame('trace', $action->name());
+        $this->assertSame('trace-once', $action->name());
     }
 
     public function testOutputsTraceFromContext(): void

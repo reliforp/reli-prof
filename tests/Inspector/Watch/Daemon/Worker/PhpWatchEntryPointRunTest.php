@@ -128,6 +128,7 @@ class PhpWatchEntryPointRunTest extends TestCase
         $entry_point = new PhpWatchEntryPoint(
             heap_stats_reader: $this->createFailingHeapStatsReader(),
             rss_reader: new \Reli\Inspector\Watch\RssReader(),
+            cpu_usage_reader: new \Reli\Inspector\Watch\CpuUsageReader(),
             call_trace_reader: $this->createCallTraceReader(),
             variable_reader: $this->createVariableReader(),
             protocol: $protocol,
@@ -153,6 +154,7 @@ class PhpWatchEntryPointRunTest extends TestCase
         $entry_point = new PhpWatchEntryPoint(
             heap_stats_reader: $this->createFailingHeapStatsReader(),
             rss_reader: new \Reli\Inspector\Watch\RssReader(),
+            cpu_usage_reader: new \Reli\Inspector\Watch\CpuUsageReader(),
             call_trace_reader: $this->createCallTraceReader(),
             variable_reader: $this->createVariableReader(),
             protocol: $protocol,

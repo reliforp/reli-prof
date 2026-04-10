@@ -20,7 +20,7 @@ use Reli\Inspector\Settings\WatchSettings\WatchSettings;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchAttachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchSettingsMessage;
-use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchWorkerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchControllerProtocolInterface;
 
 final class PhpWatchController implements PhpWatchControllerInterface
@@ -101,17 +101,17 @@ final class PhpWatchController implements PhpWatchControllerInterface
     }
 
     #[\Override]
-    public function receiveTriggerOrDetach(): WatchTriggerMessage|WatchDetachMessage
+    public function receiveMessage(): WatchWorkerMessage
     {
         return $this->auto_context_recovering->withAutoRecover(
-            function (PhpWatchControllerProtocolInterface $protocol): WatchTriggerMessage|WatchDetachMessage {
-                $message = $protocol->receiveTriggerOrDetach();
+            function (PhpWatchControllerProtocolInterface $protocol): WatchWorkerMessage {
+                $message = $protocol->receiveMessage();
                 if ($message instanceof WatchDetachMessage) {
                     $this->attach_already_sent = null;
                 }
                 return $message;
             },
-            'failed to receive trigger or detach from watch worker',
+            'failed to receive message from watch worker',
         );
     }
 }

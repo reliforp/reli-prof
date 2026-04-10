@@ -30,6 +30,8 @@ final class WatchContext
         public readonly array $variable_values = [],
         /** RSS (Resident Set Size) in bytes, read from /proc/[pid]/statm */
         public readonly ?int $rss_bytes = null,
+        /** CPU usage percentage for this PID (from CpuUsageReader), null if unavailable */
+        public readonly ?float $cpu_usage_percent = null,
         /** Daemon mode: EG address from WatchTriggerMessage */
         public readonly int $daemon_eg_address = 0,
         /** Daemon mode: CG address from WatchTriggerMessage */

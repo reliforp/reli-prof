@@ -127,7 +127,7 @@ final class PhpWatchControllerTest extends BaseTestCase
 
         $protocol = Mockery::mock(PhpWatchControllerProtocolInterface::class);
         $protocol->expects()
-            ->receiveTriggerOrDetach()
+            ->receiveMessage()
             ->andReturn($triggerMsg)
         ;
 
@@ -143,7 +143,7 @@ final class PhpWatchControllerTest extends BaseTestCase
         ;
 
         $controller = new PhpWatchController($auto);
-        $result = $controller->receiveTriggerOrDetach();
+        $result = $controller->receiveMessage();
         $this->assertInstanceOf(WatchTriggerMessage::class, $result);
         $this->assertSame(123, $result->pid);
     }
@@ -154,7 +154,7 @@ final class PhpWatchControllerTest extends BaseTestCase
 
         $protocol = Mockery::mock(PhpWatchControllerProtocolInterface::class);
         $protocol->expects()
-            ->receiveTriggerOrDetach()
+            ->receiveMessage()
             ->andReturn($detachMsg)
         ;
 
@@ -170,7 +170,7 @@ final class PhpWatchControllerTest extends BaseTestCase
         ;
 
         $controller = new PhpWatchController($auto);
-        $result = $controller->receiveTriggerOrDetach();
+        $result = $controller->receiveMessage();
         $this->assertInstanceOf(WatchDetachMessage::class, $result);
         $this->assertSame(456, $result->pid);
     }

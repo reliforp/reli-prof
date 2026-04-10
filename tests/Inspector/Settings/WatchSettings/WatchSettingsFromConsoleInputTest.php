@@ -30,7 +30,12 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'watch-function' => null,
             'trace-depth-limit' => null,
             'watch-var' => [],
+            'cpu-usage' => null,
+            'cpu-usage-exit' => null,
+            'cpu-sustain' => null,
             'action' => ['memory-dump'],
+            'on-enter' => [],
+            'on-exit' => [],
             'action-exec-command' => null,
             'action-output-dir' => null,
             'log-file' => null,
@@ -44,6 +49,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'backoff-multiplier' => null,
             'backoff-max' => null,
             'status-interval' => null,
+            'trace-interval' => null,
             'quiet-watch' => false,
             'include-binary' => false,
             'memory-limit' => null,
@@ -174,10 +180,10 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
     {
         $settings = (new WatchSettingsFromConsoleInput())
             ->createSettings($this->makeInput([
-                'action' => ['trace', 'log'],
+                'action' => ['trace-once', 'log'],
             ]));
 
-        $this->assertSame(['trace', 'log'], $settings->actions);
+        $this->assertSame(['trace-once', 'log'], $settings->actions);
     }
 
     public function testMaxDumpSize(): void

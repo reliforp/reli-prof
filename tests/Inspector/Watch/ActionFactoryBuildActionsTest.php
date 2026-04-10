@@ -80,7 +80,7 @@ class ActionFactoryBuildActionsTest extends BaseTestCase
         $tps = new TargetPhpSettings(php_version: 'v84');
 
         $actions = $factory->buildActions(
-            $this->makeSettings(['actions' => ['trace']]),
+            $this->makeSettings(['actions' => ['trace-once']]),
             $output,
             'v84',
             0x1000,
@@ -189,7 +189,7 @@ class ActionFactoryBuildActionsTest extends BaseTestCase
 
         $actions = $factory->buildActions(
             $this->makeSettings([
-                'actions' => ['trace', 'log', 'memory-dump', 'exec'],
+                'actions' => ['trace-once', 'log', 'memory-dump', 'exec'],
                 'action_exec_command' => 'curl http://example.com',
             ]),
             $output,

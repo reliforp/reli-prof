@@ -152,6 +152,32 @@ Variable names support path expressions for nested array keys and object propert
 --watch-var='local::<main>()$counter:gt:1000'
 ```
 
+### CPU Usage (`--cpu-usage=<percent>`)
+
+Fires when the process's CPU usage exceeds the threshold. Reads from `/proc/[pid]/stat` (user + system time).
+
+```bash
+reli inspector:watch -p <pid> --cpu-usage=80
+```
+
+Supports **hysteresis** to prevent rapid toggling around a single boundary:
+
+```bash
+# Enter when CPU >= 80%, exit when CPU < 60%
+reli inspector:watch -p <pid> --cpu-usage=80 --cpu-usage-exit=60
+```
+
+Supports **sustain duration** — the condition must hold continuously before entering:
+
+```bash
+# CPU must stay >= 80% for 5 seconds before triggering
+reli inspector:watch -p <pid> --cpu-usage=80 --cpu-sustain=5
+```
+
+Note: the first poll always returns null (needs two samples to compute delta), so the trigger never fires on the very first poll.
+
+**Sampling window:** CPU% is calculated over a minimum 0.5-second window regardless of `--poll-interval` or `--trace-interval`. When tracing at 10ms intervals, the CPU% still reflects the average over the last 0.5s, preventing noisy readings from causing premature exit transitions.
+
 ### Combining Triggers
 
 Multiple triggers can be active simultaneously. When multiple triggers fire in the same poll cycle, actions execute **once** with a merged event:
@@ -168,7 +194,46 @@ Output: `[TRIGGERED] PID=1234 | trigger=memory-usage+memory-peak-watch | ...`
 
 ## Actions
 
-Actions define **what to do** when a trigger fires. Default: `memory-dump`.
+Actions define **what to do** when a trigger fires.
+
+There are three categories:
+
+| Category | Actions | When |
+|----------|---------|------|
+| One-shot | `memory-dump`, `trace-once`, `log`, `exec` | Fires each time (with cooldown) |
+| Stateful start | `trace` | Starts continuous trace recording |
+| Stateful stop | `stop-trace` | Stops continuous trace recording |
+
+### `--action` (Regular Actions)
+
+Regular actions fire while the trigger condition is active, subject to cooldown. Default: `memory-dump`.
+
+### `--on-enter` / `--on-exit` (Lifecycle Actions)
+
+Lifecycle actions fire exactly once on state transitions:
+
+- `--on-enter=<action>`: fires when the trigger condition **becomes true**
+- `--on-exit=<action>`: fires when the trigger condition **becomes false**
+
+Both are repeatable. Combine with `--action` for mixed behavior:
+
+```bash
+# On CPU spike: start tracing + log; on recovery: stop tracing + log
+reli inspector:watch -p <pid> \
+  --cpu-usage=80 --cpu-usage-exit=60 --cpu-sustain=5 \
+  --on-enter=trace --on-enter=log \
+  --on-exit=stop-trace --on-exit=log \
+  --trace-interval=10
+```
+
+```bash
+# Mixed: start tracing on enter, also take memory dumps while active
+reli inspector:watch -p <pid> \
+  --cpu-usage=80 --cpu-usage-exit=60 \
+  --on-enter=trace \
+  --on-exit=stop-trace \
+  --action=memory-dump
+```
 
 ### Memory Dump (`--action=memory-dump`)
 
@@ -180,13 +245,34 @@ reli inspector:watch -p <pid> --memory-usage=256M --action=memory-dump
 
 Output files: `<output-dir>/watch-<pid>-<timestamp>.dump`
 
-### Trace Capture (`--action=trace`)
+### Trace Snapshot (`--action=trace-once`)
 
-Outputs the call trace at the moment the trigger fires.
+Outputs the call trace at the moment the trigger fires (one-shot).
 
 ```bash
-reli inspector:watch -p <pid> --watch-function="sleep" --action=trace
+reli inspector:watch -p <pid> --watch-function="sleep" --action=trace-once
 ```
+
+`trace` in `--action` means `trace-once` (one-shot). For continuous recording, use `--on-enter=trace` with `--on-exit=stop-trace`.
+
+### Continuous Trace (`--on-enter=trace` / `--on-exit=stop-trace`)
+
+Starts/stops a continuous `.rbt` trace recording that samples the call stack at `--trace-interval` frequency while the trigger condition holds.
+
+```bash
+reli inspector:watch -p <pid> \
+  --cpu-usage=80 --cpu-usage-exit=60 \
+  --on-enter=trace --on-exit=stop-trace \
+  --trace-interval=10
+```
+
+Output files: `<output-dir>/watch-trace-<pid>-<timestamp>.rbt`
+
+During continuous tracing, the poll interval automatically switches to `--trace-interval` (default: 10ms) for higher sampling resolution. When tracing stops, it reverts to `--poll-interval`.
+
+The trace session can coexist with other actions — memory dumps, log events, and exec commands continue to work during tracing.
+
+In **daemon mode**, each worker manages its own trace session locally. Trace files are written to `--action-output-dir` with per-PID filenames. The controller receives notifications when traces start and stop.
 
 ### Event Log (`--action=log`)
 
@@ -311,7 +397,13 @@ Global `--max-triggers` (or `--oneshot`) is a single counter across all workers.
 | `--watch-function` | — | Trigger on function in call stack |
 | `--trace-depth-limit` | — | Trigger on call stack depth |
 | `--watch-var` | — | Trigger on variable value condition (repeatable) |
-| `--action` | `memory-dump` | Actions to execute (repeatable) |
+| `--cpu-usage` | — | Trigger on process CPU usage (percent) |
+| `--cpu-usage-exit` | same as enter | CPU exit threshold (hysteresis) |
+| `--cpu-sustain` | `0` | Seconds CPU must stay above threshold |
+| `--action` | `memory-dump` | Regular actions while active (repeatable) |
+| `--on-enter` | — | Actions on enter transition (repeatable) |
+| `--on-exit` | — | Actions on exit transition (repeatable) |
+| `--trace-interval` | `10` | Sampling interval (ms) during tracing |
 | `--action-exec-command` | — | Command for exec action |
 | `--action-output-dir` | `.` | Output directory for dumps and logs |
 | `--log-file` | stderr | Log file path for log action |
