@@ -504,10 +504,10 @@ final class ExploreTui
             ExploreMode::ListSelf  => 'self-time top',
             ExploreMode::ListTotal => 'total-time top',
             ExploreMode::Sandwich  => match ($state->sandwich_view) {
-                SandwichView::Panes       => 'sandwich · panes (caller/callee drilldown)',
-                SandwichView::Flame       => 'sandwich · flame (bidirectional flame chart)',
-                SandwichView::TreeCallees => 'sandwich · callee tree (toward leaves)',
-                SandwichView::TreeCallers => 'sandwich · caller tree (toward roots)',
+                SandwichView::Panes       => 'sandwich panes (caller/callee drilldown)',
+                SandwichView::Flame       => 'sandwich flame (bidirectional flame chart)',
+                SandwichView::TreeCallees => 'callee tree (toward leaves)',
+                SandwichView::TreeCallers => 'caller tree (toward roots)',
             },
         };
         $line2 = sprintf('mode: %s   history: %d back', $mode_label, $hist);
