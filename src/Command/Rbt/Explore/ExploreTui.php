@@ -864,35 +864,13 @@ final class ExploreTui
      */
     private function getCursorKeyId(): ?int
     {
-        $state = $this->currentState();
-        if ($state->mode !== ExploreMode::Sandwich) {
-            return null;
-        }
-        switch ($state->active_pane) {
-            case ActivePane::Callers:
-                $rows = $this->applyViewFilter(
-                    $this->ensureCallers()['rows'],
-                    $state->view_filter,
-                );
-                $idx = $this->callers_selected;
-                break;
-            case ActivePane::Callees:
-                $rows = $this->applyViewFilter(
-                    $this->ensureCallees()['rows'],
-                    $state->view_filter,
-                );
-                $idx = $this->callees_selected;
-                break;
-            case ActivePane::Overview:
-                $rows = $this->ensureOverview()['rows'];
-                $idx = $this->overview_selected;
-                break;
-        }
-        if (!isset($rows[$idx])) {
-            return null;
-        }
-        [, $key_id, ] = $rows[$idx];
-        return $key_id < 0 ? null : $key_id;
+        // Delegate to the view-aware helper introduced by the unified
+        // sandwich-mode refactor. It already knows how to read the
+        // cursor out of every SandwichView (panes / flame / tree),
+        // and returns null for synthetic <root>/<leaf> rows so the
+        // mini-flame highlight only ever lands on real frames.
+        $cursor = $this->getActiveCursorFrame();
+        return $cursor === null ? null : $cursor['key_id'];
     }
 
     private function renderFooter(ViewState $state, int $cols): string
@@ -2744,23 +2722,15 @@ final class ExploreTui
             $this->status = 'cannot focus synthetic <root>/<leaf>';
             return;
         }
-        // Snapshot the current overview cursor into the *outgoing* state
-        // before pushing the new one. popFocus will restore it on the
-        // way back so the user doesn't lose their place in the sidebar.
-        $this->stack[count($this->stack) - 1] = $state->withOverviewCursor(
-            $this->overview_selected,
-            $this->overview_top_row,
-        );
-        $this->stack[] = new ViewState(
-            mode: ExploreMode::Sandwich,
-            focus_id: $key_id,
-            focus_label: $label,
-            active_pane: $state->active_pane,
-            overview_selected: $this->overview_selected,
-            overview_top_row: $this->overview_top_row,
-        );
-        $this->resetScrolls();
-        $this->invalidate();
+        // Inherit the current sandwich_view so focusing from the
+        // overview pane while in flame / tree view stays in flame /
+        // tree view, instead of dropping back to panes mode the way
+        // the manual constructor used to (it defaulted sandwich_view
+        // to Panes by omitting the field). pushSandwichFocus also
+        // snapshots the outgoing overview cursor onto the previous
+        // state and resets the per-view cursors so the new view
+        // re-centres on the new focus.
+        $this->pushSandwichFocus($key_id, $label, $state->sandwich_view);
     }
 
     private function popFocus(): void
