@@ -1089,7 +1089,12 @@ final class ExploreTui
             if ($vis === $focus_visual) {
                 $focus_label = $state->focus_label ?? '<none>';
                 if ($this->flame_label_right_align) {
-                    $focus_text = self::shorten($focus_label, $inner_w - 4) . ' ◀ ';
+                    // Compact + shortenLeft so the focus banner truncation
+                    // matches the bars: method:line stays visible, the
+                    // namespace prefix is the first thing to drop.
+                    $compact_focus = self::compactFlameLabel($focus_label);
+                    $short_focus = self::shortenLeft($compact_focus, $inner_w - 4);
+                    $focus_text = $short_focus . ' ◀ ';
                     $pad_len = max(0, $inner_w - mb_strlen($focus_text));
                     $padded = str_repeat(' ', $pad_len) . $focus_text;
                 } else {
@@ -1181,22 +1186,27 @@ final class ExploreTui
             $w = $bar['w'];
             if ($w >= 4) {
                 $label = Aggregator::labelFor($this->model, $bar['key_id'], $no_line);
-                // Strip "file:line" tail when present so the function
-                // name fits even in cramped bars.
-                $space_pos = strpos($label, ' ');
-                $short = $space_pos !== false
-                    ? substr($label, 0, $space_pos)
-                    : $label;
-                $short = self::shorten($short, $w - 1);
                 if ($this->flame_label_right_align) {
-                    // Right-align: pad on the LEFT with spaces so the
-                    // label sits flush against the bar's right edge
-                    // (with a 1-cell trailing margin so adjacent bars
-                    // don't visually fuse). Anchors each label next
-                    // to its own bar's "ownership boundary".
+                    // Right-align: keep "function:line" (drop the file
+                    // path; the line number is short and useful), then
+                    // shortenLeft so the rightmost part — the method
+                    // name + line — stays visible at narrow widths.
+                    // Pad on the LEFT with spaces so the label sits
+                    // flush against the bar's right edge with a
+                    // 1-cell trailing margin.
+                    $compact = self::compactFlameLabel($label);
+                    $short = self::shortenLeft($compact, $w - 1);
                     $pad_len = max(0, $w - mb_strlen($short) - 1);
                     $cell = str_repeat(' ', $pad_len) . $short . ' ';
                 } else {
+                    // Left-align: just the function name (drop the
+                    // file:line tail entirely), shortened from the
+                    // right so the namespace prefix stays visible.
+                    $space_pos = strpos($label, ' ');
+                    $short = $space_pos !== false
+                        ? substr($label, 0, $space_pos)
+                        : $label;
+                    $short = self::shorten($short, $w - 1);
                     $cell = ' ' . $short;
                 }
             } else {
@@ -3183,6 +3193,49 @@ final class ExploreTui
             return mb_substr($s, 0, $width);
         }
         return mb_substr($s, 0, $width - 1) . '…';
+    }
+
+    /**
+     * Mirror of {@see self::shorten} that drops characters from the
+     * LEFT side of $s instead of the right. Used by the right-aligned
+     * flame label rendering so the rightmost part of the function
+     * name (the bare method name + line number) stays visible at
+     * narrow bar widths instead of being cut.
+     */
+    private static function shortenLeft(string $s, int $width): string
+    {
+        if ($width <= 0) {
+            return '';
+        }
+        $len = mb_strlen($s);
+        if ($len <= $width) {
+            return $s;
+        }
+        if ($width <= 1) {
+            return mb_substr($s, $len - $width, $width);
+        }
+        return '…' . mb_substr($s, $len - ($width - 1));
+    }
+
+    /**
+     * Compact a "function file:line" label into "function:line" by
+     * dropping the file path. Used by the right-aligned flame label
+     * mode so the user keeps the line number visible (it's tiny —
+     * 3-4 chars typically) without sacrificing the method name to
+     * a long file path. Falls back to the raw label when the format
+     * doesn't match (no_line mode, synthetic <root>/<leaf>, etc.).
+     */
+    private static function compactFlameLabel(string $label): string
+    {
+        $space_pos = strpos($label, ' ');
+        if ($space_pos === false) {
+            return $label;
+        }
+        $colon_pos = strrpos($label, ':');
+        if ($colon_pos === false || $colon_pos <= $space_pos) {
+            return substr($label, 0, $space_pos);
+        }
+        return substr($label, 0, $space_pos) . substr($label, $colon_pos);
     }
 
     /**
