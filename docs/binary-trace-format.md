@@ -294,32 +294,44 @@ This is the most compact representation of a sample. It is used automatically wh
 
 ### REPEAT_SAMPLE (0x09)
 
-Repeats the most recent sample's stack_id a given number of times. Like COMPACT_SAMPLE, this event has **no payload_length**.
+Repeats the most recent **completed sample** a given number of times. A completed sample includes its stack and any annotations. Like COMPACT_SAMPLE, this event has **no payload_length**.
 
 ```
 [0x09] [count: varint]
 ```
 
 - `count` is the number of additional occurrences (e.g., count=4 means 4 more copies)
-- A preceding COMPACT_SAMPLE (or SAMPLE/PID_SAMPLE) must exist in the current segment
-- If no preceding sample exists, the stream is considered corrupt
+- The "completed sample" being repeated includes both the trace/stack and any `SAMPLE_ANNOTATION` that followed it
+- A preceding completed sample must exist in the current segment; if not, the stream is corrupt
+- `SAMPLE_ANNOTATION` **must not** follow `REPEAT_SAMPLE` — annotations attach only to the original sample event, and REPEAT copies the completed result
 
-**When used**: The writer emits REPEAT_SAMPLE for runs of 3 or more identical consecutive stacks (in `timestamps=none` mode only). Runs of 1-2 use individual COMPACT_SAMPLE events, as REPEAT_SAMPLE offers no size benefit at that length.
+**Run key**: The writer considers two consecutive samples identical only if both their `stack_id` **and** their annotations match. If the annotation changes (e.g., different query string), the run is broken and a new completed sample is emitted.
 
-**Example**: Stack A sampled 5 times consecutively:
+**When used**: In `timestamps=none` mode, for runs of 3+ identical completed samples. Runs of 1-2 use individual events.
+
+**Example**: PDO::execute with same query sampled 5 times:
 ```
-COMPACT_SAMPLE(A)     // 2 bytes
-REPEAT_SAMPLE(4)      // 2 bytes
-                      // Total: 4 bytes instead of 10 bytes
+COMPACT_SAMPLE(stack_id=3)
+SAMPLE_ANNOTATION(query="SELECT * FROM users WHERE id = ?")
+REPEAT_SAMPLE(4)
+// Total: ~10 bytes instead of 5 × (COMPACT + ANNOTATION)
 ```
 
-**Segment boundaries**: The writer's run-length state is flushed on CHECKPOINT, SEGMENT_END, or writer destruction. The reader's `last_sample_stack_id` resets on each new segment.
+**Example**: Query changes mid-run:
+```
+COMPACT_SAMPLE(3)
+SAMPLE_ANNOTATION(query="SELECT 1")
+REPEAT_SAMPLE(2)              // 3 copies of "SELECT 1"
+COMPACT_SAMPLE(3)
+SAMPLE_ANNOTATION(query="SELECT 2")
+REPEAT_SAMPLE(1)              // 2 copies of "SELECT 2"
+```
 
-**Recovery**: If REPEAT_SAMPLE appears without a preceding sample (e.g., at segment start after recovery), it is treated as a corrupt event and triggers segment-level recovery.
+**Segment boundaries**: The writer's run-length state is flushed on CHECKPOINT, SEGMENT_END, or writer destruction. The reader's completed sample state resets on each new segment.
 
 ### SAMPLE_ANNOTATION (0x0B)
 
-Attaches key-value metadata to the immediately preceding sample. Must appear directly after a SAMPLE, COMPACT_SAMPLE, PID_SAMPLE, or REPEAT_SAMPLE event.
+Attaches key-value metadata to the immediately preceding sample event. Must appear directly after a SAMPLE, COMPACT_SAMPLE, or PID_SAMPLE event. **Must not** appear after REPEAT_SAMPLE.
 
 ```
 Payload:
