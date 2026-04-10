@@ -111,25 +111,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
 
-    /**
-     * Rows per chunked fetchAll inside the loader paths. 0 disables
-     * chunking entirely (single fetchAll, max memory). Default keeps
-     * per-chunk peak under ~80 MB on the wide loadEdgesFfi row layout.
-     * Plumbed in from {@see GraphSubstrate::createFromDb} so the user
-     * can size it for their memory budget via the `--substrate-bulk-
-     * fetch-chunk` CLI option.
-     */
-    private int $bulkFetchChunk = 200000;
-
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     #[\Override]
-    public static function loadFromDb(
-        \PDO $db,
-        int $run_id,
-        int $bulk_fetch_chunk = 200000,
-    ): static {
+    public static function loadFromDb(\PDO $db, int $run_id): static
+    {
         $substrate = new self();
-        $substrate->bulkFetchChunk = $bulk_fetch_chunk;
         $substrate->loadNodeSizesFfi($db, $run_id);
         $substrate->loadNodeTypesFfi($db, $run_id);
         $substrate->loadEdgesFfi($db, $run_id);
@@ -563,7 +549,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // Localise hot reads (same pattern loadEdgesFfi uses) so the
         // inner loop never goes through `$this->` for nodeIdToIndex
-        // or the dict updates.
+        // or the dict updates. The earlier rowid-paginated chunked
+        // fetch was reverted because neither context_nodes nor
+        // context_edges has an index that lets SQLite use rowid as
+        // a range key — every chunk degenerated into a full table
+        // scan with a post-filter. The original per-row fetch is
+        // still the fastest correct option.
         $directMap = $this->nodeToIndexDirect;
         $directOffset = $this->directIndexOffset;
         $directSize = $this->directIndexSize;
@@ -571,80 +562,29 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $nodeTypeIds = $this->nodeTypeIds;
         $dictReverse = &$this->nodeTypeDictReverse;
         $dict = &$this->nodeTypeDict;
-        $chunk = $this->bulkFetchChunk;
 
-        if ($chunk <= 0) {
-            // No chunking: single fetchAll. Maximum speed, but the
-            // intermediate PHP array peaks at ~5M rows × 2 fields × 80
-            // bytes ≈ 800 MB on a big capture. Picked by users with
-            // `--substrate-bulk-fetch-chunk=0`; default uses chunking.
-            $rows = $db->query(
-                "SELECT node_id, type FROM context_nodes WHERE run_id = {$run_id}"
-            )->fetchAll(\PDO::FETCH_NUM);
-            foreach ($rows as $r) {
-                $node_id = (int)$r[0];
-                if ($directMap !== null) {
-                    $slot = $node_id + $directOffset;
-                    $idx = ($slot < 0 || $slot >= $directSize)
-                        ? -1
-                        : (int)$directMap[$slot];
-                } else {
-                    $idx = $phpMap[$node_id] ?? -1;
-                }
-                if ($idx < 0) {
-                    continue;
-                }
-                $type = (string)$r[1];
-                if (!isset($dictReverse[$type])) {
-                    $dictReverse[$type] = count($dict);
-                    $dict[] = $type;
-                }
-                $nodeTypeIds[$idx] = $dictReverse[$type];
-            }
-            unset($rows, $dictReverse, $dict);
-            return;
-        }
-
-        // Rowid-paginated chunked fetchAll. Each chunk runs as an
-        // index-bounded range scan (`rowid > $last_rowid LIMIT N`),
-        // so per-chunk cost is O(N) regardless of how far into the
-        // table we are — no OFFSET-style O(N²) walks.
-        $stmt = $db->prepare(
-            "SELECT node_id, type, rowid FROM context_nodes
-             WHERE run_id = ? AND rowid > ?
-             ORDER BY rowid
-             LIMIT {$chunk}"
+        $stmt = $db->query(
+            "SELECT node_id, type FROM context_nodes WHERE run_id = {$run_id}"
         );
-        $last_rowid = 0;
-        while (true) {
-            $stmt->execute([$run_id, $last_rowid]);
-            $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
-            if ($rows === []) {
-                break;
+        while (($row = $stmt->fetch(\PDO::FETCH_NUM)) !== false) {
+            $node_id = (int)$row[0];
+            if ($directMap !== null) {
+                $slot = $node_id + $directOffset;
+                $idx = ($slot < 0 || $slot >= $directSize)
+                    ? -1
+                    : (int)$directMap[$slot];
+            } else {
+                $idx = $phpMap[$node_id] ?? -1;
             }
-            foreach ($rows as $r) {
-                $node_id = (int)$r[0];
-                if ($directMap !== null) {
-                    $slot = $node_id + $directOffset;
-                    $idx = ($slot < 0 || $slot >= $directSize)
-                        ? -1
-                        : (int)$directMap[$slot];
-                } else {
-                    $idx = $phpMap[$node_id] ?? -1;
-                }
-                if ($idx >= 0) {
-                    $type = (string)$r[1];
-                    if (!isset($dictReverse[$type])) {
-                        $dictReverse[$type] = count($dict);
-                        $dict[] = $type;
-                    }
-                    $nodeTypeIds[$idx] = $dictReverse[$type];
-                }
-                $last_rowid = (int)$r[2];
+            if ($idx < 0) {
+                continue;
             }
-            if (count($rows) < $chunk) {
-                break;
+            $type = (string)$row[1];
+            if (!isset($dictReverse[$type])) {
+                $dictReverse[$type] = count($dict);
+                $dict[] = $type;
             }
+            $nodeTypeIds[$idx] = $dictReverse[$type];
         }
         unset($dictReverse, $dict);
     }
@@ -751,157 +691,77 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // and populate the tree-edge link_name index inline so report
         // passes can answer link_name lookups in memory afterwards.
         //
-        // The loop body is duplicated between the two paths below
-        // (single fetchAll vs chunked rowid pagination) to avoid the
-        // closure-call overhead a shared callback would add — at 5M+
-        // edges per dump even ~150 ns per closure invoke is real time.
+        // An earlier attempt to chunk this via rowid pagination
+        // (`WHERE run_id = ? AND rowid > ? LIMIT N`) regressed badly:
+        // SQLite picked one of the (run_id, ...) covering indexes
+        // instead of using rowid as a range key, so every chunk
+        // degenerated into a full table scan with a post-filter.
+        // 5M rows × 25 chunks ≈ 125M scanned rows. Reverted; the
+        // original cursor scan stays.
+        $stmt = $db->query(
+            "SELECT parent_node_id, child_node_id, link_name, is_tree, strength"
+            . " FROM context_edges WHERE run_id = {$run_id}"
+        );
         $i = 0;
-        $chunk = $this->bulkFetchChunk;
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $parentIsRoot = $r[0] === null;
+            $parent = $parentIsRoot ? -1 : (int)$r[0];
+            $child = (int)$r[1];
+            $link_name = (string)$r[2];
+            $is_tree = (int)$r[3];
+            $is_strong = ((string)($r[4] ?? 'strong')) === 'strong';
 
-        if ($chunk <= 0) {
-            // No chunking: single fetchAll over the whole edge table.
-            // Maximum speed, but the intermediate PHP array peaks at
-            // ~5M rows × 5 fields × ~80 bytes ≈ 2 GB on a big capture.
-            // Picked by users who set `--substrate-bulk-fetch-chunk=0`
-            // for max speed; the default uses chunked pagination
-            // below which keeps per-chunk peak under ~80 MB.
-            $rows = $db->query(
-                "SELECT parent_node_id, child_node_id, link_name, is_tree, strength
-                 FROM context_edges WHERE run_id = {$run_id}"
-            )->fetchAll(\PDO::FETCH_NUM);
-            foreach ($rows as $r) {
-                $parentIsRoot = $r[0] === null;
-                $parent = $parentIsRoot ? -1 : (int)$r[0];
-                $child = (int)$r[1];
-                $link_name = (string)$r[2];
-                $is_tree = (int)$r[3];
-                $is_strong = ((string)($r[4] ?? 'strong')) === 'strong';
-
-                if ($directMap !== null) {
-                    $slot = $parent + $directOffset;
-                    $pi = ($slot < 0 || $slot >= $directSize)
-                        ? -1
-                        : (int)$directMap[$slot];
-                    $slot = $child + $directOffset;
-                    $ci = ($slot < 0 || $slot >= $directSize)
-                        ? -1
-                        : (int)$directMap[$slot];
-                } else {
-                    $pi = $phpMap[$parent] ?? -1;
-                    $ci = $phpMap[$child] ?? -1;
-                }
-
-                $stageParentIdx[$i] = $pi;
-                $stageChildIdx[$i] = $ci;
-                $stageFlags[$i] = $is_tree | ($is_strong ? 2 : 0);
-                $i++;
-
-                if ($is_tree) {
-                    $treeDeg[$pi] = $treeDeg[$pi] + 1;
-                    $treeCount++;
-                    if ($is_strong) {
-                        $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
-                        $strongTreeCount++;
-                    }
-                    if ($parentIsRoot) {
-                        $roots[] = $child;
-                    }
-                    if (!isset($linkDictReverse[$link_name])) {
-                        $linkDictReverse[$link_name] = count($linkDict);
-                        $linkDict[] = $link_name;
-                    }
-                    $treeLinkIds[$ci] = $linkDictReverse[$link_name];
-                    $treeParentIdx[$ci] = $pi;
-                }
-                if (!$parentIsRoot) {
-                    $allDeg[$pi] = $allDeg[$pi] + 1;
-                    $allCount++;
-                    if ($is_strong) {
-                        $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
-                        $strongAllCount++;
-                    }
-                }
-                $revDeg[$ci] = $revDeg[$ci] + 1;
+            // Inlined nodeIdToIndex (both parent and child) — see the
+            // localisation block above for why this matters.
+            if ($directMap !== null) {
+                $slot = $parent + $directOffset;
+                $pi = ($slot < 0 || $slot >= $directSize)
+                    ? -1
+                    : (int)$directMap[$slot];
+                $slot = $child + $directOffset;
+                $ci = ($slot < 0 || $slot >= $directSize)
+                    ? -1
+                    : (int)$directMap[$slot];
+            } else {
+                $pi = $phpMap[$parent] ?? -1;
+                $ci = $phpMap[$child] ?? -1;
             }
-            unset($rows);
-        } else {
-            // Rowid-paginated chunked fetchAll. Each chunk is an
-            // index-bounded range scan; per-chunk cost is O(chunk)
-            // regardless of how far into the table we are.
-            $stmt = $db->prepare(
-                "SELECT parent_node_id, child_node_id, link_name, is_tree, strength, rowid
-                 FROM context_edges
-                 WHERE run_id = ? AND rowid > ?
-                 ORDER BY rowid
-                 LIMIT {$chunk}"
-            );
-            $last_rowid = 0;
-            while (true) {
-                $stmt->execute([$run_id, $last_rowid]);
-                $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
-                if ($rows === []) {
-                    break;
+
+            $stageParentIdx[$i] = $pi;
+            $stageChildIdx[$i] = $ci;
+            $stageFlags[$i] = $is_tree | ($is_strong ? 2 : 0);
+            $i++;
+
+            if ($is_tree) {
+                $treeDeg[$pi] = $treeDeg[$pi] + 1;
+                $treeCount++;
+                if ($is_strong) {
+                    $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
+                    $strongTreeCount++;
                 }
-                foreach ($rows as $r) {
-                    $parentIsRoot = $r[0] === null;
-                    $parent = $parentIsRoot ? -1 : (int)$r[0];
-                    $child = (int)$r[1];
-                    $link_name = (string)$r[2];
-                    $is_tree = (int)$r[3];
-                    $is_strong = ((string)($r[4] ?? 'strong')) === 'strong';
-
-                    if ($directMap !== null) {
-                        $slot = $parent + $directOffset;
-                        $pi = ($slot < 0 || $slot >= $directSize)
-                            ? -1
-                            : (int)$directMap[$slot];
-                        $slot = $child + $directOffset;
-                        $ci = ($slot < 0 || $slot >= $directSize)
-                            ? -1
-                            : (int)$directMap[$slot];
-                    } else {
-                        $pi = $phpMap[$parent] ?? -1;
-                        $ci = $phpMap[$child] ?? -1;
-                    }
-
-                    $stageParentIdx[$i] = $pi;
-                    $stageChildIdx[$i] = $ci;
-                    $stageFlags[$i] = $is_tree | ($is_strong ? 2 : 0);
-                    $i++;
-
-                    if ($is_tree) {
-                        $treeDeg[$pi] = $treeDeg[$pi] + 1;
-                        $treeCount++;
-                        if ($is_strong) {
-                            $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
-                            $strongTreeCount++;
-                        }
-                        if ($parentIsRoot) {
-                            $roots[] = $child;
-                        }
-                        if (!isset($linkDictReverse[$link_name])) {
-                            $linkDictReverse[$link_name] = count($linkDict);
-                            $linkDict[] = $link_name;
-                        }
-                        $treeLinkIds[$ci] = $linkDictReverse[$link_name];
-                        $treeParentIdx[$ci] = $pi;
-                    }
-                    if (!$parentIsRoot) {
-                        $allDeg[$pi] = $allDeg[$pi] + 1;
-                        $allCount++;
-                        if ($is_strong) {
-                            $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
-                            $strongAllCount++;
-                        }
-                    }
-                    $revDeg[$ci] = $revDeg[$ci] + 1;
-                    $last_rowid = (int)$r[5];
+                if ($parentIsRoot) {
+                    $roots[] = $child;
                 }
-                if (count($rows) < $chunk) {
-                    break;
+                // Tree edges are unique per child by definition, so a
+                // direct write here is safe.
+                if (!isset($linkDictReverse[$link_name])) {
+                    $linkDictReverse[$link_name] = count($linkDict);
+                    $linkDict[] = $link_name;
+                }
+                $treeLinkIds[$ci] = $linkDictReverse[$link_name];
+                $treeParentIdx[$ci] = $pi;
+            }
+            if (!$parentIsRoot) {
+                $allDeg[$pi] = $allDeg[$pi] + 1;
+                $allCount++;
+                if ($is_strong) {
+                    $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
+                    $strongAllCount++;
                 }
             }
+            $revDeg[$ci] = $revDeg[$ci] + 1;
         }
+        $stmt->closeCursor();
         unset($linkDictReverse, $linkDict, $roots);
 
         // Build offsets via prefix sum.

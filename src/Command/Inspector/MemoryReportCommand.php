@@ -96,11 +96,10 @@ final class MemoryReportCommand extends Command
             'substrate-bulk-fetch-chunk',
             null,
             InputOption::VALUE_REQUIRED,
-            'rows per chunked fetchAll when loading the substrate from SQLite.'
-            . ' Larger values trade memory for speed (fewer PHP/PDO round trips).'
-            . ' 0 means "no chunking, single fetchAll" (max speed, max memory).'
-            . ' Default 200000 keeps per-chunk peak under ~80 MB.',
-            '200000',
+            'reserved (currently no-op): rows per chunked fetchAll when loading the substrate.'
+            . ' The chunked path regressed badly on real captures and was reverted; flag is'
+            . ' kept so existing scripts keep working until a working strategy lands.',
+            '0',
         );
     }
 
