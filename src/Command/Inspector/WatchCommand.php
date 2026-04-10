@@ -20,6 +20,7 @@ use Reli\Inspector\Watch\Daemon\Context\PhpWatchContextCreator;
 use Reli\Inspector\Watch\Daemon\Controller\PhpWatchControllerInterface;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerExitMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Output\TraceOutput\TraceOutputFactory;
 use Reli\Inspector\RetryingLoopProvider;
@@ -660,7 +661,8 @@ final class WatchCommand extends Command
             $disk_tracker,
         );
 
-        // Build daemon lifecycle actions (trace/stop-trace not supported in daemon mode yet)
+        // Build daemon lifecycle actions for controller-side one-shot actions (log, exec).
+        // trace/stop-trace are handled worker-side via TraceSession.
         $on_enter_actions = $this->action_factory->buildDaemonLifecycleActions(
             $watch_settings->on_enter_actions,
             $watch_settings,
@@ -826,6 +828,31 @@ final class WatchCommand extends Command
                                     $result->pid,
                                     $result->trace_path ?? '',
                                 ));
+                            }
+                        } elseif ($result instanceof WatchTriggerExitMessage) {
+                            // Trigger condition cleared — execute on-exit actions
+                            if ($has_daemon_lifecycle) {
+                                $state_key = $result->pid . ':' . $result->event->trigger_name;
+                                $daemon_state_tracker->update($state_key, false);
+                                $exit_context = new WatchContext(
+                                    pid: $result->pid,
+                                    heap_stats: new HeapStats(0, 0, 0, 0),
+                                    call_trace: null,
+                                    timestamp: $result->event->timestamp,
+                                    previous: null,
+                                );
+                                $process = new \Reli\Lib\Process\ProcessSpecifier($result->pid);
+                                if (!$quiet) {
+                                    $output->writeln(sprintf(
+                                        '<info>[EXIT] PID=%d | trigger=%s | %s</info>',
+                                        $result->pid,
+                                        $result->event->trigger_name,
+                                        $result->event->description,
+                                    ));
+                                }
+                                foreach ($on_exit_actions as $action) {
+                                    $action->execute($result->event, $process, $exit_context);
+                                }
                             }
                         } elseif ($result instanceof WatchTriggerMessage) {
                             $global_trigger_count++;

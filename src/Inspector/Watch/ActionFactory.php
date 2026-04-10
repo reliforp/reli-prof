@@ -209,7 +209,7 @@ final class ActionFactory
                 'exec' => $settings->action_exec_command !== null
                     ? new ExecAction($settings->action_exec_command)
                     : null,
-                // trace / stop-trace not supported in daemon mode yet
+                // trace / stop-trace handled worker-side in daemon mode
                 default => null,
             };
             if ($action !== null) {

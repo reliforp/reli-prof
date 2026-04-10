@@ -17,6 +17,7 @@ use Reli\Inspector\Watch\CooldownManager;
 use Reli\Inspector\Watch\CpuUsageReader;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchDetachMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTraceNotifyMessage;
+use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerExitMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\Message\WatchTriggerMessage;
 use Reli\Inspector\Watch\Daemon\Protocol\PhpWatchWorkerProtocolInterface;
 use Reli\Inspector\Watch\HeapStats;
@@ -270,6 +271,15 @@ final class PhpWatchEntryPoint implements WorkerEntryPointInterface
                                         trace_path: $path,
                                     ));
                                 }
+                                // Notify controller so it can execute on-exit actions
+                                $this->protocol->sendTriggerExit(new WatchTriggerExitMessage(
+                                    pid: $descriptor->pid,
+                                    event: new \Reli\Inspector\Watch\TriggerEvent(
+                                        trigger_name: $trigger->name(),
+                                        description: 'condition cleared',
+                                        timestamp: $now,
+                                    ),
+                                ));
                                 $cooldown->recordClear($trigger->name());
                                 continue;
                             }
