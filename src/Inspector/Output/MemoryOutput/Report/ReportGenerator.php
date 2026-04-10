@@ -86,7 +86,14 @@ final class ReportGenerator
         // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
         $run_phase3 = $full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000);
         if ($full_analysis || $node_count < 500000) {
-            $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
+            // CallStackPass has a substrate-backed analyzeWithSubstrate
+            // path that's an order of magnitude cheaper than its
+            // 4-JOIN SQL fallback. Defer it to Phase 3 when the
+            // substrate is going to be built; the SQL fallback only
+            // runs on small graphs that skip Phase 3 entirely.
+            if (!$run_phase3) {
+                $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
+            }
             // DynamicProperties / PropertyScaling / TopArrays / TopStrings /
             // NonTreeEdge / StructuralDedup are all "deferred to Phase 3 if
             // graph is available" — when the substrate isn't built we run
@@ -108,6 +115,13 @@ final class ReportGenerator
         if ($run_phase3) {
             $substrate = GraphSubstrate::createFromDb($db, $run_id, $ffi_csr);
             $meta['scc_count'] = count($substrate->getSccProfiles());
+
+            // CallStackPass deferred from Phase 2: now that the
+            // substrate is built, run it through the in-memory
+            // node-type + tree-edge indexes instead of the 4-JOIN SQL.
+            $findings = array_merge($findings, $this->runPass(
+                new CallStackPass($db, $run_id, $substrate)
+            ));
 
             // Shared resolver replaces the per-edge SQL N+1 that used to
             // dominate PerPropertyMemory / Ownership / StructuralDedup /

@@ -16,6 +16,8 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 
 /**
  * Shows the call stack at the time of snapshot capture.
@@ -25,15 +27,78 @@ final class CallStackPass implements PassInterface
     public function __construct(
         private \PDO $db,
         private int $run_id,
+        private ?GraphSubstrate $substrate = null,
     ) {
     }
 
     /**
      * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
      */
     #[\Override]
     public function analyze(): array
+    {
+        if ($this->substrate !== null) {
+            return $this->analyzeWithSubstrate();
+        }
+        return $this->analyzeWithSql();
+    }
+
+    /**
+     * Substrate-backed path: walks the in-memory node-type index to
+     * find the (typically single) CallFramesContext node, then
+     * iterates its tree children via the CSR. Each child's tree-edge
+     * link_name is the frame number ("0", "1", ...) and the
+     * NodeLabeler resolves the child node id to "function_name:lineno"
+     * via its already-cached attribute pull.
+     *
+     * Replaces the 4-JOIN SQL query the SQL fallback uses; that one
+     * showed up at ~6% of total report runtime on big captures.
+     *
+     * @return list<Finding>
+     */
+    private function analyzeWithSubstrate(): array
+    {
+        assert($this->substrate !== null);
+        $callFramesNodeId = null;
+        foreach ($this->substrate->iterateNodeSizes() as $node_id => $_) {
+            if ($this->substrate->getNodeType($node_id) === 'CallFramesContext') {
+                $callFramesNodeId = $node_id;
+                break;
+            }
+        }
+        if ($callFramesNodeId === null) {
+            return [];
+        }
+
+        $labeler = new NodeLabeler($this->db, $this->run_id);
+        $framesByNo = [];
+        foreach ($this->substrate->getChildren($callFramesNodeId) as $child_id) {
+            $link_name = $this->substrate->getTreeLinkName($child_id) ?? '?';
+            $label = $labeler->resolvePathLabel($link_name, $child_id);
+            // resolvePathLabel returns the link_name unchanged when
+            // the child has no function_name attribute. That can't
+            // happen for a real CallFrameContext but we handle it
+            // gracefully so a malformed dump doesn't show "0", "1",
+            // ... as the call stack.
+            if ($label === $link_name) {
+                $label = '?';
+            }
+            $framesByNo[(int)$link_name] = $label;
+        }
+        if ($framesByNo === []) {
+            return [];
+        }
+        ksort($framesByNo);
+        return $this->buildFindings(array_values($framesByNo));
+    }
+
+    /**
+     * SQL fallback: used in Phase 2 when no substrate is built.
+     *
+     * @return list<Finding>
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    private function analyzeWithSql(): array
     {
         $rows = $this->db->query("
             SELECT
@@ -77,6 +142,15 @@ final class CallStackPass implements PassInterface
                 : (string)$fn;
         }
 
+        return $this->buildFindings($frames);
+    }
+
+    /**
+     * @param  list<string> $frames frame labels in call order
+     * @return list<Finding>
+     */
+    private function buildFindings(array $frames): array
+    {
         $lines = [];
         foreach ($frames as $i => $frame) {
             $lines[] = "#{$i} {$frame}";
