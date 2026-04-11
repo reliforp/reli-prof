@@ -456,12 +456,21 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             . " FROM context_node_locations WHERE run_id = {$run_id} GROUP BY node_id"
         )->fetchAll(\PDO::FETCH_NUM);
 
-        // Also get node IDs that appear in edges but not in node_locations
-        $edge_node_rows = $db->query(
-            "SELECT DISTINCT parent_node_id FROM context_edges"
-            . " WHERE run_id = {$run_id} AND parent_node_id IS NOT NULL"
-            . " UNION SELECT DISTINCT child_node_id FROM context_edges"
-            . " WHERE run_id = {$run_id}"
+        // The full node_id universe comes from context_nodes — it's the
+        // authoritative source maintained by PdoContextTreeSink::emitNode,
+        // which writes one row per emitted node BEFORE any reference
+        // edges to that node can be emitted. context_edges therefore
+        // never carries a parent_node_id / child_node_id that isn't
+        // already in context_nodes (reference edges only target
+        // previously-emitted nodes, and the collector dedups by address
+        // so each node is emitted exactly once). This used to be a
+        // `SELECT DISTINCT parent UNION SELECT DISTINCT child FROM
+        // context_edges` UNION DISTINCT — scanning the entire edges
+        // table twice and then deduping the union, all to recompute a
+        // set context_nodes already has indexed by (run_id, node_id).
+        // The simple PRIMARY-KEY range scan below replaces that.
+        $node_id_rows = $db->query(
+            "SELECT node_id FROM context_nodes WHERE run_id = {$run_id}"
         )->fetchAll(\PDO::FETCH_COLUMN);
 
         // Build sorted node_id list
@@ -469,12 +478,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         foreach ($rows as $r) {
             $all_node_ids[(int)$r[0]] = true;
         }
-        foreach ($edge_node_rows as $nid) {
+        foreach ($node_id_rows as $nid) {
             $all_node_ids[(int)$nid] = true;
         }
         // Include -1 sentinel for root parent
         $all_node_ids[-1] = true;
-        unset($edge_node_rows);
+        unset($node_id_rows);
 
         // Build mapping: assign CSR indices
         $this->nodeCount = count($all_node_ids);
