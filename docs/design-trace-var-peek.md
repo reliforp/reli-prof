@@ -504,6 +504,31 @@ sample. The worker then proceeds to the next attach cycle.
   event skip).
 - **Cross-sample diff encoding**: for noisy values that move RLE, an
   `ANNOTATION_DELTA` scheme (only emit changed keys) could be added later.
+- **Per-spec config file (`--trace-var-config=<path>`)**: once users want
+  distinct `every` / `on-function` gates / short display names / error
+  policy (skip vs. mark `<error>`) *per variable*, the `--trace-var` flag
+  shape starts to fight them — all attached flags become global. A YAML
+  (or TOML) file that lists each spec with its own attributes is the
+  natural escape hatch, e.g.:
+  ```yaml
+  vars:
+    - spec: global::$request->requestId
+      name: req
+      every: 1
+    - spec: local::App\Queue\Worker::run()$job->id
+      name: job_id
+      every: 5
+      on_function: App\Queue\Worker::run
+      on_error: skip
+  ```
+  Not needed for v1 — the flag shape is enough while the spec count is
+  small and attributes are uniform. Revisit when either condition breaks
+  (multiple specs needing different cadences, or users asking for stable
+  short names in the output). The current CLI options are designed to be
+  a clean subset of what this file would express, so the migration is
+  additive: introduce `--trace-var-config`, keep the flags as sugar for
+  "one spec with defaults", and have both paths build the same internal
+  `list<VariableSpec>` + attribute record.
 
 ## References
 
