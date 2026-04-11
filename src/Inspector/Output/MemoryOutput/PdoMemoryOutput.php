@@ -224,10 +224,28 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
     private function createIndexes(\PDO $db): void
     {
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_edges_run_parent_tree'
-            . ' ON context_edges(run_id, parent_node_id, is_tree)'
-        );
+        // Dropped from the eager build to save analyze time:
+        //
+        //   - idx_context_edges_run_strength
+        //       Fully covered by the 6-col NonTreeEdgePass index below
+        //       (whose prefix is (run_id, is_tree, strength, ...)). No
+        //       query hit this index alone — every strength filter we
+        //       ship is paired with is_tree, so the 6-col covering
+        //       serves them all.
+        //
+        //   - idx_context_edges_run_parent_tree
+        //       The only Phase 3 callers (CycleClusterPass /
+        //       GcPendingPass / BlameAllocationPass loadRootLinkNames
+        //       + the walker passes) have been rewritten to use the
+        //       substrate's in-memory treeParentIdx / treeLinkIds
+        //       indexes, so no SQL query filters by `parent_node_id
+        //       = X AND is_tree = Y` on the Phase 3 path anymore.
+        //       Phase 2 SQL fallbacks still exist but fall back to a
+        //       full scan, which is acceptable for the small-graph
+        //       case they target.
+        //
+        // Together these were ~5.7% of analyze wall time on the
+        // analyze.rbt trace (roughly 2 minutes out of 36).
         $db->exec(
             'CREATE INDEX IF NOT EXISTS idx_context_edges_run_child'
             . ' ON context_edges(run_id, child_node_id)'
@@ -258,10 +276,6 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $db->exec(
             'CREATE INDEX IF NOT EXISTS idx_context_edges_run_link_parent_tree'
             . ' ON context_edges(run_id, link_name, parent_node_id, is_tree)'
-        );
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_edges_run_strength'
-            . ' ON context_edges(run_id, strength)'
         );
         // Covers the NonTreeEdgePass aggregations:
         //   WHERE run_id = ? AND is_tree = 0 AND strength = 'strong'

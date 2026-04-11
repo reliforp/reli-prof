@@ -76,7 +76,6 @@ class PdoMemoryOutputTest extends BaseTestCase
         $db = new \PDO('sqlite:' . $this->db_path);
         $indexes = $this->getIndexNames($db);
 
-        $this->assertContains('idx_context_edges_run_parent_tree', $indexes);
         $this->assertContains('idx_context_edges_run_child', $indexes);
         $this->assertContains('idx_context_node_locations_run_node', $indexes);
         $this->assertContains('idx_context_node_locations_run_class', $indexes);
