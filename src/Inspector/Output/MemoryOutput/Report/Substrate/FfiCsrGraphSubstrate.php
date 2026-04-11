@@ -441,33 +441,43 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     private function loadNodeSizesFfi(\PDO $db, int $run_id): void
     {
-        // Two streaming passes, both chunked via prepared statements
-        // paginated by node_id. The previous version pulled both the
-        // GROUP-BY aggregation and the UNION DISTINCT result via a
-        // single fetchAll each — millions of rows in two large in-memory
-        // arrays plus the PHP/PDO marshalling overhead per row. On
-        // multi-GB analyze DBs this was the single biggest report self-
-        // time hot spot (PDO::query 9.8% + fetchAll 10.2% on report12).
+        // Three discovery passes, then one chunked size+class aggregation:
         //
-        // Pass 1 (context_nodes) discovers the full node_id universe.
-        // Pass 2 (context_node_locations GROUP BY) fills the size +
-        // class_name dictionary for nodes that have any location row.
-        // Both passes use the (run_id, node_id) index for ordered range
-        // scans, so paginating by `node_id > ?` is a forward seek per
-        // chunk — no per-chunk re-evaluation of the WHERE.
+        //   Pass 1a: chunked range scan over context_nodes
+        //     - The bulk source of node_ids: every emitted node has a
+        //       row here. Cheap (one-column scan over the PRIMARY KEY).
+        //
+        //   Pass 1b: UNION DISTINCT over context_edges (parent + child)
+        //     - Safety net for the case where the collector calls
+        //       analyzer->assignNodeId() on a Context, writes the
+        //       resulting node_id into the address_map, and then
+        //       emits an edge through it WITHOUT subsequently calling
+        //       emitNode() for that node. EmitObjectJob, EmitArrayJob,
+        //       EmitStringJob, EmitPhpReferenceJob and EmitResourceJob
+        //       all touch address_map directly during their loops, and
+        //       there are paths where the assigned id can show up in
+        //       context_edges before / without a matching context_nodes
+        //       row. If we miss those node_ids here, loadEdgesFfi
+        //       resolves them as nodeIdToIndex(-1), and -1 collides
+        //       with the root sentinel slot — corrupting Root Blame
+        //       Allocation, bottleneck_path retained sizes, and any
+        //       other pass that walks the tree from the substrate's
+        //       root list. So we always run this scan; it's the
+        //       backstop the chunked context_nodes pass can't replace.
+        //
+        //   Pass 1c: -1 sentinel for the synthetic root parent.
+        //
+        //   Pass 2: chunked GROUP BY over context_node_locations to
+        //     fill node sizes + class_name dictionary (this is the
+        //     part that used to be a single monolithic fetchAll on
+        //     report12.rbt and dominated loadNodeSizesFfi wall).
+        //
+        // Both chunked passes use the (run_id, node_id) PRIMARY KEY /
+        // index for ordered range scans, so paginating by
+        // `node_id > ?` is a forward seek per chunk.
         $chunk = $this->bulkFetchChunk > 0 ? $this->bulkFetchChunk : 200000;
 
-        // Pass 1: full node_id universe from context_nodes.
-        //
-        // PdoContextTreeSink::emitNode writes one row per emitted node
-        // to context_nodes BEFORE any reference edge to that node can
-        // be emitted, and the collector dedups by address so each node
-        // is emitted exactly once. context_edges therefore never carries
-        // a parent_node_id / child_node_id that isn't already in
-        // context_nodes — making context_nodes the authoritative
-        // node-id source. The previous code merged a UNION DISTINCT
-        // over context_edges into the universe just to be safe; that
-        // entire scan is now redundant.
+        // Pass 1a: chunked context_nodes range scan.
         $stmt = $db->prepare(
             "SELECT node_id FROM context_nodes
              WHERE run_id = ? AND node_id > ?
@@ -490,7 +500,24 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 break;
             }
         }
-        // Include -1 sentinel for root parent
+
+        // Pass 1b: edges-derived safety net — see the docblock above
+        // for why this is required for correctness even when
+        // context_nodes looks complete. Single non-chunked query
+        // because the result feeds straight into the same hash and
+        // we don't want to maintain a streaming UNION DISTINCT.
+        $edge_node_rows = $db->query(
+            "SELECT DISTINCT parent_node_id FROM context_edges"
+            . " WHERE run_id = {$run_id} AND parent_node_id IS NOT NULL"
+            . " UNION SELECT DISTINCT child_node_id FROM context_edges"
+            . " WHERE run_id = {$run_id}"
+        )->fetchAll(\PDO::FETCH_COLUMN);
+        foreach ($edge_node_rows as $nid) {
+            $all_node_ids[(int)$nid] = true;
+        }
+        unset($edge_node_rows);
+
+        // Pass 1c: include -1 sentinel for root parent.
         $all_node_ids[-1] = true;
 
         // Build mapping: assign CSR indices
