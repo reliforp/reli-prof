@@ -39,15 +39,15 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
     }
 
     #[\Override]
-    public function output(CallTrace $call_trace): void
+    public function output(CallTrace $call_trace, ?array $annotations = null): void
     {
-        $this->writeParsed(CallTraceConverter::toParsed($call_trace));
+        $this->writeParsed(CallTraceConverter::toParsed($call_trace), $annotations);
     }
 
     #[\Override]
-    public function outputMerged(MergedCallTrace $merged_trace): void
+    public function outputMerged(MergedCallTrace $merged_trace, ?array $annotations = null): void
     {
-        $this->writeParsed(CallTraceConverter::mergedToParsed($merged_trace));
+        $this->writeParsed(CallTraceConverter::mergedToParsed($merged_trace), $annotations);
     }
 
     /**
@@ -80,7 +80,10 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
         }
     }
 
-    private function writeParsed(ParsedCallTrace $parsed): void
+    /**
+     * @param array<string, string>|null $annotations
+     */
+    private function writeParsed(ParsedCallTrace $parsed, ?array $annotations = null): void
     {
         if (!$this->header_written) {
             $this->writer->writeHeader();
@@ -94,7 +97,7 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
         }
         $this->last_hrtime_ns = $now_ns;
 
-        $this->writer->writeTrace($parsed, $delta_us);
+        $this->writer->writeTrace($parsed, $delta_us, $annotations);
 
         if ($this->writer->getSamplesSinceCheckpoint() >= $this->checkpoint_interval) {
             $this->writer->writeCheckpoint();

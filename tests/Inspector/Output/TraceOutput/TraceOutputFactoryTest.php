@@ -49,7 +49,7 @@ class TraceOutputFactoryTest extends BaseTestCase
             )
         ;
         $call_trace_formatter->expects()
-            ->format($test_trace)
+            ->format($test_trace, null)
             ->andReturns('formatted')
         ;
         $trace_output_factory = new TraceOutputFactory($trace_formatter_factory);
@@ -88,7 +88,7 @@ class TraceOutputFactoryTest extends BaseTestCase
             )
         ;
         $call_trace_formatter->expects()
-            ->format($test_trace)
+            ->format($test_trace, null)
             ->andReturns('formatted')
         ;
 

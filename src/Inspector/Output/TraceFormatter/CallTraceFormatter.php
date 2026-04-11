@@ -17,5 +17,12 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 interface CallTraceFormatter
 {
-    public function format(CallTrace $call_trace): string;
+    /**
+     * @param array<string, string>|null $annotations optional per-sample
+     *     key/value metadata (e.g. peeked variable values). Text-oriented
+     *     formatters should emit these on lines that won't be mistaken for
+     *     stack frames; formatters that can't express annotations MUST
+     *     silently ignore the argument.
+     */
+    public function format(CallTrace $call_trace, ?array $annotations = null): string;
 }

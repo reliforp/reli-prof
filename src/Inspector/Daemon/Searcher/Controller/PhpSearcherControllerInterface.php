@@ -26,6 +26,7 @@ interface PhpSearcherControllerInterface
         TargetPhpSettings $target_php_settings,
         int $pid,
         bool $no_cache = false,
+        bool $needs_compiler_globals = false,
     ): void;
 
     public function receivePidList(): UpdateTargetProcessMessage;

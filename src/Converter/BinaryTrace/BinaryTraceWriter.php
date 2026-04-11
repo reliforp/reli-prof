@@ -102,11 +102,19 @@ final class BinaryTraceWriter
     /**
      * Write a trace sample, emitting STRING_DEF, FRAME_DEF and STACK_DEF events as needed.
      *
+     * @param array<string, string>|null $annotations optional per-sample
+     *     key/value metadata. When non-empty, a SAMPLE_ANNOTATION event is
+     *     emitted directly after the SAMPLE / COMPACT_SAMPLE; annotation
+     *     strings are interned via STRING_DEF, so repeated values cost
+     *     only one varint pair per sample after the first.
      * @return int The stack_id used for this sample
      */
-    public function writeTrace(ParsedCallTrace $trace, int $timestamp_delta_us = 0): int
-    {
-        return $this->writeAnnotatedTrace($trace, $timestamp_delta_us);
+    public function writeTrace(
+        ParsedCallTrace $trace,
+        int $timestamp_delta_us = 0,
+        ?array $annotations = null,
+    ): int {
+        return $this->writeAnnotatedTrace($trace, $timestamp_delta_us, $annotations);
     }
 
     /**
@@ -188,12 +196,28 @@ final class BinaryTraceWriter
     /**
      * Write a trace as a PID_SAMPLE, emitting FRAME_DEF and STACK_DEF as needed.
      *
+     * When `$annotations` is non-empty, a SAMPLE_ANNOTATION event is emitted
+     * directly after the PID_SAMPLE (the rbt spec allows SAMPLE_ANNOTATION to
+     * follow PID_SAMPLE just like SAMPLE / COMPACT_SAMPLE). Annotation keys
+     * and values are interned via STRING_DEF. The PID_SAMPLE path does not
+     * participate in run-length encoding — interleaved per-sample PIDs break
+     * runs by construction — so the annotation append is straight-line with
+     * no pending-run bookkeeping.
+     *
+     * @param array<string, string>|null $annotations
      * @return int The stack_id used for this sample
      */
-    public function writePidTrace(ParsedCallTrace $trace, int $pid, int $timestamp_delta_us = 0): int
-    {
+    public function writePidTrace(
+        ParsedCallTrace $trace,
+        int $pid,
+        int $timestamp_delta_us = 0,
+        ?array $annotations = null,
+    ): int {
         $stack_id = $this->defineTrace($trace);
         $this->writePidSample($stack_id, $pid, $timestamp_delta_us);
+        if ($annotations !== null && $annotations !== []) {
+            $this->emitAnnotation($annotations);
+        }
         return $stack_id;
     }
 

@@ -36,8 +36,12 @@ final class CompatCallTraceFormatter implements CallTraceFormatter
     }
 
     #[\Override]
-    public function format(CallTrace $call_trace): string
+    public function format(CallTrace $call_trace, ?array $annotations = null): string
     {
+        // The compat format has no way to express annotations without
+        // breaking consumers that expect a bare frame list, so they are
+        // intentionally ignored here. Callers that need per-sample
+        // annotations should use the phpspy template instead.
         $frames = [];
         foreach ($call_trace->call_frames as $call_frame) {
             $frames[] = $this->call_frame_formatter->format($call_frame);

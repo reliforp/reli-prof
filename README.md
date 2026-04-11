@@ -20,6 +20,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 - [Automatic memory analysis report](docs/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
 - [Condition-based monitoring](docs/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
 - [Variable inspection](docs/peek-var-command.md): read PHP variable values from a running process without modifying it
+- [Per-sample variable peek in traces](docs/trace-var-command.md): attach PHP variable values (request URI, user id, SQL query, ...) to each trace sample so you can join runtime state to hot stacks
 - [Sidecar daemon](docs/sidecar.md): run a daemon that accepts on-demand memory dump requests from PHP processes via Unix socket — no FFI needed in the application, ideal for memory_limit crash analysis and CI regression detection
 
 ## How it works
@@ -412,6 +413,43 @@ See [docs/watch-command.md](docs/watch-command.md) for full documentation.
 Supported scopes: `global::$var`, `local::func()$var`, `static::Class::$prop`, `func_static::func()$var`.
 
 See [docs/peek-var-command.md](docs/peek-var-command.md) for full documentation.
+
+## [Experimental] Trace Var Peek: Per-Sample Variable Inspection in Traces
+
+`inspector:trace --trace-var` attaches PHP variable values to every trace sample, so you can correlate runtime state (request URI, user id, SQL query, ...) with the hot stacks that produced it — no separate tool, no log join.
+
+```bash
+# Tag every sample with the current request URI
+./reli inspector:trace -p <pid> --trace-var='global::$request_uri'
+
+# Multiple variables — each becomes its own annotation line
+./reli inspector:trace -p <pid> \
+  --trace-var='global::$request_uri' \
+  --trace-var='local::App\Controller::handle()$user_id'
+
+# Skip reads when a specific function isn't on the stack (cheap gate)
+./reli inspector:trace -p <pid> \
+  --trace-var='local::App\PDOProxy::execute()$query' \
+  --trace-var-on-function='App\PDOProxy::execute'
+
+# Binary (rbt) output — annotations ride on SAMPLE_ANNOTATION events
+./reli inspector:trace -p <pid> -F rbt -o trace.rbt \
+  --trace-var='global::$counter'
+```
+
+Sample phpspy output:
+
+```
+0 App\Controller::handle /app/src/Controller.php:17
+1 <main> /app/public/index.php:9
+# global::$request_uri = (string) "/users/1234"
+# local::App\Controller::handle()$user_id = (int) 1234
+
+```
+
+The same expression grammar as `inspector:peek-var --var` is supported, including nested access (`[key]`, `->prop`). Works with `inspector:daemon` in all three output modes (per-worker `rbt`, `rbt-bundled`, and template text), and with `--with-native-trace` for merged native+PHP traces.
+
+See [docs/trace-var-command.md](docs/trace-var-command.md) for full documentation — including rate-limit options (`--trace-var-every`, `--trace-var-on-function`), RLE implications in rbt, and daemon mode behaviour.
 
 ## Examples
 ### Trace a script

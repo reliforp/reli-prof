@@ -221,6 +221,62 @@ final class DaemonOutputTest extends BaseTestCase
     }
 
     /**
+     * Bundled mode with per-sample annotations round-trips through PID_SAMPLE
+     * + SAMPLE_ANNOTATION. This path doesn't use RLE (per-sample PIDs break
+     * runs) so each annotated sample emits its own annotation event.
+     */
+    public function testBundledModePidSampleWithAnnotations(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $traceA = new ParsedCallTrace(
+            new ParsedCallFrame('func_a', '/a.php', 1),
+        );
+        $traceB = new ParsedCallTrace(
+            new ParsedCallFrame('func_b', '/b.php', 2),
+        );
+
+        $writer = new BinaryTraceWriter($stream, 10000, has_timestamps: true);
+        $writer->writeHeader();
+        $writer->writePidTrace(
+            $traceA,
+            100,
+            0,
+            ['global::$counter' => '(int) 1'],
+        );
+        $writer->writePidTrace(
+            $traceB,
+            200,
+            10000,
+            ['global::$counter' => '(int) 2', 'global::$name' => '(string) "x"'],
+        );
+        // Null annotations — should emit no SAMPLE_ANNOTATION event.
+        $writer->writePidTrace($traceA, 100, 10000, null);
+        $writer->writeCheckpoint();
+        $writer->writeSegmentEnd();
+
+        rewind($stream);
+        $reader = new BinaryTraceReader();
+        $results = iterator_to_array($reader->read($stream));
+        fclose($stream);
+
+        $this->assertCount(3, $results);
+        $this->assertSame(100, $results[0]->pid);
+        $this->assertSame(
+            ['global::$counter' => '(int) 1'],
+            $results[0]->annotations,
+        );
+        $this->assertSame(200, $results[1]->pid);
+        $this->assertSame(
+            ['global::$counter' => '(int) 2', 'global::$name' => '(string) "x"'],
+            $results[1]->annotations,
+        );
+        $this->assertSame(100, $results[2]->pid);
+        $this->assertNull($results[2]->annotations);
+    }
+
+    /**
      * Bundled mode clean shutdown: CHECKPOINT + SEGMENT_END at end.
      */
     public function testBundledModeCleanEnd(): void

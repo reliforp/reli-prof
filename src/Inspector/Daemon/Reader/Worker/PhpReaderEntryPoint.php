@@ -102,10 +102,14 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 Log::debug('start trace');
                 foreach ($loop_runner as $message) {
                     if ($use_binary_direct && $this->binary_writer !== null) {
-                        $this->writeBinaryTrace($message->trace);
+                        // Per-worker rbt mode: annotations never leave the
+                        // worker — they go straight into our own .rbt file.
+                        $this->writeBinaryTrace($message->trace, $message->annotations);
                     } else {
+                        // Bundled / template modes: forward annotations to
+                        // the controller via IPC for it to write out.
                         $this->protocol->sendTrace(
-                            new TraceMessage($message->trace, $pid)
+                            new TraceMessage($message->trace, $pid, $message->annotations)
                         );
                     }
                 }
@@ -149,7 +153,10 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
         $this->binary_stream = $stream;
     }
 
-    private function writeBinaryTrace(CallTrace $call_trace): void
+    /**
+     * @param array<string, string>|null $annotations
+     */
+    private function writeBinaryTrace(CallTrace $call_trace, ?array $annotations = null): void
     {
         assert($this->binary_writer !== null);
         $now_ns = hrtime(true);
@@ -159,7 +166,11 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
         }
         $this->last_hrtime_ns = $now_ns;
 
-        $this->binary_writer->writeTrace(CallTraceConverter::toParsed($call_trace), $delta_us);
+        $this->binary_writer->writeTrace(
+            CallTraceConverter::toParsed($call_trace),
+            $delta_us,
+            $annotations,
+        );
 
         if ($this->binary_writer->getSamplesSinceCheckpoint() >= 1000) {
             $this->binary_writer->writeCheckpoint();

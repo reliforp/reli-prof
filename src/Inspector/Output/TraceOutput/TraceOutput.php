@@ -17,5 +17,10 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 interface TraceOutput
 {
-    public function output(CallTrace $call_trace): void;
+    /**
+     * @param array<string, string>|null $annotations optional per-sample
+     *     key/value metadata (e.g. peeked variable values). Implementations
+     *     that do not support annotations MUST silently ignore this argument.
+     */
+    public function output(CallTrace $call_trace, ?array $annotations = null): void;
 }

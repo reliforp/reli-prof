@@ -27,7 +27,7 @@ final class SegmentedBinaryTraceOutput implements TraceOutput
     }
 
     #[\Override]
-    public function output(CallTrace $call_trace): void
+    public function output(CallTrace $call_trace, ?array $annotations = null): void
     {
         $now_ns = hrtime(true);
         if ($this->start_hrtime_ns === null) {
@@ -35,7 +35,11 @@ final class SegmentedBinaryTraceOutput implements TraceOutput
         }
 
         $timestamp_us = (int)(($now_ns - $this->start_hrtime_ns) / 1000);
-        $this->writer->writeTrace(CallTraceConverter::toParsed($call_trace), $timestamp_us);
+        $this->writer->writeTrace(
+            CallTraceConverter::toParsed($call_trace),
+            $timestamp_us,
+            $annotations,
+        );
     }
 
     public function finish(): void

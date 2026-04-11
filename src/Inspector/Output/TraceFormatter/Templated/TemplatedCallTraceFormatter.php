@@ -25,7 +25,7 @@ use function ob_start;
 
 final class TemplatedCallTraceFormatter implements CallTraceFormatter
 {
-    /** @var ?Closure(CallTrace): string */
+    /** @var ?Closure(CallTrace, ?array<string, string>): string */
     private ?Closure $renderer = null;
 
     public function __construct(
@@ -35,12 +35,12 @@ final class TemplatedCallTraceFormatter implements CallTraceFormatter
     }
 
     #[\Override]
-    public function format(CallTrace $call_trace): string
+    public function format(CallTrace $call_trace, ?array $annotations = null): string
     {
-        return ($this->getRenderer())($call_trace);
+        return ($this->getRenderer())($call_trace, $annotations);
     }
 
-    /** @return Closure(CallTrace): string */
+    /** @return Closure(CallTrace, ?array<string, string>): string */
     private function getRenderer(): Closure
     {
         if ($this->renderer === null) {
@@ -55,10 +55,13 @@ final class TemplatedCallTraceFormatter implements CallTraceFormatter
                 $template_body = substr($template_content, $body_start + 2);
                 /**
                  * @psalm-suppress ForbiddenCode
-                 * @var Closure(CallTrace): string $renderer
+                 * @var Closure(CallTrace, ?array<string, string>): string $renderer
                  */
                 $renderer = eval(
-                    'return static function (\\' . CallTrace::class . ' $call_trace): string {'
+                    'return static function ('
+                    . '\\' . CallTrace::class . ' $call_trace, '
+                    . '?array $annotations = null'
+                    . '): string {'
                     . 'ob_start();'
                     . '?' . '>' . $template_body
                     . '<' . '?php return ob_get_clean();'
@@ -66,7 +69,10 @@ final class TemplatedCallTraceFormatter implements CallTraceFormatter
                 );
             } else {
                 // Template is pure PHP (no closing tag separator) — fall back to include
-                $renderer = static function (CallTrace $call_trace) use ($template_path): string {
+                $renderer = static function (
+                    CallTrace $call_trace,
+                    ?array $annotations = null,
+                ) use ($template_path): string {
                     ob_start();
                     /** @psalm-suppress UnresolvableInclude */
                     include $template_path;

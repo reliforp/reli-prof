@@ -28,6 +28,8 @@ use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConso
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettingsFromConsoleInput;
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
 use Reli\Inspector\TraceLoopProvider;
+use Reli\Inspector\Watch\TraceVarPeekCollector;
+use Reli\Inspector\Watch\VariableReaderInterface;
 use Reli\Lib\Dwarf\NativeTraceCollector;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
@@ -65,6 +67,7 @@ final class GetTraceCommand extends Command
         private TargetProcessResolver $target_process_resolver,
         private RetryingLoopProvider $retrying_loop_provider,
         private BinaryAnalysisCache $binary_analysis_cache,
+        private VariableReaderInterface $variable_reader,
         private ?NativeTraceCollector $native_trace_collector = null,
     ) {
         parent::__construct();
@@ -152,6 +155,27 @@ final class GetTraceCommand extends Command
             $target_php_settings
         );
 
+        // --trace-var: resolve CG up front (only if any spec needs it) and
+        // construct the per-sample peek collector. When no specs are
+        // configured the collector stays null and the loop takes the
+        // zero-overhead path.
+        $cg_address = 0;
+        $var_peek_collector = null;
+        if ($get_trace_settings->var_specs !== []) {
+            if ($get_trace_settings->needsCompilerGlobals()) {
+                $cg_address = $this->php_globals_finder->findCompilerGlobals(
+                    $process_specifier,
+                    $target_php_settings,
+                );
+            }
+            $var_peek_collector = new TraceVarPeekCollector(
+                $this->variable_reader,
+                $get_trace_settings->var_specs,
+                $get_trace_settings->var_every,
+                $get_trace_settings->var_on_function,
+            );
+        }
+
         // Set up merged trace output if native tracing is enabled
         $merged_trace_output = null;
         $trace_merger = null;
@@ -184,6 +208,7 @@ final class GetTraceCommand extends Command
                 $loop_settings,
                 $eg_address,
                 $sg_address,
+                $cg_address,
                 $trace_output,
                 $trace_cache,
                 $with_native,
@@ -191,6 +216,7 @@ final class GetTraceCommand extends Command
                 $merged_trace_output,
                 $trace_merger,
                 $native_trace_anytime,
+                $var_peek_collector,
             ): bool {
                 if ($loop_settings->stop_process and $this->process_stopper->stop($process_specifier->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($process_specifier->pid));
@@ -212,13 +238,44 @@ final class GetTraceCommand extends Command
                         if ($native_trace !== null) {
                             $php_trace = $call_trace ?? new CallTrace();
                             $merged = $trace_merger->merge($native_trace, $php_trace);
-                            $merged_trace_output->outputMerged($merged);
+                            // --trace-var peek is evaluated against the
+                            // PHP frame list regardless of whether the
+                            // merged output carries native frames; the
+                            // on-function gate and variable reads depend
+                            // only on PHP state. When call_trace is null
+                            // (native-only sample via --native-trace-anytime),
+                            // no annotations are produced.
+                            $annotations = null;
+                            if ($call_trace !== null) {
+                                $annotations = $var_peek_collector?->collect(
+                                    $call_trace,
+                                    $process_specifier,
+                                    $target_php_settings,
+                                    $eg_address,
+                                    $cg_address,
+                                );
+                            }
+                            $merged_trace_output->outputMerged($merged, $annotations);
                         } elseif ($call_trace !== null) {
-                            $trace_output->output($call_trace);
+                            $annotations = $var_peek_collector?->collect(
+                                $call_trace,
+                                $process_specifier,
+                                $target_php_settings,
+                                $eg_address,
+                                $cg_address,
+                            );
+                            $trace_output->output($call_trace, $annotations);
                         }
                     }
                 } elseif ($call_trace !== null) {
-                    $trace_output->output($call_trace);
+                    $annotations = $var_peek_collector?->collect(
+                        $call_trace,
+                        $process_specifier,
+                        $target_php_settings,
+                        $eg_address,
+                        $cg_address,
+                    );
+                    $trace_output->output($call_trace, $annotations);
                 }
                 return true;
             },

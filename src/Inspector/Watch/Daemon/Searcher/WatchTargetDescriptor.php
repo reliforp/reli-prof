@@ -38,6 +38,7 @@ final class WatchTargetDescriptor
             $this->eg_address,
             $this->sg_address,
             $this->php_version,
+            $this->cg_address,
         );
     }
 

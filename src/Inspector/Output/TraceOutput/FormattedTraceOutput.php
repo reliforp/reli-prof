@@ -26,10 +26,10 @@ final class FormattedTraceOutput implements TraceOutput
     }
 
     #[\Override]
-    public function output(CallTrace $call_trace): void
+    public function output(CallTrace $call_trace, ?array $annotations = null): void
     {
         $this->output_channel->output(
-            $this->call_trace_formatter->format($call_trace)
+            $this->call_trace_formatter->format($call_trace, $annotations)
         );
     }
 }
