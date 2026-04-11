@@ -441,8 +441,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     private function loadNodeSizesFfi(\PDO $db, int $run_id): void
     {
+        // group_concat(DISTINCT class_name) used to live here, but the
+        // consumer below treats $r[2] as a SINGLE class-name string and
+        // uses it as a dict key — every concrete dump only has at most
+        // one non-null class_name per node_id (a node IS one PHP value,
+        // so it has one class), so the DISTINCT was paying a hash cost
+        // on millions of NULLs and a handful of strings just to return
+        // that one name back unchanged. min() picks the same name in
+        // single-class rows, automatically skips NULL-only groups, and
+        // dropped the per-row aggregation overhead that showed up as
+        // ~10% of report wall on report12.rbt.
         $rows = $db->query(
-            "SELECT node_id, sum(size) as s, group_concat(DISTINCT class_name) as cls"
+            "SELECT node_id, sum(size) as s, min(class_name) as cls"
             . " FROM context_node_locations WHERE run_id = {$run_id} GROUP BY node_id"
         )->fetchAll(\PDO::FETCH_NUM);
 
