@@ -17,9 +17,18 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 final class TraceMessage
 {
+    /**
+     * @param array<string, string>|null $annotations optional per-sample
+     *     key/value metadata (e.g. `--trace-var` peek results). Populated
+     *     by the reader worker when the daemon is launched with any
+     *     annotation-producing feature; ignored otherwise. Serialises
+     *     over the existing AMPHP IPC channel without additional work
+     *     because arrays of strings are natively supported.
+     */
     public function __construct(
         public CallTrace $trace,
         public ?int $pid = null,
+        public ?array $annotations = null,
     ) {
     }
 }

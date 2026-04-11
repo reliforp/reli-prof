@@ -53,12 +53,14 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         TargetPhpSettings $target_php_settings,
         int $pid,
         bool $no_cache = false,
+        bool $needs_compiler_globals = false,
     ): void {
         $message = new TargetPhpSettingsMessage(
             $regex,
             $target_php_settings,
             $pid,
             $no_cache,
+            $needs_compiler_globals,
         );
         $this->auto_context_recovering->withAutoRecover(
             function (PhpSearcherControllerProtocolInterface $protocol) use ($message) {

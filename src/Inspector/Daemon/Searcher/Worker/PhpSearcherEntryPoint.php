@@ -69,6 +69,7 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
                                     $pid,
                                     $target_php_settings_message->target_php_settings,
                                     $cache,
+                                    $target_php_settings_message->needs_compiler_globals,
                                 ),
                                 $searched_pids
                             ),

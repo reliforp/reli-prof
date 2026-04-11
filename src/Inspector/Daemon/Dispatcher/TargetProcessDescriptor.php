@@ -17,12 +17,21 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 
 final class TargetProcessDescriptor
 {
-    /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
+    /**
+     * @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     * @param int $cg_address compiler-globals address, or 0 when not
+     *     resolved. Populated by the searcher only when the daemon was
+     *     launched with a feature that needs CG (e.g. `inspector:trace
+     *     --trace-var` specs that reference `static::` or `func_static::`
+     *     scopes). Consumers MUST treat 0 as "not available" and skip
+     *     CG-dependent operations.
+     */
     public function __construct(
         public int $pid,
         public int $eg_address,
         public int $sg_address,
         public string $php_version,
+        public int $cg_address = 0,
     ) {
     }
 

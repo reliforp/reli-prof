@@ -119,6 +119,7 @@ final class DaemonCommand extends Command
             $target_php_settings,
             $my_pid,
             $no_cache,
+            $get_trace_settings->needsCompilerGlobals(),
         );
 
         // Pass resolved output dir to workers (not the raw user path)
@@ -216,16 +217,20 @@ final class DaemonCommand extends Command
                         $result = $reader->receiveTraceOrDetachWorker();
                         if ($result instanceof TraceMessage) {
                             if ($bundled_writer !== null && $result->pid !== null) {
-                                // Bundled mode: write PID_SAMPLE directly
+                                // Bundled mode: write PID_SAMPLE directly,
+                                // carrying any --trace-var annotations the
+                                // worker attached.
                                 $this->writeBundledTrace(
                                     $bundled_writer,
                                     $result->trace,
                                     $result->pid,
                                     $bundled_last_hrtime_ns,
+                                    $result->annotations,
                                 );
                             } elseif ($trace_output !== null) {
-                                // Template mode: use TraceOutput
-                                $trace_output->output($result->trace);
+                                // Template mode: use TraceOutput, passing
+                                // annotations through to the formatter.
+                                $trace_output->output($result->trace, $result->annotations);
                             }
                             // rbt per-worker mode: traces written by worker directly, nothing to do here
                         } else {
@@ -279,11 +284,15 @@ final class DaemonCommand extends Command
         }
     }
 
+    /**
+     * @param array<string, string>|null $annotations
+     */
     private function writeBundledTrace(
         BinaryTraceWriter $writer,
         CallTrace $call_trace,
         int $pid,
         ?int &$last_hrtime_ns,
+        ?array $annotations = null,
     ): void {
         $now_ns = hrtime(true);
         $delta_us = 0;
@@ -292,7 +301,12 @@ final class DaemonCommand extends Command
         }
         $last_hrtime_ns = $now_ns;
 
-        $writer->writePidTrace(CallTraceConverter::toParsed($call_trace), $pid, $delta_us);
+        $writer->writePidTrace(
+            CallTraceConverter::toParsed($call_trace),
+            $pid,
+            $delta_us,
+            $annotations,
+        );
 
         if ($writer->getSamplesSinceCheckpoint() >= 1000) {
             $writer->writeCheckpoint();

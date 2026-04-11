@@ -30,11 +30,19 @@ class ProcessDescriptorRetriever
     ) {
     }
 
-    /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|'auto'> $target_php_settings */
+    /**
+     * @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>|'auto'> $target_php_settings
+     * @param bool $needs_compiler_globals when true, resolve CG alongside
+     *     EG/SG so consumers like inspector:trace --trace-var can read
+     *     class static properties and function-static variables.
+     *     Resolution happens once per PID via the descriptor cache, so
+     *     the extra lookup is paid at most once per target.
+     */
     public function getProcessDescriptor(
         int $pid,
         TargetPhpSettings $target_php_settings,
         ProcessDescriptorCache $process_descriptor_cache,
+        bool $needs_compiler_globals = false,
     ): TargetProcessDescriptor {
         $cache = $process_descriptor_cache->get($pid);
         if (!is_null($cache)) {
@@ -57,6 +65,13 @@ class ProcessDescriptorRetriever
                 $process_specifier,
                 $target_php_settings_decided
             );
+            $cg_address = 0;
+            if ($needs_compiler_globals) {
+                $cg_address = $this->php_globals_finder->findCompilerGlobals(
+                    $process_specifier,
+                    $target_php_settings_decided,
+                );
+            }
         } catch (\Throwable $e) {
             Log::debug(
                 'error on analyzing php binary',
@@ -77,6 +92,7 @@ class ProcessDescriptorRetriever
             $eg_address,
             $sg_address,
             $target_php_settings_decided->php_version,
+            $cg_address,
         );
         $process_descriptor_cache->set($result);
         return $result;
