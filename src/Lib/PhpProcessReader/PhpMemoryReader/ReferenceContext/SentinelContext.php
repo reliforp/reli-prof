@@ -70,4 +70,27 @@ final class SentinelContext implements ReferenceContext
     {
         return EdgeStrength::Strong;
     }
+
+    /**
+     * Sentinels carry their own `node_id` directly and the analyzer
+     * never asks for the memo on them — the SentinelContext branch
+     * in {@see ContextAnalyzer::analyzeContext()} short-circuits
+     * before the memo lookup. Returning null here keeps the
+     * interface contract honest if someone does ask.
+     */
+    #[\Override]
+    public function getMemoNodeId(): ?int
+    {
+        return null;
+    }
+
+    /**
+     * Sentinels are immutable post-construction; the memo lookup
+     * never reaches them via the analyzer (see above), so this
+     * setter is a no-op rather than a state mutation.
+     */
+    #[\Override]
+    public function setMemoNodeId(?int $node_id): void
+    {
+    }
 }

@@ -25,23 +25,22 @@ trait ReferenceContextDefault
     private array $extra_locations = [];
 
     /**
-     * Emit-state memo for {@see ContextAnalyzer}. Values are
-     * encoded the same way the old WeakMap<ReferenceContext, int>
-     * used to encode them:
-     *
-     *   null    ... not yet visited
-     *   >= 0    ... fully emitted, use as node_id when creating
-     *               reference edges
-     *   < 0     ... reserved via assignNodeId() but not yet
-     *               emitted; decoded as `-$memo_node_id - 1`
-     *
-     * Living on the Context itself means looking up the memo is
-     * a single property read (no WeakMap spl_object_id hash +
-     * bucket walk). The Context lifetime matches the WeakMap
-     * lifetime exactly — when the Context is GC'd the memo
-     * vanishes with it — so there's no extra cleanup to do.
+     * Backing slot for the {@see ContextAnalyzer} emit-state memo.
+     * The slot is private and accessed via {@see getMemoNodeId()}
+     * / {@see setMemoNodeId()}, both of which are trivial inline
+     * accessors so the JIT can fold them.
      */
-    public ?int $memo_node_id = null;
+    private ?int $memo_node_id = null;
+
+    public function getMemoNodeId(): ?int
+    {
+        return $this->memo_node_id;
+    }
+
+    public function setMemoNodeId(?int $node_id): void
+    {
+        $this->memo_node_id = $node_id;
+    }
 
     public function getName(): string
     {

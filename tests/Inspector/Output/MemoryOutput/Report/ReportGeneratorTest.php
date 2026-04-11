@@ -185,6 +185,40 @@ class ReportGeneratorTest extends BaseTestCase
         $this->assertStringContainsString('container', $paths[0]->summary);
     }
 
+    public function testBottleneckPathShowsOwnerPathAndLeafExampleSeparately(): void
+    {
+        $small_leaf = $this->createMockContext('leaf', [], [
+            new ZendObjectMemoryLocation(0x2000, 128, 1, 7, 'App\\SmallLeaf'),
+        ]);
+        $big_leaf = $this->createMockContext('leaf', [], [
+            new ZendObjectMemoryLocation(0x3000, 2 * 1024 * 1024, 1, 7, 'App\\BigLeaf'),
+        ]);
+        $container = $this->createMockContext('container', [
+            'meta' => $small_leaf,
+            'payload' => $big_leaf,
+        ], [
+            new ZendObjectMemoryLocation(0x1000, 64, 1, 7, 'App\\Container'),
+        ]);
+        $top = $this->createMockContext('top', ['root' => $container], []);
+
+        $this->buildDbFromContext($top);
+        $result = $this->generateReport();
+
+        $paths = $this->findByKind($result, 'bottleneck_path');
+        $this->assertNotEmpty($paths);
+        $this->assertStringContainsString('root', $paths[0]->summary);
+        $this->assertStringNotContainsString('payload', $paths[0]->summary);
+        $this->assertStringContainsString('payload', $paths[0]->hypothesis);
+        $this->assertSame(
+            'root',
+            $paths[0]->facts['summary_path'],
+        );
+        $this->assertSame(
+            'root->payload',
+            $paths[0]->facts['leaf_path'],
+        );
+    }
+
     public function testChokePointDetected(): void
     {
         // A small node holding a big subtree
@@ -373,6 +407,17 @@ class ReportGeneratorTest extends BaseTestCase
         array $attributes = [],
     ): ReferenceContext {
         $context = \Mockery::mock(ReferenceContext::class);
+        $memo = null;
+        $context->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$memo): ?int {
+                return $memo;
+            }
+        );
+        $context->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$memo): void {
+                $memo = $id;
+            }
+        );
         $context->allows('getName')->andReturns($name);
         $context->allows('getLinks')->andReturns($links);
         $context->allows('getLocations')->andReturns($locations);

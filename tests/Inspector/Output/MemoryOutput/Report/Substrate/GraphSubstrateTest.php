@@ -516,6 +516,17 @@ class GraphSubstrateTest extends BaseTestCase
         array $attributes = [],
     ): ReferenceContext {
         $context = \Mockery::mock(ReferenceContext::class);
+        $memo = null;
+        $context->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$memo): ?int {
+                return $memo;
+            }
+        );
+        $context->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$memo): void {
+                $memo = $id;
+            }
+        );
         $context->allows('getName')->andReturns($name);
         $context->allows('getLinks')->andReturns($links);
         $context->allows('getLocations')->andReturns($locations);
@@ -541,6 +552,17 @@ class GraphSubstrateTest extends BaseTestCase
         array $link_strengths = [],
     ): ReferenceContext {
         $context = \Mockery::mock(ReferenceContext::class);
+        $memo = null;
+        $context->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$memo): ?int {
+                return $memo;
+            }
+        );
+        $context->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$memo): void {
+                $memo = $id;
+            }
+        );
         $context->allows('getName')->andReturns($name);
         $context->allows('getLinks')->andReturns($links);
         $context->allows('getLocations')->andReturns($locations);

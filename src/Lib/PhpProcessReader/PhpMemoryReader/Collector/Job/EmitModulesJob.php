@@ -63,16 +63,11 @@ final class EmitModulesJob implements CollectorJob
                 return;
             }
 
-            // See EmitObjectJob for why this reads $context->memo_node_id
-            // directly instead of $ctx->memo[$context] (which became
-            // dead after the analyzer's memo moved to a Context property).
-            /** @psalm-suppress UndefinedPropertyFetch */
-            $standard_node_id = isset($standard_context->memo_node_id)
-                ? $standard_context->memo_node_id
-                : null;
-            if ($standard_node_id !== null) {
-                $standard_node_id = $standard_node_id < 0 ? -$standard_node_id - 1 : $standard_node_id;
-            }
+            // See EmitObjectJob for why this reads from getMemoNodeId().
+            $raw_standard = $standard_context->getMemoNodeId();
+            $standard_node_id = $raw_standard === null
+                ? null
+                : ($raw_standard < 0 ? -$raw_standard - 1 : $raw_standard);
 
             $shutdown_table = $ctx->dereferencer->deref($bg->user_shutdown_function_names);
             $entry_size = $ctx->zend_type_reader->sizeOf('php_shutdown_function_entry');

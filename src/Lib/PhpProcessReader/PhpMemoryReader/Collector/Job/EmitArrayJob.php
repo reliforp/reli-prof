@@ -122,16 +122,12 @@ final class EmitArrayJob implements CollectorJob
         }
 
         // Get the node_id for array_elements so children can be attached.
-        // See EmitObjectJob for why this reads $context->memo_node_id
-        // directly instead of $ctx->memo[$context] (which became dead
-        // after the analyzer's memo moved to a Context property).
-        /** @psalm-suppress UndefinedPropertyFetch */
-        $elements_node_id = isset($array_elements_context->memo_node_id)
-            ? $array_elements_context->memo_node_id
-            : null;
-        if ($elements_node_id !== null) {
-            $elements_node_id = $elements_node_id < 0 ? -$elements_node_id - 1 : $elements_node_id;
-        }
+        // See EmitObjectJob for why this reads from getMemoNodeId() now
+        // instead of $ctx->memo[$context].
+        $raw_elements = $array_elements_context->getMemoNodeId();
+        $elements_node_id = $raw_elements === null
+            ? null
+            : ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements);
 
         // Push the iterator job for array elements
         $queue->push(new ArrayElementsIteratorJob(

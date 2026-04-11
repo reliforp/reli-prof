@@ -340,6 +340,17 @@ class PdoMemoryOutputTest extends BaseTestCase
 
         // Create a context that will throw during analysis
         $badContext = \Mockery::mock(ReferenceContext::class);
+        $bad_memo = null;
+        $badContext->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$bad_memo): ?int {
+                return $bad_memo;
+            }
+        );
+        $badContext->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$bad_memo): void {
+                $bad_memo = $id;
+            }
+        );
         $badContext->allows('getLinks')->andThrows(new \RuntimeException('test error'));
         $badContext->allows('getName')->andReturns('bad');
         $badContext->allows('getLocations')->andReturns([]);
@@ -376,6 +387,20 @@ class PdoMemoryOutputTest extends BaseTestCase
         array $attributes = [],
     ): ReferenceContext {
         $context = \Mockery::mock(ReferenceContext::class);
+        // Stateful memo: the analyzer's dedup logic relies on
+        // setMemoNodeId() being observable by the next
+        // getMemoNodeId() on the same Context.
+        $memo = null;
+        $context->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$memo): ?int {
+                return $memo;
+            }
+        );
+        $context->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$memo): void {
+                $memo = $id;
+            }
+        );
         $context->allows('getName')->andReturns($name);
         $context->allows('getLinks')->andReturns($links);
         $context->allows('getLocations')->andReturns($locations);

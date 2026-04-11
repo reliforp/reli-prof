@@ -86,16 +86,13 @@ final class EmitClassTableJob implements CollectorJob
             $ctx->emitNode($class_def_context, $parent, (string)$class_name);
 
             // Push deferred zvals/arrays after emit (need parent node_id from memo).
-            // See EmitObjectJob for why this reads $parent_ctx->memo_node_id
-            // directly instead of $ctx->memo[$parent_ctx] (which became
-            // dead after the analyzer's memo moved to a Context property).
+            // See EmitObjectJob for why this reads from getMemoNodeId().
             /** @psalm-suppress ArgumentTypeCoercion */
             foreach ($deferred_zvals as [$parent_ctx, $link, $value]) {
-                /** @psalm-suppress UndefinedPropertyFetch */
-                $pid = isset($parent_ctx->memo_node_id) ? $parent_ctx->memo_node_id : null;
-                if ($pid !== null) {
-                    $pid = $pid < 0 ? -$pid - 1 : $pid;
-                }
+                $raw_pid = $parent_ctx->getMemoNodeId();
+                $pid = $raw_pid === null
+                    ? null
+                    : ($raw_pid < 0 ? -$raw_pid - 1 : $raw_pid);
                 if ($value instanceof \Reli\Lib\Process\Pointer\Pointer) {
                     $queue->push(new EmitArrayJob($value, $pid, $link));
                 } else {

@@ -176,7 +176,7 @@ final class MemoryReportCommand extends Command
         /** @var string $mmap_size_raw */
         $mmap_size_raw = $input->getOption('mmap-size');
         try {
-            $mmap_size_bytes = HeapStats::parseSize((string)$mmap_size_raw);
+            $mmap_size_bytes = HeapStats::parseSize($mmap_size_raw);
         } catch (\Throwable $e) {
             $output->writeln(sprintf(
                 '<error>Invalid --mmap-size value: %s (use bytes, or K/M/G suffix)</error>',

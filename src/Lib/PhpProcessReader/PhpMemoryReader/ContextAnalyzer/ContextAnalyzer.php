@@ -90,15 +90,13 @@ final class ContextAnalyzer
         ReferenceContext $context,
         ?\WeakMap $memo = null,
     ): int {
-        /** @psalm-suppress UndefinedPropertyFetch */
-        $existing = isset($context->memo_node_id) ? $context->memo_node_id : null;
+        $existing = $context->getMemoNodeId();
         if ($existing !== null) {
             return $existing < 0 ? -$existing - 1 : $existing;
         }
         $node_id = $this->node_id++;
         // Store as negative-minus-1 to indicate "reserved but not emitted"
-        /** @psalm-suppress UndefinedPropertyAssignment */
-        $context->memo_node_id = -$node_id - 1;
+        $context->setMemoNodeId(-$node_id - 1);
         if ($memo !== null) {
             $memo[$context] = -$node_id - 1;
         }
@@ -127,7 +125,6 @@ final class ContextAnalyzer
     /**
      * @param \WeakMap<ReferenceContext, int>|null $memo optional
      *     legacy WeakMap mirror; see analyze() for the contract.
-     * @psalm-suppress UndefinedPropertyFetch, UndefinedPropertyAssignment
      */
     private function analyzeContext(
         ReferenceContext|int $linked_context,
@@ -148,9 +145,11 @@ final class ContextAnalyzer
         }
 
         // SentinelContext is retained for compatibility in tests and
-        // non-hot paths. It doesn't have a memo_node_id because it's
-        // never looked up — the streaming collector uses the int
-        // placeholder form above for that role.
+        // non-hot paths. It carries its own node_id directly and
+        // never participates in the memo lookup below — getMemoNodeId
+        // on a sentinel returns null, but the analyzer short-circuits
+        // here before asking, so the sentinel branch is the
+        // canonical path for already-emitted nodes during streaming.
         if ($linked_context instanceof SentinelContext) {
             if ($linked_context->emit_reference_edge) {
                 $sink->emitReference($linked_context->node_id, $parent_node_id, $link_name, $edge_strength);
@@ -158,17 +157,11 @@ final class ContextAnalyzer
             return;
         }
 
-        // `isset` safely returns false for unvisited (null value) AND
-        // for mock Contexts that don't declare the property at all,
-        // without tripping the PHP 8+ "undefined property" warning
-        // that `?? null` does.
-        $existing_node_id = isset($linked_context->memo_node_id)
-            ? $linked_context->memo_node_id
-            : null;
-        // If the test/legacy caller passed a WeakMap and the property
-        // is unset, fall back to the WeakMap. This makes the analyzer
-        // tolerant of mock Contexts that don't carry the property at
-        // all.
+        $existing_node_id = $linked_context->getMemoNodeId();
+        // If the test/legacy caller passed a WeakMap and the memo
+        // hasn't been populated on the Context itself, fall back to
+        // the WeakMap. This makes the analyzer tolerant of mock
+        // Contexts that don't track memo state.
         if ($existing_node_id === null && $memo !== null && isset($memo[$linked_context])) {
             $existing_node_id = $memo[$linked_context];
         }
@@ -184,7 +177,7 @@ final class ContextAnalyzer
         } else {
             $current_node_id = $this->node_id++;
         }
-        $linked_context->memo_node_id = $current_node_id;
+        $linked_context->setMemoNodeId($current_node_id);
         if ($memo !== null) {
             $memo[$linked_context] = $current_node_id;
         }

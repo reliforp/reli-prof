@@ -240,11 +240,20 @@ intent to build the additional surfaces. Adopting it without the
 follow-through is a regression, not a refactor.
 
 The retention strategy for SQL — `inspect:export-sqlite` — is
-also a real implementation cost, not a hand-wave. It must be fast
-enough that "I want to SQL this capture" is not painful (sub-
-minute on a multi-GB capture), and it must produce a SQLite DB
-schema-compatible with the current one so existing user knowledge
-and third-party tooling continue to work.
+also a real implementation cost, not a hand-wave. It must be
+fast enough that "I want to SQL this capture" doesn't dominate
+the workflow, and it must produce a SQLite DB schema-compatible
+with the current one so existing user knowledge and third-party
+tooling continue to work. The exact target speed depends on
+whether the export rebuilds indexes (the expensive part of the
+current analyze), which is itself a knob the export tool can
+expose: a no-index export is essentially bulk INSERT speed
+(seconds to a couple of minutes on a multi-GB capture), a fully
+indexed export is the same order as today's `createIndexes`
+phase (single-digit minutes after the optimisations on this
+branch). Either is acceptable as long as the export step is
+clearly bounded and not "wait half an hour to peek at the
+data".
 
 In short: this proposal is approved iff we sign up for
 

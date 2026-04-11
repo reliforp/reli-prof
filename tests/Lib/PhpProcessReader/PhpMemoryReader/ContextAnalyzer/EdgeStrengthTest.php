@@ -76,6 +76,17 @@ class EdgeStrengthTest extends BaseTestCase
     public function testAnalyzerPassesEdgeStrengthToSink(): void
     {
         $handlers = \Mockery::mock(ReferenceContext::class);
+        $handlers_memo = null;
+        $handlers->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$handlers_memo): ?int {
+                return $handlers_memo;
+            }
+        );
+        $handlers->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$handlers_memo): void {
+                $handlers_memo = $id;
+            }
+        );
         $handlers->allows('getName')->andReturns('handlers');
         $handlers->allows('getLinks')->andReturns([]);
         $handlers->allows('getLocations')->andReturns([]);
@@ -84,6 +95,17 @@ class EdgeStrengthTest extends BaseTestCase
         $handlers->allows('getLinkStrength')->andReturns(EdgeStrength::Strong);
 
         $object = \Mockery::mock(ReferenceContext::class);
+        $object_memo = null;
+        $object->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$object_memo): ?int {
+                return $object_memo;
+            }
+        );
+        $object->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$object_memo): void {
+                $object_memo = $id;
+            }
+        );
         $object->allows('getName')->andReturns('object');
         $object->allows('getLinks')->andReturns([
             'object_handlers' => $handlers,

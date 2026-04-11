@@ -90,15 +90,13 @@ final class ContextPools
     /**
      * @param iterable<int, ReferenceContext> $entries address => context
      * @param array<int, int>                 $address_map
-     * @psalm-suppress UndefinedPropertyFetch
      */
     private function drainPoolToAddressMap(
         iterable $entries,
         array &$address_map,
     ): void {
         foreach ($entries as $address => $context) {
-            /** @var ?int $node_id */
-            $node_id = isset($context->memo_node_id) ? $context->memo_node_id : null;
+            $node_id = $context->getMemoNodeId();
             if ($node_id !== null) {
                 // Decode negative memo values (reserved but emitted)
                 $address_map[$address] = $node_id < 0 ? -$node_id - 1 : $node_id;

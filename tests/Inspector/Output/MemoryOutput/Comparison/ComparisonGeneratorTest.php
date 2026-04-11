@@ -319,6 +319,17 @@ class ComparisonGeneratorTest extends BaseTestCase
         array $locations,
     ): ReferenceContext {
         $context = \Mockery::mock(ReferenceContext::class);
+        $memo = null;
+        $context->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$memo): ?int {
+                return $memo;
+            }
+        );
+        $context->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$memo): void {
+                $memo = $id;
+            }
+        );
         $context->allows('getName')->andReturns($name);
         $context->allows('getLinks')->andReturns($links);
         $context->allows('getLocations')->andReturns($locations);

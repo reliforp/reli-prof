@@ -70,7 +70,6 @@ final class CollectorContext
     /**
      * Emit a node to the sink and record its address->node_id mapping.
      * Returns the assigned node_id, or -1 if assignment failed.
-     * @psalm-suppress UndefinedPropertyFetch
      */
     public function emitNode(
         ReferenceContext $context,
@@ -86,8 +85,7 @@ final class CollectorContext
             null,
             $edge_strength,
         );
-        /** @var ?int $node_id */
-        $node_id = isset($context->memo_node_id) ? $context->memo_node_id : null;
+        $node_id = $context->getMemoNodeId();
         if ($node_id !== null) {
             return $node_id < 0 ? -$node_id - 1 : $node_id;
         }
@@ -123,12 +121,10 @@ final class CollectorContext
 
     /**
      * Register a context's node_id in the address_map after it has been emitted.
-     * @psalm-suppress UndefinedPropertyFetch
      */
     public function recordContextAddress(int $address, ReferenceContext $context): void
     {
-        /** @var ?int $node_id */
-        $node_id = isset($context->memo_node_id) ? $context->memo_node_id : null;
+        $node_id = $context->getMemoNodeId();
         if ($node_id !== null) {
             $this->address_map[$address] = $node_id < 0 ? -$node_id - 1 : $node_id;
         }
