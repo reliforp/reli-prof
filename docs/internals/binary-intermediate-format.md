@@ -26,13 +26,14 @@ The rough chronology:
    the structures. Useful as a structured dump, useless as a
    query target.
 
-2. **SQLite output era.** "If we put it in a DB you could SQL the
-   heap" was a recurring chat thread. It got built largely because
-   a coding agent volunteered to implement it in conversation —
-   the design pressure was "wouldn't this be neat" rather than
-   "we have a concrete query workload". The schema was shaped by
-   what felt natural to write at the time, not by what report
-   queries would later need.
+2. **SQLite output era.** Coding agents started being good
+   enough that "I should just lazily chat with the agent about
+   sticking this in a DB and see if it does it" worked, and it
+   did. SQLite output landed not because we had a concrete query
+   workload waiting for it but because the path of least
+   resistance happened to produce a working implementation. The
+   schema was shaped by what felt natural to write at the time,
+   not by what report queries would later need.
 
 3. **Report-by-aggregation era.** Once SQLite existed it was
    natural to write a report tool that ran SQL aggregations
