@@ -71,6 +71,72 @@ class MergedCallTraceFormatterTest extends BaseTestCase
         $this->assertStringContainsString('/app/test.php:', $lines[1]);
     }
 
+    public function testFormatWithAnnotationsEmitsCommentLinesAfterFrames(): void
+    {
+        $trace = new MergedCallTrace(
+            MergedCallFrame::fromNative(new NativeCallFrame('execute_ex', 'php8.4', 0, 0x2000)),
+            MergedCallFrame::fromPhp(new CallFrame('App\\Service', 'run', '/app/svc.php', null)),
+        );
+
+        $output = $this->formatter->format(
+            $trace,
+            [
+                'global::$counter' => '(int) 42',
+                'local::App\\Service::run()$id' => '(string) "abc"',
+            ],
+        );
+
+        $expected = "0 php8.4::execute_ex [native]:0\n"
+            . "1 App\\Service::run /app/svc.php:-1\n"
+            . "# global::\$counter = (int) 42\n"
+            . "# local::App\\Service::run()\$id = (string) \"abc\"\n"
+            . "\n";
+        $this->assertSame($expected, $output);
+    }
+
+    public function testFormatWithEmptyAnnotationsIsIdenticalToNullAnnotations(): void
+    {
+        $trace = new MergedCallTrace(
+            MergedCallFrame::fromPhp(new CallFrame('', 'main', '/index.php', null)),
+        );
+        $this->assertSame(
+            $this->formatter->format($trace),
+            $this->formatter->format($trace, []),
+        );
+        $this->assertSame(
+            $this->formatter->format($trace),
+            $this->formatter->format($trace, null),
+        );
+    }
+
+    public function testFormatAnnotationLinesRoundTripThroughPhpSpyParser(): void
+    {
+        // reli's own parser must treat the annotation lines as comments
+        // so merged-output streams remain re-parseable after annotations
+        // are added.
+        $trace = new MergedCallTrace(
+            MergedCallFrame::fromNative(new NativeCallFrame('execute_ex', 'php', 0, 0x1000)),
+            MergedCallFrame::fromPhp(new CallFrame('App', 'run', '/app.php', null)),
+        );
+        $text = $this->formatter->format($trace, ['global::$x' => '(int) 7']);
+
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+        fwrite($stream, $text);
+        rewind($stream);
+
+        $parser = new \Reli\Converter\PhpSpyCompatibleParser();
+        $parsed = iterator_to_array($parser->parseFile($stream));
+        fclose($stream);
+
+        $this->assertCount(1, $parsed);
+        $this->assertCount(2, $parsed[0]->call_frames);
+        // Frame 0 is the native frame; parser treats its display name as
+        // the function token.
+        $this->assertStringContainsString('execute_ex', $parsed[0]->call_frames[0]->function_name);
+        $this->assertSame('App::run', $parsed[0]->call_frames[1]->function_name);
+    }
+
     public function testPhpSpyCompatibility(): void
     {
         // Verify output can be parsed by PhpSpyCompatibleParser

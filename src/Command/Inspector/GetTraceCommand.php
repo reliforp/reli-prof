@@ -236,12 +236,26 @@ final class GetTraceCommand extends Command
                     if ($call_trace !== null || $native_trace_anytime) {
                         $native_trace = $native_collector->collect($process_specifier->pid);
                         if ($native_trace !== null) {
-                            // Merged native+php traces intentionally skip
-                            // --trace-var annotations for now; the merged
-                            // output path has no annotation slot yet.
                             $php_trace = $call_trace ?? new CallTrace();
                             $merged = $trace_merger->merge($native_trace, $php_trace);
-                            $merged_trace_output->outputMerged($merged);
+                            // --trace-var peek is evaluated against the
+                            // PHP frame list regardless of whether the
+                            // merged output carries native frames; the
+                            // on-function gate and variable reads depend
+                            // only on PHP state. When call_trace is null
+                            // (native-only sample via --native-trace-anytime),
+                            // no annotations are produced.
+                            $annotations = null;
+                            if ($call_trace !== null) {
+                                $annotations = $var_peek_collector?->collect(
+                                    $call_trace,
+                                    $process_specifier,
+                                    $target_php_settings,
+                                    $eg_address,
+                                    $cg_address,
+                                );
+                            }
+                            $merged_trace_output->outputMerged($merged, $annotations);
                         } elseif ($call_trace !== null) {
                             $annotations = $var_peek_collector?->collect(
                                 $call_trace,

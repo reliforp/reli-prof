@@ -26,10 +26,10 @@ final class FormattedMergedTraceOutput implements MergedTraceOutput
     }
 
     #[\Override]
-    public function outputMerged(MergedCallTrace $merged_trace): void
+    public function outputMerged(MergedCallTrace $merged_trace, ?array $annotations = null): void
     {
         $this->outputChannel->output(
-            $this->formatter->format($merged_trace)
+            $this->formatter->format($merged_trace, $annotations)
         );
     }
 }

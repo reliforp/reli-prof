@@ -156,6 +156,53 @@ final class BinaryTraceOutputTest extends BaseTestCase
         $this->assertSame('zend_execute', $frames[0]->function_name);
         $this->assertFalse($frames[1]->isNative());
         $this->assertSame('App::run', $frames[1]->function_name);
+        $this->assertNull($results[0]->annotations);
+    }
+
+    public function testOutputMergedWithAnnotationsRoundTrips(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 10000);
+        $output = new BinaryTraceOutput($writer);
+
+        $merged = new MergedCallTrace(
+            MergedCallFrame::fromNative(
+                new NativeCallFrame('zend_execute', 'libphp.so', 0x42, 0x7f00),
+            ),
+            MergedCallFrame::fromPhp(
+                new CallFrame('App', 'run', '/app.php', null),
+            ),
+        );
+        $output->outputMerged(
+            $merged,
+            [
+                'global::$counter' => '(int) 42',
+                'local::App::run()$id' => '(string) "abc"',
+            ],
+        );
+        $output->finish();
+
+        rewind($stream);
+        $reader = new BinaryTraceReader();
+        $results = iterator_to_array($reader->read($stream));
+        fclose($stream);
+
+        $this->assertCount(1, $results);
+        // Native + PHP frames both preserved.
+        $frames = $results[0]->trace->call_frames;
+        $this->assertCount(2, $frames);
+        $this->assertTrue($frames[0]->isNative());
+        $this->assertFalse($frames[1]->isNative());
+        // And the annotations round-trip.
+        $this->assertSame(
+            [
+                'global::$counter' => '(int) 42',
+                'local::App::run()$id' => '(string) "abc"',
+            ],
+            $results[0]->annotations,
+        );
     }
 
     public function testOutputWithAnnotationsRoundTrips(): void

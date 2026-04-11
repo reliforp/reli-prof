@@ -45,9 +45,9 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
     }
 
     #[\Override]
-    public function outputMerged(MergedCallTrace $merged_trace): void
+    public function outputMerged(MergedCallTrace $merged_trace, ?array $annotations = null): void
     {
-        $this->writeParsed(CallTraceConverter::mergedToParsed($merged_trace));
+        $this->writeParsed(CallTraceConverter::mergedToParsed($merged_trace), $annotations);
     }
 
     /**

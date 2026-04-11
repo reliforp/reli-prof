@@ -17,5 +17,11 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\MergedCallTrace;
 
 interface MergedTraceOutput
 {
-    public function outputMerged(MergedCallTrace $merged_trace): void;
+    /**
+     * @param array<string, string>|null $annotations optional per-sample
+     *     key/value metadata (e.g. --trace-var peek results). Same
+     *     semantics as TraceOutput::output(). Implementations that can't
+     *     express annotations MUST silently ignore this argument.
+     */
+    public function outputMerged(MergedCallTrace $merged_trace, ?array $annotations = null): void;
 }
