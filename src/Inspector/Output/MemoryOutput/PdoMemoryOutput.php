@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
+use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
@@ -257,13 +258,13 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // resulting database is left in normal-durability mode for
         // subsequent report runs.
         $sqlite = $this->driver instanceof SqliteDriver;
-        $saved_synchronous = null;
-        $saved_journal_mode = null;
-        $saved_temp_store = null;
+        $saved_synchronous = '';
+        $saved_journal_mode = '';
+        $saved_temp_store = '';
         if ($sqlite) {
-            $saved_synchronous = $db->query('PRAGMA synchronous')->fetchColumn();
-            $saved_journal_mode = $db->query('PRAGMA journal_mode')->fetchColumn();
-            $saved_temp_store = $db->query('PRAGMA temp_store')->fetchColumn();
+            $saved_synchronous = Cast::toString($db->query('PRAGMA synchronous')->fetchColumn());
+            $saved_journal_mode = Cast::toString($db->query('PRAGMA journal_mode')->fetchColumn());
+            $saved_temp_store = Cast::toString($db->query('PRAGMA temp_store')->fetchColumn());
             $db->exec('PRAGMA synchronous = OFF');
             $db->exec('PRAGMA journal_mode = MEMORY');
             $db->exec('PRAGMA temp_store = MEMORY');
@@ -343,9 +344,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             );
         } finally {
             if ($sqlite) {
-                $db->exec('PRAGMA synchronous = ' . (string)$saved_synchronous);
-                $db->exec('PRAGMA journal_mode = ' . (string)$saved_journal_mode);
-                $db->exec('PRAGMA temp_store = ' . (string)$saved_temp_store);
+                $db->exec('PRAGMA synchronous = ' . $saved_synchronous);
+                $db->exec('PRAGMA journal_mode = ' . $saved_journal_mode);
+                $db->exec('PRAGMA temp_store = ' . $saved_temp_store);
             }
         }
     }

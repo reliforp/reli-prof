@@ -1,5 +1,7 @@
 <?php
+
 namespace FFI\Libc;
+
 use FFI\CData;
 use FFI\CInteger;
 
@@ -34,7 +36,9 @@ class process_vm_readv_ffi extends \FFI
      * @param int $flags
      * @return int|CInteger
      */
-    public function process_vm_readv(int $pid, CData $local_iov_addr, int $liovcnt, CData $remote_iov_addr, int $riovcnt, int $flags): int {}
+    public function process_vm_readv(int $pid, CData $local_iov_addr, int $liovcnt, CData $remote_iov_addr, int $riovcnt, int $flags): int
+    {
+    }
 }
 
 class errno_ffi extends \FFI
@@ -45,7 +49,9 @@ class errno_ffi extends \FFI
 
 class execvp_ffi extends \FFI
 {
-    public function execvp(string $file, CData $argv): int {}
+    public function execvp(string $file, CData $argv): int
+    {
+    }
 }
 
 class ptrace_ffi extends \FFI
@@ -57,12 +63,26 @@ class ptrace_ffi extends \FFI
      * @param CData $data
      * @return int
      */
-    public function ptrace(int $request, int $pid, CData $addr, CData $data): int {}
+    public function ptrace(int $request, int $pid, CData $addr, CData $data): int
+    {
+    }
 }
 
 class libc_file_ffi extends \FFI
 {
-    public function open(string $path, int $mode): int {}
-    public function read(int $fd, CData $buffer, int $size): int {}
-    public function close(int $fd) {}
+    public function open(string $path, int $mode): int
+    {
+    }
+    public function read(int $fd, CData $buffer, int $size): int
+    {
+    }
+    public function close(int $fd)
+    {
+    }
+    public function pread(int $fd, CData $buffer, int $size, int $offset): int
+    {
+    }
+    public function posix_fadvise(int $fd, int $offset, int $len, int $advice): int
+    {
+    }
 }

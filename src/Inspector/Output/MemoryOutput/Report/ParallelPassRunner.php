@@ -103,7 +103,8 @@ final class ParallelPassRunner
             while ($pending !== [] || $running !== []) {
                 // Fork new workers up to worker_count at a time.
                 while (count($running) < $this->worker_count && $pending !== []) {
-                    $name = (string)array_key_first($pending);
+                    $name = array_key_first($pending);
+                    assert($name !== null);
                     $factory = $pending[$name];
                     unset($pending[$name]);
 
@@ -160,6 +161,7 @@ final class ParallelPassRunner
                 if ($json === false) {
                     continue;
                 }
+                /** @var list<array<string, mixed>>|mixed $arr */
                 $arr = json_decode($json, true);
                 if (!is_array($arr)) {
                     continue;

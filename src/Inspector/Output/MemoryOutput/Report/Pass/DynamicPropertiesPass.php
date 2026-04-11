@@ -43,8 +43,8 @@ final class DynamicPropertiesPass implements PassInterface
         $findings = [];
         foreach ($rows as $row) {
             $short = $row['class_name'];
-            $dp_size = (int)$row['dp_size'];
-            $cnt = (int)$row['cnt'];
+            $dp_size = $row['dp_size'];
+            $cnt = $row['cnt'];
 
             $findings[] = new Finding(
                 kind: 'dynamic_properties_overhead',

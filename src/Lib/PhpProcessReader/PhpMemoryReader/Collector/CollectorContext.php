@@ -35,7 +35,10 @@ final class CollectorContext
     /**
      * $memo is retained for source compatibility but unused —
      * the emit-state memo now lives on the Context objects as
-     * `$context->memo_node_id`. See ContextAnalyzer's class docblock.
+     * a private slot reachable through ReferenceContext::getMemoNodeId()
+     * / setMemoNodeId(). See ContextAnalyzer's class docblock.
+     *
+     * @param \WeakMap<ReferenceContext, int> $memo
      */
     public function __construct(
         public Dereferencer $dereferencer,

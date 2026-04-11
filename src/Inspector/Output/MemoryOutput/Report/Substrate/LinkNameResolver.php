@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
+use PhpCast\Cast;
+
 /**
  * Shared in-memory index of the tree edges of a memory snapshot.
  *
@@ -92,10 +94,11 @@ final class LinkNameResolver
             . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
         );
         while (($row = $stmt->fetch(\PDO::FETCH_NUM)) !== false) {
-            $child_id = (int)$row[1];
-            $this->link_cache[$child_id] = (string)$row[2];
+            assert(is_array($row));
+            $child_id = Cast::toInt($row[1]);
+            $this->link_cache[$child_id] = Cast::toString($row[2]);
             if ($row[0] !== null) {
-                $this->tree_parents[$child_id] = (int)$row[0];
+                $this->tree_parents[$child_id] = Cast::toInt($row[0]);
             }
         }
         $this->fully_loaded = true;
@@ -171,13 +174,14 @@ final class LinkNameResolver
                 . " AND child_node_id IN ({$placeholders})"
             );
             while (($row = $stmt->fetch(\PDO::FETCH_NUM)) !== false) {
-                $child_id = (int)$row[1];
-                $link_name = (string)$row[2];
+                assert(is_array($row));
+                $child_id = Cast::toInt($row[1]);
+                $link_name = Cast::toString($row[2]);
                 $result[$child_id] = $link_name;
                 if (count($this->link_cache) < $this->max_cache_entries) {
                     $this->link_cache[$child_id] = $link_name;
                     if ($row[0] !== null) {
-                        $this->tree_parents[$child_id] = (int)$row[0];
+                        $this->tree_parents[$child_id] = Cast::toInt($row[0]);
                     }
                 }
                 unset($missing[$child_id]);
@@ -295,8 +299,8 @@ final class LinkNameResolver
         /** @var array{0: int|string|null, 1: string}|false $row */
         $row = $this->stmt->fetch(\PDO::FETCH_NUM);
 
-        $link_name = $row === false ? null : (string)$row[1];
-        $parent_id = $row === false || $row[0] === null ? null : (int)$row[0];
+        $link_name = $row === false ? null : $row[1];
+        $parent_id = $row === false || $row[0] === null ? null : Cast::toInt($row[0]);
 
         // Bounded cache: stop storing once the soft cap is reached so the
         // resolver still helps the first N unique ids without growing

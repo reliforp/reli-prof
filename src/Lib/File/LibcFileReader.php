@@ -37,6 +37,12 @@ final class LibcFileReader
 {
     private int $fd = -1;
 
+    /**
+     * @param \FFI\Libc\libc_file_ffi $libc typed via the bundled stub
+     *     in `tools/stubs/ffi/libc.php` so static analysis sees the
+     *     declared method signatures (open / close / pread /
+     *     posix_fadvise) instead of the opaque \FFI base class.
+     */
     private function __construct(
         private FFI $libc,
         private string $path,
@@ -84,7 +90,10 @@ final class LibcFileReader
     public function pread(CData $buf, int $size, int $offset): int
     {
         assert($this->fd >= 0);
-        return $this->libc->pread($this->fd, FFI::addr($buf[0]), $size, $offset);
+        // PHP FFI marshals CData as a pointer to its underlying
+        // storage when passed to a function expecting `void*`, so
+        // there's no need to FFI::addr the first element manually.
+        return $this->libc->pread($this->fd, $buf, $size, $offset);
     }
 
     /**
@@ -139,6 +148,11 @@ final class LibcFileReader
      * posix_fadvise is declared in the cdef but resolved lazily on
      * first call, so platforms missing the symbol still load the
      * binding cleanly and only fail when prefetchFile() is invoked.
+     *
+     * @return \FFI\Libc\libc_file_ffi|null typed via the bundled
+     *     stub so static analysis sees the declared method
+     *     signatures (open / close / pread / posix_fadvise) on the
+     *     returned binding instead of the opaque \FFI base class.
      */
     private static function bindLibc(): ?FFI
     {
@@ -149,6 +163,7 @@ final class LibcFileReader
         $candidates = [null, 'libc.so.6', 'libc.so', 'libSystem.dylib'];
         foreach ($candidates as $lib) {
             try {
+                /** @var \FFI\Libc\libc_file_ffi */
                 return FFI::cdef($cdef, $lib);
             } catch (\Throwable) {
                 // try next candidate

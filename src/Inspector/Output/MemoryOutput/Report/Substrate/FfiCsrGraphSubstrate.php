@@ -571,8 +571,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $phpMap = $this->nodeToIndexPhp;
         $ffiNodeSizes = $this->ffiNodeSizes;
         $nodeClassIds = $this->nodeClassIds;
-        $classDictReverse = &$this->classDictReverse;
-        $classDict = &$this->classDict;
+        // The class dict is touched only on cache miss (a few hundred
+        // to a few thousand times for typical heaps), so reading the
+        // properties directly via $this-> is fine — no need for the
+        // by-reference aliasing dance, which Psalm can't model.
 
         $stmt = $db->prepare(
             "SELECT node_id, sum(size) as s, min(class_name) as cls
@@ -611,11 +613,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $this->nodeSizesSum += $size;
                 if ($r[2] !== null) {
                     $className = (string)$r[2];
-                    if (!isset($classDictReverse[$className])) {
-                        $classDictReverse[$className] = count($classDict);
-                        $classDict[] = $className;
+                    if (!isset($this->classDictReverse[$className])) {
+                        $this->classDictReverse[$className] = count($this->classDict);
+                        $this->classDict[] = $className;
                     }
-                    $nodeClassIds[$csrIdx] = $classDictReverse[$className];
+                    $nodeClassIds[$csrIdx] = $this->classDictReverse[$className];
                 }
                 $last_node_id = $node_id;
             }
@@ -623,7 +625,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 break;
             }
         }
-        unset($classDictReverse, $classDict);
     }
 
     /**
@@ -644,15 +645,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
 
         // Localise hot reads (same pattern loadEdgesFfi uses) so the
-        // inner loop never goes through `$this->` for nodeIdToIndex
-        // or the dict updates.
+        // inner loop never goes through `$this->` for nodeIdToIndex.
+        // The type dict is touched only on cache miss so $this->
+        // access on the dict properties is fine.
         $directMap = $this->nodeToIndexDirect;
         $directOffset = $this->directIndexOffset;
         $directSize = $this->directIndexSize;
         $phpMap = $this->nodeToIndexPhp;
         $nodeTypeIds = $this->nodeTypeIds;
-        $dictReverse = &$this->nodeTypeDictReverse;
-        $dict = &$this->nodeTypeDict;
         $chunk = $this->bulkFetchChunk;
 
         // Chunked node_id pagination via the lazy covering index
@@ -684,11 +684,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 }
                 if ($idx >= 0) {
                     $type = (string)$row[1];
-                    if (!isset($dictReverse[$type])) {
-                        $dictReverse[$type] = count($dict);
-                        $dict[] = $type;
+                    if (!isset($this->nodeTypeDictReverse[$type])) {
+                        $this->nodeTypeDictReverse[$type] = count($this->nodeTypeDict);
+                        $this->nodeTypeDict[] = $type;
                     }
-                    $nodeTypeIds[$idx] = $dictReverse[$type];
+                    $nodeTypeIds[$idx] = $this->nodeTypeDictReverse[$type];
                 }
                 $last_node_id = $node_id;
             }
@@ -696,7 +696,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 break;
             }
         }
-        unset($dictReverse, $dict);
     }
 
     /**
@@ -793,9 +792,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $phpMap = $this->nodeToIndexPhp;
         $treeLinkIds = $this->treeLinkIds;
         $treeParentIdx = $this->treeParentIdx;
-        $linkDictReverse = &$this->linkDictReverse;
-        $linkDict = &$this->linkDict;
-        $roots = &$this->roots;
+        // The link dict and roots list are touched only on the
+        // tree-edge branch (cache miss + once per root edge), not
+        // every row, so $this-> access here is fine — Psalm can't
+        // model the by-reference aliasing pattern this used to use.
 
         // Chunked id pagination via the lazy `(run_id, id)` index.
         // `id` is the rowid alias from the schema-level
@@ -852,13 +852,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $strongTreeCount++;
                     }
                     if ($parentIsRoot) {
-                        $roots[] = $child;
+                        $this->roots[] = $child;
                     }
-                    if (!isset($linkDictReverse[$link_name])) {
-                        $linkDictReverse[$link_name] = count($linkDict);
-                        $linkDict[] = $link_name;
+                    if (!isset($this->linkDictReverse[$link_name])) {
+                        $this->linkDictReverse[$link_name] = count($this->linkDict);
+                        $this->linkDict[] = $link_name;
                     }
-                    $treeLinkIds[$ci] = $linkDictReverse[$link_name];
+                    $treeLinkIds[$ci] = $this->linkDictReverse[$link_name];
                     $treeParentIdx[$ci] = $pi;
                 }
                 if (!$parentIsRoot) {
@@ -876,7 +876,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 break;
             }
         }
-        unset($linkDictReverse, $linkDict, $roots);
 
         // Build offsets via prefix sum.
         $this->treeOffsets[0] = 0;

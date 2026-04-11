@@ -659,7 +659,6 @@ final class NonTreeEdgePass implements PassInterface
             ];
         }
 
-        assert($this->substrate !== null);
         return [
             'source_class' => $this->substrate->getNodeClass($owner_node_id),
             'owner_prop' => $owner_prop,

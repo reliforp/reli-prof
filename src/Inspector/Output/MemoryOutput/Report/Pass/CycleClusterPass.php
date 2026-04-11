@@ -617,6 +617,10 @@ final class CycleClusterPass implements PassInterface
         );
         $stmt->execute([$child_node_id]);
         $val = $stmt->fetchColumn();
-        return $val !== false ? (string)$val : null;
+        if ($val === false) {
+            return null;
+        }
+        assert(is_string($val));
+        return $val;
     }
 }

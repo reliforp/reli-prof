@@ -196,7 +196,7 @@ final class ReportGenerator
             $workers_want_fresh_db = $worker_count > 1 && $db_path !== null;
             $db_factory = $workers_want_fresh_db
                 ? $open_db
-                : fn () => $db;
+                : fn (): \PDO => $db;
             $resolver_factory = function () use ($db_factory, $run_id, $substrate): LinkNameResolver {
                 return new LinkNameResolver(
                     db: $db_factory(),
