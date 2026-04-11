@@ -40,6 +40,17 @@ final class MySqlDriver implements PdoDriverInterface
     }
 
     #[\Override]
+    public function batchInsertIgnoreSql(
+        string $table,
+        string $columns,
+        string $row_placeholders,
+        int $row_count,
+    ): string {
+        $rows = implode(',', array_fill(0, $row_count, "({$row_placeholders})"));
+        return "INSERT IGNORE INTO {$table} ({$columns}) VALUES {$rows}";
+    }
+
+    #[\Override]
     public function concatExpr(string $a, string $b): string
     {
         return "CONCAT({$a}, {$b})";

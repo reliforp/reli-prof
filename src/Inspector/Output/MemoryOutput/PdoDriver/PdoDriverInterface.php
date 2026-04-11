@@ -20,6 +20,19 @@ interface PdoDriverInterface
     /** SQL for inserting a node, ignoring duplicates */
     public function insertIgnoreSql(string $table, string $columns, string $placeholders): string;
 
+    /**
+     * SQL for a multi-row INSERT IGNORE. `$row_placeholders` is the
+     * placeholder string for a single row (e.g. `"?,?,?"`), and the
+     * driver repeats it `$row_count` times with the correct
+     * conflict-ignore syntax for its dialect.
+     */
+    public function batchInsertIgnoreSql(
+        string $table,
+        string $columns,
+        string $row_placeholders,
+        int $row_count,
+    ): string;
+
     /** SQL expression to concatenate two strings */
     public function concatExpr(string $a, string $b): string;
 

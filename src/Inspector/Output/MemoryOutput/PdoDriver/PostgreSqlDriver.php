@@ -40,6 +40,17 @@ final class PostgreSqlDriver implements PdoDriverInterface
     }
 
     #[\Override]
+    public function batchInsertIgnoreSql(
+        string $table,
+        string $columns,
+        string $row_placeholders,
+        int $row_count,
+    ): string {
+        $rows = implode(',', array_fill(0, $row_count, "({$row_placeholders})"));
+        return "INSERT INTO {$table} ({$columns}) VALUES {$rows} ON CONFLICT DO NOTHING";
+    }
+
+    #[\Override]
     public function concatExpr(string $a, string $b): string
     {
         return "{$a} || {$b}";
