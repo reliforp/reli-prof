@@ -92,7 +92,9 @@ final class TraceModel
                             $no_line_to_id[$function] = $no_line_id;
                             $frame_keys_no_line[] = $function;
                         }
-                        $no_line_map[$frame_id] = $no_line_id;
+                        // frame_id == count($no_line_map) at this point,
+                        // so [] append keeps no_line_map[$frame_id] in sync.
+                        $no_line_map[] = $no_line_id;
                     }
                     $stack[] = $frame_id;
                 }
@@ -122,7 +124,7 @@ final class TraceModel
         if ($this->sampling_period_us <= 0) {
             return 0.0;
         }
-        return ($this->sampleCount() * $this->sampling_period_us) / 1_000_000.0;
+        return (float)$this->sampleCount() * (float)$this->sampling_period_us / 1_000_000.0;
     }
 
     /**

@@ -189,7 +189,13 @@ final class ExploreTui
      * fold state is meaningful only for one specific tree direction
      * of one specific focus, so it'd be misleading to carry it over).
      *
-     * @var array<string, true>
+     * Keys are intended as path strings (slash-joined int key_ids),
+     * but PHP normalises a purely-numeric string array key to int at
+     * insert time, so the runtime key type is `array-key`. The lookup
+     * site must handle both, hence the explicit string-cast in the
+     * recursive-unfold loop below.
+     *
+     * @var array<array-key, true>
      */
     private array $tree_folded = [];
 
@@ -246,10 +252,9 @@ final class ExploreTui
         // when on, it consumes one extra line.
         $show_mini_flame = $state->mode === ExploreMode::Sandwich
             && $this->mini_flame_enabled;
+        // The MIN_ROWS check above guarantees $rows is large enough
+        // that body_rows here is always >= 3, so no extra clamp.
         $body_rows = $rows - 6 - ($show_mini_flame ? 1 : 0);
-        if ($body_rows < 3) {
-            $body_rows = 3;
-        }
 
         // Sidebar is only shown for sandwich (the mode that benefits
         // from a "you are here" overview); the list views already are
@@ -376,8 +381,10 @@ final class ExploreTui
         // ends up beyond the visible strip.
         $virtual_widths = [];
         $virtual_total = 0;
+        $total_f = (float)$total;
+        $total_pixels_f = (float)$total_pixels;
         foreach ($rows as $i => [$count, , ]) {
-            $w = (int)round($count / $total * $total_pixels);
+            $w = (int)round((float)$count / $total_f * $total_pixels_f);
             if ($w === 0 && $count > 0) {
                 $w = 1;
             }
@@ -419,7 +426,7 @@ final class ExploreTui
             for ($i = 0; $i < $cursor_row_idx; $i++) {
                 $virtual_start += $virtual_widths[$i] ?? 0;
             }
-            $marker_pixel = (int)floor($virtual_start / $virtual_total * $total_pixels);
+            $marker_pixel = (int)floor((float)$virtual_start / (float)$virtual_total * (float)$total_pixels);
             if ($marker_pixel >= $total_pixels) {
                 $marker_pixel = $total_pixels - 1;
             }
@@ -491,7 +498,7 @@ final class ExploreTui
     {
         // Adaptive: ~25% of width, clamped to a useful range so labels
         // get enough room without starving the sandwich panes.
-        $width = (int)($cols * 0.28);
+        $width = (int)((float)$cols * 0.28);
         if ($width < 30) {
             $width = 30;
         }
@@ -543,8 +550,8 @@ final class ExploreTui
     {
         $cache = $this->ensureList();
         $rows_data = $this->applyViewFilter($cache['rows'], $state->view_filter);
-        $denom = max(1, $cache['matched_samples']);
-        $max_count = max(1, self::maxRowCount($rows_data));
+        $denom = (float)max(1, $cache['matched_samples']);
+        $max_count = (float)max(1, self::maxRowCount($rows_data));
 
         $this->clampSelection($this->list_selected, $this->list_top_row, count($rows_data), $body_rows - 1);
 
@@ -562,9 +569,9 @@ final class ExploreTui
                 continue;
             }
             [$count, , $label] = $rows_data[$idx];
-            $pct = ($count / $denom) * 100;
+            $pct = (float)$count / $denom * 100.0;
             $marker = $idx === $this->list_selected ? '>' : ' ';
-            $bar = self::barChar($count / $max_count);
+            $bar = self::barChar((float)$count / $max_count);
             $line = self::padOrShorten(
                 sprintf('%s%s %9s  %5.1f%%  %s', $marker, $bar, number_format($count), $pct, $label),
                 $width,
@@ -681,7 +688,8 @@ final class ExploreTui
             return $out;
         }
 
-        $max_count = max(1, self::maxRowCount($rows));
+        $denom_f = (float)max(1, $denom);
+        $max_count = (float)max(1, self::maxRowCount($rows));
         for ($i = 0; $i < $visible; $i++) {
             $idx = $top_row + $i;
             if (!isset($rows[$idx])) {
@@ -689,10 +697,10 @@ final class ExploreTui
                 continue;
             }
             [$count, , $label] = $rows[$idx];
-            $pct = ($count / $denom) * 100;
+            $pct = (float)$count / $denom_f * 100.0;
             $is_sel = $active && $idx === $selected;
             $sel_mark = $is_sel ? '>' : ' ';
-            $bar = self::barChar($count / $max_count);
+            $bar = self::barChar((float)$count / $max_count);
             $line = self::padOrShorten(
                 sprintf('%s%s %9s  %5.1f%%  %s', $sel_mark, $bar, number_format($count), $pct, $label),
                 $width,
@@ -761,8 +769,8 @@ final class ExploreTui
         $cache = $this->ensureList();
         foreach ($cache['rows'] as [$count, $key_id, $label]) {
             if ($key_id === $state->focus_id) {
-                $denom = max(1, $cache['matched_samples']);
-                return ['count' => $count, 'pct' => $count / $denom * 100];
+                $denom = (float)max(1, $cache['matched_samples']);
+                return ['count' => $count, 'pct' => (float)$count / $denom * 100.0];
             }
         }
         return null;
@@ -775,7 +783,7 @@ final class ExploreTui
     {
         $cache = $this->ensureOverview();
         $rows = $cache['rows'];
-        $denom = max(1, $cache['matched_samples']);
+        $denom = (float)max(1, $cache['matched_samples']);
         $focus_no_line_id = $this->getCurrentFocusKeyId();
 
         $state = $this->currentState();
@@ -832,7 +840,7 @@ final class ExploreTui
                 : "\e[2m" . $header_line . "\e[22m",
         ];
 
-        $max_count = max(1, self::maxRowCount($rows));
+        $max_count = (float)max(1, self::maxRowCount($rows));
         for ($i = 0; $i < $visible; $i++) {
             $idx = $top_row + $i;
             if (!isset($rows[$idx])) {
@@ -840,7 +848,7 @@ final class ExploreTui
                 continue;
             }
             [$count, $key_id, $label] = $rows[$idx];
-            $pct = ($count / $denom) * 100;
+            $pct = (float)$count / $denom * 100.0;
             $is_focus = $focus_idx !== null && $idx === $focus_idx;
             $is_sel = $is_active && $idx === $this->overview_selected;
             // Selection cursor takes precedence over the focus marker
@@ -848,7 +856,7 @@ final class ExploreTui
             $marker = $is_sel
                 ? '>'
                 : ($is_focus ? '◆' : ' ');
-            $bar = self::barChar($count / $max_count);
+            $bar = self::barChar((float)$count / $max_count);
             // marker(1) + bar(1) + space(1) + pct(5) + space(1) = 9 overhead
             $label_room = max(1, $width - 9);
             $line = sprintf(
@@ -1081,6 +1089,7 @@ final class ExploreTui
 
         $tree = $layout['tree'];
         $focus_count = max(1, $tree['focus_count']);
+        $focus_count_f = (float)$focus_count;
         $inner_w = $layout['inner_w'];
 
         // Lazy-init the flame cursor on first render after a view
@@ -1144,7 +1153,7 @@ final class ExploreTui
             ? sprintf(
                 ' (%s · %.1f%%)',
                 number_format($cursor_bar['count']),
-                $cursor_bar['count'] / $focus_count * 100.0,
+                (float)$cursor_bar['count'] / $focus_count_f * 100.0,
             )
             : '';
         $cursor_room = max(0, $inner_w - mb_strlen($cursor_stats) - 3);
@@ -1285,10 +1294,9 @@ final class ExploreTui
             return null;
         }
         // 1 row focus + 1 row cursor footer = 2 reserved out of body_rows.
+        // body_rows is always >= 5 after the MIN_ROWS guard, so
+        // tree_rows is always >= 3 here.
         $tree_rows = $body_rows - 2;
-        if ($tree_rows < 2) {
-            return null;
-        }
         $caller_rows = (int)floor($tree_rows / 2);
         $callee_rows = $tree_rows - $caller_rows;
         $inner_w = $body_width;
@@ -1366,11 +1374,12 @@ final class ExploreTui
                     $hit = $this->findNearestBar($bars, $this->flame_cursor_x);
                 }
                 $this->flame_cursor_visual_row = $row;
-                $outside = $hit !== null
-                    && ($this->flame_cursor_x < $hit['x']
-                        || $this->flame_cursor_x >= $hit['x'] + $hit['w']);
-                if ($outside && $hit !== null) {
-                    $this->flame_cursor_x = $hit['x'] + intdiv($hit['w'], 2);
+                if ($hit !== null) {
+                    $outside = $this->flame_cursor_x < $hit['x']
+                        || $this->flame_cursor_x >= $hit['x'] + $hit['w'];
+                    if ($outside) {
+                        $this->flame_cursor_x = $hit['x'] + intdiv($hit['w'], 2);
+                    }
                 }
                 return;
             }
@@ -1465,10 +1474,10 @@ final class ExploreTui
     private function pushSandwichFocus(int $key_id, string $label, SandwichView $view): void
     {
         $state = $this->currentState();
-        $this->stack[count($this->stack) - 1] = $state->withOverviewCursor(
+        $this->replaceTop($state->withOverviewCursor(
             $this->overview_selected,
             $this->overview_top_row,
-        );
+        ));
         $this->stack[] = new ViewState(
             mode: ExploreMode::Sandwich,
             sandwich_view: $view,
@@ -1671,8 +1680,16 @@ final class ExploreTui
     }
 
     /**
-     * @param array<int, array{count:int, children:array}>                  $nodes
-     * @param array<int, list<array{x:int, w:int, key_id:int, count:int}>>  $rows
+     * Recursive walk over the SandwichBuilder forest. The shape of
+     * each node is `array{count:int, children:array<array-key, mixed>}`
+     * and the recursion is on `children`. The recursive descent matches
+     * the SandwichBuilder shape but Psalm can't statically reify it
+     * (same reason {@see SandwichBuilder::build()} suppresses Mixed*),
+     * so the call site below also passes the shape opaquely.
+     *
+     * @param array<int, array{count:int, children:array<array-key, mixed>}> $nodes
+     * @param array<int, list<array{x:int, w:int, key_id:int, count:int}>>   $rows
+     * @psalm-suppress MixedArgumentTypeCoercion
      */
     private static function layoutFlameNodes(
         array $nodes,
@@ -1700,7 +1717,7 @@ final class ExploreTui
             if ($remaining < 1) {
                 break;
             }
-            $w = (int)floor($node['count'] / $denom * $width);
+            $w = (int)floor((float)$node['count'] / (float)$denom * (float)$width);
             if ($w < 1) {
                 continue;
             }
@@ -1831,11 +1848,12 @@ final class ExploreTui
 
     /**
      * Build the full flat line list for the sandwich tree body. Each
-     * entry carries the rendered text plus the key_id of the frame so
-     * the cursor handler / Enter can re-focus on the cursor row.
+     * entry carries the rendered text, the key_id of the frame (so the
+     * cursor handler / Enter can re-focus on the cursor row), and the
+     * synthetic path string used by the fold/unfold tracking.
      *
      * @param 'callees'|'callers' $direction
-     * @return list<array{text:string, key_id:int}>
+     * @return list<array{text:string, key_id:int, path:string}>
      */
     private function buildSandwichTreeLines(string $direction, int $width): array
     {
@@ -1874,8 +1892,9 @@ final class ExploreTui
      * lookup and the per-entry path tag are both available without
      * a second walk.
      *
-     * @param array<int, array{count:int, children:array}>          $nodes
-     * @param list<array{text:string, key_id:int, path:string}>     $entries
+     * @param array<int, array{count:int, children:array<array-key, mixed>}> $nodes
+     * @param list<array{text:string, key_id:int, path:string}>               $entries
+     * @psalm-suppress MixedArgumentTypeCoercion recursive shape lost on `children`
      */
     private function walkTreeForBody(
         array $nodes,
@@ -1921,7 +1940,7 @@ final class ExploreTui
                 ? ($is_folded ? '▶ ' : '▼ ')
                 : '  ';
 
-            $ratio = $node['count'] / $denom;
+            $ratio = (float)$node['count'] / (float)$denom;
             $bar = self::brailleHBar($ratio, 6);
             $label = Aggregator::labelFor($this->model, $kid, $no_line);
 
@@ -2005,12 +2024,12 @@ final class ExploreTui
     private static function brailleHBar(float $ratio, int $cells): string
     {
         if ($ratio < 0) {
-            $ratio = 0;
+            $ratio = 0.0;
         }
         if ($ratio > 1) {
-            $ratio = 1;
+            $ratio = 1.0;
         }
-        $sub = (int)round($ratio * $cells * 2);
+        $sub = (int)round($ratio * (float)$cells * 2.0);
         $out = '';
         for ($c = 0; $c < $cells; $c++) {
             $left_p = $c * 2 < $sub;
@@ -2232,11 +2251,9 @@ final class ExploreTui
             // Page-step (delta = ±10) is treated the same — there's
             // nowhere "further" to go on the focus row.
             if ($delta < 0) {
-                $this->stack[count($this->stack) - 1]
-                    = $state->withActivePane(ActivePane::Callers);
+                $this->replaceTop($state->withActivePane(ActivePane::Callers));
             } elseif ($delta > 0) {
-                $this->stack[count($this->stack) - 1]
-                    = $state->withActivePane(ActivePane::Callees);
+                $this->replaceTop($state->withActivePane(ActivePane::Callees));
             }
             return;
         }
@@ -2359,11 +2376,10 @@ final class ExploreTui
             }
             return;
         }
-        if ($state->sandwich_view === SandwichView::Panes) {
-            $this->stack[count($this->stack) - 1]
-                = $state->withActivePane($direction < 0 ? ActivePane::Callers : ActivePane::Callees);
-            return;
-        }
+        // Only SandwichView::Panes is left here.
+        $this->replaceTop(
+            $state->withActivePane($direction < 0 ? ActivePane::Callers : ActivePane::Callees)
+        );
     }
 
     /**
@@ -2420,6 +2436,7 @@ final class ExploreTui
                     : $tree['callers'];
                 $sub = $this->findTreeNodeByPath($children, $path);
                 if ($sub !== null && $sub['children'] !== []) {
+                    /** @psalm-suppress MixedArgumentTypeCoercion subtree shape lost via findTreeNodeByPath return */
                     $this->collectAllPaths($sub['children'], $path, $this->tree_folded);
                 }
             }
@@ -2465,10 +2482,9 @@ final class ExploreTui
             $prefix = $path . '/';
             // PHP coerces purely-numeric string array keys to int, so a
             // depth-1 path like "42" comes back from array_keys() as
-            // the integer 42. Cast to string before str_starts_with to
-            // avoid the TypeError; the unset still uses the original
-            // (possibly int) key, which is fine since PHP normalises
-            // both lookups.
+            // the integer 42. Cast every key to string before the
+            // prefix check; the unset uses the original (possibly int)
+            // key, which PHP will normalise on the way back in.
             foreach (array_keys($this->tree_folded) as $folded_path) {
                 if (str_starts_with((string)$folded_path, $prefix)) {
                     unset($this->tree_folded[$folded_path]);
@@ -2480,8 +2496,9 @@ final class ExploreTui
     /**
      * Walk the raw sandwich tree to find the node at $path.
      *
-     * @param  array<int, array{count:int, children:array}> $nodes
-     * @return array{count:int, children:array}|null
+     * @param  array<int, array{count:int, children:array<array-key, mixed>}> $nodes
+     * @return array{count:int, children:array<array-key, mixed>}|null
+     * @psalm-suppress MixedArgumentTypeCoercion recursive shape lost on `children`
      */
     private function findTreeNodeByPath(array $nodes, string $path): ?array
     {
@@ -2506,8 +2523,9 @@ final class ExploreTui
      * by recursive fold (where we want to mark every descendant
      * subtree as folded too).
      *
-     * @param array<int, array{count:int, children:array}> $nodes
-     * @param array<string, true>                          $into
+     * @param array<int, array{count:int, children:array<array-key, mixed>}> $nodes
+     * @param array<array-key, true>                                          $into
+     * @psalm-suppress MixedArgumentTypeCoercion recursive shape lost on `children`
      */
     private function collectAllPaths(array $nodes, string $base_path, array &$into): void
     {
@@ -2543,7 +2561,7 @@ final class ExploreTui
             $this->pushSandwichFocus($cursor['key_id'], $cursor['label'], $new_view);
             return;
         }
-        $this->stack[count($this->stack) - 1] = $state->withSandwichView($new_view);
+        $this->replaceTop($state->withSandwichView($new_view));
         $this->resetSandwichViewCursors();
     }
 
@@ -2725,8 +2743,7 @@ final class ExploreTui
                     ) {
                         $next = $next->next();
                     }
-                    $this->stack[count($this->stack) - 1]
-                        = $state->withActivePane($next);
+                    $this->replaceTop($state->withActivePane($next));
                 }
                 return;
 
@@ -2739,8 +2756,7 @@ final class ExploreTui
                     ) {
                         $prev = $prev->prev();
                     }
-                    $this->stack[count($this->stack) - 1]
-                        = $state->withActivePane($prev);
+                    $this->replaceTop($state->withActivePane($prev));
                 }
                 return;
 
@@ -2799,8 +2815,7 @@ final class ExploreTui
             case Keymap::ACTION_VIEW_SELF:
                 if ($state->mode === ExploreMode::Sandwich) {
                     $this->setOverviewSort('self');
-                    $this->stack[count($this->stack) - 1]
-                        = $state->withActivePane(ActivePane::Overview);
+                    $this->replaceTop($state->withActivePane(ActivePane::Overview));
                     return;
                 }
                 $this->resetTo(ExploreMode::ListSelf);
@@ -2809,8 +2824,7 @@ final class ExploreTui
             case Keymap::ACTION_VIEW_TOTAL:
                 if ($state->mode === ExploreMode::Sandwich) {
                     $this->setOverviewSort('total');
-                    $this->stack[count($this->stack) - 1]
-                        = $state->withActivePane(ActivePane::Overview);
+                    $this->replaceTop($state->withActivePane(ActivePane::Overview));
                     return;
                 }
                 $this->resetTo(ExploreMode::ListTotal);
@@ -2838,7 +2852,7 @@ final class ExploreTui
                             $this->status = "invalid view filter: {$value}";
                             return;
                         }
-                        $this->stack[count($this->stack) - 1] = $state->withViewFilter($value);
+                        $this->replaceTop($state->withViewFilter($value));
                         $this->resetScrolls();
                         $this->status = $value === null ? 'view filter cleared' : "view filter: {$value}";
                     },
@@ -2923,6 +2937,9 @@ final class ExploreTui
         $this->prompt_buffer .= $key;
     }
 
+    /**
+     * @param callable(string): void $commit
+     */
     private function openPrompt(string $label, callable $commit): void
     {
         $this->prompt_label = $label;
@@ -3031,7 +3048,7 @@ final class ExploreTui
         }
         // Replace the top state in place — this is the key bit that
         // makes follow mode not pollute the history stack.
-        $this->stack[count($this->stack) - 1] = $state->withFocus($key_id, $label);
+        $this->replaceTop($state->withFocus($key_id, $label));
         // Callers/callees content is now stale; reset their scrolls
         // and bust their caches. Overview cursor stays put because the
         // user just moved it.
@@ -3208,18 +3225,35 @@ final class ExploreTui
             $new_id = $best_id;
             $new_label = $this->model->frame_keys[$best_id] ?? $state->focus_label;
         }
-        $this->stack[count($this->stack) - 1] = new ViewState(
+        $this->replaceTop(new ViewState(
             mode: $state->mode,
             focus_id: $new_id,
             focus_label: $new_label,
             view_filter: $state->view_filter,
             active_pane: $state->active_pane,
-        );
+        ));
     }
 
     private function currentState(): ViewState
     {
-        return $this->stack[count($this->stack) - 1];
+        // The stack is initialised with one element in the constructor
+        // and never popped past that, so it's always non-empty here.
+        $last = end($this->stack);
+        assert($last !== false);
+        return $last;
+    }
+
+    /**
+     * Replace the top-of-stack ViewState. Equivalent to writing
+     * `$this->stack[count($this->stack) - 1] = $state` but expressed
+     * as pop + push so the list-type invariant of `$this->stack`
+     * is preserved across the mutation (Psalm narrows direct
+     * indexed-assignment results to a non-list array shape).
+     */
+    private function replaceTop(ViewState $state): void
+    {
+        array_pop($this->stack);
+        $this->stack[] = $state;
     }
 
     /**

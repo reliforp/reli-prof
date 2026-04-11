@@ -147,7 +147,7 @@ final class ExploreCommand extends Command
                     strlen($key),
                     strlen($key) === 1 ? ' ' : 's',
                     $hex,
-                    $printable,
+                    $printable ?? '<replace failed>',
                 ));
                 if ($key === 'q') {
                     $term->write("(q pressed — exiting)\r\n");

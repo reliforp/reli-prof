@@ -76,7 +76,11 @@ final class Finding
      * Used by ParallelPassRunner to reconstitute findings that were
      * serialised out to a temp file by a forked worker process.
      *
-     * @param array<string, mixed> $data
+     * Accepts a generic `array<array-key, mixed>` because the data
+     * comes from json_decode (mixed shape) and the per-field reads
+     * below already do their own type checks.
+     *
+     * @param array<array-key, mixed> $data
      * @psalm-suppress MixedArgumentTypeCoercion, MixedArgument, MixedAssignment
      */
     public static function fromArray(array $data): self

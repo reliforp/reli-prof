@@ -29,25 +29,33 @@ namespace Reli\Command\Rbt\Explore;
  * is meant to be cached per (focus_id, no_line, match_re) tuple by the
  * caller (see ExploreTui::ensureSandwichTree).
  *
- * @psalm-type SandwichNode = array{count:int, children:array<int, mixed>}
+ * @psalm-type SandwichForest = array<int, array{count: int, children: array<array-key, mixed>}>
  */
 final class SandwichBuilder
 {
     /**
-     * @return array{
-     *   focus_count: int,
-     *   callers: array<int, array{count:int, children:array}>,
-     *   callees: array<int, array{count:int, children:array}>,
-     * }
+     * @return array{focus_count: int, callers: SandwichForest, callees: SandwichForest}
+     *
+     * The two `for ($j = ...)` loops below grow nested trees by walking
+     * an array reference (`$cur = &$cur[$kid]['children']`). Psalm can't
+     * track the recursive shape through `&` alias re-binding, so it
+     * collapses `$cur` to mixed after the first re-bind and reports
+     * Mixed* on every descendant access. The algorithm is correct, the
+     * inputs are typed, and the alternative (path-rebuilding from the
+     * root on every step) would be O(stack_depth^2) per sample on a
+     * loop that already dominates the popup-view cost. Suppress the
+     * Mixed* / MixedReturnTypeCoercion family on this function only.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedArrayAssignment, MixedAssignment, MixedOperand, MixedReturnTypeCoercion
      */
     public static function build(
         TraceModel $model,
         int $focus_id,
         ViewOptions $opts,
     ): array {
-        /** @var array<int, array{count:int, children:array}> $callers */
+        /** @var SandwichForest $callers */
         $callers = [];
-        /** @var array<int, array{count:int, children:array}> $callees */
+        /** @var SandwichForest $callees */
         $callees = [];
         $matched = 0;
 

@@ -102,6 +102,7 @@ final class AnalyzeCommand extends Command
         //   absent  → false (no tail)
         //   present → null (default count)
         //   =N      → "N"  (explicit count)
+        /** @var string|false|null $last_raw */
         $last_raw = $input->getOption('last');
         $last_count = 0;
         if ($last_raw !== false) {
@@ -334,10 +335,11 @@ final class AnalyzeCommand extends Command
             return;
         }
 
+        $denom = (float)max(1, $denominator);
         $table = new Table($output);
         $table->setHeaders(['count', 'pct', 'frame']);
         foreach ($rows as $key => $count) {
-            $pct = ($count / $denominator) * 100;
+            $pct = (float)$count * 100.0 / $denom;
             $table->addRow([
                 (string) $count,
                 sprintf('%5.1f%%', $pct),
@@ -347,6 +349,14 @@ final class AnalyzeCommand extends Command
         $table->render();
     }
 
+    /**
+     * Wrap a user-supplied pattern in `#...#` delimiters and escape
+     * any embedded `#`. Returns a non-empty regex string (the wrapper
+     * always contributes at least 2 chars), or null when the input
+     * was missing or empty so callers can skip the preg_match step.
+     *
+     * @return non-empty-string|null
+     */
     private static function wrapPattern(?string $pattern): ?string
     {
         if ($pattern === null || $pattern === '') {

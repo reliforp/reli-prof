@@ -23,6 +23,12 @@ namespace Reli\Command\Rbt\Explore;
  */
 final class ViewOptions
 {
+    /**
+     * @param non-empty-string|null $match_re wrapped PCRE pattern;
+     *     callers either pass a regex with delimiters already added
+     *     or null to disable filtering. Empty strings are not a
+     *     valid match pattern, so they're collapsed to null upstream.
+     */
     public function __construct(
         public readonly bool $no_line = false,
         public readonly ?string $match_re = null,
@@ -34,6 +40,9 @@ final class ViewOptions
         return new self($no_line, $this->match_re);
     }
 
+    /**
+     * @param non-empty-string|null $match_re
+     */
     public function withMatch(?string $match_re): self
     {
         return new self($this->no_line, $match_re);

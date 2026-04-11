@@ -142,8 +142,9 @@ final class Aggregator
                     continue;
                 }
                 $matched++;
-                if ($i - 1 >= 0) {
-                    $callee = self::projectId($model, $stack[$i - 1], $opts->no_line);
+                $prev = $i - 1;
+                if ($prev >= 0) {
+                    $callee = self::projectId($model, $stack[$prev], $opts->no_line);
                 } else {
                     $callee = -2;
                 }

@@ -103,8 +103,10 @@ final class ParallelPassRunner
             while ($pending !== [] || $running !== []) {
                 // Fork new workers up to worker_count at a time.
                 while (count($running) < $this->worker_count && $pending !== []) {
+                    // $pending !== [] guarantees array_key_first is non-null,
+                    // and $pass_factories is keyed by string per the type
+                    // hint, so $name is always a string here.
                     $name = array_key_first($pending);
-                    assert($name !== null);
                     $factory = $pending[$name];
                     unset($pending[$name]);
 
@@ -161,11 +163,11 @@ final class ParallelPassRunner
                 if ($json === false) {
                     continue;
                 }
-                /** @var list<array<string, mixed>>|mixed $arr */
                 $arr = json_decode($json, true);
                 if (!is_array($arr)) {
                     continue;
                 }
+                /** @psalm-suppress MixedAssignment json_decode result is genuinely mixed */
                 foreach ($arr as $item) {
                     if (is_array($item)) {
                         $all[] = Finding::fromArray($item);
@@ -224,7 +226,10 @@ final class ParallelPassRunner
         if (!is_dir($dir)) {
             return;
         }
-        $files = glob($dir . '/*') ?: [];
+        $files = glob($dir . '/*');
+        if ($files === false) {
+            $files = [];
+        }
         foreach ($files as $f) {
             @unlink($f);
         }

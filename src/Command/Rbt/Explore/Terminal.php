@@ -75,11 +75,16 @@ final class Terminal
         $this->stty_orig = $this->captureStty();
         if ($this->stty_orig === null) {
             // Clean up the resources we opened so leave() doesn't try to
-            // restore a state we never captured.
-            fclose($this->tty_in);
-            fclose($this->tty_out);
+            // restore a state we never captured. Detach from $this BEFORE
+            // fclose so the property type stays `resource|null` (psalm
+            // would otherwise narrow it to `closed-resource` after
+            // fclose, which conflicts with the declared property type).
+            $tty_in = $this->tty_in;
+            $tty_out = $this->tty_out;
             $this->tty_in = null;
             $this->tty_out = null;
+            fclose($tty_in);
+            fclose($tty_out);
             throw new \RuntimeException(
                 'rbt:explore could not configure the terminal: '
                 . 'stty -g < /dev/tty failed. Run from an interactive '
@@ -115,14 +120,18 @@ final class Terminal
             $this->applyStty('sane');
         }
 
-        if (is_resource($this->tty_in)) {
-            fclose($this->tty_in);
-        }
-        if (is_resource($this->tty_out)) {
-            fclose($this->tty_out);
-        }
+        // Detach BEFORE fclose so psalm doesn't narrow the property
+        // to closed-resource (see enter()).
+        $tty_in = $this->tty_in;
+        $tty_out = $this->tty_out;
         $this->tty_in = null;
         $this->tty_out = null;
+        if (is_resource($tty_in)) {
+            fclose($tty_in);
+        }
+        if (is_resource($tty_out)) {
+            fclose($tty_out);
+        }
     }
 
     /**
@@ -206,14 +215,19 @@ final class Terminal
      */
     public function size(): array
     {
-        $cols = (int)(getenv('COLUMNS') ?: 0);
-        $rows = (int)(getenv('LINES') ?: 0);
+        $cols_env = getenv('COLUMNS');
+        $rows_env = getenv('LINES');
+        $cols = is_string($cols_env) && $cols_env !== '' ? (int)$cols_env : 0;
+        $rows = is_string($rows_env) && $rows_env !== '' ? (int)$rows_env : 0;
         if ($cols <= 0 || $rows <= 0) {
-            $stty = @shell_exec('stty size 2>/dev/null') ?: '';
-            $parts = preg_split('/\s+/', trim($stty));
-            if ($parts !== false && count($parts) >= 2) {
-                $rows = (int)$parts[0];
-                $cols = (int)$parts[1];
+            /** @psalm-suppress ForbiddenCode */
+            $stty = @shell_exec('stty size 2>/dev/null');
+            if (is_string($stty)) {
+                $parts = preg_split('/\s+/', trim($stty));
+                if ($parts !== false && count($parts) >= 2) {
+                    $rows = (int)$parts[0];
+                    $cols = (int)$parts[1];
+                }
             }
         }
         return [$cols > 0 ? $cols : 80, $rows > 0 ? $rows : 24];
@@ -221,6 +235,7 @@ final class Terminal
 
     private function captureStty(): ?string
     {
+        /** @psalm-suppress ForbiddenCode */
         $out = @shell_exec('stty -g < /dev/tty 2>/dev/null');
         if ($out === null || $out === false) {
             return null;
@@ -231,6 +246,7 @@ final class Terminal
 
     private function applyStty(string $args): void
     {
+        /** @psalm-suppress ForbiddenCode */
         @shell_exec('stty ' . $args . ' < /dev/tty 2>/dev/null');
     }
 }
