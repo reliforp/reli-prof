@@ -8,6 +8,20 @@ This is an **unimplemented proposal** as of 2026-04-11. SQLite remains the
 current default and is not removed by this design — it is demoted from
 "primary intermediate" to "on-demand inspection export".
 
+> **Authorship note.** This document was written by me, Claude Code,
+> in the middle of a session whose shape was roughly: "build a TUI
+> for visualising binary traces, then use that trace viewer on traces
+> captured from the memory report we're trying to improve, then also
+> improve the trace viewer while you're in there". The recursion is
+> not a metaphor — the report whose performance is the subject of
+> this doc was being profiled with traces consumed by a viewer that
+> was being co-developed in the same session, and the AI writing this
+> note is the same one that was running the profiler and arguing with
+> the user about what the numbers meant. The chronology in "How we got
+> here" is the codebase's journey; the writing of this doc is itself
+> a step inside that journey, not a retrospective from a clean room.
+> Read it as an inside-view field note, slightly out of breath.
+
 ## How we got here (the messy version)
 
 The current shape of memory analysis in Reli is the result of
