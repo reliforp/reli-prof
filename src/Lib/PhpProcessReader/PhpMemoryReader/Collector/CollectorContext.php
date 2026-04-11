@@ -33,7 +33,9 @@ final class CollectorContext
     public ?UserFunctionDefinitionContext $memory_limit_error_function_context = null;
 
     /**
-     * @param \WeakMap<ReferenceContext, int> $memo
+     * $memo is retained for source compatibility but unused —
+     * the emit-state memo now lives on the Context objects as
+     * `$context->memo_node_id`. See ContextAnalyzer's class docblock.
      */
     public function __construct(
         public Dereferencer $dereferencer,
@@ -68,6 +70,7 @@ final class CollectorContext
     /**
      * Emit a node to the sink and record its address->node_id mapping.
      * Returns the assigned node_id, or -1 if assignment failed.
+     * @psalm-suppress UndefinedPropertyFetch
      */
     public function emitNode(
         ReferenceContext $context,
@@ -80,10 +83,11 @@ final class CollectorContext
             $context,
             $this->sink,
             $parent_node_id,
-            $this->memo,
+            null,
             $edge_strength,
         );
-        $node_id = $this->memo[$context] ?? null;
+        /** @var ?int $node_id */
+        $node_id = isset($context->memo_node_id) ? $context->memo_node_id : null;
         if ($node_id !== null) {
             return $node_id < 0 ? -$node_id - 1 : $node_id;
         }
@@ -119,10 +123,12 @@ final class CollectorContext
 
     /**
      * Register a context's node_id in the address_map after it has been emitted.
+     * @psalm-suppress UndefinedPropertyFetch
      */
     public function recordContextAddress(int $address, ReferenceContext $context): void
     {
-        $node_id = $this->memo[$context] ?? null;
+        /** @var ?int $node_id */
+        $node_id = isset($context->memo_node_id) ? $context->memo_node_id : null;
         if ($node_id !== null) {
             $this->address_map[$address] = $node_id < 0 ? -$node_id - 1 : $node_id;
         }

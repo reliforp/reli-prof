@@ -15,6 +15,13 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\Process\MemoryLocation;
 
+/**
+ * @property ?int $memo_node_id  ContextAnalyzer emit-state memo —
+ *     stored directly on the Context as a mutable property so the
+ *     hot analyzer path can do `$context->memo_node_id` instead of
+ *     a WeakMap lookup. See ReferenceContextDefault for the encoding
+ *     (null = unvisited, >= 0 = emitted, < 0 = reserved).
+ */
 interface ReferenceContext
 {
     public function getName(): string;

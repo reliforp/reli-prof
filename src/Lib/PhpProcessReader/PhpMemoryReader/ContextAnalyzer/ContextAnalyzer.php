@@ -16,31 +16,50 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\SentinelContext;
-use WeakMap;
 
+/**
+ * The analyzer used to track visited contexts via a
+ * `WeakMap<ReferenceContext, int>` parameter. On big captures the
+ * WeakMap lookups showed up as a visible hot spot
+ * (analyzer self-time ~4.7% of total analyze wall time), mostly in
+ * the spl_object_id / bucket-walk path.
+ *
+ * The emit-state now lives as a `public ?int $memo_node_id` property
+ * directly on the Context (see ReferenceContextDefault), so hot
+ * lookups are a single property read. The encoding is the same the
+ * WeakMap used to carry:
+ *
+ *   null    ... not yet visited
+ *   >= 0    ... fully emitted, reuse as the node_id for reference edges
+ *   < 0     ... reserved via assignNodeId() but not yet emitted,
+ *               decoded as `-$memo_node_id - 1`
+ *
+ * The WeakMap parameter on the public methods is kept for
+ * source-compat but ignored.
+ */
 final class ContextAnalyzer
 {
     private int $node_id = 0;
 
     /**
-     * @param WeakMap<ReferenceContext, int>|null $memo
+     * The $memo parameter is kept for source compatibility with
+     * callers that still pass a WeakMap; it's ignored at runtime
+     * since emit state lives on the Context objects themselves now.
+     *
+     * @param \WeakMap<ReferenceContext, int>|null $memo unused; see class docblock
+     * @psalm-suppress PossiblyUnusedParam
      */
     public function analyze(
         ReferenceContext $reference_context,
         ContextTreeSink $sink,
         ?int $parent_node_id = null,
-        ?WeakMap $memo = null,
+        ?\WeakMap $memo = null,
     ): void {
-        if ($memo === null) {
-            /** @var WeakMap<ReferenceContext, int> $memo */
-            $memo = new WeakMap();
-        }
-
         foreach ($reference_context->getLinks() as $link_name => $linked_context) {
             /** @psalm-suppress RedundantCastGivenDocblockType -- int keys occur at runtime */
             $link_name = (string)$link_name;
             $edge_strength = $reference_context->getLinkStrength($link_name);
-            $this->analyzeContext($linked_context, $link_name, $parent_node_id, $sink, $memo, $edge_strength);
+            $this->analyzeContext($linked_context, $link_name, $parent_node_id, $sink, $edge_strength);
         }
 
         if ($sink->allowsRelease()) {
@@ -49,60 +68,64 @@ final class ContextAnalyzer
     }
 
     /**
-     * Pre-assign a node_id to a context and register it in the memo,
-     * without emitting it yet. Used by the collector to register parent
-     * nodes before their children are collected and emitted.
+     * Pre-assign a node_id to a context without emitting it yet.
+     * Used by the collector to register parent nodes before their
+     * children are collected and emitted.
      *
-     * The node_id is stored as negative in the memo to distinguish it
-     * from fully-emitted nodes. analyzeContext will detect this and
-     * emit the node properly.
+     * The node_id is stored as a negative sentinel in the Context's
+     * $memo_node_id so analyzeContext can tell "reserved but not yet
+     * emitted" apart from "fully emitted".
      *
-     * @param WeakMap<ReferenceContext, int> $memo
+     * The $memo parameter is ignored; see class docblock.
+     *
+     * @param \WeakMap<ReferenceContext, int>|null $memo unused
+     * @psalm-suppress PossiblyUnusedParam
      */
     public function assignNodeId(
         ReferenceContext $context,
-        WeakMap $memo,
+        ?\WeakMap $memo = null,
     ): int {
-        $existing = $memo[$context] ?? null;
+        /** @psalm-suppress UndefinedPropertyFetch */
+        $existing = isset($context->memo_node_id) ? $context->memo_node_id : null;
         if ($existing !== null) {
             return $existing < 0 ? -$existing - 1 : $existing;
         }
         $node_id = $this->node_id++;
         // Store as negative-minus-1 to indicate "reserved but not emitted"
-        $memo[$context] = -$node_id - 1;
+        /** @psalm-suppress UndefinedPropertyAssignment */
+        $context->memo_node_id = -$node_id - 1;
         return $node_id;
     }
 
     /**
      * Emit a single named context and its subtree to the sink.
-     * Useful for streaming branches independently while sharing memo across them.
+     * Useful for streaming branches independently while sharing
+     * the Context-embedded memo across them.
      *
-     * @param WeakMap<ReferenceContext, int> $memo
+     * The $memo parameter is ignored; see class docblock.
+     *
+     * @param \WeakMap<ReferenceContext, int>|null $memo unused
+     * @psalm-suppress PossiblyUnusedParam
      */
     public function analyzeSingleLink(
         string $link_name,
         ReferenceContext $context,
         ContextTreeSink $sink,
         ?int $parent_node_id = null,
-        ?WeakMap $memo = null,
+        ?\WeakMap $memo = null,
         EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
-        if ($memo === null) {
-            /** @var WeakMap<ReferenceContext, int> $memo */
-            $memo = new WeakMap();
-        }
-        $this->analyzeContext($context, $link_name, $parent_node_id, $sink, $memo, $edge_strength);
+        $this->analyzeContext($context, $link_name, $parent_node_id, $sink, $edge_strength);
     }
 
     /**
-     * @param WeakMap<ReferenceContext, int> $memo
+     * @psalm-suppress UndefinedPropertyFetch, UndefinedPropertyAssignment
      */
     private function analyzeContext(
         ReferenceContext|int $linked_context,
         string $link_name,
         ?int $parent_node_id,
         ContextTreeSink $sink,
-        WeakMap $memo,
         EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
         if (is_int($linked_context)) {
@@ -116,7 +139,9 @@ final class ContextAnalyzer
         }
 
         // SentinelContext is retained for compatibility in tests and
-        // non-hot paths. Streaming collection uses encoded int placeholders.
+        // non-hot paths. It doesn't have a memo_node_id because it's
+        // never looked up — the streaming collector uses the int
+        // placeholder form above for that role.
         if ($linked_context instanceof SentinelContext) {
             if ($linked_context->emit_reference_edge) {
                 $sink->emitReference($linked_context->node_id, $parent_node_id, $link_name, $edge_strength);
@@ -124,7 +149,13 @@ final class ContextAnalyzer
             return;
         }
 
-        $existing_node_id = $memo[$linked_context] ?? null;
+        // `isset` safely returns false for unvisited (null value) AND
+        // for mock Contexts that don't declare the property at all,
+        // without tripping the PHP 8+ "undefined property" warning
+        // that `?? null` does.
+        $existing_node_id = isset($linked_context->memo_node_id)
+            ? $linked_context->memo_node_id
+            : null;
         if ($existing_node_id !== null && $existing_node_id >= 0) {
             // Fully emitted — just add a reference edge
             $sink->emitReference($existing_node_id, $parent_node_id, $link_name, $edge_strength);
@@ -137,7 +168,7 @@ final class ContextAnalyzer
         } else {
             $current_node_id = $this->node_id++;
         }
-        $memo[$linked_context] = $current_node_id;
+        $linked_context->memo_node_id = $current_node_id;
 
         $contexts = $linked_context->getContexts();
         if (!is_array($contexts)) {
@@ -155,6 +186,6 @@ final class ContextAnalyzer
             $edge_strength,
         );
 
-        $this->analyze($linked_context, $sink, $current_node_id, $memo);
+        $this->analyze($linked_context, $sink, $current_node_id);
     }
 }

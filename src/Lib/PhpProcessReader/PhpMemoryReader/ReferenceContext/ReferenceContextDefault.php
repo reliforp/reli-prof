@@ -24,6 +24,25 @@ trait ReferenceContextDefault
     /** @var list<MemoryLocation> */
     private array $extra_locations = [];
 
+    /**
+     * Emit-state memo for {@see ContextAnalyzer}. Values are
+     * encoded the same way the old WeakMap<ReferenceContext, int>
+     * used to encode them:
+     *
+     *   null    ... not yet visited
+     *   >= 0    ... fully emitted, use as node_id when creating
+     *               reference edges
+     *   < 0     ... reserved via assignNodeId() but not yet
+     *               emitted; decoded as `-$memo_node_id - 1`
+     *
+     * Living on the Context itself means looking up the memo is
+     * a single property read (no WeakMap spl_object_id hash +
+     * bucket walk). The Context lifetime matches the WeakMap
+     * lifetime exactly — when the Context is GC'd the memo
+     * vanishes with it — so there's no extra cleanup to do.
+     */
+    public ?int $memo_node_id = null;
+
     public function getName(): string
     {
         return (new \ReflectionClass(static::class))->getShortName();

@@ -59,44 +59,46 @@ final class ContextPools
     }
 
     /**
-     * Drain all pool entries that have been emitted (exist in memo) and
-     * record their address→node_id mappings in the given map.
-     * Entries not yet emitted remain in the pool for later use.
+     * Drain all pool entries that have been emitted and record
+     * their address→node_id mappings in the given map. Entries not
+     * yet emitted remain in the pool for later use.
      *
-     * @param \WeakMap<ReferenceContext, int> $memo
+     * The memo that used to be a WeakMap parameter now lives on the
+     * Context objects as `$context->memo_node_id` (see
+     * ReferenceContextDefault), so this method just walks the pools
+     * and reads the property directly — no WeakMap lookup.
+     *
      * @param array<int, int> $address_map
      */
-    public function drainToAddressMap(\WeakMap $memo, array &$address_map): void
+    public function drainToAddressMap(array &$address_map): void
     {
-        $this->drainPoolToAddressMap($this->string_context_pool->drainWithAddresses(), $memo, $address_map);
-        $this->drainPoolToAddressMap($this->array_context_pool->drainWithAddresses(), $memo, $address_map);
-        $this->drainPoolToAddressMap($this->object_context_pool->drainWithAddresses(), $memo, $address_map);
+        $this->drainPoolToAddressMap($this->string_context_pool->drainWithAddresses(), $address_map);
+        $this->drainPoolToAddressMap($this->array_context_pool->drainWithAddresses(), $address_map);
+        $this->drainPoolToAddressMap($this->object_context_pool->drainWithAddresses(), $address_map);
         $this->drainPoolToAddressMap(
             $this->php_reference_context_pool->drainWithAddresses(),
-            $memo,
             $address_map,
         );
-        $this->drainPoolToAddressMap($this->resource_context_pool->drainWithAddresses(), $memo, $address_map);
+        $this->drainPoolToAddressMap($this->resource_context_pool->drainWithAddresses(), $address_map);
         $this->drainPoolToAddressMap(
             $this->user_function_definition_context_pool->drainWithAddresses(),
-            $memo,
             $address_map,
         );
-        $this->drainPoolToAddressMap($this->closure_context_pool->drainWithAddresses(), $memo, $address_map);
+        $this->drainPoolToAddressMap($this->closure_context_pool->drainWithAddresses(), $address_map);
     }
 
     /**
      * @param iterable<int, ReferenceContext> $entries address => context
-     * @param \WeakMap<ReferenceContext, int> $memo
-     * @param array<int, int> $address_map
+     * @param array<int, int>                 $address_map
+     * @psalm-suppress UndefinedPropertyFetch
      */
     private function drainPoolToAddressMap(
         iterable $entries,
-        \WeakMap $memo,
         array &$address_map,
     ): void {
         foreach ($entries as $address => $context) {
-            $node_id = $memo[$context] ?? null;
+            /** @var ?int $node_id */
+            $node_id = isset($context->memo_node_id) ? $context->memo_node_id : null;
             if ($node_id !== null) {
                 // Decode negative memo values (reserved but emitted)
                 $address_map[$address] = $node_id < 0 ? -$node_id - 1 : $node_id;
