@@ -7,7 +7,7 @@
       <code><![CDATA[is_null($cdata_buffer)]]></code>
     </TypeDoesNotContainNull>
   </file>
-  <file src="src/Inspector/MemoryDump/MemoryDumpReaderFactory.php">
+  <file src="src/Inspector/MemoryDump/DumpFileMemoryReader.php">
     <TypeDoesNotContainNull>
       <code><![CDATA[is_null($cdata_buffer)]]></code>
       <code><![CDATA[is_null($cdata_buffer)]]></code>

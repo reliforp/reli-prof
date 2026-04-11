@@ -13,6 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryReader;
 
-final class MemoryReaderException extends \Exception
+class MemoryReaderException extends \Exception
 {
 }
