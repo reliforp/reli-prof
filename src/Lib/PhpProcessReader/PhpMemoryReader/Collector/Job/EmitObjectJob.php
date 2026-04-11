@@ -129,8 +129,18 @@ final class EmitObjectJob implements CollectorJob
             }
         }
 
-        // Get properties parent node_id
-        $properties_node_id = $ctx->memo[$object_properties_context] ?? null;
+        // Get properties parent node_id. Used to read from $ctx->memo
+        // (a WeakMap populated by the analyzer); after the analyzer's
+        // memo moved to a $context->memo_node_id property in 1ae56c4f
+        // the WeakMap stayed empty here, so this lookup silently
+        // returned null and the deferred property edges were never
+        // wired up to the right parent — which is the corruption that
+        // was producing wrong Root Blame Allocation and broken
+        // bottleneck_path retained sizes.
+        /** @psalm-suppress UndefinedPropertyFetch */
+        $properties_node_id = isset($object_properties_context->memo_node_id)
+            ? $object_properties_context->memo_node_id
+            : null;
         if ($properties_node_id !== null) {
             $properties_node_id = $properties_node_id < 0 ? -$properties_node_id - 1 : $properties_node_id;
         }

@@ -72,13 +72,18 @@ final class EmitFunctionTableJob implements CollectorJob
 
         $ctx->emitNode($defined_functions_context, $this->parent_node_id, $this->link_name);
 
+        // See EmitObjectJob for why these read $context->memo_node_id
+        // directly instead of $ctx->memo[$context] (which became dead
+        // after the analyzer's memo moved to a Context property).
         foreach ($deferred_all as $r) {
-            $fc_node_id = $ctx->memo[$r->context] ?? null;
+            /** @psalm-suppress UndefinedPropertyFetch */
+            $fc_node_id = isset($r->context->memo_node_id) ? $r->context->memo_node_id : null;
             if ($fc_node_id !== null) {
                 $fc_node_id = $fc_node_id < 0 ? -$fc_node_id - 1 : $fc_node_id;
             }
             foreach ($r->deferred_arrays as [$arr_pointer, $arr_link, $parent_ctx]) {
-                $pid = $ctx->memo[$parent_ctx] ?? null;
+                /** @psalm-suppress UndefinedPropertyFetch */
+                $pid = isset($parent_ctx->memo_node_id) ? $parent_ctx->memo_node_id : null;
                 if ($pid !== null) {
                     $pid = $pid < 0 ? -$pid - 1 : $pid;
                 }

@@ -42,12 +42,17 @@ final class ContextAnalyzer
     private int $node_id = 0;
 
     /**
-     * The $memo parameter is kept for source compatibility with
-     * callers that still pass a WeakMap; it's ignored at runtime
-     * since emit state lives on the Context objects themselves now.
+     * The $memo parameter is the legacy WeakMap-based emit state.
+     * Production callers (CollectorContext) pass null and the
+     * analyzer uses the Context-embedded `$memo_node_id` property
+     * instead. When a non-null WeakMap IS passed, it gets mirror-
+     * populated alongside the property write so test fixtures and
+     * any external caller using the old API continue to see the
+     * emit state.
      *
-     * @param \WeakMap<ReferenceContext, int>|null $memo unused; see class docblock
-     * @psalm-suppress PossiblyUnusedParam
+     * @param \WeakMap<ReferenceContext, int>|null $memo optional
+     *     WeakMap mirror; if non-null, the analyzer writes to it
+     *     in addition to `$context->memo_node_id`.
      */
     public function analyze(
         ReferenceContext $reference_context,
@@ -59,7 +64,7 @@ final class ContextAnalyzer
             /** @psalm-suppress RedundantCastGivenDocblockType -- int keys occur at runtime */
             $link_name = (string)$link_name;
             $edge_strength = $reference_context->getLinkStrength($link_name);
-            $this->analyzeContext($linked_context, $link_name, $parent_node_id, $sink, $edge_strength);
+            $this->analyzeContext($linked_context, $link_name, $parent_node_id, $sink, $edge_strength, $memo);
         }
 
         if ($sink->allowsRelease()) {
@@ -94,6 +99,9 @@ final class ContextAnalyzer
         // Store as negative-minus-1 to indicate "reserved but not emitted"
         /** @psalm-suppress UndefinedPropertyAssignment */
         $context->memo_node_id = -$node_id - 1;
+        if ($memo !== null) {
+            $memo[$context] = -$node_id - 1;
+        }
         return $node_id;
     }
 
@@ -102,10 +110,8 @@ final class ContextAnalyzer
      * Useful for streaming branches independently while sharing
      * the Context-embedded memo across them.
      *
-     * The $memo parameter is ignored; see class docblock.
-     *
-     * @param \WeakMap<ReferenceContext, int>|null $memo unused
-     * @psalm-suppress PossiblyUnusedParam
+     * @param \WeakMap<ReferenceContext, int>|null $memo optional
+     *     legacy WeakMap mirror; see analyze() for the contract.
      */
     public function analyzeSingleLink(
         string $link_name,
@@ -115,10 +121,12 @@ final class ContextAnalyzer
         ?\WeakMap $memo = null,
         EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
-        $this->analyzeContext($context, $link_name, $parent_node_id, $sink, $edge_strength);
+        $this->analyzeContext($context, $link_name, $parent_node_id, $sink, $edge_strength, $memo);
     }
 
     /**
+     * @param \WeakMap<ReferenceContext, int>|null $memo optional
+     *     legacy WeakMap mirror; see analyze() for the contract.
      * @psalm-suppress UndefinedPropertyFetch, UndefinedPropertyAssignment
      */
     private function analyzeContext(
@@ -127,6 +135,7 @@ final class ContextAnalyzer
         ?int $parent_node_id,
         ContextTreeSink $sink,
         EdgeStrength $edge_strength = EdgeStrength::Strong,
+        ?\WeakMap $memo = null,
     ): void {
         if (is_int($linked_context)) {
             // Encoded node_id placeholder:
@@ -156,6 +165,13 @@ final class ContextAnalyzer
         $existing_node_id = isset($linked_context->memo_node_id)
             ? $linked_context->memo_node_id
             : null;
+        // If the test/legacy caller passed a WeakMap and the property
+        // is unset, fall back to the WeakMap. This makes the analyzer
+        // tolerant of mock Contexts that don't carry the property at
+        // all.
+        if ($existing_node_id === null && $memo !== null && isset($memo[$linked_context])) {
+            $existing_node_id = $memo[$linked_context];
+        }
         if ($existing_node_id !== null && $existing_node_id >= 0) {
             // Fully emitted — just add a reference edge
             $sink->emitReference($existing_node_id, $parent_node_id, $link_name, $edge_strength);
@@ -169,6 +185,9 @@ final class ContextAnalyzer
             $current_node_id = $this->node_id++;
         }
         $linked_context->memo_node_id = $current_node_id;
+        if ($memo !== null) {
+            $memo[$linked_context] = $current_node_id;
+        }
 
         $contexts = $linked_context->getContexts();
         if (!is_array($contexts)) {
@@ -186,6 +205,6 @@ final class ContextAnalyzer
             $edge_strength,
         );
 
-        $this->analyze($linked_context, $sink, $current_node_id);
+        $this->analyze($linked_context, $sink, $current_node_id, $memo);
     }
 }

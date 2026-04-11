@@ -63,7 +63,13 @@ final class EmitModulesJob implements CollectorJob
                 return;
             }
 
-            $standard_node_id = $ctx->memo[$standard_context] ?? null;
+            // See EmitObjectJob for why this reads $context->memo_node_id
+            // directly instead of $ctx->memo[$context] (which became
+            // dead after the analyzer's memo moved to a Context property).
+            /** @psalm-suppress UndefinedPropertyFetch */
+            $standard_node_id = isset($standard_context->memo_node_id)
+                ? $standard_context->memo_node_id
+                : null;
             if ($standard_node_id !== null) {
                 $standard_node_id = $standard_node_id < 0 ? -$standard_node_id - 1 : $standard_node_id;
             }
