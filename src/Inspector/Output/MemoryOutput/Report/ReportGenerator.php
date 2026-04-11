@@ -49,6 +49,15 @@ final class ReportGenerator
      * @param int $bulk_fetch_chunk rows per chunked fetchAll inside the
      *   substrate loaders. 0 disables chunking (single fetchAll, max
      *   memory). Plumbed through to {@see GraphSubstrate::createFromDb}.
+     * @param int $worker_count number of parallel workers for Phase 3
+     *   passes. 1 = sequential (default, current behavior). >1 = fork
+     *   worker_count children, each running a subset of passes in
+     *   parallel. Requires `$db_path` to be set so workers can open
+     *   fresh PDO connections after fork.
+     * @param string|null $db_path Path to the SQLite analysis DB.
+     *   Required when worker_count > 1 (workers reopen the DB rather
+     *   than share the parent's PDO across fork). Ignored in
+     *   sequential mode.
      */
     public function generateFromDb(
         \PDO $db,
@@ -57,6 +66,8 @@ final class ReportGenerator
         ?bool $ffi_csr = null,
         LinkCacheMode $link_cache_mode = LinkCacheMode::Auto,
         int $bulk_fetch_chunk = 200000,
+        int $worker_count = 1,
+        ?string $db_path = null,
     ): ReportResult {
         // Make sure the indexes report passes need exist on this database,
         // even if it was captured by an older Reli version. CREATE INDEX
@@ -154,36 +165,93 @@ final class ReportGenerator
                 $link_resolver->loadAll();
             }
 
-            $findings = array_merge($findings, $this->runPass(
-                new DynamicPropertiesPass($db, $run_id, $substrate)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new CycleClusterPass($substrate, $db, $run_id, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new PropertyScalingPass($db, $run_id, $class_objects, $substrate, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new PerPropertyMemoryPass($substrate, $db, $run_id, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new OwnershipPatternPass($substrate, $db, $run_id, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
-            $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
-            $findings = array_merge($findings, $this->runPass(
-                new NonTreeEdgePass($db, $run_id, $substrate, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new StructuralDedupPass($db, $run_id, $substrate, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(
-                new ChokePointPass($substrate, $db, $run_id, $heap_usage)
-            ));
-            $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
-            $findings = array_merge($findings, $this->runPass(new GcPendingPass($substrate, $db, $run_id)));
+            // Phase 3 passes are independent and read-only over the
+            // substrate + db. Build factory closures for each, hand
+            // them to the ParallelPassRunner which either runs them
+            // sequentially (worker_count <= 1) or forks workers that
+            // share the substrate via copy-on-write.
+            //
+            // Each factory opens its OWN PDO inside the closure so
+            // forked workers don't end up sharing the parent's file
+            // descriptor (which would corrupt SQLite). In sequential
+            // mode the extra PDO open is a few ms per pass, dwarfed
+            // by the actual pass work.
+            $open_db = function () use ($db_path): \PDO {
+                assert($db_path !== null);
+                $child_db = new \PDO("sqlite:{$db_path}");
+                $child_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+                $child_db->exec('PRAGMA journal_mode = WAL');
+                $child_db->exec('PRAGMA mmap_size = 268435456');
+                return $child_db;
+            };
+            // Resolve "fresh PDO per factory" only when we need it
+            // (parallel + db_path set). For sequential-with-parent-
+            // PDO we reuse $db directly and save the reopen cost.
+            $workers_want_fresh_db = $worker_count > 1 && $db_path !== null;
+            $db_factory = $workers_want_fresh_db
+                ? $open_db
+                : fn () => $db;
+            $resolver_factory = function () use ($db_factory, $run_id, $substrate): LinkNameResolver {
+                return new LinkNameResolver(
+                    db: $db_factory(),
+                    run_id: $run_id,
+                    substrate: $substrate,
+                );
+            };
+
+            /** @var array<string, callable(): list<Finding>> $pass_factories */
+            $pass_factories = [];
+            $pass_factories['DynamicPropertiesPass'] = fn (): array => $this->runPass(
+                new DynamicPropertiesPass($db_factory(), $run_id, $substrate)
+            );
+            $pass_factories['CycleClusterPass'] = fn (): array => $this->runPass(
+                new CycleClusterPass($substrate, $db_factory(), $run_id, $resolver_factory())
+            );
+            $pass_factories['PropertyScalingPass'] = fn (): array => $this->runPass(
+                new PropertyScalingPass(
+                    $db_factory(),
+                    $run_id,
+                    $class_objects,
+                    $substrate,
+                    $resolver_factory(),
+                )
+            );
+            $pass_factories['PerPropertyMemoryPass'] = fn (): array => $this->runPass(
+                new PerPropertyMemoryPass($substrate, $db_factory(), $run_id, $resolver_factory())
+            );
+            $pass_factories['OwnershipPatternPass'] = fn (): array => $this->runPass(
+                new OwnershipPatternPass($substrate, $db_factory(), $run_id, $resolver_factory())
+            );
+            $pass_factories['TopArraysPass'] = fn (): array => $this->runPass(
+                new TopArraysPass($db_factory(), $run_id, $substrate)
+            );
+            $pass_factories['TopStringsPass'] = fn (): array => $this->runPass(
+                new TopStringsPass($db_factory(), $run_id, $substrate)
+            );
+            $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
+                new NonTreeEdgePass($db_factory(), $run_id, $substrate, $resolver_factory())
+            );
+            $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
+                new StructuralDedupPass($db_factory(), $run_id, $substrate, $resolver_factory())
+            );
+            $pass_factories['DrillDownPass'] = fn (): array => $this->runPass(
+                new DrillDownPass($substrate, $db_factory(), $run_id)
+            );
+            $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
+                new ChokePointPass($substrate, $db_factory(), $run_id, $heap_usage)
+            );
+            $pass_factories['BlameAllocationPass'] = fn (): array => $this->runPass(
+                new BlameAllocationPass($substrate, $db_factory(), $run_id)
+            );
+            $pass_factories['RetainedSizeConfidencePass'] = fn (): array => $this->runPass(
+                new RetainedSizeConfidencePass($substrate)
+            );
+            $pass_factories['GcPendingPass'] = fn (): array => $this->runPass(
+                new GcPendingPass($substrate, $db_factory(), $run_id)
+            );
+
+            $runner = new ParallelPassRunner($workers_want_fresh_db ? $worker_count : 1);
+            $findings = array_merge($findings, $runner->run($pass_factories));
         }
 
         $findings = $this->deduplicateFindings($findings);

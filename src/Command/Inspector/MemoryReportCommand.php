@@ -104,6 +104,17 @@ final class MemoryReportCommand extends Command
             . ' are installed lazily on the first report run.',
             '200000',
         );
+        $this->addOption(
+            'report-workers',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'number of parallel workers for Phase 3 passes. 1 (default) runs sequentially'
+            . ' in the parent process. Higher values fork children via pcntl_fork; each'
+            . ' child inherits the substrate via copy-on-write and runs a subset of the'
+            . ' independent Phase 3 passes in parallel. Requires pcntl; silently falls'
+            . ' back to sequential if the extension is missing.',
+            '1',
+        );
     }
 
     #[\Override]
@@ -161,6 +172,17 @@ final class MemoryReportCommand extends Command
         }
         $bulk_fetch_chunk = (int)$bulk_fetch_chunk_raw;
 
+        /** @var string $workers_raw */
+        $workers_raw = $input->getOption('report-workers');
+        if (!ctype_digit($workers_raw) || (int)$workers_raw < 1) {
+            $output->writeln(sprintf(
+                '<error>Invalid --report-workers value: %s (must be >= 1)</error>',
+                $workers_raw,
+            ));
+            return 1;
+        }
+        $worker_count = (int)$workers_raw;
+
         $generator = new ReportGenerator();
         $result = $generator->generateFromDb(
             $db,
@@ -169,6 +191,8 @@ final class MemoryReportCommand extends Command
             $ffi_csr,
             $link_cache_mode,
             $bulk_fetch_chunk,
+            $worker_count,
+            $db_file,
         );
 
         $formatter = match ($format) {
