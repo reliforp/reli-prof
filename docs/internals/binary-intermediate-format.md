@@ -8,7 +8,236 @@ This is an **unimplemented proposal** as of 2026-04-11. SQLite remains the
 current default and is not removed by this design — it is demoted from
 "primary intermediate" to "on-demand inspection export".
 
-## Motivation
+## How we got here (the messy version)
+
+The current shape of memory analysis in Reli is the result of several
+opportunistic decisions, not a single coherent design pass. Honesty
+about that path matters because the binary format proposal is
+specifically a *correction* of accumulated drift, and future readers
+need to know which parts of today's stack are load-bearing intent and
+which are accidents that survived.
+
+The rough chronology:
+
+1. **JSON output era.** The original goal for memory analysis was
+   "make process internal state queryable" — the word "queryable"
+   was deliberately fuzzy. SQL was vaguely on the radar but felt
+   too heavy, so the actual implementation just `json_encode`'d
+   the structures. Useful as a structured dump, useless as a
+   query target.
+
+2. **SQLite output era.** "If we put it in a DB you could SQL the
+   heap" was a recurring chat thread. It got built largely because
+   a coding agent volunteered to implement it in conversation —
+   the design pressure was "wouldn't this be neat" rather than
+   "we have a concrete query workload". The schema was shaped by
+   what felt natural to write at the time, not by what report
+   queries would later need.
+
+3. **Report-by-aggregation era.** Once SQLite existed it was
+   natural to write a report tool that ran SQL aggregations
+   against it. Top-N classes, type breakdown, blame allocation —
+   all fine matches for SQL, all written as SQL.
+
+4. **Graph analysis era.** During a Claude weekly-quota window,
+   ChatGPT brainstorming surfaced "if you treat the heap as a
+   graph and run SCC + dominator + reachability, you can produce
+   far more interesting findings than a simple ranking". The
+   report was rebuilt around finding-driven graph analysis, with
+   `FfiCsrGraphSubstrate` materialising the heap as in-memory CSR
+   buffers. The interesting passes (cycle clusters, blame
+   allocation, ownership patterns, choke points, etc.) all walk
+   the substrate, not the SQL DB.
+
+5. **The drift.** Step 4 quietly retired SQL from the report's
+   hot path without retiring it from the storage layer. SQLite
+   stayed as the on-disk format and the substrate loader paid the
+   cost of dragging the data through PDO into FFI buffers on
+   every report run. Nobody noticed for a while because the
+   captures were small.
+
+6. **Hitting the wall.** Multi-GB captures (10+ GB SQLite output
+   from real-world PHP heaps) made the substrate load the
+   dominant cost: ~80% of report wall time on a 14 GB DB sat in
+   `PDOStatement::fetchAll` + `PDO::query`, marshalling rows into
+   FFI buffers that immediately discarded the SQL semantics. On
+   the analyze side, ~40% of wall sat in `PDOStatement::execute`
+   (bulk INSERT) + `PDO::exec` (createIndexes), maintaining a
+   schema that the report doesn't use. A round of SQL-side
+   optimisations (`--mmap-size` CLI, partial covering indexes,
+   chunked loaders, posix_fadvise prefetch, ...) clawed some of
+   this back but visibly bumped against the ceiling.
+
+7. **The realisation.** The report path is a graph traversal
+   that happens to be fed from a SQL store, not a SQL workload
+   that happens to produce graph findings. The storage layer
+   was matched to step 2 (SQL feels neat), the access pattern
+   was matched to step 4 (graph analysis is the actual job).
+   These two were never reconciled. This document is the
+   reconciliation.
+
+This proposal does not paint over the drift. It explicitly says:
+the SQL-primary storage was an accidental fit, the cost picture
+makes it clear, and we now know what shape the storage *should*
+have because we have several years of evidence about what the
+report actually does with the data.
+
+## Reframing: storage is a substrate base, not a report DB
+
+The single most important conceptual shift in this design is moving
+from
+
+> *storage exists to feed the report*
+
+to
+
+> *storage exists as a fast hydration source for an in-memory
+> substrate, and the substrate is consumed by multiple surfaces.*
+
+Today there is exactly one consumer of the substrate: the report
+generator. So "storage = report DB" looks indistinguishable from
+"storage = substrate base". The cost picture above is the first
+hint that they aren't the same — the report consumer doesn't
+benefit from the SQL machinery the storage layer pays for.
+
+The deeper shift is that **report is one consumer surface among
+several plausible ones**, and a binary format scoped to "fast
+substrate hydration" naturally enables the others. Picking the
+storage format on the assumption "report queries are the only
+queries" forecloses futures that we have empirical evidence will
+be valuable.
+
+### The four consumer surfaces
+
+The substrate is a graph: nodes, edges, sizes, classes, locations,
+SCCs, dominators. Each of the following surfaces consumes that
+graph through a different interaction model:
+
+1. **Report generator** (existing)
+   - Non-interactive batch tool. Produces a finding report.
+   - Consumes substrate via PHP/FFI loops over CSR buffers.
+   - Already mostly substrate-backed; SQL is now only the load
+     transport.
+
+2. **Interactive memory explorer** (unbuilt)
+   - Human-driven TUI. Equivalent of `rbt:explore` for memory
+     captures: open a capture, navigate classes / paths / cycles
+     / SCCs / blame, jump by address, walk paths to root, switch
+     view modes.
+   - Needs sub-millisecond response per keystroke. The whole
+     substrate must be reachable through random access without
+     I/O on the cursor path.
+   - **Empirical evidence: `rbt:explore`.** The same pattern
+     (binary trace → mmap → in-memory walk → TUI) already exists
+     for sampling profiler traces and the human UX impact is
+     "tool-defining". Memory captures are a strictly more
+     interesting graph than rbt's call-stack tree, so the same
+     pattern should produce a stronger result, not a weaker one.
+
+3. **Single-shot CLI query tool for AI / automation** (unbuilt)
+   - Equivalent of `rbt:analyze` for memory captures:
+     `reli mem:query top-classes capture.bin --top=20`,
+     `reli mem:query path-to-root capture.bin --node=12345`,
+     `reli mem:query cycles capture.bin`, etc. Each invocation
+     is single-shot, takes a focused set of options, dumps text.
+   - Designed for AI agents (and shell automation) that prefer
+     stateless CLI tools to either TUIs (no persistent state)
+     or SQL (needs schema discovery, query construction, result
+     marshalling — too much friction per call).
+   - **Empirical evidence: this entire optimisation session.**
+     The session's analyze-and-report optimisation work was made
+     possible by `rbt:analyze` — every "what's hot", "what calls
+     X", "what does Y call" was a one-line CLI invocation whose
+     text output went straight into the conversation. Without
+     it the AI would have been blind to the trace data. The
+     same shape of tool against memory captures would let the
+     same kind of session debug a real memory leak instead of
+     a profiler regression.
+   - As AI coding agents become standard in dev workflows, this
+     surface arguably becomes the highest-leverage one.
+
+4. **SQL inspection / external tooling** (existing, retained)
+   - Humans running ad-hoc SQL queries against the data
+     (DBeaver, sqlite3 CLI, custom dashboards, third-party
+     tools that consume SQLite).
+   - The "third party will engage with SQL more readily than
+     binary" effect is real — SQL is a low-friction entry point
+     in a way custom binary never can be. We should not pretend
+     otherwise.
+   - In this design SQL becomes a **derived export**, generated
+     on demand from the binary primary via a future
+     `inspect:export-sqlite` command. The default flow doesn't
+     pay for it; the explicit one-line opt-in path keeps it
+     available.
+
+All four surfaces share the same in-memory substrate shape. The
+binary format is the serialisation of that shape. Once it exists,
+each surface is an independent layer on top.
+
+### Trace data vs object-graph data: why SQL fits one and not the other
+
+The `rbt:analyze` / `rbt:explore` pair sits over a binary trace
+format because trace data is fundamentally **time-ordered samples
+of a hierarchical call stack**. It would not be obviously wrong
+to put trace data in a SQL store — SQL handles tabular hierarchies
+reasonably well, and many sampling profilers do exactly that.
+
+A PHP heap snapshot is not that. It is an irregular pointer graph
+with cycles, fan-in / fan-out variation across many orders of
+magnitude, and analyses (SCC, dominator tree, retained-size
+propagation) that are inherently graph-walks rather than SQL
+joins. SQL can express recursive CTEs, but they perform poorly on
+real heaps and the query plans are awkward to reason about. The
+shape of the data fights the storage technology.
+
+This is the technical-fit version of the "report doesn't actually
+use SQL" observation. The report doesn't use SQL because the data
+shape doesn't reward SQL.
+
+### What this proposal actually enables (and what it requires)
+
+If we adopt binary primary, *the storage decision alone enables
+nothing new*. What it enables is the implementation of the three
+non-existing surfaces above, because the binary format is
+designed to be the substrate they all share.
+
+That is a **commitment**, not a side-effect. If we adopt binary
+and never build the explorer or the CLI query tool, we have:
+
+- removed the SQL inspection convenience that made third parties
+  willing to engage,
+- not added any new consumer surface,
+- replaced a familiar storage with a custom one for nothing.
+
+That outcome would be strictly worse than staying on SQL. So the
+binary format proposal must be evaluated *together with* the
+intent to build the additional surfaces. Adopting it without the
+follow-through is a regression, not a refactor.
+
+The retention strategy for SQL — `inspect:export-sqlite` — is
+also a real implementation cost, not a hand-wave. It must be fast
+enough that "I want to SQL this capture" is not painful (sub-
+minute on a multi-GB capture), and it must produce a SQLite DB
+schema-compatible with the current one so existing user knowledge
+and third-party tooling continue to work.
+
+In short: this proposal is approved iff we sign up for
+
+- writing the binary writer + reader + schema,
+- building `mem:query` (the AI-facing CLI surface), and
+- building either `mem:explore` (the human-facing TUI surface) or
+  `inspect:export-sqlite` (the SQL retention surface), preferably
+  both.
+
+Without that follow-through, the cost picture below is the only
+benefit, and it does not justify the storage churn on its own.
+
+## Cost picture and ceiling (the original motivation, kept for record)
+
+The performance argument that originally drove this proposal is
+still valid; it just isn't the *primary* argument any more. The
+primary argument is the consumer-surface story above. The cost
+picture is what made the misfit visible.
 
 ### What the report actually does with the DB
 
