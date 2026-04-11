@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Rbt\Explore;
+namespace Reli\Rbt\Explore;
 
 /**
  * Builds a speedscope-style sandwich tree for a focus frame from the

@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Rbt\Explore;
+namespace Reli\Rbt\Explore;
 
 /**
  * Read-only filter knobs that influence every aggregator query.

@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Command\Rbt;
 
-use Reli\Command\Rbt\Explore\ExploreTui;
-use Reli\Command\Rbt\Explore\Keymap;
-use Reli\Command\Rbt\Explore\Terminal;
-use Reli\Command\Rbt\Explore\TraceModel;
+use Reli\Rbt\Explore\ExploreTui;
+use Reli\Rbt\Explore\Keymap;
+use Reli\Rbt\Explore\Terminal;
+use Reli\Rbt\Explore\TraceModel;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
