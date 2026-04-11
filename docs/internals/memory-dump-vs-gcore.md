@@ -833,3 +833,171 @@ are already wins on both axes or on size alone. A/B/C is predicted to
 reclaim target3 while leaving the others unchanged or improved.
 target4 in particular is already reli's strongest case and the
 preload-safe E design leaves it untouched.
+
+## Extension-heap-heavy measurement (target5) — where E becomes critical
+
+The target3/target4 rounds made E look like polish: a ~2-3 MiB win
+after A/B/C had done the heavy lifting. That conclusion was wrong. It
+was an artefact of the test targets having a small glibc heap (~2-3
+MiB). Real-world PHP workloads routinely drive glibc heap well past
+100 MiB via C-extension state (DOMDocument, SQLite3, PDO result sets,
+curl multi-handles, ...). target5 was built to cover that shape.
+
+### target5 workload
+
+- `DOMDocument::load()` of a ~20 MiB XML file with 100 000 `<item>`
+  elements. libxml2 builds its tree via system `malloc`; every node,
+  attribute, content string, and namespace lives in `[heap]`.
+- `SQLite3(':memory:')` with a 50 000-row table. sqlite3 uses
+  `sqlite3_malloc`, which is a thin wrapper over system `malloc` when
+  PHP does not install a custom allocator (it does not).
+- ~200 small `stdClass` instances on top, so the ZendMM side has
+  something to analyse.
+- `opcache.enable_cli=0` (we are not testing preload here).
+
+Runtime footprint:
+
+| metric   | value    |
+|----------|----------|
+| VmRSS    | 194 MiB  |
+| RssAnon  | 174 MiB  |
+| RssShmem | 0        |
+| `[heap]` VMA | **167 MiB** |
+
+### What `i:m:dump` and `gcore` produce
+
+| metric    | `i:m:dump`         | `gcore`            |
+|-----------|--------------------|--------------------|
+| file size | **170.5 MiB**      | 177 MiB            |
+| wall time | **1.49 s**         | 0.74 s             |
+
+This is the **worst case for reli vs. `gcore`** out of anything measured
+so far. The dump is only 4 % smaller than `gcore`'s core file and
+runs **2× slower**. The whole point of reli's selective scan —
+"the PHP pool is small compared to the rest of the heap, so we can
+dump just the interesting bits" — is inverted when the rest of the
+heap grows to 167 MiB of extension state that the current dumper
+bulk-copies anyway.
+
+### What the analyser actually reads
+
+Querying `context_node_locations.region`:
+
+| region          | count        | bytes        |
+|-----------------|--------------|--------------|
+| `outside`       | **8 320**    | **713 KiB**  |
+| `zend_mm_heap`  | 1 606        | 395 KiB      |
+| **total**       | **9 926**    | **1.08 MiB** |
+
+The analyser reads **1.08 MiB** out of a **170.5 MiB** dump. That is
+**99.4 % waste by bytes.** Of the reachable portion, the `outside`
+breakdown is literally identical to target1/3/4 — same 205
+ClassEntry, 1 811 ZendConstant, 731 PropertyInfo, 399 ClassConstant,
+93 DefaultPropertiesTable, etc. Neither the 100 000 libxml2 nodes nor
+the 50 000 SQLite3 rows contribute a single location to `outside`,
+because the extension's C-level state is invisible to the analyser:
+PHP objects for DOMDocument/SQLite3 only hold opaque pointers through
+object handlers, and the analyser does not (and cannot) cross that
+boundary without extension-specific adapters.
+
+### What the analyser reads *from `[heap]` specifically*
+
+| quantity                               | value                                  |
+|----------------------------------------|----------------------------------------|
+| `[heap]` VMA size                      | **167 MiB**                            |
+| Analyser `outside` locations in `[heap]`| 8 014                                 |
+| Analyser `outside` bytes in `[heap]`   | **692 KiB**                            |
+| Address range actually touched         | `0x557b653854e0` – `0x557b655d3f20`    |
+| Width of that range                    | **~2.4 MiB** out of 167 MiB            |
+| Analyser coverage of `[heap]`          | **0.4 %**                              |
+
+The address range is clustered at the very bottom of the VMA. That is
+not an accident: `brk`-based glibc heaps grow upward, and PHP's MINIT
+sequence runs **before** any extension allocates its bulky buffers, so
+the persistent `pemalloc(..., 1)` metadata from MINIT lives in the
+low addresses of `[heap]` while the later libxml2 / sqlite3 growth
+lives above. A dumper that only wanted the MINIT metadata could
+literally stop reading after the first ~2.5 MiB of `[heap]`.
+
+### Projected impact of dropping `[heap]` bulk
+
+| stage                            | dump size    | dump time    | vs `gcore` (177 MiB / 0.74 s) |
+|----------------------------------|--------------|--------------|-------------------------------|
+| current                          | 170.5 MiB    | 1.49 s       | 1.04× smaller, **2.01× slower** |
+| A/B/C only (dedup + pagemap + stream) | ~165 MiB | ~1.3 s   | marginally smaller, still slower than `gcore` |
+| **A/B/C + preload-safe E (drop `[heap]` bulk)** | **~10 MiB** | **~0.2–0.3 s** | **17× smaller, 3× faster** |
+
+On target3, E was predicted to shave a couple of MiB off after ABC.
+On target5, E saves **~155 MiB** on its own, and is **the only way to
+beat `gcore` at all**. A/B/C by itself touches zero bytes of `[heap]`
+and therefore leaves the 99 % waste intact.
+
+### Revised judgement on E's priority
+
+The earlier measurement rounds are consistent with each other, but
+they all under-weighted E because they ran against targets with a
+~2 MiB glibc heap. The earlier cross-target summary table recorded
+`[heap]` bulk waste in the 2-3 MiB range per dump, which made E look
+marginal. target5 breaks that pattern decisively:
+
+| target  | `[heap]` VMA | `[heap]` reachable by analyser | `[heap]` waste |
+|---------|--------------|-------------------------------|----------------|
+| target1 | ~2.6 MiB     | ~540 KiB                      | ~2.1 MiB (80 %) |
+| target3 | ~2.6 MiB     | ~540 KiB                      | ~2.1 MiB (80 %) |
+| target4 | ~2.7 MiB     | ~540 KiB                      | ~2.2 MiB (80 %) |
+| **target5** | **167 MiB** | **692 KiB**                   | **~156 MiB (99.6 %)** |
+
+Extension-heap-heavy workloads (any PHP process that has actually
+parsed XML, queried SQLite, run a curl multi-handle, opened a PDO
+result set, built an image with gd, or processed an mbstring text)
+sit closer to target5 than to target1/3/4. **E is not a polish, it is
+a correctness fix for the "small dump" premise.**
+
+### Walker sanity on target5
+
+The walker's pointer filter is still "skip if inside chunks/huges/
+SHM/binary-rw". On target5:
+
+- `zend_mm_heap` locations span `0x7f76...000000` – `0x7f76...FFFFFF`
+  (inside a ZendMM chunk). The walker skips these at the chunk-range
+  check — they are already bulk-dumped.
+- `outside` locations in `[heap]` span `0x557b653854e0` – `0x557b655d3f20`.
+  These are outside every bulk-covered region, so the walker peeks
+  them: ~8 000 peek reads, batched, ~10-15 ms of remote-read time.
+- `outside` locations in the PHP binary RO/RW: ~306 additional items
+  at `0x557b4f...`, also peeked.
+- Total walker peek set: ~8 300 items / ~750 KiB of data.
+- Walk time prediction: well under 50 ms end-to-end, including all
+  the sub-pointer chasing inside class entries.
+
+libxml2's 100 000 `xmlNode` structs, sqlite3's B-tree pages, result
+row buffers, column name arrays, etc. — **none of them are on the
+walker's reachable path from EG/CG**, so they contribute zero to the
+peek set regardless of how much extension code was loaded or how long
+the process has been running.
+
+### Cross-target summary, final version
+
+| target | shape | RSS | dump today | gcore today | reli vs gcore | E savings |
+|--------|-------|------|-------------|--------------|----------------|-----------|
+| target1 | light CLI | 32 MiB | 17.5 MiB / 0.80 s | 152 MiB / 0.90 s | 8.7× small, 1.1× fast | ~2 MiB |
+| target2 | 50 k user object | 67 MiB | 89.7 MiB / 0.39 s | 324 MiB / 1.82 s | 3.6× small, 4.7× fast | ~2 MiB |
+| target3 | 2 k user classes | 42 MiB | 44.4 MiB / **1.76 s** | 298 MiB / 1.18 s | 6.7× small, **0.67× (slow)** | ~2 MiB |
+| target4 | 2 k preloaded classes | 61 MiB | 42.0 MiB / 0.17 s | 292 MiB / 0.86 s | 6.9× small, 5.1× fast | ~2 MiB |
+| **target5** | **DOM+sqlite (extension heavy)** | **194 MiB** | **170.5 MiB / 1.49 s** | **177 MiB / 0.74 s** | **1.04× small, 0.50× (slow)** | **~156 MiB** |
+
+### Updated implementation priority
+
+1. **A/B/C** (dedup + unified pagemap + stream writer): unblocks
+   target2 (too big) and target3 (too slow). Does nothing for target5.
+2. **Preload-safe E** (drop `[heap]` bulk + anon-writable-mmap cleanup
+   + metadata peek walker): unblocks target5 (too big **and** too
+   slow). Also trims target1/2/3/4 by a couple of MiB each.
+
+target5 changes the decision: **E is now the bigger unlock of the
+two fixes by absolute bytes saved**, because it is the only one that
+addresses the extension-heap case. A/B/C still has to land first
+because E reuses the merged chunk interval set as the walker filter,
+but E can no longer be deferred as "polish" — skipping it leaves the
+tool structurally unable to beat `gcore` on any extension-heavy
+workload, which is the majority of real PHP processes.
