@@ -478,3 +478,195 @@ $writer->writeStreaming(
    pagemap returned null". Since the new path does not rely on pagemap
    at all for the metadata peeks, the fallback is inherently safer,
    not worse.
+
+## Follow-up empirical round: heavy user-class target (target3)
+
+A third target was added: 2000 user classes (10 public props, 5 methods,
+3 class constants each) loaded via one-file-per-class `require_once`, on
+top of 5000 object instances. opcache CLI enabled with
+`memory_consumption=256`.
+
+This target is the closest the benchmark harness gets to a real-world
+PHP application shape, and it turned out to be the **first case where
+`i:m:dump` actually loses to `gcore` on wall time**, not only on size:
+
+| target | RssAnon | `i:m:dump` | `gcore`       | verdict vs. gcore      |
+|--------|---------|------------|---------------|------------------------|
+| target1 (light)  | 10 MiB | 17.5 MiB / 0.80 s | 152 MiB / 0.90 s  | faster **and** smaller |
+| target2 (heavy user data) | 47 MiB | 89.7 MiB / 0.39 s | 324 MiB / 1.82 s  | faster, **bigger** (1.9× RssAnon) |
+| target3 (heavy user code) | 21 MiB | 44.4 MiB / 1.76 s | 298 MiB / 1.18 s  | **slower**, bigger (2.1× RssAnon) |
+
+target3 is the shape where the tool's original "PHP pool is small vs.
+the rest of the heap, so we can beat gcore" premise visibly breaks.
+
+### The 100× scale-up test
+
+target3 has 100× more user classes than target1 (2000 vs. 20), and the
+expectation was that user-defined metadata would blow up the `outside`
+location count. The `context_node_locations.region` column says
+otherwise:
+
+| region            | target1            | target3            | ratio |
+|-------------------|--------------------|--------------------|-------|
+| `zend_mm_heap`    | 10 252 / 2.04 MiB  | 93 119 / 8.57 MiB  | ×9    |
+| `compiler_arena`  | 80 / 17 KiB        | 40 000 / 4.76 MiB  | ×500  |
+| **`outside`**     | **8 358 / 746 KiB** | **8 329 / 728 KiB** | **≈ 1** |
+
+The counts inside `outside` are **literally unchanged** between the two
+runs:
+
+| location_type                  | target1 | target3 |
+|--------------------------------|---------|---------|
+| `ZendClassEntryMemoryLocation` | 205     | 205     |
+| `ZendConstantMemoryLocation`   | 1 811   | 1 811   |
+| `ZendPropertyInfoMemoryLocation` | 731   | 731     |
+| `ZendClassConstantMemoryLocation` | 399  | 399     |
+| `DefaultPropertiesTableMemoryLocation` | 93 | 93    |
+| `ZendStringMemoryLocation`     | 4 258   | 4 254   |
+| `ZendArrayTableMemoryLocation` | 643     | 622     |
+
+Where did the 2000 user classes × metadata go?
+
+| location_type                  | region         | target3 count | bytes    |
+|--------------------------------|----------------|---------------|----------|
+| `ZendClassEntryMemoryLocation` | compiler_arena | 2 000         | 1 000 KiB |
+| `ZendPropertyInfoMemoryLocation` | compiler_arena | 20 000      | 1 120 KiB |
+| `ZendClassConstantMemoryLocation` | compiler_arena | 6 000       | 336 KiB   |
+| `ZendOpArrayHeaderMemoryLocation` | compiler_arena | 10 000      | 2 400 KiB |
+| `ZendOpArrayBodyMemoryLocation` | zend_mm_heap   | 10 000        | 2 880 KiB |
+| `DefaultPropertiesTableMemoryLocation` | zend_mm_heap | 2 000     | 320 KiB   |
+| `ZendArgInfosMemoryLocation`   | zend_mm_heap   | 10 000        | 960 KiB   |
+| `LocalVariableNameTableMemoryLocation` | zend_mm_heap | 10 000    | 160 KiB   |
+
+Every single byte of user-class metadata — class entries, property
+infos, constants, op-array headers, op-array bodies, default property
+tables, arg infos, local variable name tables — is inside a ZendMM
+chunk (`compiler_arena` is allocated from `CG(arena)`, which lives in
+a chunk; `zend_mm_heap` is a direct ZendMM allocation). The `outside`
+set picks up **only** internal classes/functions/constants from the
+`pemalloc(..., 1)` calls made by PHP extensions at MINIT.
+
+### Why this split is structural, not accidental
+
+Any data allocated during a request must be released at request end.
+PHP's per-request cleanup is built on tearing down the ZendMM heap: at
+`zend_deactivate()` time the engine simply resets the ZendMM chunks.
+Anything that needs to survive across requests (internal class
+definitions, interned strings, `pemalloc(..., 1)`'d extension state,
+opcache-cached op arrays) **cannot** be in ZendMM — it must live in the
+glibc heap, in opcache SHM, or in the PHP binary's own segments.
+
+Conversely, anything created by user PHP code during a request **must**
+be in ZendMM, otherwise it would leak. The split between "ZendMM
+territory" and "persistent territory" is not a convention, it is a
+hard lifetime boundary. That is why the `outside` count is workload-
+invariant: the persistent territory is entirely populated at
+MINIT/startup and then never grows (modulo `dl()` and preload, covered
+below).
+
+### Decision: the peek walk filter is "address ∈ already-bulk-covered"
+
+Given the split above, `[heap]` vs. user classes does not need a
+type-flag check (`ce->type == ZEND_INTERNAL_CLASS` etc.). A single
+bound check — "is this pointer inside a ZendMM chunk or huge alloc?" —
+already correctly partitions the walk. Everything we need to follow is
+on the outside of ZendMM; everything on the inside is already covered
+by the bulk chunk dump.
+
+Concretely, the filter in the dump-time walker is:
+
+```
+pointer → skip if pointer ∈ (zend_mm_chunks ∪ zend_mm_huges ∪
+                             opcache_shm_vma ∪ php_binary_rw_vma)
+```
+
+with all four sets precomputed before the walk starts. The check is a
+handful of range comparisons per pointer, <100 ns.
+
+## Preload: the one case that matters for the SHM bulk decision
+
+`opcache.preload` is the cleanest counter-example to the "persistent
+territory is tiny and static" observation. Classes loaded during a
+preload script are compiled once at startup, persisted into opcache
+SHM, and stay there forever. They pick up an unbounded amount of
+user-authored code (Symfony projects routinely preload several
+thousand classes). The runtime `zend_class_entry`, its op arrays,
+arg infos, property infos, and per-class hash tables live in SHM,
+not in `[heap]`.
+
+This means **dropping the `/dev/zero` opcache SHM bulk scan is not
+safe in general**. For a preload-heavy process, the peek walker would
+have to chase every preloaded class into SHM and pull in a bounded
+2 × (user class count) × (avg metadata per class) of peeks — at
+Symfony scale that is tens of megabytes of small reads, which defeats
+the speed goal of step E.
+
+The preload-safe variant of E is therefore:
+
+| source                          | today     | ABC-only  | ABC + E (preload-safe) |
+|---------------------------------|-----------|-----------|------------------------|
+| ZendMM chunks                   | bulk      | bulk (dedup) | bulk (dedup)          |
+| ZendMM huge                     | bulk      | bulk (dedup) | bulk (dedup)          |
+| **`/dev/zero` opcache SHM**     | bulk      | bulk      | **bulk kept**          |
+| PHP binary RW                   | bulk      | bulk      | bulk                   |
+| **`[heap]` (brk)**              | bulk      | bulk      | **dropped**            |
+| **anonymous writable mmap**     | bulk      | bulk (merged) | **dropped**         |
+| metadata peek walk              | —         | —         | **added (`[heap]` only)** |
+
+The walker only needs to cover the `[heap]` gap. Every address it
+encounters that falls inside a chunk/huge/SHM/binary-RW bulk region is
+skipped because it is already in the dump. Preloaded classes in SHM
+are therefore transparently handled by the SHM bulk scan; the walker
+never has to chase into SHM, which makes its cost independent of the
+preload size as well.
+
+### Projected impact, rebenchmarked on target3
+
+target3 already hit the concerning "reli is slower than gcore" point,
+so it is the relevant data point for deciding whether the effort is
+worth it.
+
+Rough breakdown of the current 44.4 MiB dump3, based on region sizes
+from `i:m:dump:inspect`:
+
+| bucket in the dump                                 | size        |
+|----------------------------------------------------|-------------|
+| 9 × ZendMM chunks (full 2 MiB each)                | 18.0 MiB    |
+| anonymous writable mmap scan (overlapping chunks)  | ~14-16 MiB  |
+| compiler arena chain (78 × 64 KiB, all in chunks)  | ~5.0 MiB    |
+| `[heap]` resident runs                             | ~2.6 MiB    |
+| `/dev/zero` SHM resident runs                      | ~2.4 MiB    |
+| PHP binary RW + BSS                                | ~100 KiB    |
+| VM stack                                           | 256 KiB     |
+| EG/CG                                              | ~2 KiB      |
+| **total**                                          | **44.4 MiB** |
+
+Applying the fixes:
+
+| stage                                          | size      | time    | vs. gcore (298 MiB / 1.18 s) |
+|------------------------------------------------|-----------|---------|------------------------------|
+| current                                        | 44.4 MiB  | 1.76 s  | 6.7× smaller, **1.5× slower** |
+| A/B/C only (dedup + unified pagemap + stream)  | ~25 MiB   | ~1.0 s  | 11.9× smaller, 1.2× faster   |
+| A/B/C + preload-safe E                         | ~22 MiB   | ~0.8 s  | 13.5× smaller, 1.5× faster   |
+
+The duplication-driven waste (chunks × anon-writable × compiler-arena
+overlap, ≈ 19 MiB) dominates on target3, which is why A/B/C alone
+already puts the tool back ahead of `gcore` on both axes. The incremental
+value of E is another ~3 MiB shaved off and the conceptual cleanup of
+"the dump file contains only PHP-related bytes" — nice to have, not
+critical for beating `gcore`.
+
+### Conclusion of the empirical round
+
+- **A/B/C is the path to beating `gcore` on target3** (the only case we
+  measured where we currently lose). It is also the path to shrinking
+  `i:m:dump` peak profiler RSS by ~2× on every target.
+- **E is viable** (the metadata walk is bounded and fast), but it is a
+  second-order optimisation once A/B/C is done. Worth prototyping after
+  ABC lands.
+- **SHM bulk scan stays** for preload safety. The walker handles only
+  the `[heap]` gap, so its cost is bounded by the fixed MINIT metadata
+  set regardless of how much user code was preloaded.
+- The dump-time filter for the walker can be purely address-range based;
+  `ce->type` / `func->type` inspection is not necessary because of the
+  request-scoped cleanup lifetime constraint.
