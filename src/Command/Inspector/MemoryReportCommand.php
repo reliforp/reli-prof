@@ -18,6 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Formatter\TextReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
 use Reli\Inspector\Watch\HeapStats;
+use Reli\Lib\File\LibcFileReader;
 use Reli\Lib\Log\Log;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -133,6 +134,19 @@ final class MemoryReportCommand extends Command
             . ' which is usually fine if the file is already cache-warm.',
             '2G',
         );
+        $this->addOption(
+            'prefetch',
+            null,
+            InputOption::VALUE_NEGATABLE,
+            'Hint the kernel to read-ahead the entire DB file into the page cache'
+            . ' via posix_fadvise(POSIX_FADV_WILLNEED) before opening it. On Linux'
+            . ' this kicks off async read-ahead so SQLite hits a warm cache from the'
+            . ' first pread, which is the dominant lever on multi-GB analyze DBs that'
+            . ' overflow the SQLite mmap cap (~2 GiB). Silently no-ops on platforms'
+            . ' without posix_fadvise (e.g. macOS) or when PHP was built without FFI.'
+            . ' Default: on.',
+            true,
+        );
     }
 
     #[\Override]
@@ -176,6 +190,17 @@ final class MemoryReportCommand extends Command
                 $mmap_size_raw,
             ));
             return 1;
+        }
+
+        // Page-cache prefetch via posix_fadvise(WILLNEED). Done BEFORE
+        // PDO opens the file so the kernel's async read-ahead has the
+        // longest possible head start while we're still doing PHP /
+        // PDO setup work. The hint is purely advisory — if the kernel
+        // is under memory pressure or the file is already cached, it
+        // costs nothing.
+        $prefetch = (bool)$input->getOption('prefetch');
+        if ($prefetch) {
+            LibcFileReader::prefetchFile($db_file);
         }
 
         $db = new \PDO("sqlite:{$db_file}");

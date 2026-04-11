@@ -88,17 +88,64 @@ final class LibcFileReader
     }
 
     /**
-     * Try to bind the three libc calls we need. libc's location is
+     * Hint the kernel that the entire file at `$path` will be needed
+     * soon, via posix_fadvise(POSIX_FADV_WILLNEED). On Linux this kicks
+     * off an asynchronous read-ahead that pulls the file into the
+     * kernel page cache while the caller continues other work — by
+     * the time SQLite (or anything else) starts pread()ing the file,
+     * most pages are already in cache and the per-page syscall cost
+     * collapses to a memcpy from cache.
+     *
+     * Self-contained fd lifecycle: opens, fadvises, closes. Returns
+     * true on success, false if FFI / libc / posix_fadvise are
+     * unavailable on this platform (e.g. PHP without FFI, macOS where
+     * posix_fadvise is not exported under that name) or if the file
+     * couldn't be opened.
+     */
+    public static function prefetchFile(string $path): bool
+    {
+        if (!extension_loaded('ffi')) {
+            return false;
+        }
+        $libc = self::bindLibc();
+        if ($libc === null) {
+            return false;
+        }
+        $fd = $libc->open($path, 0);
+        if ($fd < 0) {
+            return false;
+        }
+        try {
+            // POSIX_FADV_WILLNEED = 3 on Linux. (offset=0, len=0) is
+            // the documented "whole file from offset 0 to end" form.
+            $rc = $libc->posix_fadvise($fd, 0, 0, 3);
+            return $rc === 0;
+        } catch (\Throwable) {
+            // posix_fadvise symbol missing — non-Linux platform, or
+            // a libc that doesn't export it under this name.
+            return false;
+        } finally {
+            $libc->close($fd);
+        }
+    }
+
+    /**
+     * Try to bind the libc calls we need. libc's location is
      * platform-dependent, so try the usual candidates in order. PHP
      * FFI with a null library name looks up symbols from RTLD_DEFAULT
      * which on glibc systems already has libc loaded into the main
      * binary — that's the first attempt since it avoids a dlopen.
+     *
+     * posix_fadvise is declared in the cdef but resolved lazily on
+     * first call, so platforms missing the symbol still load the
+     * binding cleanly and only fail when prefetchFile() is invoked.
      */
     private static function bindLibc(): ?FFI
     {
         $cdef = 'int open(const char *pathname, int flags);'
             . 'int close(int fd);'
-            . 'long pread(int fd, void *buf, unsigned long count, long offset);';
+            . 'long pread(int fd, void *buf, unsigned long count, long offset);'
+            . 'int posix_fadvise(int fd, long offset, long len, int advice);';
         $candidates = [null, 'libc.so.6', 'libc.so', 'libSystem.dylib'];
         foreach ($candidates as $lib) {
             try {
