@@ -91,18 +91,27 @@ final class MemoryDumper
             $zend_type_reader->sizeOf('zend_mm_chunk'),
         ));
 
-        // Enumerate all regions
-        /** @var list<array{address: int, size: int}> $read_list */
-        $read_list = [];
+        // Phase 1: collect every candidate interval from every source
+        // without pagemap filtering or deduplication. Sources frequently
+        // overlap (ZendMM chunks are also visible as anonymous writable
+        // mmap regions; the compiler arena usually lives inside a glibc
+        // malloc mapping). We resolve the overlap in phase 2 by merging
+        // into a disjoint interval list, then apply a single uniform
+        // pagemap residency pass over the merged intervals so that the
+        // residency filter cannot be bypassed by a second unfiltered
+        // entry from a different source.
+        /** @var list<array{address: int, size: int}> $intervals */
+        $intervals = [];
 
-        // EG + CG structs
-        $read_list[] = [
+        // EG + CG structs (usually inside the PHP binary RW segment, but
+        // kept explicitly so we always cover the exact bytes we need).
+        $intervals[] = [
             'address' => $eg_address,
             'size' => $zend_type_reader->sizeOf(
                 'zend_executor_globals',
             ),
         ];
-        $read_list[] = [
+        $intervals[] = [
             'address' => $cg_address,
             'size' => $zend_type_reader->sizeOf(
                 'zend_compiler_globals',
@@ -111,7 +120,7 @@ final class MemoryDumper
 
         // ZendMM chunks
         foreach ($main_chunk->iterateChunks($dereferencer) as $chunk) {
-            $read_list[] = [
+            $intervals[] = [
                 'address' => $chunk->getPointer()->address,
                 'size' => ZendMmChunk::SIZE,
             ];
@@ -122,7 +131,7 @@ final class MemoryDumper
             $dereferencer,
         );
         foreach ($huge_list as $huge) {
-            $read_list[] = [
+            $intervals[] = [
                 'address' => $huge->ptr,
                 'size' => $huge->size,
             ];
@@ -131,32 +140,19 @@ final class MemoryDumper
         // [heap] region (internal function/class definitions).
         // After heavy extension usage + free, glibc returns pages via
         // MADV_DONTNEED but brk doesn't shrink, leaving non-resident
-        // gaps. Use pagemap to skip them when [heap] is large.
+        // gaps; the unified pagemap pass below takes care of them.
         $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
         foreach ($heap_areas as $area) {
             $addr = (int)hexdec($area->begin);
             $size = (int)hexdec($area->end) - $addr;
-            if ($size <= 0) {
-                continue;
-            }
-            $resident_runs = $this->findResidentRuns(
-                $pid,
-                $addr,
-                $size,
-            );
-            if ($resident_runs !== null && $resident_runs !== []) {
-                foreach ($resident_runs as $run) {
-                    $read_list[] = $run;
-                }
-            } else {
-                $read_list[] = ['address' => $addr, 'size' => $size];
+            if ($size > 0) {
+                $intervals[] = ['address' => $addr, 'size' => $size];
             }
         }
 
-        // Opcache SHM regions (e.g. /dev/zero mmap).
-        // When opcache is enabled, interned strings and cached scripts
-        // live in shared memory that can be very large (128-320MB+)
-        // but mostly empty. Use pagemap to identify resident pages.
+        // Opcache SHM regions (e.g. /dev/zero mmap). When opcache is
+        // enabled, interned strings and cached scripts live in shared
+        // memory that can be very large (128-320MB+) but mostly empty.
         $shm_areas = $memory_map->findByNameRegex('/dev/zero');
         foreach ($shm_areas as $area) {
             if (!$area->attribute->read) {
@@ -164,29 +160,16 @@ final class MemoryDumper
             }
             $addr = (int)hexdec($area->begin);
             $size = (int)hexdec($area->end) - $addr;
-            if ($size <= 0) {
-                continue;
-            }
-            $resident_runs = $this->findResidentRuns(
-                $pid,
-                $addr,
-                $size,
-            );
-            if ($resident_runs !== null) {
-                foreach ($resident_runs as $run) {
-                    $read_list[] = $run;
-                }
-            } else {
-                $read_list[] = ['address' => $addr, 'size' => $size];
+            if ($size > 0) {
+                $intervals[] = ['address' => $addr, 'size' => $size];
             }
         }
 
-        // Anonymous writable mmap regions.
-        // glibc's malloc uses mmap for large allocations
-        // (> M_MMAP_THRESHOLD, typically 128KB). Persistent PHP
-        // data such as EG(function_table)->arData and interned
-        // strings can end up here. Use pagemap to skip
-        // non-resident pages.
+        // Anonymous writable mmap regions. glibc's malloc uses mmap for
+        // large allocations (> M_MMAP_THRESHOLD, typically 128KB).
+        // Persistent PHP data and extension buffers can end up here.
+        // This scan also subsumes the explicit ZendMM chunk and huge
+        // list entries above; merge + pagemap will collapse them.
         $anon_areas = $memory_map->findByNameRegex('^$');
         foreach ($anon_areas as $area) {
             if (
@@ -197,23 +180,8 @@ final class MemoryDumper
             ) {
                 $addr = (int)hexdec($area->begin);
                 $size = (int)hexdec($area->end) - $addr;
-                if ($size <= 0) {
-                    continue;
-                }
-                $resident_runs = $this->findResidentRuns(
-                    $pid,
-                    $addr,
-                    $size,
-                );
-                if ($resident_runs !== null && $resident_runs !== []) {
-                    foreach ($resident_runs as $run) {
-                        $read_list[] = $run;
-                    }
-                } else {
-                    $read_list[] = [
-                        'address' => $addr,
-                        'size' => $size,
-                    ];
+                if ($size > 0) {
+                    $intervals[] = ['address' => $addr, 'size' => $size];
                 }
             }
         }
@@ -227,7 +195,7 @@ final class MemoryDumper
                 $addr = (int)hexdec($area->begin);
                 $size = (int)hexdec($area->end) - $addr;
                 if ($size > 0) {
-                    $read_list[] = [
+                    $intervals[] = [
                         'address' => $addr,
                         'size' => $size,
                     ];
@@ -250,7 +218,7 @@ final class MemoryDumper
                     $addr = $stack->getPointer()->address;
                     $size = $stack->end->address - $addr;
                     if ($size > 0) {
-                        $read_list[] = [
+                        $intervals[] = [
                             'address' => $addr,
                             'size' => $size,
                         ];
@@ -271,7 +239,7 @@ final class MemoryDumper
                 $addr = $a->getPointer()->address;
                 $size = $a->end - $addr;
                 if ($size > 0) {
-                    $read_list[] = [
+                    $intervals[] = [
                         'address' => $addr,
                         'size' => $size,
                     ];
@@ -284,7 +252,7 @@ final class MemoryDumper
                 $addr = $a->getPointer()->address;
                 $size = $a->end - $addr;
                 if ($size > 0) {
-                    $read_list[] = [
+                    $intervals[] = [
                         'address' => $addr,
                         'size' => $size,
                     ];
@@ -292,30 +260,10 @@ final class MemoryDumper
             }
         }
 
-        // Bulk read all regions
-        /** @var array<array{address: int, size: int, data: string}> $regions */
-        $regions = [];
-        foreach ($read_list as $entry) {
-            try {
-                $data = $this->memory_reader->read(
-                    $pid,
-                    $entry['address'],
-                    $entry['size'],
-                );
-                $regions[] = [
-                    'address' => $entry['address'],
-                    'size' => $entry['size'],
-                    'data' => \FFI::string($data, $entry['size']),
-                ];
-            } catch (\Throwable $e) {
-                Log::info(
-                    'skipping region at 0x' . dechex($entry['address'])
-                    . ': ' . $e->getMessage(),
-                );
-            }
-        }
-
-        // Optionally include read-only binary segments
+        // Optionally include read-only binary segments (self-contained
+        // dumps). These rarely overlap with RW intervals because a
+        // single VMA is either read-only or writable; merge handles
+        // any accidental overlap anyway.
         if ($include_binary) {
             $php_ro_areas = $memory_map->findByNameRegex(
                 $target_php_settings->php_regex,
@@ -329,48 +277,152 @@ final class MemoryDumper
                     $addr = (int)hexdec($area->begin);
                     $size = (int)hexdec($area->end) - $addr;
                     if ($size > 0) {
-                        try {
-                            $data = $this->memory_reader->read(
-                                $pid,
-                                $addr,
-                                $size,
-                            );
-                            $regions[] = [
-                                'address' => $addr,
-                                'size' => $size,
-                                'data' => \FFI::string($data, $size),
-                            ];
-                        } catch (\Throwable) {
-                            // skip
-                        }
+                        $intervals[] = [
+                            'address' => $addr,
+                            'size' => $size,
+                        ];
                     }
                 }
             }
         }
 
-        // Write dump file
+        // Phase 2: sort by address and merge strictly overlapping
+        // intervals. After this step the interval list is disjoint, so
+        // each byte in the target is enumerated at most once and the
+        // duplication that previously let the pagemap filter be
+        // bypassed is eliminated.
+        $merged = self::mergeIntervals($intervals);
+
+        // Phase 3: uniform pagemap residency filter applied once per
+        // merged interval. Every region source benefits from
+        // non-resident-page skipping -- including ZendMM chunks, huge
+        // allocations, VM stacks and arenas -- without being bypassed
+        // by duplicate unfiltered entries from another source.
+        /** @var list<array{address: int, size: int}> $final */
+        $final = [];
+        foreach ($merged as $m) {
+            $resident_runs = $this->findResidentRuns(
+                $pid,
+                $m['address'],
+                $m['size'],
+            );
+            if ($resident_runs === null) {
+                // pagemap unavailable: fall back to the full range.
+                $final[] = $m;
+                continue;
+            }
+            foreach ($resident_runs as $run) {
+                $final[] = $run;
+            }
+        }
+
+        // Phase 4: stream-write. Read each region and flush it to disk
+        // one at a time. Peak profiler memory drops from
+        // `O(dump size)` to `O(max single region size)` because FFI
+        // buffers and the PHP string copies are released as soon as
+        // the writer advances to the next iteration.
         $all_areas = $memory_map->findByNameRegex('.*');
         $writer = new MemoryDumpWriter();
-        $writer->write(
+        $result = $writer->writeStreaming(
             $output_path,
             $pid,
             $php_version,
             $eg_address,
             $cg_address,
             $all_areas,
-            $regions,
+            count($final),
+            $this->streamRegionReads($pid, $final),
         );
-
-        $total_size = 0;
-        foreach ($regions as $region) {
-            $total_size += $region['size'];
-        }
 
         return new MemoryDumpResult(
             output_path: $output_path,
-            region_count: count($regions),
-            total_bytes: $total_size,
+            region_count: $result['region_count'],
+            total_bytes: $result['total_bytes'],
         );
+    }
+
+    /**
+     * Sort intervals by start address and merge strictly overlapping
+     * entries. Adjacent-but-not-overlapping intervals are kept
+     * separate so the pagemap residency pass is not forced to span a
+     * VMA gap.
+     *
+     * @param list<array{address: int, size: int}> $intervals
+     * @return list<array{address: int, size: int}>
+     */
+    private static function mergeIntervals(array $intervals): array
+    {
+        if ($intervals === []) {
+            return [];
+        }
+        // Drop zero-size entries so the merge loop below stays simple.
+        $intervals = array_values(array_filter(
+            $intervals,
+            static fn (array $i): bool => $i['size'] > 0,
+        ));
+        if ($intervals === []) {
+            return [];
+        }
+        usort(
+            $intervals,
+            static fn (array $a, array $b): int
+                => $a['address'] <=> $b['address'],
+        );
+
+        /** @var list<array{address: int, size: int}> $merged */
+        $merged = [];
+        $current = $intervals[0];
+        $count = count($intervals);
+        for ($i = 1; $i < $count; $i++) {
+            $next = $intervals[$i];
+            $cur_end = $current['address'] + $current['size'];
+            if ($next['address'] < $cur_end) {
+                // Overlap: extend the current interval if necessary.
+                $next_end = $next['address'] + $next['size'];
+                if ($next_end > $cur_end) {
+                    $current['size'] = $next_end - $current['address'];
+                }
+            } else {
+                $merged[] = $current;
+                $current = $next;
+            }
+        }
+        $merged[] = $current;
+        return $merged;
+    }
+
+    /**
+     * Generator that reads each planned region from the target process
+     * and yields it to the writer. Per-region FFI buffers and PHP
+     * string copies are released as soon as the writer advances, so
+     * peak memory is bounded by the largest single region rather than
+     * the total dump size.
+     *
+     * @param list<array{address: int, size: int}> $regions
+     * @return \Generator<int, array{address: int, size: int, data: string}>
+     */
+    private function streamRegionReads(int $pid, array $regions): \Generator
+    {
+        foreach ($regions as $entry) {
+            try {
+                $data = $this->memory_reader->read(
+                    $pid,
+                    $entry['address'],
+                    $entry['size'],
+                );
+            } catch (\Throwable $e) {
+                Log::info(
+                    'skipping region at 0x' . dechex($entry['address'])
+                    . ': ' . $e->getMessage(),
+                );
+                continue;
+            }
+            yield [
+                'address' => $entry['address'],
+                'size' => $entry['size'],
+                'data' => \FFI::string($data, $entry['size']),
+            ];
+        }
     }
 
     private static ?\FFI $libc = null;
