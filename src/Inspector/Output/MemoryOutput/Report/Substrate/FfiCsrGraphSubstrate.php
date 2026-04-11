@@ -441,49 +441,57 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     private function loadNodeSizesFfi(\PDO $db, int $run_id): void
     {
-        // group_concat(DISTINCT class_name) used to live here, but the
-        // consumer below treats $r[2] as a SINGLE class-name string and
-        // uses it as a dict key — every concrete dump only has at most
-        // one non-null class_name per node_id (a node IS one PHP value,
-        // so it has one class), so the DISTINCT was paying a hash cost
-        // on millions of NULLs and a handful of strings just to return
-        // that one name back unchanged. min() picks the same name in
-        // single-class rows, automatically skips NULL-only groups, and
-        // dropped the per-row aggregation overhead that showed up as
-        // ~10% of report wall on report12.rbt.
-        $rows = $db->query(
-            "SELECT node_id, sum(size) as s, min(class_name) as cls"
-            . " FROM context_node_locations WHERE run_id = {$run_id} GROUP BY node_id"
-        )->fetchAll(\PDO::FETCH_NUM);
+        // Two streaming passes, both chunked via prepared statements
+        // paginated by node_id. The previous version pulled both the
+        // GROUP-BY aggregation and the UNION DISTINCT result via a
+        // single fetchAll each — millions of rows in two large in-memory
+        // arrays plus the PHP/PDO marshalling overhead per row. On
+        // multi-GB analyze DBs this was the single biggest report self-
+        // time hot spot (PDO::query 9.8% + fetchAll 10.2% on report12).
+        //
+        // Pass 1 (context_nodes) discovers the full node_id universe.
+        // Pass 2 (context_node_locations GROUP BY) fills the size +
+        // class_name dictionary for nodes that have any location row.
+        // Both passes use the (run_id, node_id) index for ordered range
+        // scans, so paginating by `node_id > ?` is a forward seek per
+        // chunk — no per-chunk re-evaluation of the WHERE.
+        $chunk = $this->bulkFetchChunk > 0 ? $this->bulkFetchChunk : 200000;
 
-        // The full node_id universe comes from context_nodes — it's the
-        // authoritative source maintained by PdoContextTreeSink::emitNode,
-        // which writes one row per emitted node BEFORE any reference
-        // edges to that node can be emitted. context_edges therefore
-        // never carries a parent_node_id / child_node_id that isn't
-        // already in context_nodes (reference edges only target
-        // previously-emitted nodes, and the collector dedups by address
-        // so each node is emitted exactly once). This used to be a
-        // `SELECT DISTINCT parent UNION SELECT DISTINCT child FROM
-        // context_edges` UNION DISTINCT — scanning the entire edges
-        // table twice and then deduping the union, all to recompute a
-        // set context_nodes already has indexed by (run_id, node_id).
-        // The simple PRIMARY-KEY range scan below replaces that.
-        $node_id_rows = $db->query(
-            "SELECT node_id FROM context_nodes WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_COLUMN);
-
-        // Build sorted node_id list
+        // Pass 1: full node_id universe from context_nodes.
+        //
+        // PdoContextTreeSink::emitNode writes one row per emitted node
+        // to context_nodes BEFORE any reference edge to that node can
+        // be emitted, and the collector dedups by address so each node
+        // is emitted exactly once. context_edges therefore never carries
+        // a parent_node_id / child_node_id that isn't already in
+        // context_nodes — making context_nodes the authoritative
+        // node-id source. The previous code merged a UNION DISTINCT
+        // over context_edges into the universe just to be safe; that
+        // entire scan is now redundant.
+        $stmt = $db->prepare(
+            "SELECT node_id FROM context_nodes
+             WHERE run_id = ? AND node_id > ?
+             ORDER BY node_id
+             LIMIT {$chunk}"
+        );
         $all_node_ids = [];
-        foreach ($rows as $r) {
-            $all_node_ids[(int)$r[0]] = true;
-        }
-        foreach ($node_id_rows as $nid) {
-            $all_node_ids[(int)$nid] = true;
+        $last_node_id = PHP_INT_MIN;
+        while (true) {
+            $stmt->execute([$run_id, $last_node_id]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+            if ($rows === []) {
+                break;
+            }
+            foreach ($rows as $nid) {
+                $all_node_ids[(int)$nid] = true;
+                $last_node_id = (int)$nid;
+            }
+            if (count($rows) < $chunk) {
+                break;
+            }
         }
         // Include -1 sentinel for root parent
         $all_node_ids[-1] = true;
-        unset($node_id_rows);
 
         // Build mapping: assign CSR indices
         $this->nodeCount = count($all_node_ids);
@@ -543,25 +551,81 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $this->nodeClassIds[$i] = -1;
         }
 
-        // Fill node sizes and class dictionary
+        // Pass 2: stream the size + class aggregation in chunks. The
+        // previous monolithic fetchAll on a multi-million-row GROUP BY
+        // was the largest single PHP allocation in report; chunking
+        // keeps the per-chunk peak bounded by `chunk` rows × 3 cols.
+        //
+        // group_concat(DISTINCT class_name) used to live here, but the
+        // consumer below treats $r[2] as a SINGLE class-name string and
+        // uses it as a dict key — every concrete dump only has at most
+        // one non-null class_name per node_id (a node IS one PHP value,
+        // so it has one class). min() picks the same name in single-
+        // class rows and automatically skips NULL-only groups, dropping
+        // the per-row distinct hash entirely.
+        //
+        // Localise hot reads (same pattern loadEdgesFfi uses) so the
+        // inner row loop never goes through `$this->` for nodeIdToIndex
+        // or the dict updates.
+        $directMap = $this->nodeToIndexDirect;
+        $directOffset = $this->directIndexOffset;
+        $directSize = $this->directIndexSize;
+        $phpMap = $this->nodeToIndexPhp;
+        $ffiNodeSizes = $this->ffiNodeSizes;
+        $nodeClassIds = $this->nodeClassIds;
+        $classDictReverse = &$this->classDictReverse;
+        $classDict = &$this->classDict;
+
+        $stmt = $db->prepare(
+            "SELECT node_id, sum(size) as s, min(class_name) as cls
+             FROM context_node_locations
+             WHERE run_id = ? AND node_id > ?
+             GROUP BY node_id
+             ORDER BY node_id
+             LIMIT {$chunk}"
+        );
         $this->nodeSizesSum = 0;
-        foreach ($rows as $r) {
-            $node_id = (int)$r[0];
-            $size = (int)$r[1];
-            $csrIdx = $this->nodeIdToIndex($node_id);
-            $this->ffiNodeSizes[$csrIdx] = $size;
-            $this->nodeSizesSum += $size;
-            if ($r[2] !== null) {
-                $className = (string)$r[2];
-                if (!isset($this->classDictReverse[$className])) {
-                    $classId = count($this->classDict);
-                    $this->classDict[] = $className;
-                    $this->classDictReverse[$className] = $classId;
+        $last_node_id = PHP_INT_MIN;
+        while (true) {
+            $stmt->execute([$run_id, $last_node_id]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
+            if ($rows === []) {
+                break;
+            }
+            foreach ($rows as $r) {
+                $node_id = (int)$r[0];
+                $size = (int)$r[1];
+                if ($directMap !== null) {
+                    $slot = $node_id + $directOffset;
+                    $csrIdx = ($slot < 0 || $slot >= $directSize)
+                        ? -1
+                        : (int)$directMap[$slot];
+                } else {
+                    $csrIdx = $phpMap[$node_id] ?? -1;
                 }
-                $this->nodeClassIds[$csrIdx] = $this->classDictReverse[$className];
+                if ($csrIdx < 0) {
+                    // Defensive: should not happen since context_nodes is
+                    // a strict superset of context_node_locations.node_id.
+                    $last_node_id = $node_id;
+                    continue;
+                }
+                $ffiNodeSizes[$csrIdx] = $size;
+                $this->nodeSizesSum += $size;
+                if ($r[2] !== null) {
+                    $className = (string)$r[2];
+                    if (!isset($classDictReverse[$className])) {
+                        $classDictReverse[$className] = count($classDict);
+                        $classDict[] = $className;
+                    }
+                    $nodeClassIds[$csrIdx] = $classDictReverse[$className];
+                }
+                $last_node_id = $node_id;
+            }
+            if (count($rows) < $chunk) {
+                break;
             }
         }
-        unset($rows);
+        unset($classDictReverse, $classDict);
     }
 
     /**
