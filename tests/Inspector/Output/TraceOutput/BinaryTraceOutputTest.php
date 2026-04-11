@@ -158,6 +158,64 @@ final class BinaryTraceOutputTest extends BaseTestCase
         $this->assertSame('App::run', $frames[1]->function_name);
     }
 
+    public function testOutputWithAnnotationsRoundTrips(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 10000);
+        $output = new BinaryTraceOutput($writer);
+
+        $trace = new CallTrace(
+            new CallFrame('App', 'run', '/app.php', null),
+        );
+        $output->output(
+            $trace,
+            [
+                'global::$counter' => '(int) 42',
+                'local::App::run()$id' => '(string) "abc"',
+            ],
+        );
+        $output->finish();
+
+        rewind($stream);
+        $reader = new BinaryTraceReader();
+        $results = iterator_to_array($reader->read($stream));
+        fclose($stream);
+
+        $this->assertCount(1, $results);
+        $this->assertSame(
+            [
+                'global::$counter' => '(int) 42',
+                'local::App::run()$id' => '(string) "abc"',
+            ],
+            $results[0]->annotations,
+        );
+    }
+
+    public function testOutputWithNullAnnotationsEmitsNoAnnotationEvent(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 10000);
+        $output = new BinaryTraceOutput($writer);
+
+        $trace = new CallTrace(
+            new CallFrame('App', 'run', '/app.php', null),
+        );
+        $output->output($trace, null);
+        $output->finish();
+
+        rewind($stream);
+        $reader = new BinaryTraceReader();
+        $results = iterator_to_array($reader->read($stream));
+        fclose($stream);
+
+        $this->assertCount(1, $results);
+        $this->assertNull($results[0]->annotations);
+    }
+
     public function testCheckpointInterval(): void
     {
         $stream = fopen('php://memory', 'r+');

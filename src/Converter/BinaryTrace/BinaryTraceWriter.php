@@ -102,11 +102,19 @@ final class BinaryTraceWriter
     /**
      * Write a trace sample, emitting STRING_DEF, FRAME_DEF and STACK_DEF events as needed.
      *
+     * @param array<string, string>|null $annotations optional per-sample
+     *     key/value metadata. When non-empty, a SAMPLE_ANNOTATION event is
+     *     emitted directly after the SAMPLE / COMPACT_SAMPLE; annotation
+     *     strings are interned via STRING_DEF, so repeated values cost
+     *     only one varint pair per sample after the first.
      * @return int The stack_id used for this sample
      */
-    public function writeTrace(ParsedCallTrace $trace, int $timestamp_delta_us = 0): int
-    {
-        return $this->writeAnnotatedTrace($trace, $timestamp_delta_us);
+    public function writeTrace(
+        ParsedCallTrace $trace,
+        int $timestamp_delta_us = 0,
+        ?array $annotations = null,
+    ): int {
+        return $this->writeAnnotatedTrace($trace, $timestamp_delta_us, $annotations);
     }
 
     /**

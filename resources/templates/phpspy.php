@@ -13,8 +13,12 @@ declare(strict_types=1);
 
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 /** @var CallTrace $call_trace */
+/** @var array<string, string>|null $annotations */
 ?>
 <?php foreach ($call_trace->call_frames as $depth => $frame): ?>
 <?= $depth ?> <?= $frame->getFullyQualifiedFunctionName() ?> <?= $frame->file_name ?>:<?= $frame->getLineno(), "\n" ?>
+<?php endforeach ?>
+<?php foreach ($annotations ?? [] as $key => $value): ?>
+# <?= $key ?> = <?= $value, "\n" ?>
 <?php endforeach ?>
 <?= "\n" ?>

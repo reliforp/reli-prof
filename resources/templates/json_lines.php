@@ -13,6 +13,9 @@ declare(strict_types=1);
 
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 /** @var CallTrace $call_trace */
+// $annotations is currently ignored in this template. Changing the JSON
+// shape mid-stream would break existing `jq`-based consumers; a future
+// template (e.g. json_lines_with_vars) can opt in when demand exists.
 ?>
 <?= json_encode($call_trace, JSON_UNESCAPED_UNICODE) ?>
 <?= "\n" ?>

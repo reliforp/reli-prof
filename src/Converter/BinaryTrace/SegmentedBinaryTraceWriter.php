@@ -66,9 +66,16 @@ final class SegmentedBinaryTraceWriter
     /**
      * Write a trace sample with an absolute timestamp.
      * Handles segment rotation, definition re-emission, and timestamp deltas.
+     *
+     * @param array<string, string>|null $annotations optional per-sample
+     *     key/value metadata. Attached to the emitted SAMPLE via
+     *     SAMPLE_ANNOTATION; strings are interned in the current segment.
      */
-    public function writeTrace(ParsedCallTrace $trace, int $timestamp_us): void
-    {
+    public function writeTrace(
+        ParsedCallTrace $trace,
+        int $timestamp_us,
+        ?array $annotations = null,
+    ): void {
         if ($this->current_writer === null) {
             $this->startSegment($timestamp_us);
         }
@@ -86,7 +93,7 @@ final class SegmentedBinaryTraceWriter
 
         $this->trackTrace($trace);
         assert($this->current_writer !== null);
-        $this->current_writer->writeTrace($trace, $delta);
+        $this->current_writer->writeTrace($trace, $delta, $annotations);
 
         if ($this->current_writer->getSamplesSinceCheckpoint() >= $this->checkpoint_interval) {
             $this->current_writer->writeCheckpoint();
