@@ -359,125 +359,25 @@ fsync are never looked at by the analyser.
 not the ZendMM-chunk duplication from Finding 1 (although that is
 significant too — it roughly doubles the ZendMM portion).
 
-## Fix direction E — "reachability-guided peek list" (outside heuristic)
+## Fix direction E — "metadata peek walk" (superseded)
 
-The `outside` total is bounded by a small, workload-independent count
-(~8k locations ≈ 750 KiB). Every single location in it is reachable
-from a short list of root `HashTable`s in EG/CG. We do not need to scan
-`[heap]` or the bulk of opcache SHM at all if we can generate the peek
-list from pointer walks.
+> **Note**: the aggressive formulation of E (drop `[heap]`, SHM, and
+> anon-writable bulk scans simultaneously, cover everything via the
+> walker) was written before the preload and extension-heap-heavy
+> rounds and is **no longer the chosen design**. Follow-up measurements
+> showed that (a) `opcache.preload` can push tens of MiB of class
+> metadata into SHM where the walker would have to chase it, and
+> (b) the walker must not try to keep up with the growing set of
+> extension-C-state types that the analyser gradually supports.
+>
+> The final design is captured in "Final design: minimum mode by
+> default + `--include-heap` opt-in" at the end of this document, along
+> with the implementation plan.
+>
+> The original algorithm, savings table, and risks analysis below are
+> kept for history — they motivated the whole investigation — but the
+> actual recommended design is the final one.
 
-### Algorithm
-
-At dump time, while the target is stopped:
-
-1. **ZendMM bulk phase (same as today, minus Findings 1-3)**
-   - Merge intervals to dedupe overlapping sources.
-   - Apply pagemap residency filter uniformly on merged intervals.
-   - Covers `zend_mm_heap` + `zend_mm_huge` + compiler arena + VM stacks.
-
-2. **Metadata peek phase (new)**
-   Run a lightweight reachability walk from the roots:
-   - `EG(function_table)` → each `zend_function *` (~96 B for internal functions) and its `arg_info[]`.
-   - `EG(class_table)` → each `zend_class_entry` (512 B) and, one hop deep, its `properties_info` `HashTable`, `constants_table` `HashTable`, `function_table` `HashTable`, `default_properties_table[]`.
-   - `EG(zend_constants)` → each `zend_constant` (~48 B).
-   - `EG(included_files)` → each included-file entry.
-   - `EG(module_registry)` → each `zend_module_entry`.
-   - For any `zend_string *` encountered along the way that is outside
-     a ZendMM chunk/huge, record a peek for it too (its header + body
-     length are in the first 24 bytes, so the size is bounded per string).
-
-   Classify each peek: if the target address falls inside a ZendMM
-   chunk/huge we already cover it — skip. Otherwise record
-   `(address, sizeof(zend_struct))`.
-
-3. **PHP binary RW segment**: keep bulk-copying (it is ≤ a few pages).
-
-4. **Drop the `[heap]` bulk scan entirely.**
-5. **Drop the anonymous-writable-mmap scan entirely** (ZendMM chunks
-   are enumerated by step 1, glibc malloc overflow is not PHP data).
-6. **Drop the `/dev/zero` opcache SHM bulk scan.** Any interned string
-   addresses that fall inside SHM are picked up by the peek walk in
-   step 2 via `CG(interned_strings)` or the opcache interned-strings
-   hash table.
-
-### Expected size savings (projected from target2 data)
-
-| Source                               | Current          | Proposal      |
-|--------------------------------------|------------------|---------------|
-| ZendMM chunks (with duplicates)      | ~45 MiB          | ~20 MiB       |
-| ZendMM huge (sometimes dumped twice) | ~46 MiB          | ~23 MiB       |
-| `[heap]` bulk                        | ~3 MiB           | 0 (peeks only)|
-| `/dev/zero` SHM bulk                 | ~2.5 MiB         | 0 (peeks only)|
-| Anonymous writable mmap              | ~ few hundred KiB| 0             |
-| PHP binary RW                        | ~30 KiB          | ~30 KiB       |
-| Metadata peeks                       | n/a              | ~750 KiB      |
-| **Total**                            | **89.7 MiB**     | **≈ 44 MiB**  |
-
-The dump shrinks to roughly half and ends up essentially the same size
-as RssAnon, which is the structural lower bound.
-
-### Stop-the-world window
-
-Bulk remote-read volume drops from ~89 MiB to ~44 MiB, which directly
-shortens the `process_vm_readv` work. The peek phase adds ~8 000 small
-`process_vm_readv` calls; at ~10–20 µs each that is ~100–200 ms of
-extra latency. On the heavy target, the current implementation already
-runs in ~390 ms (dominated by sending 90 MiB through FFI and into PHP
-strings), so the proposal should be in the same ballpark or faster,
-while using ~2× less peak profiler RSS thanks to fix (C) streaming.
-
-### Implementation shape
-
-`MemoryLocationsCollector` already knows how to walk every root
-`HashTable` and every Zend struct the analyser cares about. Instead of
-writing a second walker in `MemoryDumper`, reuse the collector with a
-new "address-recording sink": instead of emitting full location
-objects, the sink appends `(address, size)` to a peek list. The
-existing `ContextTreeSink` interface should be a close fit.
-
-`MemoryDumper::dump()` then becomes:
-
-```
-$intervals  = collectZendMMIntervals();   // chunks, huge, stacks, arenas
-$merged     = mergeIntervals($intervals); // (A)
-$filtered   = applyPagemapFilter($merged);// (B)
-
-$peek_sink  = new AddressRecordingSink();
-$collector->collectAll(..., $peek_sink);  // (E)
-$peeks      = $peek_sink->dropInsideZendMM($intervals); // keep only "outside"
-
-$writer->writeStreaming(
-    $path,
-    ...,
-    iterable: mergeAndStream($filtered, $peeks, $php_rw_areas),
-);
-```
-
-### Open risks
-
-1. **Coverage drift**: the analyser could, in some version of PHP,
-   reach an address the dump-time peek walk did not record. Mitigation:
-   run the same dump through `i:m:analyze` in CI, compare the
-   `outside` location count and total bytes against a snapshot. Today's
-   number for a canary PHP-CLI workload is ~8 358 locations / ~745 KiB;
-   any new version bumping that by more than, say, 5 % fails the test.
-
-2. **Per-version Zend struct sizes**: peek sizes need to match the
-   `zend_type_reader` for the target PHP version. The existing
-   dereferencer already handles this; we just need the peek walker to
-   pull sizes from `ZendTypeReader::sizeOf(...)`.
-
-3. **opcache SHM coverage**: if the peek walker misses an interned
-   string that lives in SHM (for example because the analyser reached
-   it via a path the dumper did not walk), analyse will fail for that
-   address. CI gate as above catches this.
-
-4. **Pagemap permissions**: dropping the `[heap]` bulk scan removes one
-   of the places that used to fall back to "dump the whole range if
-   pagemap returned null". Since the new path does not rely on pagemap
-   at all for the metadata peeks, the fallback is inherently safer,
-   not worse.
 
 ## Follow-up empirical round: heavy user-class target (target3)
 
@@ -1001,3 +901,265 @@ because E reuses the merged chunk interval set as the walker filter,
 but E can no longer be deferred as "polish" — skipping it leaves the
 tool structurally unable to beat `gcore` on any extension-heavy
 workload, which is the majority of real PHP processes.
+
+## Final design: minimum mode by default + `--include-heap` opt-in
+
+This section is the authoritative recommendation, derived from the
+five empirical rounds above. It supersedes the earlier "Fix direction
+E" section.
+
+### Three design decisions
+
+#### Decision 1 — Two dump modes, minimum by default
+
+The dumper has two modes, selected by a CLI flag:
+
+- **Minimum mode (default)**: dump only the regions that reli's own
+  analyser can actually walk. Captures ZendMM chunks / huge list /
+  VM stacks / compiler arenas (all under one merged interval set),
+  opcache SHM (pagemap-filtered, kept for preload safety), PHP binary
+  RW segments, and a **metadata peek walk** that covers the ~750 KiB
+  of MINIT-time metadata that currently lives in `[heap]`.
+
+  Excluded: `[heap]` bulk scan, anonymous-writable-mmap bulk scan.
+
+  Expected size: roughly the process's `RssAnon + RssShmem`
+  (structural lower bound), so `~10 MiB` on target5's workload,
+  compared to 170 MiB today.
+
+- **Full mode (`--include-heap`)**: adds a pagemap-filtered bulk scan
+  of the `[heap]` brk region **and** the anonymous-writable-mmap
+  regions that are not already covered by ZendMM chunks. Matches the
+  current behaviour post-ABC: captures extension C-level state so
+  that the analyser can later follow cross-boundary references into
+  those buffers.
+
+  Expected size: roughly the process's full `VmRSS`. Use this for
+  deep local-debug sessions where the question is "why is this
+  `zend_object` still alive?" and the answer might be "a PDO driver
+  data struct in `[heap]` is holding it".
+
+Flag name: **`--include-heap`** (symmetric with the existing
+`--include-binary`).
+
+#### Decision 2 — Analyser gracefully degrades on missing addresses
+
+The iterative DFS job queue in `MemoryLocationsCollector` already
+catches per-job exceptions so that a broken subtree does not abort
+the whole analysis. This is the mechanism that makes minimum-mode
+dumps safe to analyse, because any address that is in `[heap]` or
+the anon-writable VMAs (i.e. present in the *live* process but not
+in the *minimum* dump) will raise on deref.
+
+Small remaining work:
+
+1. **Dedicated exception type**: `MemoryAddressNotInDumpException`
+   (or similar), thrown by `MemoryDumpReader::read()` when the
+   requested address is not in `region_index` *and* not resolvable
+   via the binary-file fallback. Distinct from `MemoryReaderException`
+   so the catch path can filter for "it is not in the dump" vs.
+   "the dump reader is broken".
+2. **Surrogate node emission**: when the job queue catches
+   `MemoryAddressNotInDumpException`, it emits an `ExternalRefContext`
+   surrogate in place of the would-be child node. Attributes:
+   - `address` — the failed target address
+   - `size` — expected size (if known)
+   - `parent_type` — which context was trying to follow this pointer
+   - `reason` — "not in dump (try --include-heap)"
+3. **Report aggregation**: `inspector:memory:report` shows
+   - "N unresolved references, estimated M KiB"
+   - Top parent types (e.g. "200 from PDO, 50 from DOMDocument,
+     10 from SQLite3")
+   - A suggestion to re-run with `--include-heap` if the count is
+     significant
+4. **sqlite exposure**: surrogate nodes land in `context_node_locations`
+   with `location_type = 'ExternalRef'` so post-hoc queries can find
+   them.
+
+The existing catch-exceptions-per-job architecture means Decision 2
+is essentially a small polish on top of what already works — it makes
+the UX pleasant rather than adding new structural capability.
+
+#### Decision 3 — Walker scope is fixed; extension coverage rides on mode flag
+
+The dump-time metadata walker has a **stable, fixed scope**: the
+handful of root `HashTable`s that the analyser walks for engine-level
+metadata regardless of which extensions are loaded:
+
+```
+EG(function_table)
+EG(class_table)
+EG(zend_constants)
+EG(included_files)
+EG(module_registry)
+CG(interned_strings)    (only if outside ZendMM and outside SHM)
+```
+
+For each bucket the walker reads, the pointer is passed through a
+single range filter:
+
+    pointer → skip if pointer ∈ (zend_mm_chunks
+                               ∪ zend_mm_huges
+                               ∪ opcache_shm_vmas
+                               ∪ php_binary_rw_vmas)
+
+everything remaining is added to the peek set, read, and emitted to
+the dump.
+
+The walker **does not try to track** the growing set of extension
+custom-types that the analyser learns to walk (the "X" track — `ext/pdo`
+`driver_data`, custom `zend_object_handlers::get_gc` walks, etc.).
+That catalogue is moving, and keeping the walker in lockstep with it
+would either force coupling or become a source of missing-coverage
+bugs. Instead:
+
+- Extension C state that is referenced *from* a `zend_object` lives
+  either in ZendMM (already covered by bulk) or in `[heap]` /
+  anon-writable mmap (only covered when the user passes
+  `--include-heap`).
+- When the walker *does not* record an extension address and the
+  analyser later tries to follow it, the surrogate-node path from
+  Decision 2 kicks in.
+
+This keeps the walker small, stable across PHP versions and
+extension-catalogue growth, and specifically covers the
+workload-invariant `outside` set observed across targets 1/3/5 (≈ 8 k
+locations / ≈ 745 KiB).
+
+### Final dumper pipeline
+
+```
+Phase 1 (always):
+    intervals  = collectAllBulkIntervals()    # chunks, huge, arenas, stacks,
+                                              # SHM, PHP-RW, [heap]?, anon?
+    merged     = mergeIntervals(intervals)    # (A): dedupe
+    filtered   = applyPagemapFilter(merged)   # (B): one pass, uniform
+
+Phase 2 (always):
+    peeks      = metadataPeekWalk(            # (E)
+        chunks, huges, shm, php_rw            # address-range filter inputs
+    )
+
+Phase 3 (always):
+    writer.writeStreaming(                    # (C): stream I/O
+        path,
+        pid,
+        php_version,
+        eg, cg,
+        memory_map,
+        chain(filtered, peeks, php_rw_intervals),
+    )
+```
+
+Whether `[heap]` and anon-writable VMAs are added to `intervals`
+before the merge is governed by the `include_heap` flag. Everything
+else is unconditional.
+
+### Walker flow in detail
+
+1. **Pre-compute "already-covered" interval set**
+   - Input: merged/filtered ZendMM intervals (chunks + huge + stacks
+     + arenas), opcache SHM VMA extents from `/proc/pid/maps`, PHP
+     binary RW VMA extents.
+   - Output: sorted disjoint interval list, used as an O(log n)
+     "is this pointer already in the dump?" check.
+
+2. **Walk roots**
+   - For each `HashTable` root, read the header (≤ 100 B), extract
+     `arData` pointer + `nNumUsed`, read `arData` as one bulk region.
+   - Iterate buckets locally in-profiler; extract each bucket value's
+     `zval.value.ptr`.
+
+3. **Filter and follow**
+   - For each pointer: if already-covered, skip. Otherwise, add
+     `(address, sizeof(target_type))` to the peek set and continue
+     to the target's outgoing fields (class_entry →
+     properties_info/constants_table/methods HashTable,
+     default_properties_table, name; zend_function → arg_info +
+     function_name; zend_constant → name + value; module_entry →
+     functions table + module_name; included_files entries).
+
+4. **Batch peek reads**
+   - Collect the full peek set, then issue batched
+     `process_vm_readv` calls (up to 1024 iovecs per syscall) to
+     read all peek targets in a handful of syscalls.
+
+5. **Emit to the writer** as additional regions, each labelled as
+   `metadata_peek` for observability.
+
+The walker is **bounded by the size of the engine-level root tables**
+(~ 6-7 k entries across all roots), which is effectively constant
+across PHP versions and workloads. It does not grow with user code,
+preloaded classes, or extension data.
+
+### Cross-target projected impact
+
+| target | shape                     | today              | ABC only         | ABC + minimum mode (default) | gcore            |
+|--------|---------------------------|--------------------|------------------|-------------------------------|------------------|
+| target1 | light CLI                | 17.5 MiB / 0.80 s  | ~14 MiB / ~0.6 s | ~10 MiB / ~0.3 s             | 152 MiB / 0.90 s |
+| target2 | 50 k user object         | 89.7 MiB / 0.39 s  | ~45 MiB / ~0.3 s | ~42 MiB / ~0.3 s             | 324 MiB / 1.82 s |
+| target3 | 2 k user classes         | 44.4 MiB / 1.76 s  | ~25 MiB / ~1.0 s | ~22 MiB / ~0.8 s             | 298 MiB / 1.18 s |
+| target4 | 2 k preloaded classes    | 42.0 MiB / 0.17 s  | ~38 MiB / ~0.15 s | ~36 MiB / ~0.15 s           | 292 MiB / 0.86 s |
+| **target5** | **DOM+sqlite heap**  | **170.5 MiB / 1.49 s** | **~165 MiB / ~1.3 s** | **~10 MiB / ~0.3 s**    | **177 MiB / 0.74 s** |
+
+Every target beats `gcore` on both size and speed under
+`ABC + minimum mode`. Users who need the extension-state view
+(retention analysis through PDO, DOMDocument, SQLite3, …) opt in
+via `--include-heap` and trade the size/speed back for completeness.
+
+### Implementation order
+
+```
+Phase 1: A/B/C  (merge intervals, unified pagemap, stream writer)
+  └ MemoryDumper::dump() rewrite for interval pipeline
+  └ MemoryDumpWriter::writeStreaming() addition
+  └ existing tests stay green
+  └ unblocks target2 (too big) and target3 (too slow)
+
+Phase 2: Dedicated exception + surrogate node + report polish
+  └ MemoryAddressNotInDumpException
+  └ MemoryDumpReader::read() raises the specific type
+  └ Job queue exception handler routes to ExternalRefContext
+  └ inspector:memory:report shows unresolved count + suggestion
+  └ prerequisite for phase 3
+
+Phase 3: Minimum-mode dumper + --include-heap opt-in
+  └ MetadataPeekWalker (fixed scope)
+  └ MemoryDumper branches on include_heap for [heap] + anon
+  └ MemoryDumpSettings::include_heap (default false)
+  └ --include-heap CLI flag on inspector:memory:dump
+  └ unblocks target5 (170 MiB → ~10 MiB)
+
+Phase 4: i:watch integration
+  └ WatchAction config accepts include_heap (default false)
+  └ WatchCommand / DaemonMemoryDumpAction thread the setting through
+  └ default monitoring stays in minimum mode; local-dev deep sessions
+    opt in per-action
+
+Phase 5: BatchMemoryReader (optional)
+  └ process_vm_readv with riovcnt > 1
+  └ speeds up the metadata walker (≈ 8 k peeks in ~10 syscalls)
+  └ also usable by the analyser at analyse time
+```
+
+Phases 1 → 2 → 3 are sequential. Phase 4 lands once Phase 3 is in.
+Phase 5 is a strict win at any point but is the smallest absolute
+impact — worth saving until the pipeline is otherwise stable.
+
+### Open questions parked for later
+
+- **CI coverage drift gate**: today's minimum-mode dump on a canary
+  PHP-CLI workload should produce ≈ 8 k `outside` locations / ≈ 745 KiB.
+  Any new PHP version or extension set that bumps it by more than
+  some threshold (5 %? 10 %?) should trip a CI alarm so the peek set
+  doesn't silently lose coverage.
+- **Surrogate-node cardinality control**: for pathological cases
+  where thousands of extension pointers each fail, do we emit one
+  surrogate per address, one surrogate per parent-type, or one
+  aggregate surrogate? First pass: one per address, revisit if it
+  explodes the report.
+- **Interned string location** when opcache is off and preload is
+  not used: `CG(interned_strings)` lives in `[heap]` then, so
+  interned string peeks must enter the walker's peek set. Already
+  covered by "walk strings encountered along the way" but needs
+  explicit test.
