@@ -80,8 +80,9 @@ The rough chronology:
 This proposal does not paint over the drift. It explicitly says:
 the SQL-primary storage was an accidental fit, the cost picture
 makes it clear, and we now know what shape the storage *should*
-have because we have several years of evidence about what the
-report actually does with the data.
+have because we have enough evidence — across the recent
+optimisation rounds on multi-GB captures — about what the report
+actually does with the data once it gets there.
 
 ## Reframing: storage is a substrate base, not a report DB
 
