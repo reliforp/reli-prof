@@ -61,7 +61,8 @@ final class ReportGenerator
      * @param int $mmap_size_bytes mmap_size to apply to worker PDOs
      *   opened inside `$open_db` (the parent's PDO is configured by
      *   the caller). 0 disables mmap. SQLite silently caps to its
-     *   compile-time SQLITE_MAX_MMAP_SIZE.
+     *   compile-time SQLITE_MAX_MMAP_SIZE (typically 2 GiB - 16 KiB),
+     *   so values above that are honoured up to the cap.
      */
     public function generateFromDb(
         \PDO $db,
@@ -72,7 +73,7 @@ final class ReportGenerator
         int $bulk_fetch_chunk = 200000,
         int $worker_count = 1,
         ?string $db_path = null,
-        int $mmap_size_bytes = 268435456,
+        int $mmap_size_bytes = 2147483648,
     ): ReportResult {
         // Make sure the indexes report passes need exist on this database,
         // even if it was captured by an older Reli version. CREATE INDEX

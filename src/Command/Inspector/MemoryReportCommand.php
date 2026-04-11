@@ -124,10 +124,14 @@ final class MemoryReportCommand extends Command
             . ' Suffix-aware: K / M / G are KiB / MiB / GiB; plain integers are bytes;'
             . ' 0 disables mmap. Bigger means SQLite memory-maps more of the database'
             . ' file instead of paying pread() per page on substrate load. Defaults to'
-            . ' 4G — large enough for typical multi-GB analyze DBs while still being'
-            . ' silently capped to SQLite\'s compile-time SQLITE_MAX_MMAP_SIZE on builds'
-            . ' that ship a smaller cap.',
-            '4G',
+            . ' 2G, which matches the typical SQLite compile-time cap'
+            . ' (SQLITE_MAX_MMAP_SIZE = 0x7fff0000 ≈ 2 GiB - 16 KiB on most distro'
+            . ' builds). Asking for more than the cap is harmless — SQLite silently'
+            . ' clamps — but the help text would lie about the effective value, so the'
+            . ' default is pinned at the realistic ceiling. For DBs larger than 2 GiB,'
+            . ' the trailing pages still go through pread + the kernel page cache,'
+            . ' which is usually fine if the file is already cache-warm.',
+            '2G',
         );
     }
 
