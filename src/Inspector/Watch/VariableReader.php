@@ -41,7 +41,7 @@ use Reli\Lib\Process\ProcessSpecifier;
  * - static:      class static properties (requires CG)
  * - func_static: function static variables
  */
-final class VariableReader
+final class VariableReader implements VariableReaderInterface
 {
     public function __construct(
         private MemoryReaderInterface $memory_reader,
@@ -54,6 +54,7 @@ final class VariableReader
      * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
      * @return array<string, VariableValue>
      */
+    #[\Override]
     public function readVariables(
         array $specs,
         ProcessSpecifier $process_specifier,

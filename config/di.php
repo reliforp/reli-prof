@@ -21,6 +21,8 @@ use Reli\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoop;
 use Reli\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoopInterface;
 use Reli\Inspector\Output\TraceFormatter\Templated\TemplatePathResolver;
 use Reli\Inspector\Output\TraceFormatter\Templated\TemplatePathResolverInterface;
+use Reli\Inspector\Watch\VariableReader;
+use Reli\Inspector\Watch\VariableReaderInterface;
 use Reli\Lib\Amphp\ContextCreator;
 use Reli\Lib\Amphp\ContextCreatorInterface;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
@@ -77,6 +79,7 @@ return [
     ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
     Config::class => fn () => AppDirectory::loadConfig(__DIR__ . '/config.php'),
     TemplatePathResolverInterface::class => autowire(TemplatePathResolver::class),
+    VariableReaderInterface::class => autowire(VariableReader::class),
     StateCollector::class => function (Container $container) {
         $collectors = [];
         $collectors[] = $container->make(ProcessStateCollector::class);
