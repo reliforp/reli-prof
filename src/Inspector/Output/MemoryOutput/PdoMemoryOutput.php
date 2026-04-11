@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\MemoryOutput;
 
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
+use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
@@ -227,11 +228,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // Dropped from the eager build to save analyze time:
         //
         //   - idx_context_edges_run_strength
-        //       Fully covered by the 6-col NonTreeEdgePass index below
-        //       (whose prefix is (run_id, is_tree, strength, ...)). No
-        //       query hit this index alone — every strength filter we
-        //       ship is paired with is_tree, so the 6-col covering
-        //       serves them all.
+        //       Fully covered by the NonTreeEdgePass partial index below
+        //       (whose WHERE clause already pins is_tree=0 AND
+        //       strength='strong'). No query hit this index alone —
+        //       every strength filter we ship is paired with is_tree.
         //
         //   - idx_context_edges_run_parent_tree
         //       The only Phase 3 callers (CycleClusterPass /
@@ -246,55 +246,108 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         //
         // Together these were ~5.7% of analyze wall time on the
         // analyze.rbt trace (roughly 2 minutes out of 36).
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_edges_run_child'
-            . ' ON context_edges(run_id, child_node_id)'
-        );
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_node'
-            . ' ON context_node_locations(run_id, node_id)'
-        );
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_class'
-            . ' ON context_node_locations(run_id, class_name)'
-        );
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_node_attributes_run_node'
-            . ' ON context_node_attributes(run_id, node_id)'
-        );
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_type'
-            . ' ON context_node_locations(run_id, location_type)'
-        );
-        // Lets TopStringsPass scan the top-N largest strings as a backward
-        // index range scan instead of sorting every ZendStringMemoryLocation
-        // row in the table — critical on captures with millions of strings.
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_type_size'
-            . ' ON context_node_locations(run_id, location_type, size)'
-        );
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_edges_run_link_parent_tree'
-            . ' ON context_edges(run_id, link_name, parent_node_id, is_tree)'
-        );
-        // Covers the NonTreeEdgePass aggregations:
-        //   WHERE run_id = ? AND is_tree = 0 AND strength = 'strong'
-        //   GROUP BY link_name
-        // and lets shared_rows do an entirely index-only scan by also
-        // carrying child_node_id and parent_node_id (used for the
-        // per-link min() / count(distinct) projections).
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_edges_run_tree_strength_link_child_parent'
-            . ' ON context_edges(run_id, is_tree, strength, link_name, child_node_id, parent_node_id)'
-        );
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_nodes_canonical'
-            . ' ON context_nodes(run_id, canonical_node_id)'
-        );
-        $db->exec(
-            'CREATE INDEX IF NOT EXISTS idx_context_node_locations_region_addr_size'
-            . ' ON context_node_locations(run_id, region, address, size)'
-        );
+        //
+        // Build-phase PRAGMAs: createIndexes is the single biggest
+        // analyze hot spot (~22% of wall time on analyze3.rbt). The
+        // tunes below trade durability for build speed — safe because
+        // we are still inside the same PDO session that wrote the
+        // table data, the file is not yet visible to readers, and a
+        // crash during analyze just means the user re-runs analyze.
+        // The original settings are restored at the end so the
+        // resulting database is left in normal-durability mode for
+        // subsequent report runs.
+        $sqlite = $this->driver instanceof SqliteDriver;
+        $saved_synchronous = null;
+        $saved_journal_mode = null;
+        $saved_temp_store = null;
+        if ($sqlite) {
+            $saved_synchronous = $db->query('PRAGMA synchronous')->fetchColumn();
+            $saved_journal_mode = $db->query('PRAGMA journal_mode')->fetchColumn();
+            $saved_temp_store = $db->query('PRAGMA temp_store')->fetchColumn();
+            $db->exec('PRAGMA synchronous = OFF');
+            $db->exec('PRAGMA journal_mode = MEMORY');
+            $db->exec('PRAGMA temp_store = MEMORY');
+            // -1048576 means 1 GiB of page cache (negative = KiB).
+            // The B-tree build for the partial covering index below
+            // benefits enormously from being able to keep the working
+            // set in memory; on smaller machines SQLite will simply
+            // honour what it can.
+            $db->exec('PRAGMA cache_size = -1048576');
+        }
+
+        try {
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_child'
+                . ' ON context_edges(run_id, child_node_id)'
+            );
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_node'
+                . ' ON context_node_locations(run_id, node_id)'
+            );
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_class'
+                . ' ON context_node_locations(run_id, class_name)'
+            );
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_attributes_run_node'
+                . ' ON context_node_attributes(run_id, node_id)'
+            );
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_type'
+                . ' ON context_node_locations(run_id, location_type)'
+            );
+            // Lets TopStringsPass scan the top-N largest strings as a backward
+            // index range scan instead of sorting every ZendStringMemoryLocation
+            // row in the table — critical on captures with millions of strings.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_type_size'
+                . ' ON context_node_locations(run_id, location_type, size)'
+            );
+            // (run_id, link_name, parent_node_id) — used by the
+            // v_arrays view JOIN, DynamicPropertiesPass /
+            // StructuralDedupPass / PropertyScalingPass JOINs that
+            // narrow on a literal link_name and a parent_node_id.
+            // The trailing is_tree column was dropped: SQLite was
+            // only ever using it as a stored value (the WHEREs filter
+            // is_tree as a post-condition, not a leading key), so the
+            // extra column was paying B-tree page cost for nothing.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_link_parent'
+                . ' ON context_edges(run_id, link_name, parent_node_id)'
+            );
+            // Partial covering index for the NonTreeEdgePass
+            // aggregations:
+            //   WHERE run_id = ? AND is_tree = 0 AND strength = 'strong'
+            //   GROUP BY link_name
+            // The constants `is_tree = 0` and `strength = 'strong'`
+            // are pushed into the partial-index WHERE so SQLite only
+            // stores rows that actually match — typically a tiny
+            // fraction of the edge table on a real PHP heap (most
+            // edges are tree edges). The remaining columns are
+            // ordered (link_name, child_node_id, parent_node_id) so
+            // the GROUP BY link_name + the per-link
+            // count(distinct child_node_id) / min(parent_node_id)
+            // projections can finish without ever leaving the index.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_strong_nontree_links'
+                . ' ON context_edges(run_id, link_name, child_node_id, parent_node_id)'
+                . " WHERE is_tree = 0 AND strength = 'strong'"
+            );
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_nodes_canonical'
+                . ' ON context_nodes(run_id, canonical_node_id)'
+            );
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_locations_region_addr_size'
+                . ' ON context_node_locations(run_id, region, address, size)'
+            );
+        } finally {
+            if ($sqlite) {
+                $db->exec('PRAGMA synchronous = ' . (string)$saved_synchronous);
+                $db->exec('PRAGMA journal_mode = ' . (string)$saved_journal_mode);
+                $db->exec('PRAGMA temp_store = ' . (string)$saved_temp_store);
+            }
+        }
     }
 
     private function createViews(\PDO $db): void

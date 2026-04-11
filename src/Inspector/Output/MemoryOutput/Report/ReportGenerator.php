@@ -349,15 +349,35 @@ final class ReportGenerator
     private function ensureReportIndexes(\PDO $db): void
     {
         try {
-            // The 4-col version was the original NonTreeEdgePass index;
-            // it's now superseded by a 6-col covering variant that lets
-            // the shared_rows aggregation finish without ever leaving
-            // the index. Drop the old one so old captures don't carry
-            // both indexes side by side.
+            // History of NonTreeEdgePass index:
+            //   v1: idx_context_edges_run_tree_strength_link
+            //         (run_id, is_tree, strength, link_name)
+            //   v2: idx_context_edges_run_tree_strength_link_child_parent
+            //         (run_id, is_tree, strength, link_name, child_node_id, parent_node_id)
+            //   v3 (current): idx_context_edges_strong_nontree_links
+            //         (run_id, link_name, child_node_id, parent_node_id)
+            //         WHERE is_tree = 0 AND strength = 'strong'
+            // v3 pushes the two constant filters into the partial-index
+            // WHERE clause so the index only carries the (typically tiny)
+            // subset of edges actually queried by NonTreeEdgePass — the
+            // build cost drops from ~144s on analyze3.rbt to single-digit
+            // seconds. Drop the older variants so old captures don't
+            // pay for two indexes side by side.
             $db->exec('DROP INDEX IF EXISTS idx_context_edges_run_tree_strength_link');
+            $db->exec('DROP INDEX IF EXISTS idx_context_edges_run_tree_strength_link_child_parent');
             $db->exec(
-                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_tree_strength_link_child_parent'
-                . ' ON context_edges(run_id, is_tree, strength, link_name, child_node_id, parent_node_id)'
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_strong_nontree_links'
+                . ' ON context_edges(run_id, link_name, child_node_id, parent_node_id)'
+                . " WHERE is_tree = 0 AND strength = 'strong'"
+            );
+            // Slimmed sibling: dropped the trailing is_tree column from
+            // the legacy idx_context_edges_run_link_parent_tree, since
+            // the WHERE clauses that hit this index already filter is_tree
+            // as a post-condition (SQLite never used it as a leading key).
+            $db->exec('DROP INDEX IF EXISTS idx_context_edges_run_link_parent_tree');
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_link_parent'
+                . ' ON context_edges(run_id, link_name, parent_node_id)'
             );
             // Required by TopStringsPass top-N scan to avoid sorting tens of
             // millions of ZendStringMemoryLocation rows on huge dumps.
