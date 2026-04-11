@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Formatter\JsonReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Formatter\TextReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
+use Reli\Inspector\Watch\HeapStats;
 use Reli\Lib\Log\Log;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -115,6 +116,19 @@ final class MemoryReportCommand extends Command
             . ' back to sequential if the extension is missing.',
             '1',
         );
+        $this->addOption(
+            'mmap-size',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'SQLite mmap_size for the report read connection (and worker connections).'
+            . ' Suffix-aware: K / M / G are KiB / MiB / GiB; plain integers are bytes;'
+            . ' 0 disables mmap. Bigger means SQLite memory-maps more of the database'
+            . ' file instead of paying pread() per page on substrate load. Defaults to'
+            . ' 4G — large enough for typical multi-GB analyze DBs while still being'
+            . ' silently capped to SQLite\'s compile-time SQLITE_MAX_MMAP_SIZE on builds'
+            . ' that ship a smaller cap.',
+            '4G',
+        );
     }
 
     #[\Override]
@@ -141,10 +155,29 @@ final class MemoryReportCommand extends Command
         $output_path = $input->getOption('output');
         $pretty = (bool)$input->getOption('pretty-print');
 
+        /** @var string $mmap_size_raw */
+        $mmap_size_raw = $input->getOption('mmap-size');
+        try {
+            $mmap_size_bytes = HeapStats::parseSize((string)$mmap_size_raw);
+        } catch (\Throwable $e) {
+            $output->writeln(sprintf(
+                '<error>Invalid --mmap-size value: %s (use bytes, or K/M/G suffix)</error>',
+                $mmap_size_raw,
+            ));
+            return 1;
+        }
+        if ($mmap_size_bytes < 0) {
+            $output->writeln(sprintf(
+                '<error>Invalid --mmap-size value: %s (must be >= 0)</error>',
+                $mmap_size_raw,
+            ));
+            return 1;
+        }
+
         $db = new \PDO("sqlite:{$db_file}");
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $db->exec('PRAGMA journal_mode = WAL');
-        $db->exec('PRAGMA mmap_size = 268435456');
+        $db->exec('PRAGMA mmap_size = ' . $mmap_size_bytes);
 
         $full_analysis = (bool)$input->getOption('full-analysis');
         /** @var bool|null $ffi_csr */
@@ -193,6 +226,7 @@ final class MemoryReportCommand extends Command
             $bulk_fetch_chunk,
             $worker_count,
             $db_file,
+            $mmap_size_bytes,
         );
 
         $formatter = match ($format) {

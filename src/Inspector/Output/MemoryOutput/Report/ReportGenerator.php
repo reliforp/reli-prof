@@ -58,6 +58,10 @@ final class ReportGenerator
      *   Required when worker_count > 1 (workers reopen the DB rather
      *   than share the parent's PDO across fork). Ignored in
      *   sequential mode.
+     * @param int $mmap_size_bytes mmap_size to apply to worker PDOs
+     *   opened inside `$open_db` (the parent's PDO is configured by
+     *   the caller). 0 disables mmap. SQLite silently caps to its
+     *   compile-time SQLITE_MAX_MMAP_SIZE.
      */
     public function generateFromDb(
         \PDO $db,
@@ -68,6 +72,7 @@ final class ReportGenerator
         int $bulk_fetch_chunk = 200000,
         int $worker_count = 1,
         ?string $db_path = null,
+        int $mmap_size_bytes = 268435456,
     ): ReportResult {
         // Make sure the indexes report passes need exist on this database,
         // even if it was captured by an older Reli version. CREATE INDEX
@@ -176,12 +181,12 @@ final class ReportGenerator
             // descriptor (which would corrupt SQLite). In sequential
             // mode the extra PDO open is a few ms per pass, dwarfed
             // by the actual pass work.
-            $open_db = function () use ($db_path): \PDO {
+            $open_db = function () use ($db_path, $mmap_size_bytes): \PDO {
                 assert($db_path !== null);
                 $child_db = new \PDO("sqlite:{$db_path}");
                 $child_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
                 $child_db->exec('PRAGMA journal_mode = WAL');
-                $child_db->exec('PRAGMA mmap_size = 268435456');
+                $child_db->exec('PRAGMA mmap_size = ' . $mmap_size_bytes);
                 return $child_db;
             };
             // Resolve "fresh PDO per factory" only when we need it
