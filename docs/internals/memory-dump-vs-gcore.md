@@ -670,3 +670,166 @@ critical for beating `gcore`.
 - The dump-time filter for the walker can be purely address-range based;
   `ce->type` / `func->type` inspection is not necessary because of the
   request-scoped cleanup lifetime constraint.
+
+## Preload measurement (target4)
+
+A fourth target was added to verify the preload-safe variant of E
+against an actual `opcache.preload` process:
+
+- `opcache.preload=/work/preload.php`, `opcache.preload_user=root`,
+  `opcache.memory_consumption=256`
+- Preload script declares 2000 `PL{0..1999}` classes (each with 10
+  properties, 5 methods, 3 class constants), same shape as target3
+- After preload, the main script creates 3000 instances and sits idle
+
+Runtime footprint:
+
+| metric      | target3 (2000 user classes, no preload) | target4 (2000 preloaded) |
+|-------------|-----------------------------------------|--------------------------|
+| VmRSS       | 42 MiB                                  | 61 MiB                   |
+| RssAnon     | 21 MiB                                  | 17 MiB                   |
+| **RssShmem**| 2.4 MiB                                 | **25 MiB**               |
+
+The 10× jump in `RssShmem` is the preload manifesting: the compiled
+PL class structures (class_entry, op_arrays, property_info tables,
+class constants, interned strings) stopped living in ZendMM and moved
+into the persistent opcache SHM VMA.
+
+### `context_node_locations.region` shift
+
+| region           | target3 (no preload)  | target4 (preload)      |
+|------------------|-----------------------|------------------------|
+| `zend_mm_heap`   | 93 119 / 8.57 MiB     | 6 120 / 932 KiB        |
+| `compiler_arena` | 40 000 / 4.76 MiB     | — (not emitted)        |
+| `outside`        | **8 329 / 728 KiB**   | **174 343 / 20.2 MiB** |
+
+`outside` grew ×25 both in count and bytes. Every single preloaded
+class-metadata structure moved from `compiler_arena`/`zend_mm_heap`
+into `outside`. Breakdown:
+
+| location_type                    | target3 | target4 | delta            |
+|----------------------------------|---------|---------|------------------|
+| `ZendClassEntryMemoryLocation`   | 205     | 4 205   | +4 000           |
+| `ZendOpArrayHeaderMemoryLocation`| —       | 20 000  | +20 000          |
+| `ZendOpArrayBodyMemoryLocation`  | —       | 20 000  | +20 000          |
+| `ZendPropertyInfoMemoryLocation` | 731     | 40 731  | +40 000          |
+| `ZendClassConstantMemoryLocation`| 399     | 12 399  | +12 000          |
+| `ZendArgInfosMemoryLocation`     | —       | 20 000  | +20 000          |
+| `DefaultPropertiesTableMemoryLocation` | 93 | 4 093  | +4 000           |
+| `LocalVariableNameTableMemoryLocation` | — | 20 000 | +20 000          |
+| `ZendArrayTableMemoryLocation`   | 622     | 12 622  | +12 000          |
+| `ZendStringMemoryLocation`       | 4 254   | 14 268  | +10 014          |
+| `ZendConstantMemoryLocation`     | 1 811   | 1 811   | 0                |
+
+The added items are exactly the expected preloaded-class metadata:
+4000 class_entries, 20000 methods (2000 × 10, with two entries per
+method — one in the op-array table and one as an internal form), each
+method contributing arg_infos / local-variable-name tables / op-array
+headers and bodies, etc.
+
+### Where `outside` now lives
+
+Address bucketing of target4 `outside` addresses:
+
+| bucket range   | VMA                     | bytes     | what              |
+|----------------|-------------------------|-----------|-------------------|
+| `0x41c00000`–`0x42d00000` (16 buckets × ~1 MiB each) | `/dev/zero` opcache SHM | **~20 MiB** | preloaded class metadata |
+| `0x562a09...` (3 buckets) | `[heap]` (brk)          | ~540 KiB  | internal classes etc. (same as target1/3) |
+| `0x5629fb/fc...` (3 buckets) | `/usr/local/bin/php` RO/RW | ~36 KiB  | pre-baked hash tables |
+| `0x41300000`/`0x41400000` | another `/dev/zero` SHM chunk | ~370 KiB | more preload content |
+
+**99 % of the new `outside` bytes live in the `/dev/zero` opcache SHM
+VMA.** The `[heap]` portion is the same ~540 KiB observed with the
+non-preload targets: it is entirely internal-class metadata, not
+preloaded user metadata.
+
+### `i:m:dump` vs `gcore` on target4
+
+| metric      | `i:m:dump`          | `gcore`              |
+|-------------|---------------------|----------------------|
+| file size   | **42.0 MiB**        | 292 MiB              |
+| wall time   | **0.17 s**          | 0.86 s               |
+| ratio       | 7× smaller          | 5× faster            |
+
+**target4 is the case where `i:m:dump` wins the most.** That is
+because the opcache SHM VMA is 256 MiB but only ~25 MiB is resident,
+and reli's pagemap filter skips the non-resident pages while `gcore`
+faithfully writes them as zeros. `gcore` ends up writing ~267 MiB of
+SHM (most of which is zero) into the core file; reli writes ~25 MiB.
+
+### Validating the preload-safe E walker on target4
+
+The preload-safe E walker's pointer filter is:
+
+    pointer → skip if pointer ∈ (zend_mm_chunks ∪ zend_mm_huges ∪
+                                 opcache_shm_vma ∪ php_binary_rw_vma)
+
+Applying it to target4's roots:
+
+1. `class_table` has 2180 entries. 205 of them point into `[heap]`
+   (internal classes) and are added to the peek set. The remaining
+   **2000 preloaded class pointers all land in the `/dev/zero` SHM
+   VMA and are skipped because they are already covered by the SHM
+   bulk scan.** The walker does not read 2000 × 512 B = 1 MiB of
+   class_entry bodies, does not chase their 40 000 property_info /
+   20 000 class_constant / 20 000 op_array sub-pointers, etc.
+2. `function_table` behaves the same way: internal functions peek,
+   preloaded user functions skip (they live in SHM).
+3. `zend_constants` is unchanged (all internal).
+4. `module_registry` is unchanged.
+5. `included_files` contains the 2000 preloaded filenames as
+   `zend_string` pointers; those strings are interned in SHM and
+   therefore skipped.
+
+**Net walker cost on target4: identical to target1/target3** — the
+~8 k-item peek set, ~10 ms wall time under batched
+`process_vm_readv`, entirely independent of preload scale. The
+preload-safe E design succeeds here.
+
+### Residual observation: "other anon writable" regions are 0 % useful
+
+While inspecting dump4 regions a separate finding fell out: the dump
+contains three 2 MiB+ regions from source 7 (anon writable mmap
+scan) that are **not** ZendMM chunks (source 3 only enumerated one
+chunk), yet a `SELECT * FROM context_node_locations WHERE address
+BETWEEN 0x7f51efc00000 AND 0x7f51f2800000` returns zero rows. The
+analyser never reads a single byte from these ~5-6 MiB of anon
+writable memory.
+
+These are presumably glibc malloc arenas, opcache's working buffers,
+or similar libc-internal state. They are correctly pagemap-filtered,
+they do not duplicate ZendMM chunks (because they are outside the
+chunk ranges), but they also carry no PHP data. On target4 they add
+~5-6 MiB of completely unreachable bytes to the dump.
+
+A single measurement is not enough evidence to change the current
+policy (anon writable scan remains, merged via fix A), but this is
+a useful data point for a future optimisation: if we can detect
+"writable-anon that is not owned by ZendMM and not opcache SHM" at
+dump time, we can drop it outright. An easy proxy is "the analyzer
+never references it" — but that is only known after analysis, which
+is too late. A cheaper proxy is "writable-anon whose page contents
+look random/binary rather than containing recognisable PHP struct
+signatures", which is a heuristic and carries risk.
+
+For now the conservative stance stands: **keep the anon writable
+scan, but rely on fix A to dedupe it against chunks**. This might
+be revisited if target measurements in the future consistently show
+>5 MiB of unreachable bytes in those regions.
+
+### Cross-target summary (after this round)
+
+| target | workload shape        | RssAnon+RssShmem | `i:m:dump` today   | `gcore` today     | reli vs gcore  |
+|--------|-----------------------|-------------------|--------------------|-------------------|-----------------|
+| target1 | light CLI             | 12 MiB            | 17.5 MiB / 0.80 s  | 152 MiB / 0.90 s  | 8.7× small, 1.1× fast |
+| target2 | 50 k object instances | 49 MiB            | 89.7 MiB / 0.39 s  | 324 MiB / 1.82 s  | 3.6× small, 4.7× fast |
+| target3 | 2 k user classes      | 23 MiB            | 44.4 MiB / **1.76 s** | 298 MiB / 1.18 s | 6.7× small, **0.67× (slower)** |
+| target4 | 2 k preloaded classes | 42 MiB            | **42.0 MiB / 0.17 s** | 292 MiB / 0.86 s | 6.9× small, **5.1× fast** |
+
+**target3 is the only shape where `i:m:dump` is currently losing to
+`gcore`**, and it is the shape closest to a real-world PHP request
+handler. The other three shapes (light CLI, heavy user data, preload)
+are already wins on both axes or on size alone. A/B/C is predicted to
+reclaim target3 while leaving the others unchanged or improved.
+target4 in particular is already reli's strongest case and the
+preload-safe E design leaves it untouched.
