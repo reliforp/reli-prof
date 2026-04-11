@@ -345,19 +345,21 @@ final class CycleClusterPass implements PassInterface
 
     /**
      * @return array<int, string> root_node_id => link_name
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function loadRootLinkNames(): array
     {
-        $stmt = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE parent_node_id IS NULL AND is_tree = 1"
-            . " AND run_id = {$this->run_id}"
-        );
-
+        // Substrate knows every root node's tree-edge link_name from
+        // its in-memory treeLinkIds index (built once during
+        // loadEdgesFfi). Walking the roots in PHP is O(roots) and
+        // avoids the `WHERE parent_node_id IS NULL AND is_tree = 1`
+        // SQL scan that used to show up as a visible hot spot on
+        // captures with millions of edges.
         $map = [];
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $map[(int)$r[0]] = (string)$r[1];
+        foreach ($this->substrate->getRoots() as $root) {
+            $link = $this->substrate->getTreeLinkName($root);
+            if ($link !== null) {
+                $map[$root] = $link;
+            }
         }
         return $map;
     }
