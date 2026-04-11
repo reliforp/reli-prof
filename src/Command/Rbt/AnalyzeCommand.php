@@ -15,6 +15,8 @@ namespace Reli\Command\Rbt;
 
 use Reli\Converter\BinaryTrace\BinaryTraceReader;
 use Reli\Converter\StreamDecompressor;
+use Reli\Rbt\Analyze\TraceAggregationResult;
+use Reli\Rbt\Analyze\TraceAggregator;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
@@ -109,132 +111,34 @@ final class AnalyzeCommand extends Command
             $last_count = $last_raw === null ? 1 : max(1, (int) $last_raw);
         }
 
-        $callers_re = self::wrapPattern($callers_pattern);
-        $callees_re = self::wrapPattern($callees_pattern);
-        $match_re = self::wrapPattern($match_pattern);
-        $hide_re = self::wrapPattern($hide_pattern);
+        $aggregator = new TraceAggregator(
+            no_line: $no_line,
+            hide_re: TraceAggregator::wrapPattern($hide_pattern),
+            match_re: TraceAggregator::wrapPattern($match_pattern),
+            callers_re: TraceAggregator::wrapPattern($callers_pattern),
+            callees_re: TraceAggregator::wrapPattern($callees_pattern),
+            last_count: $last_count,
+        );
 
         $reader = new BinaryTraceReader();
         $stream = StreamDecompressor::decompressIfNeeded(STDIN);
-
-        /** @var array<string, int> */
-        $self_counts = [];
-        /** @var array<string, int> */
-        $total_counts = [];
-        /** @var array<string, int> */
-        $caller_counts = [];
-        /** @var array<string, int> */
-        $callee_counts = [];
-
-        $sample_count = 0;
-        $matched_samples = 0;
-
-        /**
-         * Ring buffer of the most recent samples for --last. We store the
-         * already-formatted frame keys (with the same hide/no-line rules
-         * applied as the aggregations) so the tail render is just printing.
-         *
-         * @var list<list<string>>
-         */
-        $tail_buffer = [];
-
-        foreach ($reader->read($stream) as $sample) {
-            $sample_count++;
-
-            $keys = [];
-            foreach ($sample->trace->call_frames as $frame) {
-                $keys[] = $no_line
-                    ? $frame->function_name
-                    : $frame->function_name . ' ' . $frame->file_name . ':' . $frame->lineno;
-            }
-
-            if ($hide_re !== null) {
-                $keys = array_values(
-                    array_filter($keys, static fn(string $k): bool => preg_match($hide_re, $k) !== 1),
-                );
-            }
-            if ($keys === []) {
-                continue;
-            }
-
-            if ($match_re !== null) {
-                $hit = false;
-                foreach ($keys as $k) {
-                    if (preg_match($match_re, $k) === 1) {
-                        $hit = true;
-                        break;
-                    }
-                }
-                if (!$hit) {
-                    continue;
-                }
-            }
-
-            $matched_samples++;
-
-            // self-time: leaf frame (call_frames[0] is innermost)
-            $leaf = $keys[0];
-            $self_counts[$leaf] = ($self_counts[$leaf] ?? 0) + 1;
-
-            // inclusive: each frame on the stack, deduped per sample so
-            // recursive calls only count once.
-            $seen = [];
-            foreach ($keys as $k) {
-                if (isset($seen[$k])) {
-                    continue;
-                }
-                $seen[$k] = true;
-                $total_counts[$k] = ($total_counts[$k] ?? 0) + 1;
-            }
-
-            if ($callers_re !== null) {
-                // Find topmost (closest to leaf) frame matching pattern,
-                // attribute one count to its immediate caller.
-                $n = count($keys);
-                for ($i = 0; $i < $n; $i++) {
-                    if (preg_match($callers_re, $keys[$i]) === 1) {
-                        $caller = $keys[$i + 1] ?? '<root>';
-                        $caller_counts[$caller] = ($caller_counts[$caller] ?? 0) + 1;
-                        break;
-                    }
-                }
-            }
-
-            if ($callees_re !== null) {
-                // Find bottommost (closest to root) matching frame, attribute
-                // one count to its immediate callee.
-                for ($i = count($keys) - 1; $i >= 0; $i--) {
-                    if (preg_match($callees_re, $keys[$i]) === 1) {
-                        $callee = $i > 0 ? $keys[$i - 1] : '<leaf>';
-                        $callee_counts[$callee] = ($callee_counts[$callee] ?? 0) + 1;
-                        break;
-                    }
-                }
-            }
-
-            if ($last_count > 0) {
-                $tail_buffer[] = $keys;
-                if (count($tail_buffer) > $last_count) {
-                    array_shift($tail_buffer);
-                }
-            }
-        }
+        $result = $aggregator->aggregate($reader->read($stream));
 
         $err = $output instanceof ConsoleOutputInterface
             ? $output->getErrorOutput()
             : $output;
 
-        $this->writeSummary($err, $reader, $sample_count, $matched_samples);
+        $this->writeSummary($err, $reader, $result->sample_count, $result->matched_samples);
 
         if ($last_count > 0) {
-            $this->printTail($output, $tail_buffer);
+            $this->printTail($output, $result->tail);
         }
 
-        $denominator = $matched_samples > 0 ? $matched_samples : 1;
+        $denominator = $result->matched_samples > 0 ? $result->matched_samples : 1;
 
         if ($top > 0) {
-            $this->printTable($output, 'self-time top', $self_counts, $denominator, $top);
-            $this->printTable($output, 'total-time top (inclusive)', $total_counts, $denominator, $top);
+            $this->printTable($output, 'self-time top', $result->self_counts, $denominator, $top);
+            $this->printTable($output, 'total-time top (inclusive)', $result->total_counts, $denominator, $top);
         }
 
         // --top 0 only suppresses the default self/total tables. The
@@ -242,20 +146,20 @@ final class AnalyzeCommand extends Command
         // (with their own row cap so the user can still bound output).
         $explicit_top = $top > 0 ? $top : 20;
 
-        if ($callers_re !== null) {
+        if ($aggregator->callers_re !== null) {
             $this->printTable(
                 $output,
                 "callers of frames matching /{$callers_pattern}/",
-                $caller_counts,
+                $result->caller_counts,
                 $denominator,
                 $explicit_top,
             );
         }
-        if ($callees_re !== null) {
+        if ($aggregator->callees_re !== null) {
             $this->printTable(
                 $output,
                 "callees of frames matching /{$callees_pattern}/",
-                $callee_counts,
+                $result->callee_counts,
                 $denominator,
                 $explicit_top,
             );
@@ -347,21 +251,5 @@ final class AnalyzeCommand extends Command
             ]);
         }
         $table->render();
-    }
-
-    /**
-     * Wrap a user-supplied pattern in `#...#` delimiters and escape
-     * any embedded `#`. Returns a non-empty regex string (the wrapper
-     * always contributes at least 2 chars), or null when the input
-     * was missing or empty so callers can skip the preg_match step.
-     *
-     * @return non-empty-string|null
-     */
-    private static function wrapPattern(?string $pattern): ?string
-    {
-        if ($pattern === null || $pattern === '') {
-            return null;
-        }
-        return '#' . str_replace('#', '\\#', $pattern) . '#';
     }
 }
