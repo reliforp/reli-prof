@@ -10,12 +10,21 @@ current default and is not removed by this design — it is demoted from
 
 ## How we got here (the messy version)
 
-The current shape of memory analysis in Reli is the result of several
-opportunistic decisions, not a single coherent design pass. Honesty
-about that path matters because the binary format proposal is
-specifically a *correction* of accumulated drift, and future readers
-need to know which parts of today's stack are load-bearing intent and
-which are accidents that survived.
+The current shape of memory analysis in Reli is the result of
+several opportunistic decisions, not a single coherent design pass.
+Honesty about that path matters because the binary format proposal
+is specifically a *correction* of accumulated drift, and future
+readers need to know which parts of today's stack are load-bearing
+intent and which are accidents that survived.
+
+A note on timescale before the chronology: most of steps 2 through
+7 below happened over a span of **days**, not months or years. The
+"drift" framing makes it sound like a multi-year saga of slowly
+accumulated technical debt; really it's "we got from JSON to
+graph-shaped report to hitting the multi-GB wall in about a working
+week of coding-agent-assisted iteration". The drift is real but the
+clock was set to fast-forward, which is itself a relevant fact about
+how this codebase evolves.
 
 The rough chronology:
 
@@ -80,9 +89,9 @@ The rough chronology:
 This proposal does not paint over the drift. It explicitly says:
 the SQL-primary storage was an accidental fit, the cost picture
 makes it clear, and we now know what shape the storage *should*
-have because we have enough evidence — across the recent
-optimisation rounds on multi-GB captures — about what the report
-actually does with the data once it gets there.
+have — not because we have years of operational evidence, but
+because the multi-GB optimisation round that produced this very
+document made the misfit unmissable in the space of a few days.
 
 ## Reframing: storage is a substrate base, not a report DB
 
