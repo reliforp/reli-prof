@@ -3038,6 +3038,13 @@ final class ExploreTui
             $this->list_selected += $delta;
             return;
         }
+        // Activate the hovered pane so the scroll is visible. Without
+        // this, the overview's auto-center logic would overwrite the
+        // selection on the next render and the scroll would appear to
+        // have no effect.
+        if ($state->active_pane !== $pane && $pane !== ActivePane::Focus) {
+            $this->replaceTop($state->withActivePane($pane));
+        }
         match ($pane) {
             ActivePane::Callers  => $this->callers_selected += $delta,
             ActivePane::Callees  => $this->callees_selected += $delta,
