@@ -3149,6 +3149,22 @@ final class ExploreTui
         }
         $label = Aggregator::labelFor($this->model, $key_id, true);
         $this->pushSandwichFocus($key_id, $label, $state->sandwich_view);
+
+        // When panes or overview was active, switch to the Focus
+        // banner so the mini-flame highlight tracks the newly focused
+        // frame. getActiveCursorFrame() returns focus_id directly for
+        // ActivePane::Focus, which is exactly what we just clicked.
+        // Flame / tree views initialise their cursor onto the focus
+        // bar on the next render, so they highlight correctly already.
+        if (
+            $state->active_pane === ActivePane::Callers
+            || $state->active_pane === ActivePane::Callees
+            || $state->active_pane === ActivePane::Overview
+        ) {
+            $this->replaceTop(
+                $this->currentState()->withActivePane(ActivePane::Focus)
+            );
+        }
     }
 
     /**
