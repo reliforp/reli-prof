@@ -1362,8 +1362,8 @@ class ExploreTuiStateTest extends BaseTestCase
         // Scroll inside body area (ANSI row 6 = body row 1).
         $mouse = new MouseEvent(MouseEvent::SCROLL_UP, 10, 6, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
-        // Scroll up moves by -3.
-        $this->assertSame(2, $this->get($tui, 'list_selected'));
+        // Scroll up moves by -1.
+        $this->assertSame(4, $this->get($tui, 'list_selected'));
     }
 
     public function testMouseScrollDownMovesListSelectionDown(): void
@@ -1372,7 +1372,7 @@ class ExploreTuiStateTest extends BaseTestCase
         $this->set($tui, 'term', new FakeTerminal(120, 30));
         $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 10, 6, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
-        $this->assertSame(3, $this->get($tui, 'list_selected'));
+        $this->assertSame(1, $this->get($tui, 'list_selected'));
     }
 
     public function testMouseScrollTargetsPaneUnderPointer(): void
@@ -1395,7 +1395,7 @@ class ExploreTuiStateTest extends BaseTestCase
         $this->inv($tui, 'dispatchMouse', $mouse);
 
         // Callees selection should have moved, not callers.
-        $this->assertSame(3, $this->get($tui, 'callees_selected'));
+        $this->assertSame(1, $this->get($tui, 'callees_selected'));
         $this->assertSame(0, $this->get($tui, 'callers_selected'));
     }
 
@@ -1411,7 +1411,7 @@ class ExploreTuiStateTest extends BaseTestCase
         $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 5, 8, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
 
-        $this->assertSame(3, $this->get($tui, 'overview_selected'));
+        $this->assertSame(1, $this->get($tui, 'overview_selected'));
     }
 
     public function testMouseReleaseIsIgnored(): void
