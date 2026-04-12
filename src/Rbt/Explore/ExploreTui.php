@@ -218,6 +218,25 @@ final class ExploreTui
      */
     private array $mini_flame_pixel_keys = [];
 
+    /**
+     * Mouse scroll delta: how many rows each scroll event moves.
+     * Adjustable via the [δN] indicator in the header (click to
+     * cycle presets, scroll to fine-tune).
+     */
+    private int $scroll_delta = 3;
+
+    /** @var list<int> preset values cycled through on click */
+    private const SCROLL_DELTA_PRESETS = [1, 2, 3, 5, 10];
+
+    /**
+     * Column range of the [δN] indicator on header line 2 (0-based,
+     * exclusive end). Set by renderHeader() so the mouse dispatcher
+     * knows where the widget is.
+     *
+     * @var array{int, int}
+     */
+    private array $scroll_delta_cols = [0, 0];
+
     public function __construct(TraceModel $model, TerminalInterface $term, Keymap $keymap)
     {
         $this->model = $model;
@@ -555,12 +574,25 @@ final class ExploreTui
             },
         };
         $line2 = sprintf('mode: %s   history: %d back', $mode_label, $hist);
-        $line3 = sprintf(
+        $line3_left = sprintf(
             'no-line: %s   match: %s   filter: %s',
             $this->opts->no_line ? 'on' : 'off',
             $this->opts->match_re ?? '(none)',
             $state->view_filter ?? '(none)',
         );
+        $delta_label = sprintf('[δ%d]', $this->scroll_delta);
+        $delta_len = mb_strlen($delta_label);
+        // Right-align the scroll-delta indicator on line 2 (row index 2).
+        $gap = $cols - mb_strlen($line3_left) - $delta_len;
+        if ($gap >= 2) {
+            $delta_col_start = $cols - $delta_len;
+            $line3 = $line3_left . str_repeat(' ', $gap) . $delta_label;
+        } else {
+            // Terminal too narrow — omit the indicator.
+            $delta_col_start = 0;
+            $line3 = $line3_left;
+        }
+        $this->scroll_delta_cols = [$delta_col_start, $delta_col_start + $delta_len];
 
         $out = $this->styleHeader(self::shorten($line1, $cols)) . "\n";
         $out .= self::shorten($line2, $cols) . "\n";
@@ -2979,6 +3011,16 @@ final class ExploreTui
         $body_rows = $rows - 6 - ($show_mini_flame ? 1 : 0);
         $body_start = 4 + ($show_mini_flame ? 1 : 0);
 
+        // [δN] indicator on header line 2 (screen row 2).
+        if (
+            $screen_row === 2
+            && $screen_col >= $this->scroll_delta_cols[0]
+            && $screen_col < $this->scroll_delta_cols[1]
+        ) {
+            $this->dispatchScrollDeltaWidget($is_scroll, $mouse);
+            return;
+        }
+
         // Click on the mini-flame strip row (directly after the header).
         if ($show_mini_flame && $screen_row === 4 && !$is_scroll) {
             $this->dispatchMouseMiniFlame($screen_col, $cols);
@@ -2999,7 +3041,7 @@ final class ExploreTui
         $hover_pane = $this->hitTestPane($state, $body_row, $body_rows, $screen_col, $sidebar_width);
 
         if ($is_scroll) {
-            $step = $mouse->shift ? 3 : 1;
+            $step = $this->scroll_delta;
             $delta = $mouse->button === MouseEvent::SCROLL_UP ? -$step : $step;
             $this->dispatchMouseScroll($state, $hover_pane, $delta);
             return;
@@ -3125,8 +3167,30 @@ final class ExploreTui
     }
 
     /**
-     * Left-click in list mode body: row 0 is header, rows 1+ are data.
+     * Handle click / scroll on the [δN] header widget.
+     * Click cycles through presets, scroll adjusts ±1 (clamped 1–20).
      */
+    private function dispatchScrollDeltaWidget(
+        bool $is_scroll,
+        MouseEvent $mouse,
+    ): void {
+        if ($is_scroll) {
+            $dir = $mouse->button === MouseEvent::SCROLL_UP ? -1 : 1;
+            $this->scroll_delta = max(1, min(20, $this->scroll_delta + $dir));
+        } else {
+            // Cycle through presets.
+            $idx = array_search($this->scroll_delta, self::SCROLL_DELTA_PRESETS, true);
+            if ($idx === false) {
+                // Current value is not a preset — snap to nearest.
+                $this->scroll_delta = self::SCROLL_DELTA_PRESETS[0];
+            } else {
+                $next = ($idx + 1) % count(self::SCROLL_DELTA_PRESETS);
+                $this->scroll_delta = self::SCROLL_DELTA_PRESETS[$next];
+            }
+        }
+        $this->status = "scroll delta: {$this->scroll_delta}";
+    }
+
     /**
      * Left-click on the mini-flame strip: focus on the frame at that column.
      */
