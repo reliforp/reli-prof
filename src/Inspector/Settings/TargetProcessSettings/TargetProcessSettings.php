@@ -20,6 +20,8 @@ final class TargetProcessSettings
         public ?int $pid,
         public ?string $command = null,
         public array $arguments = [],
+        public ?string $child_stdout = null,
+        public ?string $child_stderr = null,
     ) {
     }
 }

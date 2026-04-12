@@ -16,6 +16,7 @@ namespace Reli\Lib\Process\Exec;
 use Reli\Lib\Libc\Errno\Errno;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
 use Reli\Lib\Libc\Sys\Ptrace\PtraceRequest;
+use Reli\Lib\Libc\Unistd\Dup2;
 use Reli\Lib\Libc\Unistd\Execvp;
 use Reli\Lib\Process\Exec\Internal\Pcntl;
 use Reli\Lib\System\OnShutdown;
@@ -29,14 +30,25 @@ class TraceeExecutor
         private Execvp $execvp,
         private Errno $errno,
         private OnShutdown $on_shutdown,
+        private Dup2 $dup2 = new Dup2(),
     ) {
     }
 
     /** @param list<string> $argv */
-    public function execute(string $command, array $argv): int
-    {
+    public function execute(
+        string $command,
+        array $argv,
+        ?string $child_stdout = null,
+        ?string $child_stderr = null,
+    ): int {
         $pid = $this->pcntl->fork();
         if ($pid === 0) {
+            if ($child_stdout !== null) {
+                $this->dup2->redirectToFile($child_stdout, Dup2::STDOUT_FILENO);
+            }
+            if ($child_stderr !== null) {
+                $this->dup2->redirectToFile($child_stderr, Dup2::STDERR_FILENO);
+            }
             $this->ptrace->ptrace(
                 PtraceRequest::PTRACE_PTRACEME,
                 0,
