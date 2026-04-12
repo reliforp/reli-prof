@@ -119,6 +119,24 @@ final class MemoryDumper
             ),
         ];
 
+        // PHP BSS segment: the anonymous writable VMA that contains EG.
+        // This covers EG, CG, zend_one_char_string[256], and other PHP
+        // engine globals that live in the binary's .bss. Small (~130 KiB)
+        // and always resident. Without this, globals like
+        // zend_one_char_string are invisible in minimum mode because the
+        // BSS is anonymous-writable (gated on --include-heap) and not
+        // reachable from any walker root.
+        $eg_vmas = $memory_map->findByAddress($eg_address);
+        foreach ($eg_vmas as $vma) {
+            if ($vma->attribute->write && $vma->attribute->read) {
+                $addr = (int)hexdec($vma->begin);
+                $size = (int)hexdec($vma->end) - $addr;
+                if ($size > 0) {
+                    $intervals[] = ['address' => $addr, 'size' => $size];
+                }
+            }
+        }
+
         // ZendMM chunks
         foreach ($main_chunk->iterateChunks($dereferencer) as $chunk) {
             $intervals[] = [
