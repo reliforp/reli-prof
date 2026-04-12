@@ -3045,15 +3045,33 @@ final class ExploreTui
         if ($state->active_pane !== $pane && $pane !== ActivePane::Focus) {
             $this->replaceTop($state->withActivePane($pane));
         }
+        if ($pane === ActivePane::Overview) {
+            $this->overview_selected += $delta;
+            if ($this->overview_follow) {
+                $this->liveFollowOverviewFocus();
+            }
+            return;
+        }
+        // Tree and flame views have their own cursor state that is
+        // separate from the per-pane callers/callees selection.
+        if ($state->mode === ExploreMode::Sandwich) {
+            switch ($state->sandwich_view) {
+                case SandwichView::TreeCallees:
+                case SandwichView::TreeCallers:
+                    $this->tree_cursor_row += $delta;
+                    return;
+                case SandwichView::Flame:
+                    $this->moveFlameCursorRow($delta > 0 ? 1 : -1);
+                    return;
+                case SandwichView::Panes:
+                    break; // fall through to per-pane selection below
+            }
+        }
         match ($pane) {
             ActivePane::Callers  => $this->callers_selected += $delta,
             ActivePane::Callees  => $this->callees_selected += $delta,
-            ActivePane::Overview => $this->overview_selected += $delta,
-            ActivePane::Focus    => null, // nothing to scroll
+            ActivePane::Overview, ActivePane::Focus => null,
         };
-        if ($pane === ActivePane::Overview && $this->overview_follow) {
-            $this->liveFollowOverviewFocus();
-        }
     }
 
     /**
