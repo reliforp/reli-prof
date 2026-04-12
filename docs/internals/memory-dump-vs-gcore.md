@@ -1205,3 +1205,37 @@ valid — it just covers PHP-managed memory only.
 | Pure PHP (ZendMM dominates) | 110 MB | 105 MB | ~5% |
 | Extension-heavy (libxml2+sqlite3) | 173 MB | 6 MB | **97%** |
 | gcore equivalent | 307 MB | — | — |
+
+---
+
+## `--buffer-all` usage guide
+
+By default `i:m:dump` reads and writes each memory region one at a time
+(streaming). This keeps the reli process's own memory usage minimal (one
+region-sized buffer is reused) but the target process stays stopped for
+the entire duration of both reading and writing.
+
+`--buffer-all` reads all regions into a single contiguous buffer first,
+then writes the dump file. The target process is stopped only during the
+read phase; it can be resumed before any disk I/O begins.
+
+### Trade-offs
+
+| | Streaming (default) | `--buffer-all` |
+|---|---|---|
+| Target stop duration | Read + write time | **Read time only** |
+| reli memory usage | One buffer (largest region) | **Dump size** (e.g. 435 MB) |
+| Total wall time | Similar | Similar |
+
+### When to use `--buffer-all`
+
+- **Production processes** where stop duration directly affects request
+  latency or SLA. The target is resumed as soon as memory reading
+  finishes; disk I/O happens afterwards with no impact on the target.
+
+### When NOT to use `--buffer-all`
+
+- **Memory-constrained hosts** where the reli process cannot afford to
+  hold the entire dump in memory alongside the target process.
+- **Recurring dumps** where the streaming default keeps reli's footprint
+  small.
