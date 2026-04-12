@@ -223,7 +223,7 @@ final class ExploreTui
      * Adjustable via the [δN] indicator in the header (click to
      * cycle presets, scroll to fine-tune).
      */
-    private int $scroll_delta = 3;
+    private int $scroll_delta = 1;
 
     /** @var list<int> preset values cycled through on click */
     private const SCROLL_DELTA_PRESETS = [1, 2, 3, 5, 10];

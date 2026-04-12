@@ -1362,8 +1362,8 @@ class ExploreTuiStateTest extends BaseTestCase
         // Scroll inside body area (ANSI row 6 = body row 1).
         $mouse = new MouseEvent(MouseEvent::SCROLL_UP, 10, 6, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
-        // Default scroll_delta is 3, so scroll up moves by -3.
-        $this->assertSame(2, $this->get($tui, 'list_selected'));
+        // Default scroll_delta is 1, so scroll up moves by -1.
+        $this->assertSame(4, $this->get($tui, 'list_selected'));
     }
 
     public function testMouseScrollDownMovesListSelectionDown(): void
@@ -1372,19 +1372,19 @@ class ExploreTuiStateTest extends BaseTestCase
         $this->set($tui, 'term', new FakeTerminal(120, 30));
         $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 10, 6, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
-        $this->assertSame(3, $this->get($tui, 'list_selected'));
+        $this->assertSame(1, $this->get($tui, 'list_selected'));
     }
 
     public function testScrollDeltaWidgetClickCyclesPresets(): void
     {
         $tui = $this->makeTui();
         $this->set($tui, 'term', new FakeTerminal(120, 30));
-        $this->assertSame(3, $this->get($tui, 'scroll_delta'));
+        $this->assertSame(1, $this->get($tui, 'scroll_delta'));
 
         // Render to populate scroll_delta_cols.
         $this->inv($tui, 'render');
         [$col_start, $col_end] = $this->get($tui, 'scroll_delta_cols');
-        // Click on the indicator — should cycle 3 → 5.
+        // Click on the indicator — should cycle 1 → 2.
         $mouse = new MouseEvent(
             MouseEvent::BUTTON_LEFT,
             $col_start + 1 + 1, // 0-based→1-based ANSI
@@ -1393,7 +1393,7 @@ class ExploreTuiStateTest extends BaseTestCase
             false,
         );
         $this->inv($tui, 'dispatchMouse', $mouse);
-        $this->assertSame(5, $this->get($tui, 'scroll_delta'));
+        $this->assertSame(2, $this->get($tui, 'scroll_delta'));
     }
 
     public function testScrollDeltaWidgetScrollAdjusts(): void
@@ -1404,18 +1404,7 @@ class ExploreTuiStateTest extends BaseTestCase
         [$col_start, ] = $this->get($tui, 'scroll_delta_cols');
         $ansi_col = $col_start + 1 + 1;
 
-        // Scroll up on the indicator → 3-1=2.
-        $mouse = new MouseEvent(
-            MouseEvent::SCROLL_UP,
-            $ansi_col,
-            3,
-            true,
-            false,
-        );
-        $this->inv($tui, 'dispatchMouse', $mouse);
-        $this->assertSame(2, $this->get($tui, 'scroll_delta'));
-
-        // Scroll down → 2+1=3.
+        // Scroll down on the indicator → 1+1=2.
         $mouse = new MouseEvent(
             MouseEvent::SCROLL_DOWN,
             $ansi_col,
@@ -1424,7 +1413,18 @@ class ExploreTuiStateTest extends BaseTestCase
             false,
         );
         $this->inv($tui, 'dispatchMouse', $mouse);
-        $this->assertSame(3, $this->get($tui, 'scroll_delta'));
+        $this->assertSame(2, $this->get($tui, 'scroll_delta'));
+
+        // Scroll up → 2-1=1.
+        $mouse = new MouseEvent(
+            MouseEvent::SCROLL_UP,
+            $ansi_col,
+            3,
+            true,
+            false,
+        );
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(1, $this->get($tui, 'scroll_delta'));
     }
 
     public function testMouseScrollTargetsPaneUnderPointer(): void
@@ -1446,8 +1446,8 @@ class ExploreTuiStateTest extends BaseTestCase
         $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 36, 19, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
 
-        // Default scroll_delta=3, so callees moves by 3.
-        $this->assertSame(3, $this->get($tui, 'callees_selected'));
+        // Default scroll_delta=1, so callees moves by 1.
+        $this->assertSame(1, $this->get($tui, 'callees_selected'));
         $this->assertSame(0, $this->get($tui, 'callers_selected'));
     }
 
@@ -1463,7 +1463,7 @@ class ExploreTuiStateTest extends BaseTestCase
         $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 5, 8, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
 
-        $this->assertSame(3, $this->get($tui, 'overview_selected'));
+        $this->assertSame(1, $this->get($tui, 'overview_selected'));
     }
 
     public function testMouseReleaseIsIgnored(): void
