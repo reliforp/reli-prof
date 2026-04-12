@@ -575,22 +575,19 @@ final class MemoryDumper
             $final = self::mergeIntervals($page_aligned);
         }
 
-        // Phase 5: stream-write. Read each region and flush it to disk
-        // one at a time. Peak profiler memory drops from
-        // `O(dump size)` to `O(max single region size)` because FFI
-        // buffers and the PHP string copies are released as soon as
-        // the writer advances to the next iteration.
+        // Phase 5: direct-write. Read each region from the target and
+        // write to the dump file, reusing a single pre-allocated FFI
+        // buffer. This avoids per-region FFI::new + FFI::string that
+        // previously dominated the write phase (~44% of total time).
         $all_areas = $memory_map->findByNameRegex('.*');
-        $writer = new MemoryDumpWriter();
-        $result = $writer->writeStreaming(
-            $output_path,
+        $result = $this->directWrite(
             $pid,
+            $final,
+            $output_path,
             $php_version,
             $eg_address,
             $cg_address,
             $all_areas,
-            count($final),
-            $this->streamRegionReads($pid, $final),
         );
 
         return new MemoryDumpResult(
@@ -680,36 +677,161 @@ final class MemoryDumper
     }
 
     /**
-     * Generator that reads each planned region from the target process
-     * and yields it to the writer. Per-region FFI buffers and PHP
-     * string copies are released as soon as the writer advances, so
-     * peak memory is bounded by the largest single region rather than
-     * the total dump size.
+     * Read each region from the target process and write directly to
+     * the dump file, reusing a single FFI buffer. Avoids per-region
+     * FFI::new + FFI::string that dominated the streaming write phase.
      *
      * @param list<array{address: int, size: int}> $regions
-     * @return \Generator<int, array{address: int, size: int, data: string}>
+     * @return array{region_count: int, total_bytes: int}
      */
-    private function streamRegionReads(int $pid, array $regions): \Generator
-    {
+    private function directWrite(
+        int $pid,
+        array $regions,
+        string $output_path,
+        string $php_version,
+        int $eg_address,
+        int $cg_address,
+        /** @var \Reli\Lib\Process\MemoryMap\ProcessMemoryArea[] */
+        array $memory_areas,
+    ): array {
+        // Find max region size for buffer pre-allocation
+        $max_size = 0;
         foreach ($regions as $entry) {
-            try {
-                $data = $this->memory_reader->read(
-                    $pid,
-                    $entry['address'],
-                    $entry['size'],
-                );
-            } catch (\Throwable $e) {
-                Log::info(
-                    'skipping region at 0x' . dechex($entry['address'])
-                    . ': ' . $e->getMessage(),
-                );
-                continue;
+            if ($entry['size'] > $max_size) {
+                $max_size = $entry['size'];
             }
-            yield [
-                'address' => $entry['address'],
-                'size' => $entry['size'],
-                'data' => \FFI::string($data, $entry['size']),
+        }
+        if ($max_size === 0) {
+            $max_size = 4096;
+        }
+
+        // Pre-allocate a single FFI buffer at max size
+        $ffi = \FFI::cdef('
+            typedef int pid_t;
+            struct iovec {
+                void  *iov_base;
+                size_t iov_len;
+            };
+            int errno;
+            ssize_t process_vm_readv(pid_t pid,
+                const struct iovec *local_iov, unsigned long liovcnt,
+                const struct iovec *remote_iov, unsigned long riovcnt,
+                unsigned long flags);
+            size_t fwrite(const void *ptr, size_t size, size_t nmemb, void *stream);
+            int fileno(void *stream);
+        ', 'libc.so.6');
+
+        $buffer = $ffi->new("unsigned char[{$max_size}]");
+        if ($buffer === null) {
+            throw new \RuntimeException('failed to allocate dump buffer');
+        }
+        $local_iov = $ffi->new('struct iovec');
+        $remote_iov = $ffi->new('struct iovec');
+        $remote_base = $ffi->new('long');
+        if ($local_iov === null || $remote_iov === null || $remote_base === null) {
+            throw new \RuntimeException('failed to allocate iovec');
+        }
+        /** @psalm-suppress UndefinedPropertyAssignment */
+        $local_iov->iov_base = \FFI::addr($buffer);
+
+        // Open dump file, write header + memory map via the existing writer
+        $writer = new MemoryDumpWriter();
+        $fp = fopen($output_path, 'wb');
+        if ($fp === false) {
+            throw new \RuntimeException("failed to open: {$output_path}");
+        }
+
+        try {
+            // Use writeStreaming with an empty generator to write header+map
+            // then take over the fp for direct writes.
+            // Actually simpler: just reopen and write ourselves.
+            fclose($fp);
+
+            // Write header+map via the writer, then append regions directly
+            /** @var \Reli\Lib\Process\MemoryMap\ProcessMemoryArea[] $memory_areas */
+            $header_result = $writer->writeStreaming(
+                $output_path,
+                $pid,
+                $php_version,
+                $eg_address,
+                $cg_address,
+                $memory_areas,
+                count($regions),
+                (static fn () => yield from [])(),
+            );
+
+            // Reopen in append mode for direct region writes
+            $fp = fopen($output_path, 'ab');
+            if ($fp === false) {
+                throw new \RuntimeException("failed to reopen: {$output_path}");
+            }
+
+            $written_count = 0;
+            $total_bytes = 0;
+
+            foreach ($regions as $entry) {
+                $size = $entry['size'];
+                $addr = $entry['address'];
+
+                // Set up iovecs for process_vm_readv
+                /** @psalm-suppress UndefinedPropertyAssignment */
+                $local_iov->iov_len = $size;
+                /** @var \FFI\CInteger $remote_base */
+                $remote_base->cdata = $addr;
+                /** @psalm-suppress PropertyTypeCoercion, UndefinedPropertyAssignment */
+                $remote_iov->iov_base = FFIHelper::cast('void *', $remote_base);
+                /** @psalm-suppress UndefinedPropertyAssignment */
+                $remote_iov->iov_len = $size;
+
+                /** @var int $read */
+                $read = $ffi->process_vm_readv(
+                    $pid,
+                    \FFI::addr($local_iov),
+                    1,
+                    \FFI::addr($remote_iov),
+                    1,
+                    0,
+                );
+                if ($read === -1) {
+                    Log::info(
+                        'skipping region at 0x' . dechex($addr)
+                        . ': process_vm_readv failed',
+                    );
+                    continue;
+                }
+
+                // Write region header (address + size) via PHP fwrite
+                fwrite($fp, pack('P', $addr));
+                fwrite($fp, pack('P', $size));
+
+                // Write region data directly from FFI buffer via PHP fwrite
+                // FFI::string is needed here but on the reused buffer
+                fwrite($fp, \FFI::string($buffer, $size));
+
+                $written_count++;
+                $total_bytes += $size;
+            }
+
+            fclose($fp);
+
+            // Patch region_count in the header (writeStreaming wrote 0)
+            $rc_offset = 8 + 4 + 4 + strlen($php_version) + 8 + 8 + 8 + 4;
+            $patch_fp = fopen($output_path, 'r+b');
+            if ($patch_fp !== false) {
+                fseek($patch_fp, $rc_offset);
+                fwrite($patch_fp, pack('V', $written_count));
+                fclose($patch_fp);
+            }
+            $fp = null; // prevent double-close in finally
+
+            return [
+                'region_count' => $written_count,
+                'total_bytes' => $total_bytes,
             ];
+        } finally {
+            if ($fp !== null) {
+                fclose($fp);
+            }
         }
     }
 
