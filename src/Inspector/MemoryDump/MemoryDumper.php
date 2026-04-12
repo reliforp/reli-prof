@@ -255,6 +255,21 @@ final class MemoryDumper
             }
         }
 
+        // EG(objects_store).object_buckets: the bucket array is
+        // allocated via realloc() and may end up in an anonymous
+        // writable mmap region outside ZendMM chunks. Without it,
+        // EmitObjectsStoreJob fails and ALL object instances are lost.
+        if ($eg->objects_store->object_buckets !== null) {
+            $ob_addr = $eg->objects_store->object_buckets->address;
+            $ob_size = $eg->objects_store->size * 8;
+            if ($ob_size > 0) {
+                $intervals[] = [
+                    'address' => $ob_addr,
+                    'size' => $ob_size,
+                ];
+            }
+        }
+
         // Compiler arenas
         $cg = $dereferencer->deref(new Pointer(
             ZendCompilerGlobals::class,
