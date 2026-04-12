@@ -774,12 +774,14 @@ final class MemoryDumper
                 // ext/ffi/ffi.c). process_vm_readv will overwrite the
                 // entire buffer so zeroing is pure waste (~300ms for
                 // 500MB).
+                /** @var \FFI\CData $big_buffer_raw */
                 $big_buffer_raw = $ffi->malloc($total_size);
-                if ($big_buffer_raw === null || \FFI::isNull($big_buffer_raw)) {
+                if (\FFI::isNull($big_buffer_raw)) {
                     throw new \RuntimeException(
                         'failed to allocate buffer (' . $total_size . ' bytes)',
                     );
                 }
+                /** @var \FFI\CData $big_buffer - unsigned char[N] backed by malloc'd memory */
                 $big_buffer = \FFI::cast(
                     'unsigned char[' . $total_size . ']',
                     $big_buffer_raw,
@@ -791,7 +793,7 @@ final class MemoryDumper
                 foreach ($regions as $entry) {
                     $size = $entry['size'];
                     $addr = $entry['address'];
-                    /** @psalm-suppress UndefinedPropertyAssignment */
+                    /** @psalm-suppress UndefinedPropertyAssignment, InvalidOperand — FFI pointer arithmetic */
                     $local_iov->iov_base = \FFI::cast(
                         'void *',
                         \FFI::cast('char *', \FFI::addr($big_buffer)) + $offset,
@@ -835,14 +837,13 @@ final class MemoryDumper
                 $total_bytes = 0;
                 foreach ($layout as $item) {
                     $ffi->write($fd, pack('PP', $item['addr'], $item['size']), 16);
-                    $ffi->write(
-                        $fd,
-                        \FFI::cast('char *', \FFI::addr($big_buffer)) + $item['offset'],
-                        $item['size'],
-                    );
+                    /** @psalm-suppress InvalidOperand — FFI pointer arithmetic */
+                    $ptr = \FFI::cast('char *', \FFI::addr($big_buffer)) + $item['offset'];
+                    $ffi->write($fd, $ptr, $item['size']);
                     $written_count++;
                     $total_bytes += $item['size'];
                 }
+                /** @psalm-suppress MixedArgument — FFI CData from malloc */
                 $ffi->free($big_buffer_raw);
                 $ffi->close($fd);
             } else {
