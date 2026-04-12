@@ -80,6 +80,22 @@ final class MetadataPeekWalker
             return $peeks;
         }
 
+        // Read CG early: map_ptr_base is needed for class_table walk
+        // (static_members_table resolution), interned_strings is walked
+        // at the end.
+        $cg = null;
+        $map_ptr_base = 0;
+        try {
+            $cg = $dereferencer->deref(new Pointer(
+                ZendCompilerGlobals::class,
+                $cg_address,
+                $type_reader->sizeOf('zend_compiler_globals'),
+            ));
+            $map_ptr_base = $cg->map_ptr_base;
+        } catch (\Throwable $e) {
+            Log::info('MetadataPeekWalker: failed to read CG: ' . $e->getMessage());
+        }
+
         $func_size = $type_reader->sizeOf('zend_function');
         $ce_size = $type_reader->sizeOf('zend_class_entry');
         $const_size = $type_reader->sizeOf('zend_constant');
@@ -125,6 +141,7 @@ final class MetadataPeekWalker
                     $covered_intervals,
                     &$peeks,
                     $ce_size,
+                    $map_ptr_base,
                 ): void {
                     $this->peekClassExternals(
                         $addr,
@@ -133,6 +150,7 @@ final class MetadataPeekWalker
                         $type_reader,
                         $covered_intervals,
                         $peeks,
+                        $map_ptr_base,
                     );
                 },
             );
@@ -173,21 +191,14 @@ final class MetadataPeekWalker
             $peeks,
         );
 
-        // interned_strings (via CG)
-        try {
-            $cg = $dereferencer->deref(new Pointer(
-                ZendCompilerGlobals::class,
-                $cg_address,
-                $type_reader->sizeOf('zend_compiler_globals'),
-            ));
+        // interned_strings (via CG, already read above)
+        if ($cg !== null) {
             $this->walkInlineTableKeys(
                 $cg->interned_strings,
                 $dereferencer,
                 $covered_intervals,
                 $peeks,
             );
-        } catch (\Throwable $e) {
-            Log::info('MetadataPeekWalker: failed to read CG: ' . $e->getMessage());
         }
 
         return $peeks;
@@ -311,13 +322,6 @@ final class MetadataPeekWalker
     }
 
     /**
-     * For an internal function at $addr, peek its function_name and
-     * arg_info if they are outside the covered set.
-     *
-     * @param list<array{address: int, size: int}> $covered
-     * @param list<array{address: int, size: int}> $peeks
-     */
-    /**
      * For an internal constant at $addr, peek its value if it is a
      * string outside the covered set. Without this, the analyzer's
      * EmitGlobalConstantsJob fails on the first constant whose value
@@ -402,9 +406,9 @@ final class MetadataPeekWalker
     }
 
     /**
-     * For an internal class entry at $addr, peek its sub-HashTable
-     * arData arrays and name string if they are outside the covered
-     * set.
+     * For a class entry at $addr, peek its sub-HashTable arData arrays,
+     * name string, default_properties_table, and static_members_table
+     * (resolved via MAP_PTR) if they are outside the covered set.
      *
      * @param list<array{address: int, size: int}> $covered
      * @param list<array{address: int, size: int}> $peeks
@@ -416,6 +420,7 @@ final class MetadataPeekWalker
         ZendTypeReader $type_reader,
         array $covered,
         array &$peeks,
+        int $map_ptr_base = 0,
     ): void {
         try {
             $ce = $dereferencer->deref(new Pointer(
@@ -491,6 +496,30 @@ final class MetadataPeekWalker
                         'address' => $ce->default_properties_table->address,
                         'size' => $default_props_size,
                     ];
+                }
+            } catch (\Throwable) {
+            }
+        }
+
+        // static_members_table: resolved via MAP_PTR when opcache is
+        // on. The resolved table lives in ZendMM but may be on a page
+        // that pagemap filtering excluded. Peeking it explicitly
+        // ensures the dump always covers static property values.
+        // Page-alignment of this peek also captures nearby allocations
+        // (e.g. string values of static properties on the same page).
+        if ($ce->default_static_members_count > 0 && $ce->static_members_table !== null) {
+            try {
+                $table_address = $type_reader->resolveMapPtr(
+                    $map_ptr_base,
+                    $ce->static_members_table->address,
+                    $dereferencer,
+                );
+                if ($table_address !== 0) {
+                    $table_size = $ce->default_static_members_count
+                        * $type_reader->sizeOf('zval');
+                    if (!self::isCovered($table_address, $table_size, $covered)) {
+                        $peeks[] = ['address' => $table_address, 'size' => $table_size];
+                    }
                 }
             } catch (\Throwable) {
             }

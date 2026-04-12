@@ -1485,3 +1485,45 @@ typedef struct {
 	uintptr_t data;
 	uintptr_t data_cursor;
 } MYSQLND_RES_BUFFERED;
+
+// ext/opcache — zend_accelerator_hash.h + ZendAccelerator.h
+typedef struct _zend_accel_hash_entry {
+	zend_ulong             hash_value;
+	char                  *key;
+	uint32_t               key_length;
+	struct _zend_accel_hash_entry *next;
+	void                  *data;
+	zend_bool              indirect;
+} zend_accel_hash_entry;
+
+typedef struct _zend_accel_hash {
+	zend_accel_hash_entry **hash_table;
+	zend_accel_hash_entry  *hash_entries;
+	uint32_t               num_entries;
+	uint32_t               max_num_entries;
+	uint32_t               num_direct_entries;
+} zend_accel_hash;
+
+typedef struct _zend_accel_shared_globals {
+	zend_ulong   hits;
+	zend_ulong   misses;
+	zend_ulong   blacklist_misses;
+	zend_ulong   oom_restarts;
+	zend_ulong   hash_restarts;
+	zend_ulong   manual_restarts;
+	zend_accel_hash hash;
+	long         start_time;
+	long         last_restart_time;
+	long         force_restart_time;
+	zend_bool    accelerator_enabled;
+	zend_bool    restart_pending;
+	uint8_t      restart_reason;
+	zend_bool    cache_status_before_restart;
+	zend_bool    restart_in_progress;
+	char        *interned_strings_start;
+	char        *interned_strings_top;
+	char        *interned_strings_end;
+	char        *interned_strings_saved_top;
+	HashTable    interned_strings;
+	uint32_t     uninitialized_bucket[2];
+} zend_accel_shared_globals;
