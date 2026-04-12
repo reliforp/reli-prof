@@ -384,6 +384,9 @@ Options:
 # Monitor a PHP variable
 ./reli inspector:watch -p <pid> --watch-var='global::$cache:count_gt:10000'
 
+# Monitor memory usage via variable interface
+./reli inspector:watch -p <pid> --watch-var='memory::memory_get_usage:gt:104857600'
+
 # Grab 3 memory dumps and stop
 ./reli inspector:watch -p <pid> --memory-usage=128M --oneshot=3
 ```
@@ -411,7 +414,7 @@ See [docs/watch-command.md](docs/watch-command.md) for full documentation.
 ./reli inspector:peek-var -p <pid> --var='global::$counter' --format=json
 ```
 
-Supported scopes: `global::$var`, `local::func()$var`, `static::Class::$prop`, `func_static::func()$var`.
+Supported scopes: `global::$var`, `local::func()$var`, `static::Class::$prop`, `func_static::func()$var`, `memory::memory_get_usage`.
 
 See [docs/peek-var-command.md](docs/peek-var-command.md) for full documentation.
 
@@ -422,6 +425,9 @@ See [docs/peek-var-command.md](docs/peek-var-command.md) for full documentation.
 ```bash
 # Tag every sample with the current request URI
 ./reli inspector:trace -p <pid> --trace-var='global::$request_uri'
+
+# Track memory usage per sample
+./reli inspector:trace -p <pid> --trace-var='memory::memory_get_usage'
 
 # Multiple variables — each becomes its own annotation line
 ./reli inspector:trace -p <pid> \

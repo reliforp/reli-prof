@@ -59,6 +59,7 @@ The expression grammar is **exactly** what `inspector:peek-var --var` accepts
 | Local | `local::<fqn>()$var` (use `<main>` for top-level) |
 | Static property | `static::Class::$prop` |
 | Function static | `func_static::<fqn>()$var` |
+| Memory | `memory::memory_get_usage` etc. |
 
 Nested access (`[key]`, `->prop`) is already supported by
 `VariableReader::parsePathExpression()` and flows through unchanged.
