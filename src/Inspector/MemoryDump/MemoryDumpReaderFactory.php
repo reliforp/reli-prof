@@ -14,8 +14,6 @@ declare(strict_types=1);
 namespace Reli\Inspector\MemoryDump;
 
 use DI\ContainerBuilder;
-use FFI\CData;
-use Reli\Lib\File\LibcFileReader;
 use Reli\Lib\File\PathResolver\MappedPathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
@@ -24,7 +22,6 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
-use Reli\Lib\FFI\FFIHelper;
 
 use function DI\autowire;
 
@@ -54,132 +51,12 @@ final class MemoryDumpReaderFactory
         $path_resolver = new MappedPathResolver($path_mapping);
         $region_index = $parsed['region_index'];
 
-        $memory_reader = new class (
+        $memory_reader = new DumpFileMemoryReader(
             $file_path,
             $region_index,
             $process_memory_map,
             $path_resolver,
-            LibcFileReader::open($file_path),
-        ) implements MemoryReaderInterface {
-            /** @var array<string, resource> path => cached file handle */
-            private array $fp_cache = [];
-
-            /**
-             * @param list<array{address: int, size: int, file_offset: int}> $region_index
-             */
-            public function __construct(
-                private string $file_path,
-                private array $region_index,
-                private ProcessMemoryMap $process_memory_map,
-                private MappedPathResolver $path_resolver,
-                private ?LibcFileReader $libc_reader,
-            ) {
-            }
-
-            public function __destruct()
-            {
-                foreach ($this->fp_cache as $fp) {
-                    fclose($fp);
-                }
-            }
-
-            /** @return resource|null */
-            private function openCached(string $path)
-            {
-                if (!isset($this->fp_cache[$path])) {
-                    $fp = fopen($path, 'rb');
-                    if ($fp === false) {
-                        return null;
-                    }
-                    $this->fp_cache[$path] = $fp;
-                }
-                return $this->fp_cache[$path];
-            }
-
-            #[\Override]
-            public function read(int $pid, int $remote_address, int $size): CData
-            {
-                foreach ($this->region_index as $region) {
-                    $region_start = $region['address'];
-                    $region_end = $region_start + $region['size'];
-                    if ($remote_address >= $region_start && ($remote_address + $size) <= $region_end) {
-                        $offset_in_region = $remote_address - $region_start;
-                        $file_offset = $region['file_offset'] + $offset_in_region;
-
-                        $cdata_buffer = FFIHelper::new("unsigned char[$size]");
-                        if (is_null($cdata_buffer)) {
-                            throw new \RuntimeException("failed to allocate memory");
-                        }
-
-                        if ($this->libc_reader !== null) {
-                            // Fast path: pread(2) directly into the
-                            // CData buffer. Halves the syscall count
-                            // (no separate lseek) and skips the PHP
-                            // string intermediate that fread would
-                            // allocate and memcpy from.
-                            $n = $this->libc_reader->pread($cdata_buffer, $size, $file_offset);
-                            if ($n !== $size) {
-                                throw new \RuntimeException(
-                                    "failed to pread {$size} bytes at file offset {$file_offset}"
-                                    . " (got {$n})"
-                                );
-                            }
-                            /** @var \FFI\CArray<int> */
-                            return $cdata_buffer;
-                        }
-
-                        // Fallback for builds where FFI libc binding
-                        // isn't available: original fopen/fseek/fread
-                        // path.
-                        $fp = $this->openCached($this->file_path);
-                        if ($fp === null) {
-                            throw new \RuntimeException("failed to open dump file: {$this->file_path}");
-                        }
-                        fseek($fp, $file_offset);
-                        $data = fread($fp, $size);
-                        if ($data === false || strlen($data) !== $size) {
-                            throw new \RuntimeException(
-                                "failed to read {$size} bytes at file offset {$file_offset}"
-                            );
-                        }
-                        \FFI::memcpy($cdata_buffer, $data, $size);
-                        /** @var \FFI\CArray<int> */
-                        return $cdata_buffer;
-                    }
-                }
-
-                // Fallback: try to read from binary files via memory map (for read-only segments)
-                $memory_areas = $this->process_memory_map->findByAddress($remote_address);
-                foreach ($memory_areas as $memory_area) {
-                    if ($memory_area->name !== '' && !$memory_area->attribute->write) {
-                        $resolved_path = $this->path_resolver->resolve($pid, $memory_area->name);
-                        if (file_exists($resolved_path)) {
-                            $file_fp = $this->openCached($resolved_path);
-                            if ($file_fp === null) {
-                                continue;
-                            }
-                            $offset = $remote_address - hexdec($memory_area->begin);
-                            fseek($file_fp, (int)hexdec($memory_area->file_offset) + $offset);
-                            $data = fread($file_fp, $size);
-                            if ($data === false) {
-                                continue;
-                            }
-                            $cdata_buffer = FFIHelper::new("unsigned char[$size]");
-                            if (is_null($cdata_buffer)) {
-                                throw new \RuntimeException("failed to allocate memory");
-                            }
-                            \FFI::memcpy($cdata_buffer, $data, $size);
-                            /** @var \FFI\CArray<int> */
-                            return $cdata_buffer;
-                        }
-                    }
-                }
-
-                throw new \RuntimeException(
-                    "no memory region found for address: 0x" . dechex($remote_address) . " (size: {$size})"
-                );
-            }
-        };
+        );
 
         $container = $this->container_builder
             ->addDefinitions(

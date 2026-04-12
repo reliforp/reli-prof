@@ -1697,3 +1697,54 @@ typedef struct {
 	uintptr_t unused2;
 	uintptr_t unused3;
 } MYSQLND_RES_BUFFERED;
+
+// ext/opcache — zend_accelerator_hash.h + ZendAccelerator.h
+typedef struct _zend_accel_hash_entry {
+	zend_ulong             hash_value;
+	zend_string           *key;
+	struct _zend_accel_hash_entry *next;
+	void                  *data;
+	bool                   indirect;
+} zend_accel_hash_entry;
+
+typedef struct _zend_accel_hash {
+	zend_accel_hash_entry **hash_table;
+	zend_accel_hash_entry  *hash_entries;
+	uint32_t               num_entries;
+	uint32_t               max_num_entries;
+	uint32_t               num_direct_entries;
+} zend_accel_hash;
+
+typedef struct _zend_string_table {
+	uint32_t     nTableMask;
+	uint32_t     nNumOfElements;
+	zend_string *start;
+	zend_string *top;
+	zend_string *end;
+	zend_string *saved_top;
+} zend_string_table;
+
+typedef struct _zend_accel_shared_globals {
+	zend_ulong   hits;
+	zend_ulong   misses;
+	zend_ulong   blacklist_misses;
+	zend_ulong   oom_restarts;
+	zend_ulong   hash_restarts;
+	zend_ulong   manual_restarts;
+	zend_accel_hash hash;
+	size_t       map_ptr_last;
+	long         start_time;
+	long         last_restart_time;
+	long         force_restart_time;
+	bool         accelerator_enabled;
+	bool         restart_pending;
+	uint8_t      restart_reason;
+	bool         cache_status_before_restart;
+	bool         restart_in_progress;
+	void        *preload_script;
+	void       **saved_scripts;
+	uint32_t     uninitialized_bucket[2];
+	void        *jit_traces;
+	const void **jit_exit_groups;
+	zend_string_table interned_strings;
+} zend_accel_shared_globals;

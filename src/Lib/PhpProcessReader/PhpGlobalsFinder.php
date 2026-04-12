@@ -313,6 +313,40 @@ class PhpGlobalsFinder
         return new ProcessModuleMemoryMap($php_areas);
     }
 
+    /**
+     * Resolve a plain BSS/data symbol address from the PHP binary.
+     * Unlike findGlobals(), this does NOT use the TSRM resolution path
+     * on ZTS builds. Use this for symbols like zend_one_char_string
+     * that are process-global (not thread-local) regardless of ZTS.
+     *
+     * @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     */
+    public function findSymbol(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        string $symbol_name,
+    ): int {
+        $module_map = $this->getPhpModuleMemoryMap($process_specifier, $target_php_settings->php_regex);
+        $fingerprint = $this->createFingerprint($process_specifier, $module_map);
+
+        $cached = $this->binary_analysis_cache->get($fingerprint, 'nts_globals');
+        if ($cached !== null && isset($cached[$symbol_name]) && is_int($cached[$symbol_name])) {
+            return $module_map->getBaseAddress() + $cached[$symbol_name];
+        }
+
+        $address = $this->getSymbolReader($process_specifier, $target_php_settings)
+            ->resolveAddress($symbol_name);
+        if (is_null($address)) {
+            throw new RuntimeException('symbol not found: ' . $symbol_name);
+        }
+
+        $cache_data = $cached ?? [];
+        $cache_data[$symbol_name] = $address - $module_map->getBaseAddress();
+        $this->binary_analysis_cache->set($fingerprint, 'nts_globals', $cache_data);
+
+        return $address;
+    }
+
     /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
     public function findSAPIGlobals(
         ProcessSpecifier $process_specifier,

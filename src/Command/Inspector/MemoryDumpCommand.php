@@ -110,6 +110,33 @@ final class MemoryDumpCommand extends Command
             $target_php_settings_decided,
         );
 
+        // Resolve global interned-string pointer arrays for exclude-heap
+        // mode. These are plain BSS symbols (not TSRM globals), so
+        // findSymbol is used instead of findGlobals to avoid the TSRM
+        // resolution path on ZTS builds.
+        /** @var list<array{address: int, count: int}> $interned_string_arrays */
+        $interned_string_arrays = [];
+        if ($dump_settings->exclude_heap) {
+            $sym_defs = [
+                'zend_one_char_string' => 256,
+                'zend_known_strings'   => -1,
+                'zend_empty_string'    => 1,
+            ];
+            foreach ($sym_defs as $sym => $count) {
+                try {
+                    $interned_string_arrays[] = [
+                        'address' => $this->php_globals_finder->findSymbol(
+                            $process_specifier,
+                            $target_php_settings_decided,
+                            $sym,
+                        ),
+                        'count' => $count,
+                    ];
+                } catch (\Throwable) {
+                }
+            }
+        }
+
         if ($dump_settings->stop_process) {
             $this->process_stopper->stop($process_specifier->pid);
             defer(
@@ -127,6 +154,8 @@ final class MemoryDumpCommand extends Command
             $cg_address,
             $dump_settings->output_path,
             $dump_settings->include_binary,
+            !$dump_settings->exclude_heap,
+            $interned_string_arrays,
         );
 
         $output->writeln(sprintf(
