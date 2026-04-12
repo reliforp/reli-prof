@@ -20,6 +20,7 @@ final class MemoryDumpSettings
         public bool $stop_process = true,
         public bool $include_binary = false,
         public bool $exclude_heap = false,
+        public bool $buffer_all = false,
     ) {
     }
 }

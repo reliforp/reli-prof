@@ -60,6 +60,7 @@ final class MemoryDumper
         bool $include_binary = false,
         bool $include_heap = false,
         array $interned_string_arrays = [],
+        bool $buffer_all = false,
     ): MemoryDumpResult {
         $php_version = $target_php_settings->php_version;
         $zend_type_reader = $this->zend_type_reader_creator->create(
@@ -588,6 +589,7 @@ final class MemoryDumper
             $eg_address,
             $cg_address,
             $all_areas,
+            $buffer_all,
         );
 
         return new MemoryDumpResult(
@@ -693,6 +695,7 @@ final class MemoryDumper
         int $cg_address,
         /** @var \Reli\Lib\Process\MemoryMap\ProcessMemoryArea[] */
         array $memory_areas,
+        bool $buffer_all = false,
     ): array {
         // Find max region size for buffer pre-allocation
         $max_size = 0;
@@ -722,6 +725,8 @@ final class MemoryDumper
             int open(const char *pathname, int flags, ...);
             ssize_t write(int fd, const void *buf, size_t count);
             int close(int fd);
+            void *malloc(size_t size);
+            void free(void *ptr);
         ', 'libc.so.6');
 
         $buffer = $ffi->new("unsigned char[{$max_size}]");
@@ -754,61 +759,137 @@ final class MemoryDumper
                 (static fn () => yield from [])(),
             );
 
-            // Reopen in append mode via C open() for zero-copy writes.
-            // O_WRONLY|O_APPEND = 1|1024 = 1025
-            /** @var int $fd */
-            $fd = $ffi->open($output_path, 1025);
-            if ($fd < 0) {
-                throw new \RuntimeException("failed to reopen: {$output_path}");
-            }
-
-            $written_count = 0;
-            $total_bytes = 0;
-
-            foreach ($regions as $entry) {
-                $size = $entry['size'];
-                $addr = $entry['address'];
-
-                // Set up iovecs for process_vm_readv
-                /** @psalm-suppress UndefinedPropertyAssignment */
-                $local_iov->iov_len = $size;
-                /** @var \FFI\CInteger $remote_base */
-                $remote_base->cdata = $addr;
-                /** @psalm-suppress PropertyTypeCoercion, UndefinedPropertyAssignment */
-                $remote_iov->iov_base = FFIHelper::cast('void *', $remote_base);
-                /** @psalm-suppress UndefinedPropertyAssignment */
-                $remote_iov->iov_len = $size;
-
-                /** @var int $read */
-                $read = $ffi->process_vm_readv(
-                    $pid,
-                    \FFI::addr($local_iov),
-                    1,
-                    \FFI::addr($remote_iov),
-                    1,
-                    0,
-                );
-                if ($read === -1) {
-                    Log::info(
-                        'skipping region at 0x' . dechex($addr)
-                        . ': process_vm_readv failed',
+            if ($buffer_all) {
+                // Buffer mode: allocate one contiguous FFI buffer for
+                // all regions, read them all via process_vm_readv at
+                // successive offsets, then write. No PHP-string copy
+                // during the read phase. The target can be resumed as
+                // soon as reading completes.
+                $total_size = 0;
+                foreach ($regions as $entry) {
+                    $total_size += $entry['size'];
+                }
+                // Use malloc instead of FFI::new to skip the memset(0)
+                // that FFI::new unconditionally performs (php-src
+                // ext/ffi/ffi.c). process_vm_readv will overwrite the
+                // entire buffer so zeroing is pure waste (~300ms for
+                // 500MB).
+                $big_buffer_raw = $ffi->malloc($total_size);
+                if ($big_buffer_raw === null || \FFI::isNull($big_buffer_raw)) {
+                    throw new \RuntimeException(
+                        'failed to allocate buffer (' . $total_size . ' bytes)',
                     );
-                    continue;
+                }
+                $big_buffer = \FFI::cast(
+                    'unsigned char[' . $total_size . ']',
+                    $big_buffer_raw,
+                );
+
+                /** @var list<array{addr: int, offset: int, size: int}> $layout */
+                $layout = [];
+                $offset = 0;
+                foreach ($regions as $entry) {
+                    $size = $entry['size'];
+                    $addr = $entry['address'];
+                    /** @psalm-suppress UndefinedPropertyAssignment */
+                    $local_iov->iov_base = \FFI::cast(
+                        'void *',
+                        \FFI::cast('char *', \FFI::addr($big_buffer)) + $offset,
+                    );
+                    /** @psalm-suppress UndefinedPropertyAssignment */
+                    $local_iov->iov_len = $size;
+                    /** @var \FFI\CInteger $remote_base */
+                    $remote_base->cdata = $addr;
+                    /** @psalm-suppress PropertyTypeCoercion, UndefinedPropertyAssignment */
+                    $remote_iov->iov_base = FFIHelper::cast('void *', $remote_base);
+                    /** @psalm-suppress UndefinedPropertyAssignment */
+                    $remote_iov->iov_len = $size;
+                    /** @var int $read */
+                    $read = $ffi->process_vm_readv(
+                        $pid,
+                        \FFI::addr($local_iov),
+                        1,
+                        \FFI::addr($remote_iov),
+                        1,
+                        0,
+                    );
+                    if ($read === -1) {
+                        Log::info(
+                            'skipping region at 0x' . dechex($addr)
+                            . ': process_vm_readv failed',
+                        );
+                        continue;
+                    }
+                    $layout[] = ['addr' => $addr, 'offset' => $offset, 'size' => $size];
+                    $offset += $size;
                 }
 
-                // Write region header (address + size) via PHP fwrite
-                // (16 bytes — not worth the complexity of FFI for this)
-                $hdr = pack('PP', $addr, $size);
-                $ffi->write($fd, $hdr, 16);
+                // -- target can be resumed here --
 
-                // Write region data directly from FFI buffer — no copy
-                $ffi->write($fd, $buffer, $size);
-
-                $written_count++;
-                $total_bytes += $size;
+                /** @var int $fd */
+                $fd = $ffi->open($output_path, 1025); // O_WRONLY|O_APPEND
+                if ($fd < 0) {
+                    throw new \RuntimeException("failed to reopen: {$output_path}");
+                }
+                $written_count = 0;
+                $total_bytes = 0;
+                foreach ($layout as $item) {
+                    $ffi->write($fd, pack('PP', $item['addr'], $item['size']), 16);
+                    $ffi->write(
+                        $fd,
+                        \FFI::cast('char *', \FFI::addr($big_buffer)) + $item['offset'],
+                        $item['size'],
+                    );
+                    $written_count++;
+                    $total_bytes += $item['size'];
+                }
+                $ffi->free($big_buffer_raw);
+                $ffi->close($fd);
+            } else {
+                // Streaming mode: read and write each region one at a
+                // time using a single reused FFI buffer. Minimal memory
+                // overhead but the target stays stopped during I/O.
+                /** @var int $fd */
+                $fd = $ffi->open($output_path, 1025); // O_WRONLY|O_APPEND
+                if ($fd < 0) {
+                    throw new \RuntimeException("failed to reopen: {$output_path}");
+                }
+                $written_count = 0;
+                $total_bytes = 0;
+                foreach ($regions as $entry) {
+                    $size = $entry['size'];
+                    $addr = $entry['address'];
+                    /** @psalm-suppress UndefinedPropertyAssignment */
+                    $local_iov->iov_len = $size;
+                    /** @var \FFI\CInteger $remote_base */
+                    $remote_base->cdata = $addr;
+                    /** @psalm-suppress PropertyTypeCoercion, UndefinedPropertyAssignment */
+                    $remote_iov->iov_base = FFIHelper::cast('void *', $remote_base);
+                    /** @psalm-suppress UndefinedPropertyAssignment */
+                    $remote_iov->iov_len = $size;
+                    /** @var int $read */
+                    $read = $ffi->process_vm_readv(
+                        $pid,
+                        \FFI::addr($local_iov),
+                        1,
+                        \FFI::addr($remote_iov),
+                        1,
+                        0,
+                    );
+                    if ($read === -1) {
+                        Log::info(
+                            'skipping region at 0x' . dechex($addr)
+                            . ': process_vm_readv failed',
+                        );
+                        continue;
+                    }
+                    $ffi->write($fd, pack('PP', $addr, $size), 16);
+                    $ffi->write($fd, $buffer, $size);
+                    $written_count++;
+                    $total_bytes += $size;
+                }
+                $ffi->close($fd);
             }
-
-            $ffi->close($fd);
 
             // Patch region_count in the header (writeStreaming wrote 0)
             $rc_offset = 8 + 4 + 4 + strlen($php_version) + 8 + 8 + 8 + 4;

@@ -53,6 +53,15 @@ final class MemoryDumpSettingsFromConsoleInput
                 . ' but you only need to analyze PHP-managed memory.'
                 . ' Typically saves 50-99% of dump size in such cases.',
         );
+        $command->addOption(
+            'buffer-all',
+            null,
+            InputOption::VALUE_NONE,
+            'read all memory regions before writing the dump file.'
+                . ' The target process is resumed as soon as reading completes,'
+                . ' minimizing the stop window at the cost of holding the entire'
+                . ' dump in the reli process memory.',
+        );
     }
 
     public function createSettings(InputInterface $input): MemoryDumpSettings
@@ -64,12 +73,14 @@ final class MemoryDumpSettingsFromConsoleInput
         $stop_process = Cast::toBool($input->getOption('stop-process'));
         $include_binary = Cast::toBool($input->getOption('include-binary'));
         $exclude_heap = Cast::toBool($input->getOption('exclude-heap'));
+        $buffer_all = Cast::toBool($input->getOption('buffer-all'));
 
         return new MemoryDumpSettings(
             $output_path,
             $stop_process,
             $include_binary,
             $exclude_heap,
+            $buffer_all,
         );
     }
 }
