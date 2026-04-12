@@ -2985,7 +2985,7 @@ final class ExploreTui
             SandwichView::Panes => $this->dispatchMousePanes($state, $body_row, $body_rows),
             SandwichView::TreeCallees,
             SandwichView::TreeCallers => $this->dispatchMouseTree($body_row, $body_rows),
-            SandwichView::Flame => null,
+            SandwichView::Flame => $this->dispatchMouseFlame($body_row, $screen_col, $sidebar_width, $body_rows),
         };
     }
 
@@ -3160,6 +3160,51 @@ final class ExploreTui
         $total = count($this->ensureCallees()['rows']);
         if ($data_row < $total) {
             $this->callees_selected = $data_row;
+        }
+    }
+
+    /**
+     * Left-click in sandwich flame view: move cursor to the clicked bar.
+     */
+    private function dispatchMouseFlame(
+        int $body_row,
+        int $screen_col,
+        int $sidebar_width,
+        int $body_rows,
+    ): void {
+        $layout = $this->buildCurrentSandwichLayout();
+        if ($layout === null) {
+            return;
+        }
+        $total_visual = $layout['total_visual_rows'];
+        if ($body_row < 0 || $body_row >= $total_visual) {
+            return;
+        }
+        // Convert screen column to inner-body x coordinate.
+        // Sidebar + separator occupy the left portion of the screen.
+        $separator_width = $sidebar_width > 0 ? 1 : 0;
+        $inner_x = $screen_col - $sidebar_width - $separator_width;
+        if ($inner_x < 0) {
+            return;
+        }
+        $bars = $layout['visual_rows'][$body_row] ?? [];
+        if ($bars === []) {
+            // Allow clicking the focus row even though it has no bars.
+            if ($body_row === $layout['focus_visual_row']) {
+                $this->flame_cursor_visual_row = $body_row;
+                $this->flame_cursor_x = $inner_x;
+            }
+            return;
+        }
+        $hit = $this->findBarAtX($bars, $inner_x);
+        if ($hit === null) {
+            $hit = $this->findNearestBar($bars, $inner_x);
+        }
+        $this->flame_cursor_visual_row = $body_row;
+        if ($hit !== null) {
+            $this->flame_cursor_x = $hit['x'] + intdiv($hit['w'], 2);
+        } else {
+            $this->flame_cursor_x = $inner_x;
         }
     }
 
