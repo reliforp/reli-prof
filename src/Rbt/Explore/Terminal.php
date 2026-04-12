@@ -99,8 +99,11 @@ final class Terminal implements TerminalInterface
         // that `time 1` would add to every single keystroke.
         $this->applyStty('-icanon -echo min 1 time 0');
 
-        // Alt screen on, hide cursor.
-        $this->write("\e[?1049h\e[?25l");
+        // Alt screen on, hide cursor, enable SGR mouse tracking.
+        // ?1000h = basic press/release tracking
+        // ?1002h = button-motion (drag) tracking
+        // ?1006h = SGR extended coordinates (no 223-column limit)
+        $this->write("\e[?1049h\e[?25l\e[?1000h\e[?1002h\e[?1006h");
 
         $this->entered = true;
     }
@@ -113,8 +116,8 @@ final class Terminal implements TerminalInterface
         }
         $this->entered = false;
 
-        // Show cursor, leave alt screen.
-        $this->write("\e[?25h\e[?1049l");
+        // Disable mouse tracking, show cursor, leave alt screen.
+        $this->write("\e[?1006l\e[?1002l\e[?1000l\e[?25h\e[?1049l");
 
         if ($this->stty_orig !== null) {
             $this->applyStty($this->stty_orig);
@@ -171,9 +174,11 @@ final class Terminal implements TerminalInterface
         // in libc's buffer by the time we get here; if they aren't, we
         // simply return the bytes we have and let the keymap try to
         // resolve a partial sequence (which it will refuse and ignore).
+        // SGR mouse events ("\e[<0;120;45M") can be up to ~18 bytes,
+        // so the drain budget must be generous.
         @stream_set_blocking($this->tty_in, false);
         $bytes = $first;
-        for ($i = 0; $i < 8; $i++) {
+        for ($i = 0; $i < 20; $i++) {
             $next = @fgetc($this->tty_in);
             if ($next === false || $next === '') {
                 break;

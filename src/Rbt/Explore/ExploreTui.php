@@ -2685,6 +2685,12 @@ final class ExploreTui
             return;
         }
 
+        $mouse = MouseEvent::tryParse($key);
+        if ($mouse !== null) {
+            $this->dispatchMouse($mouse);
+            return;
+        }
+
         $action = $this->keymap->resolve($key);
         if ($action === null) {
             return;
@@ -2906,6 +2912,184 @@ final class ExploreTui
                 $this->status = 'overview: ' . ($this->sidebar_override ? 'on' : 'off');
                 return;
         }
+    }
+
+    /**
+     * Handle a parsed SGR mouse event.
+     *
+     * Supported interactions:
+     *   - Scroll wheel (up/down) in any view → equivalent to ↑/↓
+     *   - Left-click on a body row → move selection to that row
+     *   - Left-click on sidebar (overview) → activate + select row
+     *   - Left-click on sandwich pane → activate that pane + select
+     */
+    private function dispatchMouse(MouseEvent $mouse): void
+    {
+        // Only act on press events (ignore release / drag).
+        if (!$mouse->press) {
+            return;
+        }
+
+        // Scroll wheel: translate to ↑/↓ navigation.
+        if ($mouse->button === MouseEvent::SCROLL_UP) {
+            $this->dispatchUpDown(-3);
+            return;
+        }
+        if ($mouse->button === MouseEvent::SCROLL_DOWN) {
+            $this->dispatchUpDown(3);
+            return;
+        }
+
+        // Only left-click for selection.
+        if ($mouse->button !== MouseEvent::BUTTON_LEFT) {
+            return;
+        }
+
+        // Convert 1-based ANSI coords to 0-based screen row/col.
+        $screen_row = $mouse->row - 1;
+        $screen_col = $mouse->col - 1;
+
+        [$cols, $rows] = $this->term->size();
+        if ($cols < self::MIN_COLS || $rows < self::MIN_ROWS) {
+            return;
+        }
+
+        $state = $this->currentState();
+        $show_mini_flame = $state->mode === ExploreMode::Sandwich
+            && $this->mini_flame_enabled;
+        $body_rows = $rows - 6 - ($show_mini_flame ? 1 : 0);
+        $body_start = 4 + ($show_mini_flame ? 1 : 0); // header=4 + optional mini-flame
+
+        // Click outside the body area — ignore.
+        if ($screen_row < $body_start || $screen_row >= $body_start + $body_rows) {
+            return;
+        }
+
+        $body_row = $screen_row - $body_start;
+
+        // Check if click is in the sidebar region.
+        $show_sidebar = $state->mode === ExploreMode::Sandwich
+            && $this->shouldShowSidebar($cols);
+        $sidebar_width = $show_sidebar ? $this->computeSidebarWidth($cols) : 0;
+
+        if ($show_sidebar && $screen_col < $sidebar_width) {
+            $this->dispatchMouseOverview($state, $body_row, $body_rows);
+            return;
+        }
+
+        // Click is in the main body.
+        if ($state->mode !== ExploreMode::Sandwich) {
+            $this->dispatchMouseList($body_row);
+            return;
+        }
+
+        match ($state->sandwich_view) {
+            SandwichView::Panes => $this->dispatchMousePanes($state, $body_row, $body_rows),
+            SandwichView::TreeCallees,
+            SandwichView::TreeCallers => $this->dispatchMouseTree($body_row, $body_rows),
+            SandwichView::Flame => null, // flame bars don't map cleanly to row selection
+        };
+    }
+
+    /**
+     * Left-click in list mode body: row 0 is header, rows 1+ are data.
+     */
+    private function dispatchMouseList(int $body_row): void
+    {
+        if ($body_row < 1) {
+            return; // clicked on header
+        }
+        $data_row = $body_row - 1 + $this->list_top_row;
+        $total = count($this->ensureList()['rows']);
+        if ($data_row < $total) {
+            $this->list_selected = $data_row;
+        }
+    }
+
+    /**
+     * Left-click in the overview sidebar.
+     */
+    private function dispatchMouseOverview(ViewState $state, int $body_row, int $body_rows): void
+    {
+        if ($body_row < 1) {
+            return; // clicked on header
+        }
+        $visible = max(0, $body_rows - 1);
+        $data_row = $body_row - 1 + $this->overview_top_row;
+        $total = count($this->ensureOverview()['rows']);
+        if ($data_row >= $total) {
+            return;
+        }
+        // Activate the overview pane and move selection.
+        if ($state->active_pane !== ActivePane::Overview) {
+            $this->replaceTop($state->withActivePane(ActivePane::Overview));
+        }
+        $this->overview_selected = $data_row;
+        if ($this->overview_follow) {
+            $this->liveFollowOverviewFocus();
+        }
+    }
+
+    /**
+     * Left-click in sandwich panes view: determine which pane was
+     * clicked and set the selection within that pane.
+     */
+    private function dispatchMousePanes(ViewState $state, int $body_row, int $body_rows): void
+    {
+        $banner_rows = 3;
+        $available = max(0, $body_rows - $banner_rows);
+        $caller_body = (int)floor($available / 2);
+        $callee_body = $available - $caller_body;
+
+        // Callers pane: rows 0 to caller_body-1 (header + body)
+        if ($body_row < $caller_body) {
+            if ($body_row < 1) {
+                return; // header
+            }
+            if ($state->active_pane !== ActivePane::Callers) {
+                $this->replaceTop($state->withActivePane(ActivePane::Callers));
+            }
+            $data_row = $body_row - 1 + $this->callers_top_row;
+            $total = count($this->ensureCallers()['rows']);
+            if ($data_row < $total) {
+                $this->callers_selected = $data_row;
+            }
+            return;
+        }
+
+        // Focus banner: rows caller_body to caller_body+2
+        if ($body_row < $caller_body + $banner_rows) {
+            if ($state->active_pane !== ActivePane::Focus) {
+                $this->replaceTop($state->withActivePane(ActivePane::Focus));
+            }
+            return;
+        }
+
+        // Callees pane: rows caller_body+3 onwards (header + body)
+        $callee_local = $body_row - $caller_body - $banner_rows;
+        if ($callee_local < 1) {
+            return; // header
+        }
+        if ($state->active_pane !== ActivePane::Callees) {
+            $this->replaceTop($state->withActivePane(ActivePane::Callees));
+        }
+        $data_row = $callee_local - 1 + $this->callees_top_row;
+        $total = count($this->ensureCallees()['rows']);
+        if ($data_row < $total) {
+            $this->callees_selected = $data_row;
+        }
+    }
+
+    /**
+     * Left-click in sandwich tree view: set tree cursor to clicked row.
+     */
+    private function dispatchMouseTree(int $body_row, int $body_rows): void
+    {
+        // Tree body has a 1-line header, then data rows.
+        if ($body_row < 1) {
+            return;
+        }
+        $this->tree_cursor_row = $body_row - 1 + $this->tree_top_row;
     }
 
     private function dispatchPrompt(string $key): void
