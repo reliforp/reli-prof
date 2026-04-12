@@ -134,18 +134,16 @@ final class MemoryDumpWriter
         int $memory_map_count,
         int $region_count,
     ): int {
-        fwrite($fp, self::MAGIC);
-        fwrite($fp, pack('V', self::FORMAT_VERSION));
-        $this->writeString($fp, $php_version);
-        fwrite($fp, pack('P', $pid));
-        fwrite($fp, pack('P', $eg_address));
-        fwrite($fp, pack('P', $cg_address));
-        fwrite($fp, pack('V', $memory_map_count));
-        $region_count_offset = ftell($fp);
-        if ($region_count_offset === false) {
-            throw new \RuntimeException('failed to ftell for region_count offset');
-        }
-        fwrite($fp, pack('V', $region_count));
+        $buf = self::MAGIC;
+        $buf .= pack('V', self::FORMAT_VERSION);
+        $buf .= self::packString($php_version);
+        $buf .= pack('P', $pid);
+        $buf .= pack('P', $eg_address);
+        $buf .= pack('P', $cg_address);
+        $buf .= pack('V', $memory_map_count);
+        $region_count_offset = strlen($buf);
+        $buf .= pack('V', $region_count);
+        fwrite($fp, $buf);
         return $region_count_offset;
     }
 
@@ -155,29 +153,27 @@ final class MemoryDumpWriter
      */
     private function writeMemoryMap($fp, array $memory_areas): void
     {
+        $buf = '';
         foreach ($memory_areas as $area) {
-            $this->writeString($fp, $area->begin);
-            $this->writeString($fp, $area->end);
-            $this->writeString($fp, $area->file_offset);
-            fwrite($fp, pack(
+            $buf .= self::packString($area->begin);
+            $buf .= self::packString($area->end);
+            $buf .= self::packString($area->file_offset);
+            $buf .= pack(
                 'CCCC',
                 $area->attribute->read ? 1 : 0,
                 $area->attribute->write ? 1 : 0,
                 $area->attribute->execute ? 1 : 0,
                 $area->attribute->protected ? 1 : 0,
-            ));
-            $this->writeString($fp, $area->device_id);
-            fwrite($fp, pack('P', $area->inode_num));
-            $this->writeString($fp, $area->name);
+            );
+            $buf .= self::packString($area->device_id);
+            $buf .= pack('P', $area->inode_num);
+            $buf .= self::packString($area->name);
         }
+        fwrite($fp, $buf);
     }
 
-    /** @param resource $fp */
-    private function writeString($fp, string $value): void
+    private static function packString(string $value): string
     {
-        fwrite($fp, pack('V', strlen($value)));
-        if (strlen($value) > 0) {
-            fwrite($fp, $value);
-        }
+        return pack('V', strlen($value)) . $value;
     }
 }
