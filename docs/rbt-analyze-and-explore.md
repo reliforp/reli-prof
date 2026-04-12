@@ -200,31 +200,45 @@ loaded 1,842,000 samples (184.2s sampled wall, 100-us period)
 After that you're in a sandwich-style explorer modelled loosely on
 [speedscope](https://www.speedscope.app/)'s sandwich view.
 
+### Screenshots
+#### Panes view
+![panes view](./images/rbt-explore-panes.png)
+
+#### Flame view
+![flame view](./images/rbt-explore-flame.png)
+
+#### Callers tree view
+![callers tree view](./images/rbt-explore-callers-tree.png)
+
+#### Callees tree view
+![callees tree view](./images/rbt-explore-callees-tree.png)
+
 ### Layout at a glance
 
 ```
 ┌──────────────────────────── header ──────────────────────────────┐
 │ trace: 1,842,000 samples · 184.2s sampled · self-time            │
 ├──────────────────────────────────────────────────────────────────┤
-│ overview sidebar     │ focus banner: PDO::query  src/Db.php:142  │
-│  PDO::query ...      ├──────────────────────────────────────────┤
-│  preg_match ...      │ ▏ mini-flame strip (1 row) ▕             │
-│  ...                 ├──────────────────────────────────────────┤
-│                      │  callers / callees    OR    flame body   │
-│                      │  (panes view)               OR  tree     │
-├──────────────────────┴──────────────────────────────────────────┤
+│ mini-flame strip (1 row)                                         │
+├──────────────────────────────────────────────────────────────────┤
+│ overview sidebar     │  callers OR flame body OR tree            │
+│  PDO::query ...      ├───────────────────────────────────────────┤
+│  preg_match ...      │ focus banner: PDO::query  src/Db.php:142  │
+│  ...                 ├───────────────────────────────────────────┤
+│                      │  callers OR flame body OR tree            │
+├──────────────────────┴───────────────────────────────────────────┤
 │ status line · matched samples · pane / view hints                │
-│ footer · per-view keybindings                                     │
+│ footer · per-view keybindings                                    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 The **overview sidebar** is always the same self-time-or-total-time
-top list, sorted globally. The **focus banner** shows the frame
-you've drilled into. The **mini-flame strip** is a 1-row Braille
-histogram of that ranking, with a highlight that follows your cursor.
+top list, sorted globally. The **focus banner** shows the frame you've
+drilled into (on panes view only). The **mini-flame strip** is a 1-row
+Braille histogram of that ranking, with a highlight that follows your cursor.
 The **body** changes shape depending on which sandwich view is active.
 
-### The four sandwich views
+### The four views
 
 | Key | View | What it shows |
 |---|---|---|
@@ -354,6 +368,3 @@ name out of the explorer and paste it into an `--callers=` query.
   format spec, gzip / segment behaviour, recovery
 - [internals/binary-intermediate-format.md](internals/binary-intermediate-format.md)
   — design notes on why the analyze/explore split exists
-- [memory-report.md](memory-report.md) — the equivalent automated
-  report for *memory* snapshots (the analogue of `rbt:analyze` for
-  the memory profiler side)
