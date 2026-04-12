@@ -18,6 +18,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendString;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
@@ -137,7 +138,7 @@ final class MetadataPeekWalker
             );
         }
 
-        // zend_constants
+        // zend_constants — follow value strings for internal constants
         if ($eg->zend_constants !== null) {
             $this->walkRootTable(
                 $eg->zend_constants,
@@ -145,7 +146,21 @@ final class MetadataPeekWalker
                 $covered_intervals,
                 $peeks,
                 $const_size,
-                null,
+                function (int $addr) use (
+                    $dereferencer,
+                    $type_reader,
+                    $covered_intervals,
+                    &$peeks,
+                    $const_size,
+                ): void {
+                    $this->peekConstantValue(
+                        $addr,
+                        $const_size,
+                        $dereferencer,
+                        $covered_intervals,
+                        $peeks,
+                    );
+                },
             );
         }
 
@@ -302,6 +317,54 @@ final class MetadataPeekWalker
      * @param list<array{address: int, size: int}> $covered
      * @param list<array{address: int, size: int}> $peeks
      */
+    /**
+     * For an internal constant at $addr, peek its value if it is a
+     * string outside the covered set. Without this, the analyzer's
+     * EmitGlobalConstantsJob fails on the first constant whose value
+     * string body is missing (opcache OFF → all in [heap]).
+     *
+     * @param list<array{address: int, size: int}> $covered
+     * @param list<array{address: int, size: int}> $peeks
+     * @psalm-suppress MixedPropertyFetch, MixedMethodCall, MixedArgument, MixedArgumentTypeCoercion
+     */
+    private function peekConstantValue(
+        int $addr,
+        int $const_size,
+        Dereferencer $dereferencer,
+        array $covered,
+        array &$peeks,
+    ): void {
+        try {
+            $constant = $dereferencer->deref(new Pointer(
+                ZendConstant::class,
+                $addr,
+                $const_size,
+            ));
+            // name string (may differ from bucket key in some versions)
+            if ($constant->name !== null) {
+                $this->peekStringIfExternal(
+                    $constant->name->address,
+                    $constant->name->size,
+                    $dereferencer,
+                    $covered,
+                    $peeks,
+                );
+            }
+            // value: if IS_STRING, peek the string body
+            if ($constant->value->isString() && $constant->value->value->str !== null) {
+                $this->peekStringIfExternal(
+                    $constant->value->value->str->address,
+                    $constant->value->value->str->size,
+                    $dereferencer,
+                    $covered,
+                    $peeks,
+                );
+            }
+        } catch (\Throwable) {
+        }
+    }
+
+    /** @psalm-suppress ArgumentTypeCoercion */
     private function peekFunctionExternals(
         int $addr,
         int $func_size,
