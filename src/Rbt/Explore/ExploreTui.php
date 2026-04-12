@@ -582,11 +582,12 @@ final class ExploreTui
         );
         $delta_label = sprintf('[δ%d]', $this->scroll_delta);
         $delta_len = mb_strlen($delta_label);
-        // Right-align the scroll-delta indicator on line 2 (row index 2).
-        $gap = $cols - mb_strlen($line3_left) - $delta_len;
-        if ($gap >= 2) {
-            $delta_col_start = $cols - $delta_len;
-            $line3 = $line3_left . str_repeat(' ', $gap) . $delta_label;
+        $left_len = mb_strlen($line3_left);
+        // Place the indicator right after the settings text so it
+        // stays near the left-side overview sidebar on wide terminals.
+        if ($left_len + 3 + $delta_len <= $cols) {
+            $delta_col_start = $left_len + 3;
+            $line3 = $line3_left . '   ' . $delta_label;
         } else {
             // Terminal too narrow — omit the indicator.
             $delta_col_start = 0;
