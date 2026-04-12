@@ -110,10 +110,10 @@ final class MemoryDumpCommand extends Command
             $target_php_settings_decided,
         );
 
-        // Resolve global interned-string arrays for exclude-heap mode.
-        // These are only needed for the MetadataPeekWalker to peek
-        // interned strings that live in [heap]. In full mode (default),
-        // [heap] is included in the dump so no peeking is needed.
+        // Resolve global interned-string pointer arrays for exclude-heap
+        // mode. These are plain BSS symbols (not TSRM globals), so
+        // findSymbol is used instead of findGlobals to avoid the TSRM
+        // resolution path on ZTS builds.
         /** @var list<array{address: int, count: int}> $interned_string_arrays */
         $interned_string_arrays = [];
         if ($dump_settings->exclude_heap) {
@@ -125,7 +125,7 @@ final class MemoryDumpCommand extends Command
             foreach ($sym_defs as $sym => $count) {
                 try {
                     $interned_string_arrays[] = [
-                        'address' => $this->php_globals_finder->findGlobals(
+                        'address' => $this->php_globals_finder->findSymbol(
                             $process_specifier,
                             $target_php_settings_decided,
                             $sym,
