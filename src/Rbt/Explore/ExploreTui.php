@@ -199,6 +199,16 @@ final class ExploreTui
      */
     private array $tree_folded = [];
 
+    /**
+     * Double-click detection state. Tracks the last left-click's
+     * timestamp and position so a second click within the threshold
+     * at the same cell can be promoted to a focus action.
+     */
+    private float $last_click_time = 0.0;
+    private int $last_click_row = -1;
+    private int $last_click_col = -1;
+    private const DOUBLE_CLICK_MS = 400;
+
     public function __construct(TraceModel $model, TerminalInterface $term, Keymap $keymap)
     {
         $this->model = $model;
@@ -2972,7 +2982,24 @@ final class ExploreTui
             return;
         }
 
-        // Left-click.
+        // Left-click — detect double-click for focus/enter action.
+        $now = microtime(true);
+        $is_double = ($now - $this->last_click_time) < (self::DOUBLE_CLICK_MS / 1000.0)
+            && $this->last_click_row === $mouse->row
+            && $this->last_click_col === $mouse->col;
+        $this->last_click_time = $now;
+        $this->last_click_row = $mouse->row;
+        $this->last_click_col = $mouse->col;
+
+        if ($is_double) {
+            // The first click already moved the selection / cursor to
+            // the right row, so Enter will act on it.
+            $this->dispatchEnter();
+            // Reset so a third rapid click doesn't trigger another enter.
+            $this->last_click_time = 0.0;
+            return;
+        }
+
         if ($hover_pane === ActivePane::Overview) {
             $this->dispatchMouseOverview($state, $body_row, $body_rows);
             return;
