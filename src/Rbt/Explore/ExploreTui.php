@@ -3180,6 +3180,18 @@ final class ExploreTui
         if ($body_row < 0 || $body_row >= $total_visual) {
             return;
         }
+
+        // Clicking the flame body should hand navigation focus to
+        // the main body so that a subsequent Enter drills into the
+        // clicked bar rather than acting on the overview sidebar.
+        $state = $this->currentState();
+        if (
+            $state->active_pane === ActivePane::Overview
+            || $state->active_pane === ActivePane::Focus
+        ) {
+            $this->replaceTop($state->withActivePane(ActivePane::Callees));
+        }
+
         // Convert screen column to inner-body x coordinate.
         // Sidebar + separator occupy the left portion of the screen.
         $separator_width = $sidebar_width > 0 ? 1 : 0;
@@ -3216,6 +3228,15 @@ final class ExploreTui
         // Tree body has a 1-line header, then data rows.
         if ($body_row < 1) {
             return;
+        }
+        // Hand navigation focus to the main body so Enter acts on the
+        // tree cursor, not the overview sidebar.
+        $state = $this->currentState();
+        if (
+            $state->active_pane === ActivePane::Overview
+            || $state->active_pane === ActivePane::Focus
+        ) {
+            $this->replaceTop($state->withActivePane(ActivePane::Callees));
         }
         $this->tree_cursor_row = $body_row - 1 + $this->tree_top_row;
     }
