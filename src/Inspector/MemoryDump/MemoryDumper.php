@@ -360,6 +360,79 @@ final class MemoryDumper
                 $final,
             );
 
+            // Opcache SHM interned string buffer: when opcache is ON,
+            // interned strings are stored in a packed buffer in SHM.
+            // The zend_accel_shared_globals struct is at SHM+0x88
+            // (after the shared segment metadata). Walk the buffer
+            // from start to top, peeking each zend_string that is
+            // outside the covered intervals.
+            $shm_areas = $memory_map->findByNameRegex('/dev/zero');
+            foreach ($shm_areas as $shm_area) {
+                if (!$shm_area->attribute->read) {
+                    continue;
+                }
+                try {
+                    $shm_base = (int)hexdec($shm_area->begin);
+                    // zend_accel_shared_globals at SHM+0x88
+                    $asg_addr = $shm_base + 0x88;
+                    $is_offset = 160; // interned_strings field offset
+                    $is_raw = \FFI::string(
+                        $this->memory_reader->read($pid, $asg_addr + $is_offset, 40),
+                        40,
+                    );
+                    /** @var array{1: int} */
+                    $is_start_u = unpack('P', $is_raw, 8);
+                    $is_start = $is_start_u[1];
+                    /** @var array{1: int} */
+                    $is_top_u = unpack('P', $is_raw, 16);
+                    $is_top = $is_top_u[1];
+                    $shm_end = (int)hexdec($shm_area->end);
+                    if (
+                        $is_start >= $shm_base && $is_start < $shm_end
+                        && $is_top > $is_start && $is_top <= $shm_end
+                    ) {
+                        $buf_size = $is_top - $is_start;
+                        $buf = \FFI::string(
+                            $this->memory_reader->read($pid, $is_start, $buf_size),
+                            $buf_size,
+                        );
+                        $str_hdr = $zend_type_reader->sizeOf('zend_string');
+                        $off = 0;
+                        $skip_count = 0;
+                        while ($off + $str_hdr <= $buf_size) {
+                            // Validate: interned strings have gc.refcount=2
+                            /** @var array{1: int} */
+                            $rc_u = unpack('V', $buf, $off);
+                            $refcount = $rc_u[1];
+                            if ($refcount !== 2) {
+                                $off += 8;
+                                $skip_count++;
+                                if ($skip_count > 100) {
+                                    break;
+                                }
+                                continue;
+                            }
+                            $skip_count = 0;
+                            /** @var array{1: int} */
+                            $len_u = unpack('P', $buf, $off + 16);
+                            $len = $len_u[1];
+                            if ($len > $buf_size) {
+                                break;
+                            }
+                            $full_size = 24 + $len + 1;
+                            $str_addr = $is_start + $off;
+                            if (!self::isInIntervals($str_addr, $full_size, $final)) {
+                                $peeks[] = ['address' => $str_addr, 'size' => $full_size];
+                            }
+                            $aligned = ($full_size + 7) & ~7;
+                            $off += $aligned;
+                        }
+                    }
+                } catch (\Throwable) {
+                }
+                break; // only process the first /dev/zero VMA
+            }
+
             // Global interned-string pointer arrays (zend_one_char_string,
             // zend_known_strings, zend_empty_string). These are in BSS
             // and their string bodies are pemalloc'd in [heap]. Not in
