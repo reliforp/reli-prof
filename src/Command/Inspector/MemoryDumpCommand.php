@@ -110,6 +110,32 @@ final class MemoryDumpCommand extends Command
             $target_php_settings_decided,
         );
 
+        // Resolve global interned-string arrays for minimum-mode peek.
+        // All use the BinaryAnalysisCache so repeated resolves are free.
+        /** @var list<array{address: int, count: int}> $interned_string_arrays */
+        $interned_string_arrays = [];
+        // zend_one_char_string: zend_string *[256] — inline array, 256 entries
+        // zend_known_strings:  zend_string **      — pointer to heap-allocated array, scan until null
+        // zend_empty_string:   zend_string *        — single pointer
+        $sym_defs = [
+            'zend_one_char_string' => 256,   // inline array of known size
+            'zend_known_strings'   => -1,    // indirect pointer, scan until null
+            'zend_empty_string'    => 1,     // single pointer
+        ];
+        foreach ($sym_defs as $sym => $count) {
+            try {
+                $interned_string_arrays[] = [
+                    'address' => $this->php_globals_finder->findGlobals(
+                        $process_specifier,
+                        $target_php_settings_decided,
+                        $sym,
+                    ),
+                    'count' => $count,
+                ];
+            } catch (\Throwable) {
+            }
+        }
+
         if ($dump_settings->stop_process) {
             $this->process_stopper->stop($process_specifier->pid);
             defer(
@@ -127,6 +153,8 @@ final class MemoryDumpCommand extends Command
             $cg_address,
             $dump_settings->output_path,
             $dump_settings->include_binary,
+            !$dump_settings->exclude_heap,
+            $interned_string_arrays,
         );
 
         $output->writeln(sprintf(
