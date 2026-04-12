@@ -3147,7 +3147,7 @@ final class ExploreTui
         if ($state->focus_id === $key_id) {
             return; // already focused on this frame
         }
-        $label = Aggregator::labelFor($this->model, $key_id, true);
+        $label = Aggregator::labelFor($this->model, $key_id, $this->opts->no_line);
         $this->pushSandwichFocus($key_id, $label, $state->sandwich_view);
 
         // When panes or overview was active, switch to the Focus
