@@ -19,7 +19,6 @@ final class MemoryDumpSettings
         public string $output_path,
         public bool $stop_process = true,
         public bool $include_binary = false,
-        public bool $exclude_heap = false,
     ) {
     }
 }
