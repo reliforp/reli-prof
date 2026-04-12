@@ -64,7 +64,8 @@ final class GetTraceSettingsFromConsoleInput
                 'variable to peek per sample and attach as an annotation '
                 . '(same syntax as inspector:peek-var --var, e.g. '
                 . "global::\$counter, local::App\\Svc::run()\$id, "
-                . "static::App\\Cache::\$entries, func_static::App\\retry()\$n)"
+                . "static::App\\Cache::\$entries, func_static::App\\retry()\$n, "
+                . 'memory::memory_get_usage, memory::memory_get_peak_usage)'
             )
             ->addOption(
                 'trace-var-every',

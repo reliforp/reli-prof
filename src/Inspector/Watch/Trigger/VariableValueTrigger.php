@@ -27,6 +27,8 @@ use Reli\Inspector\Watch\WatchContext;
  *   static::App\Cache::$size:gt:100000
  *   func_static::App\retry()$attempt:gt:10
  *   global::status:eq:error
+ *   memory::memory_get_usage:gt:104857600
+ *   memory::memory_get_peak_usage:gt:134217728
  */
 final class VariableValueTrigger implements TriggerInterface
 {
@@ -73,6 +75,22 @@ final class VariableValueTrigger implements TriggerInterface
                         . " '{$this->expression}'."
                         . ' global:: requires $ prefix'
                         . ' (e.g., global::$var:op:value)',
+                );
+            }
+        }
+        if ($this->scope === 'memory') {
+            $valid_names = [
+                'memory_get_usage',
+                'memory_get_peak_usage',
+                'memory_get_usage_real',
+                'memory_get_peak_usage_real',
+            ];
+            if (!in_array($this->var_name, $valid_names, true)) {
+                throw new \InvalidArgumentException(
+                    "Invalid watch-var expression:"
+                        . " '{$this->expression}'."
+                        . ' memory:: requires one of: '
+                        . implode(', ', $valid_names),
                 );
             }
         }

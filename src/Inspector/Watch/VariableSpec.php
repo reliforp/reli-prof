@@ -22,6 +22,10 @@ namespace Reli\Inspector\Watch;
  *   local::App\Service::process()$retries
  *   static::App\Cache::$entries
  *   func_static::App\retry()$attempt
+ *   memory::memory_get_usage
+ *   memory::memory_get_peak_usage
+ *   memory::memory_get_usage_real
+ *   memory::memory_get_peak_usage_real
  */
 final class VariableSpec
 {
@@ -47,7 +51,8 @@ final class VariableSpec
                     . ' (e.g., global::$var,'
                     . ' local::func()$var,'
                     . ' static::Class::$prop,'
-                    . ' func_static::func()$var)'
+                    . ' func_static::func()$var,'
+                    . ' memory::memory_get_usage)'
             );
         }
         $scope = $parts[0];
@@ -92,6 +97,23 @@ final class VariableSpec
                 );
             }
         }
+        if ($scope === 'memory') {
+            $valid_names = [
+                'memory_get_usage',
+                'memory_get_peak_usage',
+                'memory_get_usage_real',
+                'memory_get_peak_usage_real',
+            ];
+            if (!in_array($name, $valid_names, true)) {
+                throw new \InvalidArgumentException(
+                    "Invalid variable expression:"
+                        . " '{$expression}'."
+                        . " memory:: requires one of: "
+                        . implode(', ', $valid_names),
+                );
+            }
+            return;
+        }
         $valid_scopes = ['global', 'local', 'static', 'func_static'];
         if (!in_array($scope, $valid_scopes, true)) {
             throw new \InvalidArgumentException(
@@ -99,7 +121,8 @@ final class VariableSpec
                     . " '{$expression}'."
                     . " Unknown scope '{$scope}'."
                     . ' Valid scopes: '
-                    . implode(', ', $valid_scopes),
+                    . implode(', ', $valid_scopes)
+                    . ', memory',
             );
         }
     }

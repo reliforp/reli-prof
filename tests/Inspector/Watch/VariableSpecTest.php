@@ -110,4 +110,39 @@ class VariableSpecTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         VariableSpec::parse('invalid::$var');
     }
+
+    public function testParseMemoryGetUsage(): void
+    {
+        $spec = VariableSpec::parse('memory::memory_get_usage');
+        $this->assertSame('memory', $spec->scope);
+        $this->assertSame('memory_get_usage', $spec->var_name);
+        $this->assertSame('memory::memory_get_usage', $spec->lookup_key);
+    }
+
+    public function testParseMemoryGetPeakUsage(): void
+    {
+        $spec = VariableSpec::parse('memory::memory_get_peak_usage');
+        $this->assertSame('memory', $spec->scope);
+        $this->assertSame('memory_get_peak_usage', $spec->var_name);
+    }
+
+    public function testParseMemoryGetUsageReal(): void
+    {
+        $spec = VariableSpec::parse('memory::memory_get_usage_real');
+        $this->assertSame('memory', $spec->scope);
+        $this->assertSame('memory_get_usage_real', $spec->var_name);
+    }
+
+    public function testParseMemoryGetPeakUsageReal(): void
+    {
+        $spec = VariableSpec::parse('memory::memory_get_peak_usage_real');
+        $this->assertSame('memory', $spec->scope);
+        $this->assertSame('memory_get_peak_usage_real', $spec->var_name);
+    }
+
+    public function testInvalidMemoryName(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        VariableSpec::parse('memory::invalid_name');
+    }
 }

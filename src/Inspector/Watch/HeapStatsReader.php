@@ -83,6 +83,7 @@ final class HeapStatsReader
             real_size: $heap->real_size,
             peak: $heap->peak,
             limit: $heap->limit,
+            real_peak: $heap->real_peak,
         );
     }
 

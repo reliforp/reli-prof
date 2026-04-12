@@ -60,7 +60,8 @@ final class PeekVarCommand extends Command
             'variable to read (e.g., global::$var,'
                 . ' local::func()$var,'
                 . ' static::Class::$prop,'
-                . ' func_static::func()$var)',
+                . ' func_static::func()$var,'
+                . ' memory::memory_get_usage)',
         );
         $this->addOption(
             'repeat',

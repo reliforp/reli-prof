@@ -70,7 +70,8 @@ final class WatchSettingsFromConsoleInput
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
                 'trigger on variable value condition'
                     . ' (format: scope::name:op:value,'
-                    . ' e.g. global::cache:count_gt:10000)',
+                    . ' e.g. global::cache:count_gt:10000,'
+                    . ' memory::memory_get_usage:gt:104857600)',
             )
             // CPU trigger options
             ->addOption(
