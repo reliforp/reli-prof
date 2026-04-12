@@ -864,16 +864,12 @@ final class MemoryDumper
     ): ?array {
         $libc = self::libc();
         $page_size = 4096;
-        $num_pages = (int)($region_size / $page_size);
+        $start_vpn = intdiv($region_addr, $page_size);
+        $end_vpn = intdiv($region_addr + $region_size + $page_size - 1, $page_size);
+        $num_pages = $end_vpn - $start_vpn;
         if ($num_pages === 0) {
-            // Sub-page region: too small to probe via pagemap (it
-            // always fits inside a single page). Treat it as
-            // resident — returning null would also work (it means
-            // "pagemap unavailable, keep the whole range"), but
-            // returning the region itself is more explicit.
             return [['address' => $region_addr, 'size' => $region_size]];
         }
-        $start_vpn = (int)($region_addr / $page_size);
 
         $pagemap_path = "/proc/{$pid}/pagemap";
         /** @var int $fd */
