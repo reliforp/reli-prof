@@ -40,12 +40,14 @@ use Reli\Lib\Process\ProcessSpecifier;
  * - local:       current call frame CVs
  * - static:      class static properties (requires CG)
  * - func_static: function static variables
+ * - memory:      ZendMM heap stats (memory_get_usage, memory_get_peak_usage, etc.)
  */
 final class VariableReader implements VariableReaderInterface
 {
     public function __construct(
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
+        private ?HeapStatsReader $heap_stats_reader = null,
     ) {
     }
 
@@ -75,12 +77,40 @@ final class VariableReader implements VariableReaderInterface
             $php_version,
         );
 
-        $eg_pointer = new Pointer(
-            ZendExecutorGlobals::class,
-            $eg_address,
-            $zend_type_reader->sizeOf('zend_executor_globals'),
-        );
-        $eg = $dereferencer->deref($eg_pointer);
+        // Check if any spec needs EG (non-memory scopes)
+        $has_non_memory = false;
+        $has_memory = false;
+        foreach ($specs as $spec) {
+            if ($spec->scope === 'memory') {
+                $has_memory = true;
+            } else {
+                $has_non_memory = true;
+            }
+        }
+
+        $eg = null;
+        if ($has_non_memory) {
+            $eg_pointer = new Pointer(
+                ZendExecutorGlobals::class,
+                $eg_address,
+                $zend_type_reader->sizeOf('zend_executor_globals'),
+            );
+            $eg = $dereferencer->deref($eg_pointer);
+        }
+
+        // Read heap stats once if any memory spec is present
+        $heap_stats = null;
+        if ($has_memory && $this->heap_stats_reader !== null) {
+            try {
+                $heap_stats = $this->heap_stats_reader->read(
+                    $process_specifier,
+                    $target_php_settings,
+                    $eg_address,
+                );
+            } catch (\Throwable) {
+                // heap stats unavailable; memory specs will be skipped
+            }
+        }
 
         $results = [];
 
@@ -91,32 +121,36 @@ final class VariableReader implements VariableReaderInterface
 
             try {
                 $value = match ($scope) {
-                    'global' => $this->readGlobalVariable(
+                    'memory' => $this->readMemoryVariable(
+                        $name,
+                        $heap_stats,
+                    ),
+                    'global' => $eg !== null ? $this->readGlobalVariable(
                         $eg,
                         $dereferencer,
                         $zend_type_reader,
                         $name,
-                    ),
-                    'local' => $this->readLocalVariable(
+                    ) : null,
+                    'local' => $eg !== null ? $this->readLocalVariable(
                         $eg,
                         $dereferencer,
                         $zend_type_reader,
                         $name,
-                    ),
-                    'static' => $this->readStaticProperty(
+                    ) : null,
+                    'static' => $eg !== null ? $this->readStaticProperty(
                         $eg,
                         $dereferencer,
                         $zend_type_reader,
                         $name,
                         $cg_address,
-                    ),
-                    'func_static' => $this->readFuncStaticVariable(
+                    ) : null,
+                    'func_static' => $eg !== null ? $this->readFuncStaticVariable(
                         $eg,
                         $dereferencer,
                         $zend_type_reader,
                         $name,
                         $cg_address,
-                    ),
+                    ) : null,
                     default => null,
                 };
                 if ($value !== null) {
@@ -128,6 +162,39 @@ final class VariableReader implements VariableReaderInterface
         }
 
         return $results;
+    }
+
+    /**
+     * Read a memory metric from the Zend Memory Manager heap.
+     *
+     * Maps to PHP's memory_get_usage() / memory_get_peak_usage() equivalents:
+     *   memory_get_usage           → heap->size   (emalloc usage)
+     *   memory_get_peak_usage      → heap->peak   (peak emalloc usage)
+     *   memory_get_usage_real      → heap->real_size (OS-level allocation)
+     *   memory_get_peak_usage_real → heap->real_peak (peak OS-level allocation)
+     */
+    private function readMemoryVariable(
+        string $name,
+        ?HeapStats $heap_stats,
+    ): ?VariableValue {
+        if ($heap_stats === null) {
+            return null;
+        }
+        $bytes = match ($name) {
+            'memory_get_usage' => $heap_stats->size,
+            'memory_get_peak_usage' => $heap_stats->peak,
+            'memory_get_usage_real' => $heap_stats->real_size,
+            'memory_get_peak_usage_real' => $heap_stats->real_peak,
+            default => null,
+        };
+        if ($bytes === null) {
+            return null;
+        }
+        return new VariableValue(
+            VariableValue::TYPE_LONG,
+            $bytes,
+            null,
+        );
     }
 
     private function readGlobalVariable(

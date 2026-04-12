@@ -259,6 +259,66 @@ class VariableValueTriggerTest extends TestCase
         $this->assertTrue($trigger->requiresDeepInspection());
     }
 
+    public function testParseMemoryUsageExpression(): void
+    {
+        $parsed = VariableValueTrigger::parseExpression(
+            'memory::memory_get_usage:gt:104857600'
+        );
+        $this->assertSame('memory', $parsed['scope']);
+        $this->assertSame('memory_get_usage', $parsed['name']);
+        $this->assertSame('gt', $parsed['op']);
+        $this->assertSame('104857600', $parsed['value']);
+    }
+
+    public function testParseMemoryPeakUsageExpression(): void
+    {
+        $parsed = VariableValueTrigger::parseExpression(
+            'memory::memory_get_peak_usage:gte:134217728'
+        );
+        $this->assertSame('memory', $parsed['scope']);
+        $this->assertSame('memory_get_peak_usage', $parsed['name']);
+        $this->assertSame('gte', $parsed['op']);
+        $this->assertSame('134217728', $parsed['value']);
+    }
+
+    public function testMemoryUsageGtFires(): void
+    {
+        $trigger = new VariableValueTrigger(
+            'memory::memory_get_usage:gt:104857600'
+        );
+        $context = $this->makeContext([
+            'memory::memory_get_usage' => new VariableValue(
+                VariableValue::TYPE_LONG,
+                209715200,
+                null,
+            ),
+        ]);
+        $event = $trigger->evaluate($context);
+        $this->assertNotNull($event);
+        $this->assertSame('watch-var', $event->trigger_name);
+    }
+
+    public function testMemoryUsageGtDoesNotFire(): void
+    {
+        $trigger = new VariableValueTrigger(
+            'memory::memory_get_usage:gt:104857600'
+        );
+        $context = $this->makeContext([
+            'memory::memory_get_usage' => new VariableValue(
+                VariableValue::TYPE_LONG,
+                52428800,
+                null,
+            ),
+        ]);
+        $this->assertNull($trigger->evaluate($context));
+    }
+
+    public function testMemoryInvalidNameThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new VariableValueTrigger('memory::invalid_name:gt:0');
+    }
+
     /**
      * @param array<string, VariableValue> $vars
      */

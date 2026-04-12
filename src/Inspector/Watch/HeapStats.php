@@ -20,6 +20,7 @@ final class HeapStats
         public readonly int $real_size,
         public readonly int $peak,
         public readonly int $limit,
+        public readonly int $real_peak = 0,
     ) {
     }
 
