@@ -128,8 +128,6 @@ final class MemoryDumper
         // zend_one_char_string are invisible in minimum mode because the
         // BSS is anonymous-writable (gated on --include-heap) and not
         // reachable from any walker root.
-        // BISECT: BSS VMA disabled
-        if (false) {
         $eg_vmas = $memory_map->findByAddress($eg_address);
         foreach ($eg_vmas as $vma) {
             if ($vma->attribute->write && $vma->attribute->read) {
@@ -140,7 +138,6 @@ final class MemoryDumper
                 }
             }
         }
-        } // BISECT end
 
         // ZendMM chunks
         foreach ($main_chunk->iterateChunks($dereferencer) as $chunk) {
@@ -262,8 +259,7 @@ final class MemoryDumper
         // allocated via realloc() and may end up in an anonymous
         // writable mmap region outside ZendMM chunks. Without it,
         // EmitObjectsStoreJob fails and ALL object instances are lost.
-        // BISECT: objects_store disabled
-        if (false && $eg->objects_store->object_buckets !== null) {
+        if ($eg->objects_store->object_buckets !== null) {
             $ob_addr = $eg->objects_store->object_buckets->address;
             $ob_size = $eg->objects_store->size * 8;
             if ($ob_size > 0) {
@@ -312,8 +308,7 @@ final class MemoryDumper
         // resolution via map_ptr. The table itself lives in [heap]
         // (allocated by opcache). Without it, resolveMapPtr() fails
         // and entire EmitClassTableJob/EmitFunctionTableJob skip.
-        // BISECT: MAP_PTR disabled
-        if (false && $cg->map_ptr_base !== 0) {
+        if ($cg->map_ptr_base !== 0) {
             try {
                 [$mpl_off, $mpl_sz] = $zend_type_reader->getOffsetAndSizeOfMember(
                     'zend_compiler_globals',
@@ -738,11 +733,12 @@ final class MemoryDumper
     ): ?array {
         $libc = self::libc();
         $page_size = 4096;
-        $num_pages = (int)($region_size / $page_size);
+        $start_vpn = intdiv($region_addr, $page_size);
+        $end_vpn = intdiv($region_addr + $region_size + $page_size - 1, $page_size);
+        $num_pages = $end_vpn - $start_vpn;
         if ($num_pages === 0) {
             return [['address' => $region_addr, 'size' => $region_size]];
         }
-        $start_vpn = (int)($region_addr / $page_size);
 
         $pagemap_path = "/proc/{$pid}/pagemap";
         /** @var int $fd */
