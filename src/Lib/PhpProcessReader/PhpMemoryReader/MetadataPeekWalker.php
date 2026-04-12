@@ -436,10 +436,8 @@ final class MetadataPeekWalker
             $peeks,
         );
 
-        // Sub-HashTable arData + bucket targets for methods, properties,
-        // constants. The table headers are inline in the class_entry
-        // struct (already covered by the CE peek), but arData and each
-        // bucket target may be separately allocated in [heap].
+        // Sub-HashTable arData + bucket targets + their internal string
+        // pointers for methods, properties, constants.
         $func_size = $type_reader->sizeOf('zend_function');
         $this->peekInlineTableContents(
             $ce->function_table,
@@ -447,6 +445,9 @@ final class MetadataPeekWalker
             $func_size,
             $covered,
             $peeks,
+            function (int $ptr) use ($dereferencer, $type_reader, $covered, &$peeks, $func_size): void {
+                $this->peekFunctionExternals($ptr, $func_size, $dereferencer, $type_reader, $covered, $peeks);
+            },
         );
         $prop_info_size = $type_reader->sizeOf('zend_property_info');
         $this->peekInlineTableContents(
@@ -455,6 +456,9 @@ final class MetadataPeekWalker
             $prop_info_size,
             $covered,
             $peeks,
+            function (int $ptr) use ($dereferencer, $prop_info_size, $covered, &$peeks): void {
+                $this->peekPropertyInfoExternals($ptr, $prop_info_size, $dereferencer, $covered, $peeks);
+            },
         );
         $class_const_size = $type_reader->sizeOf(
             ZendClassConstant::getCTypeName(),
@@ -465,6 +469,9 @@ final class MetadataPeekWalker
             $class_const_size,
             $covered,
             $peeks,
+            function (int $ptr) use ($dereferencer, $class_const_size, $covered, &$peeks): void {
+                $this->peekClassConstantExternals($ptr, $class_const_size, $dereferencer, $covered, $peeks);
+            },
         );
 
         // default_properties_table (array of zvals)
@@ -491,6 +498,68 @@ final class MetadataPeekWalker
     }
 
     /**
+     * @param list<array{address: int, size: int}> $covered
+     * @param list<array{address: int, size: int}> $peeks
+     * @psalm-suppress MixedPropertyFetch, MixedArgument, MixedArgumentTypeCoercion
+     */
+    private function peekPropertyInfoExternals(
+        int $addr,
+        int $size,
+        Dereferencer $dereferencer,
+        array $covered,
+        array &$peeks,
+    ): void {
+        try {
+            $pi = $dereferencer->deref(new Pointer(
+                \Reli\Lib\PhpInternals\Types\Zend\ZendPropertyInfo::class,
+                $addr,
+                $size,
+            ));
+            if ($pi->name !== null) {
+                $this->peekStringIfExternal(
+                    $pi->name->address,
+                    $pi->name->size,
+                    $dereferencer,
+                    $covered,
+                    $peeks,
+                );
+            }
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * @param list<array{address: int, size: int}> $covered
+     * @param list<array{address: int, size: int}> $peeks
+     * @psalm-suppress MixedPropertyFetch, MixedMethodCall, MixedArgument, MixedArgumentTypeCoercion
+     */
+    private function peekClassConstantExternals(
+        int $addr,
+        int $size,
+        Dereferencer $dereferencer,
+        array $covered,
+        array &$peeks,
+    ): void {
+        try {
+            $cc = $dereferencer->deref(new Pointer(
+                ZendClassConstant::class,
+                $addr,
+                $size,
+            ));
+            if ($cc->value->isString() && $cc->value->value->str !== null) {
+                $this->peekStringIfExternal(
+                    $cc->value->value->str->address,
+                    $cc->value->value->str->size,
+                    $dereferencer,
+                    $covered,
+                    $peeks,
+                );
+            }
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
      * For an inline HashTable (embedded inside a class_entry), peek
      * arData AND each bucket's IS_PTR target if outside the covered
      * set. Without this, the analyzer can read the HashTable header
@@ -500,6 +569,7 @@ final class MetadataPeekWalker
      *
      * @param list<array{address: int, size: int}> $covered
      * @param list<array{address: int, size: int}> $peeks
+     * @param (callable(int): void)|null $follow_target
      */
     private function peekInlineTableContents(
         ZendArray $table,
@@ -507,6 +577,7 @@ final class MetadataPeekWalker
         int $target_size,
         array $covered,
         array &$peeks,
+        ?callable $follow_target = null,
     ): void {
         try {
             if ($table->arData === null) {
@@ -526,6 +597,12 @@ final class MetadataPeekWalker
                 $ptr_addr = $bucket->val->value->lval;
                 if ($ptr_addr !== 0 && !self::isCovered($ptr_addr, $target_size, $covered)) {
                     $peeks[] = ['address' => $ptr_addr, 'size' => $target_size];
+                    if ($follow_target !== null) {
+                        try {
+                            $follow_target($ptr_addr);
+                        } catch (\Throwable) {
+                        }
+                    }
                 }
                 // Bucket key string
                 if ($bucket->key !== null) {
