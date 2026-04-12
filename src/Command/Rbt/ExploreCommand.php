@@ -111,7 +111,9 @@ final class ExploreCommand extends Command
             $from = substr($entry, 0, $eq);
             $to = substr($entry, $eq + 1);
             if ($from === '') {
-                $output->writeln("<error>Invalid --path-map value \"{$entry}\": \"from\" part must not be empty.</error>");
+                $output->writeln(
+                    "<error>Invalid --path-map value \"{$entry}\": \"from\" part must not be empty.</error>"
+                );
                 return 1;
             }
             $path_map[$from] = $to;
