@@ -722,7 +722,7 @@ final class MemoryDumper
                 const struct iovec *local_iov, unsigned long liovcnt,
                 const struct iovec *remote_iov, unsigned long riovcnt,
                 unsigned long flags);
-            int open(const char *pathname, int flags, ...);
+            int open(const char *pathname, int flags);
             ssize_t write(int fd, const void *buf, size_t count);
             int close(int fd);
             void *malloc(size_t size);
