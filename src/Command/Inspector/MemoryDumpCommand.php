@@ -114,7 +114,15 @@ final class MemoryDumpCommand extends Command
         // All use the BinaryAnalysisCache so repeated resolves are free.
         /** @var list<array{address: int, count: int}> $interned_string_arrays */
         $interned_string_arrays = [];
-        foreach (['zend_one_char_string', 'zend_known_strings', 'zend_empty_string'] as $sym) {
+        // zend_one_char_string: zend_string *[256] — inline array, 256 entries
+        // zend_known_strings:  zend_string **      — pointer to heap-allocated array, scan until null
+        // zend_empty_string:   zend_string *        — single pointer
+        $sym_defs = [
+            'zend_one_char_string' => 256,   // inline array of known size
+            'zend_known_strings'   => -1,    // indirect pointer, scan until null
+            'zend_empty_string'    => 1,     // single pointer
+        ];
+        foreach ($sym_defs as $sym => $count) {
             try {
                 $interned_string_arrays[] = [
                     'address' => $this->php_globals_finder->findGlobals(
@@ -122,8 +130,7 @@ final class MemoryDumpCommand extends Command
                         $target_php_settings_decided,
                         $sym,
                     ),
-                    // zend_empty_string is a single pointer (not an array)
-                    'count' => $sym === 'zend_empty_string' ? 1 : 0,
+                    'count' => $count,
                 ];
             } catch (\Throwable) {
             }

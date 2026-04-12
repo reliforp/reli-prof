@@ -368,10 +368,25 @@ final class MemoryDumper
             foreach ($interned_string_arrays as $arr) {
                 try {
                     $arr_addr = $arr['address'];
-                    // count=0 means "read as many pointers as the BSS
-                    // region allows" — determine from the array's known
-                    // ELF symbol size or cap at a safe maximum.
-                    $count = $arr['count'] > 0 ? $arr['count'] : 256;
+                    $count = $arr['count'];
+
+                    if ($count === -1) {
+                        // Indirect pointer (zend_string **): deref once
+                        // to get the heap-allocated array base, then
+                        // scan entries until a null pointer.
+                        $ptr_raw_single = \FFI::string(
+                            $this->memory_reader->read($pid, $arr_addr, 8),
+                            8,
+                        );
+                        /** @var array{val: int} $deref_u */
+                        $deref_u = unpack('Pval', $ptr_raw_single);
+                        $arr_addr = $deref_u['val'];
+                        if ($arr_addr === 0) {
+                            continue;
+                        }
+                        $count = 1024; // safe upper bound
+                    }
+
                     $byte_len = $count * 8;
                     $ptr_data = $this->memory_reader->read(
                         $pid,
@@ -379,14 +394,18 @@ final class MemoryDumper
                         $byte_len,
                     );
                     $ptr_raw = \FFI::string($ptr_data, $byte_len);
+                    $is_indirect = $arr['count'] === -1;
                     for ($ci = 0; $ci < $count; $ci++) {
                         /** @var array{val: int} $unpacked */
                         $unpacked = unpack('Pval', $ptr_raw, $ci * 8);
                         $str_addr = $unpacked['val'];
-                        if (
-                            $str_addr === 0
-                            || self::isInIntervals($str_addr, $str_hdr_size, $final)
-                        ) {
+                        if ($str_addr === 0) {
+                            if ($is_indirect) {
+                                break; // null-terminated array end
+                            }
+                            continue;
+                        }
+                        if (self::isInIntervals($str_addr, $str_hdr_size, $final)) {
                             continue;
                         }
                         try {
