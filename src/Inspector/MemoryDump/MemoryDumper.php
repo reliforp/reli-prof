@@ -396,7 +396,13 @@ final class MemoryDumper
                             );
                             /** @var array{val: int} $len_u */
                             $len_u = unpack('Pval', $hdr, 16);
-                            $peeks[] = ['address' => $str_addr, 'size' => $str_hdr_size + $len_u['val']];
+                            $str_len = $len_u['val'];
+                            // Sanity: interned strings are short names, not multi-MB blobs.
+                            if ($str_len > 0 && $str_len < 4096) {
+                                $peeks[] = ['address' => $str_addr, 'size' => $str_hdr_size + $str_len];
+                            } else {
+                                $peeks[] = ['address' => $str_addr, 'size' => $str_hdr_size];
+                            }
                         } catch (\Throwable) {
                             $peeks[] = ['address' => $str_addr, 'size' => $str_hdr_size];
                         }
