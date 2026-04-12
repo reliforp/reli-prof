@@ -49,6 +49,7 @@ final class MemoryDumper
      * Perform a memory dump and write to file.
      *
      * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
+     * @param list<array{address: int, count: int}> $interned_string_arrays
      */
     public function dump(
         ProcessSpecifier $process_specifier,
@@ -58,6 +59,7 @@ final class MemoryDumper
         string $output_path,
         bool $include_binary = false,
         bool $include_heap = false,
+        array $interned_string_arrays = [],
     ): MemoryDumpResult {
         $php_version = $target_php_settings->php_version;
         $zend_type_reader = $this->zend_type_reader_creator->create(
@@ -317,6 +319,7 @@ final class MemoryDumper
         // each byte in the target is enumerated at most once and the
         // duplication that previously let the pagemap filter be
         // bypassed is eliminated.
+        /** @var list<array{address: int, size: int}> $merged */
         $merged = self::mergeIntervals($intervals);
 
         // Phase 3: uniform pagemap residency filter applied once per
@@ -356,6 +359,51 @@ final class MemoryDumper
                 $cg_address,
                 $final,
             );
+
+            // Global interned-string pointer arrays (zend_one_char_string,
+            // zend_known_strings, zend_empty_string). These are in BSS
+            // and their string bodies are pemalloc'd in [heap]. Not in
+            // CG(interned_strings) when opcache is OFF.
+            $str_hdr_size = $zend_type_reader->sizeOf('zend_string');
+            foreach ($interned_string_arrays as $arr) {
+                try {
+                    $arr_addr = $arr['address'];
+                    // count=0 means "read as many pointers as the BSS
+                    // region allows" — determine from the array's known
+                    // ELF symbol size or cap at a safe maximum.
+                    $count = $arr['count'] > 0 ? $arr['count'] : 256;
+                    $byte_len = $count * 8;
+                    $ptr_data = $this->memory_reader->read(
+                        $pid,
+                        $arr_addr,
+                        $byte_len,
+                    );
+                    $ptr_raw = \FFI::string($ptr_data, $byte_len);
+                    for ($ci = 0; $ci < $count; $ci++) {
+                        /** @var array{val: int} $unpacked */
+                        $unpacked = unpack('Pval', $ptr_raw, $ci * 8);
+                        $str_addr = $unpacked['val'];
+                        if (
+                            $str_addr === 0
+                            || self::isInIntervals($str_addr, $str_hdr_size, $final)
+                        ) {
+                            continue;
+                        }
+                        try {
+                            $hdr = \FFI::string(
+                                $this->memory_reader->read($pid, $str_addr, $str_hdr_size),
+                                $str_hdr_size,
+                            );
+                            /** @var array{val: int} $len_u */
+                            $len_u = unpack('Pval', $hdr, 16);
+                            $peeks[] = ['address' => $str_addr, 'size' => $str_hdr_size + $len_u['val']];
+                        } catch (\Throwable) {
+                            $peeks[] = ['address' => $str_addr, 'size' => $str_hdr_size];
+                        }
+                    }
+                } catch (\Throwable) {
+                }
+            }
             foreach ($peeks as $peek) {
                 $final[] = $peek;
             }
@@ -365,13 +413,18 @@ final class MemoryDumper
             // tiny peek regions into ~20 contiguous page runs with
             // zero additional read cost (same pages are accessed
             // regardless of alignment padding).
-            foreach ($final as &$iv) {
+            /** @var list<array{address: int, size: int}> $page_aligned */
+            $page_aligned = [];
+            foreach ($final as $iv) {
                 $end = $iv['address'] + $iv['size'];
-                $iv['address'] &= ~0xFFF;
-                $iv['size'] = (($end + 0xFFF) & ~0xFFF) - $iv['address'];
+                $base = $iv['address'] & ~0xFFF;
+                $page_aligned[] = [
+                    'address' => $base,
+                    'size' => (($end + 0xFFF) & ~0xFFF) - $base,
+                ];
             }
-            unset($iv);
-            $final = self::mergeIntervals($final);
+            /** @var list<array{address: int, size: int}> $final */
+            $final = self::mergeIntervals($page_aligned);
         }
 
         // Phase 5: stream-write. Read each region and flush it to disk
@@ -408,12 +461,40 @@ final class MemoryDumper
      * @param list<array{address: int, size: int}> $intervals
      * @return list<array{address: int, size: int}>
      */
+    /**
+     * @param list<array{address: int, size: int}> $intervals sorted disjoint
+     */
+    private static function isInIntervals(int $addr, int $size, array $intervals): bool
+    {
+        $lo = 0;
+        $hi = count($intervals) - 1;
+        while ($lo <= $hi) {
+            $mid = intdiv($lo + $hi, 2);
+            $iv = $intervals[$mid];
+            $iv_end = $iv['address'] + $iv['size'];
+            if ($addr >= $iv['address'] && ($addr + $size) <= $iv_end) {
+                return true;
+            }
+            if ($addr < $iv['address']) {
+                $hi = $mid - 1;
+            } else {
+                $lo = $mid + 1;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param list<array{address: int, size: int}> $intervals
+     * @return list<array{address: int, size: int}>
+     */
     private static function mergeIntervals(array $intervals): array
     {
         if ($intervals === []) {
             return [];
         }
         // Drop zero-size entries so the merge loop below stays simple.
+        /** @var list<array{address: int, size: int}> $intervals */
         $intervals = array_values(array_filter(
             $intervals,
             static fn (array $i): bool => $i['size'] > 0,
@@ -423,6 +504,7 @@ final class MemoryDumper
         }
         usort(
             $intervals,
+            /** @param array{address: int, size: int} $a @param array{address: int, size: int} $b */
             static fn (array $a, array $b): int
                 => $a['address'] <=> $b['address'],
         );

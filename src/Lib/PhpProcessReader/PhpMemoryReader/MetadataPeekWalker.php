@@ -173,17 +173,6 @@ final class MetadataPeekWalker
             $peeks,
         );
 
-        // symbol_table — global variable names. Keys are variable name
-        // strings that may point to zend_one_char_string[] entries in
-        // [heap] (not reachable from CG(interned_strings) when opcache
-        // is OFF).
-        $this->walkInlineTableKeys(
-            $eg->symbol_table,
-            $dereferencer,
-            $covered_intervals,
-            $peeks,
-        );
-
         // interned_strings (via CG)
         try {
             $cg = $dereferencer->deref(new Pointer(
