@@ -307,6 +307,19 @@ final class ExploreTui
         $buf .= $this->renderHeader($state, $cols);
 
         if ($state->mode === ExploreMode::Sandwich) {
+            // Clamp overview_selected early so renderMiniFlame (which
+            // runs before renderOverviewLines) sees a valid index.
+            // Without this, a negative overview_selected causes
+            // getCursorKeyId() to return null and the highlight falls
+            // back to focus_id, making it jump to a wrong position.
+            $ov_rows = $this->ensureOverview()['rows'];
+            if ($this->overview_selected < 0) {
+                $this->overview_selected = 0;
+            }
+            if ($ov_rows !== [] && $this->overview_selected >= count($ov_rows)) {
+                $this->overview_selected = count($ov_rows) - 1;
+            }
+
             if ($show_mini_flame) {
                 $buf .= $this->renderMiniFlame($cols) . "\n";
             }
@@ -459,6 +472,7 @@ final class ExploreTui
             }
             $pos = $end;
         }
+        /** @var list<int> $pixel_keys */
         $this->mini_flame_pixel_keys = $pixel_keys;
 
         // If the cursor row's natural position lies past the visible
@@ -3050,7 +3064,7 @@ final class ExploreTui
 
         // Left-click — detect double-click for focus/enter action.
         $now = microtime(true);
-        $is_double = ($now - $this->last_click_time) < (self::DOUBLE_CLICK_MS / 1000.0)
+        $is_double = ($now - $this->last_click_time) < ((float)self::DOUBLE_CLICK_MS / 1000.0)
             && $this->last_click_row === $mouse->row
             && $this->last_click_col === $mouse->col;
         $this->last_click_time = $now;
@@ -3163,7 +3177,7 @@ final class ExploreTui
         match ($pane) {
             ActivePane::Callers  => $this->callers_selected += $delta,
             ActivePane::Callees  => $this->callees_selected += $delta,
-            ActivePane::Overview, ActivePane::Focus => null,
+            default => null,
         };
     }
 
