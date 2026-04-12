@@ -341,14 +341,19 @@ final class MemoryDumper
             foreach ($peeks as $peek) {
                 $final[] = $peek;
             }
-            // Re-merge with gap tolerance: peek regions in [heap] are
-            // separated by small malloc chunk headers (typically
-            // 16-64 bytes). Merging with a tolerance collapses
-            // thousands of tiny peek regions into a handful of
-            // contiguous ranges, reading a few extra bytes of malloc
-            // metadata that the analyzer ignores. This dramatically
-            // speeds up the analyzer's region_index lookup.
-            $final = self::mergeIntervalsWithGap($final, 256);
+            // Page-align peek intervals, then re-merge with the
+            // existing strict-overlap merge. Peeks on the same 4 KiB
+            // page collapse into one region. This turns thousands of
+            // tiny peek regions into ~20 contiguous page runs with
+            // zero additional read cost (same pages are accessed
+            // regardless of alignment padding).
+            foreach ($final as &$iv) {
+                $end = $iv['address'] + $iv['size'];
+                $iv['address'] &= ~0xFFF;
+                $iv['size'] = (($end + 0xFFF) & ~0xFFF) - $iv['address'];
+            }
+            unset($iv);
+            $final = self::mergeIntervals($final);
         }
 
         // Phase 5: stream-write. Read each region and flush it to disk
@@ -413,56 +418,6 @@ final class MemoryDumper
             $cur_end = $current['address'] + $current['size'];
             if ($next['address'] < $cur_end) {
                 // Overlap: extend the current interval if necessary.
-                $next_end = $next['address'] + $next['size'];
-                if ($next_end > $cur_end) {
-                    $current['size'] = $next_end - $current['address'];
-                }
-            } else {
-                $merged[] = $current;
-                $current = $next;
-            }
-        }
-        $merged[] = $current;
-        return $merged;
-    }
-
-    /**
-     * Like mergeIntervals but also merges intervals separated by a
-     * small gap (≤ $max_gap bytes). Useful for collapsing thousands
-     * of tiny peek regions in [heap] that are only separated by
-     * malloc chunk headers into a handful of contiguous ranges.
-     *
-     * @param list<array{address: int, size: int}> $intervals
-     * @return list<array{address: int, size: int}>
-     */
-    private static function mergeIntervalsWithGap(
-        array $intervals,
-        int $max_gap,
-    ): array {
-        if ($intervals === []) {
-            return [];
-        }
-        $intervals = array_values(array_filter(
-            $intervals,
-            static fn (array $i): bool => $i['size'] > 0,
-        ));
-        if ($intervals === []) {
-            return [];
-        }
-        usort(
-            $intervals,
-            static fn (array $a, array $b): int
-                => $a['address'] <=> $b['address'],
-        );
-
-        /** @var list<array{address: int, size: int}> $merged */
-        $merged = [];
-        $current = $intervals[0];
-        $count = count($intervals);
-        for ($i = 1; $i < $count; $i++) {
-            $next = $intervals[$i];
-            $cur_end = $current['address'] + $current['size'];
-            if ($next['address'] <= $cur_end + $max_gap) {
                 $next_end = $next['address'] + $next['size'];
                 if ($next_end > $cur_end) {
                     $current['size'] = $next_end - $current['address'];
