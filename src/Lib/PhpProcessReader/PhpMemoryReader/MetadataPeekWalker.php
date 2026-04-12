@@ -15,8 +15,10 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
+use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
+use Reli\Lib\PhpInternals\Types\Zend\ZendString;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendFunction;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -247,6 +249,7 @@ final class MetadataPeekWalker
                 $this->peekStringIfExternal(
                     $bucket->key->address,
                     $bucket->key->size,
+                    $dereferencer,
                     $covered,
                     $peeks,
                 );
@@ -284,6 +287,7 @@ final class MetadataPeekWalker
                 $this->peekStringIfExternal(
                     $bucket->key->address,
                     $bucket->key->size,
+                    $dereferencer,
                     $covered,
                     $peeks,
                 );
@@ -321,6 +325,7 @@ final class MetadataPeekWalker
             $this->peekStringIfExternal(
                 $func->function_name->address,
                 $func->function_name->size,
+                $dereferencer,
                 $covered,
                 $peeks,
             );
@@ -363,30 +368,38 @@ final class MetadataPeekWalker
         $this->peekStringIfExternal(
             $ce->name->address,
             $ce->name->size,
+            $dereferencer,
             $covered,
             $peeks,
         );
 
-        // Sub-HashTable arData for methods, properties, constants.
-        // These are inline HashTables (not pointers) inside the
-        // class_entry struct, so their headers are already covered by
-        // the class_entry peek. But their arData pointers may point
-        // to separate allocations in [heap].
-        $this->peekInlineTableArData(
+        // Sub-HashTable arData + bucket targets for methods, properties,
+        // constants. The table headers are inline in the class_entry
+        // struct (already covered by the CE peek), but arData and each
+        // bucket target may be separately allocated in [heap].
+        $func_size = $type_reader->sizeOf('zend_function');
+        $this->peekInlineTableContents(
             $ce->function_table,
             $dereferencer,
+            $func_size,
             $covered,
             $peeks,
         );
-        $this->peekInlineTableArData(
+        $prop_info_size = $type_reader->sizeOf('zend_property_info');
+        $this->peekInlineTableContents(
             $ce->properties_info,
             $dereferencer,
+            $prop_info_size,
             $covered,
             $peeks,
         );
-        $this->peekInlineTableArData(
+        $class_const_size = $type_reader->sizeOf(
+            ZendClassConstant::getCTypeName(),
+        );
+        $this->peekInlineTableContents(
             $ce->constants_table,
             $dereferencer,
+            $class_const_size,
             $covered,
             $peeks,
         );
@@ -416,14 +429,19 @@ final class MetadataPeekWalker
 
     /**
      * For an inline HashTable (embedded inside a class_entry), peek
-     * its arData if it is outside the covered set.
+     * arData AND each bucket's IS_PTR target if outside the covered
+     * set. Without this, the analyzer can read the HashTable header
+     * and the bucket array but not the struct that each bucket value
+     * points to (e.g. zend_function for methods, zend_property_info
+     * for properties, zend_class_constant for class constants).
      *
      * @param list<array{address: int, size: int}> $covered
      * @param list<array{address: int, size: int}> $peeks
      */
-    private function peekInlineTableArData(
+    private function peekInlineTableContents(
         ZendArray $table,
         Dereferencer $dereferencer,
+        int $target_size,
         array $covered,
         array &$peeks,
     ): void {
@@ -436,25 +454,66 @@ final class MetadataPeekWalker
             if ($ar_size > 0 && !self::isCovered($ar_addr, $ar_size, $covered)) {
                 $peeks[] = ['address' => $ar_addr, 'size' => $ar_size];
             }
+
+            // Walk bucket targets (IS_PTR values)
+            foreach ($table->getBucketIterator($dereferencer) as $bucket) {
+                if ($bucket->val->isUndef()) {
+                    continue;
+                }
+                $ptr_addr = $bucket->val->value->lval;
+                if ($ptr_addr !== 0 && !self::isCovered($ptr_addr, $target_size, $covered)) {
+                    $peeks[] = ['address' => $ptr_addr, 'size' => $target_size];
+                }
+                // Bucket key string
+                if ($bucket->key !== null) {
+                    $this->peekStringIfExternal(
+                        $bucket->key->address,
+                        $bucket->key->size,
+                        $dereferencer,
+                        $covered,
+                        $peeks,
+                    );
+                }
+            }
         } catch (\Throwable) {
         }
     }
 
     /**
-     * Add a zend_string to the peek set if its address is outside the
-     * covered intervals.
+     * Add a zend_string (header + value body) to the peek set if its
+     * address is outside the covered intervals. The string header
+     * alone is not enough — the analyzer's toString() reads past it
+     * into the char[] body — so we deref the header to get the real
+     * length and peek the full allocation.
      *
      * @param list<array{address: int, size: int}> $covered
      * @param list<array{address: int, size: int}> $peeks
      */
     private function peekStringIfExternal(
         int $addr,
-        int $size,
+        int $header_size,
+        Dereferencer $dereferencer,
         array $covered,
         array &$peeks,
     ): void {
-        if ($addr !== 0 && $size > 0 && !self::isCovered($addr, $size, $covered)) {
-            $peeks[] = ['address' => $addr, 'size' => $size];
+        if ($addr === 0 || $header_size <= 0) {
+            return;
+        }
+        if (self::isCovered($addr, $header_size, $covered)) {
+            return;
+        }
+        try {
+            $str = $dereferencer->deref(new Pointer(
+                ZendString::class,
+                $addr,
+                $header_size,
+            ));
+            $full_size = $str->getSize();
+            $peeks[] = ['address' => $addr, 'size' => $full_size];
+        } catch (\Throwable) {
+            // Fallback: peek just the header; toString() may fail
+            // at analyze time but the header fields are still useful.
+            $peeks[] = ['address' => $addr, 'size' => $header_size];
         }
     }
 
