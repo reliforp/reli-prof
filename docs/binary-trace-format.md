@@ -703,6 +703,23 @@ reli rbt:recover -f phpspy < corrupted.rbt > recovered.txt
 reli converter:flamegraph < trace.txt > graph.svg
 ```
 
+### Analyzing `.rbt` traces in the terminal
+
+Two CLIs read `.rbt` directly without going through speedscope or pprof:
+
+```bash
+# One-shot text reports (pipe-friendly, agent-friendly)
+reli rbt:analyze < trace.rbt
+reli rbt:analyze --callers='Doctrine\\ORM' --hide='^Symfony\\' < trace.rbt
+reli rbt:analyze --last=5 < trace.rbt   # tail the most recent sample stacks
+
+# Interactive sandwich/flame/tree TUI
+reli rbt:explore trace.rbt
+```
+
+See [rbt-analyze-and-explore.md](rbt-analyze-and-explore.md) for the
+full option reference, recipes, and the explorer's keybindings.
+
 ### Live Capture Usage
 
 Single-segment output:
