@@ -68,7 +68,6 @@ There is no particular reason why these features cannot be implemented on the ph
 
 On the other hand, there are a few things that phpspy can do but reli cannot yet.
 
-- Redirecting output of child processes
 - Run more faster with lower overhead.
 - etc.
 
@@ -131,6 +130,8 @@ Arguments:
 
 Options:
   -p, --pid=PID                                process id
+  -O, --child-stdout=CHILD-STDOUT              write child process stdout to the specified path
+  -E, --child-stderr=CHILD-STDERR              write child process stderr to the specified path
   -d, --depth[=DEPTH]                          max depth
       --with-native-trace                      collect native (C-level) stack traces alongside PHP traces
       --native-trace-anytime                   collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
@@ -237,6 +238,8 @@ Arguments:
 
 Options:
   -p, --pid=PID                                process id
+  -O, --child-stdout=CHILD-STDOUT              write child process stdout to the specified path
+  -E, --child-stderr=CHILD-STDERR              write child process stderr to the specified path
       --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
       --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
@@ -286,6 +289,8 @@ Arguments:
 
 Options:
   -p, --pid=PID                                process id
+  -O, --child-stdout=CHILD-STDOUT              write child process stdout to the specified path
+  -E, --child-stderr=CHILD-STDERR              write child process stderr to the specified path
   -d, --depth[=DEPTH]                          max depth
       --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
@@ -351,6 +356,8 @@ Options:
       --memory-usage-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
       --memory-usage-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
   -p, --pid=PID                                                      process id
+  -O, --child-stdout=CHILD-STDOUT                                    write child process stdout to the specified path
+  -E, --child-stderr=CHILD-STDERR                                    write child process stderr to the specified path
       --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
       --zts-globals-regex[=ZTS-GLOBALS-REGEX]                        regex to find the binary containing globals symbols for ZTS loaded in the target process
