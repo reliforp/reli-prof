@@ -850,9 +850,8 @@ final class MemoryDumper
                 // Streaming mode: read and write each region one at a
                 // time using a single reused FFI buffer. Minimal memory
                 // overhead but the target stays stopped during I/O.
-                /** @var int $fd */
-                $fd = $ffi->open($output_path, 1025); // O_WRONLY|O_APPEND
-                if ($fd < 0) {
+                $fp = fopen($output_path, 'ab');
+                if ($fp === false) {
                     throw new \RuntimeException("failed to reopen: {$output_path}");
                 }
                 $written_count = 0;
@@ -884,12 +883,12 @@ final class MemoryDumper
                         );
                         continue;
                     }
-                    $ffi->write($fd, pack('PP', $addr, $size), 16);
-                    $ffi->write($fd, $buffer, $size);
+                    fwrite($fp, pack('PP', $addr, $size));
+                    fwrite($fp, \FFI::string($buffer, $size));
                     $written_count++;
                     $total_bytes += $size;
                 }
-                $ffi->close($fd);
+                fclose($fp);
             }
 
             // Patch region_count in the header (writeStreaming wrote 0)
