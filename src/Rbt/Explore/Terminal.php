@@ -97,7 +97,7 @@ final class Terminal implements TerminalInterface
         // inter-byte timer. We compose multi-byte sequences ourselves via
         // a non-blocking drain so we don't pay the 100 ms inter-byte delay
         // that `time 1` would add to every single keystroke.
-        $this->applyStty('-icanon -echo min 1 time 0');
+        $this->applyStty('-icanon -echo -ixon min 1 time 0');
 
         // Alt screen on, hide cursor, enable SGR mouse tracking.
         // ?1000h = basic press/release tracking
