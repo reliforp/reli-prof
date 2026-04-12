@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
@@ -27,6 +28,7 @@ final class CycleClusterPass implements PassInterface
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
+        private ?LinkNameResolver $link_resolver = null,
     ) {
     }
 
@@ -62,33 +64,17 @@ final class CycleClusterPass implements PassInterface
         }
         usort($groups_sorted, fn($a, $b) => $b['total'] <=> $a['total']);
 
-        // Collect all SCC node IDs for targeted metadata loading
-        $scc_node_ids = [];
-        foreach ($groups_sorted as $g) {
-            foreach ($g['group'] as $profile) {
-                foreach ($profile['nodes'] as $nid) {
-                    $scc_node_ids[$nid] = true;
-                }
-            }
-        }
-
-        // Load link_names only for SCC nodes (not all 2M+ edges)
-        $link_names = $this->loadLinkNamesForNodes(array_keys($scc_node_ids));
+        // findBackReference uses link_names for at most one child per cycle
+        // — the first non-tree intra-SCC edge it walks into. The previous
+        // version pre-loaded link_names for every node in every example SCC
+        // (millions on huge dumps) just to actually consult ten of them.
+        // We now look them up on demand from the shared LinkNameResolver
+        // inside findBackReference itself.
+        $top_groups = array_slice($groups_sorted, 0, 10);
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
-        // Prepared statements for on-demand path lookup (max ~20 rows per path)
-        $parent_stmt = $this->db->prepare(
-            "SELECT parent_node_id, link_name FROM context_edges"
-            . " WHERE child_node_id = ? AND is_tree = 1"
-            . " AND run_id = {$this->run_id} LIMIT 1"
-        );
-        $type_stmt = $this->db->prepare(
-            "SELECT type FROM context_nodes"
-            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
-        );
-
         $findings = [];
-        foreach (array_slice($groups_sorted, 0, 10) as $g) {
+        foreach ($top_groups as $g) {
             $group = $g['group'];
             $example = $group[0];
             $count = count($group);
@@ -99,21 +85,13 @@ final class CycleClusterPass implements PassInterface
             );
 
             // Find back-reference (non-tree edge within SCC)
-            $back_ref = $this->findBackReference(
-                $example['nodes'],
-                $link_names,
-            );
+            $back_ref = $this->findBackReference($example['nodes']);
 
             // Compute retained size (shallow + downstream)
             $retained = $this->computeRetained($example['nodes']);
 
             // Find entry point path
-            $entry_path = $this->findEntryPath(
-                $example['nodes'],
-                $parent_stmt,
-                $type_stmt,
-                $labeler,
-            );
+            $entry_path = $this->findEntryPath($example['nodes'], $labeler);
 
             // Micro-cycles (2 nodes)
             if ($example['node_count'] === 2) {
@@ -367,19 +345,21 @@ final class CycleClusterPass implements PassInterface
 
     /**
      * @return array<int, string> root_node_id => link_name
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function loadRootLinkNames(): array
     {
-        $stmt = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE parent_node_id IS NULL AND is_tree = 1"
-            . " AND run_id = {$this->run_id}"
-        );
-
+        // Substrate knows every root node's tree-edge link_name from
+        // its in-memory treeLinkIds index (built once during
+        // loadEdgesFfi). Walking the roots in PHP is O(roots) and
+        // avoids the `WHERE parent_node_id IS NULL AND is_tree = 1`
+        // SQL scan that used to show up as a visible hot spot on
+        // captures with millions of edges.
         $map = [];
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $map[(int)$r[0]] = (string)$r[1];
+        foreach ($this->substrate->getRoots() as $root) {
+            $link = $this->substrate->getTreeLinkName($root);
+            if ($link !== null) {
+                $map[$root] = $link;
+            }
         }
         return $map;
     }
@@ -473,32 +453,36 @@ final class CycleClusterPass implements PassInterface
     /**
      * Find the non-tree edge within an SCC (the back-reference).
      * @param list<int> $nodes
-     * @param array<int, string> $link_names
      */
-    private function findBackReference(
-        array $nodes,
-        array $link_names,
-    ): string {
+    private function findBackReference(array $nodes): string
+    {
         $scc_set = array_flip($nodes);
+        $resolver = $this->link_resolver;
 
         foreach ($nodes as $node) {
+            // Build a quick set of tree-edge children so we can answer
+            // "is this a non-tree edge?" without scanning a list inside
+            // the inner loop. getChildren() can be large for hub nodes.
+            $tree_children = [];
+            foreach ($this->substrate->getChildren($node) as $tc) {
+                $tree_children[$tc] = true;
+            }
+
             // Check all_children for edges that go to another SCC member
             foreach ($this->substrate->getAllChildren($node) as $child) {
                 if (!isset($scc_set[$child])) {
                     continue;
                 }
-                // Is this a non-tree edge? (tree edge would be in $children)
-                $is_tree = in_array(
-                    $child,
-                    $this->substrate->getChildren($node),
-                    true
-                );
-                if ($is_tree) {
-                    continue;
+                if (isset($tree_children[$child])) {
+                    continue; // tree edge — not a back-ref
                 }
 
-                // Found a non-tree edge within SCC
-                $link = $link_names[$child] ?? '?';
+                // Found a non-tree edge within SCC. The link_name is only
+                // needed *here*, so we look it up on demand instead of
+                // pre-loading every example node's link_name upfront.
+                $link = $resolver !== null
+                    ? ($resolver->lookup($child) ?? '?')
+                    : ($this->lookupSingleLinkName($child) ?? '?');
                 $src_class = $this->substrate->getNodeClass($node);
                 $tgt_class = $this->substrate->getNodeClass($child);
 
@@ -543,20 +527,17 @@ final class CycleClusterPass implements PassInterface
 
     /**
      * Find entry point path to an SCC member.
-     * @param list<int> $nodes
-     * @param array<int, array{0: int, 1: string}> $parent_map
-     * @param array<int, string> $node_type_map
-     */
-    /**
-     * @param list<int> $nodes
+     *
+     * Walks tree parents in memory via the substrate's index. The
+     * previous version did one prepared-statement execute per depth
+     * level for both the parent edge and the node type — measurable
+     * on big dumps.
+     *
+     * @param  list<int> $nodes
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
-    private function findEntryPath(
-        array $nodes,
-        \PDOStatement $parent_stmt,
-        \PDOStatement $type_stmt,
-        NodeLabeler $labeler,
-    ): string {
+    private function findEntryPath(array $nodes, NodeLabeler $labeler): string
+    {
         $scc_set = array_flip($nodes);
 
         $entry_node = null;
@@ -573,29 +554,24 @@ final class CycleClusterPass implements PassInterface
             return '';
         }
 
-        // Walk up from entry_node to root using on-demand queries
         $parts = [];
         $types = [];
         $cur = $entry_node;
         for ($i = 0; $i < 20; $i++) {
-            $parent_stmt->execute([$cur]);
-            $row = $parent_stmt->fetch(\PDO::FETCH_NUM);
-            if (!$row) {
+            $link = $this->substrate->getTreeLinkName($cur);
+            if ($link === null) {
                 break;
             }
-            if ($row[0] === null) {
-                array_unshift($parts, (string)$row[1]);
+            $parent = $this->substrate->getTreeParentNodeId($cur);
+            if ($parent === null) {
+                // Reached the synthetic root — record the root's
+                // link_name and stop.
+                array_unshift($parts, $link);
                 array_unshift($types, '');
                 break;
             }
-            $parent = (int)$row[0];
-            $link = (string)$row[1];
-            $resolved = $labeler->resolvePathLabel($link, $cur);
-            array_unshift($parts, $resolved);
-
-            $type_stmt->execute([$cur]);
-            $type_row = $type_stmt->fetchColumn();
-            array_unshift($types, $type_row !== false ? (string)$type_row : '');
+            array_unshift($parts, $labeler->resolvePathLabel($link, $cur));
+            array_unshift($types, $this->substrate->getNodeType($cur) ?? '');
             $cur = $parent;
         }
 
@@ -628,29 +604,23 @@ final class CycleClusterPass implements PassInterface
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     /**
-     * Load link_names only for the given node IDs.
-     *
-     * @param list<int> $node_ids
-     * @return array<int, string>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     * Single tree-edge link_name lookup used as the fallback path when
+     * no LinkNameResolver was injected (e.g. in unit tests). The
+     * production wiring always supplies the shared resolver.
      */
-    private function loadLinkNamesForNodes(array $node_ids): array
+    private function lookupSingleLinkName(int $child_node_id): ?string
     {
-        if ($node_ids === []) {
-            return [];
+        $stmt = $this->db->prepare(
+            "SELECT link_name FROM context_edges"
+            . " WHERE child_node_id = ? AND is_tree = 1"
+            . " AND run_id = {$this->run_id} LIMIT 1"
+        );
+        $stmt->execute([$child_node_id]);
+        $val = $stmt->fetchColumn();
+        if ($val === false) {
+            return null;
         }
-        $map = [];
-        foreach (array_chunk($node_ids, 500) as $chunk) {
-            $placeholders = implode(',', $chunk);
-            $stmt = $this->db->query(
-                "SELECT child_node_id, link_name FROM context_edges"
-                . " WHERE is_tree = 1 AND run_id = {$this->run_id}"
-                . " AND child_node_id IN ({$placeholders})"
-            );
-            while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-                $map[(int)$r[0]] = (string)$r[1];
-            }
-        }
-        return $map;
+        assert(is_string($val));
+        return $val;
     }
 }

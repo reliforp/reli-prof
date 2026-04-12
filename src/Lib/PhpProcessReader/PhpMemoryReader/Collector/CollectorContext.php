@@ -33,6 +33,11 @@ final class CollectorContext
     public ?UserFunctionDefinitionContext $memory_limit_error_function_context = null;
 
     /**
+     * $memo is retained for source compatibility but unused —
+     * the emit-state memo now lives on the Context objects as
+     * a private slot reachable through ReferenceContext::getMemoNodeId()
+     * / setMemoNodeId(). See ContextAnalyzer's class docblock.
+     *
      * @param \WeakMap<ReferenceContext, int> $memo
      */
     public function __construct(
@@ -80,10 +85,10 @@ final class CollectorContext
             $context,
             $this->sink,
             $parent_node_id,
-            $this->memo,
+            null,
             $edge_strength,
         );
-        $node_id = $this->memo[$context] ?? null;
+        $node_id = $context->getMemoNodeId();
         if ($node_id !== null) {
             return $node_id < 0 ? -$node_id - 1 : $node_id;
         }
@@ -122,7 +127,7 @@ final class CollectorContext
      */
     public function recordContextAddress(int $address, ReferenceContext $context): void
     {
-        $node_id = $this->memo[$context] ?? null;
+        $node_id = $context->getMemoNodeId();
         if ($node_id !== null) {
             $this->address_map[$address] = $node_id < 0 ? -$node_id - 1 : $node_id;
         }

@@ -24,6 +24,24 @@ trait ReferenceContextDefault
     /** @var list<MemoryLocation> */
     private array $extra_locations = [];
 
+    /**
+     * Backing slot for the {@see ContextAnalyzer} emit-state memo.
+     * The slot is private and accessed via {@see getMemoNodeId()}
+     * / {@see setMemoNodeId()}, both of which are trivial inline
+     * accessors so the JIT can fold them.
+     */
+    private ?int $memo_node_id = null;
+
+    public function getMemoNodeId(): ?int
+    {
+        return $this->memo_node_id;
+    }
+
+    public function setMemoNodeId(?int $node_id): void
+    {
+        $this->memo_node_id = $node_id;
+    }
+
     public function getName(): string
     {
         return (new \ReflectionClass(static::class))->getShortName();

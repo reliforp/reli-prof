@@ -70,4 +70,37 @@ final class Finding
 
         return $result;
     }
+
+    /**
+     * Re-hydrate a Finding previously produced by {@see self::toArray}.
+     * Used by ParallelPassRunner to reconstitute findings that were
+     * serialised out to a temp file by a forked worker process.
+     *
+     * Accepts a generic `array<array-key, mixed>` because the data
+     * comes from json_decode (mixed shape) and the per-field reads
+     * below already do their own type checks.
+     *
+     * @param array<array-key, mixed> $data
+     * @psalm-suppress MixedArgumentTypeCoercion, MixedArgument, MixedAssignment
+     */
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            kind: (string)($data['kind'] ?? ''),
+            severity: FindingSeverity::from((string)($data['severity'] ?? 'info')),
+            confidence: FindingConfidence::from((string)($data['confidence'] ?? 'low')),
+            summary: (string)($data['summary'] ?? ''),
+            facts: is_array($data['facts'] ?? null) ? $data['facts'] : [],
+            hypothesis: (string)($data['hypothesis'] ?? ''),
+            next_checks: is_array($data['next_checks'] ?? null) ? $data['next_checks'] : [],
+            impact_bytes: (int)($data['impact_bytes'] ?? 0),
+            evidence_node_ids: is_array($data['evidence_node_ids'] ?? null)
+                ? $data['evidence_node_ids']
+                : [],
+            representative_paths: is_array($data['representative_paths'] ?? null)
+                ? $data['representative_paths']
+                : [],
+            replay_query: (string)($data['replay_query'] ?? ''),
+        );
+    }
 }

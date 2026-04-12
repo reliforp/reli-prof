@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class NonTreeEdgePass implements PassInterface
@@ -368,8 +369,6 @@ final class NonTreeEdgePass implements PassInterface
     {
         assert($this->substrate !== null);
 
-        [$tree_parents, $tree_links] = $this->loadTreeParentsAndLinks();
-
         $findings = [];
         $shared_rows = $this->db->query("
             SELECT
@@ -399,8 +398,6 @@ final class NonTreeEdgePass implements PassInterface
             $avg_refs = round($ref_count / max(1, $target_count), 1);
             $source_class = $this->resolveDirectSourceClass(
                 (int)$row['sample_parent_node_id'],
-                $tree_parents,
-                $tree_links,
             );
             $target_class = $this->substrate->getNodeClass(
                 (int)$row['sample_child_node_id']
@@ -508,8 +505,6 @@ final class NonTreeEdgePass implements PassInterface
                 'owner_prop' => $owner_prop,
             ] = $this->resolveDedupOwnerInfo(
                 $sample_parent_node_id,
-                $tree_parents,
-                $tree_links,
             );
             $dedup_tgt = $this->substrate->getNodeClass($sample_child_node_id);
 
@@ -592,73 +587,27 @@ final class NonTreeEdgePass implements PassInterface
         return $findings;
     }
 
-    /**
-     * @return array{array<int, int>, array<int, string>}
-     * @psalm-suppress MixedAssignment
-     */
-    private function loadTreeParentsAndLinks(): array
+    private function resolveDirectSourceClass(int $parent_node_id): ?string
     {
-        $tree_parents = [];
-        $tree_links = [];
-
-        $stmt = $this->db->query(
-            "SELECT parent_node_id, child_node_id, link_name"
-            . " FROM context_edges"
-            . " WHERE run_id = {$this->run_id}"
-            . " AND is_tree = 1"
-            . " AND parent_node_id IS NOT NULL"
-        );
-
-        while (true) {
-            /** @var array{0: int|string, 1: int|string, 2: string}|false $row */
-            $row = $stmt->fetch(\PDO::FETCH_NUM);
-            if ($row === false) {
-                break;
-            }
-            $tree_parents[(int)$row[1]] = (int)$row[0];
-            $tree_links[(int)$row[1]] = $row[2];
-        }
-
-        return [$tree_parents, $tree_links];
-    }
-
-    /**
-     * @param array<int, int> $tree_parents
-     * @param array<int, string> $tree_links
-     */
-    private function resolveDirectSourceClass(
-        int $parent_node_id,
-        array $tree_parents,
-        array $tree_links,
-    ): ?string {
-        if (($tree_links[$parent_node_id] ?? null) !== 'object_properties') {
+        assert($this->substrate !== null);
+        if ($this->substrate->getTreeLinkName($parent_node_id) !== 'object_properties') {
             return null;
         }
-
-        $owner_node_id = $tree_parents[$parent_node_id] ?? null;
+        $owner_node_id = $this->substrate->getTreeParentNodeId($parent_node_id);
         if ($owner_node_id === null) {
             return null;
         }
-
-        assert($this->substrate !== null);
         return $this->substrate->getNodeClass($owner_node_id);
     }
 
     /**
-     * @param array<int, int> $tree_parents
-     * @param array<int, string> $tree_links
      * @return array{source_class: ?string, owner_prop: ?string}
      */
-    private function resolveDedupOwnerInfo(
-        int $parent_node_id,
-        array $tree_parents,
-        array $tree_links,
-    ): array {
-        $source_class = $this->resolveDirectSourceClass(
-            $parent_node_id,
-            $tree_parents,
-            $tree_links,
-        );
+    private function resolveDedupOwnerInfo(int $parent_node_id): array
+    {
+        assert($this->substrate !== null);
+
+        $source_class = $this->resolveDirectSourceClass($parent_node_id);
         if ($source_class !== null) {
             return [
                 'source_class' => $source_class,
@@ -666,7 +615,7 @@ final class NonTreeEdgePass implements PassInterface
             ];
         }
 
-        $array_elements_node_id = $tree_parents[$parent_node_id] ?? null;
+        $array_elements_node_id = $this->substrate->getTreeParentNodeId($parent_node_id);
         if ($array_elements_node_id === null) {
             return [
                 'source_class' => null,
@@ -674,14 +623,14 @@ final class NonTreeEdgePass implements PassInterface
             ];
         }
 
-        if (($tree_links[$array_elements_node_id] ?? null) !== 'array_elements') {
+        if ($this->substrate->getTreeLinkName($array_elements_node_id) !== 'array_elements') {
             return [
                 'source_class' => null,
                 'owner_prop' => null,
             ];
         }
 
-        $array_header_node_id = $tree_parents[$array_elements_node_id] ?? null;
+        $array_header_node_id = $this->substrate->getTreeParentNodeId($array_elements_node_id);
         if ($array_header_node_id === null) {
             return [
                 'source_class' => null,
@@ -689,11 +638,11 @@ final class NonTreeEdgePass implements PassInterface
             ];
         }
 
-        $owner_prop = $tree_links[$array_header_node_id] ?? null;
-        $object_properties_node_id = $tree_parents[$array_header_node_id] ?? null;
+        $owner_prop = $this->substrate->getTreeLinkName($array_header_node_id);
+        $object_properties_node_id = $this->substrate->getTreeParentNodeId($array_header_node_id);
         if (
             $object_properties_node_id === null
-            || ($tree_links[$object_properties_node_id] ?? null) !== 'object_properties'
+            || $this->substrate->getTreeLinkName($object_properties_node_id) !== 'object_properties'
         ) {
             return [
                 'source_class' => null,
@@ -701,7 +650,7 @@ final class NonTreeEdgePass implements PassInterface
             ];
         }
 
-        $owner_node_id = $tree_parents[$object_properties_node_id] ?? null;
+        $owner_node_id = $this->substrate->getTreeParentNodeId($object_properties_node_id);
         if ($owner_node_id === null) {
             return [
                 'source_class' => null,
@@ -709,7 +658,6 @@ final class NonTreeEdgePass implements PassInterface
             ];
         }
 
-        assert($this->substrate !== null);
         return [
             'source_class' => $this->substrate->getNodeClass($owner_node_id),
             'owner_prop' => $owner_prop,

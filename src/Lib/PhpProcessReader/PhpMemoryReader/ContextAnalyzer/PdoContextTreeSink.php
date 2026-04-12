@@ -23,17 +23,17 @@ use Reli\Lib\Process\MemoryLocation;
 
 final class PdoContextTreeSink implements ContextTreeSink
 {
+    private const NODE_BATCH_SIZE = 200;
     private const LOCATION_BATCH_SIZE = 200;
     private const ATTR_BATCH_SIZE = 200;
     private const EDGE_BATCH_SIZE = 200;
-    private const LOCATION_COLUMNS = 10;
-    private const ATTR_COLUMNS = 4;
-    private const EDGE_COLUMNS = 6;
-
-    private \PDOStatement $node_stmt;
 
     /** @var array<class-string, string> */
     private array $short_name_cache = [];
+
+    /** @var list<mixed> */
+    private array $node_buffer = [];
+    private int $node_row_count = 0;
 
     /** @var list<mixed> */
     private array $location_buffer = [];
@@ -48,6 +48,8 @@ final class PdoContextTreeSink implements ContextTreeSink
     private int $edge_row_count = 0;
 
     /** @var array<int, \PDOStatement> */
+    private array $node_batch_stmts = [];
+    /** @var array<int, \PDOStatement> */
     private array $location_batch_stmts = [];
     /** @var array<int, \PDOStatement> */
     private array $attr_batch_stmts = [];
@@ -60,9 +62,6 @@ final class PdoContextTreeSink implements ContextTreeSink
         private int $run_id,
         private ?RegionBoundaries $region_boundaries = null,
     ) {
-        $this->node_stmt = $db->prepare(
-            $driver->insertIgnoreSql('context_nodes', 'run_id, node_id, type', '?, ?, ?')
-        );
     }
 
     public function setRegionBoundaries(RegionBoundaries $region_boundaries): void
@@ -84,7 +83,13 @@ final class PdoContextTreeSink implements ContextTreeSink
         array $attributes,
         EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
-        $this->node_stmt->execute([$this->run_id, $node_id, $type]);
+        $this->node_buffer[] = $this->run_id;
+        $this->node_buffer[] = $node_id;
+        $this->node_buffer[] = $type;
+        $this->node_row_count++;
+        if ($this->node_row_count >= self::NODE_BATCH_SIZE) {
+            $this->flushNodes();
+        }
         $this->bufferEdge($parent_node_id, $node_id, $link_name, 1, $edge_strength);
 
         foreach ($locations as $location) {
@@ -147,6 +152,14 @@ final class PdoContextTreeSink implements ContextTreeSink
 
     public function flush(): void
     {
+        // Nodes first — edges / locations / attributes reference
+        // node_ids and anything downstream that joins to context_nodes
+        // expects rows to be visible. Without FK constraints the
+        // order isn't strictly required, but keeping it deterministic
+        // avoids any surprise on drivers that do enforce them.
+        if ($this->node_row_count > 0) {
+            $this->flushNodes();
+        }
         if ($this->location_row_count > 0) {
             $this->flushLocations();
         }
@@ -156,6 +169,28 @@ final class PdoContextTreeSink implements ContextTreeSink
         if ($this->edge_row_count > 0) {
             $this->flushEdges();
         }
+    }
+
+    private function flushNodes(): void
+    {
+        $count = $this->node_row_count;
+        $stmt = $this->getNodeBatchStmt($count);
+        $stmt->execute($this->node_buffer);
+        $this->node_buffer = [];
+        $this->node_row_count = 0;
+    }
+
+    private function getNodeBatchStmt(int $row_count): \PDOStatement
+    {
+        return $this->node_batch_stmts[$row_count]
+            ??= $this->db->prepare(
+                $this->driver->batchInsertIgnoreSql(
+                    'context_nodes',
+                    'run_id, node_id, type',
+                    '?,?,?',
+                    $row_count,
+                )
+            );
     }
 
     private function flushLocations(): void

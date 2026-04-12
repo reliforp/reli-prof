@@ -121,11 +121,13 @@ final class EmitArrayJob implements CollectorJob
             $ctx->address_map[$array_header_location->address] = $header_node_id;
         }
 
-        // Get the node_id for array_elements so children can be attached
-        $elements_node_id = $ctx->memo[$array_elements_context] ?? null;
-        if ($elements_node_id !== null) {
-            $elements_node_id = $elements_node_id < 0 ? -$elements_node_id - 1 : $elements_node_id;
-        }
+        // Get the node_id for array_elements so children can be attached.
+        // See EmitObjectJob for why this reads from getMemoNodeId() now
+        // instead of $ctx->memo[$context].
+        $raw_elements = $array_elements_context->getMemoNodeId();
+        $elements_node_id = $raw_elements === null
+            ? null
+            : ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements);
 
         // Push the iterator job for array elements
         $queue->push(new ArrayElementsIteratorJob(

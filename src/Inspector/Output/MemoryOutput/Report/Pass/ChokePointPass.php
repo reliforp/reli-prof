@@ -105,25 +105,14 @@ final class ChokePointPass implements PassInterface
         }
         $chokepoints = $filtered;
 
-        // On-demand path lookup (max ~20 rows per choke_point × 10 = 200 queries)
-        $parent_stmt = $this->db->prepare(
-            "SELECT parent_node_id, link_name FROM context_edges"
-            . " WHERE child_node_id = ? AND is_tree = 1"
-            . " AND run_id = {$this->run_id} LIMIT 1"
-        );
-        $ntype_stmt = $this->db->prepare(
-            "SELECT type FROM context_nodes"
-            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
-        );
-
+        // The parent walk + node type lookups now come from the
+        // substrate's in-memory indexes (loadEdgesFfi / loadNodeTypesFfi),
+        // so the only prepared statement left here is the loc_stmt
+        // class+location_type lookup, which is called at most 10 times.
         $labeler = new NodeLabeler($this->db, $this->run_id);
 
         $loc_stmt = $this->db->prepare(
             "SELECT class_name, location_type FROM context_node_locations"
-            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
-        );
-        $type_stmt = $this->db->prepare(
-            "SELECT type FROM context_nodes"
             . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
         );
 
@@ -141,41 +130,31 @@ final class ChokePointPass implements PassInterface
             } elseif ($loc_type !== '') {
                 $label = $loc_type;
             } else {
-                $type_stmt->execute([$node]);
-                $type_row = $type_stmt->fetch(\PDO::FETCH_NUM);
-                if ($type_row) {
-                    $label = $type_row[0];
+                $node_type = $this->substrate->getNodeType($node);
+                if ($node_type !== null) {
+                    $label = $node_type;
                 }
             }
 
-            // Walk up to root for full PHP-syntax path.
+            // Walk up to root for full PHP-syntax path, entirely from
+            // the substrate's in-memory indexes.
             $up_parts = [];
             $up_types = [];
             $cur = $node;
             for ($i = 0; $i < 20; $i++) {
-                $parent_stmt->execute([$cur]);
-                $pr = $parent_stmt->fetch(\PDO::FETCH_NUM);
-                if (!$pr) {
+                $link = $this->substrate->getTreeLinkName($cur);
+                if ($link === null) {
                     break;
                 }
-                if ($pr[0] === null) {
-                    // Reached root — record the root link_name and stop
-                    array_unshift($up_parts, (string)$pr[1]);
+                $parent = $this->substrate->getTreeParentNodeId($cur);
+                if ($parent === null) {
+                    array_unshift($up_parts, $link);
                     array_unshift($up_types, '');
                     break;
                 }
-                $parent = (int)$pr[0];
-                $link = (string)$pr[1];
-
-                $resolved = $labeler->resolvePathLabel(
-                    $link,
-                    $cur
-                );
+                $resolved = $labeler->resolvePathLabel($link, $cur);
                 array_unshift($up_parts, $resolved);
-
-                $ntype_stmt->execute([$cur]);
-                $nt = $ntype_stmt->fetchColumn();
-                array_unshift($up_types, $nt !== false ? (string)$nt : '');
+                array_unshift($up_types, $this->substrate->getNodeType($cur) ?? '');
                 if ($label === '') {
                     $label = $link;
                 }

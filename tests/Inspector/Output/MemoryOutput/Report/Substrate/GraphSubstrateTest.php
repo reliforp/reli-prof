@@ -462,6 +462,7 @@ class GraphSubstrateTest extends BaseTestCase
         ');
         $db->exec("
             CREATE TABLE IF NOT EXISTS context_edges (
+                id INTEGER PRIMARY KEY,
                 run_id INTEGER NOT NULL,
                 parent_node_id INTEGER,
                 child_node_id INTEGER NOT NULL,
@@ -515,6 +516,17 @@ class GraphSubstrateTest extends BaseTestCase
         array $attributes = [],
     ): ReferenceContext {
         $context = \Mockery::mock(ReferenceContext::class);
+        $memo = null;
+        $context->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$memo): ?int {
+                return $memo;
+            }
+        );
+        $context->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$memo): void {
+                $memo = $id;
+            }
+        );
         $context->allows('getName')->andReturns($name);
         $context->allows('getLinks')->andReturns($links);
         $context->allows('getLocations')->andReturns($locations);
@@ -540,6 +552,17 @@ class GraphSubstrateTest extends BaseTestCase
         array $link_strengths = [],
     ): ReferenceContext {
         $context = \Mockery::mock(ReferenceContext::class);
+        $memo = null;
+        $context->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$memo): ?int {
+                return $memo;
+            }
+        );
+        $context->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$memo): void {
+                $memo = $id;
+            }
+        );
         $context->allows('getName')->andReturns($name);
         $context->allows('getLinks')->andReturns($links);
         $context->allows('getLocations')->andReturns($locations);

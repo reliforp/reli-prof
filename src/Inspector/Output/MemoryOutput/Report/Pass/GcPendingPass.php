@@ -30,8 +30,6 @@ final class GcPendingPass implements PassInterface
 {
     public function __construct(
         private GraphSubstrate $substrate,
-        private \PDO $db,
-        private int $run_id,
     ) {
     }
 
@@ -158,19 +156,17 @@ final class GcPendingPass implements PassInterface
 
     /**
      * @return array<int, string> root_node_id => link_name
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function loadRootLinkNames(): array
     {
-        $stmt = $this->db->query(
-            "SELECT child_node_id, link_name FROM context_edges"
-            . " WHERE parent_node_id IS NULL AND is_tree = 1"
-            . " AND run_id = {$this->run_id}"
-        );
-
+        // Substrate-backed: see the matching comment on
+        // CycleClusterPass::loadRootLinkNames for the why.
         $map = [];
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $map[(int)$r[0]] = (string)$r[1];
+        foreach ($this->substrate->getRoots() as $root) {
+            $link = $this->substrate->getTreeLinkName($root);
+            if ($link !== null) {
+                $map[$root] = $link;
+            }
         }
         return $map;
     }

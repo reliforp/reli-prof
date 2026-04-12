@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 
 /**
  * Detects 1:1 ownership patterns between classes.
@@ -33,6 +34,7 @@ final class OwnershipPatternPass implements PassInterface
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
+        private ?LinkNameResolver $link_resolver = null,
     ) {
     }
 
@@ -44,11 +46,7 @@ final class OwnershipPatternPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        $link_stmt = $this->db->prepare(
-            "SELECT link_name FROM context_edges"
-            . " WHERE child_node_id = ? AND is_tree = 1"
-            . " AND run_id = {$this->run_id} LIMIT 1"
-        );
+        $resolver = $this->link_resolver ?? new LinkNameResolver($this->db, $this->run_id);
 
         // Build class instance counts (canonical-or-unique only)
         /** @var array<string, int> */
@@ -71,7 +69,7 @@ final class OwnershipPatternPass implements PassInterface
                 continue;
             }
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($this->lookupLinkName($link_stmt, $child)) !== 'object_properties') {
+                if ($resolver->lookup($child) !== 'object_properties') {
                     continue;
                 }
                 // child = ObjectPropertiesContext, iterate its children
@@ -116,7 +114,7 @@ final class OwnershipPatternPass implements PassInterface
                 $prop = $this->findLinkingProperty(
                     $owner_class,
                     $owned_class,
-                    $link_stmt,
+                    $resolver,
                 );
 
                 $patterns[] = [
@@ -197,9 +195,8 @@ final class OwnershipPatternPass implements PassInterface
     }
 
     /**
-     * Find the property name that links owner_class to owned_class.
+     * Average shallow size of the first N instances of $class_name.
      * @psalm-suppress MixedArrayAccess
-     * @param array<int, string> $link_names
      */
     private function avgSize(string $class_name): int
     {
@@ -223,7 +220,7 @@ final class OwnershipPatternPass implements PassInterface
     private function findLinkingProperty(
         string $owner_class,
         string $owned_class,
-        \PDOStatement $link_stmt,
+        LinkNameResolver $resolver,
     ): string {
         // Sample: find one owner instance and check which property points to owned
         foreach ($this->substrate->iterateNodeClasses() as $node_id => $cls) {
@@ -231,11 +228,11 @@ final class OwnershipPatternPass implements PassInterface
                 continue;
             }
             foreach ($this->substrate->getChildren($node_id) as $child) {
-                if (($this->lookupLinkName($link_stmt, $child)) !== 'object_properties') {
+                if ($resolver->lookup($child) !== 'object_properties') {
                     continue;
                 }
                 foreach ($this->substrate->getChildren($child) as $prop_child) {
-                    $prop_name = $this->lookupLinkName($link_stmt, $prop_child) ?? '';
+                    $prop_name = $resolver->lookup($prop_child) ?? '';
                     // Direct child
                     if ($this->substrate->getNodeClass($prop_child) === $owned_class) {
                         return $prop_name;
@@ -253,17 +250,5 @@ final class OwnershipPatternPass implements PassInterface
             return '?';
         }
         return '?';
-    }
-
-    /**
-     * @return array<int, string>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
-     */
-    /** @psalm-suppress MixedAssignment */
-    private function lookupLinkName(\PDOStatement $stmt, int $child_node_id): ?string
-    {
-        $stmt->execute([$child_node_id]);
-        $val = $stmt->fetchColumn();
-        return $val !== false ? (string)$val : null;
     }
 }

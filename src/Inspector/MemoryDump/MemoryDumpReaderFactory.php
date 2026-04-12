@@ -15,6 +15,7 @@ namespace Reli\Inspector\MemoryDump;
 
 use DI\ContainerBuilder;
 use FFI\CData;
+use Reli\Lib\File\LibcFileReader;
 use Reli\Lib\File\PathResolver\MappedPathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
@@ -58,6 +59,7 @@ final class MemoryDumpReaderFactory
             $region_index,
             $process_memory_map,
             $path_resolver,
+            LibcFileReader::open($file_path),
         ) implements MemoryReaderInterface {
             /** @var array<string, resource> path => cached file handle */
             private array $fp_cache = [];
@@ -70,6 +72,7 @@ final class MemoryDumpReaderFactory
                 private array $region_index,
                 private ProcessMemoryMap $process_memory_map,
                 private MappedPathResolver $path_resolver,
+                private ?LibcFileReader $libc_reader,
             ) {
             }
 
@@ -103,6 +106,31 @@ final class MemoryDumpReaderFactory
                         $offset_in_region = $remote_address - $region_start;
                         $file_offset = $region['file_offset'] + $offset_in_region;
 
+                        $cdata_buffer = FFIHelper::new("unsigned char[$size]");
+                        if (is_null($cdata_buffer)) {
+                            throw new \RuntimeException("failed to allocate memory");
+                        }
+
+                        if ($this->libc_reader !== null) {
+                            // Fast path: pread(2) directly into the
+                            // CData buffer. Halves the syscall count
+                            // (no separate lseek) and skips the PHP
+                            // string intermediate that fread would
+                            // allocate and memcpy from.
+                            $n = $this->libc_reader->pread($cdata_buffer, $size, $file_offset);
+                            if ($n !== $size) {
+                                throw new \RuntimeException(
+                                    "failed to pread {$size} bytes at file offset {$file_offset}"
+                                    . " (got {$n})"
+                                );
+                            }
+                            /** @var \FFI\CArray<int> */
+                            return $cdata_buffer;
+                        }
+
+                        // Fallback for builds where FFI libc binding
+                        // isn't available: original fopen/fseek/fread
+                        // path.
                         $fp = $this->openCached($this->file_path);
                         if ($fp === null) {
                             throw new \RuntimeException("failed to open dump file: {$this->file_path}");
@@ -113,10 +141,6 @@ final class MemoryDumpReaderFactory
                             throw new \RuntimeException(
                                 "failed to read {$size} bytes at file offset {$file_offset}"
                             );
-                        }
-                        $cdata_buffer = FFIHelper::new("unsigned char[$size]");
-                        if (is_null($cdata_buffer)) {
-                            throw new \RuntimeException("failed to allocate memory");
                         }
                         \FFI::memcpy($cdata_buffer, $data, $size);
                         /** @var \FFI\CArray<int> */

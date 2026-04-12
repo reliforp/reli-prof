@@ -27,6 +27,23 @@ class GraphSubstrate
     /** @var array<int, list<int>> child_id => [parent_id, ...] (all edges) */
     public array $all_parents = [];
 
+    /**
+     * Tree-edge link_name index — child_node_id → link_name. Populated
+     * during {@see loadEdges()} so report passes can answer
+     * "what's the link_name of this child?" without per-row SQL.
+     *
+     * @var array<int, string>
+     */
+    public array $tree_link_names = [];
+
+    /**
+     * Tree-edge parent index — child_node_id → parent_node_id (or -1
+     * for the synthetic root). Populated during {@see loadEdges()}.
+     *
+     * @var array<int, int>
+     */
+    public array $tree_parents = [];
+
     /** @var array<int, list<int>> parent_id => [child_id, ...] (strong tree edges only) */
     public array $strong_children = [];
 
@@ -41,6 +58,15 @@ class GraphSubstrate
 
     /** @var array<int, string> node_id => class name */
     public array $node_classes = [];
+
+    /**
+     * Per-node context type ("PhpReferenceContext", "ObjectPropertiesContext",
+     * etc.). Populated alongside loadNodeSizes so the path-walking passes
+     * can answer "what is this node?" without per-row prepared statements.
+     *
+     * @var array<int, string>
+     */
+    public array $node_types = [];
 
     /** @var array<int, int> node_id => scc_id */
     public array $node_to_scc = [];
@@ -78,6 +104,7 @@ class GraphSubstrate
     {
         $substrate = new static();
         $substrate->loadNodeSizes($db, $run_id);
+        $substrate->loadNodeTypes($db, $run_id);
         $substrate->loadEdges($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
         $substrate->buildSccAdjacency();
@@ -93,9 +120,21 @@ class GraphSubstrate
      * For smaller graphs, uses PHP arrays (faster for small datasets).
      *
      * @param bool|null $forceFfiCsr true=force on, false=force off, null=auto
+     * @param int $bulk_fetch_chunk Rows per chunked fetchAll inside
+     *   the FFI substrate loaders. 0 disables chunking entirely
+     *   (legacy per-row cursor scan, lowest peak memory). The
+     *   chunked path uses index-friendly pagination keys
+     *   (`(run_id, node_id)` covering index on context_nodes,
+     *   `(run_id, id)` index on context_edges) — both are installed
+     *   lazily by ReportGenerator::ensureReportIndexes. The PHP-array
+     *   fallback substrate ignores the parameter.
      */
-    public static function createFromDb(\PDO $db, int $run_id, ?bool $forceFfiCsr = null): self
-    {
+    public static function createFromDb(
+        \PDO $db,
+        int $run_id,
+        ?bool $forceFfiCsr = null,
+        int $bulk_fetch_chunk = 0,
+    ): self {
         if ($forceFfiCsr === false) {
             return self::loadFromDb($db, $run_id);
         }
@@ -109,7 +148,7 @@ class GraphSubstrate
         }
 
         if ($useFfi && extension_loaded('ffi')) {
-            return FfiCsrGraphSubstrate::loadFromDb($db, $run_id);
+            return FfiCsrGraphSubstrate::loadFromDb($db, $run_id, $bulk_fetch_chunk);
         }
         return self::loadFromDb($db, $run_id);
     }
@@ -137,12 +176,6 @@ class GraphSubstrate
     }
 
     /** @return list<int> */
-    public function getStrongAllChildren(int $nodeId): array
-    {
-        return $this->strong_all_children[$nodeId] ?? [];
-    }
-
-    /** @return list<int> */
     public function getAllParents(int $nodeId): array
     {
         return $this->all_parents[$nodeId] ?? [];
@@ -166,6 +199,16 @@ class GraphSubstrate
     public function getNodeClass(int $nodeId): ?string
     {
         return $this->node_classes[$nodeId] ?? null;
+    }
+
+    /**
+     * Context node type for the given node id, e.g. "PhpReferenceContext"
+     * or "ObjectPropertiesContext". Returns null when the node has no
+     * recorded type or isn't in the loaded run.
+     */
+    public function getNodeType(int $nodeId): ?string
+    {
+        return $this->node_types[$nodeId] ?? null;
     }
 
     /** @return list<int> */
@@ -281,20 +324,6 @@ class GraphSubstrate
         return $node;
     }
 
-    protected function union(int $a, int $b): void
-    {
-        $ca = $this->findCanonical($a);
-        $cb = $this->findCanonical($b);
-        if ($ca !== $cb) {
-            // Use smaller node_id as canonical
-            if ($ca > $cb) {
-                [$ca, $cb] = [$cb, $ca];
-            }
-            $this->canonical[$cb] = $ca;
-            $this->canonical[$ca] = $ca;
-        }
-    }
-
     /**
      * Load canonical_node_id from DB and build Union-Find structure.
      *
@@ -373,11 +402,29 @@ class GraphSubstrate
         }
     }
 
+    /**
+     * Load context node types ("PhpReferenceContext", etc.) into
+     * {@see self::$node_types}. Called from loadFromDb after sizes are
+     * loaded so the path-walker passes can answer type lookups
+     * directly from memory.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    protected function loadNodeTypes(\PDO $db, int $run_id): void
+    {
+        $stmt = $db->query(
+            "SELECT node_id, type FROM context_nodes WHERE run_id = {$run_id}"
+        );
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $this->node_types[(int)$r[0]] = (string)$r[1];
+        }
+    }
+
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument */
     protected function loadEdges(\PDO $db, int $run_id): void
     {
         $stmt = $db->query(
-            "SELECT parent_node_id, child_node_id, is_tree, strength"
+            "SELECT parent_node_id, child_node_id, link_name, is_tree, strength"
             . " FROM context_edges WHERE run_id = {$run_id}"
         );
 
@@ -386,8 +433,9 @@ class GraphSubstrate
             $edge_count++;
             $parent = $r[0] === null ? -1 : (int)$r[0];
             $child = (int)$r[1];
-            $is_tree = (int)$r[2];
-            $strength = (string)($r[3] ?? 'strong');
+            $link_name = (string)$r[2];
+            $is_tree = (int)$r[3];
+            $strength = (string)($r[4] ?? 'strong');
             $is_strong = $strength === 'strong';
 
             if ($is_tree) {
@@ -398,6 +446,11 @@ class GraphSubstrate
                 if ($parent === -1) {
                     $this->roots[] = $child;
                 }
+                // Tree edges are unique per child by definition, so a
+                // direct write here is safe and gives report passes an
+                // O(1) link_name lookup without any extra SQL.
+                $this->tree_link_names[$child] = $link_name;
+                $this->tree_parents[$child] = $parent;
             }
             if ($parent !== -1) {
                 $this->all_children[$parent][] = $child;
@@ -408,6 +461,60 @@ class GraphSubstrate
             $this->all_parents[$child][] = $parent;
         }
         $this->edge_count = $edge_count;
+    }
+
+    /**
+     * Resolve the tree-edge link_name for a child node.
+     *
+     * Returns null when the node has no tree edge in the loaded run.
+     * O(1) — backed by the {@see self::$tree_link_names} index built
+     * during {@see self::loadEdges()}.
+     */
+    public function getTreeLinkName(int $child_node_id): ?string
+    {
+        return $this->tree_link_names[$child_node_id] ?? null;
+    }
+
+    /**
+     * Resolve the tree-edge parent for a child node, or null when
+     * there is no parent (root) or no tree edge for this child.
+     */
+    public function getTreeParentNodeId(int $child_node_id): ?int
+    {
+        if (!isset($this->tree_parents[$child_node_id])) {
+            return null;
+        }
+        $parent = $this->tree_parents[$child_node_id];
+        return $parent === -1 ? null : $parent;
+    }
+
+    /**
+     * Whether the substrate carries a tree-edge link_name index that
+     * report passes can use instead of querying the DB themselves.
+     */
+    public function hasTreeLinkIndex(): bool
+    {
+        return $this->tree_link_names !== [];
+    }
+
+    /**
+     * Yield every child_node_id whose tree-edge link_name equals
+     * `$link_name`. Lets passes that used to issue
+     *
+     *   SELECT child_node_id FROM context_edges
+     *   WHERE is_tree = 1 AND link_name = ?
+     *
+     * walk the in-memory tree link index instead. Order is unspecified.
+     *
+     * @return iterable<int>
+     */
+    public function iterateTreeChildrenByLinkName(string $link_name): iterable
+    {
+        foreach ($this->tree_link_names as $child_id => $name) {
+            if ($name === $link_name) {
+                yield $child_id;
+            }
+        }
     }
 
     protected function computeSubtreeSizes(): void

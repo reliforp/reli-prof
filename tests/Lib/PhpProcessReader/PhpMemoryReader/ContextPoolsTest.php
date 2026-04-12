@@ -29,12 +29,13 @@ class ContextPoolsTest extends BaseTestCase
             new ZendStringMemoryLocation(0x2000, 16, 1, 0, 'b'),
         );
 
-        $memo = new \WeakMap();
-        $memo[$context_a] = 10;
-        $memo[$context_b] = 20;
+        // Emit-state memo now lives on the Context, accessed via the
+        // ReferenceContext interface methods (see ReferenceContextDefault).
+        $context_a->setMemoNodeId(10);
+        $context_b->setMemoNodeId(20);
 
         $address_map = [];
-        $pools->drainToAddressMap($memo, $address_map);
+        $pools->drainToAddressMap($address_map);
 
         $this->assertSame(10, $address_map[0x1000]);
         $this->assertSame(20, $address_map[0x2000]);

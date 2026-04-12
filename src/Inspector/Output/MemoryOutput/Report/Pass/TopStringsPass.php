@@ -41,37 +41,25 @@ final class TopStringsPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        // 3-hop ancestor: grandparent -> parent -> link_name -> string
+        // Find the top 10 largest strings first — no joins, no per-row work.
+        // The previous implementation joined 3 hops of context_edges before
+        // applying ORDER BY/LIMIT, which forced the planner to compute the
+        // join for every ZendStringMemoryLocation row in the table. On large
+        // captures (15+ GB DBs, tens of millions of strings) that single
+        // query dominated the entire report runtime. Sorting first and
+        // walking ancestors only for the top 10 reduces the cost by orders
+        // of magnitude. The covering index
+        // `idx_context_node_locations_run_type_size` lets this run as a
+        // pure index scan.
         $rows = $this->db->query("
             SELECT
-                cnl.node_id,
-                cnl.size,
-                substr(cnl.string_value, 1, 80) as preview,
-                e1.link_name as link1,
-                e1.parent_node_id as parent1_id,
-                cnl_p1.class_name as parent1_class,
-                e2.link_name as link2,
-                e2.parent_node_id as parent2_id,
-                e3.link_name as link3
-            FROM context_node_locations cnl
-            LEFT JOIN context_edges e1
-                ON e1.child_node_id = cnl.node_id
-                AND e1.is_tree = 1
-                AND e1.run_id = {$this->run_id}
-            LEFT JOIN context_node_locations cnl_p1
-                ON cnl_p1.node_id = e1.parent_node_id
-                AND cnl_p1.run_id = {$this->run_id}
-            LEFT JOIN context_edges e2
-                ON e2.child_node_id = e1.parent_node_id
-                AND e2.is_tree = 1
-                AND e2.run_id = {$this->run_id}
-            LEFT JOIN context_edges e3
-                ON e3.child_node_id = e2.parent_node_id
-                AND e3.is_tree = 1
-                AND e3.run_id = {$this->run_id}
-            WHERE cnl.run_id = {$this->run_id}
-                AND cnl.location_type = 'ZendStringMemoryLocation'
-            ORDER BY cnl.size DESC
+                node_id,
+                size,
+                substr(string_value, 1, 80) as preview
+            FROM context_node_locations
+            WHERE run_id = {$this->run_id}
+                AND location_type = 'ZendStringMemoryLocation'
+            ORDER BY size DESC
             LIMIT 10
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
@@ -84,9 +72,7 @@ final class TopStringsPass implements PassInterface
             }
 
             $node_id = (int)$row['node_id'];
-            $path = $this->substrate !== null
-                ? $this->buildFullPath($node_id, $labeler)
-                : $this->buildOwnerPath($row, $labeler);
+            $path = $this->buildFullPath($node_id, $labeler);
             $preview = $row['preview'] ?? '';
             if (strlen($preview) > 60) {
                 $preview = substr($preview, 0, 57) . '...';
@@ -119,13 +105,50 @@ final class TopStringsPass implements PassInterface
     }
 
     /**
-     * Walk from node to root via tree parent edges, resolve with NodeLabeler + PathFormatter.
+     * Walk from node to root via tree parent edges, resolved entirely
+     * from the substrate's in-memory tree-link / parent / type indexes.
+     * Falls back to the old prepared-statement walk only when the
+     * substrate isn't available (Phase 2 SQL paths still use it).
+     *
      * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function buildFullPath(int $node_id, NodeLabeler $labeler): string
     {
-        assert($this->substrate !== null);
+        if ($this->substrate !== null && $this->substrate->hasTreeLinkIndex()) {
+            return $this->buildFullPathFromSubstrate($node_id, $labeler);
+        }
+        return $this->buildFullPathFromSql($node_id, $labeler);
+    }
 
+    private function buildFullPathFromSubstrate(int $node_id, NodeLabeler $labeler): string
+    {
+        assert($this->substrate !== null);
+        $parts = [];
+        $types = [];
+        $cur = $node_id;
+        for ($i = 0; $i < 20; $i++) {
+            $link = $this->substrate->getTreeLinkName($cur);
+            if ($link === null) {
+                break;
+            }
+            $parent = $this->substrate->getTreeParentNodeId($cur);
+            if ($parent === null) {
+                array_unshift($parts, $link);
+                array_unshift($types, '');
+                break;
+            }
+            array_unshift($parts, $labeler->resolvePathLabel($link, $cur));
+            array_unshift($types, $this->substrate->getNodeType($cur) ?? '');
+            $cur = $parent;
+        }
+        return PathFormatter::toPhpSyntax($parts, $types);
+    }
+
+    /**
+     * @psalm-suppress MixedArrayAccess, MixedAssignment
+     */
+    private function buildFullPathFromSql(int $node_id, NodeLabeler $labeler): string
+    {
         if ($this->parentStmt === null) {
             $this->parentStmt = $this->db->prepare(
                 "SELECT parent_node_id, link_name FROM context_edges"
@@ -165,56 +188,5 @@ final class TopStringsPass implements PassInterface
         }
 
         return PathFormatter::toPhpSyntax($parts, $types);
-    }
-
-    private const STRUCTURAL_LINKS = [
-        'object_properties',
-        'array_elements',
-        'local_variables',
-        'symbol_table',
-        'dynamic_properties',
-        'value',
-        'call_frames',
-    ];
-
-    /**
-     * @param array<string, mixed> $row
-     * @psalm-suppress MixedArgument, MixedAssignment, RiskyTruthyFalsyComparison
-     * @psalm-suppress InvalidArgument, MixedArgumentTypeCoercion
-     */
-    private function buildOwnerPath(
-        array $row,
-        NodeLabeler $labeler,
-    ): string {
-        $raw_parts = [];
-
-        if (($row['link3'] ?? null) !== null) {
-            $raw_parts[] = (string)$row['link3'];
-        }
-
-        if (($row['link2'] ?? null) !== null) {
-            $parent2_id = (int)($row['parent2_id'] ?? 0);
-            $raw_parts[] = $labeler->resolvePathLabel(
-                (string)$row['link2'],
-                $parent2_id
-            );
-        }
-
-        $parent_class = $row['parent1_class'] ?? null;
-        if ($parent_class) {
-            $raw_parts[] = $parent_class;
-        }
-
-        if (($row['link1'] ?? null) !== null) {
-            $raw_parts[] = (string)$row['link1'];
-        }
-
-        // Filter structural intermediaries and join with ->
-        $filtered = array_values(array_filter(
-            $raw_parts,
-            fn(string $p) => !in_array($p, self::STRUCTURAL_LINKS, true)
-        ));
-
-        return implode('->', $filtered);
     }
 }

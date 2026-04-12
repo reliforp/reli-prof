@@ -34,6 +34,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopArraysPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopStringsPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TypeBreakdownPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
 
 final class ReportGenerator
 {
@@ -44,13 +46,40 @@ final class ReportGenerator
      */
     /**
      * @param bool|null $ffi_csr true=force on, false=force off, null=auto
+     * @param int $bulk_fetch_chunk rows per chunked fetchAll inside the
+     *   substrate loaders. 0 disables chunking (single fetchAll, max
+     *   memory). Plumbed through to {@see GraphSubstrate::createFromDb}.
+     * @param int $worker_count number of parallel workers for Phase 3
+     *   passes. 1 = sequential (default, current behavior). >1 = fork
+     *   worker_count children, each running a subset of passes in
+     *   parallel. Requires `$db_path` to be set so workers can open
+     *   fresh PDO connections after fork.
+     * @param string|null $db_path Path to the SQLite analysis DB.
+     *   Required when worker_count > 1 (workers reopen the DB rather
+     *   than share the parent's PDO across fork). Ignored in
+     *   sequential mode.
+     * @param int $mmap_size_bytes mmap_size to apply to worker PDOs
+     *   opened inside `$open_db` (the parent's PDO is configured by
+     *   the caller). 0 disables mmap. SQLite silently caps to its
+     *   compile-time SQLITE_MAX_MMAP_SIZE (typically 2 GiB - 16 KiB),
+     *   so values above that are honoured up to the cap.
      */
     public function generateFromDb(
         \PDO $db,
         int $run_id = 1,
         bool $full_analysis = false,
         ?bool $ffi_csr = null,
+        LinkCacheMode $link_cache_mode = LinkCacheMode::Auto,
+        int $bulk_fetch_chunk = 200000,
+        int $worker_count = 1,
+        ?string $db_path = null,
+        int $mmap_size_bytes = 2147483648,
     ): ReportResult {
+        // Make sure the indexes report passes need exist on this database,
+        // even if it was captured by an older Reli version. CREATE INDEX
+        // IF NOT EXISTS is a no-op when the index already exists.
+        $this->ensureReportIndexes($db);
+
         $meta = $this->loadMeta($db, $run_id);
         $node_count = (int)($meta['node_count'] ?? 0);
         $edge_count = (int)($meta['edge_count'] ?? 0);
@@ -78,11 +107,21 @@ final class ReportGenerator
         // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
         $run_phase3 = $full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000);
         if ($full_analysis || $node_count < 500000) {
-            $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
-            // PropertyScaling, TopArrays, TopStrings: deferred to Phase 3
-            // if graph available (full path + retained size)
+            // CallStackPass has a substrate-backed analyzeWithSubstrate
+            // path that's an order of magnitude cheaper than its
+            // 4-JOIN SQL fallback. Defer it to Phase 3 when the
+            // substrate is going to be built; the SQL fallback only
+            // runs on small graphs that skip Phase 3 entirely.
             if (!$run_phase3) {
+                $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
+            }
+            // DynamicProperties / PropertyScaling / TopArrays / TopStrings /
+            // NonTreeEdge / StructuralDedup are all "deferred to Phase 3 if
+            // graph is available" — when the substrate isn't built we run
+            // their SQL fallbacks here, otherwise the Phase 3 block below
+            // takes over and feeds them the substrate.
+            if (!$run_phase3) {
+                $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(
                     new PropertyScalingPass($db, $run_id, $class_objects)
                 ));
@@ -95,26 +134,130 @@ final class ReportGenerator
 
         // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
         if ($run_phase3) {
-            $substrate = GraphSubstrate::createFromDb($db, $run_id, $ffi_csr);
+            $substrate = GraphSubstrate::createFromDb($db, $run_id, $ffi_csr, $bulk_fetch_chunk);
             $meta['scc_count'] = count($substrate->getSccProfiles());
 
-            $findings = array_merge($findings, $this->runPass(new CycleClusterPass($substrate, $db, $run_id)));
+            // CallStackPass deferred from Phase 2: now that the
+            // substrate is built, run it through the in-memory
+            // node-type + tree-edge indexes instead of the 4-JOIN SQL.
             $findings = array_merge($findings, $this->runPass(
-                new PropertyScalingPass($db, $run_id, $class_objects, $substrate)
+                new CallStackPass($db, $run_id, $substrate)
             ));
-            $findings = array_merge($findings, $this->runPass(new PerPropertyMemoryPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new OwnershipPatternPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id, $substrate)));
-            $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id, $substrate)));
-            $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id, $substrate)));
-            $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id, $substrate)));
-            $findings = array_merge($findings, $this->runPass(new DrillDownPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(
-                new ChokePointPass($substrate, $db, $run_id, $heap_usage)
-            ));
-            $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate, $db, $run_id)));
-            $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
-            $findings = array_merge($findings, $this->runPass(new GcPendingPass($substrate, $db, $run_id)));
+
+            // Shared resolver replaces the per-edge SQL N+1 that used to
+            // dominate PerPropertyMemory / Ownership / StructuralDedup /
+            // PropertyScaling / NonTreeEdgePass.
+            //
+            // The substrate now carries a tree-edge link_name index built
+            // for free during loadEdgesFfi/loadEdges, so the resolver
+            // delegates to it and answers every lookup in O(1) memory —
+            // the legacy eager/lazy paths are kept as fallbacks for code
+            // paths that don't have a substrate (Phase 2 SQL passes).
+            $link_resolver = new LinkNameResolver(
+                db: $db,
+                run_id: $run_id,
+                substrate: $substrate,
+            );
+            $eager = match ($link_cache_mode) {
+                LinkCacheMode::Eager => true,
+                LinkCacheMode::Lazy => false,
+                LinkCacheMode::Auto => $edge_count > 0 && $edge_count <= 500_000,
+            };
+            // Substrate-backed lookups are always O(1) regardless, but
+            // when somebody runs --link-cache=eager explicitly we still
+            // honour it for the no-substrate code paths inside the
+            // resolver itself.
+            if ($eager && !$substrate->hasTreeLinkIndex()) {
+                $link_resolver->loadAll();
+            }
+
+            // Phase 3 passes are independent and read-only over the
+            // substrate + db. Build factory closures for each, hand
+            // them to the ParallelPassRunner which either runs them
+            // sequentially (worker_count <= 1) or forks workers that
+            // share the substrate via copy-on-write.
+            //
+            // Each factory opens its OWN PDO inside the closure so
+            // forked workers don't end up sharing the parent's file
+            // descriptor (which would corrupt SQLite). In sequential
+            // mode the extra PDO open is a few ms per pass, dwarfed
+            // by the actual pass work.
+            $open_db = function () use ($db_path, $mmap_size_bytes): \PDO {
+                assert($db_path !== null);
+                $child_db = new \PDO("sqlite:{$db_path}");
+                $child_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+                $child_db->exec('PRAGMA journal_mode = WAL');
+                $child_db->exec('PRAGMA mmap_size = ' . $mmap_size_bytes);
+                return $child_db;
+            };
+            // Resolve "fresh PDO per factory" only when we need it
+            // (parallel + db_path set). For sequential-with-parent-
+            // PDO we reuse $db directly and save the reopen cost.
+            $workers_want_fresh_db = $worker_count > 1 && $db_path !== null;
+            $db_factory = $workers_want_fresh_db
+                ? $open_db
+                : fn (): \PDO => $db;
+            $resolver_factory = function () use ($db_factory, $run_id, $substrate): LinkNameResolver {
+                return new LinkNameResolver(
+                    db: $db_factory(),
+                    run_id: $run_id,
+                    substrate: $substrate,
+                );
+            };
+
+            /** @var array<string, callable(): list<Finding>> $pass_factories */
+            $pass_factories = [];
+            $pass_factories['DynamicPropertiesPass'] = fn (): array => $this->runPass(
+                new DynamicPropertiesPass($db_factory(), $run_id, $substrate)
+            );
+            $pass_factories['CycleClusterPass'] = fn (): array => $this->runPass(
+                new CycleClusterPass($substrate, $db_factory(), $run_id, $resolver_factory())
+            );
+            $pass_factories['PropertyScalingPass'] = fn (): array => $this->runPass(
+                new PropertyScalingPass(
+                    $db_factory(),
+                    $run_id,
+                    $class_objects,
+                    $substrate,
+                    $resolver_factory(),
+                )
+            );
+            $pass_factories['PerPropertyMemoryPass'] = fn (): array => $this->runPass(
+                new PerPropertyMemoryPass($substrate, $db_factory(), $run_id, $resolver_factory())
+            );
+            $pass_factories['OwnershipPatternPass'] = fn (): array => $this->runPass(
+                new OwnershipPatternPass($substrate, $db_factory(), $run_id, $resolver_factory())
+            );
+            $pass_factories['TopArraysPass'] = fn (): array => $this->runPass(
+                new TopArraysPass($db_factory(), $run_id, $substrate)
+            );
+            $pass_factories['TopStringsPass'] = fn (): array => $this->runPass(
+                new TopStringsPass($db_factory(), $run_id, $substrate)
+            );
+            $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
+                new NonTreeEdgePass($db_factory(), $run_id, $substrate)
+            );
+            $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
+                new StructuralDedupPass($db_factory(), $run_id, $substrate, $resolver_factory())
+            );
+            $pass_factories['DrillDownPass'] = fn (): array => $this->runPass(
+                new DrillDownPass($substrate, $db_factory(), $run_id)
+            );
+            $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
+                new ChokePointPass($substrate, $db_factory(), $run_id, $heap_usage)
+            );
+            $pass_factories['BlameAllocationPass'] = fn (): array => $this->runPass(
+                new BlameAllocationPass($substrate)
+            );
+            $pass_factories['RetainedSizeConfidencePass'] = fn (): array => $this->runPass(
+                new RetainedSizeConfidencePass($substrate)
+            );
+            $pass_factories['GcPendingPass'] = fn (): array => $this->runPass(
+                new GcPendingPass($substrate)
+            );
+
+            $runner = new ParallelPassRunner($workers_want_fresh_db ? $worker_count : 1);
+            $findings = array_merge($findings, $runner->run($pass_factories));
         }
 
         $findings = $this->deduplicateFindings($findings);
@@ -197,6 +340,87 @@ final class ReportGenerator
             return $pass->analyze();
         } catch (\Throwable) {
             return [];
+        }
+    }
+
+    /**
+     * Backfill any indexes the report passes rely on, so databases
+     * captured by an older Reli build still benefit on the very next
+     * report run. CREATE INDEX IF NOT EXISTS is a no-op once the
+     * index exists; on the first run it does a single sequential
+     * scan + sort, paid back many times over by the queries that
+     * follow. Failures are tolerated (read-only DBs, etc.) and just
+     * leave the report on the unindexed path.
+     */
+    private function ensureReportIndexes(\PDO $db): void
+    {
+        try {
+            // History of NonTreeEdgePass index:
+            //   v1: idx_context_edges_run_tree_strength_link
+            //         (run_id, is_tree, strength, link_name)
+            //   v2: idx_context_edges_run_tree_strength_link_child_parent
+            //         (run_id, is_tree, strength, link_name, child_node_id, parent_node_id)
+            //   v3 (current): idx_context_edges_strong_nontree_links
+            //         (run_id, link_name, child_node_id, parent_node_id)
+            //         WHERE is_tree = 0 AND strength = 'strong'
+            // v3 pushes the two constant filters into the partial-index
+            // WHERE clause so the index only carries the (typically tiny)
+            // subset of edges actually queried by NonTreeEdgePass — the
+            // build cost drops from ~144s on analyze3.rbt to single-digit
+            // seconds. Drop the older variants so old captures don't
+            // pay for two indexes side by side.
+            $db->exec('DROP INDEX IF EXISTS idx_context_edges_run_tree_strength_link');
+            $db->exec('DROP INDEX IF EXISTS idx_context_edges_run_tree_strength_link_child_parent');
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_strong_nontree_links'
+                . ' ON context_edges(run_id, link_name, child_node_id, parent_node_id)'
+                . " WHERE is_tree = 0 AND strength = 'strong'"
+            );
+            // Slimmed sibling: dropped the trailing is_tree column from
+            // the legacy idx_context_edges_run_link_parent_tree, since
+            // the WHERE clauses that hit this index already filter is_tree
+            // as a post-condition (SQLite never used it as a leading key).
+            $db->exec('DROP INDEX IF EXISTS idx_context_edges_run_link_parent_tree');
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_link_parent'
+                . ' ON context_edges(run_id, link_name, parent_node_id)'
+            );
+            // Required by TopStringsPass top-N scan to avoid sorting tens of
+            // millions of ZendStringMemoryLocation rows on huge dumps.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_locations_run_type_size'
+                . ' ON context_node_locations(run_id, location_type, size)'
+            );
+            // NodeLabeler::ensureLoaded filters by (run_id, key) when
+            // it pulls function_name / lineno attrs for CallFrame
+            // labels. Without this index that lookup falls back to a
+            // run_id-only index range scan that walks every attribute
+            // row in the run, which on big captures showed up as ~5%
+            // of total report runtime in PDOStatement::fetchAll.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_node_attributes_run_key_node'
+                . ' ON context_node_attributes(run_id, key, node_id)'
+            );
+            // Covering index on context_nodes for the substrate's
+            // chunked loadNodeTypesFfi: paginating by node_id needs
+            // an index that includes `type` so SQLite can answer the
+            // query from the index alone, without a per-row heap
+            // lookup.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_nodes_run_node_type'
+                . ' ON context_nodes(run_id, node_id, type)'
+            );
+            // (run_id, id) on context_edges for the chunked
+            // loadEdgesFfi. Requires the `id INTEGER PRIMARY KEY`
+            // column added by the matching schema change in
+            // PdoMemoryOutput; dumps captured with older schemas
+            // need to be re-analysed before the report can run.
+            $db->exec(
+                'CREATE INDEX IF NOT EXISTS idx_context_edges_run_id'
+                . ' ON context_edges(run_id, id)'
+            );
+        } catch (\PDOException) {
+            // Read-only DB, missing privileges, etc. — best effort.
         }
     }
 

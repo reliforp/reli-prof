@@ -72,16 +72,13 @@ final class EmitFunctionTableJob implements CollectorJob
 
         $ctx->emitNode($defined_functions_context, $this->parent_node_id, $this->link_name);
 
+        // See EmitObjectJob for why these read from getMemoNodeId().
         foreach ($deferred_all as $r) {
-            $fc_node_id = $ctx->memo[$r->context] ?? null;
-            if ($fc_node_id !== null) {
-                $fc_node_id = $fc_node_id < 0 ? -$fc_node_id - 1 : $fc_node_id;
-            }
             foreach ($r->deferred_arrays as [$arr_pointer, $arr_link, $parent_ctx]) {
-                $pid = $ctx->memo[$parent_ctx] ?? null;
-                if ($pid !== null) {
-                    $pid = $pid < 0 ? -$pid - 1 : $pid;
-                }
+                $raw_pid = $parent_ctx->getMemoNodeId();
+                $pid = $raw_pid === null
+                    ? null
+                    : ($raw_pid < 0 ? -$raw_pid - 1 : $raw_pid);
                 /** @psalm-suppress ArgumentTypeCoercion */
                 $queue->push(new EmitArrayJob($arr_pointer, $pid, $arr_link));
             }

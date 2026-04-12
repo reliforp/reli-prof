@@ -75,17 +75,64 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private array $classDict = [];
     /** @var array<string, int> class_name → class_id */
     private array $classDictReverse = [];
-    private \FFI\CData $nodeClassIds; // int16_t[nodeCount], -1 = no class
+    // int32 (not int16) per node: dumps with anonymous classes / closures
+    // can easily produce 32k+ unique class names, which silently wrapped
+    // around when this was int16 and pointed every overflowed node at the
+    // wrong dict slot.
+    private \FFI\CData $nodeClassIds; // int32_t[nodeCount], -1 = no class
+
+    // Tree-edge link_name index: an int32 per child CSR slot (-1 = no
+    // tree edge) plus an interned dict. Built during loadEdgesFfi so
+    // report passes get O(1) link_name lookups without per-row SQL.
+    //
+    // int16 was the original choice but it overflowed on real captures:
+    // array elements show up as link_name = the integer key string ("0",
+    // "1", ...), so any dump containing arrays with thousands of distinct
+    // numeric keys blew through 32767 entries and treeLinkIds wrapped to
+    // negative — collapsing some nodes to "null link_name" and pointing
+    // others at the wrong dict slot. Result: BlameAllocationPass and the
+    // walker passes (DrillDownPass etc.) emitted random numeric strings
+    // instead of real names. int32 makes the wrap unreachable in practice.
+    /** @var list<string> link_id → link_name */
+    private array $linkDict = [];
+    /** @var array<string, int> link_name → link_id */
+    private array $linkDictReverse = [];
+    private ?\FFI\CData $treeLinkIds = null;     // int32_t[nodeCount], -1 = no tree edge
+    private ?\FFI\CData $treeParentIdx = null;   // int32_t[nodeCount], -1 = no tree parent
+
+    // Per-node context type ("PhpReferenceContext", etc.). Same shape
+    // as the class dictionary above — int16 per node plus small dict.
+    /** @var list<string> type_id → type name */
+    private array $nodeTypeDict = [];
+    /** @var array<string, int> type name → type_id */
+    private array $nodeTypeDictReverse = [];
+    private ?\FFI\CData $nodeTypeIds = null;     // int16_t[nodeCount], -1 = unknown
 
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
 
+    /**
+     * Rows per chunked fetchAll inside the loader paths. Plumbed in
+     * from GraphSubstrate::createFromDb so the user can size it for
+     * their memory budget via the `--substrate-bulk-fetch-chunk` CLI
+     * flag. Default keeps per-chunk peak under ~80 MB on the wide
+     * loadEdgesFfi row layout.
+     */
+    private int $bulkFetchChunk = 200000;
+
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     #[\Override]
-    public static function loadFromDb(\PDO $db, int $run_id): static
-    {
+    public static function loadFromDb(
+        \PDO $db,
+        int $run_id,
+        int $bulk_fetch_chunk = 200000,
+    ): static {
         $substrate = new self();
+        if ($bulk_fetch_chunk > 0) {
+            $substrate->bulkFetchChunk = $bulk_fetch_chunk;
+        }
         $substrate->loadNodeSizesFfi($db, $run_id);
+        $substrate->loadNodeTypesFfi($db, $run_id);
         $substrate->loadEdgesFfi($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
         $substrate->buildSccAdjacency();
@@ -125,17 +172,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             return [];
         }
         return $this->csrSlice($this->allOffsets, $this->allEdges, $idx);
-    }
-
-    /** @return list<int> */
-    #[\Override]
-    public function getStrongAllChildren(int $nodeId): array
-    {
-        $idx = $this->nodeIdToIndex($nodeId);
-        if ($idx < 0) {
-            return [];
-        }
-        return $this->csrSlice($this->strongAllOffsets, $this->strongAllEdges, $idx);
     }
 
     /** @return list<int> */
@@ -194,6 +230,85 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     #[\Override]
+    public function getNodeType(int $nodeId): ?string
+    {
+        if ($this->nodeTypeIds === null) {
+            return null;
+        }
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return null;
+        }
+        $typeId = (int)$this->nodeTypeIds[$idx];
+        if ($typeId < 0) {
+            return null;
+        }
+        return $this->nodeTypeDict[$typeId] ?? null;
+    }
+
+    #[\Override]
+    public function getTreeLinkName(int $child_node_id): ?string
+    {
+        if ($this->treeLinkIds === null) {
+            return null;
+        }
+        $idx = $this->nodeIdToIndex($child_node_id);
+        if ($idx < 0) {
+            return null;
+        }
+        $link_id = (int)$this->treeLinkIds[$idx];
+        if ($link_id < 0) {
+            return null;
+        }
+        return $this->linkDict[$link_id] ?? null;
+    }
+
+    #[\Override]
+    public function getTreeParentNodeId(int $child_node_id): ?int
+    {
+        if ($this->treeParentIdx === null) {
+            return null;
+        }
+        $idx = $this->nodeIdToIndex($child_node_id);
+        if ($idx < 0) {
+            return null;
+        }
+        $parent_idx = (int)$this->treeParentIdx[$idx];
+        if ($parent_idx < 0) {
+            return null;
+        }
+        $parent_id = (int)$this->indexToNodeFfi[$parent_idx];
+        return $parent_id === -1 ? null : $parent_id;
+    }
+
+    #[\Override]
+    public function hasTreeLinkIndex(): bool
+    {
+        return $this->treeLinkIds !== null;
+    }
+
+    /**
+     * @return iterable<int>
+     */
+    #[\Override]
+    public function iterateTreeChildrenByLinkName(string $link_name): iterable
+    {
+        if ($this->treeLinkIds === null) {
+            return;
+        }
+        $link_id = $this->linkDictReverse[$link_name] ?? null;
+        if ($link_id === null) {
+            return;
+        }
+        $n = $this->nodeCount;
+        for ($i = 0; $i < $n; $i++) {
+            if ((int)$this->treeLinkIds[$i] === $link_id) {
+                yield (int)$this->indexToNodeFfi[$i];
+            }
+        }
+    }
+
+    #[\Override]
     public function hasSubtreeSizes(): bool
     {
         return $this->subtreeSizesComputed;
@@ -236,7 +351,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             if ($start < $end) {
                 $parents = [];
                 for ($j = $start; $j < $end; $j++) {
-                    $parents[] = (int)$this->revEdges[$j];
+                    // revEdges stores CSR indices (matching the rest of the
+                    // CSR arrays); translate back to node_ids on the way out.
+                    $parents[] = (int)$this->indexToNodeFfi[(int)$this->revEdges[$j]];
                 }
                 yield (int)$this->indexToNodeFfi[$i] => $parents;
             }
@@ -313,30 +430,55 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     private function loadNodeSizesFfi(\PDO $db, int $run_id): void
     {
-        $rows = $db->query(
-            "SELECT node_id, sum(size) as s, group_concat(DISTINCT class_name) as cls"
-            . " FROM context_node_locations WHERE run_id = {$run_id} GROUP BY node_id"
-        )->fetchAll(\PDO::FETCH_NUM);
+        // Two streaming passes, both chunked via prepared statements
+        // paginated by node_id over the (run_id, node_id) PRIMARY KEY
+        // / covering index, so paginating by `node_id > ?` is a
+        // forward seek per chunk:
+        //
+        //   Pass 1: chunked range scan over context_nodes — the
+        //     authoritative source of node_ids. PdoContextTreeSink::
+        //     emitNode() writes a context_nodes row for every emitted
+        //     node, and after the 29f9f258 collector-job fix every
+        //     node_id that ever lands in context_edges (parent or
+        //     child) corresponds to a context_nodes row in the same
+        //     run. Verified empirically by querying the analyze DB
+        //     for the set difference (it's empty); historically there
+        //     was a UNION DISTINCT over context_edges here as a
+        //     backstop, but the underlying invariant is now solid
+        //     and the backstop's table scan was paying nothing back.
+        //
+        //   Pass 2: chunked GROUP BY over context_node_locations to
+        //     fill node sizes + class_name dictionary (this used to
+        //     be a single monolithic fetchAll on report12.rbt and
+        //     dominated loadNodeSizesFfi wall).
+        $chunk = $this->bulkFetchChunk > 0 ? $this->bulkFetchChunk : 200000;
 
-        // Also get node IDs that appear in edges but not in node_locations
-        $edge_node_rows = $db->query(
-            "SELECT DISTINCT parent_node_id FROM context_edges"
-            . " WHERE run_id = {$run_id} AND parent_node_id IS NOT NULL"
-            . " UNION SELECT DISTINCT child_node_id FROM context_edges"
-            . " WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_COLUMN);
-
-        // Build sorted node_id list
+        // Pass 1: chunked context_nodes range scan.
+        $stmt = $db->prepare(
+            "SELECT node_id FROM context_nodes
+             WHERE run_id = ? AND node_id > ?
+             ORDER BY node_id
+             LIMIT {$chunk}"
+        );
         $all_node_ids = [];
-        foreach ($rows as $r) {
-            $all_node_ids[(int)$r[0]] = true;
+        $last_node_id = PHP_INT_MIN;
+        while (true) {
+            $stmt->execute([$run_id, $last_node_id]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+            if ($rows === []) {
+                break;
+            }
+            foreach ($rows as $nid) {
+                $all_node_ids[(int)$nid] = true;
+                $last_node_id = (int)$nid;
+            }
+            if (count($rows) < $chunk) {
+                break;
+            }
         }
-        foreach ($edge_node_rows as $nid) {
-            $all_node_ids[(int)$nid] = true;
-        }
-        // Include -1 sentinel for root parent
+
+        // Include -1 sentinel for the synthetic root parent.
         $all_node_ids[-1] = true;
-        unset($edge_node_rows);
 
         // Build mapping: assign CSR indices
         $this->nodeCount = count($all_node_ids);
@@ -388,7 +530,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $this->ffiNodeSizes = FFIHelper::new("int64_t[{$this->nodeCount}]");
         $this->ffiSubtreeSizes = FFIHelper::new("int64_t[{$this->nodeCount}]");
         $this->ffiNodeToScc = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $this->nodeClassIds = FFIHelper::new("int16_t[{$this->nodeCount}]");
+        $this->nodeClassIds = FFIHelper::new("int32_t[{$this->nodeCount}]");
 
         // Initialize
         for ($i = 0; $i < $this->nodeCount; $i++) {
@@ -396,40 +538,227 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $this->nodeClassIds[$i] = -1;
         }
 
-        // Fill node sizes and class dictionary
+        // Pass 2: stream the size + class aggregation in chunks. The
+        // previous monolithic fetchAll on a multi-million-row GROUP BY
+        // was the largest single PHP allocation in report; chunking
+        // keeps the per-chunk peak bounded by `chunk` rows × 3 cols.
+        //
+        // group_concat(DISTINCT class_name) used to live here, but the
+        // consumer below treats $r[2] as a SINGLE class-name string and
+        // uses it as a dict key — every concrete dump only has at most
+        // one non-null class_name per node_id (a node IS one PHP value,
+        // so it has one class). min() picks the same name in single-
+        // class rows and automatically skips NULL-only groups, dropping
+        // the per-row distinct hash entirely.
+        //
+        // Localise hot reads (same pattern loadEdgesFfi uses) so the
+        // inner row loop never goes through `$this->` for nodeIdToIndex
+        // or the dict updates.
+        $directMap = $this->nodeToIndexDirect;
+        $directOffset = $this->directIndexOffset;
+        $directSize = $this->directIndexSize;
+        $phpMap = $this->nodeToIndexPhp;
+        $ffiNodeSizes = $this->ffiNodeSizes;
+        $nodeClassIds = $this->nodeClassIds;
+        // The class dict is touched only on cache miss (a few hundred
+        // to a few thousand times for typical heaps), so reading the
+        // properties directly via $this-> is fine — no need for the
+        // by-reference aliasing dance, which Psalm can't model.
+
+        $stmt = $db->prepare(
+            "SELECT node_id, sum(size) as s, min(class_name) as cls
+             FROM context_node_locations
+             WHERE run_id = ? AND node_id > ?
+             GROUP BY node_id
+             ORDER BY node_id
+             LIMIT {$chunk}"
+        );
         $this->nodeSizesSum = 0;
-        foreach ($rows as $r) {
-            $node_id = (int)$r[0];
-            $size = (int)$r[1];
-            $csrIdx = $this->nodeIdToIndex($node_id);
-            $this->ffiNodeSizes[$csrIdx] = $size;
-            $this->nodeSizesSum += $size;
-            if ($r[2] !== null) {
-                $className = (string)$r[2];
-                if (!isset($this->classDictReverse[$className])) {
-                    $classId = count($this->classDict);
-                    $this->classDict[] = $className;
-                    $this->classDictReverse[$className] = $classId;
+        $last_node_id = PHP_INT_MIN;
+        while (true) {
+            $stmt->execute([$run_id, $last_node_id]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
+            if ($rows === []) {
+                break;
+            }
+            foreach ($rows as $r) {
+                $node_id = (int)$r[0];
+                $size = (int)$r[1];
+                if ($directMap !== null) {
+                    $slot = $node_id + $directOffset;
+                    $csrIdx = ($slot < 0 || $slot >= $directSize)
+                        ? -1
+                        : (int)$directMap[$slot];
+                } else {
+                    $csrIdx = $phpMap[$node_id] ?? -1;
                 }
-                $this->nodeClassIds[$csrIdx] = $this->classDictReverse[$className];
+                if ($csrIdx < 0) {
+                    // Defensive: should not happen since context_nodes is
+                    // a strict superset of context_node_locations.node_id.
+                    $last_node_id = $node_id;
+                    continue;
+                }
+                $ffiNodeSizes[$csrIdx] = $size;
+                $this->nodeSizesSum += $size;
+                if ($r[2] !== null) {
+                    $className = (string)$r[2];
+                    if (!isset($this->classDictReverse[$className])) {
+                        $this->classDictReverse[$className] = count($this->classDict);
+                        $this->classDict[] = $className;
+                    }
+                    $nodeClassIds[$csrIdx] = $this->classDictReverse[$className];
+                }
+                $last_node_id = $node_id;
+            }
+            if (count($rows) < $chunk) {
+                break;
             }
         }
-        unset($rows);
     }
 
     /**
-     * Load edges from DB into CSR arrays using cursor streaming.
-     * Two cursor passes avoid loading all edges into a PHP array.
+     * Per-node context type index. One pass over context_nodes
+     * fills an int16-per-CSR-slot dictionary; the path-walker passes
+     * (DrillDownPass / ChokePointPass / TopStringsPass / TopArraysPass /
+     * CycleClusterPass::findEntryPath) read it via getNodeType
+     * instead of issuing per-node prepared statements.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    private function loadNodeTypesFfi(\PDO $db, int $run_id): void
+    {
+        $nc = $this->nodeCount;
+        $this->nodeTypeIds = FFIHelper::new("int16_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $this->nodeTypeIds[$i] = -1;
+        }
+
+        // Localise hot reads (same pattern loadEdgesFfi uses) so the
+        // inner loop never goes through `$this->` for nodeIdToIndex.
+        // The type dict is touched only on cache miss so $this->
+        // access on the dict properties is fine.
+        $directMap = $this->nodeToIndexDirect;
+        $directOffset = $this->directIndexOffset;
+        $directSize = $this->directIndexSize;
+        $phpMap = $this->nodeToIndexPhp;
+        $nodeTypeIds = $this->nodeTypeIds;
+        $chunk = $this->bulkFetchChunk;
+
+        // Chunked node_id pagination via the lazy covering index
+        // `(run_id, node_id, type)`. Because the index covers all
+        // three columns SQLite answers the chunked query as a pure
+        // index range scan — no per-row heap lookups.
+        $stmt = $db->prepare(
+            "SELECT node_id, type FROM context_nodes
+             WHERE run_id = ? AND node_id > ?
+             ORDER BY node_id
+             LIMIT {$chunk}"
+        );
+        $last_node_id = PHP_INT_MIN;
+        while (true) {
+            $stmt->execute([$run_id, $last_node_id]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
+            if ($rows === []) {
+                break;
+            }
+            foreach ($rows as $row) {
+                $node_id = (int)$row[0];
+                if ($directMap !== null) {
+                    $slot = $node_id + $directOffset;
+                    $idx = ($slot < 0 || $slot >= $directSize)
+                        ? -1
+                        : (int)$directMap[$slot];
+                } else {
+                    $idx = $phpMap[$node_id] ?? -1;
+                }
+                if ($idx >= 0) {
+                    $type = (string)$row[1];
+                    if (!isset($this->nodeTypeDictReverse[$type])) {
+                        $this->nodeTypeDictReverse[$type] = count($this->nodeTypeDict);
+                        $this->nodeTypeDict[] = $type;
+                    }
+                    $nodeTypeIds[$idx] = $this->nodeTypeDictReverse[$type];
+                }
+                $last_node_id = $node_id;
+            }
+            if (count($rows) < $chunk) {
+                break;
+            }
+        }
+    }
+
+    /**
+     * Load edges from DB into CSR arrays via a single SQL pass.
+     *
+     * The previous implementation issued the same SELECT twice — once
+     * to count degrees, once to fill the CSR arrays. ~70% of the
+     * function's runtime sat inside PDOStatement::fetch on huge dumps,
+     * almost all of it from the redundant second scan. We now stage
+     * every edge into compact FFI int arrays during the SQL pass and
+     * walk *those* for the CSR fill, eliminating the second SQL
+     * round-trip entirely. The staging buffer costs ~9 bytes per edge
+     * (parent index int32 + child index int32 + flags int8) and is
+     * freed before the function returns.
+     *
+     * Also fixes a long-standing bug in the rev-edges build: the old
+     * code stored the *raw* parent value (which could be -1 for root
+     * edges) into revEdges, but csrSlice reads each entry as a CSR
+     * index and dereferences indexToNodeFfi[entry]. That meant
+     * getAllParents() returned garbage for non-root nodes and crashed
+     * with "C array index out of bounds" the moment anyone asked for
+     * the parents of a real root. Storing the parent's CSR index $pi
+     * (already computed) makes csrSlice's contract hold and the
+     * function actually works.
      *
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
      */
     private function loadEdgesFfi(\PDO $db, int $run_id): void
     {
         $nc = $this->nodeCount;
-        $edge_query = "SELECT parent_node_id, child_node_id, is_tree, strength"
-            . " FROM context_edges WHERE run_id = {$run_id}";
+        $rootParentIdx = $this->nodeIdToIndex(-1);
 
-        // Pass 1 (cursor): count degrees and collect roots
+        // Get an exact edge count up front so the staging arrays can
+        // be sized in one allocation. COUNT(*) is fast on the
+        // (run_id, *) indexed table and pays back many times over by
+        // letting the second pass walk an in-memory FFI buffer.
+        $edgeCount = (int)$db->query(
+            "SELECT count(*) FROM context_edges WHERE run_id = {$run_id}"
+        )->fetchColumn();
+        $this->edge_count = $edgeCount;
+
+        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+
+        if ($edgeCount === 0) {
+            $this->treeEdges = FFIHelper::new("int32_t[1]");
+            $this->strongTreeEdges = FFIHelper::new("int32_t[1]");
+            $this->allEdges = FFIHelper::new("int32_t[1]");
+            $this->strongAllEdges = FFIHelper::new("int32_t[1]");
+            $this->revEdges = FFIHelper::new("int32_t[1]");
+            return;
+        }
+
+        // Staging buffer: written during the SQL pass, read during the
+        // CSR fill pass. Flags layout: bit 0 = is_tree, bit 1 = is_strong.
+        $stageParentIdx = FFIHelper::new("int32_t[{$edgeCount}]");
+        $stageChildIdx = FFIHelper::new("int32_t[{$edgeCount}]");
+        $stageFlags = FFIHelper::new("int8_t[{$edgeCount}]");
+
+        // Tree-edge link_name index: int32 per child slot, -1 = no
+        // tree edge. Initialised below to -1 in one pass over the
+        // CSR slot space, then filled as we walk tree edges. Must
+        // stay int32: see the field-declaration comment for the int16
+        // wrap-around bug that motivated the widening.
+        $this->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
+        $this->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        for ($k = 0; $k < $nc; $k++) {
+            $this->treeLinkIds[$k] = -1;
+            $this->treeParentIdx[$k] = -1;
+        }
+
         $treeDeg = FFIHelper::new("int32_t[{$nc}]");
         $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
         $allDeg = FFIHelper::new("int32_t[{$nc}]");
@@ -440,96 +769,147 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $strongTreeCount = 0;
         $allCount = 0;
         $strongAllCount = 0;
-        $edgeCount = 0;
 
-        $stmt = $db->query($edge_query);
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $edgeCount++;
-            $parent = $r[0] === null ? -1 : (int)$r[0];
-            $child = (int)$r[1];
-            $is_tree = (int)$r[2];
-            $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
+        // Localise everything the inner row loop touches. Property
+        // access on $this and method dispatch on $this->nodeIdToIndex
+        // each cost ~50-100 ns per call, and the loop runs 5M+ times
+        // on big captures. The two nodeIdToIndex calls per row alone
+        // were ~10M method dispatches before this.
+        $directMap = $this->nodeToIndexDirect;
+        $directOffset = $this->directIndexOffset;
+        $directSize = $this->directIndexSize;
+        $phpMap = $this->nodeToIndexPhp;
+        $treeLinkIds = $this->treeLinkIds;
+        $treeParentIdx = $this->treeParentIdx;
+        // The link dict and roots list are touched only on the
+        // tree-edge branch (cache miss + once per root edge), not
+        // every row, so $this-> access here is fine — Psalm can't
+        // model the by-reference aliasing pattern this used to use.
 
-            $pi = $this->nodeIdToIndex($parent);
-            $ci = $this->nodeIdToIndex($child);
-
-            if ($is_tree) {
-                $treeDeg[$pi] = $treeDeg[$pi] + 1;
-                $treeCount++;
-                if ($is_strong) {
-                    $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
-                    $strongTreeCount++;
-                }
-                if ($parent === -1) {
-                    $this->roots[] = $child;
-                }
+        // Chunked id pagination via the lazy `(run_id, id)` index.
+        // `id` is the rowid alias from the schema-level
+        // `id INTEGER PRIMARY KEY`, so each chunk runs as an
+        // `id > ?` range scan with O(chunk) cost per round trip.
+        $i = 0;
+        $chunk = $this->bulkFetchChunk;
+        $stmt = $db->prepare(
+            "SELECT parent_node_id, child_node_id, link_name, is_tree, strength, id
+             FROM context_edges
+             WHERE run_id = ? AND id > ?
+             ORDER BY id
+             LIMIT {$chunk}"
+        );
+        $last_id = 0;
+        while (true) {
+            $stmt->execute([$run_id, $last_id]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
+            if ($rows === []) {
+                break;
             }
-            if ($parent !== -1) {
-                $allDeg[$pi] = $allDeg[$pi] + 1;
-                $allCount++;
-                if ($is_strong) {
-                    $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
-                    $strongAllCount++;
+            foreach ($rows as $r) {
+                $parentIsRoot = $r[0] === null;
+                $parent = $parentIsRoot ? -1 : (int)$r[0];
+                $child = (int)$r[1];
+                $link_name = (string)$r[2];
+                $is_tree = (int)$r[3];
+                $is_strong = ((string)($r[4] ?? 'strong')) === 'strong';
+
+                if ($directMap !== null) {
+                    $slot = $parent + $directOffset;
+                    $pi = ($slot < 0 || $slot >= $directSize)
+                        ? -1
+                        : (int)$directMap[$slot];
+                    $slot = $child + $directOffset;
+                    $ci = ($slot < 0 || $slot >= $directSize)
+                        ? -1
+                        : (int)$directMap[$slot];
+                } else {
+                    $pi = $phpMap[$parent] ?? -1;
+                    $ci = $phpMap[$child] ?? -1;
                 }
+
+                $stageParentIdx[$i] = $pi;
+                $stageChildIdx[$i] = $ci;
+                $stageFlags[$i] = $is_tree | ($is_strong ? 2 : 0);
+                $i++;
+
+                if ($is_tree) {
+                    $treeDeg[$pi] = $treeDeg[$pi] + 1;
+                    $treeCount++;
+                    if ($is_strong) {
+                        $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
+                        $strongTreeCount++;
+                    }
+                    if ($parentIsRoot) {
+                        $this->roots[] = $child;
+                    }
+                    if (!isset($this->linkDictReverse[$link_name])) {
+                        $this->linkDictReverse[$link_name] = count($this->linkDict);
+                        $this->linkDict[] = $link_name;
+                    }
+                    $treeLinkIds[$ci] = $this->linkDictReverse[$link_name];
+                    $treeParentIdx[$ci] = $pi;
+                }
+                if (!$parentIsRoot) {
+                    $allDeg[$pi] = $allDeg[$pi] + 1;
+                    $allCount++;
+                    if ($is_strong) {
+                        $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
+                        $strongAllCount++;
+                    }
+                }
+                $revDeg[$ci] = $revDeg[$ci] + 1;
+                $last_id = (int)$r[5];
             }
-            $revDeg[$ci] = $revDeg[$ci] + 1;
+            if (count($rows) < $chunk) {
+                break;
+            }
         }
-        $stmt->closeCursor();
-        $this->edge_count = $edgeCount;
 
-        // Build offsets via prefix sum
-        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-
+        // Build offsets via prefix sum.
         $this->treeOffsets[0] = 0;
         $this->strongTreeOffsets[0] = 0;
         $this->allOffsets[0] = 0;
         $this->strongAllOffsets[0] = 0;
         $this->revOffsets[0] = 0;
 
-        for ($i = 0; $i < $nc; $i++) {
-            $this->treeOffsets[$i + 1] = $this->treeOffsets[$i] + $treeDeg[$i];
-            $this->strongTreeOffsets[$i + 1] = $this->strongTreeOffsets[$i] + $strongTreeDeg[$i];
-            $this->allOffsets[$i + 1] = $this->allOffsets[$i] + $allDeg[$i];
-            $this->strongAllOffsets[$i + 1] = $this->strongAllOffsets[$i] + $strongAllDeg[$i];
-            $this->revOffsets[$i + 1] = $this->revOffsets[$i] + $revDeg[$i];
+        for ($k = 0; $k < $nc; $k++) {
+            $this->treeOffsets[$k + 1] = $this->treeOffsets[$k] + $treeDeg[$k];
+            $this->strongTreeOffsets[$k + 1] = $this->strongTreeOffsets[$k] + $strongTreeDeg[$k];
+            $this->allOffsets[$k + 1] = $this->allOffsets[$k] + $allDeg[$k];
+            $this->strongAllOffsets[$k + 1] = $this->strongAllOffsets[$k] + $strongAllDeg[$k];
+            $this->revOffsets[$k + 1] = $this->revOffsets[$k] + $revDeg[$k];
         }
         unset($treeDeg, $strongTreeDeg, $allDeg, $strongAllDeg, $revDeg);
 
-        // Allocate edge arrays
         $this->treeEdges = FFIHelper::new("int32_t[" . max($treeCount, 1) . "]");
         $this->strongTreeEdges = FFIHelper::new("int32_t[" . max($strongTreeCount, 1) . "]");
         $this->allEdges = FFIHelper::new("int32_t[" . max($allCount, 1) . "]");
         $this->strongAllEdges = FFIHelper::new("int32_t[" . max($strongAllCount, 1) . "]");
-        $this->revEdges = FFIHelper::new("int32_t[" . max($edgeCount, 1) . "]");
+        $this->revEdges = FFIHelper::new("int32_t[{$edgeCount}]");
 
-        // Write positions (FFI)
+        // Write positions, seeded from the offsets we just computed.
         $treeP = FFIHelper::new("int32_t[{$nc}]");
         $streeP = FFIHelper::new("int32_t[{$nc}]");
         $allP = FFIHelper::new("int32_t[{$nc}]");
         $sallP = FFIHelper::new("int32_t[{$nc}]");
         $revP = FFIHelper::new("int32_t[{$nc}]");
-        for ($i = 0; $i < $nc; $i++) {
-            $treeP[$i] = $this->treeOffsets[$i];
-            $streeP[$i] = $this->strongTreeOffsets[$i];
-            $allP[$i] = $this->allOffsets[$i];
-            $sallP[$i] = $this->strongAllOffsets[$i];
-            $revP[$i] = $this->revOffsets[$i];
+        for ($k = 0; $k < $nc; $k++) {
+            $treeP[$k] = $this->treeOffsets[$k];
+            $streeP[$k] = $this->strongTreeOffsets[$k];
+            $allP[$k] = $this->allOffsets[$k];
+            $sallP[$k] = $this->strongAllOffsets[$k];
+            $revP[$k] = $this->revOffsets[$k];
         }
 
-        // Pass 2 (cursor): fill CSR arrays
-        $stmt = $db->query($edge_query);
-        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
-            $parent = $r[0] === null ? -1 : (int)$r[0];
-            $child = (int)$r[1];
-            $is_tree = (int)$r[2];
-            $is_strong = ((string)($r[3] ?? 'strong')) === 'strong';
-
-            $pi = $this->nodeIdToIndex($parent);
-            $ci = $this->nodeIdToIndex($child);
+        // Second pass: walk the staged edges and place them into the
+        // CSR arrays. No SQL.
+        for ($k = 0; $k < $edgeCount; $k++) {
+            $pi = (int)$stageParentIdx[$k];
+            $ci = (int)$stageChildIdx[$k];
+            $flags = (int)$stageFlags[$k];
+            $is_tree = ($flags & 1) !== 0;
+            $is_strong = ($flags & 2) !== 0;
 
             if ($is_tree) {
                 $p = (int)$treeP[$pi];
@@ -541,7 +921,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $streeP[$pi] = $p + 1;
                 }
             }
-            if ($parent !== -1) {
+            if ($pi !== $rootParentIdx) {
                 $p = (int)$allP[$pi];
                 $this->allEdges[$p] = $ci;
                 $allP[$pi] = $p + 1;
@@ -551,12 +931,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $sallP[$pi] = $p + 1;
                 }
             }
+            // revEdges stores the parent's CSR index (matching the
+            // contract csrSlice expects). The previous code stored
+            // the raw parent value here, which corrupted getAllParents
+            // for every non-root node and crashed on the actual root.
             $p = (int)$revP[$ci];
-            $this->revEdges[$p] = $parent;
+            $this->revEdges[$p] = $pi;
             $revP[$ci] = $p + 1;
         }
-        $stmt->closeCursor();
         unset($treeP, $streeP, $allP, $sallP, $revP);
+        unset($stageParentIdx, $stageChildIdx, $stageFlags);
     }
 
     /**
@@ -612,11 +996,28 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
      * each neighbor to its canonical CSR index before visiting. This
      * avoids materializing a separate scc_adjacency PHP array.
      *
+     * Tarjan's three per-node tables (index / lowlink / on_stack) live
+     * in FFI int32 / int8 buffers indexed by csrIdx instead of in PHP
+     * associative arrays. PHP hashmap access dominates the inner loop
+     * on big graphs (5M+ nodes), and these tables are accessed
+     * millions of times each — moving them to FFI removes per-visit
+     * zval overhead and gives the inner loop O(1) direct memory
+     * reads. Also localises the strongAll CSR property accesses so
+     * the loop body never goes through `$this->` for the hot reads.
+     *
      * @psalm-suppress UnsupportedReferenceUsage, MixedArgument
      */
     private function computeSccFfi(): void
     {
+        $nc = $this->nodeCount;
         $has_canonical = $this->canonical !== [];
+
+        // Localise hot FFI handles so the inner loop reads them as
+        // local variables. PHP property access has measurable overhead
+        // per call; the SCC pass touches these millions of times.
+        $strongAllOffsets = $this->strongAllOffsets;
+        $strongAllEdges = $this->strongAllEdges;
+        $indexToNodeFfi = $this->indexToNodeFfi;
 
         // If canonical mapping exists, build index-level canonical map:
         // csrIdx → canonical csrIdx. This avoids repeated node_id lookups.
@@ -625,8 +1026,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         /** @var array<int, list<int>> $canonical_original_indices canonical csrIdx => original csrIdx list */
         $canonical_original_indices = [];
         if ($has_canonical) {
-            for ($v = 0; $v < $this->nodeCount; $v++) {
-                $nid = (int)$this->indexToNodeFfi[$v];
+            for ($v = 0; $v < $nc; $v++) {
+                $nid = (int)$indexToNodeFfi[$v];
                 if ($nid === -1) {
                     continue;
                 }
@@ -640,27 +1041,37 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
 
+        // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
+        // tarjan_on_stack uses 0/1 because int8 is plenty.
+        $tarjan_index = FFIHelper::new("int32_t[{$nc}]");
+        $tarjan_lowlink = FFIHelper::new("int32_t[{$nc}]");
+        $tarjan_on_stack = FFIHelper::new("int8_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $tarjan_index[$i] = -1;
+            $tarjan_lowlink[$i] = -1;
+            $tarjan_on_stack[$i] = 0;
+        }
+
         $index_counter = 0;
         $stack = [];
-        $on_stack = [];
-        $index = [];
-        $lowlink = [];
         $sccs = [];
 
-        for ($v = 0; $v < $this->nodeCount; $v++) {
-            if ((int)$this->indexToNodeFfi[$v] === -1) {
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$indexToNodeFfi[$v] === -1) {
                 continue;
             }
             // Use canonical index if available
             $cv = $canonIdx[$v] ?? $v;
-            if (isset($index[$cv])) {
+            if ((int)$tarjan_index[$cv] !== -1) {
                 continue;
             }
 
             $call_stack = [[$cv, 0]];
-            $index[$cv] = $lowlink[$cv] = $index_counter++;
+            $tarjan_index[$cv] = $index_counter;
+            $tarjan_lowlink[$cv] = $index_counter;
+            $index_counter++;
             $stack[] = $cv;
-            $on_stack[$cv] = true;
+            $tarjan_on_stack[$cv] = 1;
 
             while ($call_stack) {
                 [$node, $ci] = array_pop($call_stack);
@@ -670,10 +1081,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $neighbors = [];
                         $seen = [];
                         foreach ($canonical_original_indices[$node] ?? [$node] as $oi) {
-                            $start = (int)$this->strongAllOffsets[$oi];
-                            $end = (int)$this->strongAllOffsets[$oi + 1];
+                            $start = (int)$strongAllOffsets[$oi];
+                            $end = (int)$strongAllOffsets[$oi + 1];
                             for ($j = $start; $j < $end; $j++) {
-                                $w = (int)$this->strongAllEdges[$j];
+                                $w = (int)$strongAllEdges[$j];
                                 $cw = $canonIdx[$w] ?? $w;
                                 if ($cw !== $node && !isset($seen[$cw])) {
                                     $seen[$cw] = true;
@@ -687,10 +1098,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 } else {
                     $neighbors = [];
                     $seen = [];
-                    $start = (int)$this->strongAllOffsets[$node];
-                    $end = (int)$this->strongAllOffsets[$node + 1];
+                    $start = (int)$strongAllOffsets[$node];
+                    $end = (int)$strongAllOffsets[$node + 1];
                     for ($j = $start; $j < $end; $j++) {
-                        $w = (int)$this->strongAllEdges[$j];
+                        $w = (int)$strongAllEdges[$j];
                         if ($w !== $node && !isset($seen[$w])) {
                             $seen[$w] = true;
                             $neighbors[] = $w;
@@ -702,27 +1113,35 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $found_unvisited = false;
                 for ($i = $ci; $i < $count; $i++) {
                     $w = $neighbors[$i];
-                    if (!isset($index[$w])) {
+                    $w_index = (int)$tarjan_index[$w];
+                    if ($w_index === -1) {
                         $call_stack[] = [$node, $i + 1];
-                        $index[$w] = $lowlink[$w] = $index_counter++;
+                        $tarjan_index[$w] = $index_counter;
+                        $tarjan_lowlink[$w] = $index_counter;
+                        $index_counter++;
                         $stack[] = $w;
-                        $on_stack[$w] = true;
+                        $tarjan_on_stack[$w] = 1;
                         $call_stack[] = [$w, 0];
                         $found_unvisited = true;
                         break;
-                    } elseif (isset($on_stack[$w])) {
-                        $lowlink[$node] = min($lowlink[$node], $index[$w]);
+                    } elseif ((int)$tarjan_on_stack[$w] !== 0) {
+                        // Inlined min() — the builtin call adds
+                        // measurable overhead in this hot loop.
+                        $cur = (int)$tarjan_lowlink[$node];
+                        if ($w_index < $cur) {
+                            $tarjan_lowlink[$node] = $w_index;
+                        }
                     }
                 }
 
                 if (!$found_unvisited) {
-                    if ($lowlink[$node] === $index[$node]) {
+                    if ((int)$tarjan_lowlink[$node] === (int)$tarjan_index[$node]) {
                         /** @var list<int> $scc CSR indices (canonical) */
                         $scc = [];
                         do {
                             /** @var int $w */
                             $w = array_pop($stack);
-                            unset($on_stack[$w]);
+                            $tarjan_on_stack[$w] = 0;
                             $scc[] = $w;
                         } while ($w !== $node);
                         if (count($scc) > 1) {
@@ -730,11 +1149,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         }
                     }
                     if ($call_stack) {
-                        $parent_frame = &$call_stack[count($call_stack) - 1];
-                        $lowlink[$parent_frame[0]] = min(
-                            $lowlink[$parent_frame[0]],
-                            $lowlink[$node]
-                        );
+                        $parent_node = $call_stack[count($call_stack) - 1][0];
+                        $cur = (int)$tarjan_lowlink[$parent_node];
+                        $cand = (int)$tarjan_lowlink[$node];
+                        if ($cand < $cur) {
+                            $tarjan_lowlink[$parent_node] = $cand;
+                        }
                     }
                 }
             }
@@ -777,7 +1197,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $class_counts = [];
 
             foreach ($scc_indices as $idx) {
-                $node_id = $this->indexToNodeId($idx);
                 $this->ffiNodeToScc[$idx] = $scc_id;
                 $total_size += (int)$this->ffiNodeSizes[$idx];
                 $classId = (int)$this->nodeClassIds[$idx];
@@ -787,18 +1206,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 }
             }
 
+            $rootParentIdx = $this->nodeIdToIndex(-1);
             $ext_in = 0;
             $ext_out = 0;
             foreach ($scc_indices as $idx) {
-                // Reverse edges (parents)
+                // Reverse edges (parents) — revEdges holds CSR indices.
                 $rStart = (int)$this->revOffsets[$idx];
                 $rEnd = (int)$this->revOffsets[$idx + 1];
                 for ($j = $rStart; $j < $rEnd; $j++) {
-                    $parentNodeId = (int)$this->revEdges[$j];
-                    if ($parentNodeId === -1) {
+                    $parentIdx = (int)$this->revEdges[$j];
+                    if ($parentIdx === $rootParentIdx) {
                         continue;
                     }
-                    $parentIdx = $this->nodeIdToIndex($parentNodeId);
                     if (!isset($scc_set[$parentIdx])) {
                         $ext_in++;
                     }

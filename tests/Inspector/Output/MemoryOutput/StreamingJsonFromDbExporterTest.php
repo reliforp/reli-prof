@@ -85,6 +85,17 @@ class StreamingJsonFromDbExporterTest extends BaseTestCase
         $str_ctx = new StringContext($str_loc);
 
         $root = \Mockery::mock(ReferenceContext::class);
+        $root_memo = null;
+        $root->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$root_memo): ?int {
+                return $root_memo;
+            }
+        );
+        $root->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$root_memo): void {
+                $root_memo = $id;
+            }
+        );
         $root->allows('getName')->andReturn('Root');
         $root->allows('getLinks')->andReturn(['child' => $str_ctx]);
         $root->allows('getLocations')->andReturn([]);
@@ -93,6 +104,17 @@ class StreamingJsonFromDbExporterTest extends BaseTestCase
         $root->allows('getLinkStrength')->andReturns(EdgeStrength::Strong);
 
         $wrapper = \Mockery::mock(ReferenceContext::class);
+        $wrapper_memo = null;
+        $wrapper->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$wrapper_memo): ?int {
+                return $wrapper_memo;
+            }
+        );
+        $wrapper->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$wrapper_memo): void {
+                $wrapper_memo = $id;
+            }
+        );
         $wrapper->allows('getName')->andReturn('Wrapper');
         $wrapper->allows('getLinks')->andReturn(['root' => $root]);
         $wrapper->allows('getLocations')->andReturn([]);
@@ -152,6 +174,17 @@ class StreamingJsonFromDbExporterTest extends BaseTestCase
     private function createTreeContext(): ReferenceContext
     {
         $context = \Mockery::mock(ReferenceContext::class);
+        $memo = null;
+        $context->allows('getMemoNodeId')->andReturnUsing(
+            static function () use (&$memo): ?int {
+                return $memo;
+            }
+        );
+        $context->allows('setMemoNodeId')->andReturnUsing(
+            static function (?int $id) use (&$memo): void {
+                $memo = $id;
+            }
+        );
         $context->allows('getName')->andReturn('TestContext');
         $context->allows('getLinks')->andReturn([]);
         $context->allows('getLocations')->andReturn([]);
