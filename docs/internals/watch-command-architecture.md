@@ -144,6 +144,7 @@ Scopes:
   local::func()$var         specific frame only
   static::Class::$prop      class static property (needs CG)
   func_static::func()$var   function static variable
+  memory::memory_get_usage  ZendMM heap stats (via HeapStatsReader)
 ```
 
 ### Path Expressions

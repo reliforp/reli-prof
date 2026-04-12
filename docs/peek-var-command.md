@@ -16,6 +16,16 @@ reli inspector:peek-var -p <pid> \
   --var='global::$counter' \
   --var='global::$config[database][host]'
 
+# Read memory usage (equivalent to memory_get_usage())
+reli inspector:peek-var -p <pid> --var='memory::memory_get_usage'
+
+# Read all memory metrics at once
+reli inspector:peek-var -p <pid> \
+  --var='memory::memory_get_usage' \
+  --var='memory::memory_get_peak_usage' \
+  --var='memory::memory_get_usage_real' \
+  --var='memory::memory_get_peak_usage_real'
+
 # Repeat every 500ms (Ctrl+C to stop)
 reli inspector:peek-var -p <pid> --var='global::$cache' --repeat=500
 
@@ -43,9 +53,27 @@ Variable expressions use the format `scope::identifier`.
 | Local | `local::func()$var` | Local variable in a specific function frame |
 | Static property | `static::Class::$prop` | Class static property |
 | Function static | `func_static::func()$var` | Function's `static $var` |
+| Memory | `memory::memory_get_usage` | Zend MM heap stats (see below) |
 
 For `local::` and `func_static::`, the function name is **required**.
 Use `<main>` for the top-level script scope.
+
+### Memory Scope
+
+The `memory::` scope exposes Zend Memory Manager heap statistics, equivalent
+to PHP's `memory_get_usage()` / `memory_get_peak_usage()` functions. Values
+are returned as integers (bytes).
+
+| Name | PHP equivalent | Description |
+|------|---------------|-------------|
+| `memory::memory_get_usage` | `memory_get_usage()` | Current emalloc heap usage |
+| `memory::memory_get_peak_usage` | `memory_get_peak_usage()` | Peak emalloc heap usage |
+| `memory::memory_get_usage_real` | `memory_get_usage(true)` | Current OS-level allocation |
+| `memory::memory_get_peak_usage_real` | `memory_get_peak_usage(true)` | Peak OS-level allocation |
+
+The read is lightweight (~1ms, single `process_vm_readv` syscall) and does not
+require compiler globals (CG), so it works without the extra overhead of
+`static::` / `func_static::` scopes.
 
 ### Path Expressions
 
@@ -79,6 +107,10 @@ Nested array keys and object properties are supported:
 
 # Function static variable
 --var='func_static::App\retry()$attempts'
+
+# Memory metrics
+--var='memory::memory_get_usage'
+--var='memory::memory_get_peak_usage'
 ```
 
 ## Output Formats

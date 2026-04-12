@@ -30,6 +30,11 @@ reli inspector:trace -p <pid> \
   --trace-var='local::App\PDOProxy::execute()$query' \
   --trace-var-on-function='App\PDOProxy::execute'
 
+# Track memory usage per sample
+reli inspector:trace -p <pid> \
+  --trace-var='memory::memory_get_usage' \
+  --trace-var='memory::memory_get_peak_usage'
+
 # Binary (rbt) output — annotations ride on SAMPLE_ANNOTATION events
 reli inspector:trace -p <pid> -F rbt -o trace.rbt \
   --trace-var='global::$counter'
@@ -56,6 +61,7 @@ short:
 | Local | `local::func()$var` | Local variable in a specific function frame |
 | Static property | `static::Class::$prop` | Class static property |
 | Function static | `func_static::func()$var` | Function's `static $var` |
+| Memory | `memory::memory_get_usage` | Zend MM heap stats |
 
 Nested array keys and object properties use the same path syntax:
 
@@ -64,6 +70,11 @@ Nested array keys and object properties use the same path syntax:
 --trace-var='global::$app->cache->size'
 --trace-var='global::$container->services[cache]->pool[active]'
 ```
+
+The `memory::` scope exposes `memory_get_usage()` / `memory_get_peak_usage()`
+equivalents. Available names: `memory_get_usage`, `memory_get_peak_usage`,
+`memory_get_usage_real`, `memory_get_peak_usage_real`. See
+[docs/peek-var-command.md](peek-var-command.md#memory-scope) for details.
 
 For `local::` and `func_static::`, the function name is **required**; use
 `<main>` for the top-level script scope.

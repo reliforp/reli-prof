@@ -22,6 +22,7 @@ Unified into `--watch-var` with `count_gt`/`count_lt`/`count_eq` operators (e.g.
 - `local::` and `func_static::` require function specification (`func()$var`)
 - Top-level script scope uses `<main>` (not `main`) to avoid collision with user-defined functions
 - Nested path access: `[key]` for arrays, `->prop` for objects
+- `memory::` scope added for ZendMM heap stats (`memory_get_usage`, `memory_get_peak_usage`, `memory_get_usage_real`, `memory_get_peak_usage_real`)
 
 ### `--oneshot` vs long-running daemon
 `--oneshot=<N>` exits after N triggers. For daemons restarted by supervisors, use restart-resilient mechanisms (`--max-dump-size`, `--max-triggers-per-hour`, `--cooldown`).

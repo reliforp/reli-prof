@@ -105,8 +105,11 @@ Fires when a PHP variable meets a condition. Multiple `--watch-var` flags can be
 | Local | `local::func()$var` | Local variable in a specific function frame |
 | Static property | `static::Class::$prop` | Class static property |
 | Function static | `func_static::func()$var` | Function's `static $var` |
+| Memory | `memory::memory_get_usage` | Zend MM heap stats |
 
 For `local::` and `func_static::`, the function name is **required**. Use `<main>` for the top-level script scope.
+
+The `memory::` scope exposes `memory_get_usage()` / `memory_get_peak_usage()` equivalents as integers (bytes). Available names: `memory_get_usage`, `memory_get_peak_usage`, `memory_get_usage_real`, `memory_get_peak_usage_real`. See [docs/peek-var-command.md](peek-var-command.md#memory-scope) for details.
 
 #### Operators
 
@@ -150,6 +153,12 @@ Variable names support path expressions for nested array keys and object propert
 
 # Top-level script variable
 --watch-var='local::<main>()$counter:gt:1000'
+
+# Memory usage exceeds 100MB
+--watch-var='memory::memory_get_usage:gt:104857600'
+
+# Peak memory exceeds 256MB
+--watch-var='memory::memory_get_peak_usage:gt:268435456'
 ```
 
 ### CPU Usage (`--cpu-usage=<percent>`)
