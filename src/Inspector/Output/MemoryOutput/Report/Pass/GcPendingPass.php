@@ -30,8 +30,6 @@ final class GcPendingPass implements PassInterface
 {
     public function __construct(
         private GraphSubstrate $substrate,
-        private \PDO $db,
-        private int $run_id,
     ) {
     }
 

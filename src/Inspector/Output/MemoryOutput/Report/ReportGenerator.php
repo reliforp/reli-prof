@@ -235,7 +235,7 @@ final class ReportGenerator
                 new TopStringsPass($db_factory(), $run_id, $substrate)
             );
             $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
-                new NonTreeEdgePass($db_factory(), $run_id, $substrate, $resolver_factory())
+                new NonTreeEdgePass($db_factory(), $run_id, $substrate)
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
                 new StructuralDedupPass($db_factory(), $run_id, $substrate, $resolver_factory())
@@ -247,13 +247,13 @@ final class ReportGenerator
                 new ChokePointPass($substrate, $db_factory(), $run_id, $heap_usage)
             );
             $pass_factories['BlameAllocationPass'] = fn (): array => $this->runPass(
-                new BlameAllocationPass($substrate, $db_factory(), $run_id)
+                new BlameAllocationPass($substrate)
             );
             $pass_factories['RetainedSizeConfidencePass'] = fn (): array => $this->runPass(
                 new RetainedSizeConfidencePass($substrate)
             );
             $pass_factories['GcPendingPass'] = fn (): array => $this->runPass(
-                new GcPendingPass($substrate, $db_factory(), $run_id)
+                new GcPendingPass($substrate)
             );
 
             $runner = new ParallelPassRunner($workers_want_fresh_db ? $worker_count : 1);

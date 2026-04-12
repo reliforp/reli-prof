@@ -66,7 +66,7 @@ class GcPendingPassTest extends BaseTestCase
         $substrate = GraphSubstrate::loadFromDb($db, 1);
         $this->assertNotEmpty($substrate->getSccProfiles(), 'fixture should produce an SCC');
 
-        $pass = new GcPendingPass($substrate, $db, 1);
+        $pass = new GcPendingPass($substrate);
         $findings = $pass->analyze();
 
         $this->assertCount(1, $findings);
@@ -118,7 +118,7 @@ class GcPendingPassTest extends BaseTestCase
         $substrate = GraphSubstrate::loadFromDb($db, 1);
         $this->assertNotEmpty($substrate->getSccProfiles(), 'cycle still detected');
 
-        $pass = new GcPendingPass($substrate, $db, 1);
+        $pass = new GcPendingPass($substrate);
         $findings = $pass->analyze();
 
         $this->assertSame([], $findings);
@@ -148,7 +148,7 @@ class GcPendingPassTest extends BaseTestCase
         $substrate = GraphSubstrate::loadFromDb($db, 1);
         $this->assertSame([], $substrate->getSccProfiles());
 
-        $pass = new GcPendingPass($substrate, $db, 1);
+        $pass = new GcPendingPass($substrate);
         $this->assertSame([], $pass->analyze());
     }
 
@@ -182,7 +182,7 @@ class GcPendingPassTest extends BaseTestCase
         $substrate = GraphSubstrate::loadFromDb($db, 1);
         $this->assertNotEmpty($substrate->getSccProfiles());
 
-        $pass = new GcPendingPass($substrate, $db, 1);
+        $pass = new GcPendingPass($substrate);
         $this->assertSame([], $pass->analyze());
     }
 

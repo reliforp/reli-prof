@@ -146,7 +146,6 @@ final class StructuralDedupPass implements PassInterface
 
             // Find object_properties child, collect property names
             $props = [];
-            $has_dynamic_props = false;
             foreach ($this->substrate->getChildren($node_id) as $child) {
                 $child_link = $resolver->lookup($child);
                 if ($child_link === 'object_properties') {
@@ -160,7 +159,6 @@ final class StructuralDedupPass implements PassInterface
                     // stdClass and __set() classes store props here
                     $dyn_count = count($this->substrate->getChildren($child));
                     if ($dyn_count > 0) {
-                        $has_dynamic_props = true;
                         $props[] = "[dynamic:{$dyn_count}]";
                     }
                 }

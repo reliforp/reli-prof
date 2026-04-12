@@ -28,7 +28,6 @@ final class NonTreeEdgePass implements PassInterface
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
-        private ?LinkNameResolver $link_resolver = null,
     ) {
     }
 

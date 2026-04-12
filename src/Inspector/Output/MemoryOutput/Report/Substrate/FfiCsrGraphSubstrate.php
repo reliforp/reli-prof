@@ -176,17 +176,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
     /** @return list<int> */
     #[\Override]
-    public function getStrongAllChildren(int $nodeId): array
-    {
-        $idx = $this->nodeIdToIndex($nodeId);
-        if ($idx < 0) {
-            return [];
-        }
-        return $this->csrSlice($this->strongAllOffsets, $this->strongAllEdges, $idx);
-    }
-
-    /** @return list<int> */
-    #[\Override]
     public function getAllParents(int $nodeId): array
     {
         $idx = $this->nodeIdToIndex($nodeId);
@@ -1208,7 +1197,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $class_counts = [];
 
             foreach ($scc_indices as $idx) {
-                $node_id = $this->indexToNodeId($idx);
                 $this->ffiNodeToScc[$idx] = $scc_id;
                 $total_size += (int)$this->ffiNodeSizes[$idx];
                 $classId = (int)$this->nodeClassIds[$idx];

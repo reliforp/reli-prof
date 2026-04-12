@@ -195,9 +195,8 @@ final class OwnershipPatternPass implements PassInterface
     }
 
     /**
-     * Find the property name that links owner_class to owned_class.
+     * Average shallow size of the first N instances of $class_name.
      * @psalm-suppress MixedArrayAccess
-     * @param array<int, string> $link_names
      */
     private function avgSize(string $class_name): int
     {

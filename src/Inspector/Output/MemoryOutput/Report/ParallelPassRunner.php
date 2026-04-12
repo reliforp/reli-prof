@@ -121,7 +121,6 @@ final class ParallelPassRunner
                         // Child process.
                         $this->childRun($factory, $out_file);
                         // childRun calls exit() itself — never returns.
-                        exit(99);
                     }
                     $running[$pid] = ['name' => $name, 'out_file' => $out_file];
                 }

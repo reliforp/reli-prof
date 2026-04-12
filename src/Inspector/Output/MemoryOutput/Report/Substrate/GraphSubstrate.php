@@ -176,12 +176,6 @@ class GraphSubstrate
     }
 
     /** @return list<int> */
-    public function getStrongAllChildren(int $nodeId): array
-    {
-        return $this->strong_all_children[$nodeId] ?? [];
-    }
-
-    /** @return list<int> */
     public function getAllParents(int $nodeId): array
     {
         return $this->all_parents[$nodeId] ?? [];
@@ -328,20 +322,6 @@ class GraphSubstrate
             $node = $this->canonical[$node];
         }
         return $node;
-    }
-
-    protected function union(int $a, int $b): void
-    {
-        $ca = $this->findCanonical($a);
-        $cb = $this->findCanonical($b);
-        if ($ca !== $cb) {
-            // Use smaller node_id as canonical
-            if ($ca > $cb) {
-                [$ca, $cb] = [$cb, $ca];
-            }
-            $this->canonical[$cb] = $ca;
-            $this->canonical[$ca] = $ca;
-        }
     }
 
     /**

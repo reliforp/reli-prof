@@ -23,8 +23,6 @@ final class BlameAllocationPass implements PassInterface
 {
     public function __construct(
         private GraphSubstrate $substrate,
-        private \PDO $db,
-        private int $run_id,
     ) {
     }
 
@@ -144,13 +142,9 @@ final class BlameAllocationPass implements PassInterface
         usort($blame_sorted, fn($a, $b) => $b['total'] <=> $a['total']);
 
         $total_heap = $this->substrate->getNodeSizesSum();
-        $total_exclusive = 0;
-        $total_shared = 0.0;
 
         $findings = [];
         foreach ($blame_sorted as $b) {
-            $total_exclusive += $b['exclusive'];
-            $total_shared += $b['shared'];
             $pct = $total_heap > 0 ? $b['total'] / $total_heap * 100.0 : 0;
 
             $findings[] = new Finding(
