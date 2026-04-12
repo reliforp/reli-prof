@@ -209,6 +209,15 @@ final class ExploreTui
     private int $last_click_col = -1;
     private const DOUBLE_CLICK_MS = 400;
 
+    /**
+     * Cached mini-flame pixel → overview key_id mapping, populated
+     * during render so click handlers can look up which frame a
+     * column corresponds to without recomputing the allocation.
+     *
+     * @var list<int>  pixel_index → key_id (-1 = unallocated)
+     */
+    private array $mini_flame_pixel_keys = [];
+
     public function __construct(TraceModel $model, TerminalInterface $term, Keymap $keymap)
     {
         $this->model = $model;
@@ -353,6 +362,7 @@ final class ExploreTui
         $cache = $this->ensureOverview();
         $rows = $cache['rows'];
         if ($rows === [] || $width <= 0) {
+            $this->mini_flame_pixel_keys = [];
             return str_repeat(' ', max(0, $width));
         }
 
@@ -361,6 +371,7 @@ final class ExploreTui
             $total += $count;
         }
         if ($total === 0) {
+            $this->mini_flame_pixel_keys = [];
             return str_repeat(' ', $width);
         }
 
@@ -404,8 +415,11 @@ final class ExploreTui
 
         // Walk frames in order, allocating subpixels proportionally.
         // The break at $total_pixels truncates the long tail.
+        // Also builds a parallel pixel → key_id mapping for click handling.
         $pos = 0;
         $cursor_rendered_in_strip = false;
+        /** @var list<int> pixel_index → key_id (-1 = unallocated) */
+        $pixel_keys = array_fill(0, $total_pixels, -1);
         foreach ($rows as $i => [, $key_id, ]) {
             if ($pos >= $total_pixels) {
                 break;
@@ -419,12 +433,14 @@ final class ExploreTui
             for ($p = $pos; $p < $end; $p++) {
                 $pixel_frame[$p] = $i;
                 $pixel_focus[$p] = $is_highlight;
+                $pixel_keys[$p] = $key_id;
             }
             if ($is_highlight) {
                 $cursor_rendered_in_strip = true;
             }
             $pos = $end;
         }
+        $this->mini_flame_pixel_keys = $pixel_keys;
 
         // If the cursor row's natural position lies past the visible
         // strip (typical for callers/callees on aggregator functions
@@ -2963,6 +2979,12 @@ final class ExploreTui
         $body_rows = $rows - 6 - ($show_mini_flame ? 1 : 0);
         $body_start = 4 + ($show_mini_flame ? 1 : 0);
 
+        // Click on the mini-flame strip row (directly after the header).
+        if ($show_mini_flame && $screen_row === 4 && !$is_scroll) {
+            $this->dispatchMouseMiniFlame($screen_col, $cols);
+            return;
+        }
+
         if ($screen_row < $body_start || $screen_row >= $body_start + $body_rows) {
             return;
         }
@@ -3099,6 +3121,34 @@ final class ExploreTui
             ActivePane::Callees  => $this->callees_selected += $delta,
             ActivePane::Overview, ActivePane::Focus => null,
         };
+    }
+
+    /**
+     * Left-click in list mode body: row 0 is header, rows 1+ are data.
+     */
+    /**
+     * Left-click on the mini-flame strip: focus on the frame at that column.
+     */
+    private function dispatchMouseMiniFlame(int $screen_col, int $cols): void
+    {
+        if ($this->mini_flame_pixel_keys === []) {
+            return;
+        }
+        // The mini-flame spans the full terminal width. Each cell = 2 pixels.
+        $pixel = $screen_col * 2;
+        if ($pixel < 0 || $pixel >= count($this->mini_flame_pixel_keys)) {
+            return;
+        }
+        $key_id = $this->mini_flame_pixel_keys[$pixel];
+        if ($key_id < 0) {
+            return;
+        }
+        $state = $this->currentState();
+        if ($state->focus_id === $key_id) {
+            return; // already focused on this frame
+        }
+        $label = Aggregator::labelFor($this->model, $key_id, true);
+        $this->pushSandwichFocus($key_id, $label, $state->sandwich_view);
     }
 
     /**
