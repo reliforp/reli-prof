@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
+use Reli\Lib\Log\Log;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassConstant;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry;
@@ -72,32 +73,60 @@ final class EmitClassTableJob implements CollectorJob
         $root_node_id = $ctx->emitNode($defined_classes_context, null, 'class_table');
         $parent = $root_node_id >= 0 ? $root_node_id : null;
 
-        foreach ($this->array->getItemIterator($ctx->dereferencer) as $class_name => $zval) {
-            assert(!is_null($zval->value->ce));
-
-            $pointer = $zval->value->ce;
-            if ($ctx->memory_locations->has($pointer->address)) {
-                continue;
-            }
-
-            $class_entry = $ctx->dereferencer->deref($pointer);
-            [$class_def_context, $deferred_zvals] = $this->collectClassDefinition($class_entry, $ctx, $queue);
-
-            $ctx->emitNode($class_def_context, $parent, (string)$class_name);
-
-            // Push deferred zvals/arrays after emit (need parent node_id from memo).
-            // See EmitObjectJob for why this reads from getMemoNodeId().
-            /** @psalm-suppress ArgumentTypeCoercion */
-            foreach ($deferred_zvals as [$parent_ctx, $link, $value]) {
-                $raw_pid = $parent_ctx->getMemoNodeId();
-                $pid = $raw_pid === null
-                    ? null
-                    : ($raw_pid < 0 ? -$raw_pid - 1 : $raw_pid);
-                if ($value instanceof \Reli\Lib\Process\Pointer\Pointer) {
-                    $queue->push(new EmitArrayJob($value, $pid, $link));
-                } else {
-                    $queue->push(new ResolveZvalJob($value, $pid, $link));
+        // Walk the class table by iterating arData directly with a
+        // plain for-loop (no generators). Generator-based iterators
+        // (getItemIterator, getBucketIterator) propagate a single
+        // deref failure to the foreach and kill the entire walk.
+        // A plain loop with per-bucket try-catch is resilient.
+        $arData = $this->array->arData;
+        if ($arData === null) {
+            return;
+        }
+        $numUsed = $this->array->nNumUsed;
+        for ($i = 0; $i < $numUsed; $i++) {
+            try {
+                $bucket = $ctx->dereferencer->deref($arData->indexedAt($i));
+                if ($bucket->val->isUndef()) {
+                    continue;
                 }
+
+                $pointer = $bucket->val->value->ce;
+                if ($pointer === null) {
+                    continue;
+                }
+                if ($ctx->memory_locations->has($pointer->address)) {
+                    continue;
+                }
+
+                if ($bucket->key !== null) {
+                    $zend_string = $ctx->dereferencer->deref($bucket->key);
+                    $class_name = $zend_string->toString($ctx->dereferencer);
+                } else {
+                    $class_name = '?';
+                }
+
+                $class_entry = $ctx->dereferencer->deref($pointer);
+                [$class_def_context, $deferred_zvals] = $this->collectClassDefinition($class_entry, $ctx, $queue);
+
+                $ctx->emitNode($class_def_context, $parent, $class_name);
+
+                // Push deferred zvals/arrays after emit (need parent node_id from memo).
+                // See EmitObjectJob for why this reads from getMemoNodeId().
+                /** @psalm-suppress ArgumentTypeCoercion */
+                foreach ($deferred_zvals as [$parent_ctx, $link, $value]) {
+                    $raw_pid = $parent_ctx->getMemoNodeId();
+                    $pid = $raw_pid === null
+                        ? null
+                        : ($raw_pid < 0 ? -$raw_pid - 1 : $raw_pid);
+                    if ($value instanceof \Reli\Lib\Process\Pointer\Pointer) {
+                        $queue->push(new EmitArrayJob($value, $pid, $link));
+                    } else {
+                        $queue->push(new ResolveZvalJob($value, $pid, $link));
+                    }
+                }
+            } catch (\Throwable) {
+                // Per-bucket error isolation: a single unreadable class
+                // must not abort the walk of remaining classes.
             }
         }
     }
