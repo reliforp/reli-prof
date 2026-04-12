@@ -705,20 +705,23 @@ final class MemoryDumper
             $max_size = 4096;
         }
 
-        // Pre-allocate a single FFI buffer at max size
+        // Pre-allocate a single FFI buffer at max size.
+        // Region data is written via C write() directly from the FFI
+        // buffer, bypassing FFI::string() which would copy the entire
+        // region into a PHP string first.
         $ffi = \FFI::cdef('
             typedef int pid_t;
             struct iovec {
                 void  *iov_base;
                 size_t iov_len;
             };
-            int errno;
             ssize_t process_vm_readv(pid_t pid,
                 const struct iovec *local_iov, unsigned long liovcnt,
                 const struct iovec *remote_iov, unsigned long riovcnt,
                 unsigned long flags);
-            size_t fwrite(const void *ptr, size_t size, size_t nmemb, void *stream);
-            int fileno(void *stream);
+            int open(const char *pathname, int flags, ...);
+            ssize_t write(int fd, const void *buf, size_t count);
+            int close(int fd);
         ', 'libc.so.6');
 
         $buffer = $ffi->new("unsigned char[{$max_size}]");
@@ -734,20 +737,11 @@ final class MemoryDumper
         /** @psalm-suppress UndefinedPropertyAssignment */
         $local_iov->iov_base = \FFI::addr($buffer);
 
-        // Open dump file, write header + memory map via the existing writer
+        // Write header + memory map via the existing writer, then append
+        // region data via C open()/write() to avoid FFI::string copies.
         $writer = new MemoryDumpWriter();
-        $fp = fopen($output_path, 'wb');
-        if ($fp === false) {
-            throw new \RuntimeException("failed to open: {$output_path}");
-        }
 
         try {
-            // Use writeStreaming with an empty generator to write header+map
-            // then take over the fp for direct writes.
-            // Actually simpler: just reopen and write ourselves.
-            fclose($fp);
-
-            // Write header+map via the writer, then append regions directly
             /** @var \Reli\Lib\Process\MemoryMap\ProcessMemoryArea[] $memory_areas */
             $header_result = $writer->writeStreaming(
                 $output_path,
@@ -760,9 +754,11 @@ final class MemoryDumper
                 (static fn () => yield from [])(),
             );
 
-            // Reopen in append mode for direct region writes
-            $fp = fopen($output_path, 'ab');
-            if ($fp === false) {
+            // Reopen in append mode via C open() for zero-copy writes.
+            // O_WRONLY|O_APPEND = 1|1024 = 1025
+            /** @var int $fd */
+            $fd = $ffi->open($output_path, 1025);
+            if ($fd < 0) {
                 throw new \RuntimeException("failed to reopen: {$output_path}");
             }
 
@@ -801,18 +797,18 @@ final class MemoryDumper
                 }
 
                 // Write region header (address + size) via PHP fwrite
-                fwrite($fp, pack('P', $addr));
-                fwrite($fp, pack('P', $size));
+                // (16 bytes — not worth the complexity of FFI for this)
+                $hdr = pack('PP', $addr, $size);
+                $ffi->write($fd, $hdr, 16);
 
-                // Write region data directly from FFI buffer via PHP fwrite
-                // FFI::string is needed here but on the reused buffer
-                fwrite($fp, \FFI::string($buffer, $size));
+                // Write region data directly from FFI buffer — no copy
+                $ffi->write($fd, $buffer, $size);
 
                 $written_count++;
                 $total_bytes += $size;
             }
 
-            fclose($fp);
+            $ffi->close($fd);
 
             // Patch region_count in the header (writeStreaming wrote 0)
             $rc_offset = 8 + 4 + 4 + strlen($php_version) + 8 + 8 + 8 + 4;
@@ -822,16 +818,12 @@ final class MemoryDumper
                 fwrite($patch_fp, pack('V', $written_count));
                 fclose($patch_fp);
             }
-            $fp = null; // prevent double-close in finally
-
             return [
                 'region_count' => $written_count,
                 'total_bytes' => $total_bytes,
             ];
-        } finally {
-            if ($fp !== null) {
-                fclose($fp);
-            }
+        } catch (\Throwable $e) {
+            throw $e;
         }
     }
 
