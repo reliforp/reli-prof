@@ -89,6 +89,32 @@ class MouseEventTest extends BaseTestCase
         $this->assertNull(MouseEvent::tryParse("\e[5~"));
     }
 
+    public function testParseShiftModifier(): void
+    {
+        // Shift adds bit 2 (4) to Cb. Left click + shift = 0+4 = 4.
+        $event = MouseEvent::tryParse("\e[<4;10;5M");
+        $this->assertNotNull($event);
+        $this->assertSame(MouseEvent::BUTTON_LEFT, $event->button);
+        $this->assertTrue($event->shift);
+        $this->assertFalse($event->drag);
+    }
+
+    public function testShiftScrollUp(): void
+    {
+        // Scroll up (64) + shift (4) = 68.
+        $event = MouseEvent::tryParse("\e[<68;1;1M");
+        $this->assertNotNull($event);
+        $this->assertSame(MouseEvent::SCROLL_UP, $event->button);
+        $this->assertTrue($event->shift);
+    }
+
+    public function testNoShiftByDefault(): void
+    {
+        $event = MouseEvent::tryParse("\e[<0;10;5M");
+        $this->assertNotNull($event);
+        $this->assertFalse($event->shift);
+    }
+
     public function testReturnsNullForMalformed(): void
     {
         $this->assertNull(MouseEvent::tryParse("\e[<0;10M"));

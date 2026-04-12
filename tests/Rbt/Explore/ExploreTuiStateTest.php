@@ -1375,6 +1375,24 @@ class ExploreTuiStateTest extends BaseTestCase
         $this->assertSame(1, $this->get($tui, 'list_selected'));
     }
 
+    public function testShiftScrollMovesThreeRows(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+        // Start at row 5.
+        $this->inv($tui, 'moveSelection', 5);
+
+        // Shift+scroll down in body area.
+        $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 10, 6, true, false, true);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(8, $this->get($tui, 'list_selected'));
+
+        // Shift+scroll up.
+        $mouse = new MouseEvent(MouseEvent::SCROLL_UP, 10, 6, true, false, true);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(5, $this->get($tui, 'list_selected'));
+    }
+
     public function testMouseScrollTargetsPaneUnderPointer(): void
     {
         $tui = $this->makeTui();

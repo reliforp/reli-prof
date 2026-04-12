@@ -2999,7 +2999,8 @@ final class ExploreTui
         $hover_pane = $this->hitTestPane($state, $body_row, $body_rows, $screen_col, $sidebar_width);
 
         if ($is_scroll) {
-            $delta = $mouse->button === MouseEvent::SCROLL_UP ? -1 : 1;
+            $step = $mouse->shift ? 3 : 1;
+            $delta = $mouse->button === MouseEvent::SCROLL_UP ? -$step : $step;
             $this->dispatchMouseScroll($state, $hover_pane, $delta);
             return;
         }

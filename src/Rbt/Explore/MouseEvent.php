@@ -34,6 +34,7 @@ final class MouseEvent
         public readonly int $row,
         public readonly bool $press,
         public readonly bool $drag,
+        public readonly bool $shift = false,
     ) {
     }
 
@@ -53,9 +54,10 @@ final class MouseEvent
         $row = (int)$m[3];
         $press = $m[4] === 'M';
 
+        $shift = ($cb & 4) !== 0;
         $drag = ($cb & 32) !== 0;
-        $button = $cb & ~32;
+        $button = $cb & ~(4 | 8 | 16 | 32);
 
-        return new self($button, $col, $row, $press, $drag);
+        return new self($button, $col, $row, $press, $drag, $shift);
     }
 }
