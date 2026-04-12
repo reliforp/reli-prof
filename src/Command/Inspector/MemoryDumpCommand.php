@@ -155,7 +155,6 @@ final class MemoryDumpCommand extends Command
             $dump_settings->include_binary,
             !$dump_settings->exclude_heap,
             $interned_string_arrays,
-            $dump_settings->buffer_all,
         );
 
         $output->writeln(sprintf(
