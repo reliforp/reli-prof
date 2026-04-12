@@ -40,7 +40,7 @@ final class ExploreTui
     private const SYNTH_LEAF = -2;
 
     private TraceModel $model;
-    private Terminal $term;
+    private TerminalInterface $term;
     private Keymap $keymap;
 
     /** @var list<ViewState> stack of focuses; top is current */
@@ -199,7 +199,7 @@ final class ExploreTui
      */
     private array $tree_folded = [];
 
-    public function __construct(TraceModel $model, Terminal $term, Keymap $keymap)
+    public function __construct(TraceModel $model, TerminalInterface $term, Keymap $keymap)
     {
         $this->model = $model;
         $this->term = $term;

@@ -36,7 +36,7 @@ namespace Reli\Rbt\Explore;
  * (arrow keys etc) are then drained with the stream switched to
  * non-blocking so the loop stops as soon as the kernel buffer is empty.
  */
-final class Terminal
+final class Terminal implements TerminalInterface
 {
     /** @var resource|null */
     private $tty_in = null;
@@ -53,6 +53,7 @@ final class Terminal
         register_shutdown_function([$this, 'leave']);
     }
 
+    #[\Override]
     public function enter(): void
     {
         if ($this->entered) {
@@ -104,6 +105,7 @@ final class Terminal
         $this->entered = true;
     }
 
+    #[\Override]
     public function leave(): void
     {
         if (!$this->entered) {
@@ -147,6 +149,7 @@ final class Terminal
      * Returns an empty string only when the underlying read fails or
      * the resource is closed; the caller may treat that as "try again".
      */
+    #[\Override]
     public function readKey(): string
     {
         if ($this->tty_in === null) {
@@ -186,11 +189,13 @@ final class Terminal
      * separate entry point so future versions can interleave SIGWINCH
      * handling or polling without changing the call site.
      */
+    #[\Override]
     public function pollKey(): string
     {
         return $this->readKey();
     }
 
+    #[\Override]
     public function write(string $s): void
     {
         if ($this->tty_out === null) {
@@ -200,6 +205,7 @@ final class Terminal
         fflush($this->tty_out);
     }
 
+    #[\Override]
     public function clear(): void
     {
         $this->write("\e[2J\e[H");
@@ -213,6 +219,7 @@ final class Terminal
     /**
      * @return array{int, int} [columns, rows]
      */
+    #[\Override]
     public function size(): array
     {
         $cols_env = getenv('COLUMNS');
