@@ -127,6 +127,7 @@ final class MemoryDumpCommand extends Command
             $cg_address,
             $dump_settings->output_path,
             $dump_settings->include_binary,
+            $dump_settings->include_heap,
         );
 
         $output->writeln(sprintf(

@@ -57,6 +57,7 @@ final class MemoryDumper
         int $cg_address,
         string $output_path,
         bool $include_binary = false,
+        bool $include_heap = false,
     ): MemoryDumpResult {
         $php_version = $target_php_settings->php_version;
         $zend_type_reader = $this->zend_type_reader_creator->create(
@@ -137,16 +138,20 @@ final class MemoryDumper
             ];
         }
 
-        // [heap] region (internal function/class definitions).
-        // After heavy extension usage + free, glibc returns pages via
-        // MADV_DONTNEED but brk doesn't shrink, leaving non-resident
-        // gaps; the unified pagemap pass below takes care of them.
-        $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
-        foreach ($heap_areas as $area) {
-            $addr = (int)hexdec($area->begin);
-            $size = (int)hexdec($area->end) - $addr;
-            if ($size > 0) {
-                $intervals[] = ['address' => $addr, 'size' => $size];
+        // [heap] region (glibc brk heap). In include_heap mode, the
+        // entire resident range is captured for extension-state
+        // retention analysis. In minimum mode, the heap is NOT bulk-
+        // captured; a metadata peek walker runs later to selectively
+        // read just the ~750 KiB of MINIT-time metadata that the
+        // analyser needs.
+        if ($include_heap) {
+            $heap_areas = $memory_map->findByNameRegex('\\[heap\\]');
+            foreach ($heap_areas as $area) {
+                $addr = (int)hexdec($area->begin);
+                $size = (int)hexdec($area->end) - $addr;
+                if ($size > 0) {
+                    $intervals[] = ['address' => $addr, 'size' => $size];
+                }
             }
         }
 
@@ -165,23 +170,26 @@ final class MemoryDumper
             }
         }
 
-        // Anonymous writable mmap regions. glibc's malloc uses mmap for
-        // large allocations (> M_MMAP_THRESHOLD, typically 128KB).
-        // Persistent PHP data and extension buffers can end up here.
-        // This scan also subsumes the explicit ZendMM chunk and huge
-        // list entries above; merge + pagemap will collapse them.
-        $anon_areas = $memory_map->findByNameRegex('^$');
-        foreach ($anon_areas as $area) {
-            if (
-                $area->inode_num === 0
-                && $area->attribute->read
-                && $area->attribute->write
-                && !$area->attribute->execute
-            ) {
-                $addr = (int)hexdec($area->begin);
-                $size = (int)hexdec($area->end) - $addr;
-                if ($size > 0) {
-                    $intervals[] = ['address' => $addr, 'size' => $size];
+        // Anonymous writable mmap regions. In include_heap mode, these
+        // are captured for full coverage; in minimum mode they are
+        // skipped because the ZendMM chunk / huge entries above
+        // already cover the PHP-owned portion, and the remainder is
+        // glibc malloc arenas and extension-private state that the
+        // analyser does not walk.
+        if ($include_heap) {
+            $anon_areas = $memory_map->findByNameRegex('^$');
+            foreach ($anon_areas as $area) {
+                if (
+                    $area->inode_num === 0
+                    && $area->attribute->read
+                    && $area->attribute->write
+                    && !$area->attribute->execute
+                ) {
+                    $addr = (int)hexdec($area->begin);
+                    $size = (int)hexdec($area->end) - $addr;
+                    if ($size > 0) {
+                        $intervals[] = ['address' => $addr, 'size' => $size];
+                    }
                 }
             }
         }
@@ -316,7 +324,26 @@ final class MemoryDumper
             }
         }
 
-        // Phase 4: stream-write. Read each region and flush it to disk
+        // Phase 4 (minimum mode only): run the metadata peek walker to
+        // cover the ~750 KiB of MINIT-time internal metadata that
+        // lives in [heap] but is not captured by the bulk scan. The
+        // walker uses the live Dereferencer so it reads from the
+        // stopped target process, not from the dump file.
+        if (!$include_heap) {
+            $walker = new \Reli\Lib\PhpProcessReader\PhpMemoryReader\MetadataPeekWalker();
+            $peeks = $walker->walk(
+                $dereferencer,
+                $zend_type_reader,
+                $eg_address,
+                $cg_address,
+                $final,
+            );
+            foreach ($peeks as $peek) {
+                $final[] = $peek;
+            }
+        }
+
+        // Phase 5: stream-write. Read each region and flush it to disk
         // one at a time. Peak profiler memory drops from
         // `O(dump size)` to `O(max single region size)` because FFI
         // buffers and the PHP string copies are released as soon as
@@ -456,7 +483,12 @@ final class MemoryDumper
         $page_size = 4096;
         $num_pages = (int)($region_size / $page_size);
         if ($num_pages === 0) {
-            return [];
+            // Sub-page region: too small to probe via pagemap (it
+            // always fits inside a single page). Treat it as
+            // resident — returning null would also work (it means
+            // "pagemap unavailable, keep the whole range"), but
+            // returning the region itself is more explicit.
+            return [['address' => $region_addr, 'size' => $region_size]];
         }
         $start_vpn = (int)($region_addr / $page_size);
 
