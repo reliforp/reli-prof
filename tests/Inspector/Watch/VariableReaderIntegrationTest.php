@@ -34,6 +34,7 @@ use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpSymbolReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
+use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\PhpProcessReader\TsrmGlobalsResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreator;
 use Reli\Lib\Process\MemoryReader\MemoryReader;
@@ -1087,6 +1088,207 @@ class VariableReaderIntegrationTest extends BaseTestCase
         $key_items = 'static::PreloadedTarget::$items';
         $this->assertArrayHasKey($key_items, $results);
         $this->assertSame(4, $results[$key_items]->array_count);
+    }
+
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testReadMemoryVariables(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $memory_reader = new MemoryReader();
+        $zend_type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script = <<<'CODE'
+            <?php
+            $data = str_repeat("x", 1024 * 1024); // ~1MB
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+
+        $s = fgets($pipes[1]);
+        $this->assertSame("ready\n", $s);
+
+        $process_specifier = new ProcessSpecifier($pid);
+        $target_php_settings = new TargetPhpSettings(
+            php_version: $php_version,
+        );
+
+        $php_globals_finder = $this->createGlobalsFinder(
+            $memory_reader,
+            $zend_type_reader_creator,
+        );
+        $eg_address = $php_globals_finder->findExecutorGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
+
+        $process_memory_map_creator = ProcessMemoryMapCreator::create();
+        $chunk_finder = new PhpZendMemoryManagerChunkFinder(
+            $process_memory_map_creator,
+            $zend_type_reader_creator,
+        );
+        $heap_stats_reader = new HeapStatsReader(
+            $chunk_finder,
+            $memory_reader,
+            $zend_type_reader_creator,
+        );
+
+        $variable_reader = new VariableReader(
+            $memory_reader,
+            $zend_type_reader_creator,
+            $heap_stats_reader,
+        );
+
+        $specs = [
+            VariableSpec::parse('memory::memory_get_usage'),
+            VariableSpec::parse('memory::memory_get_peak_usage'),
+            VariableSpec::parse('memory::memory_get_usage_real'),
+            VariableSpec::parse('memory::memory_get_peak_usage_real'),
+        ];
+        $results = $variable_reader->readVariables(
+            $specs,
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+        );
+
+        // memory_get_usage — should be > 1MB after str_repeat
+        $key_usage = 'memory::memory_get_usage';
+        $this->assertArrayHasKey($key_usage, $results);
+        $this->assertSame(
+            VariableValue::TYPE_LONG,
+            $results[$key_usage]->type,
+        );
+        $this->assertGreaterThan(
+            1024 * 1024,
+            $results[$key_usage]->scalar_value,
+            'memory_get_usage should be > 1MB',
+        );
+
+        // memory_get_peak_usage — should be >= usage
+        $key_peak = 'memory::memory_get_peak_usage';
+        $this->assertArrayHasKey($key_peak, $results);
+        $this->assertSame(
+            VariableValue::TYPE_LONG,
+            $results[$key_peak]->type,
+        );
+        $this->assertGreaterThanOrEqual(
+            $results[$key_usage]->scalar_value,
+            $results[$key_peak]->scalar_value,
+            'peak should be >= current usage',
+        );
+
+        // memory_get_usage_real — OS-level allocation, should be > 0
+        $key_real = 'memory::memory_get_usage_real';
+        $this->assertArrayHasKey($key_real, $results);
+        $this->assertGreaterThan(
+            0,
+            $results[$key_real]->scalar_value,
+            'real_size should be > 0',
+        );
+
+        // memory_get_peak_usage_real — should be >= real_size
+        $key_real_peak = 'memory::memory_get_peak_usage_real';
+        $this->assertArrayHasKey($key_real_peak, $results);
+        $this->assertGreaterThanOrEqual(
+            $results[$key_real]->scalar_value,
+            $results[$key_real_peak]->scalar_value,
+            'real_peak should be >= real_size',
+        );
+    }
+
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testReadMemoryAndGlobalVariablesTogether(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $memory_reader = new MemoryReader();
+        $zend_type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script = <<<'CODE'
+            <?php
+            $GLOBALS['gcount'] = 42;
+            $data = str_repeat("x", 1024 * 1024);
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+
+        $s = fgets($pipes[1]);
+        $this->assertSame("ready\n", $s);
+
+        $process_specifier = new ProcessSpecifier($pid);
+        $target_php_settings = new TargetPhpSettings(
+            php_version: $php_version,
+        );
+
+        $php_globals_finder = $this->createGlobalsFinder(
+            $memory_reader,
+            $zend_type_reader_creator,
+        );
+        $eg_address = $php_globals_finder->findExecutorGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
+
+        $process_memory_map_creator = ProcessMemoryMapCreator::create();
+        $chunk_finder = new PhpZendMemoryManagerChunkFinder(
+            $process_memory_map_creator,
+            $zend_type_reader_creator,
+        );
+        $heap_stats_reader = new HeapStatsReader(
+            $chunk_finder,
+            $memory_reader,
+            $zend_type_reader_creator,
+        );
+
+        $variable_reader = new VariableReader(
+            $memory_reader,
+            $zend_type_reader_creator,
+            $heap_stats_reader,
+        );
+
+        // Mix memory and global scopes in a single readVariables call
+        $specs = [
+            VariableSpec::parse('memory::memory_get_usage'),
+            VariableSpec::parse('global::$gcount'),
+            VariableSpec::parse('memory::memory_get_peak_usage'),
+        ];
+        $results = $variable_reader->readVariables(
+            $specs,
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+        );
+
+        // Both scopes should resolve
+        $this->assertArrayHasKey('memory::memory_get_usage', $results);
+        $this->assertGreaterThan(
+            0,
+            $results['memory::memory_get_usage']->scalar_value,
+        );
+
+        $this->assertArrayHasKey('global::$gcount', $results);
+        $this->assertSame(42, $results['global::$gcount']->scalar_value);
+
+        $this->assertArrayHasKey('memory::memory_get_peak_usage', $results);
+        $this->assertGreaterThan(
+            0,
+            $results['memory::memory_get_peak_usage']->scalar_value,
+        );
     }
 
     /**
