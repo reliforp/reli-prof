@@ -288,6 +288,41 @@ final class MemoryDumper
             }
         }
 
+        // CG(map_ptr_base) table: when opcache is ON, class_entry
+        // static_members_table and other pointers use indirect
+        // resolution via map_ptr. The table itself lives in [heap]
+        // (allocated by opcache). Without it, resolveMapPtr() fails
+        // and entire EmitClassTableJob/EmitFunctionTableJob skip.
+        if ($cg->map_ptr_base !== 0) {
+            try {
+                [$mpl_off, $mpl_sz] = $zend_type_reader->getOffsetAndSizeOfMember(
+                    'zend_compiler_globals',
+                    'map_ptr_last',
+                );
+                $mpl_raw = \FFI::string(
+                    $this->memory_reader->read(
+                        $pid,
+                        $cg_address + $mpl_off,
+                        $mpl_sz,
+                    ),
+                    $mpl_sz,
+                );
+                /** @var array{1: int} */
+                $mpl_u = unpack('P', $mpl_raw);
+                $map_ptr_last = $mpl_u[1];
+                if ($map_ptr_last > 0 && $map_ptr_last < 1000000) {
+                    $table_size = $map_ptr_last * 8;
+                    // PHP 8.0+ biased base: real_base = map_ptr_base + 1
+                    $real_base = $cg->map_ptr_base + 1;
+                    $intervals[] = [
+                        'address' => $real_base,
+                        'size' => $table_size,
+                    ];
+                }
+            } catch (\Throwable) {
+            }
+        }
+
         // Optionally include read-only binary segments (self-contained
         // dumps). These rarely overlap with RW intervals because a
         // single VMA is either read-only or writable; merge handles
