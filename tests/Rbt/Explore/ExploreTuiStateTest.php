@@ -1354,11 +1354,13 @@ class ExploreTuiStateTest extends BaseTestCase
     public function testMouseScrollUpMovesListSelectionUp(): void
     {
         $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
         // Start at row 5.
         $this->inv($tui, 'moveSelection', 5);
         $this->assertSame(5, $this->get($tui, 'list_selected'));
 
-        $mouse = new MouseEvent(MouseEvent::SCROLL_UP, 10, 10, true, false);
+        // Scroll inside body area (ANSI row 6 = body row 1).
+        $mouse = new MouseEvent(MouseEvent::SCROLL_UP, 10, 6, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
         // Scroll up moves by -3.
         $this->assertSame(2, $this->get($tui, 'list_selected'));
@@ -1367,9 +1369,49 @@ class ExploreTuiStateTest extends BaseTestCase
     public function testMouseScrollDownMovesListSelectionDown(): void
     {
         $tui = $this->makeTui();
-        $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 10, 10, true, false);
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+        $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 10, 6, true, false);
         $this->inv($tui, 'dispatchMouse', $mouse);
         $this->assertSame(3, $this->get($tui, 'list_selected'));
+    }
+
+    public function testMouseScrollTargetsPaneUnderPointer(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+
+        // Push into sandwich mode.
+        $this->inv($tui, 'focusSelected');
+        /** @var ViewState $state */
+        $state = $this->inv($tui, 'currentState');
+        $this->assertSame(ExploreMode::Sandwich, $state->mode);
+
+        // Active pane is Callers, but scroll over the callees region.
+        // body_start = 5 (4 header + 1 mini-flame), body_rows = 23
+        // banner=3, available=20, caller_body=10
+        // Callees body starts at body_row 13 → ANSI row = 5+13+1 = 19
+        // Use column past sidebar (sidebar_width=33, separator=1).
+        $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 36, 19, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+
+        // Callees selection should have moved, not callers.
+        $this->assertSame(3, $this->get($tui, 'callees_selected'));
+        $this->assertSame(0, $this->get($tui, 'callers_selected'));
+    }
+
+    public function testMouseScrollOverSidebarScrollsOverview(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+
+        // Push into sandwich mode.
+        $this->inv($tui, 'focusSelected');
+
+        // Scroll in the sidebar area (col 5, inside sidebar_width=33).
+        $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 5, 8, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+
+        $this->assertSame(3, $this->get($tui, 'overview_selected'));
     }
 
     public function testMouseReleaseIsIgnored(): void

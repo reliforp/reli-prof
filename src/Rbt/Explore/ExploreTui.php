@@ -2918,7 +2918,7 @@ final class ExploreTui
      * Handle a parsed SGR mouse event.
      *
      * Supported interactions:
-     *   - Scroll wheel (up/down) in any view → equivalent to ↑/↓
+     *   - Scroll wheel: scroll the pane under the mouse pointer
      *   - Left-click on a body row → move selection to that row
      *   - Left-click on sidebar (overview) → activate + select row
      *   - Left-click on sandwich pane → activate that pane + select
@@ -2930,18 +2930,11 @@ final class ExploreTui
             return;
         }
 
-        // Scroll wheel: translate to ↑/↓ navigation.
-        if ($mouse->button === MouseEvent::SCROLL_UP) {
-            $this->dispatchUpDown(-3);
-            return;
-        }
-        if ($mouse->button === MouseEvent::SCROLL_DOWN) {
-            $this->dispatchUpDown(3);
-            return;
-        }
+        $is_scroll = $mouse->button === MouseEvent::SCROLL_UP
+            || $mouse->button === MouseEvent::SCROLL_DOWN;
 
-        // Only left-click for selection.
-        if ($mouse->button !== MouseEvent::BUTTON_LEFT) {
+        // For non-scroll events, only left-click is handled.
+        if (!$is_scroll && $mouse->button !== MouseEvent::BUTTON_LEFT) {
             return;
         }
 
@@ -2958,37 +2951,102 @@ final class ExploreTui
         $show_mini_flame = $state->mode === ExploreMode::Sandwich
             && $this->mini_flame_enabled;
         $body_rows = $rows - 6 - ($show_mini_flame ? 1 : 0);
-        $body_start = 4 + ($show_mini_flame ? 1 : 0); // header=4 + optional mini-flame
+        $body_start = 4 + ($show_mini_flame ? 1 : 0);
 
-        // Click outside the body area — ignore.
         if ($screen_row < $body_start || $screen_row >= $body_start + $body_rows) {
             return;
         }
 
         $body_row = $screen_row - $body_start;
 
-        // Check if click is in the sidebar region.
         $show_sidebar = $state->mode === ExploreMode::Sandwich
             && $this->shouldShowSidebar($cols);
         $sidebar_width = $show_sidebar ? $this->computeSidebarWidth($cols) : 0;
 
-        if ($show_sidebar && $screen_col < $sidebar_width) {
-            $this->dispatchMouseOverview($state, $body_row, $body_rows);
+        // Determine which pane the pointer is over and dispatch.
+        $hover_pane = $this->hitTestPane($state, $body_row, $body_rows, $screen_col, $sidebar_width);
+
+        if ($is_scroll) {
+            $delta = $mouse->button === MouseEvent::SCROLL_UP ? -3 : 3;
+            $this->dispatchMouseScroll($state, $hover_pane, $delta);
             return;
         }
 
-        // Click is in the main body.
+        // Left-click.
+        if ($hover_pane === ActivePane::Overview) {
+            $this->dispatchMouseOverview($state, $body_row, $body_rows);
+            return;
+        }
         if ($state->mode !== ExploreMode::Sandwich) {
             $this->dispatchMouseList($body_row);
             return;
         }
-
         match ($state->sandwich_view) {
             SandwichView::Panes => $this->dispatchMousePanes($state, $body_row, $body_rows),
             SandwichView::TreeCallees,
             SandwichView::TreeCallers => $this->dispatchMouseTree($body_row, $body_rows),
-            SandwichView::Flame => null, // flame bars don't map cleanly to row selection
+            SandwichView::Flame => null,
         };
+    }
+
+    /**
+     * Determine which logical pane the mouse pointer is hovering over.
+     *
+     * Returns an ActivePane value for sandwich mode or null for list mode
+     * (list mode has only one pane, so no disambiguation is needed).
+     */
+    private function hitTestPane(
+        ViewState $state,
+        int $body_row,
+        int $body_rows,
+        int $screen_col,
+        int $sidebar_width,
+    ): ?ActivePane {
+        if ($sidebar_width > 0 && $screen_col < $sidebar_width) {
+            return ActivePane::Overview;
+        }
+        if ($state->mode !== ExploreMode::Sandwich) {
+            return null; // list mode
+        }
+        if ($state->sandwich_view !== SandwichView::Panes) {
+            // Flame / tree views have a single main body; treat as
+            // whichever non-overview pane is active (callers/callees).
+            return $state->active_pane === ActivePane::Overview
+                ? ActivePane::Callees
+                : $state->active_pane;
+        }
+        // Panes view: callers top / focus banner / callees bottom.
+        $banner_rows = 3;
+        $available = max(0, $body_rows - $banner_rows);
+        $caller_body = (int)floor($available / 2);
+        if ($body_row < $caller_body) {
+            return ActivePane::Callers;
+        }
+        if ($body_row < $caller_body + $banner_rows) {
+            return ActivePane::Focus;
+        }
+        return ActivePane::Callees;
+    }
+
+    /**
+     * Scroll the pane that the mouse pointer is hovering over.
+     */
+    private function dispatchMouseScroll(ViewState $state, ?ActivePane $pane, int $delta): void
+    {
+        if ($pane === null) {
+            // List mode.
+            $this->list_selected += $delta;
+            return;
+        }
+        match ($pane) {
+            ActivePane::Callers  => $this->callers_selected += $delta,
+            ActivePane::Callees  => $this->callees_selected += $delta,
+            ActivePane::Overview => $this->overview_selected += $delta,
+            ActivePane::Focus    => null, // nothing to scroll
+        };
+        if ($pane === ActivePane::Overview && $this->overview_follow) {
+            $this->liveFollowOverviewFocus();
+        }
     }
 
     /**
