@@ -58,6 +58,17 @@ final class ExploreCommand extends Command
                 . ' Use this if the TUI seems to ignore keys to verify whether'
                 . ' bytes are reaching PHP at all',
             )
+            ->addOption(
+                'path-map',
+                null,
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'rewrite file paths in the trace for local navigation;'
+                . ' format is "from=to" where "from" is a prefix recorded in'
+                . ' the trace and "to" is the local replacement'
+                . ' (e.g. --path-map /var/www/html=/home/you/project'
+                . ' or --path-map /var/www/html=. for project-relative paths).'
+                . ' May be specified multiple times; longest prefix wins',
+            )
         ;
     }
 
@@ -88,8 +99,28 @@ final class ExploreCommand extends Command
             ? Keymap::fromJsonFile($keymap_path)
             : Keymap::default();
 
+        /** @var list<string> $path_map_raw */
+        $path_map_raw = $input->getOption('path-map');
+        $path_map = [];
+        foreach ($path_map_raw as $entry) {
+            $eq = strpos($entry, '=');
+            if ($eq === false) {
+                $output->writeln("<error>Invalid --path-map value \"{$entry}\": expected \"from=to\" format.</error>");
+                return 1;
+            }
+            $from = substr($entry, 0, $eq);
+            $to = substr($entry, $eq + 1);
+            if ($from === '') {
+                $output->writeln(
+                    "<error>Invalid --path-map value \"{$entry}\": \"from\" part must not be empty.</error>"
+                );
+                return 1;
+            }
+            $path_map[$from] = $to;
+        }
+
         $output->writeln("<info>loading {$path} ...</info>");
-        $model = TraceModel::load($path);
+        $model = TraceModel::load($path, $path_map);
         $output->writeln(sprintf(
             '<info>loaded %s samples (%.1fs sampled wall, %d-us period)</info>',
             number_format($model->sampleCount()),

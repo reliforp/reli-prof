@@ -45,8 +45,13 @@ final class TraceModel
 
     /**
      * Load a .rbt file (gzip-aware) into a fully realised model.
+     *
+     * @param array<string, string> $path_map source-prefix => local-prefix
+     *     mappings applied to every file path in the trace. Longer
+     *     prefixes are tried first so a specific mapping always wins
+     *     over a broader one (e.g. "/app/vendor" before "/app").
      */
-    public static function load(string $path): self
+    public static function load(string $path, array $path_map = []): self
     {
         $stream = @fopen($path, 'rb');
         if ($stream === false) {
@@ -76,7 +81,7 @@ final class TraceModel
                 $stack = [];
                 foreach ($sample->trace->call_frames as $frame) {
                     $function = $frame->function_name;
-                    $file = $frame->file_name;
+                    $file = $path_map !== [] ? self::mapPath($frame->file_name, $path_map) : $frame->file_name;
                     $line = $frame->lineno;
                     $with_line = $function . ' ' . $file . ':' . $line;
 
@@ -112,6 +117,25 @@ final class TraceModel
         } finally {
             fclose($stream);
         }
+    }
+
+    /**
+     * @param array<string, string> $path_map
+     */
+    private static function mapPath(string $path, array $path_map): string
+    {
+        $best_prefix = '';
+        $best_replacement = '';
+        foreach ($path_map as $from => $to) {
+            if (str_starts_with($path, $from) && strlen($from) > strlen($best_prefix)) {
+                $best_prefix = $from;
+                $best_replacement = $to;
+            }
+        }
+        if ($best_prefix === '') {
+            return $path;
+        }
+        return $best_replacement . substr($path, strlen($best_prefix));
     }
 
     public function sampleCount(): int

@@ -102,6 +102,66 @@ class TraceModelTest extends BaseTestCase
         $this->assertEqualsWithDelta(0.030, $model->durationSeconds(), 1e-9);
     }
 
+    public function testLoadAppliesPathMap(): void
+    {
+        $this->writeRbt([
+            $this->trace(['foo /var/www/html/app/Foo.php:10', 'main /var/www/html/index.php:5']),
+            $this->trace(['bar /usr/share/php/Bar.php:20']),
+        ]);
+
+        $model = TraceModel::load($this->tmp, [
+            '/var/www/html' => '/home/user/project',
+            '/usr/share/php' => '/home/user/vendor',
+        ]);
+
+        $this->assertSame(2, $model->sampleCount());
+        $this->assertContains('foo /home/user/project/app/Foo.php:10', $model->frame_keys);
+        $this->assertContains('main /home/user/project/index.php:5', $model->frame_keys);
+        $this->assertContains('bar /home/user/vendor/Bar.php:20', $model->frame_keys);
+    }
+
+    public function testLoadPathMapLongestPrefixWins(): void
+    {
+        $this->writeRbt([
+            $this->trace(['foo /app/vendor/lib/Foo.php:1']),
+            $this->trace(['bar /app/src/Bar.php:2']),
+        ]);
+
+        $model = TraceModel::load($this->tmp, [
+            '/app' => '/local',
+            '/app/vendor' => '/local-vendor',
+        ]);
+
+        $this->assertContains('foo /local-vendor/lib/Foo.php:1', $model->frame_keys);
+        $this->assertContains('bar /local/src/Bar.php:2', $model->frame_keys);
+    }
+
+    public function testLoadPathMapToRelativePath(): void
+    {
+        $this->writeRbt([
+            $this->trace(['foo /var/www/html/app/Foo.php:10']),
+        ]);
+
+        $model = TraceModel::load($this->tmp, [
+            '/var/www/html' => '.',
+        ]);
+
+        $this->assertContains('foo ./app/Foo.php:10', $model->frame_keys);
+    }
+
+    public function testLoadPathMapNoMatchLeavesPathUnchanged(): void
+    {
+        $this->writeRbt([
+            $this->trace(['foo /other/path/Foo.php:1']),
+        ]);
+
+        $model = TraceModel::load($this->tmp, [
+            '/var/www/html' => '/home/user/project',
+        ]);
+
+        $this->assertContains('foo /other/path/Foo.php:1', $model->frame_keys);
+    }
+
     public function testLoadMissingFileThrows(): void
     {
         $this->expectException(\RuntimeException::class);
