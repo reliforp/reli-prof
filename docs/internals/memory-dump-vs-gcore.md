@@ -1163,3 +1163,45 @@ impact — worth saving until the pipeline is otherwise stable.
   interned string peeks must enter the walker's peek set. Already
   covered by "walk strings encountered along the way" but needs
   explicit test.
+
+---
+
+## `--exclude-heap` usage guide
+
+By default `i:m:dump` captures the full process memory including the
+glibc `[heap]` and anonymous writable mmap regions. This gives complete
+coverage: every byte the analyzer might need is present in the dump.
+
+The `--exclude-heap` option skips these regions, producing a much smaller
+and faster dump. The trade-off is that data allocated by C extensions via
+system `malloc` (not PHP's ZendMM) will be absent from the dump. The
+analyzer gracefully skips such unreachable data, so the dump is still
+valid — it just covers PHP-managed memory only.
+
+### When to use `--exclude-heap`
+
+- **Recurring lightweight dumps** (`i:watch`, monitoring scripts):
+  dumping every few seconds at 6 MB instead of 170 MB matters.
+- **Large RSS from C extensions**: processes where `RSS >> memory_get_usage()`
+  because libxml2, sqlite3, ImageMagick, curl multi, etc. are holding
+  large C-heap allocations. Without `--exclude-heap`, the dump includes
+  all that C data (which the analyzer cannot interpret anyway).
+- **Disk/network constrained environments**: when dumps are shipped
+  off-host for analysis, smaller is better.
+
+### When NOT to use `--exclude-heap`
+
+- **One-shot diagnosis**: when you are not sure what you are looking for,
+  use the default (full) so nothing is lost.
+- **Extension-state analysis**: if you specifically want to see how much
+  memory libxml2 or sqlite3 is holding, you need the heap.
+- **Fiber call-frame recovery**: Fiber C stacks live in anonymous mmap;
+  `--exclude-heap` drops them.
+
+### Typical size impact
+
+| Workload shape | Default (full) | `--exclude-heap` | Saving |
+|---|---|---|---|
+| Pure PHP (ZendMM dominates) | 110 MB | 105 MB | ~5% |
+| Extension-heavy (libxml2+sqlite3) | 173 MB | 6 MB | **97%** |
+| gcore equivalent | 307 MB | — | — |

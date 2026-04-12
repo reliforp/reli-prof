@@ -43,12 +43,15 @@ final class MemoryDumpSettingsFromConsoleInput
             'include read-only binary segments in dump (self-contained, no --dependency-root needed at analyze time)',
         );
         $command->addOption(
-            'include-heap',
+            'exclude-heap',
             null,
             InputOption::VALUE_NONE,
-            'include the glibc [heap] and anonymous writable mmap regions'
-                . ' in the dump (enables extension-state retention analysis;'
-                . ' increases dump size significantly)',
+            'exclude the glibc [heap] and anonymous writable mmap regions'
+                . ' from the dump. Useful for lightweight recurring dumps'
+                . ' (e.g. i:watch) when the target process has a large RSS'
+                . ' from C extensions (libxml2, sqlite3, ImageMagick, etc.)'
+                . ' but you only need to analyze PHP-managed memory.'
+                . ' Typically saves 50-99% of dump size in such cases.',
         );
     }
 
@@ -60,13 +63,13 @@ final class MemoryDumpSettingsFromConsoleInput
         }
         $stop_process = Cast::toBool($input->getOption('stop-process'));
         $include_binary = Cast::toBool($input->getOption('include-binary'));
-        $include_heap = Cast::toBool($input->getOption('include-heap'));
+        $exclude_heap = Cast::toBool($input->getOption('exclude-heap'));
 
         return new MemoryDumpSettings(
             $output_path,
             $stop_process,
             $include_binary,
-            $include_heap,
+            $exclude_heap,
         );
     }
 }

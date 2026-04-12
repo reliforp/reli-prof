@@ -153,7 +153,7 @@ final class MemoryDumpCommand extends Command
             $cg_address,
             $dump_settings->output_path,
             $dump_settings->include_binary,
-            $dump_settings->include_heap,
+            !$dump_settings->exclude_heap,
             $interned_string_arrays,
         );
 
