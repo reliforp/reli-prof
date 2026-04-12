@@ -1348,4 +1348,197 @@ class ExploreTuiStateTest extends BaseTestCase
         $this->assertStringContainsString('col', $tableHead);
         $this->assertNotSame('col', $tableHead);
     }
+
+    // ---------- mouse dispatch ----------
+
+    public function testMouseScrollUpMovesListSelectionUp(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+        // Start at row 5.
+        $this->inv($tui, 'moveSelection', 5);
+        $this->assertSame(5, $this->get($tui, 'list_selected'));
+
+        // Scroll inside body area (ANSI row 6 = body row 1).
+        $mouse = new MouseEvent(MouseEvent::SCROLL_UP, 10, 6, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        // Default scroll_delta is 1, so scroll up moves by -1.
+        $this->assertSame(4, $this->get($tui, 'list_selected'));
+    }
+
+    public function testMouseScrollDownMovesListSelectionDown(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+        $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 10, 6, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(1, $this->get($tui, 'list_selected'));
+    }
+
+    public function testScrollDeltaWidgetClickCyclesPresets(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+        $this->assertSame(1, $this->get($tui, 'scroll_delta'));
+
+        // Render to populate scroll_delta_cols.
+        $this->inv($tui, 'render');
+        [$col_start, $col_end] = $this->get($tui, 'scroll_delta_cols');
+        // Click on the indicator — should cycle 1 → 2.
+        $mouse = new MouseEvent(
+            MouseEvent::BUTTON_LEFT,
+            $col_start + 1 + 1, // 0-based→1-based ANSI
+            3, // header row 2 → ANSI row 3
+            true,
+            false,
+        );
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(2, $this->get($tui, 'scroll_delta'));
+    }
+
+    public function testScrollDeltaWidgetScrollAdjusts(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+        $this->inv($tui, 'render');
+        [$col_start, ] = $this->get($tui, 'scroll_delta_cols');
+        $ansi_col = $col_start + 1 + 1;
+
+        // Scroll down on the indicator → 1+1=2.
+        $mouse = new MouseEvent(
+            MouseEvent::SCROLL_DOWN,
+            $ansi_col,
+            3,
+            true,
+            false,
+        );
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(2, $this->get($tui, 'scroll_delta'));
+
+        // Scroll up → 2-1=1.
+        $mouse = new MouseEvent(
+            MouseEvent::SCROLL_UP,
+            $ansi_col,
+            3,
+            true,
+            false,
+        );
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(1, $this->get($tui, 'scroll_delta'));
+    }
+
+    public function testMouseScrollTargetsPaneUnderPointer(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+
+        // Push into sandwich mode.
+        $this->inv($tui, 'focusSelected');
+        /** @var ViewState $state */
+        $state = $this->inv($tui, 'currentState');
+        $this->assertSame(ExploreMode::Sandwich, $state->mode);
+
+        // Active pane is Callers, but scroll over the callees region.
+        // body_start = 5 (4 header + 1 mini-flame), body_rows = 23
+        // banner=3, available=20, caller_body=10
+        // Callees body starts at body_row 13 → ANSI row = 5+13+1 = 19
+        // Use column past sidebar (sidebar_width=33, separator=1).
+        $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 36, 19, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+
+        // Default scroll_delta=1, so callees moves by 1.
+        $this->assertSame(1, $this->get($tui, 'callees_selected'));
+        $this->assertSame(0, $this->get($tui, 'callers_selected'));
+    }
+
+    public function testMouseScrollOverSidebarScrollsOverview(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+
+        // Push into sandwich mode.
+        $this->inv($tui, 'focusSelected');
+
+        // Scroll in the sidebar area (col 5, inside sidebar_width=33).
+        $mouse = new MouseEvent(MouseEvent::SCROLL_DOWN, 5, 8, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+
+        $this->assertSame(1, $this->get($tui, 'overview_selected'));
+    }
+
+    public function testMouseReleaseIsIgnored(): void
+    {
+        $tui = $this->makeTui();
+        $this->inv($tui, 'moveSelection', 2);
+        // Release event — should not change selection.
+        $mouse = new MouseEvent(MouseEvent::BUTTON_LEFT, 10, 10, false, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(2, $this->get($tui, 'list_selected'));
+    }
+
+    public function testMouseClickListBodySelectsRow(): void
+    {
+        $tui = $this->makeTui();
+        // Set up a fake terminal size for geometry calculation.
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+
+        // List mode: no mini-flame, body_start = 4 (header, 0-based).
+        // body row 0 = table header, body row 1+ = data rows.
+        // ANSI row for data row 0 = body_start + 1(header) + 0 + 1(to 1-based) = 6
+        $mouse = new MouseEvent(MouseEvent::BUTTON_LEFT, 10, 6, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(0, $this->get($tui, 'list_selected'));
+
+        // Model has 2 list rows (leaf_x, leaf_y). Click data row 1.
+        // ANSI row = 4 + 1 + 1 + 1 = 7
+        $mouse = new MouseEvent(MouseEvent::BUTTON_LEFT, 10, 7, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        $this->assertSame(1, $this->get($tui, 'list_selected'));
+    }
+
+    public function testMouseClickSandwichPanesSwitchesPaneAndSelectsRow(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+
+        // Push into sandwich mode by focusing on a frame.
+        $this->inv($tui, 'focusSelected');
+        /** @var ViewState $state */
+        $state = $this->inv($tui, 'currentState');
+        $this->assertSame(ExploreMode::Sandwich, $state->mode);
+        $this->assertSame(ActivePane::Callers, $state->active_pane);
+
+        // Sidebar width at 120 cols = int(120*0.28) = 33, separator = 1.
+        // Must click past col 34 (0-based) to land in the body, not sidebar.
+        // body_start = 4 + 1(mini-flame) = 5
+        // body_rows = 30 - 6 - 1 = 23
+        // banner = 3, available = 20, caller_body = 10
+        // Callees pane starts at body_row 13 (= 10 + 3).
+        // Callee data row 0: body_row 14
+        // ANSI row = body_start + body_row + 1 = 5 + 14 + 1 = 20
+        // ANSI col past sidebar: 36 (1-based, well past col 34)
+        $mouse = new MouseEvent(
+            MouseEvent::BUTTON_LEFT,
+            36,
+            20,
+            true,
+            false,
+        );
+        $this->inv($tui, 'dispatchMouse', $mouse);
+
+        /** @var ViewState $state */
+        $state = $this->inv($tui, 'currentState');
+        $this->assertSame(ActivePane::Callees, $state->active_pane);
+    }
+
+    public function testMouseRightClickIsIgnored(): void
+    {
+        $tui = $this->makeTui();
+        $this->set($tui, 'term', new FakeTerminal(120, 30));
+
+        $mouse = new MouseEvent(MouseEvent::BUTTON_RIGHT, 10, 6, true, false);
+        $this->inv($tui, 'dispatchMouse', $mouse);
+        // Selection should not have changed.
+        $this->assertSame(0, $this->get($tui, 'list_selected'));
+    }
 }

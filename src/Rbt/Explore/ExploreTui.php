@@ -199,6 +199,44 @@ final class ExploreTui
      */
     private array $tree_folded = [];
 
+    /**
+     * Double-click detection state. Tracks the last left-click's
+     * timestamp and position so a second click within the threshold
+     * at the same cell can be promoted to a focus action.
+     */
+    private float $last_click_time = 0.0;
+    private int $last_click_row = -1;
+    private int $last_click_col = -1;
+    private const DOUBLE_CLICK_MS = 400;
+
+    /**
+     * Cached mini-flame pixel → overview key_id mapping, populated
+     * during render so click handlers can look up which frame a
+     * column corresponds to without recomputing the allocation.
+     *
+     * @var list<int>  pixel_index → key_id (-1 = unallocated)
+     */
+    private array $mini_flame_pixel_keys = [];
+
+    /**
+     * Mouse scroll delta: how many rows each scroll event moves.
+     * Adjustable via the [δN] indicator in the header (click to
+     * cycle presets, scroll to fine-tune).
+     */
+    private int $scroll_delta = 1;
+
+    /** @var list<int> preset values cycled through on click */
+    private const SCROLL_DELTA_PRESETS = [1, 2, 3, 5, 10];
+
+    /**
+     * Column range of the [δN] indicator on header line 2 (0-based,
+     * exclusive end). Set by renderHeader() so the mouse dispatcher
+     * knows where the widget is.
+     *
+     * @var array{int, int}
+     */
+    private array $scroll_delta_cols = [0, 0];
+
     public function __construct(TraceModel $model, TerminalInterface $term, Keymap $keymap)
     {
         $this->model = $model;
@@ -269,6 +307,19 @@ final class ExploreTui
         $buf .= $this->renderHeader($state, $cols);
 
         if ($state->mode === ExploreMode::Sandwich) {
+            // Clamp overview_selected early so renderMiniFlame (which
+            // runs before renderOverviewLines) sees a valid index.
+            // Without this, a negative overview_selected causes
+            // getCursorKeyId() to return null and the highlight falls
+            // back to focus_id, making it jump to a wrong position.
+            $ov_rows = $this->ensureOverview()['rows'];
+            if ($this->overview_selected < 0) {
+                $this->overview_selected = 0;
+            }
+            if ($ov_rows !== [] && $this->overview_selected >= count($ov_rows)) {
+                $this->overview_selected = count($ov_rows) - 1;
+            }
+
             if ($show_mini_flame) {
                 $buf .= $this->renderMiniFlame($cols) . "\n";
             }
@@ -343,6 +394,7 @@ final class ExploreTui
         $cache = $this->ensureOverview();
         $rows = $cache['rows'];
         if ($rows === [] || $width <= 0) {
+            $this->mini_flame_pixel_keys = [];
             return str_repeat(' ', max(0, $width));
         }
 
@@ -351,6 +403,7 @@ final class ExploreTui
             $total += $count;
         }
         if ($total === 0) {
+            $this->mini_flame_pixel_keys = [];
             return str_repeat(' ', $width);
         }
 
@@ -394,8 +447,11 @@ final class ExploreTui
 
         // Walk frames in order, allocating subpixels proportionally.
         // The break at $total_pixels truncates the long tail.
+        // Also builds a parallel pixel → key_id mapping for click handling.
         $pos = 0;
         $cursor_rendered_in_strip = false;
+        /** @var list<int> pixel_index → key_id (-1 = unallocated) */
+        $pixel_keys = array_fill(0, $total_pixels, -1);
         foreach ($rows as $i => [, $key_id, ]) {
             if ($pos >= $total_pixels) {
                 break;
@@ -409,12 +465,15 @@ final class ExploreTui
             for ($p = $pos; $p < $end; $p++) {
                 $pixel_frame[$p] = $i;
                 $pixel_focus[$p] = $is_highlight;
+                $pixel_keys[$p] = $key_id;
             }
             if ($is_highlight) {
                 $cursor_rendered_in_strip = true;
             }
             $pos = $end;
         }
+        /** @var list<int> $pixel_keys */
+        $this->mini_flame_pixel_keys = $pixel_keys;
 
         // If the cursor row's natural position lies past the visible
         // strip (typical for callers/callees on aggregator functions
@@ -529,12 +588,26 @@ final class ExploreTui
             },
         };
         $line2 = sprintf('mode: %s   history: %d back', $mode_label, $hist);
-        $line3 = sprintf(
+        $line3_left = sprintf(
             'no-line: %s   match: %s   filter: %s',
             $this->opts->no_line ? 'on' : 'off',
             $this->opts->match_re ?? '(none)',
             $state->view_filter ?? '(none)',
         );
+        $delta_label = sprintf('[δ%d]', $this->scroll_delta);
+        $delta_len = mb_strlen($delta_label);
+        $left_len = mb_strlen($line3_left);
+        // Place the indicator right after the settings text so it
+        // stays near the left-side overview sidebar on wide terminals.
+        if ($left_len + 3 + $delta_len <= $cols) {
+            $delta_col_start = $left_len + 3;
+            $line3 = $line3_left . '   ' . $delta_label;
+        } else {
+            // Terminal too narrow — omit the indicator.
+            $delta_col_start = 0;
+            $line3 = $line3_left;
+        }
+        $this->scroll_delta_cols = [$delta_col_start, $delta_col_start + $delta_len];
 
         $out = $this->styleHeader(self::shorten($line1, $cols)) . "\n";
         $out .= self::shorten($line2, $cols) . "\n";
@@ -2685,6 +2758,12 @@ final class ExploreTui
             return;
         }
 
+        $mouse = MouseEvent::tryParse($key);
+        if ($mouse !== null) {
+            $this->dispatchMouse($mouse);
+            return;
+        }
+
         $action = $this->keymap->resolve($key);
         if ($action === null) {
             return;
@@ -2906,6 +2985,433 @@ final class ExploreTui
                 $this->status = 'overview: ' . ($this->sidebar_override ? 'on' : 'off');
                 return;
         }
+    }
+
+    /**
+     * Handle a parsed SGR mouse event.
+     *
+     * Supported interactions:
+     *   - Scroll wheel: scroll the pane under the mouse pointer
+     *   - Left-click on a body row → move selection to that row
+     *   - Left-click on sidebar (overview) → activate + select row
+     *   - Left-click on sandwich pane → activate that pane + select
+     */
+    private function dispatchMouse(MouseEvent $mouse): void
+    {
+        // Only act on press events (ignore release / drag).
+        if (!$mouse->press) {
+            return;
+        }
+
+        $is_scroll = $mouse->button === MouseEvent::SCROLL_UP
+            || $mouse->button === MouseEvent::SCROLL_DOWN;
+
+        // For non-scroll events, only left-click is handled.
+        if (!$is_scroll && $mouse->button !== MouseEvent::BUTTON_LEFT) {
+            return;
+        }
+
+        // Convert 1-based ANSI coords to 0-based screen row/col.
+        $screen_row = $mouse->row - 1;
+        $screen_col = $mouse->col - 1;
+
+        [$cols, $rows] = $this->term->size();
+        if ($cols < self::MIN_COLS || $rows < self::MIN_ROWS) {
+            return;
+        }
+
+        $state = $this->currentState();
+        $show_mini_flame = $state->mode === ExploreMode::Sandwich
+            && $this->mini_flame_enabled;
+        $body_rows = $rows - 6 - ($show_mini_flame ? 1 : 0);
+        $body_start = 4 + ($show_mini_flame ? 1 : 0);
+
+        // [δN] indicator on header line 2 (screen row 2).
+        if (
+            $screen_row === 2
+            && $screen_col >= $this->scroll_delta_cols[0]
+            && $screen_col < $this->scroll_delta_cols[1]
+        ) {
+            $this->dispatchScrollDeltaWidget($is_scroll, $mouse);
+            return;
+        }
+
+        // Click on the mini-flame strip row (directly after the header).
+        if ($show_mini_flame && $screen_row === 4 && !$is_scroll) {
+            $this->dispatchMouseMiniFlame($screen_col, $cols);
+            return;
+        }
+
+        if ($screen_row < $body_start || $screen_row >= $body_start + $body_rows) {
+            return;
+        }
+
+        $body_row = $screen_row - $body_start;
+
+        $show_sidebar = $state->mode === ExploreMode::Sandwich
+            && $this->shouldShowSidebar($cols);
+        $sidebar_width = $show_sidebar ? $this->computeSidebarWidth($cols) : 0;
+
+        // Determine which pane the pointer is over and dispatch.
+        $hover_pane = $this->hitTestPane($state, $body_row, $body_rows, $screen_col, $sidebar_width);
+
+        if ($is_scroll) {
+            $step = $this->scroll_delta;
+            $delta = $mouse->button === MouseEvent::SCROLL_UP ? -$step : $step;
+            $this->dispatchMouseScroll($state, $hover_pane, $delta);
+            return;
+        }
+
+        // Left-click — detect double-click for focus/enter action.
+        $now = microtime(true);
+        $is_double = ($now - $this->last_click_time) < ((float)self::DOUBLE_CLICK_MS / 1000.0)
+            && $this->last_click_row === $mouse->row
+            && $this->last_click_col === $mouse->col;
+        $this->last_click_time = $now;
+        $this->last_click_row = $mouse->row;
+        $this->last_click_col = $mouse->col;
+
+        if ($is_double) {
+            // The first click already moved the selection / cursor to
+            // the right row, so Enter will act on it.
+            $this->dispatchEnter();
+            // Reset so a third rapid click doesn't trigger another enter.
+            $this->last_click_time = 0.0;
+            return;
+        }
+
+        if ($hover_pane === ActivePane::Overview) {
+            $this->dispatchMouseOverview($state, $body_row, $body_rows);
+            return;
+        }
+        if ($state->mode !== ExploreMode::Sandwich) {
+            $this->dispatchMouseList($body_row);
+            return;
+        }
+        match ($state->sandwich_view) {
+            SandwichView::Panes => $this->dispatchMousePanes($state, $body_row, $body_rows),
+            SandwichView::TreeCallees,
+            SandwichView::TreeCallers => $this->dispatchMouseTree($body_row, $body_rows),
+            SandwichView::Flame => $this->dispatchMouseFlame($body_row, $screen_col, $sidebar_width, $body_rows),
+        };
+    }
+
+    /**
+     * Determine which logical pane the mouse pointer is hovering over.
+     *
+     * Returns an ActivePane value for sandwich mode or null for list mode
+     * (list mode has only one pane, so no disambiguation is needed).
+     */
+    private function hitTestPane(
+        ViewState $state,
+        int $body_row,
+        int $body_rows,
+        int $screen_col,
+        int $sidebar_width,
+    ): ?ActivePane {
+        if ($sidebar_width > 0 && $screen_col < $sidebar_width) {
+            return ActivePane::Overview;
+        }
+        if ($state->mode !== ExploreMode::Sandwich) {
+            return null; // list mode
+        }
+        if ($state->sandwich_view !== SandwichView::Panes) {
+            // Flame / tree views have a single main body; treat as
+            // whichever non-overview pane is active (callers/callees).
+            return $state->active_pane === ActivePane::Overview
+                ? ActivePane::Callees
+                : $state->active_pane;
+        }
+        // Panes view: callers top / focus banner / callees bottom.
+        $banner_rows = 3;
+        $available = max(0, $body_rows - $banner_rows);
+        $caller_body = (int)floor($available / 2);
+        if ($body_row < $caller_body) {
+            return ActivePane::Callers;
+        }
+        if ($body_row < $caller_body + $banner_rows) {
+            return ActivePane::Focus;
+        }
+        return ActivePane::Callees;
+    }
+
+    /**
+     * Scroll the pane that the mouse pointer is hovering over.
+     */
+    private function dispatchMouseScroll(ViewState $state, ?ActivePane $pane, int $delta): void
+    {
+        if ($pane === null) {
+            // List mode.
+            $this->list_selected += $delta;
+            return;
+        }
+        // Activate the hovered pane so the scroll is visible. Without
+        // this, the overview's auto-center logic would overwrite the
+        // selection on the next render and the scroll would appear to
+        // have no effect.
+        if ($state->active_pane !== $pane && $pane !== ActivePane::Focus) {
+            $this->replaceTop($state->withActivePane($pane));
+        }
+        if ($pane === ActivePane::Overview) {
+            $this->overview_selected += $delta;
+            if ($this->overview_follow) {
+                $this->liveFollowOverviewFocus();
+            }
+            return;
+        }
+        // Tree and flame views have their own cursor state that is
+        // separate from the per-pane callers/callees selection.
+        if ($state->mode === ExploreMode::Sandwich) {
+            switch ($state->sandwich_view) {
+                case SandwichView::TreeCallees:
+                case SandwichView::TreeCallers:
+                    $this->tree_cursor_row += $delta;
+                    return;
+                case SandwichView::Flame:
+                    $this->moveFlameCursorRow($delta > 0 ? 1 : -1);
+                    return;
+                case SandwichView::Panes:
+                    break; // fall through to per-pane selection below
+            }
+        }
+        match ($pane) {
+            ActivePane::Callers  => $this->callers_selected += $delta,
+            ActivePane::Callees  => $this->callees_selected += $delta,
+            default => null,
+        };
+    }
+
+    /**
+     * Handle click / scroll on the [δN] header widget.
+     * Click cycles through presets, scroll adjusts ±1 (clamped 1–20).
+     */
+    private function dispatchScrollDeltaWidget(
+        bool $is_scroll,
+        MouseEvent $mouse,
+    ): void {
+        if ($is_scroll) {
+            $dir = $mouse->button === MouseEvent::SCROLL_UP ? -1 : 1;
+            $this->scroll_delta = max(1, min(20, $this->scroll_delta + $dir));
+        } else {
+            // Cycle through presets.
+            $idx = array_search($this->scroll_delta, self::SCROLL_DELTA_PRESETS, true);
+            if ($idx === false) {
+                // Current value is not a preset — snap to nearest.
+                $this->scroll_delta = self::SCROLL_DELTA_PRESETS[0];
+            } else {
+                $next = ($idx + 1) % count(self::SCROLL_DELTA_PRESETS);
+                $this->scroll_delta = self::SCROLL_DELTA_PRESETS[$next];
+            }
+        }
+        $this->status = "scroll delta: {$this->scroll_delta}";
+    }
+
+    /**
+     * Left-click on the mini-flame strip: focus on the frame at that column.
+     */
+    private function dispatchMouseMiniFlame(int $screen_col, int $cols): void
+    {
+        if ($this->mini_flame_pixel_keys === []) {
+            return;
+        }
+        // The mini-flame spans the full terminal width. Each cell = 2 pixels.
+        $pixel = $screen_col * 2;
+        if ($pixel < 0 || $pixel >= count($this->mini_flame_pixel_keys)) {
+            return;
+        }
+        $key_id = $this->mini_flame_pixel_keys[$pixel];
+        if ($key_id < 0) {
+            return;
+        }
+        $state = $this->currentState();
+        if ($state->focus_id === $key_id) {
+            return; // already focused on this frame
+        }
+        $label = Aggregator::labelFor($this->model, $key_id, $this->opts->no_line);
+        $this->pushSandwichFocus($key_id, $label, $state->sandwich_view);
+
+        // When panes or overview was active, switch to the Focus
+        // banner so the mini-flame highlight tracks the newly focused
+        // frame. getActiveCursorFrame() returns focus_id directly for
+        // ActivePane::Focus, which is exactly what we just clicked.
+        // Flame / tree views initialise their cursor onto the focus
+        // bar on the next render, so they highlight correctly already.
+        if (
+            $state->active_pane === ActivePane::Callers
+            || $state->active_pane === ActivePane::Callees
+            || $state->active_pane === ActivePane::Overview
+        ) {
+            $this->replaceTop(
+                $this->currentState()->withActivePane(ActivePane::Focus)
+            );
+        }
+    }
+
+    /**
+     * Left-click in list mode body: row 0 is header, rows 1+ are data.
+     */
+    private function dispatchMouseList(int $body_row): void
+    {
+        if ($body_row < 1) {
+            return; // clicked on header
+        }
+        $data_row = $body_row - 1 + $this->list_top_row;
+        $total = count($this->ensureList()['rows']);
+        if ($data_row < $total) {
+            $this->list_selected = $data_row;
+        }
+    }
+
+    /**
+     * Left-click in the overview sidebar.
+     */
+    private function dispatchMouseOverview(ViewState $state, int $body_row, int $body_rows): void
+    {
+        if ($body_row < 1) {
+            return; // clicked on header
+        }
+        $visible = max(0, $body_rows - 1);
+        $data_row = $body_row - 1 + $this->overview_top_row;
+        $total = count($this->ensureOverview()['rows']);
+        if ($data_row >= $total) {
+            return;
+        }
+        // Activate the overview pane and move selection.
+        if ($state->active_pane !== ActivePane::Overview) {
+            $this->replaceTop($state->withActivePane(ActivePane::Overview));
+        }
+        $this->overview_selected = $data_row;
+        if ($this->overview_follow) {
+            $this->liveFollowOverviewFocus();
+        }
+    }
+
+    /**
+     * Left-click in sandwich panes view: determine which pane was
+     * clicked and set the selection within that pane.
+     */
+    private function dispatchMousePanes(ViewState $state, int $body_row, int $body_rows): void
+    {
+        $banner_rows = 3;
+        $available = max(0, $body_rows - $banner_rows);
+        $caller_body = (int)floor($available / 2);
+        $callee_body = $available - $caller_body;
+
+        // Callers pane: rows 0 to caller_body-1 (header + body)
+        if ($body_row < $caller_body) {
+            if ($body_row < 1) {
+                return; // header
+            }
+            if ($state->active_pane !== ActivePane::Callers) {
+                $this->replaceTop($state->withActivePane(ActivePane::Callers));
+            }
+            $data_row = $body_row - 1 + $this->callers_top_row;
+            $total = count($this->ensureCallers()['rows']);
+            if ($data_row < $total) {
+                $this->callers_selected = $data_row;
+            }
+            return;
+        }
+
+        // Focus banner: rows caller_body to caller_body+2
+        if ($body_row < $caller_body + $banner_rows) {
+            if ($state->active_pane !== ActivePane::Focus) {
+                $this->replaceTop($state->withActivePane(ActivePane::Focus));
+            }
+            return;
+        }
+
+        // Callees pane: rows caller_body+3 onwards (header + body)
+        $callee_local = $body_row - $caller_body - $banner_rows;
+        if ($callee_local < 1) {
+            return; // header
+        }
+        if ($state->active_pane !== ActivePane::Callees) {
+            $this->replaceTop($state->withActivePane(ActivePane::Callees));
+        }
+        $data_row = $callee_local - 1 + $this->callees_top_row;
+        $total = count($this->ensureCallees()['rows']);
+        if ($data_row < $total) {
+            $this->callees_selected = $data_row;
+        }
+    }
+
+    /**
+     * Left-click in sandwich flame view: move cursor to the clicked bar.
+     */
+    private function dispatchMouseFlame(
+        int $body_row,
+        int $screen_col,
+        int $sidebar_width,
+        int $body_rows,
+    ): void {
+        $layout = $this->buildCurrentSandwichLayout();
+        if ($layout === null) {
+            return;
+        }
+        $total_visual = $layout['total_visual_rows'];
+        if ($body_row < 0 || $body_row >= $total_visual) {
+            return;
+        }
+
+        // Clicking the flame body should hand navigation focus to
+        // the main body so that a subsequent Enter drills into the
+        // clicked bar rather than acting on the overview sidebar.
+        $state = $this->currentState();
+        if (
+            $state->active_pane === ActivePane::Overview
+            || $state->active_pane === ActivePane::Focus
+        ) {
+            $this->replaceTop($state->withActivePane(ActivePane::Callees));
+        }
+
+        // Convert screen column to inner-body x coordinate.
+        // Sidebar + separator occupy the left portion of the screen.
+        $separator_width = $sidebar_width > 0 ? 1 : 0;
+        $inner_x = $screen_col - $sidebar_width - $separator_width;
+        if ($inner_x < 0) {
+            return;
+        }
+        $bars = $layout['visual_rows'][$body_row] ?? [];
+        if ($bars === []) {
+            // Allow clicking the focus row even though it has no bars.
+            if ($body_row === $layout['focus_visual_row']) {
+                $this->flame_cursor_visual_row = $body_row;
+                $this->flame_cursor_x = $inner_x;
+            }
+            return;
+        }
+        $hit = $this->findBarAtX($bars, $inner_x);
+        if ($hit === null) {
+            $hit = $this->findNearestBar($bars, $inner_x);
+        }
+        $this->flame_cursor_visual_row = $body_row;
+        if ($hit !== null) {
+            $this->flame_cursor_x = $hit['x'] + intdiv($hit['w'], 2);
+        } else {
+            $this->flame_cursor_x = $inner_x;
+        }
+    }
+
+    /**
+     * Left-click in sandwich tree view: set tree cursor to clicked row.
+     */
+    private function dispatchMouseTree(int $body_row, int $body_rows): void
+    {
+        // Tree body has a 1-line header, then data rows.
+        if ($body_row < 1) {
+            return;
+        }
+        // Hand navigation focus to the main body so Enter acts on the
+        // tree cursor, not the overview sidebar.
+        $state = $this->currentState();
+        if (
+            $state->active_pane === ActivePane::Overview
+            || $state->active_pane === ActivePane::Focus
+        ) {
+            $this->replaceTop($state->withActivePane(ActivePane::Callees));
+        }
+        $this->tree_cursor_row = $body_row - 1 + $this->tree_top_row;
     }
 
     private function dispatchPrompt(string $key): void
