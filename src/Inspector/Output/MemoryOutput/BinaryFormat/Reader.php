@@ -13,33 +13,66 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\BinaryFormat;
 
+use FFI;
+use FFI\CData;
+use Reli\Lib\FFI\FFIHelper;
+use Reli\Lib\File\LibcFileReader;
+
 /**
  * Reader for the .rmem binary format.
  *
- * Stage 1: fopen + fread. Stage 2 will add real mmap via FFI.
+ * Uses mmap when FFI is available (Stage 2): the file stays on disk,
+ * pages are loaded on demand by the kernel, and substrate loaders can
+ * FFI::cast directly into the mapped region without any PHP-level copy.
+ *
+ * Falls back to file_get_contents when FFI/mmap is unavailable.
  */
 final class Reader
 {
     /** @var array<string, array{offset: int, length: int, element_count: int}> */
     private array $toc = [];
 
-    private string $fileData;
-
     private StringDict $stringDict;
+
+    // mmap-backed storage (preferred)
+    private ?CData $mmapPtr = null;
+    private int $mmapLength = 0;
+
+    // Fallback: entire file in a PHP string
+    private ?string $fileData = null;
+
+    /** FFI instance for struct casts (lazy-initialized) */
+    private static ?FFI $structFfi = null;
 
     private function __construct()
     {
     }
 
+    public function __destruct()
+    {
+        if ($this->mmapPtr !== null) {
+            LibcFileReader::munmapFile($this->mmapPtr, $this->mmapLength);
+            $this->mmapPtr = null;
+        }
+    }
+
     public static function open(string $path): self
     {
-        $data = file_get_contents($path);
-        if ($data === false) {
-            throw new \RuntimeException("Cannot read {$path}");
+        $reader = new self();
+
+        // Try mmap first
+        $mmapResult = LibcFileReader::mmapFile($path);
+        if ($mmapResult !== null) {
+            [$reader->mmapPtr, $reader->mmapLength] = $mmapResult;
+        } else {
+            // Fallback to file_get_contents
+            $data = file_get_contents($path);
+            if ($data === false) {
+                throw new \RuntimeException("Cannot read {$path}");
+            }
+            $reader->fileData = $data;
         }
 
-        $reader = new self();
-        $reader->fileData = $data;
         $reader->parseHeader();
         $reader->loadStringDict();
         return $reader;
@@ -47,38 +80,40 @@ final class Reader
 
     private function parseHeader(): void
     {
-        if (strlen($this->fileData) < Format::HEADER_SIZE) {
+        $headerBytes = $this->readBytes(0, Format::HEADER_SIZE);
+        if (strlen($headerBytes) < Format::HEADER_SIZE) {
             throw new \RuntimeException('File too small for rmem header');
         }
 
-        $magic = substr($this->fileData, 0, 4);
+        $magic = substr($headerBytes, 0, 4);
         if ($magic !== Format::MAGIC) {
             throw new \RuntimeException('Invalid rmem magic: ' . bin2hex($magic));
         }
 
-        $version = unpack('V', $this->fileData, 4)[1];
+        $version = unpack('V', $headerBytes, 4)[1];
         if ($version !== Format::VERSION) {
             throw new \RuntimeException("Unsupported rmem version: {$version}");
         }
 
-        $flags = unpack('V', $this->fileData, 8)[1];
+        $flags = unpack('V', $headerBytes, 8)[1];
         if (($flags & Format::FLAG_LITTLE_ENDIAN) === 0) {
             throw new \RuntimeException('Big-endian rmem files are not supported');
         }
 
-        $section_count = unpack('V', $this->fileData, 12)[1];
-        $toc_offset = unpack('P', $this->fileData, 16)[1];
+        $section_count = unpack('V', $headerBytes, 12)[1];
+        $toc_offset = unpack('P', $headerBytes, 16)[1];
 
         // Parse TOC
-        $pos = (int)$toc_offset;
+        $tocBytes = $this->readBytes((int)$toc_offset, $section_count * Format::TOC_ENTRY_SIZE);
+        $pos = 0;
         for ($i = 0; $i < $section_count; $i++) {
-            $name = rtrim(substr($this->fileData, $pos, Format::TOC_NAME_SIZE), "\0");
+            $name = rtrim(substr($tocBytes, $pos, Format::TOC_NAME_SIZE), "\0");
             $pos += Format::TOC_NAME_SIZE;
-            $offset = unpack('P', $this->fileData, $pos)[1];
+            $offset = unpack('P', $tocBytes, $pos)[1];
             $pos += 8;
-            $length = unpack('P', $this->fileData, $pos)[1];
+            $length = unpack('P', $tocBytes, $pos)[1];
             $pos += 8;
-            $element_count = unpack('P', $this->fileData, $pos)[1];
+            $element_count = unpack('P', $tocBytes, $pos)[1];
             $pos += 8;
 
             $this->toc[$name] = [
@@ -96,7 +131,7 @@ final class Reader
             return;
         }
         $entry = $this->toc[Format::SECTION_STRING_DICT];
-        $data = substr($this->fileData, $entry['offset'], $entry['length']);
+        $data = $this->readBytes($entry['offset'], $entry['length']);
         $this->stringDict = StringDict::deserialize($data);
     }
 
@@ -111,7 +146,10 @@ final class Reader
     }
 
     /**
-     * Get raw section data as a string buffer.
+     * Get raw section data as a PHP string.
+     *
+     * When mmap is active, this copies from the mapped region into a
+     * PHP string. Use getSectionPointer() for zero-copy FFI access.
      */
     public function getSectionData(string $name): string
     {
@@ -119,7 +157,34 @@ final class Reader
             throw new \RuntimeException("Section not found: {$name}");
         }
         $entry = $this->toc[$name];
-        return substr($this->fileData, $entry['offset'], $entry['length']);
+        return $this->readBytes($entry['offset'], $entry['length']);
+    }
+
+    /**
+     * Get a CData pointer to a section's data in the mmap'd region.
+     *
+     * Returns a `uint8_t*` pointing at the first byte of the section.
+     * The caller can FFI::cast this to struct arrays for zero-copy
+     * access. Returns null when mmap is not active (fallback mode).
+     */
+    public function getSectionPointer(string $name): ?CData
+    {
+        if ($this->mmapPtr === null || !isset($this->toc[$name])) {
+            return null;
+        }
+        $entry = $this->toc[$name];
+        $ffi = self::getHelperFfi();
+        $base = $ffi->cast('char*', $this->mmapPtr);
+        $offset_ptr = $base + $entry['offset'];
+        return $ffi->cast('uint8_t*', $offset_ptr);
+    }
+
+    /**
+     * Whether mmap is active (vs fallback file_get_contents).
+     */
+    public function isMmapped(): bool
+    {
+        return $this->mmapPtr !== null;
     }
 
     public function getSectionElementCount(string $name): int
@@ -147,11 +212,91 @@ final class Reader
     }
 
     /**
-     * Get the raw file data buffer. Used by substrate loaders that
-     * want to FFI::cast directly into the buffer.
+     * Get the FFI instance with struct definitions for binary row types.
+     *
+     * Provides packed struct types: NodeRow, EdgeRow, LocationRow.
+     * Substrate loaders use these for zero-copy reads from mmap'd sections.
      */
-    public function getFileData(): string
+    public static function getStructFfi(): FFI
     {
-        return $this->fileData;
+        if (self::$structFfi === null) {
+            self::$structFfi = FFI::cdef('
+                typedef struct __attribute__((packed)) {
+                    uint32_t node_id;
+                    uint32_t canonical_id;
+                    uint32_t type_id;
+                    uint32_t class_id;
+                } NodeRow;
+
+                typedef struct __attribute__((packed)) {
+                    uint32_t parent_node_id;
+                    uint32_t child_node_id;
+                    uint32_t link_name_id;
+                    uint8_t  is_tree;
+                    uint8_t  strength;
+                    uint16_t _pad;
+                } EdgeRow;
+
+                typedef struct __attribute__((packed)) {
+                    uint32_t node_id;
+                    uint32_t location_type_id;
+                    uint32_t class_id;
+                    uint64_t address;
+                    uint64_t size;
+                    uint32_t string_value_id;
+                    uint32_t refcount;
+                    uint32_t type_info;
+                    uint32_t region_id;
+                    uint32_t bin_overhead;
+                } LocationRow;
+            ');
+        }
+        return self::$structFfi;
+    }
+
+    /**
+     * Cast a section to a typed FFI array.
+     *
+     * @template T
+     * @param string $section Section name
+     * @param string $type FFI type string, e.g. "NodeRow" or "EdgeRow"
+     * @return CData|null The cast array, or null if mmap not active
+     */
+    public function castSection(string $section, string $type): ?CData
+    {
+        $ptr = $this->getSectionPointer($section);
+        if ($ptr === null) {
+            return null;
+        }
+        $count = $this->getSectionElementCount($section);
+        if ($count === 0) {
+            return null;
+        }
+        $ffi = self::getStructFfi();
+        return $ffi->cast("{$type}[{$count}]", $ptr);
+    }
+
+    // ---- Internal I/O ----
+
+    /**
+     * Read bytes from the underlying storage (mmap or PHP string).
+     */
+    private function readBytes(int $offset, int $length): string
+    {
+        if ($this->mmapPtr !== null) {
+            $ffi = self::getHelperFfi();
+            $base = $ffi->cast('char*', $this->mmapPtr);
+            return FFI::string($base + $offset, $length);
+        }
+        assert($this->fileData !== null);
+        return substr($this->fileData, $offset, $length);
+    }
+
+    /** Bare FFI instance for non-deprecated cast calls on mmap pointers */
+    private static ?FFI $helperFfi = null;
+
+    private static function getHelperFfi(): FFI
+    {
+        return self::$helperFfi ??= FFI::cdef();
     }
 }

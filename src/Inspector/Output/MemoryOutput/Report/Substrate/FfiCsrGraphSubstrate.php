@@ -146,14 +146,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /**
      * Load the substrate directly from a .rmem binary file.
      *
-     * Reads the fixed-width sections (nodes, edges, locations) from the
-     * binary reader and populates FFI CSR arrays without any SQL
-     * marshalling. The hot path is:
-     *   1. Parse the node section → build node-id mapping + type dict
-     *   2. Parse the location section → fill node sizes + class dict
-     *   3. Parse the edge section → fill CSR + link_name index
-     *   4. Parse canonical_ids from the node section
-     *   5. computeSubtreeSizes + computeScc (same as DB path)
+     * When the file is mmap'd, uses FFI::cast to access rows as
+     * packed C structs (NodeRow/EdgeRow/LocationRow) for zero-copy
+     * reads. Falls back to unpack() on non-mmap readers.
      *
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion
      */
@@ -163,18 +158,26 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate = new self();
         $dict = $reader->getStringDict();
 
-        // ---- Phase 1: Build node ID mapping from the nodes section ----
-        $nodeData = $reader->getSectionData(Format::SECTION_NODES);
         $nodeRowCount = $reader->getSectionElementCount(Format::SECTION_NODES);
 
-        // Collect all node_ids (same role as the Pass 1 context_nodes scan in loadNodeSizesFfi)
+        // Try mmap + struct cast path
+        $nodeRows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
+
+        // ---- Phase 1: Build node ID mapping from the nodes section ----
         /** @var array<int, true> $all_node_ids */
         $all_node_ids = [];
-        $offset = 0;
-        for ($i = 0; $i < $nodeRowCount; $i++) {
-            $node_id = unpack('V', $nodeData, $offset)[1];
-            $all_node_ids[(int)$node_id] = true;
-            $offset += Format::NODE_ROW_SIZE;
+        if ($nodeRows !== null) {
+            for ($i = 0; $i < $nodeRowCount; $i++) {
+                $all_node_ids[(int)$nodeRows[$i]->node_id] = true;
+            }
+        } else {
+            $nodeData = $reader->getSectionData(Format::SECTION_NODES);
+            $offset = 0;
+            for ($i = 0; $i < $nodeRowCount; $i++) {
+                $node_id = unpack('V', $nodeData, $offset)[1];
+                $all_node_ids[(int)$node_id] = true;
+                $offset += Format::NODE_ROW_SIZE;
+            }
         }
         // Include -1 sentinel for the synthetic root parent.
         $all_node_ids[-1] = true;
@@ -242,12 +245,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $directSize = $substrate->directIndexSize;
         $phpMap = $substrate->nodeToIndexPhp;
 
-        $offset = 0;
         for ($i = 0; $i < $nodeRowCount; $i++) {
-            $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $nodeData, $offset);
-            $offset += Format::NODE_ROW_SIZE;
+            if ($nodeRows !== null) {
+                $node_id = (int)$nodeRows[$i]->node_id;
+                $type_id = (int)$nodeRows[$i]->type_id;
+                $canonical_id = (int)$nodeRows[$i]->canonical_id;
+            } else {
+                $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $nodeData, $i * Format::NODE_ROW_SIZE);
+                $node_id = (int)$row['node_id'];
+                $type_id = (int)$row['type_id'];
+                $canonical_id = (int)$row['canonical_id'];
+            }
 
-            $node_id = (int)$row['node_id'];
             if ($directMap !== null) {
                 $slot = $node_id + $directOffset;
                 $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
@@ -258,8 +267,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 continue;
             }
 
-            // Type
-            $type_id = (int)$row['type_id'];
             $type = $dict->lookup($type_id);
             if ($type !== null) {
                 if (!isset($substrate->nodeTypeDictReverse[$type])) {
@@ -269,32 +276,33 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $substrate->nodeTypeIds[$csrIdx] = $substrate->nodeTypeDictReverse[$type];
             }
 
-            // Canonical ID
-            $canonical_id = (int)$row['canonical_id'];
             if ($canonical_id !== 0 && $canonical_id !== $node_id) {
                 $substrate->canonical[$node_id] = $canonical_id;
                 $substrate->canonical[$canonical_id] = $canonical_id;
             }
         }
-        unset($nodeData);
+        unset($nodeData, $nodeRows);
 
         // ---- Phase 3: Load node sizes + classes from locations ----
         if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
-            $locData = $reader->getSectionData(Format::SECTION_LOCATIONS);
             $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+            $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+            $locData = $locRows === null ? $reader->getSectionData(Format::SECTION_LOCATIONS) : null;
             $ffiNodeSizes = $substrate->ffiNodeSizes;
             $nodeClassIds = $substrate->nodeClassIds;
 
             $substrate->nodeSizesSum = 0;
-            $offset = 0;
             for ($i = 0; $i < $locCount; $i++) {
-                // Location row: node_id:u32, location_type_id:u32, class_id:u32,
-                //   address:u64, size:u64, string_value_id:u32, refcount:u32,
-                //   type_info:u32, region_id:u32, bin_overhead:u32, _pad:u32
-                $node_id = unpack('V', $locData, $offset)[1];
-                $class_id = unpack('V', $locData, $offset + 8)[1];
-                $size = unpack('P', $locData, $offset + 20)[1]; // address@12 then size@20
-                $offset += Format::LOCATION_ROW_SIZE;
+                if ($locRows !== null) {
+                    $node_id = (int)$locRows[$i]->node_id;
+                    $class_id = (int)$locRows[$i]->class_id;
+                    $size = (int)$locRows[$i]->size;
+                } else {
+                    $off = $i * Format::LOCATION_ROW_SIZE;
+                    $node_id = unpack('V', $locData, $off)[1];
+                    $class_id = unpack('V', $locData, $off + 8)[1];
+                    $size = unpack('P', $locData, $off + 20)[1];
+                }
 
                 if ($directMap !== null) {
                     $slot = $node_id + $directOffset;
@@ -320,7 +328,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                 }
             }
-            unset($locData);
+            unset($locData, $locRows);
         }
 
         // ---- Phase 4: Load edges → build CSR ----
@@ -370,19 +378,25 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $treeLinkIds = $substrate->treeLinkIds;
         $treeParentIdx = $substrate->treeParentIdx;
 
-        $edgeData = $reader->getSectionData(Format::SECTION_EDGES);
-        $eOffset = 0;
+        $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+        $edgeData = $edgeRows === null ? $reader->getSectionData(Format::SECTION_EDGES) : null;
         for ($i = 0; $i < $edgeCount; $i++) {
-            $row = unpack('Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength', $edgeData, $eOffset);
-            $eOffset += Format::EDGE_ROW_SIZE;
-
-            $raw_parent = (int)$row['parent_node_id'];
+            if ($edgeRows !== null) {
+                $raw_parent = (int)$edgeRows[$i]->parent_node_id;
+                $child = (int)$edgeRows[$i]->child_node_id;
+                $link_name_id = (int)$edgeRows[$i]->link_name_id;
+                $is_tree = (int)$edgeRows[$i]->is_tree;
+                $is_strong = (int)$edgeRows[$i]->strength === 0;
+            } else {
+                $row = unpack('Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength', $edgeData, $i * Format::EDGE_ROW_SIZE);
+                $raw_parent = (int)$row['parent_node_id'];
+                $child = (int)$row['child_node_id'];
+                $link_name_id = (int)$row['link_name_id'];
+                $is_tree = (int)$row['is_tree'];
+                $is_strong = (int)$row['strength'] === 0;
+            }
             $parentIsRoot = $raw_parent === 0xFFFFFFFF;
             $parent = $parentIsRoot ? -1 : $raw_parent;
-            $child = (int)$row['child_node_id'];
-            $is_tree = (int)$row['is_tree'];
-            $is_strong = (int)$row['strength'] === 0;
-            $link_name_id = (int)$row['link_name_id'];
 
             if ($directMap !== null) {
                 $slot = $parent + $directOffset;
@@ -428,7 +442,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
             $revDeg[$ci] = $revDeg[$ci] + 1;
         }
-        unset($edgeData);
+        unset($edgeData, $edgeRows);
 
         // Build offsets via prefix sum
         $substrate->treeOffsets[0] = 0;
