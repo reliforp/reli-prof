@@ -283,7 +283,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         unset($nodeData, $nodeRows);
 
-        // ---- Phase 3: Load node sizes + classes from locations ----
+        // ---- Phase 3: Load node sizes + classes + canonical address grouping ----
+        // Single pass over the locations section for all three purposes.
+        /** @var array<int, list<int>> $addr_to_nodes address → [node_id, ...] for canonical */
+        $addr_to_nodes = [];
         if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
             $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
             $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
@@ -297,11 +300,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $node_id = (int)$locRows[$i]->node_id;
                     $class_id = (int)$locRows[$i]->class_id;
                     $size = (int)$locRows[$i]->size;
+                    $address = (int)$locRows[$i]->address;
                 } else {
                     $off = $i * Format::LOCATION_ROW_SIZE;
                     $node_id = unpack('V', $locData, $off)[1];
                     $class_id = unpack('V', $locData, $off + 8)[1];
                     $size = unpack('P', $locData, $off + 20)[1];
+                    $address = unpack('P', $locData, $off + 12)[1];
                 }
 
                 if ($directMap !== null) {
@@ -310,80 +315,51 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 } else {
                     $csrIdx = $phpMap[$node_id] ?? -1;
                 }
-                if ($csrIdx < 0) {
-                    continue;
+                if ($csrIdx >= 0) {
+                    $ffiNodeSizes[$csrIdx] = (int)$ffiNodeSizes[$csrIdx] + (int)$size;
+                    $substrate->nodeSizesSum += (int)$size;
+
+                    if ((int)$class_id !== Format::NULL_STRING_ID && (int)$nodeClassIds[$csrIdx] === -1) {
+                        $className = $dict->lookup((int)$class_id);
+                        if ($className !== null) {
+                            if (!isset($substrate->classDictReverse[$className])) {
+                                $substrate->classDictReverse[$className] = count($substrate->classDict);
+                                $substrate->classDict[] = $className;
+                            }
+                            $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
+                        }
+                    }
                 }
 
-                $ffiNodeSizes[$csrIdx] = (int)$ffiNodeSizes[$csrIdx] + (int)$size;
-                $substrate->nodeSizesSum += (int)$size;
-
-                if ((int)$class_id !== Format::NULL_STRING_ID && (int)$nodeClassIds[$csrIdx] === -1) {
-                    $className = $dict->lookup((int)$class_id);
-                    if ($className !== null) {
-                        if (!isset($substrate->classDictReverse[$className])) {
-                            $substrate->classDictReverse[$className] = count($substrate->classDict);
-                            $substrate->classDict[] = $className;
-                        }
-                        $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
-                    }
+                // Canonical address grouping (was Phase 3.5)
+                if ($address !== 0) {
+                    $addr_to_nodes[$address][] = $node_id;
                 }
             }
             unset($locData, $locRows);
         }
 
-        // ---- Phase 3.5: Compute canonical node IDs from address grouping ----
-        // The binary format doesn't pre-compute canonical IDs (the SQLite path
-        // does this in PdoMemoryOutput::computeCanonicalNodeIds). Without this,
-        // SCC computation processes all address-duplicate nodes separately,
-        // making the graph much larger than necessary and causing Tarjan's to
-        // run for hours instead of minutes.
-        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
-            $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
-            $locRows2 = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
-            $locData2 = $locRows2 === null ? $reader->getSectionData(Format::SECTION_LOCATIONS) : null;
-
-            /** @var array<int, list<int>> address → [node_id, ...] */
-            $addr_to_nodes = [];
-            for ($i = 0; $i < $locCount; $i++) {
-                if ($locRows2 !== null) {
-                    $address = (int)$locRows2[$i]->address;
-                    $node_id = (int)$locRows2[$i]->node_id;
-                } else {
-                    $off = $i * Format::LOCATION_ROW_SIZE;
-                    $node_id = unpack('V', $locData2, $off)[1];
-                    $address = unpack('P', $locData2, $off + 12)[1];
-                }
-                if ($address !== 0) {
-                    $addr_to_nodes[$address][] = $node_id;
-                }
+        // Canonical: group nodes by address, assign min(node_id) as canonical
+        foreach ($addr_to_nodes as $nodes) {
+            $unique_nodes = array_values(array_unique($nodes));
+            if (count($unique_nodes) <= 1) {
+                continue;
             }
-            unset($locRows2, $locData2);
-
-            foreach ($addr_to_nodes as $nodes) {
-                if (count($nodes) <= 1) {
-                    continue;
-                }
-                $unique_nodes = array_values(array_unique($nodes));
-                if (count($unique_nodes) <= 1) {
-                    continue;
-                }
-                $canon = min($unique_nodes);
-                foreach ($unique_nodes as $nid) {
-                    $substrate->canonical[$nid] = $canon;
-                    $substrate->canonical[$canon] = $canon;
-                }
+            $canon = min($unique_nodes);
+            foreach ($unique_nodes as $nid) {
+                $substrate->canonical[$nid] = $canon;
+                $substrate->canonical[$canon] = $canon;
             }
-            unset($addr_to_nodes);
+        }
+        unset($addr_to_nodes);
 
-            // Build reverse mapping
-            if ($substrate->canonical !== []) {
-                foreach ($substrate->canonical as $node => $parent) {
-                    $canon = $substrate->findCanonical($node);
-                    $substrate->canonicalToOriginals[$canon][] = $node;
-                }
-                foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
-                    $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
-                }
+        if ($substrate->canonical !== []) {
+            foreach ($substrate->canonical as $node => $parent) {
+                $canon = $substrate->findCanonical($node);
+                $substrate->canonicalToOriginals[$canon][] = $node;
+            }
+            foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
+                $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
             }
         }
 

@@ -38,6 +38,10 @@ final class Reader
     private ?CData $mmapPtr = null;
     private int $mmapLength = 0;
 
+    // castSection cache: "section:type" → CData
+    /** @var array<string, CData> */
+    private array $castCache = [];
+
     // Fallback: entire file in a PHP string
     private ?string $fileData = null;
 
@@ -257,10 +261,9 @@ final class Reader
     /**
      * Cast a section to a typed FFI struct array.
      *
-     * Allocates an FFI buffer of the target type and copies the raw
-     * section bytes into it (one bulk memcpy). This is faster than
-     * per-row unpack() and avoids the cross-FFI-scope cast issues
-     * that prevent direct mmap pointer casting.
+     * The first call allocates an FFI buffer and copies the raw section
+     * bytes into it (one bulk memcpy). Subsequent calls with the same
+     * section+type return the cached buffer — no re-allocation or copy.
      *
      * @param string $section Section name
      * @param string $type FFI type string, e.g. "NodeRow" or "EdgeRow"
@@ -268,6 +271,11 @@ final class Reader
      */
     public function castSection(string $section, string $type): ?CData
     {
+        $cacheKey = "{$section}:{$type}";
+        if (isset($this->castCache[$cacheKey])) {
+            return $this->castCache[$cacheKey];
+        }
+
         if (!isset($this->toc[$section])) {
             return null;
         }
@@ -279,36 +287,41 @@ final class Reader
         $entry = $this->toc[$section];
 
         // Verify section size matches expected struct array size
-        $type_size = FFI::sizeof($ffi->new($type));
-        $needed = $count * $type_size;
+        $needed = $count * self::getStructSize($type);
         if ($entry['length'] < $needed) {
             return null;
         }
 
         try {
-            // Allocate a properly typed+sized FFI buffer
             $buf = $ffi->new("{$type}[{$count}]");
             if ($buf === null) {
                 return null;
             }
 
-            // Copy raw bytes into the typed buffer — one bulk memcpy
             if ($this->mmapPtr !== null) {
-                // mmap path: copy directly from mapped region
                 $helperFfi = self::getHelperFfi();
                 $src = $helperFfi->cast('char*', $this->mmapPtr) + $entry['offset'];
                 FFI::memcpy($buf, $src, $needed);
             } else {
-                // string fallback: copy from PHP string
                 assert($this->fileData !== null);
                 $raw = substr($this->fileData, $entry['offset'], $needed);
                 FFI::memcpy($buf, $raw, $needed);
             }
 
+            $this->castCache[$cacheKey] = $buf;
             return $buf;
         } catch (\FFI\Exception) {
             return null;
         }
+    }
+
+    /** @var array<string, int> type name → sizeof */
+    private static array $structSizeCache = [];
+
+    private static function getStructSize(string $type): int
+    {
+        return self::$structSizeCache[$type]
+            ??= FFI::sizeof(self::getStructFfi()->new($type));
     }
 
     // ---- Internal I/O ----
