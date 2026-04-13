@@ -193,6 +193,26 @@ class DumpFileMemoryReaderTest extends TestCase
     }
 
     #[Test]
+    public function testReadFindsEarlierOverlappingRegionThatFullyContainsRequest(): void
+    {
+        $reader = $this->makeReader([
+            [
+                'address' => 0x7f0000001000,
+                'size' => 32,
+                'data' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef',
+            ],
+            [
+                'address' => 0x7f0000001010,
+                'size' => 8,
+                'data' => 'qrstuvwx',
+            ],
+        ]);
+
+        $cdata = $reader->read(1234, 0x7f0000001018, 8);
+        $this->assertSame('YZabcdef', \FFI::string($cdata, 8));
+    }
+
+    #[Test]
     public function testReadWithAddressNotInDumpRaisesSpecificException(): void
     {
         $reader = $this->makeReader([

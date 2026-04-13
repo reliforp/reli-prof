@@ -38,6 +38,7 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
 {
     /** @var array<string, resource> path => cached file handle */
     private array $fp_cache = [];
+    private int $max_region_size = 0;
 
     /**
      * @param list<array{address: int, size: int, file_offset: int}> $region_index
@@ -52,6 +53,11 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
             $this->region_index,
             static fn (array $a, array $b): int => $a['address'] <=> $b['address'],
         );
+        foreach ($this->region_index as $region) {
+            if ($region['size'] > $this->max_region_size) {
+                $this->max_region_size = $region['size'];
+            }
+        }
     }
 
     public function __destruct()
@@ -143,23 +149,34 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     {
         $lo = 0;
         $hi = count($this->region_index) - 1;
-        $remote_end = $remote_address + $size;
+        $candidate = -1;
 
         while ($lo <= $hi) {
             $mid = ($lo + $hi) >> 1;
             $region = $this->region_index[$mid];
-            $region_start = $region['address'];
-            $region_end = $region_start + $region['size'];
-
-            if ($remote_address < $region_start) {
-                $hi = $mid - 1;
-                continue;
-            }
-            if ($remote_end > $region_end) {
+            if ($region['address'] <= $remote_address) {
+                $candidate = $mid;
                 $lo = $mid + 1;
-                continue;
+            } else {
+                $hi = $mid - 1;
             }
-            return $region;
+        }
+
+        if ($candidate < 0) {
+            return null;
+        }
+
+        $remote_end = $remote_address + $size;
+        for ($i = $candidate; $i >= 0; $i--) {
+            $region = $this->region_index[$i];
+            $region_start = $region['address'];
+            if (($remote_address - $region_start) > $this->max_region_size) {
+                break;
+            }
+            $region_end = $region_start + $region['size'];
+            if ($remote_address >= $region_start && $remote_end <= $region_end) {
+                return $region;
+            }
         }
 
         return null;
