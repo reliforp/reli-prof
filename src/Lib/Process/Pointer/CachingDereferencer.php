@@ -40,7 +40,7 @@ final class CachingDereferencer implements Dereferencer
 
     public function __construct(
         private Dereferencer $inner,
-        private int $max_entries = 65536,
+        private int $max_entries = 4096,
     ) {
     }
 
@@ -68,15 +68,27 @@ final class CachingDereferencer implements Dereferencer
     }
 
     /**
-     * A large cache is cheap in offline analysis, but walking every
-     * per-type bucket to evict a quarter became a hotspot of its own.
-     * Once the cache is full, clearing it outright is cheaper than
-     * paying an O(types + entries) partial-eviction pass.
+     * Drop roughly the oldest quarter of cached entries. PHP arrays
+     * preserve insertion order, so `array_slice($entries, $drop,
+     * preserve_keys: true)` keeps the most recently inserted 75% per
+     * type — a rough LRU approximation that's good enough for the
+     * dereffer's temporal locality without needing a real LRU list.
      */
     private function evictQuarter(): void
     {
-        $this->cache = [];
-        $this->count = 0;
+        $evicted = 0;
+        foreach ($this->cache as $t => $entries) {
+            $n = count($entries);
+            if ($n === 0) {
+                continue;
+            }
+            $drop = (int)($n / 4);
+            if ($drop > 0) {
+                $this->cache[$t] = array_slice($entries, $drop, preserve_keys: true);
+                $evicted += $drop;
+            }
+        }
+        $this->count -= $evicted;
     }
 
     public function clearCache(): void
