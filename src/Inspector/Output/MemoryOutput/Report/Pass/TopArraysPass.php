@@ -26,10 +26,14 @@ final class TopArraysPass implements PassInterface
     private ?\PDOStatement $parentStmt = null;
     private ?\PDOStatement $nodeTypeStmt = null;
 
+    /**
+     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
+     */
     public function __construct(
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
+        private ?array $frame_labels = null,
     ) {
     }
 
@@ -56,7 +60,7 @@ final class TopArraysPass implements PassInterface
     {
         assert($this->substrate !== null);
         $array_element_nodes = $this->loadArrayElementNodes();
-        $labeler = new NodeLabeler($this->db, $this->run_id);
+        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
         $use_retained = $this->substrate->hasSubtreeSizes();
 
         $arrays = [];

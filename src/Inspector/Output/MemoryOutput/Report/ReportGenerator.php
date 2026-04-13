@@ -358,7 +358,7 @@ final class ReportGenerator
             $dummy_db = new \PDO('sqlite::memory:');
             $dummy_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
             $findings = array_merge($findings, $this->runPass(
-                new CallStackPass($dummy_db, 0, $substrate)
+                new CallStackPass($dummy_db, 0, $substrate, $frame_labels)
             ));
 
             // Binary passes don't share a SQLite fd, so each factory
@@ -377,7 +377,7 @@ final class ReportGenerator
                 new DynamicPropertiesPass($dummy_factory(), 0, $substrate)
             );
             $pass_factories['CycleClusterPass'] = fn (): array => $this->runPass(
-                new CycleClusterPass($substrate, $dummy_factory(), 0, $resolver_factory())
+                new CycleClusterPass($substrate, $dummy_factory(), 0, $resolver_factory(), $frame_labels)
             );
             $pass_factories['PropertyScalingPass'] = fn (): array => $this->runPass(
                 new PropertyScalingPass(
@@ -391,7 +391,7 @@ final class ReportGenerator
                 new OwnershipPatternPass($substrate, $dummy_factory(), 0, $resolver_factory())
             );
             $pass_factories['TopArraysPass'] = fn (): array => $this->runPass(
-                new TopArraysPass($dummy_factory(), 0, $substrate)
+                new TopArraysPass($dummy_factory(), 0, $substrate, $frame_labels)
             );
             $pass_factories['TopStringsPass'] = fn (): array => $this->runPass(
                 new TopStringsPass($dummy_factory(), 0, $substrate, $top_strings, $frame_labels)
@@ -403,7 +403,7 @@ final class ReportGenerator
                 new StructuralDedupPass($dummy_factory(), 0, $substrate, $resolver_factory())
             );
             $pass_factories['DrillDownPass'] = fn (): array => $this->runPass(
-                new DrillDownPass($substrate, $dummy_factory(), 0)
+                new DrillDownPass($substrate, $dummy_factory(), 0, $frame_labels)
             );
             $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
                 new ChokePointPass(
