@@ -154,16 +154,47 @@ final class ZendMmHeap implements LazyDereferencable, CDataDereferencable
         };
     }
 
+    /**
+     * Cast a size_t CData value to int.
+     *
+     * PHP FFI normally auto-converts scalar CData to PHP scalars, but
+     * this has been observed to intermittently fail in CI (v73_zts),
+     * returning FFI\CData instead of int. This helper detects and
+     * handles that case.
+     */
+    private static function sizeToInt(mixed $value, string $field_name): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if ($value instanceof \FFI\CData) {
+            $type = \FFI::typeof($value);
+            fwrite(STDERR, sprintf(
+                "ZendMmHeap::sizeToInt: field=%s got FFI\\CData type=%s size=%d\n",
+                $field_name,
+                $type->getName(),
+                \FFI::sizeof($value),
+            ));
+            /** @psalm-suppress InvalidCast -- FFI scalar CData is castable to int */
+            return (int)$value;
+        }
+        throw new \TypeError(sprintf(
+            'ZendMmHeap::%s: expected int, got %s',
+            $field_name,
+            get_debug_type($value),
+        ));
+    }
+
     private function getFieldEager(string $field_name): mixed
     {
         assert($this->casted_cdata !== null);
         return match ($field_name) {
             'use_custom_heap' => $this->use_custom_heap = $this->casted_cdata->casted->use_custom_heap,
-            'size' => $this->size = $this->casted_cdata->casted->size,
-            'peak' => $this->peak = $this->casted_cdata->casted->peak,
-            'real_size' => $this->real_size = $this->casted_cdata->casted->real_size,
-            'real_peak' => $this->real_peak = $this->casted_cdata->casted->real_peak,
-            'limit' => $this->limit = $this->casted_cdata->casted->limit,
+            'size' => $this->size = self::sizeToInt($this->casted_cdata->casted->size, 'size'),
+            'peak' => $this->peak = self::sizeToInt($this->casted_cdata->casted->peak, 'peak'),
+            'real_size' => $this->real_size = self::sizeToInt($this->casted_cdata->casted->real_size, 'real_size'),
+            'real_peak' => $this->real_peak = self::sizeToInt($this->casted_cdata->casted->real_peak, 'real_peak'),
+            'limit' => $this->limit = self::sizeToInt($this->casted_cdata->casted->limit, 'limit'),
             'overflow' => $this->overflow = $this->casted_cdata->casted->overflow,
             'huge_list' => $this->huge_list = $this->casted_cdata->casted->huge_list !== null
                 ? Pointer::fromCData(
