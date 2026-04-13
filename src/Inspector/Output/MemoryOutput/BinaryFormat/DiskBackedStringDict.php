@@ -16,38 +16,29 @@ namespace Reli\Inspector\Output\MemoryOutput\BinaryFormat;
 /**
  * Disk-backed string dictionary for large captures.
  *
- * Stores string bodies on disk in a temp file and keeps only a hash-based
- * index in memory. An LRU cache holds frequently accessed strings to avoid
- * repeated disk reads during dedup lookups.
+ * Stores string bodies on disk in a temp file and keeps only an
+ * FFI-backed open-addressing hash table in memory. An LRU cache
+ * holds frequently accessed strings to avoid repeated disk reads
+ * during dedup lookups.
  *
- * For zend_string values, the pre-computed hash from zend_string.h is used
- * when available (non-zero). For other strings (link_name, class_name, etc.)
- * a CRC32c hash is computed on the fly.
+ * Memory per entry: ~37 bytes (28 bytes/slot at 75% load factor)
+ * vs ~482 bytes for a PHP nested-array implementation.
+ * At 10M entries: ~370 MB vs ~4.6 GB.
  *
- * Memory usage: ~40 bytes per entry (hash index) + configurable cache.
- * Compare: in-memory StringDict uses ~120+ bytes per entry (PHP string +
- * array bucket overhead).
- *
- * Write path (intern):
- *   1. Compute or reuse hash
- *   2. Look up hash in index → candidate list
- *   3. For each candidate: compare length, then compare bytes from disk/cache
- *   4. If match → return existing id
- *   5. If no match → append to disk, add to index
- *
- * The final .rmem serialization uses StringDict::serialize() format for
- * compatibility. Call toStringDict() to produce the serialized form by
- * streaming from disk.
+ * When the FFI extension is not available, falls back to a compact
+ * PHP-array index (~82 bytes/entry with packed binary strings).
  */
 final class DiskBackedStringDict
 {
+    /** @var FfiHashTable|null FFI hash table (null when FFI unavailable) */
+    private ?FfiHashTable $ffiTable = null;
+
     /**
-     * Hash index: hash → list of candidate entries.
-     * Each entry: [id, diskOffset, length]
-     *
-     * @var array<int, list<array{int, int, int}>>
+     * Fallback PHP hash index when FFI is not available.
+     * Hash → packed binary entries (12 bytes each: id:V, offset:V, len:V).
+     * @var array<int, string>|null
      */
-    private array $hashIndex = [];
+    private ?array $phpIndex = null;
 
     /** Total number of interned strings */
     private int $count = 0;
@@ -59,8 +50,6 @@ final class DiskBackedStringDict
 
     /**
      * LRU cache: id → string value.
-     * Bounded by $maxCacheBytes. Eviction is approximate (FIFO via array_shift).
-     *
      * @var array<int, string>
      */
     private array $cache = [];
@@ -68,12 +57,22 @@ final class DiskBackedStringDict
     private int $maxCacheBytes;
 
     /**
-     * @param int $max_cache_bytes Maximum bytes of string data to keep in the
-     *   LRU cache. Default 64 MiB. Set lower on memory-constrained machines.
+     * @param int $max_cache_bytes Maximum bytes of string data to keep in
+     *   the LRU cache. Default 64 MiB.
+     * @param int $initial_capacity Initial hash table capacity (must be
+     *   power of 2 when FFI is used). Default 4096.
      */
-    public function __construct(int $max_cache_bytes = 64 * 1024 * 1024)
-    {
+    public function __construct(
+        int $max_cache_bytes = 64 * 1024 * 1024,
+        int $initial_capacity = 4096,
+    ) {
         $this->maxCacheBytes = $max_cache_bytes;
+
+        if (extension_loaded('ffi')) {
+            $this->ffiTable = new FfiHashTable($initial_capacity);
+        } else {
+            $this->phpIndex = [];
+        }
 
         $base = tempnam(sys_get_temp_dir(), 'rmem_dict_');
         if ($base === false) {
@@ -94,10 +93,6 @@ final class DiskBackedStringDict
 
     /**
      * Intern a string with an optional pre-computed hash (from zend_string.h).
-     *
-     * @param string|null $s The string to intern (null → NULL_STRING_ID)
-     * @param int $precomputedHash Hash from zend_string.h (0 = not available)
-     * @return int The string's id in the dictionary
      */
     public function intern(?string $s, int $precomputedHash = 0): int
     {
@@ -111,18 +106,14 @@ final class DiskBackedStringDict
             : self::computeHash($s);
 
         // Look up existing entries with the same hash
-        if (isset($this->hashIndex[$hash])) {
-            foreach ($this->hashIndex[$hash] as [$id, $offset, $entryLen]) {
-                if ($entryLen !== $len) {
-                    continue;
-                }
-                // Length matches — compare actual bytes
-                $existing = $this->readFromDiskOrCache($id, $offset, $entryLen);
-                if ($existing === $s) {
-                    // Cache the looked-up string (it's being reused)
-                    $this->cacheString($id, $s);
-                    return $id;
-                }
+        foreach ($this->findCandidates($hash) as [$id, $offset, $entryLen]) {
+            if ($entryLen !== $len) {
+                continue;
+            }
+            $existing = $this->readFromDiskOrCache($id, $offset, $entryLen);
+            if ($existing === $s) {
+                $this->cacheString($id, $s);
+                return $id;
             }
         }
 
@@ -133,7 +124,7 @@ final class DiskBackedStringDict
         $this->diskPos += $len;
         $this->count++;
 
-        $this->hashIndex[$hash][] = [$id, $offset, $len];
+        $this->insertEntry($hash, $id, $offset, $len);
         $this->cacheString($id, $s);
 
         return $id;
@@ -150,15 +141,12 @@ final class DiskBackedStringDict
         if (isset($this->cache[$id])) {
             return $this->cache[$id];
         }
-        // Linear scan through hash index to find the entry by id.
-        // This is O(N/buckets) but lookup() is not on the hot write path.
-        foreach ($this->hashIndex as $entries) {
-            foreach ($entries as [$entryId, $offset, $len]) {
-                if ($entryId === $id) {
-                    $s = $this->readFromDisk($offset, $len);
-                    $this->cacheString($id, $s);
-                    return $s;
-                }
+
+        foreach ($this->iterateAllEntries() as [$entryId, $offset, $len]) {
+            if ($entryId === $id) {
+                $s = $this->readFromDisk($offset, $len);
+                $this->cacheString($id, $s);
+                return $s;
             }
         }
         return null;
@@ -170,22 +158,18 @@ final class DiskBackedStringDict
     }
 
     /**
-     * Serialize in the same format as StringDict::serialize(), but stream
-     * directly to a file handle rather than building a PHP string. Returns
-     * the number of bytes written.
+     * Serialize in StringDict::serialize() format, streaming directly
+     * to a file handle. Returns the number of bytes written.
      *
      * @param resource $outFh Target file handle
      * @return int Bytes written
      */
     public function serializeToStream($outFh): int
     {
-        // Build id → (offset, len) mapping from the hash index, sorted by id
-        /** @var array<int, array{int, int}> $entries id => [diskOffset, len] */
+        /** @var array<int, array{int, int}> $entries */
         $entries = [];
-        foreach ($this->hashIndex as $candidates) {
-            foreach ($candidates as [$id, $offset, $len]) {
-                $entries[$id] = [$offset, $len];
-            }
+        foreach ($this->iterateAllEntries() as [$id, $offset, $len]) {
+            $entries[$id] = [$offset, $len];
         }
         ksort($entries);
 
@@ -196,7 +180,6 @@ final class DiskBackedStringDict
         foreach ($entries as [$offset, $len]) {
             $w = fwrite($outFh, pack('V', $len));
             $written += $w;
-            // Stream the string body from disk in chunks
             fseek($this->diskFh, $offset);
             $remaining = $len;
             while ($remaining > 0) {
@@ -213,9 +196,6 @@ final class DiskBackedStringDict
         return $written;
     }
 
-    /**
-     * Cleanup disk resources.
-     */
     public function cleanup(): void
     {
         if (is_resource($this->diskFh)) {
@@ -225,6 +205,59 @@ final class DiskBackedStringDict
             @unlink($this->diskPath);
         }
     }
+
+    // ---- Index abstraction ----
+
+    /**
+     * @return iterable<array{int, int, int}> [id, offset, len]
+     */
+    private function findCandidates(int $hash): iterable
+    {
+        if ($this->ffiTable !== null) {
+            return $this->ffiTable->findByHash($hash);
+        }
+        $packed = $this->phpIndex[$hash] ?? null;
+        if ($packed === null) {
+            return [];
+        }
+        $result = [];
+        $pLen = strlen($packed);
+        for ($i = 0; $i < $pLen; $i += 12) {
+            $entry = unpack('Vid/Voffset/Vlen', $packed, $i);
+            $result[] = [(int)$entry['id'], (int)$entry['offset'], (int)$entry['len']];
+        }
+        return $result;
+    }
+
+    private function insertEntry(int $hash, int $id, int $offset, int $len): void
+    {
+        if ($this->ffiTable !== null) {
+            $this->ffiTable->insert($hash, $id, $offset, $len);
+            return;
+        }
+        $this->phpIndex[$hash] = ($this->phpIndex[$hash] ?? '') . pack('VVV', $id, $offset, $len);
+    }
+
+    /**
+     * @return iterable<array{int, int, int}> [id, offset, len]
+     */
+    private function iterateAllEntries(): iterable
+    {
+        if ($this->ffiTable !== null) {
+            return $this->ffiTable->iterateAll();
+        }
+        $result = [];
+        foreach ($this->phpIndex as $packed) {
+            $pLen = strlen($packed);
+            for ($i = 0; $i < $pLen; $i += 12) {
+                $entry = unpack('Vid/Voffset/Vlen', $packed, $i);
+                $result[] = [(int)$entry['id'], (int)$entry['offset'], (int)$entry['len']];
+            }
+        }
+        return $result;
+    }
+
+    // ---- Cache & disk I/O ----
 
     private function readFromDiskOrCache(int $id, int $offset, int $len): string
     {
@@ -250,28 +283,19 @@ final class DiskBackedStringDict
             return;
         }
         $len = strlen($s);
-        // Evict if over budget
         while ($this->cacheBytes + $len > $this->maxCacheBytes && $this->cache !== []) {
             $evictId = array_key_first($this->cache);
             $this->cacheBytes -= strlen($this->cache[$evictId]);
             unset($this->cache[$evictId]);
         }
-        // Don't cache strings larger than the entire cache budget
         if ($len <= $this->maxCacheBytes) {
             $this->cache[$id] = $s;
             $this->cacheBytes += $len;
         }
     }
 
-    /**
-     * Compute a hash for strings that don't have a pre-computed one.
-     * Uses CRC32c for speed (hardware-accelerated on modern x86).
-     */
     private static function computeHash(string $s): int
     {
-        // crc32c returns a 32-bit value. We want a non-zero int to
-        // distinguish from "hash not computed" (0). If CRC32c happens
-        // to return 0, use 1 instead.
         $h = crc32($s);
         return $h !== 0 ? $h : 1;
     }
