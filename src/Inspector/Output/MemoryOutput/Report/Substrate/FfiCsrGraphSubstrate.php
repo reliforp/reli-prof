@@ -331,6 +331,62 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             unset($locData, $locRows);
         }
 
+        // ---- Phase 3.5: Compute canonical node IDs from address grouping ----
+        // The binary format doesn't pre-compute canonical IDs (the SQLite path
+        // does this in PdoMemoryOutput::computeCanonicalNodeIds). Without this,
+        // SCC computation processes all address-duplicate nodes separately,
+        // making the graph much larger than necessary and causing Tarjan's to
+        // run for hours instead of minutes.
+        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
+            $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+            $locRows2 = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+            $locData2 = $locRows2 === null ? $reader->getSectionData(Format::SECTION_LOCATIONS) : null;
+
+            /** @var array<int, list<int>> address → [node_id, ...] */
+            $addr_to_nodes = [];
+            for ($i = 0; $i < $locCount; $i++) {
+                if ($locRows2 !== null) {
+                    $address = (int)$locRows2[$i]->address;
+                    $node_id = (int)$locRows2[$i]->node_id;
+                } else {
+                    $off = $i * Format::LOCATION_ROW_SIZE;
+                    $node_id = unpack('V', $locData2, $off)[1];
+                    $address = unpack('P', $locData2, $off + 12)[1];
+                }
+                if ($address !== 0) {
+                    $addr_to_nodes[$address][] = $node_id;
+                }
+            }
+            unset($locRows2, $locData2);
+
+            foreach ($addr_to_nodes as $nodes) {
+                if (count($nodes) <= 1) {
+                    continue;
+                }
+                $unique_nodes = array_values(array_unique($nodes));
+                if (count($unique_nodes) <= 1) {
+                    continue;
+                }
+                $canon = min($unique_nodes);
+                foreach ($unique_nodes as $nid) {
+                    $substrate->canonical[$nid] = $canon;
+                    $substrate->canonical[$canon] = $canon;
+                }
+            }
+            unset($addr_to_nodes);
+
+            // Build reverse mapping
+            if ($substrate->canonical !== []) {
+                foreach ($substrate->canonical as $node => $parent) {
+                    $canon = $substrate->findCanonical($node);
+                    $substrate->canonicalToOriginals[$canon][] = $node;
+                }
+                foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
+                    $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
+                }
+            }
+        }
+
         // ---- Phase 4: Load edges → build CSR ----
         $edgeCount = $reader->getSectionElementCount(Format::SECTION_EDGES);
         $substrate->edge_count = $edgeCount;

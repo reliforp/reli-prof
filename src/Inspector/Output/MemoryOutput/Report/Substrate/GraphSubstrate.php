@@ -251,6 +251,38 @@ class GraphSubstrate
             $substrate->edge_count = $edge_count;
         }
 
+        // Compute canonical node IDs from address grouping (same logic as
+        // PdoMemoryOutput::computeCanonicalNodeIds but from binary locations).
+        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
+            $locData = $reader->getSectionData(Format::SECTION_LOCATIONS);
+            $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+            /** @var array<int, list<int>> $addr_to_nodes */
+            $addr_to_nodes = [];
+            $offset = 0;
+            for ($i = 0; $i < $locCount; $i++) {
+                $node_id = unpack('V', $locData, $offset)[1];
+                $address = unpack('P', $locData, $offset + 12)[1];
+                $offset += Format::LOCATION_ROW_SIZE;
+                if ((int)$address !== 0) {
+                    $addr_to_nodes[(int)$address][] = (int)$node_id;
+                }
+            }
+            unset($locData);
+
+            foreach ($addr_to_nodes as $nodes) {
+                $unique = array_values(array_unique($nodes));
+                if (count($unique) <= 1) {
+                    continue;
+                }
+                $canon = min($unique);
+                foreach ($unique as $nid) {
+                    $substrate->canonical[$nid] = $canon;
+                    $substrate->canonical[$canon] = $canon;
+                }
+            }
+            unset($addr_to_nodes);
+        }
+
         // Build canonical reverse mapping
         if ($substrate->canonical !== []) {
             foreach ($substrate->canonical as $node => $parent) {
