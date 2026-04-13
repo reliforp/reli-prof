@@ -38,7 +38,7 @@ final class DiskBackedStringDict
 
     /**
      * Fallback PHP hash index when FFI is not available.
-     * Hash → packed binary entries (12 bytes each: id:V, offset:V, len:V).
+     * Hash → packed binary entries (16 bytes each: id:V, offset:P, len:V).
      * @var array<int, string>|null
      */
     private ?array $phpIndex = null;
@@ -238,8 +238,8 @@ final class DiskBackedStringDict
         }
         $result = [];
         $pLen = strlen($packed);
-        for ($i = 0; $i < $pLen; $i += 12) {
-            $entry = unpack('Vid/Voffset/Vlen', $packed, $i);
+        for ($i = 0; $i < $pLen; $i += 16) {
+            $entry = unpack('Vid/Poffset/Vlen', $packed, $i);
             $result[] = [(int)$entry['id'], (int)$entry['offset'], (int)$entry['len']];
         }
         return $result;
@@ -251,7 +251,7 @@ final class DiskBackedStringDict
             $this->ffiTable->insert($hash, $id, $offset, $len);
             return;
         }
-        $this->phpIndex[$hash] = ($this->phpIndex[$hash] ?? '') . pack('VVV', $id, $offset, $len);
+        $this->phpIndex[$hash] = ($this->phpIndex[$hash] ?? '') . pack('VPV', $id, $offset, $len);
     }
 
     /**
@@ -265,8 +265,8 @@ final class DiskBackedStringDict
         $result = [];
         foreach ($this->phpIndex as $packed) {
             $pLen = strlen($packed);
-            for ($i = 0; $i < $pLen; $i += 12) {
-                $entry = unpack('Vid/Voffset/Vlen', $packed, $i);
+            for ($i = 0; $i < $pLen; $i += 16) {
+                $entry = unpack('Vid/Poffset/Vlen', $packed, $i);
                 $result[] = [(int)$entry['id'], (int)$entry['offset'], (int)$entry['len']];
             }
         }

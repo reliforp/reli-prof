@@ -18,26 +18,26 @@ use Reli\Lib\FFI\FFIHelper;
 /**
  * Open-addressing hash table backed by FFI int arrays.
  *
- * Each slot is 20 bytes stored across 4 parallel FFI arrays:
+ * Each slot is 24 bytes stored across 4 parallel FFI arrays:
  *   hash:       int64  (8 bytes) — 0 means empty
  *   id:         int32  (4 bytes)
- *   diskOffset: int32  (4 bytes)
- *   len:        int32  (4 bytes)
+ *   diskOffset: uint64 (8 bytes)
+ *   len:        uint32 (4 bytes)
  *
  * Linear probing with 75% max load factor. Grows 2x when the load
  * threshold is reached. hash=0 is remapped to 1 to preserve the
  * empty-slot sentinel.
  *
  * Memory: ~28 bytes/slot × capacity (with load factor overhead, effectively
- * ~37 bytes per stored entry). At 10M entries: ~370 MB vs ~4.6 GB for
+ * ~32 bytes per stored entry). At 10M entries: ~320 MB vs ~4.6 GB for
  * nested PHP arrays.
  */
 final class FfiHashTable
 {
     private \FFI\CData $hashes;   // int64_t[capacity]
     private \FFI\CData $ids;      // int32_t[capacity]
-    private \FFI\CData $offsets;  // int32_t[capacity]
-    private \FFI\CData $lengths;  // int32_t[capacity]
+    private \FFI\CData $offsets;  // uint64_t[capacity]
+    private \FFI\CData $lengths;  // uint32_t[capacity]
 
     private int $capacity;
     private int $mask; // capacity - 1, for fast modulo
@@ -146,8 +146,8 @@ final class FfiHashTable
 
         $this->hashes = FFIHelper::new("int64_t[{$capacity}]");
         $this->ids = FFIHelper::new("int32_t[{$capacity}]");
-        $this->offsets = FFIHelper::new("int32_t[{$capacity}]");
-        $this->lengths = FFIHelper::new("int32_t[{$capacity}]");
+        $this->offsets = FFIHelper::new("uint64_t[{$capacity}]");
+        $this->lengths = FFIHelper::new("uint32_t[{$capacity}]");
 
         // hashes are zero-initialized by FFI::new (calloc semantics)
     }

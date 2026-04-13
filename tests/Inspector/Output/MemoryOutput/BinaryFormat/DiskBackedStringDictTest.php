@@ -156,4 +156,40 @@ class DiskBackedStringDictTest extends TestCase
         $this->assertSame('string_5000', $this->dict->lookup($ids[5000]));
         $this->assertSame('string_9999', $this->dict->lookup($ids[9999]));
     }
+
+    public function testSerializeRoundTripWithSparseOffsetBeyondTwoGiB(): void
+    {
+        $this->dict = new DiskBackedStringDict(1024);
+
+        $highOffset = (1 << 31) + 4096;
+        $this->seekBackingFile($highOffset);
+
+        $id = $this->dict->intern('late_string');
+        $this->assertSame(0, $id);
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'dict_sparse_');
+        $fh = fopen($tmpPath, 'w+b');
+        $bytesWritten = $this->dict->serializeToStream($fh);
+        $this->assertGreaterThan(0, $bytesWritten);
+
+        fseek($fh, 0);
+        $data = fread($fh, $bytesWritten);
+        fclose($fh);
+        @unlink($tmpPath);
+
+        $loaded = StringDict::deserialize($data);
+        $this->assertSame('late_string', $loaded->lookup(0));
+    }
+
+    private function seekBackingFile(int $offset): void
+    {
+        $diskPos = new \ReflectionProperty(DiskBackedStringDict::class, 'diskPos');
+        $diskPos->setAccessible(true);
+        $diskPos->setValue($this->dict, $offset);
+
+        $diskFh = new \ReflectionProperty(DiskBackedStringDict::class, 'diskFh');
+        $diskFh->setAccessible(true);
+        $fh = $diskFh->getValue($this->dict);
+        fseek($fh, $offset);
+    }
 }
