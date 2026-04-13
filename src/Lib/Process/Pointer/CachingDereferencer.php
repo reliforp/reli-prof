@@ -40,7 +40,7 @@ final class CachingDereferencer implements Dereferencer
 
     public function __construct(
         private Dereferencer $inner,
-        private int $max_entries = 4096,
+        private int $max_entries = 65536,
     ) {
     }
 
