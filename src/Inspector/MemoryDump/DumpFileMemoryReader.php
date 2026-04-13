@@ -38,7 +38,9 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
 {
     /** @var array<string, resource> path => cached file handle */
     private array $fp_cache = [];
-    private int $max_region_size = 0;
+    /** @var list<array{address: int, size: int, file_offset: int}> */
+    private array $sorted_region_index = [];
+    private bool $can_use_sorted_lookup = false;
 
     /**
      * @param list<array{address: int, size: int, file_offset: int}> $region_index
@@ -49,14 +51,20 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
         private ProcessMemoryMap $process_memory_map,
         private MappedPathResolver $path_resolver,
     ) {
+        $this->sorted_region_index = $this->region_index;
         usort(
-            $this->region_index,
+            $this->sorted_region_index,
             static fn (array $a, array $b): int => $a['address'] <=> $b['address'],
         );
-        foreach ($this->region_index as $region) {
-            if ($region['size'] > $this->max_region_size) {
-                $this->max_region_size = $region['size'];
+        $previous_end = null;
+        $this->can_use_sorted_lookup = true;
+        foreach ($this->sorted_region_index as $region) {
+            $region_end = $region['address'] + $region['size'];
+            if ($previous_end !== null && $region['address'] < $previous_end) {
+                $this->can_use_sorted_lookup = false;
+                break;
             }
+            $previous_end = $region_end;
         }
     }
 
@@ -83,7 +91,9 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     #[\Override]
     public function read(int $pid, int $remote_address, int $size): CData
     {
-        $region = $this->findContainingRegion($remote_address, $size);
+        $region = $this->can_use_sorted_lookup
+            ? $this->findContainingRegionSorted($remote_address, $size)
+            : $this->findContainingRegionLinear($remote_address, $size);
         if ($region !== null) {
             $region_start = $region['address'];
             $offset_in_region = $remote_address - $region_start;
@@ -145,15 +155,33 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     /**
      * @return array{address: int, size: int, file_offset: int}|null
      */
-    private function findContainingRegion(int $remote_address, int $size): ?array
+    private function findContainingRegionLinear(int $remote_address, int $size): ?array
+    {
+        $remote_end = $remote_address + $size;
+        foreach ($this->region_index as $region) {
+            $region_start = $region['address'];
+            $region_end = $region_start + $region['size'];
+            if ($remote_address >= $region_start && $remote_end <= $region_end) {
+                return $region;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Fast path for modern dumps whose captured intervals are disjoint.
+     *
+     * @return array{address: int, size: int, file_offset: int}|null
+     */
+    private function findContainingRegionSorted(int $remote_address, int $size): ?array
     {
         $lo = 0;
-        $hi = count($this->region_index) - 1;
+        $hi = count($this->sorted_region_index) - 1;
         $candidate = -1;
 
         while ($lo <= $hi) {
             $mid = ($lo + $hi) >> 1;
-            $region = $this->region_index[$mid];
+            $region = $this->sorted_region_index[$mid];
             if ($region['address'] <= $remote_address) {
                 $candidate = $mid;
                 $lo = $mid + 1;
@@ -166,19 +194,12 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
             return null;
         }
 
+        $region = $this->sorted_region_index[$candidate];
+        $region_start = $region['address'];
+        $region_end = $region_start + $region['size'];
         $remote_end = $remote_address + $size;
-        for ($i = $candidate; $i >= 0; $i--) {
-            $region = $this->region_index[$i];
-            $region_start = $region['address'];
-            if (($remote_address - $region_start) > $this->max_region_size) {
-                break;
-            }
-            $region_end = $region_start + $region['size'];
-            if ($remote_address >= $region_start && $remote_end <= $region_end) {
-                return $region;
-            }
-        }
-
-        return null;
+        return $remote_address >= $region_start && $remote_end <= $region_end
+            ? $region
+            : null;
     }
 }

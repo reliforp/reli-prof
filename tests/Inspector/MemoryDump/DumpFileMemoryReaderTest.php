@@ -193,7 +193,7 @@ class DumpFileMemoryReaderTest extends TestCase
     }
 
     #[Test]
-    public function testReadFindsEarlierOverlappingRegionThatFullyContainsRequest(): void
+    public function testReadPreservesOriginalFileOrderForOverlappingRegions(): void
     {
         $reader = $this->makeReader([
             [
@@ -208,8 +208,8 @@ class DumpFileMemoryReaderTest extends TestCase
             ],
         ]);
 
-        $cdata = $reader->read(1234, 0x7f0000001018, 8);
-        $this->assertSame('YZabcdef', \FFI::string($cdata, 8));
+        $cdata = $reader->read(1234, 0x7f0000001010, 8);
+        $this->assertSame('QRSTUVWX', \FFI::string($cdata, 8));
     }
 
     #[Test]
