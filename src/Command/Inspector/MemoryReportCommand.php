@@ -37,7 +37,7 @@ final class MemoryReportCommand extends Command
         $this->addArgument(
             'db-file',
             InputArgument::REQUIRED,
-            'path to the SQLite database file (created by inspector:memory with -f sqlite3)'
+            'path to the analysis file (SQLite .db/.sqlite or binary .rmem)'
         );
         $this->addOption(
             'run-id',
@@ -162,101 +162,115 @@ final class MemoryReportCommand extends Command
 
         $db_file = (string)$input->getArgument('db-file');
         if (!file_exists($db_file)) {
-            $output->writeln("<error>Database file not found: {$db_file}</error>");
+            $output->writeln("<error>File not found: {$db_file}</error>");
             return 1;
         }
 
-        $run_id = (int)$input->getOption('run-id');
         $format = (string)$input->getOption('output-format');
         /** @var string|null $output_path */
         // @psalm-suppress RedundantCastGivenDocblockType
         $output_path = $input->getOption('output');
         $pretty = (bool)$input->getOption('pretty-print');
 
-        /** @var string $mmap_size_raw */
-        $mmap_size_raw = $input->getOption('mmap-size');
-        try {
-            $mmap_size_bytes = HeapStats::parseSize($mmap_size_raw);
-        } catch (\Throwable $e) {
-            $output->writeln(sprintf(
-                '<error>Invalid --mmap-size value: %s (use bytes, or K/M/G suffix)</error>',
-                $mmap_size_raw,
-            ));
-            return 1;
-        }
-        if ($mmap_size_bytes < 0) {
-            $output->writeln(sprintf(
-                '<error>Invalid --mmap-size value: %s (must be >= 0)</error>',
-                $mmap_size_raw,
-            ));
-            return 1;
-        }
-
-        // Page-cache prefetch via posix_fadvise(WILLNEED). Done BEFORE
-        // PDO opens the file so the kernel's async read-ahead has the
-        // longest possible head start while we're still doing PHP /
-        // PDO setup work. The hint is purely advisory — if the kernel
-        // is under memory pressure or the file is already cached, it
-        // costs nothing.
-        $prefetch = (bool)$input->getOption('prefetch');
-        if ($prefetch) {
-            LibcFileReader::prefetchFile($db_file);
-        }
-
-        $db = new \PDO("sqlite:{$db_file}");
-        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-        $db->exec('PRAGMA journal_mode = WAL');
-        $db->exec('PRAGMA mmap_size = ' . $mmap_size_bytes);
-
-        $full_analysis = (bool)$input->getOption('full-analysis');
-        /** @var bool|null $ffi_csr */
-        $ffi_csr = $input->getOption('ffi-csr');
-
-        /** @var string $link_cache_raw */
-        $link_cache_raw = $input->getOption('link-cache');
-        $link_cache_mode = LinkCacheMode::tryFrom($link_cache_raw);
-        if ($link_cache_mode === null) {
-            $output->writeln(sprintf(
-                '<error>Unsupported --link-cache value: %s (supported: auto, eager, lazy)</error>',
-                $link_cache_raw,
-            ));
-            return 1;
-        }
-
-        /** @var string $bulk_fetch_chunk_raw */
-        $bulk_fetch_chunk_raw = $input->getOption('substrate-bulk-fetch-chunk');
-        if (!ctype_digit($bulk_fetch_chunk_raw)) {
-            $output->writeln(sprintf(
-                '<error>Invalid --substrate-bulk-fetch-chunk value: %s (must be a non-negative integer)</error>',
-                $bulk_fetch_chunk_raw,
-            ));
-            return 1;
-        }
-        $bulk_fetch_chunk = (int)$bulk_fetch_chunk_raw;
-
-        /** @var string $workers_raw */
-        $workers_raw = $input->getOption('report-workers');
-        if (!ctype_digit($workers_raw) || (int)$workers_raw < 1) {
-            $output->writeln(sprintf(
-                '<error>Invalid --report-workers value: %s (must be >= 1)</error>',
-                $workers_raw,
-            ));
-            return 1;
-        }
-        $worker_count = (int)$workers_raw;
+        // Detect binary (.rmem) vs SQLite by extension or magic bytes
+        $is_binary = $this->isBinaryFormat($db_file);
 
         $generator = new ReportGenerator();
-        $result = $generator->generateFromDb(
-            $db,
-            $run_id,
-            $full_analysis,
-            $ffi_csr,
-            $link_cache_mode,
-            $bulk_fetch_chunk,
-            $worker_count,
-            $db_file,
-            $mmap_size_bytes,
-        );
+
+        if ($is_binary) {
+            // Binary path: no SQLite, no PDO, no mmap_size/prefetch/etc.
+            /** @var bool|null $ffi_csr */
+            $ffi_csr = $input->getOption('ffi-csr');
+
+            // Prefetch the binary file into kernel page cache too
+            $prefetch = (bool)$input->getOption('prefetch');
+            if ($prefetch) {
+                LibcFileReader::prefetchFile($db_file);
+            }
+
+            $result = $generator->generateFromBinary($db_file, $ffi_csr);
+        } else {
+            // SQLite path (original)
+            $run_id = (int)$input->getOption('run-id');
+
+            /** @var string $mmap_size_raw */
+            $mmap_size_raw = $input->getOption('mmap-size');
+            try {
+                $mmap_size_bytes = HeapStats::parseSize($mmap_size_raw);
+            } catch (\Throwable $e) {
+                $output->writeln(sprintf(
+                    '<error>Invalid --mmap-size value: %s (use bytes, or K/M/G suffix)</error>',
+                    $mmap_size_raw,
+                ));
+                return 1;
+            }
+            if ($mmap_size_bytes < 0) {
+                $output->writeln(sprintf(
+                    '<error>Invalid --mmap-size value: %s (must be >= 0)</error>',
+                    $mmap_size_raw,
+                ));
+                return 1;
+            }
+
+            $prefetch = (bool)$input->getOption('prefetch');
+            if ($prefetch) {
+                LibcFileReader::prefetchFile($db_file);
+            }
+
+            $db = new \PDO("sqlite:{$db_file}");
+            $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $db->exec('PRAGMA journal_mode = WAL');
+            $db->exec('PRAGMA mmap_size = ' . $mmap_size_bytes);
+
+            $full_analysis = (bool)$input->getOption('full-analysis');
+            /** @var bool|null $ffi_csr */
+            $ffi_csr = $input->getOption('ffi-csr');
+
+            /** @var string $link_cache_raw */
+            $link_cache_raw = $input->getOption('link-cache');
+            $link_cache_mode = LinkCacheMode::tryFrom($link_cache_raw);
+            if ($link_cache_mode === null) {
+                $output->writeln(sprintf(
+                    '<error>Unsupported --link-cache value: %s (supported: auto, eager, lazy)</error>',
+                    $link_cache_raw,
+                ));
+                return 1;
+            }
+
+            /** @var string $bulk_fetch_chunk_raw */
+            $bulk_fetch_chunk_raw = $input->getOption('substrate-bulk-fetch-chunk');
+            if (!ctype_digit($bulk_fetch_chunk_raw)) {
+                $output->writeln(sprintf(
+                    '<error>Invalid --substrate-bulk-fetch-chunk value: %s (must be a non-negative integer)</error>',
+                    $bulk_fetch_chunk_raw,
+                ));
+                return 1;
+            }
+            $bulk_fetch_chunk = (int)$bulk_fetch_chunk_raw;
+
+            /** @var string $workers_raw */
+            $workers_raw = $input->getOption('report-workers');
+            if (!ctype_digit($workers_raw) || (int)$workers_raw < 1) {
+                $output->writeln(sprintf(
+                    '<error>Invalid --report-workers value: %s (must be >= 1)</error>',
+                    $workers_raw,
+                ));
+                return 1;
+            }
+            $worker_count = (int)$workers_raw;
+
+            $result = $generator->generateFromDb(
+                $db,
+                $run_id,
+                $full_analysis,
+                $ffi_csr,
+                $link_cache_mode,
+                $bulk_fetch_chunk,
+                $worker_count,
+                $db_file,
+                $mmap_size_bytes,
+            );
+        }
 
         $formatter = match ($format) {
             'report' => new TextReportFormatter(),
@@ -277,5 +291,23 @@ final class MemoryReportCommand extends Command
 
         Log::info('end memory:report command');
         return 0;
+    }
+
+    /**
+     * Detect binary format by extension (.rmem) or magic bytes ("RMEM").
+     */
+    private function isBinaryFormat(string $path): bool
+    {
+        if (str_ends_with($path, '.rmem')) {
+            return true;
+        }
+        // Check magic bytes
+        $fh = fopen($path, 'rb');
+        if ($fh === false) {
+            return false;
+        }
+        $magic = fread($fh, 4);
+        fclose($fh);
+        return $magic === 'RMEM';
     }
 }

@@ -13,6 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
+
 class GraphSubstrate
 {
     /** @var array<int, int> node_id => shallow size */
@@ -151,6 +154,138 @@ class GraphSubstrate
             return FfiCsrGraphSubstrate::loadFromDb($db, $run_id, $bulk_fetch_chunk);
         }
         return self::loadFromDb($db, $run_id);
+    }
+
+    /**
+     * Load the substrate from a .rmem binary file (PHP-array variant).
+     *
+     * @psalm-suppress UnsafeInstantiation
+     */
+    public static function loadFromBinary(BinaryReader $reader): static
+    {
+        $substrate = new static();
+        $dict = $reader->getStringDict();
+
+        // Load nodes (node sizes come from locations, but we need types from nodes)
+        if ($reader->hasSection(Format::SECTION_NODES)) {
+            $data = $reader->getSectionData(Format::SECTION_NODES);
+            $count = $reader->getSectionElementCount(Format::SECTION_NODES);
+            $offset = 0;
+            for ($i = 0; $i < $count; $i++) {
+                $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $data, $offset);
+                $offset += Format::NODE_ROW_SIZE;
+                $node_id = (int)$row['node_id'];
+                $type = $dict->lookup((int)$row['type_id']);
+                if ($type !== null) {
+                    $substrate->node_types[$node_id] = $type;
+                }
+                $canonical_id = (int)$row['canonical_id'];
+                if ($canonical_id !== 0 && $canonical_id !== $node_id) {
+                    $substrate->canonical[$node_id] = $canonical_id;
+                    $substrate->canonical[$canonical_id] = $canonical_id;
+                }
+            }
+        }
+
+        // Load locations → node_sizes + node_classes
+        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
+            $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+            $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+            $offset = 0;
+            for ($i = 0; $i < $count; $i++) {
+                $row = unpack('Vnode_id/Vlocation_type_id/Vclass_id/Paddress/Psize/Vstring_value_id/Vrefcount/Vtype_info/Vregion_id/Vbin_overhead', $data, $offset);
+                $offset += Format::LOCATION_ROW_SIZE;
+                $node_id = (int)$row['node_id'];
+                $size = (int)$row['size'];
+                $substrate->node_sizes[$node_id] = ($substrate->node_sizes[$node_id] ?? 0) + $size;
+
+                $class_id = (int)$row['class_id'];
+                if ($class_id !== Format::NULL_STRING_ID && !isset($substrate->node_classes[$node_id])) {
+                    $cls = $dict->lookup($class_id);
+                    if ($cls !== null) {
+                        $substrate->node_classes[$node_id] = $cls;
+                    }
+                }
+            }
+        }
+
+        // Load edges
+        if ($reader->hasSection(Format::SECTION_EDGES)) {
+            $data = $reader->getSectionData(Format::SECTION_EDGES);
+            $count = $reader->getSectionElementCount(Format::SECTION_EDGES);
+            $offset = 0;
+            $edge_count = 0;
+            for ($i = 0; $i < $count; $i++) {
+                $row = unpack('Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength/v_pad', $data, $offset);
+                $offset += Format::EDGE_ROW_SIZE;
+                $edge_count++;
+
+                $raw_parent = (int)$row['parent_node_id'];
+                $parent = $raw_parent === 0xFFFFFFFF ? -1 : $raw_parent;
+                $child = (int)$row['child_node_id'];
+                $is_tree = (int)$row['is_tree'];
+                $is_strong = (int)$row['strength'] === 0; // 0 = strong
+
+                if ($is_tree) {
+                    $substrate->children[$parent][] = $child;
+                    if ($is_strong) {
+                        $substrate->strong_children[$parent][] = $child;
+                    }
+                    if ($parent === -1) {
+                        $substrate->roots[] = $child;
+                    }
+                    $link_name = $dict->lookup((int)$row['link_name_id']);
+                    if ($link_name !== null) {
+                        $substrate->tree_link_names[$child] = $link_name;
+                    }
+                    $substrate->tree_parents[$child] = $parent;
+                }
+                if ($parent !== -1) {
+                    $substrate->all_children[$parent][] = $child;
+                    if ($is_strong) {
+                        $substrate->strong_all_children[$parent][] = $child;
+                    }
+                }
+                $substrate->all_parents[$child][] = $parent;
+            }
+            $substrate->edge_count = $edge_count;
+        }
+
+        // Build canonical reverse mapping
+        if ($substrate->canonical !== []) {
+            foreach ($substrate->canonical as $node => $parent) {
+                $canon = $substrate->findCanonical($node);
+                $substrate->canonicalToOriginals[$canon][] = $node;
+            }
+            foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
+                $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
+            }
+        }
+
+        $substrate->buildSccAdjacency();
+        $substrate->computeSubtreeSizes();
+        $substrate->computeScc();
+        return $substrate;
+    }
+
+    /**
+     * Factory that auto-selects PHP array or FFI CSR from a binary file.
+     */
+    public static function createFromBinary(
+        BinaryReader $reader,
+        ?bool $forceFfiCsr = null,
+    ): self {
+        if ($forceFfiCsr === false) {
+            return self::loadFromBinary($reader);
+        }
+
+        $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $useFfi = $forceFfiCsr === true || $edge_count > self::FFI_CSR_THRESHOLD;
+
+        if ($useFfi && extension_loaded('ffi')) {
+            return FfiCsrGraphSubstrate::loadFromBinary($reader);
+        }
+        return self::loadFromBinary($reader);
     }
 
     // ---- Accessor methods ----

@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Lib\FFI\FFIHelper;
 
 /**
@@ -135,6 +137,369 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate->loadNodeTypesFfi($db, $run_id);
         $substrate->loadEdgesFfi($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
+        $substrate->buildSccAdjacency();
+        $substrate->computeSubtreeSizesFfi();
+        $substrate->computeSccFfi();
+        return $substrate;
+    }
+
+    /**
+     * Load the substrate directly from a .rmem binary file.
+     *
+     * Reads the fixed-width sections (nodes, edges, locations) from the
+     * binary reader and populates FFI CSR arrays without any SQL
+     * marshalling. The hot path is:
+     *   1. Parse the node section → build node-id mapping + type dict
+     *   2. Parse the location section → fill node sizes + class dict
+     *   3. Parse the edge section → fill CSR + link_name index
+     *   4. Parse canonical_ids from the node section
+     *   5. computeSubtreeSizes + computeScc (same as DB path)
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion
+     */
+    #[\Override]
+    public static function loadFromBinary(BinaryReader $reader): static
+    {
+        $substrate = new self();
+        $dict = $reader->getStringDict();
+
+        // ---- Phase 1: Build node ID mapping from the nodes section ----
+        $nodeData = $reader->getSectionData(Format::SECTION_NODES);
+        $nodeRowCount = $reader->getSectionElementCount(Format::SECTION_NODES);
+
+        // Collect all node_ids (same role as the Pass 1 context_nodes scan in loadNodeSizesFfi)
+        /** @var array<int, true> $all_node_ids */
+        $all_node_ids = [];
+        $offset = 0;
+        for ($i = 0; $i < $nodeRowCount; $i++) {
+            $node_id = unpack('V', $nodeData, $offset)[1];
+            $all_node_ids[(int)$node_id] = true;
+            $offset += Format::NODE_ROW_SIZE;
+        }
+        // Include -1 sentinel for the synthetic root parent.
+        $all_node_ids[-1] = true;
+
+        $substrate->nodeCount = count($all_node_ids);
+        $nc = $substrate->nodeCount;
+        $substrate->indexToNodeFfi = FFIHelper::new("int32_t[{$nc}]");
+
+        $idx = 0;
+        $minNodeId = PHP_INT_MAX;
+        $maxNodeId = PHP_INT_MIN;
+        foreach ($all_node_ids as $node_id => $_) {
+            $substrate->indexToNodeFfi[$idx] = $node_id;
+            if ($node_id < $minNodeId) {
+                $minNodeId = $node_id;
+            }
+            if ($node_id > $maxNodeId) {
+                $maxNodeId = $node_id;
+            }
+            $idx++;
+        }
+
+        // Decide nodeToIndex strategy
+        $range = $maxNodeId - $minNodeId + 1;
+        if ($range > 0 && $range < $nc * 4 && $range < 100_000_000) {
+            $substrate->directIndexOffset = -$minNodeId;
+            $directSize = $range;
+            $substrate->directIndexSize = $directSize;
+            $substrate->nodeToIndexDirect = FFIHelper::new("int32_t[{$directSize}]");
+            for ($i = 0; $i < $directSize; $i++) {
+                $substrate->nodeToIndexDirect[$i] = -1;
+            }
+            for ($i = 0; $i < $nc; $i++) {
+                $nid = (int)$substrate->indexToNodeFfi[$i];
+                $slot = $nid + $substrate->directIndexOffset;
+                $substrate->nodeToIndexDirect[$slot] = $i;
+            }
+        } else {
+            $substrate->nodeToIndexPhp = [];
+            for ($i = 0; $i < $nc; $i++) {
+                $substrate->nodeToIndexPhp[(int)$substrate->indexToNodeFfi[$i]] = $i;
+            }
+        }
+        unset($all_node_ids);
+
+        // Allocate per-node FFI arrays
+        $substrate->ffiNodeSizes = FFIHelper::new("int64_t[{$nc}]");
+        $substrate->ffiSubtreeSizes = FFIHelper::new("int64_t[{$nc}]");
+        $substrate->ffiNodeToScc = FFIHelper::new("int32_t[{$nc}]");
+        $substrate->nodeClassIds = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $substrate->ffiNodeToScc[$i] = -1;
+            $substrate->nodeClassIds[$i] = -1;
+        }
+
+        // ---- Phase 2: Load node types from nodes section ----
+        $substrate->nodeTypeIds = FFIHelper::new("int16_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $substrate->nodeTypeIds[$i] = -1;
+        }
+
+        // Localise for the inner loop
+        $directMap = $substrate->nodeToIndexDirect;
+        $directOffset = $substrate->directIndexOffset;
+        $directSize = $substrate->directIndexSize;
+        $phpMap = $substrate->nodeToIndexPhp;
+
+        $offset = 0;
+        for ($i = 0; $i < $nodeRowCount; $i++) {
+            $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $nodeData, $offset);
+            $offset += Format::NODE_ROW_SIZE;
+
+            $node_id = (int)$row['node_id'];
+            if ($directMap !== null) {
+                $slot = $node_id + $directOffset;
+                $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+            } else {
+                $csrIdx = $phpMap[$node_id] ?? -1;
+            }
+            if ($csrIdx < 0) {
+                continue;
+            }
+
+            // Type
+            $type_id = (int)$row['type_id'];
+            $type = $dict->lookup($type_id);
+            if ($type !== null) {
+                if (!isset($substrate->nodeTypeDictReverse[$type])) {
+                    $substrate->nodeTypeDictReverse[$type] = count($substrate->nodeTypeDict);
+                    $substrate->nodeTypeDict[] = $type;
+                }
+                $substrate->nodeTypeIds[$csrIdx] = $substrate->nodeTypeDictReverse[$type];
+            }
+
+            // Canonical ID
+            $canonical_id = (int)$row['canonical_id'];
+            if ($canonical_id !== 0 && $canonical_id !== $node_id) {
+                $substrate->canonical[$node_id] = $canonical_id;
+                $substrate->canonical[$canonical_id] = $canonical_id;
+            }
+        }
+        unset($nodeData);
+
+        // ---- Phase 3: Load node sizes + classes from locations ----
+        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
+            $locData = $reader->getSectionData(Format::SECTION_LOCATIONS);
+            $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+            $ffiNodeSizes = $substrate->ffiNodeSizes;
+            $nodeClassIds = $substrate->nodeClassIds;
+
+            $substrate->nodeSizesSum = 0;
+            $offset = 0;
+            for ($i = 0; $i < $locCount; $i++) {
+                // Location row: node_id:u32, location_type_id:u32, class_id:u32,
+                //   address:u64, size:u64, string_value_id:u32, refcount:u32,
+                //   type_info:u32, region_id:u32, bin_overhead:u32, _pad:u32
+                $node_id = unpack('V', $locData, $offset)[1];
+                $class_id = unpack('V', $locData, $offset + 8)[1];
+                $size = unpack('P', $locData, $offset + 20)[1]; // address@12 then size@20
+                $offset += Format::LOCATION_ROW_SIZE;
+
+                if ($directMap !== null) {
+                    $slot = $node_id + $directOffset;
+                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                } else {
+                    $csrIdx = $phpMap[$node_id] ?? -1;
+                }
+                if ($csrIdx < 0) {
+                    continue;
+                }
+
+                $ffiNodeSizes[$csrIdx] = (int)$ffiNodeSizes[$csrIdx] + (int)$size;
+                $substrate->nodeSizesSum += (int)$size;
+
+                if ((int)$class_id !== Format::NULL_STRING_ID && (int)$nodeClassIds[$csrIdx] === -1) {
+                    $className = $dict->lookup((int)$class_id);
+                    if ($className !== null) {
+                        if (!isset($substrate->classDictReverse[$className])) {
+                            $substrate->classDictReverse[$className] = count($substrate->classDict);
+                            $substrate->classDict[] = $className;
+                        }
+                        $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
+                    }
+                }
+            }
+            unset($locData);
+        }
+
+        // ---- Phase 4: Load edges → build CSR ----
+        $edgeCount = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $substrate->edge_count = $edgeCount;
+        $rootParentIdx = $substrate->nodeIdToIndex(-1);
+
+        $substrate->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+
+        if ($edgeCount === 0) {
+            $substrate->treeEdges = FFIHelper::new("int32_t[1]");
+            $substrate->strongTreeEdges = FFIHelper::new("int32_t[1]");
+            $substrate->allEdges = FFIHelper::new("int32_t[1]");
+            $substrate->strongAllEdges = FFIHelper::new("int32_t[1]");
+            $substrate->revEdges = FFIHelper::new("int32_t[1]");
+            $substrate->subtreeSizesComputed = false;
+            return $substrate;
+        }
+
+        // Staging buffers
+        $stageParentIdx = FFIHelper::new("int32_t[{$edgeCount}]");
+        $stageChildIdx = FFIHelper::new("int32_t[{$edgeCount}]");
+        $stageFlags = FFIHelper::new("int8_t[{$edgeCount}]");
+
+        $substrate->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
+        $substrate->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        for ($k = 0; $k < $nc; $k++) {
+            $substrate->treeLinkIds[$k] = -1;
+            $substrate->treeParentIdx[$k] = -1;
+        }
+
+        $treeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $allDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
+        $revDeg = FFIHelper::new("int32_t[{$nc}]");
+
+        $treeCount = 0;
+        $strongTreeCount = 0;
+        $allCount = 0;
+        $strongAllCount = 0;
+
+        $treeLinkIds = $substrate->treeLinkIds;
+        $treeParentIdx = $substrate->treeParentIdx;
+
+        $edgeData = $reader->getSectionData(Format::SECTION_EDGES);
+        $eOffset = 0;
+        for ($i = 0; $i < $edgeCount; $i++) {
+            $row = unpack('Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength', $edgeData, $eOffset);
+            $eOffset += Format::EDGE_ROW_SIZE;
+
+            $raw_parent = (int)$row['parent_node_id'];
+            $parentIsRoot = $raw_parent === 0xFFFFFFFF;
+            $parent = $parentIsRoot ? -1 : $raw_parent;
+            $child = (int)$row['child_node_id'];
+            $is_tree = (int)$row['is_tree'];
+            $is_strong = (int)$row['strength'] === 0;
+            $link_name_id = (int)$row['link_name_id'];
+
+            if ($directMap !== null) {
+                $slot = $parent + $directOffset;
+                $pi = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                $slot = $child + $directOffset;
+                $ci = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+            } else {
+                $pi = $phpMap[$parent] ?? -1;
+                $ci = $phpMap[$child] ?? -1;
+            }
+
+            $stageParentIdx[$i] = $pi;
+            $stageChildIdx[$i] = $ci;
+            $stageFlags[$i] = $is_tree | ($is_strong ? 2 : 0);
+
+            if ($is_tree) {
+                $treeDeg[$pi] = $treeDeg[$pi] + 1;
+                $treeCount++;
+                if ($is_strong) {
+                    $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
+                    $strongTreeCount++;
+                }
+                if ($parentIsRoot) {
+                    $substrate->roots[] = $child;
+                }
+                $link_name = $dict->lookup($link_name_id);
+                if ($link_name !== null) {
+                    if (!isset($substrate->linkDictReverse[$link_name])) {
+                        $substrate->linkDictReverse[$link_name] = count($substrate->linkDict);
+                        $substrate->linkDict[] = $link_name;
+                    }
+                    $treeLinkIds[$ci] = $substrate->linkDictReverse[$link_name];
+                }
+                $treeParentIdx[$ci] = $pi;
+            }
+            if (!$parentIsRoot) {
+                $allDeg[$pi] = $allDeg[$pi] + 1;
+                $allCount++;
+                if ($is_strong) {
+                    $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
+                    $strongAllCount++;
+                }
+            }
+            $revDeg[$ci] = $revDeg[$ci] + 1;
+        }
+        unset($edgeData);
+
+        // Build offsets via prefix sum
+        $substrate->treeOffsets[0] = 0;
+        $substrate->strongTreeOffsets[0] = 0;
+        $substrate->allOffsets[0] = 0;
+        $substrate->strongAllOffsets[0] = 0;
+        $substrate->revOffsets[0] = 0;
+        for ($k = 0; $k < $nc; $k++) {
+            $substrate->treeOffsets[$k + 1] = $substrate->treeOffsets[$k] + $treeDeg[$k];
+            $substrate->strongTreeOffsets[$k + 1] = $substrate->strongTreeOffsets[$k] + $strongTreeDeg[$k];
+            $substrate->allOffsets[$k + 1] = $substrate->allOffsets[$k] + $allDeg[$k];
+            $substrate->strongAllOffsets[$k + 1] = $substrate->strongAllOffsets[$k] + $strongAllDeg[$k];
+            $substrate->revOffsets[$k + 1] = $substrate->revOffsets[$k] + $revDeg[$k];
+        }
+        unset($treeDeg, $strongTreeDeg, $allDeg, $strongAllDeg, $revDeg);
+
+        $substrate->treeEdges = FFIHelper::new("int32_t[" . max($treeCount, 1) . "]");
+        $substrate->strongTreeEdges = FFIHelper::new("int32_t[" . max($strongTreeCount, 1) . "]");
+        $substrate->allEdges = FFIHelper::new("int32_t[" . max($allCount, 1) . "]");
+        $substrate->strongAllEdges = FFIHelper::new("int32_t[" . max($strongAllCount, 1) . "]");
+        $substrate->revEdges = FFIHelper::new("int32_t[{$edgeCount}]");
+
+        $treeP = FFIHelper::new("int32_t[{$nc}]");
+        $streeP = FFIHelper::new("int32_t[{$nc}]");
+        $allP = FFIHelper::new("int32_t[{$nc}]");
+        $sallP = FFIHelper::new("int32_t[{$nc}]");
+        $revP = FFIHelper::new("int32_t[{$nc}]");
+        for ($k = 0; $k < $nc; $k++) {
+            $treeP[$k] = $substrate->treeOffsets[$k];
+            $streeP[$k] = $substrate->strongTreeOffsets[$k];
+            $allP[$k] = $substrate->allOffsets[$k];
+            $sallP[$k] = $substrate->strongAllOffsets[$k];
+            $revP[$k] = $substrate->revOffsets[$k];
+        }
+
+        // Second pass: walk staged edges into CSR
+        for ($k = 0; $k < $edgeCount; $k++) {
+            $pi = (int)$stageParentIdx[$k];
+            $ci = (int)$stageChildIdx[$k];
+            $flags = (int)$stageFlags[$k];
+            $is_tree = ($flags & 1) !== 0;
+            $is_strong = ($flags & 2) !== 0;
+
+            if ($is_tree) {
+                $p = (int)$treeP[$pi];
+                $substrate->treeEdges[$p] = $ci;
+                $treeP[$pi] = $p + 1;
+                if ($is_strong) {
+                    $p = (int)$streeP[$pi];
+                    $substrate->strongTreeEdges[$p] = $ci;
+                    $streeP[$pi] = $p + 1;
+                }
+            }
+            if ($pi !== $rootParentIdx) {
+                $p = (int)$allP[$pi];
+                $substrate->allEdges[$p] = $ci;
+                $allP[$pi] = $p + 1;
+                if ($is_strong) {
+                    $p = (int)$sallP[$pi];
+                    $substrate->strongAllEdges[$p] = $ci;
+                    $sallP[$pi] = $p + 1;
+                }
+            }
+            $p = (int)$revP[$ci];
+            $substrate->revEdges[$p] = $pi;
+            $revP[$ci] = $p + 1;
+        }
+        unset($treeP, $streeP, $allP, $sallP, $revP);
+        unset($stageParentIdx, $stageChildIdx, $stageFlags);
+
+        // ---- Phase 5: compute derived structures ----
         $substrate->buildSccAdjacency();
         $substrate->computeSubtreeSizesFfi();
         $substrate->computeSccFfi();

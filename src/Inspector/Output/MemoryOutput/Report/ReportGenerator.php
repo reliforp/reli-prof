@@ -33,6 +33,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\StructuralDedupPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopArraysPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopStringsPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TypeBreakdownPass;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
@@ -264,6 +266,275 @@ final class ReportGenerator
         $this->sortFindings($findings);
 
         return new ReportResult($meta, $findings);
+    }
+
+    /**
+     * Generate a report from a .rmem binary file.
+     *
+     * Binary input goes straight to Phase 3 substrate analysis — there
+     * is no SQL fallback for Phase 2 passes. The Phase 1 summary passes
+     * read summary/location_types/class_objects data that was serialized
+     * into the binary file's summary section.
+     *
+     * @param bool|null $ffi_csr true=force on, false=force off, null=auto
+     */
+    public function generateFromBinary(
+        string $path,
+        ?bool $ffi_csr = null,
+    ): ReportResult {
+        $reader = BinaryReader::open($path);
+        $dict = $reader->getStringDict();
+
+        // Load summary from binary
+        $summary = $this->loadSummaryFromBinary($reader);
+        /** @var array<string, mixed> $flat_summary */
+        $flat_summary = [];
+        /** @psalm-suppress MixedAssignment */
+        foreach ($summary as $entry) {
+            foreach ($entry as $k => $v) {
+                $flat_summary[$k] = $v;
+            }
+        }
+        $heap_usage = (int)($flat_summary['zend_mm_heap_usage'] ?? 0);
+
+        // Derive location_types and class_objects from the locations section
+        $location_types = $this->computeLocationTypesFromBinary($reader);
+        $class_objects = $this->computeClassObjectsFromBinary($reader);
+
+        // Load runs metadata
+        $captured_at = null;
+        if ($reader->hasSection(Format::SECTION_RUNS)) {
+            $runs_data = $reader->getSectionData(Format::SECTION_RUNS);
+            // [run_count:u32] then [len:u32][string...]
+            $offset = 4; // skip run_count
+            if (strlen($runs_data) > $offset + 4) {
+                $len = unpack('V', $runs_data, $offset)[1];
+                $offset += 4;
+                $captured_at = substr($runs_data, $offset, $len);
+            }
+        }
+
+        $meta = [];
+        $meta['php_version'] = $flat_summary['php_version'] ?? null;
+        $meta['heap_memory_analyzed_percentage'] = isset($flat_summary['heap_memory_analyzed_percentage'])
+            ? (float)$flat_summary['heap_memory_analyzed_percentage'] : null;
+        $meta['memory_get_usage'] = isset($flat_summary['memory_get_usage'])
+            ? (int)$flat_summary['memory_get_usage'] : null;
+        $meta['node_count'] = $reader->getSectionElementCount(Format::SECTION_NODES);
+        $meta['edge_count'] = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $meta['captured_at'] = $captured_at;
+
+        // Phase 1: Summary-based passes
+        $findings = [];
+        $findings = array_merge($findings, (new OverviewPass($summary))->analyze());
+        $findings = array_merge($findings, (new TypeBreakdownPass($location_types))->analyze());
+        $findings = array_merge($findings, (new ClassRankingPass($class_objects))->analyze());
+        $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
+
+        // Phase 3: Substrate passes (binary goes straight here — no Phase 2 SQL)
+        //
+        // Passes that accept \PDO receive a dummy in-memory SQLite since their
+        // constructors are typed non-nullable. When the substrate is provided
+        // these passes use the substrate-backed code path and never query the
+        // DB, so the dummy is never hit. If a pass does fall back to SQL it
+        // gets an empty database and returns empty findings harmlessly.
+        $edge_count = (int)$meta['edge_count'];
+        if ($edge_count > 0) {
+            $substrate = GraphSubstrate::createFromBinary($reader, $ffi_csr);
+            $meta['scc_count'] = count($substrate->getSccProfiles());
+
+            $dummy_db = new \PDO('sqlite::memory:');
+            $dummy_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+            $findings = array_merge($findings, $this->runPass(
+                new CallStackPass($dummy_db, 0, $substrate)
+            ));
+
+            // Substrate-only passes (no DB required)
+            $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate)));
+            $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
+            $findings = array_merge($findings, $this->runPass(new GcPendingPass($substrate)));
+            $findings = array_merge($findings, $this->runPass(
+                new DrillDownPass($substrate, $dummy_db, 0)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new ChokePointPass($substrate, $dummy_db, 0, $heap_usage)
+            ));
+
+            // Passes that can work with substrate alone
+            $findings = array_merge($findings, $this->runPass(
+                new DynamicPropertiesPass($dummy_db, 0, $substrate)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new TopArraysPass($dummy_db, 0, $substrate)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new TopStringsPass($dummy_db, 0, $substrate)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new NonTreeEdgePass($dummy_db, 0, $substrate)
+            ));
+
+            // LinkNameResolver-backed passes (resolver uses substrate's tree link index)
+            $link_resolver = new LinkNameResolver(
+                db: $dummy_db,
+                run_id: 0,
+                substrate: $substrate,
+            );
+            $findings = array_merge($findings, $this->runPass(
+                new CycleClusterPass($substrate, $dummy_db, 0, $link_resolver)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new PropertyScalingPass($dummy_db, 0, $class_objects, $substrate, $link_resolver)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new PerPropertyMemoryPass($substrate, $dummy_db, 0, $link_resolver)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new OwnershipPatternPass($substrate, $dummy_db, 0, $link_resolver)
+            ));
+            $findings = array_merge($findings, $this->runPass(
+                new StructuralDedupPass($dummy_db, 0, $substrate, $link_resolver)
+            ));
+        }
+
+        $findings = $this->deduplicateFindings($findings);
+        $this->sortFindings($findings);
+
+        return new ReportResult($meta, $findings);
+    }
+
+    /**
+     * Load summary key-value pairs from the binary file's summary section.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function loadSummaryFromBinary(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_SUMMARY)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_SUMMARY);
+        $dict = $reader->getStringDict();
+
+        $offset = 0;
+        $entry_count = unpack('V', $data, $offset)[1];
+        $offset += 4;
+
+        $flat = [];
+        for ($i = 0; $i < $entry_count; $i++) {
+            $key_id = unpack('V', $data, $offset)[1];
+            $offset += 4;
+            $value_id = unpack('V', $data, $offset)[1];
+            $offset += 4;
+
+            $key = $dict->lookup((int)$key_id);
+            $value = $dict->lookup((int)$value_id);
+            if ($key !== null && $value !== null) {
+                $flat[$key] = is_numeric($value)
+                    ? (str_contains($value, '.') ? (float)$value : (int)$value)
+                    : $value;
+            }
+        }
+        return [$flat];
+    }
+
+    /**
+     * Compute location_types summary from the binary locations section.
+     *
+     * @return array<string, array{count: int, memory_usage: int}>
+     */
+    private function computeLocationTypesFromBinary(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $dict = $reader->getStringDict();
+
+        // Filter to relevant regions (same as insertLocationTypesSummaryFromDb)
+        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
+
+        /** @var array<string, array{count: int, memory_usage: int}> $result */
+        $result = [];
+        $offset = 0;
+        for ($i = 0; $i < $count; $i++) {
+            // Fields: node_id(4), location_type_id(4), class_id(4), address(8), size(8),
+            //         string_value_id(4), refcount(4), type_info(4), region_id(4), bin_overhead(4)
+            $location_type_id = unpack('V', $data, $offset + 4)[1];
+            $size = unpack('P', $data, $offset + 20)[1];
+            $region_id = unpack('V', $data, $offset + 40)[1];
+            $offset += Format::LOCATION_ROW_SIZE;
+
+            // Filter by region (null region also included)
+            $region = $dict->lookup((int)$region_id);
+            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+                continue;
+            }
+
+            $type = $dict->lookup((int)$location_type_id);
+            if ($type === null) {
+                continue;
+            }
+            if (!isset($result[$type])) {
+                $result[$type] = ['count' => 0, 'memory_usage' => 0];
+            }
+            $result[$type]['count']++;
+            $result[$type]['memory_usage'] += (int)$size;
+        }
+
+        // Sort by memory_usage descending
+        uasort($result, fn (array $a, array $b): int => $b['memory_usage'] <=> $a['memory_usage']);
+        return $result;
+    }
+
+    /**
+     * Compute class_objects summary from the binary locations section.
+     *
+     * @return array<string, array{count: int, memory_usage: int}>
+     */
+    private function computeClassObjectsFromBinary(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $dict = $reader->getStringDict();
+
+        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
+
+        /** @var array<string, array{count: int, memory_usage: int}> $result */
+        $result = [];
+        $offset = 0;
+        for ($i = 0; $i < $count; $i++) {
+            $class_id = unpack('V', $data, $offset + 8)[1];
+            $size = unpack('P', $data, $offset + 20)[1];
+            $region_id = unpack('V', $data, $offset + 40)[1];
+            $offset += Format::LOCATION_ROW_SIZE;
+
+            if ((int)$class_id === Format::NULL_STRING_ID) {
+                continue;
+            }
+            $region = $dict->lookup((int)$region_id);
+            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+                continue;
+            }
+
+            $class_name = $dict->lookup((int)$class_id);
+            if ($class_name === null) {
+                continue;
+            }
+            if (!isset($result[$class_name])) {
+                $result[$class_name] = ['count' => 0, 'memory_usage' => 0];
+            }
+            $result[$class_name]['count']++;
+            $result[$class_name]['memory_usage'] += (int)$size;
+        }
+
+        uasort($result, fn (array $a, array $b): int => $b['memory_usage'] <=> $a['memory_usage']);
+        return $result;
     }
 
     /**

@@ -18,6 +18,8 @@ use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PostgreSqlDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
@@ -99,11 +101,42 @@ final class MemoryOutputFactory
                 $region_boundaries,
                 $settings->output_path,
             ),
+            'binary' => new BinaryMemoryOutput(
+                $settings->output_path ?? throw new \RuntimeException(
+                    '--output is required when using binary format'
+                ),
+                $region_boundaries,
+            ),
             default => throw new \RuntimeException(
                 "unsupported output format: {$settings->output_format}"
-                . " (supported: json, sqlite3, mysql, postgresql, report, report-json)"
+                . " (supported: json, sqlite3, binary, mysql, postgresql, report, report-json)"
             ),
         };
+    }
+
+    /**
+     * Check if the given output format is the binary (.rmem) format.
+     */
+    public static function isBinaryFormat(MemoryProfilerSettings $settings): bool
+    {
+        return $settings->output_format === 'binary';
+    }
+
+    /**
+     * Create a binary streaming sink.
+     *
+     * @return array{BinaryMemoryOutput, BinaryContextTreeSink}
+     */
+    public function createBinaryStreamingSink(
+        MemoryProfilerSettings $settings,
+        ?RegionBoundaries $region_boundaries = null,
+    ): array {
+        $output_path = $settings->output_path ?? throw new \RuntimeException(
+            '--output is required when using binary format'
+        );
+        $binary_output = new BinaryMemoryOutput($output_path, $region_boundaries);
+        $sink = $binary_output->createStreamingSink();
+        return [$binary_output, $sink];
     }
 
     /**
