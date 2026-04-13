@@ -47,6 +47,18 @@ final class TargetProcessSettingsFromConsoleInput
                 InputArgument::OPTIONAL | InputArgument::IS_ARRAY,
                 'command line arguments for cmd',
             )
+            ->addOption(
+                'child-stdout',
+                'O',
+                InputOption::VALUE_REQUIRED,
+                'write child process stdout to the specified path'
+            )
+            ->addOption(
+                'child-stderr',
+                'E',
+                InputOption::VALUE_REQUIRED,
+                'write child process stderr to the specified path'
+            )
         ;
     }
 
@@ -73,6 +85,8 @@ final class TargetProcessSettingsFromConsoleInput
         }
         /** @var list<string> $args */
         $args = $input->getArgument('args');
-        return new TargetProcessSettings(null, $command, $args);
+        $child_stdout = NullableCast::toString($input->getOption('child-stdout'));
+        $child_stderr = NullableCast::toString($input->getOption('child-stderr'));
+        return new TargetProcessSettings(null, $command, $args, $child_stdout, $child_stderr);
     }
 }

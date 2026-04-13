@@ -47,4 +47,39 @@ class TargetProcessSettingsFromConsoleInputTest extends BaseTestCase
         $this->expectException(TargetProcessSettingsException::class);
         (new TargetProcessSettingsFromConsoleInput())->createSettings($input);
     }
+
+    public function testFromConsoleInputCommand(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('pid')->andReturns(null);
+        $input->expects()->getArgument('cmd')->andReturns('php');
+        $input->expects()->getArgument('args')->andReturns(['-r', 'sleep(3);']);
+        $input->expects()->getOption('child-stdout')->andReturns(null);
+        $input->expects()->getOption('child-stderr')->andReturns(null);
+
+        $settings = (new TargetProcessSettingsFromConsoleInput())->createSettings($input);
+
+        $this->assertNull($settings->pid);
+        $this->assertSame('php', $settings->command);
+        $this->assertSame(['-r', 'sleep(3);'], $settings->arguments);
+        $this->assertNull($settings->child_stdout);
+        $this->assertNull($settings->child_stderr);
+    }
+
+    public function testFromConsoleInputCommandWithChildOutput(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('pid')->andReturns(null);
+        $input->expects()->getArgument('cmd')->andReturns('php');
+        $input->expects()->getArgument('args')->andReturns([]);
+        $input->expects()->getOption('child-stdout')->andReturns('/tmp/child.out');
+        $input->expects()->getOption('child-stderr')->andReturns('/tmp/child.err');
+
+        $settings = (new TargetProcessSettingsFromConsoleInput())->createSettings($input);
+
+        $this->assertNull($settings->pid);
+        $this->assertSame('php', $settings->command);
+        $this->assertSame('/tmp/child.out', $settings->child_stdout);
+        $this->assertSame('/tmp/child.err', $settings->child_stderr);
+    }
 }

@@ -26,10 +26,16 @@ class TargetProcessResolverTest extends BaseTestCase
         $process_specifier = $resolver->resolve(new TargetProcessSettings(123));
         $this->assertSame(123, $process_specifier->pid);
 
-        $tracee_executor->expects()->execute('command', ['arg1', 'arg2'])->andReturns(456);
+        $tracee_executor->expects()->execute('command', ['arg1', 'arg2'], null, null)->andReturns(456);
         $process_specifier = $resolver->resolve(
             new TargetProcessSettings(null, 'command', ['arg1', 'arg2'])
         );
         $this->assertSame(456, $process_specifier->pid);
+
+        $tracee_executor->expects()->execute('command', [], '/tmp/out', '/tmp/err')->andReturns(789);
+        $process_specifier = $resolver->resolve(
+            new TargetProcessSettings(null, 'command', [], '/tmp/out', '/tmp/err')
+        );
+        $this->assertSame(789, $process_specifier->pid);
     }
 }

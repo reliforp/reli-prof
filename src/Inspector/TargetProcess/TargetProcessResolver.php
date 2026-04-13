@@ -33,7 +33,9 @@ final class TargetProcessResolver
         assert(!is_null($target_process_settings->command));
         $pid = $this->tracee_executor->execute(
             $target_process_settings->command,
-            $target_process_settings->arguments
+            $target_process_settings->arguments,
+            $target_process_settings->child_stdout,
+            $target_process_settings->child_stderr,
         );
         return new ProcessSpecifier($pid);
     }

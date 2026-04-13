@@ -68,6 +68,19 @@ class ptrace_ffi extends \FFI
     }
 }
 
+class dup2_ffi extends \FFI
+{
+    public function open(string $pathname, int $flags, int $mode): int
+    {
+    }
+    public function dup2(int $oldfd, int $newfd): int
+    {
+    }
+    public function close(int $fd): int
+    {
+    }
+}
+
 class libc_file_ffi extends \FFI
 {
     public function open(string $path, int $mode): int
