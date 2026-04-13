@@ -48,6 +48,10 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
         private ProcessMemoryMap $process_memory_map,
         private MappedPathResolver $path_resolver,
     ) {
+        usort(
+            $this->region_index,
+            static fn (array $a, array $b): int => $a['address'] <=> $b['address'],
+        );
     }
 
     public function __destruct()
@@ -73,32 +77,30 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     #[\Override]
     public function read(int $pid, int $remote_address, int $size): CData
     {
-        foreach ($this->region_index as $region) {
+        $region = $this->findContainingRegion($remote_address, $size);
+        if ($region !== null) {
             $region_start = $region['address'];
-            $region_end = $region_start + $region['size'];
-            if ($remote_address >= $region_start && ($remote_address + $size) <= $region_end) {
-                $offset_in_region = $remote_address - $region_start;
-                $file_offset = $region['file_offset'] + $offset_in_region;
+            $offset_in_region = $remote_address - $region_start;
+            $file_offset = $region['file_offset'] + $offset_in_region;
 
-                $fp = $this->openCached($this->file_path);
-                if ($fp === null) {
-                    throw new \RuntimeException("failed to open dump file: {$this->file_path}");
-                }
-                fseek($fp, $file_offset);
-                $data = fread($fp, $size);
-                if ($data === false || strlen($data) !== $size) {
-                    throw new \RuntimeException(
-                        "failed to read {$size} bytes at file offset {$file_offset}"
-                    );
-                }
-                $cdata_buffer = FFIHelper::new("unsigned char[$size]");
-                if (is_null($cdata_buffer)) {
-                    throw new \RuntimeException("failed to allocate memory");
-                }
-                \FFI::memcpy($cdata_buffer, $data, $size);
-                /** @var \FFI\CArray<int> */
-                return $cdata_buffer;
+            $fp = $this->openCached($this->file_path);
+            if ($fp === null) {
+                throw new \RuntimeException("failed to open dump file: {$this->file_path}");
             }
+            fseek($fp, $file_offset);
+            $data = fread($fp, $size);
+            if ($data === false || strlen($data) !== $size) {
+                throw new \RuntimeException(
+                    "failed to read {$size} bytes at file offset {$file_offset}"
+                );
+            }
+            $cdata_buffer = FFIHelper::new("unsigned char[$size]");
+            if (is_null($cdata_buffer)) {
+                throw new \RuntimeException("failed to allocate memory");
+            }
+            \FFI::memcpy($cdata_buffer, $data, $size);
+            /** @var \FFI\CArray<int> */
+            return $cdata_buffer;
         }
 
         // Fallback: try to read from binary files via memory map (for
@@ -132,5 +134,34 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
         throw new MemoryAddressNotInDumpException(
             "no memory region found for address: 0x" . dechex($remote_address) . " (size: {$size})"
         );
+    }
+
+    /**
+     * @return array{address: int, size: int, file_offset: int}|null
+     */
+    private function findContainingRegion(int $remote_address, int $size): ?array
+    {
+        $lo = 0;
+        $hi = count($this->region_index) - 1;
+        $remote_end = $remote_address + $size;
+
+        while ($lo <= $hi) {
+            $mid = ($lo + $hi) >> 1;
+            $region = $this->region_index[$mid];
+            $region_start = $region['address'];
+            $region_end = $region_start + $region['size'];
+
+            if ($remote_address < $region_start) {
+                $hi = $mid - 1;
+                continue;
+            }
+            if ($remote_end > $region_end) {
+                $lo = $mid + 1;
+                continue;
+            }
+            return $region;
+        }
+
+        return null;
     }
 }

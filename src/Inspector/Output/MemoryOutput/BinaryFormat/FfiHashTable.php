@@ -85,23 +85,26 @@ final class FfiHashTable
     }
 
     /**
-     * Find all entries matching the given hash. Yields [id, diskOffset, len]
-     * for each match. The caller compares actual string bytes for final dedup.
+     * Find all entries matching the given hash.
      *
-     * @return \Generator<int, array{int, int, int}>
+     * The common case is zero or one hit, so returning a tiny list is
+     * cheaper than constructing a generator frame on every lookup.
+     *
+     * @return list<array{int, int, int}>
      */
-    public function findByHash(int $hash): \Generator
+    public function findByHash(int $hash): array
     {
         $h = self::sanitizeHash($hash);
         $slot = $h & $this->mask;
+        $matches = [];
 
         while (true) {
             $stored = (int)$this->hashes[$slot];
             if ($stored === 0) {
-                return; // empty slot → end of probe chain
+                return $matches; // empty slot → end of probe chain
             }
             if ($stored === $h) {
-                yield [(int)$this->ids[$slot], (int)$this->offsets[$slot], (int)$this->lengths[$slot]];
+                $matches[] = [(int)$this->ids[$slot], (int)$this->offsets[$slot], (int)$this->lengths[$slot]];
             }
             $slot = ($slot + 1) & $this->mask;
         }

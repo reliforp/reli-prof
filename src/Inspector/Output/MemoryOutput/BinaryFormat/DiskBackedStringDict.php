@@ -30,6 +30,9 @@ namespace Reli\Inspector\Output\MemoryOutput\BinaryFormat;
  */
 final class DiskBackedStringDict
 {
+    private const HOT_EXACT_CACHE_MAX_ENTRIES = 4096;
+    private const HOT_EXACT_CACHE_MAX_LEN = 96;
+
     /** @var FfiHashTable|null FFI hash table (null when FFI unavailable) */
     private ?FfiHashTable $ffiTable = null;
 
@@ -55,6 +58,14 @@ final class DiskBackedStringDict
     private array $cache = [];
     private int $cacheBytes = 0;
     private int $maxCacheBytes;
+
+    /**
+     * Small bounded exact-match cache for short strings that repeat
+     * heavily during emission (type names, link names, region labels).
+     *
+     * @var array<string, int>
+     */
+    private array $hotExactCache = [];
 
     /**
      * @param int $max_cache_bytes Maximum bytes of string data to keep in
@@ -99,8 +110,10 @@ final class DiskBackedStringDict
         if ($s === null) {
             return Format::NULL_STRING_ID;
         }
-
         $len = strlen($s);
+        if ($len <= self::HOT_EXACT_CACHE_MAX_LEN && isset($this->hotExactCache[$s])) {
+            return $this->hotExactCache[$s];
+        }
         $hash = ($precomputedHash !== 0)
             ? $precomputedHash
             : self::computeHash($s);
@@ -113,6 +126,7 @@ final class DiskBackedStringDict
             $existing = $this->readFromDiskOrCache($id, $offset, $entryLen);
             if ($existing === $s) {
                 $this->cacheString($id, $s);
+                $this->rememberHotExactMatch($s, $id, $len);
                 return $id;
             }
         }
@@ -126,6 +140,7 @@ final class DiskBackedStringDict
 
         $this->insertEntry($hash, $id, $offset, $len);
         $this->cacheString($id, $s);
+        $this->rememberHotExactMatch($s, $id, $len);
 
         return $id;
     }
@@ -198,6 +213,7 @@ final class DiskBackedStringDict
 
     public function cleanup(): void
     {
+        $this->hotExactCache = [];
         if (is_resource($this->diskFh)) {
             fclose($this->diskFh);
         }
@@ -292,6 +308,20 @@ final class DiskBackedStringDict
             $this->cache[$id] = $s;
             $this->cacheBytes += $len;
         }
+    }
+
+    private function rememberHotExactMatch(string $s, int $id, int $len): void
+    {
+        if ($len > self::HOT_EXACT_CACHE_MAX_LEN) {
+            return;
+        }
+        if (
+            count($this->hotExactCache) >= self::HOT_EXACT_CACHE_MAX_ENTRIES
+            && !isset($this->hotExactCache[$s])
+        ) {
+            $this->hotExactCache = [];
+        }
+        $this->hotExactCache[$s] = $id;
     }
 
     private static function computeHash(string $s): int
