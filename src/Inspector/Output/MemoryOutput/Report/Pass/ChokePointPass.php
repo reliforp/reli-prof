@@ -23,11 +23,17 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class ChokePointPass implements PassInterface
 {
+    /**
+     * @param array<int, true>|null $objects_store_nodes Pre-computed set (binary path)
+     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
+     */
     public function __construct(
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
         private int $heap_usage = 0,
+        private ?array $objects_store_nodes = null,
+        private ?array $frame_labels = null,
     ) {
     }
 
@@ -43,14 +49,18 @@ final class ChokePointPass implements PassInterface
         $chokepoints = [];
 
         // Identify objects_store node IDs — used to deprioritize, not exclude.
-        $objects_store_nodes = [];
-        $os_stmt = $this->db->query(
-            "SELECT DISTINCT node_id FROM context_node_locations"
-            . " WHERE run_id = {$this->run_id}"
-            . " AND location_type = 'ObjectsStoreMemoryLocation'"
-        );
-        while ($nid = $os_stmt->fetchColumn()) {
-            $objects_store_nodes[(int)$nid] = true;
+        if ($this->objects_store_nodes !== null) {
+            $objects_store_nodes = $this->objects_store_nodes;
+        } else {
+            $objects_store_nodes = [];
+            $os_stmt = $this->db->query(
+                "SELECT DISTINCT node_id FROM context_node_locations"
+                . " WHERE run_id = {$this->run_id}"
+                . " AND location_type = 'ObjectsStoreMemoryLocation'"
+            );
+            while ($nid = $os_stmt->fetchColumn()) {
+                $objects_store_nodes[(int)$nid] = true;
+            }
         }
 
         foreach ($this->substrate->iterateSubtreeSizes() as $node => $subtree) {
@@ -109,19 +119,29 @@ final class ChokePointPass implements PassInterface
         // substrate's in-memory indexes (loadEdgesFfi / loadNodeTypesFfi),
         // so the only prepared statement left here is the loc_stmt
         // class+location_type lookup, which is called at most 10 times.
-        $labeler = new NodeLabeler($this->db, $this->run_id);
+        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
 
-        $loc_stmt = $this->db->prepare(
-            "SELECT class_name, location_type FROM context_node_locations"
-            . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
-        );
+        $loc_stmt = null;
+        if ($this->objects_store_nodes === null) {
+            // SQL path: prepare per-node location lookup
+            $loc_stmt = $this->db->prepare(
+                "SELECT class_name, location_type FROM context_node_locations"
+                . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
+            );
+        }
 
         $findings = [];
         foreach (array_slice($chokepoints, 0, 10) as [$node, $shallow, $subtree, $ratio]) {
-            $loc_stmt->execute([$node]);
-            $loc = $loc_stmt->fetch(\PDO::FETCH_ASSOC);
-            $class = $loc['class_name'] ?? '';
-            $loc_type = $loc['location_type'] ?? '';
+            if ($loc_stmt !== null) {
+                $loc_stmt->execute([$node]);
+                $loc = $loc_stmt->fetch(\PDO::FETCH_ASSOC);
+                $class = $loc['class_name'] ?? '';
+                $loc_type = $loc['location_type'] ?? '';
+            } else {
+                // Binary path: use substrate for class, skip location_type
+                $class = $this->substrate->getNodeClass($node) ?? '';
+                $loc_type = '';
+            }
 
             // Build a meaningful label: prefer class_name > location_type > node type > link_name
             $label = '';

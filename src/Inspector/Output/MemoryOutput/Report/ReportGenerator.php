@@ -35,6 +35,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopStringsPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TypeBreakdownPass;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
+use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkNameResolver;
@@ -331,13 +332,11 @@ final class ReportGenerator
         $findings = array_merge($findings, (new ClassRankingPass($class_objects))->analyze());
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
 
-        // Phase 3: Substrate passes (binary goes straight here — no Phase 2 SQL)
+        // Phase 3: Substrate passes — binary goes straight here.
         //
-        // Passes that accept \PDO receive a dummy in-memory SQLite since their
-        // constructors are typed non-nullable. When the substrate is provided
-        // these passes use the substrate-backed code path and never query the
-        // DB, so the dummy is never hit. If a pass does fall back to SQL it
-        // gets an empty database and returns empty findings harmlessly.
+        // Pre-compute data that hybrid passes (ChokePoint, TopStrings,
+        // NonTreeEdge) would normally get from SQL, then feed it via
+        // optional constructor parameters so they never touch the DB.
         $edge_count = (int)$meta['edge_count'];
         if ($edge_count > 0) {
             $substrate = GraphSubstrate::createFromBinary($reader, $ffi_csr);
@@ -346,22 +345,30 @@ final class ReportGenerator
             $dummy_db = new \PDO('sqlite::memory:');
             $dummy_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 
+            // Pre-compute data from binary sections for hybrid passes
+            $frame_labels = BinaryReportDataProvider::loadFrameLabels($reader);
+            $objects_store_nodes = BinaryReportDataProvider::getNodesByLocationType(
+                $reader, 'ObjectsStoreMemoryLocation'
+            );
+            $top_strings = BinaryReportDataProvider::getTopStrings($reader, 10);
+            $non_tree_edge_stats = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
+
             $findings = array_merge($findings, $this->runPass(
                 new CallStackPass($dummy_db, 0, $substrate)
             ));
 
-            // Substrate-only passes (no DB required)
+            // Substrate-only passes
             $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate)));
             $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
             $findings = array_merge($findings, $this->runPass(new GcPendingPass($substrate)));
             $findings = array_merge($findings, $this->runPass(
                 new DrillDownPass($substrate, $dummy_db, 0)
             ));
-            $findings = array_merge($findings, $this->runPass(
-                new ChokePointPass($substrate, $dummy_db, 0, $heap_usage)
-            ));
 
-            // Passes that can work with substrate alone
+            // Hybrid passes with pre-computed binary data
+            $findings = array_merge($findings, $this->runPass(
+                new ChokePointPass($substrate, $dummy_db, 0, $heap_usage, $objects_store_nodes, $frame_labels)
+            ));
             $findings = array_merge($findings, $this->runPass(
                 new DynamicPropertiesPass($dummy_db, 0, $substrate)
             ));
@@ -369,13 +376,13 @@ final class ReportGenerator
                 new TopArraysPass($dummy_db, 0, $substrate)
             ));
             $findings = array_merge($findings, $this->runPass(
-                new TopStringsPass($dummy_db, 0, $substrate)
+                new TopStringsPass($dummy_db, 0, $substrate, $top_strings, $frame_labels)
             ));
             $findings = array_merge($findings, $this->runPass(
-                new NonTreeEdgePass($dummy_db, 0, $substrate)
+                new NonTreeEdgePass($dummy_db, 0, $substrate, $non_tree_edge_stats)
             ));
 
-            // LinkNameResolver-backed passes (resolver uses substrate's tree link index)
+            // LinkNameResolver-backed passes
             $link_resolver = new LinkNameResolver(
                 db: $dummy_db,
                 run_id: 0,

@@ -264,16 +264,42 @@ final class Reader
      */
     public function castSection(string $section, string $type): ?CData
     {
-        $ptr = $this->getSectionPointer($section);
-        if ($ptr === null) {
+        if ($this->mmapPtr === null || !isset($this->toc[$section])) {
             return null;
         }
         $count = $this->getSectionElementCount($section);
         if ($count === 0) {
             return null;
         }
+        $entry = $this->toc[$section];
         $ffi = self::getStructFfi();
-        return $ffi->cast("{$type}[{$count}]", $ptr);
+
+        // Cast needs a buffer at least as large as the target type.
+        // Use the full mmap region starting at the section offset so
+        // FFI sees enough backing memory for the struct array.
+        $base = self::getHelperFfi()->cast('char*', $this->mmapPtr);
+        $section_ptr = $base + $entry['offset'];
+
+        // Verify the section is large enough for the requested array
+        $type_size = FFI::sizeof($ffi->new($type));
+        if ($entry['length'] < $count * $type_size) {
+            return null; // section too small for the declared element count
+        }
+
+        // Cast from the mmap base pointer (large enough backing store)
+        // using the remaining mmap length from the section offset.
+        $remaining = $this->mmapLength - $entry['offset'];
+        $needed = $count * $type_size;
+        if ($remaining < $needed) {
+            return null;
+        }
+
+        try {
+            return $ffi->cast("{$type}[{$count}]", $section_ptr);
+        } catch (\FFI\Exception) {
+            // cast failed (e.g. backing buffer too small) — fall back to unpack path
+            return null;
+        }
     }
 
     // ---- Internal I/O ----

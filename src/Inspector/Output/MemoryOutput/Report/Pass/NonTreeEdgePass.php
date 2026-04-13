@@ -24,10 +24,16 @@ final class NonTreeEdgePass implements PassInterface
 {
     private ?\PDOStatement $node_location_stmt = null;
 
+    /**
+     * @param list<array{link_name: string, ref_count: int, target_count: int,
+     *     sample_parent_node_id: int, sample_child_node_id: int}>|null $precomputed_edge_stats
+     *     Pre-computed non-tree edge stats from binary (skips SQL in substrate path)
+     */
     public function __construct(
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
+        private ?array $precomputed_edge_stats = null,
     ) {
     }
 
@@ -370,22 +376,26 @@ final class NonTreeEdgePass implements PassInterface
         assert($this->substrate !== null);
 
         $findings = [];
-        $shared_rows = $this->db->query("
-            SELECT
-                e.link_name,
-                count(*) as ref_count,
-                count(DISTINCT e.child_node_id) as target_count,
-                min(e.parent_node_id) as sample_parent_node_id,
-                min(e.child_node_id) as sample_child_node_id
-            FROM context_edges e
-            WHERE e.run_id = {$this->run_id}
-                AND e.is_tree = 0
-                AND e.strength = 'strong'
-            GROUP BY e.link_name
-            HAVING count(*) > 10
-            ORDER BY count(*) DESC
-            LIMIT 20
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        if ($this->precomputed_edge_stats !== null) {
+            $shared_rows = $this->precomputed_edge_stats;
+        } else {
+            $shared_rows = $this->db->query("
+                SELECT
+                    e.link_name,
+                    count(*) as ref_count,
+                    count(DISTINCT e.child_node_id) as target_count,
+                    min(e.parent_node_id) as sample_parent_node_id,
+                    min(e.child_node_id) as sample_child_node_id
+                FROM context_edges e
+                WHERE e.run_id = {$this->run_id}
+                    AND e.is_tree = 0
+                    AND e.strength = 'strong'
+                GROUP BY e.link_name
+                HAVING count(*) > 10
+                ORDER BY count(*) DESC
+                LIMIT 20
+            ")->fetchAll(\PDO::FETCH_ASSOC);
+        }
 
         foreach ($shared_rows as $row) {
             $link_name = (string)$row['link_name'];
@@ -453,26 +463,33 @@ final class NonTreeEdgePass implements PassInterface
             }
         }
 
-        $dedup_rows = $this->db->query("
-            SELECT
-                e.link_name,
-                cnl.size,
-                count(*) as cnt,
-                count(*) * cnl.size as total_waste,
-                min(e.parent_node_id) as sample_parent_node_id,
-                min(e.child_node_id) as sample_child_node_id
-            FROM context_edges e
-            JOIN context_node_locations cnl
-                ON cnl.node_id = e.child_node_id
-                AND cnl.run_id = {$this->run_id}
-            WHERE e.run_id = {$this->run_id}
-                AND e.is_tree = 0
-                AND e.strength = 'strong'
-            GROUP BY e.link_name, cnl.size
-            HAVING count(*) > 50 AND count(*) * cnl.size > 10240
-            ORDER BY count(*) * cnl.size DESC
-            LIMIT 10
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        if ($this->precomputed_edge_stats !== null) {
+            // Binary path: skip dedup_rows (requires edge×location join
+            // that's not available without SQL). The shared_rows findings
+            // above cover the primary non-tree edge analysis.
+            $dedup_rows = [];
+        } else {
+            $dedup_rows = $this->db->query("
+                SELECT
+                    e.link_name,
+                    cnl.size,
+                    count(*) as cnt,
+                    count(*) * cnl.size as total_waste,
+                    min(e.parent_node_id) as sample_parent_node_id,
+                    min(e.child_node_id) as sample_child_node_id
+                FROM context_edges e
+                JOIN context_node_locations cnl
+                    ON cnl.node_id = e.child_node_id
+                    AND cnl.run_id = {$this->run_id}
+                WHERE e.run_id = {$this->run_id}
+                    AND e.is_tree = 0
+                    AND e.strength = 'strong'
+                GROUP BY e.link_name, cnl.size
+                HAVING count(*) > 50 AND count(*) * cnl.size > 10240
+                ORDER BY count(*) * cnl.size DESC
+                LIMIT 10
+            ")->fetchAll(\PDO::FETCH_ASSOC);
+        }
 
         $use_retained = $this->substrate->hasSubtreeSizes();
         foreach ($dedup_rows as $row) {
