@@ -255,49 +255,58 @@ final class Reader
     }
 
     /**
-     * Cast a section to a typed FFI array.
+     * Cast a section to a typed FFI struct array.
      *
-     * @template T
+     * Allocates an FFI buffer of the target type and copies the raw
+     * section bytes into it (one bulk memcpy). This is faster than
+     * per-row unpack() and avoids the cross-FFI-scope cast issues
+     * that prevent direct mmap pointer casting.
+     *
      * @param string $section Section name
      * @param string $type FFI type string, e.g. "NodeRow" or "EdgeRow"
-     * @return CData|null The cast array, or null if mmap not active
+     * @return CData|null The typed array, or null if section missing/empty
      */
     public function castSection(string $section, string $type): ?CData
     {
-        if ($this->mmapPtr === null || !isset($this->toc[$section])) {
+        if (!isset($this->toc[$section])) {
             return null;
         }
         $count = $this->getSectionElementCount($section);
         if ($count === 0) {
             return null;
         }
-        $entry = $this->toc[$section];
         $ffi = self::getStructFfi();
+        $entry = $this->toc[$section];
 
-        // Cast needs a buffer at least as large as the target type.
-        // Use the full mmap region starting at the section offset so
-        // FFI sees enough backing memory for the struct array.
-        $base = self::getHelperFfi()->cast('char*', $this->mmapPtr);
-        $section_ptr = $base + $entry['offset'];
-
-        // Verify the section is large enough for the requested array
+        // Verify section size matches expected struct array size
         $type_size = FFI::sizeof($ffi->new($type));
-        if ($entry['length'] < $count * $type_size) {
-            return null; // section too small for the declared element count
-        }
-
-        // Cast from the mmap base pointer (large enough backing store)
-        // using the remaining mmap length from the section offset.
-        $remaining = $this->mmapLength - $entry['offset'];
         $needed = $count * $type_size;
-        if ($remaining < $needed) {
+        if ($entry['length'] < $needed) {
             return null;
         }
 
         try {
-            return $ffi->cast("{$type}[{$count}]", $section_ptr);
+            // Allocate a properly typed+sized FFI buffer
+            $buf = $ffi->new("{$type}[{$count}]");
+            if ($buf === null) {
+                return null;
+            }
+
+            // Copy raw bytes into the typed buffer — one bulk memcpy
+            if ($this->mmapPtr !== null) {
+                // mmap path: copy directly from mapped region
+                $helperFfi = self::getHelperFfi();
+                $src = $helperFfi->cast('char*', $this->mmapPtr) + $entry['offset'];
+                FFI::memcpy($buf, $src, $needed);
+            } else {
+                // string fallback: copy from PHP string
+                assert($this->fileData !== null);
+                $raw = substr($this->fileData, $entry['offset'], $needed);
+                FFI::memcpy($buf, $raw, $needed);
+            }
+
+            return $buf;
         } catch (\FFI\Exception) {
-            // cast failed (e.g. backing buffer too small) — fall back to unpack path
             return null;
         }
     }
