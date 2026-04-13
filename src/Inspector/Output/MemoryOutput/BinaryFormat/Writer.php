@@ -109,6 +109,33 @@ final class Writer
     }
 
     /**
+     * Write a section via a callback that writes directly to the output
+     * file handle. The callback receives the file handle and must return
+     * the number of bytes written. This avoids materializing the entire
+     * section in a PHP string.
+     *
+     * @param string $name Section name (max 16 chars)
+     * @param callable(resource): int $writer_fn Callback: fn($fh) → bytes_written
+     * @param int $element_count Number of logical rows/entries
+     */
+    public function writeSectionWithCallback(
+        string $name,
+        callable $writer_fn,
+        int $element_count,
+    ): void {
+        $offset = $this->pos;
+        $length = $writer_fn($this->fh);
+        $this->pos += $length;
+
+        $this->toc[] = [
+            'name' => $name,
+            'offset' => $offset,
+            'length' => $length,
+            'element_count' => $element_count,
+        ];
+    }
+
+    /**
      * Finalize: write TOC, then rewind and write the header.
      */
     public function finish(): void

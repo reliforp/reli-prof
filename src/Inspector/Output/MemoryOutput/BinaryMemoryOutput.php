@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DiskBackedStringDict;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Writer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
@@ -86,10 +87,14 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
 
         $writer = new Writer($this->outputPath);
 
-        // Section 1: string_dict (now includes summary strings)
-        $dict_data = $sink->getStringDict()->serialize();
-        $writer->writeSection(Format::SECTION_STRING_DICT, $dict_data, $sink->getStringDict()->count());
-        unset($dict_data);
+        // Section 1: string_dict — streamed directly to the output file
+        // to avoid materializing potentially hundreds of MB in a PHP string.
+        $dict = $sink->getStringDict();
+        $writer->writeSectionWithCallback(
+            Format::SECTION_STRING_DICT,
+            fn ($fh) => $dict->serializeToStream($fh),
+            $dict->count(),
+        );
 
         // Sections 2–5: stream from temp files (avoids loading
         // multi-GB section data into PHP memory).
@@ -134,7 +139,7 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
      *
      * @param array<int, array<string, mixed>> $summary
      */
-    private function serializeSummary(array $summary, \Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict $dict): string
+    private function serializeSummary(array $summary, DiskBackedStringDict $dict): string
     {
         $entries = [];
         /** @psalm-suppress MixedAssignment */

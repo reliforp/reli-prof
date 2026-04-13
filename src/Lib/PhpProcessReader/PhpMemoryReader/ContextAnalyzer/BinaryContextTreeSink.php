@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DiskBackedStringDict;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
-use Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
@@ -27,10 +27,17 @@ use Reli\Lib\Process\MemoryLocation;
  *
  * Nodes, edges, locations, and attributes are buffered in PHP strings
  * (configurable batch size) and flushed to separate temp files when the
- * buffer is full. Only the StringDict is kept in memory for the entire
- * collection (typically a few MB even for multi-GB captures). The temp
- * files are consumed by BinaryMemoryOutput::finalizeStreaming() to
- * assemble the final .rmem file.
+ * buffer is full. String data is stored in a DiskBackedStringDict that
+ * keeps only a hash index in memory and writes string bodies to disk;
+ * an LRU cache (configurable size) keeps frequently accessed strings
+ * for dedup lookups. For ZendString values, the pre-computed hash from
+ * zend_string.h is used when available (non-zero); other strings use
+ * crc32 for hashing.
+ *
+ * Node deduplication is NOT performed at write time. The ContextAnalyzer
+ * guarantees each context is emitted exactly once via getMemoNodeId /
+ * setMemoNodeId, so duplicate emitNode calls are not expected. The
+ * substrate loader handles any edge cases at read time.
  *
  * Row layouts (all little-endian):
  *
@@ -55,7 +62,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
     /** @var array<class-string, string> */
     private array $short_name_cache = [];
 
-    private StringDict $stringDict;
+    private DiskBackedStringDict $stringDict;
 
     // In-memory write buffers (flushed to temp files at batch boundary)
     private string $nodeBuf = '';
@@ -86,9 +93,6 @@ final class BinaryContextTreeSink implements ContextTreeSink
     private int $locationCount = 0;
     private int $attrCount = 0;
 
-    /** @var array<int, int> node_id => row index in nodeFile (for class_id fixup) */
-    private array $nodeRowIndices = [];
-
     /** Rows to accumulate before flushing each section to its temp file */
     private int $batchSize;
 
@@ -97,13 +101,16 @@ final class BinaryContextTreeSink implements ContextTreeSink
      *   memory for fewer syscalls. 200k (default) keeps per-section
      *   buffer peak at ~10 MB (locations × 48 bytes). Set lower on
      *   memory-constrained machines.
+     * @param int $dict_cache_bytes Max bytes of string data to keep in
+     *   the DiskBackedStringDict's LRU cache. Default 64 MiB.
      */
     public function __construct(
         private ?RegionBoundaries $region_boundaries = null,
         int $batch_size = self::DEFAULT_BATCH_SIZE,
+        int $dict_cache_bytes = 64 * 1024 * 1024,
     ) {
         $this->batchSize = $batch_size;
-        $this->stringDict = new StringDict();
+        $this->stringDict = new DiskBackedStringDict($dict_cache_bytes);
 
         $this->nodeTmpPath = $this->createTmpFile('rmem_nodes_');
         $this->edgeTmpPath = $this->createTmpFile('rmem_edges_');
@@ -126,7 +133,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
         $this->region_boundaries = $region_boundaries;
     }
 
-    public function getStringDict(): StringDict
+    public function getStringDict(): DiskBackedStringDict
     {
         return $this->stringDict;
     }
@@ -185,32 +192,30 @@ final class BinaryContextTreeSink implements ContextTreeSink
         array $attributes,
         EdgeStrength $edge_strength = EdgeStrength::Strong,
     ): void {
-        // Deduplicate nodes (PdoContextTreeSink uses INSERT IGNORE)
-        $is_new_node = !isset($this->nodeRowIndices[$node_id]);
-        if ($is_new_node) {
-            $type_id = $this->stringDict->intern($type);
+        // No dedup: ContextAnalyzer guarantees each context is emitted
+        // once via getMemoNodeId/setMemoNodeId. Substrate loader handles
+        // any edge cases at read time.
+        $type_id = $this->stringDict->intern($type);
 
-            $this->nodeRowIndices[$node_id] = $this->nodeCount;
-
-            // Node row: node_id:u32, canonical_id:u32(0=unset), type_id:u32, class_id:u32(NULL_STRING_ID=unset)
-            $this->nodeBuf .= pack('VVVV',
-                $node_id,
-                0,
-                $type_id,
-                Format::NULL_STRING_ID,
-            );
-            $this->nodeCount++;
-            $this->nodeBufRows++;
-            if ($this->nodeBufRows >= $this->batchSize) {
-                $this->flushNodes();
-            }
+        // Node row: node_id:u32, canonical_id:u32(0=unset), type_id:u32, class_id:u32(NULL_STRING_ID)
+        // class_id is left as NULL_STRING_ID — the substrate loader
+        // derives class from the locations section.
+        $this->nodeBuf .= pack('VVVV',
+            $node_id,
+            0,
+            $type_id,
+            Format::NULL_STRING_ID,
+        );
+        $this->nodeCount++;
+        $this->nodeBufRows++;
+        if ($this->nodeBufRows >= $this->batchSize) {
+            $this->flushNodes();
         }
 
         // Buffer tree edge
         $this->bufferEdge($parent_node_id, $node_id, $link_name, 1, $edge_strength);
 
         // Buffer locations
-        $first_class_id = null;
         foreach ($locations as $location) {
             $class = $location::class;
             $short_class = $this->short_name_cache[$class]
@@ -222,13 +227,11 @@ final class BinaryContextTreeSink implements ContextTreeSink
                 ? $location->class_name : null;
             $class_id = $this->stringDict->intern($class_name_val);
 
-            if ($first_class_id === null && $class_name_val !== null) {
-                $first_class_id = $class_id;
-            }
-
             $string_value_val = $location instanceof ZendStringMemoryLocation
                 ? $location->value : null;
-            $string_value_id = $this->stringDict->intern($string_value_val);
+            $string_hash = $location instanceof ZendStringMemoryLocation
+                ? $location->hash : 0;
+            $string_value_id = $this->stringDict->intern($string_value_val, $string_hash);
 
             $refcount = $location instanceof RefcountedMemoryLocation
                 ? $location->refcount : 0;
@@ -257,31 +260,6 @@ final class BinaryContextTreeSink implements ContextTreeSink
             $this->locationBufRows++;
             if ($this->locationBufRows >= $this->batchSize) {
                 $this->flushLocations();
-            }
-        }
-
-        // Fix up node's class_id if we found one and the node was just created
-        if ($first_class_id !== null && $is_new_node) {
-            $row_index = $this->nodeRowIndices[$node_id];
-            $file_byte_offset = $row_index * Format::NODE_ROW_SIZE;
-            // How many rows have already been flushed to the file?
-            $flushed_rows = $this->nodeCount - $this->nodeBufRows;
-            $flushed_byte_end = $flushed_rows * Format::NODE_ROW_SIZE;
-
-            if ($file_byte_offset < $flushed_byte_end) {
-                // Node was already flushed to file — seek and patch
-                fseek($this->nodeFile, $file_byte_offset + 12);
-                fwrite($this->nodeFile, pack('V', $first_class_id));
-                // Seek back to end for next append
-                fseek($this->nodeFile, 0, SEEK_END);
-            } else {
-                // Node is still in the in-memory buffer — patch directly
-                $buf_byte_offset = ($row_index - $flushed_rows) * Format::NODE_ROW_SIZE + 12;
-                $packed = pack('V', $first_class_id);
-                $this->nodeBuf[$buf_byte_offset] = $packed[0];
-                $this->nodeBuf[$buf_byte_offset + 1] = $packed[1];
-                $this->nodeBuf[$buf_byte_offset + 2] = $packed[2];
-                $this->nodeBuf[$buf_byte_offset + 3] = $packed[3];
             }
         }
 
@@ -364,6 +342,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
     public function cleanup(): void
     {
         $this->closeTempFiles();
+        $this->stringDict->cleanup();
         foreach ([$this->nodeTmpPath, $this->edgeTmpPath, $this->locationTmpPath, $this->attrTmpPath] as $path) {
             if (file_exists($path)) {
                 @unlink($path);

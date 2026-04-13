@@ -24,6 +24,8 @@ final class ZendStringMemoryLocation extends RefcountedMemoryLocation
         int $refcount,
         int $type_info,
         public string $value,
+        /** Pre-computed hash from zend_string.h (0 = not yet computed by PHP) */
+        public int $hash = 0,
     ) {
         parent::__construct(
             $address,
@@ -44,6 +46,7 @@ final class ZendStringMemoryLocation extends RefcountedMemoryLocation
             $zend_string->gc->refcount,
             $zend_string->gc->type_info,
             $raw_string,
+            $zend_string->h,
         );
     }
 }

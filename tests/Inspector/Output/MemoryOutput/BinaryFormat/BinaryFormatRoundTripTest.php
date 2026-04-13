@@ -249,16 +249,19 @@ class BinaryFormatRoundTripTest extends TestCase
         $this->assertSame('8.2.0', $result->meta['php_version']);
     }
 
-    public function testNodeDeduplication(): void
+    public function testNodeNonDedup(): void
     {
         $sink = new BinaryContextTreeSink(batch_size: 10);
 
-        // Emit same node_id twice (simulating re-encounter during collection)
+        // Emit same node_id twice. ContextAnalyzer guarantees this
+        // doesn't happen in practice, but verify the sink doesn't
+        // crash — it simply writes two rows. The substrate loader
+        // handles duplicates at read time.
         $loc = new MemoryLocation(0x1000, 100);
         $sink->emitNode(1, null, 'entry1', 'TypeA', [$loc], []);
         $sink->emitNode(1, null, 'entry2', 'TypeA', [], []);
 
-        $this->assertSame(1, $sink->getNodeCount()); // deduped
+        $this->assertSame(2, $sink->getNodeCount()); // no dedup at write time
         $this->assertSame(2, $sink->getEdgeCount()); // 2 edges (one per emit)
     }
 
