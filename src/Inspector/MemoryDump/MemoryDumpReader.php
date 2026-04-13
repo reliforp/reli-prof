@@ -167,17 +167,10 @@ final class MemoryDumpReader
             $sink,
         );
 
-        $region_boundaries = new RegionBoundaries(
-            $collected_memories->chunk_memory_locations,
-            $collected_memories->huge_memory_locations,
-            $collected_memories->vm_stack_memory_locations,
-            $collected_memories->compiler_arena_memory_locations,
-        );
-        $sink->setRegionBoundaries($region_boundaries);
-
-        // Backfill region_id for locations emitted before region_boundaries
-        // was available (same role as PdoMemoryOutput's backfillRegions).
-        $sink->backfillRegions();
+        // RegionBoundaries is already set on the sink by collectAll()
+        // (MemoryLocationsCollector builds it from chunk/huge/vm_stack/
+        // compiler_arena before the emit loop starts), so all locations
+        // are written with correct region_id inline — no backfill needed.
 
         $region_analyzer = new RegionAnalyzer(
             $collected_memories->chunk_memory_locations,

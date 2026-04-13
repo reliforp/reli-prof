@@ -219,6 +219,9 @@ final class MemoryLocationsCollector
         if ($sink instanceof \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink) {
             $sink->setRegionBoundaries($region_boundaries);
         }
+        if ($sink instanceof \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink) {
+            $sink->setRegionBoundaries($region_boundaries);
+        }
         $analyzer = new ContextAnalyzer();
         /** @var \WeakMap<\Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext, int> $memo */
         $memo = new \WeakMap();
