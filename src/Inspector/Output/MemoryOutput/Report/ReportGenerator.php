@@ -278,10 +278,12 @@ final class ReportGenerator
      * into the binary file's summary section.
      *
      * @param bool|null $ffi_csr true=force on, false=force off, null=auto
+     * @param int $worker_count number of parallel workers for Phase 3
      */
     public function generateFromBinary(
         string $path,
         ?bool $ffi_csr = null,
+        int $worker_count = 1,
     ): ReportResult {
         $reader = BinaryReader::open($path);
         $dict = $reader->getStringDict();
@@ -342,10 +344,9 @@ final class ReportGenerator
             $substrate = GraphSubstrate::createFromBinary($reader, $ffi_csr);
             $meta['scc_count'] = count($substrate->getSccProfiles());
 
-            $dummy_db = new \PDO('sqlite::memory:');
-            $dummy_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-
-            // Pre-compute data from binary sections for hybrid passes
+            // Pre-compute data from binary sections for hybrid passes.
+            // Done before forking so child workers inherit the results
+            // via copy-on-write.
             $frame_labels = BinaryReportDataProvider::loadFrameLabels($reader);
             $objects_store_nodes = BinaryReportDataProvider::getNodesByLocationType(
                 $reader, 'ObjectsStoreMemoryLocation'
@@ -353,56 +354,75 @@ final class ReportGenerator
             $top_strings = BinaryReportDataProvider::getTopStrings($reader, 10);
             $non_tree_edge_stats = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
 
+            // CallStackPass runs before the parallel batch (same as DB path)
+            $dummy_db = new \PDO('sqlite::memory:');
+            $dummy_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
             $findings = array_merge($findings, $this->runPass(
                 new CallStackPass($dummy_db, 0, $substrate)
             ));
 
-            // Substrate-only passes
-            $findings = array_merge($findings, $this->runPass(new BlameAllocationPass($substrate)));
-            $findings = array_merge($findings, $this->runPass(new RetainedSizeConfidencePass($substrate)));
-            $findings = array_merge($findings, $this->runPass(new GcPendingPass($substrate)));
-            $findings = array_merge($findings, $this->runPass(
-                new DrillDownPass($substrate, $dummy_db, 0)
-            ));
-
-            // Hybrid passes with pre-computed binary data
-            $findings = array_merge($findings, $this->runPass(
-                new ChokePointPass($substrate, $dummy_db, 0, $heap_usage, $objects_store_nodes, $frame_labels)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new DynamicPropertiesPass($dummy_db, 0, $substrate)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new TopArraysPass($dummy_db, 0, $substrate)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new TopStringsPass($dummy_db, 0, $substrate, $top_strings, $frame_labels)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new NonTreeEdgePass($dummy_db, 0, $substrate, $non_tree_edge_stats)
-            ));
-
-            // LinkNameResolver-backed passes
-            $link_resolver = new LinkNameResolver(
-                db: $dummy_db,
+            // Binary passes don't share a SQLite fd, so each factory
+            // just creates a fresh in-memory dummy. The substrate is
+            // shared via copy-on-write after fork.
+            $dummy_factory = fn (): \PDO => new \PDO('sqlite::memory:');
+            $resolver_factory = fn () => new LinkNameResolver(
+                db: $dummy_factory(),
                 run_id: 0,
                 substrate: $substrate,
             );
-            $findings = array_merge($findings, $this->runPass(
-                new CycleClusterPass($substrate, $dummy_db, 0, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new PropertyScalingPass($dummy_db, 0, $class_objects, $substrate, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new PerPropertyMemoryPass($substrate, $dummy_db, 0, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new OwnershipPatternPass($substrate, $dummy_db, 0, $link_resolver)
-            ));
-            $findings = array_merge($findings, $this->runPass(
-                new StructuralDedupPass($dummy_db, 0, $substrate, $link_resolver)
-            ));
+
+            /** @var array<string, callable(): list<Finding>> $pass_factories */
+            $pass_factories = [];
+            $pass_factories['DynamicPropertiesPass'] = fn (): array => $this->runPass(
+                new DynamicPropertiesPass($dummy_factory(), 0, $substrate)
+            );
+            $pass_factories['CycleClusterPass'] = fn (): array => $this->runPass(
+                new CycleClusterPass($substrate, $dummy_factory(), 0, $resolver_factory())
+            );
+            $pass_factories['PropertyScalingPass'] = fn (): array => $this->runPass(
+                new PropertyScalingPass(
+                    $dummy_factory(), 0, $class_objects, $substrate, $resolver_factory(),
+                )
+            );
+            $pass_factories['PerPropertyMemoryPass'] = fn (): array => $this->runPass(
+                new PerPropertyMemoryPass($substrate, $dummy_factory(), 0, $resolver_factory())
+            );
+            $pass_factories['OwnershipPatternPass'] = fn (): array => $this->runPass(
+                new OwnershipPatternPass($substrate, $dummy_factory(), 0, $resolver_factory())
+            );
+            $pass_factories['TopArraysPass'] = fn (): array => $this->runPass(
+                new TopArraysPass($dummy_factory(), 0, $substrate)
+            );
+            $pass_factories['TopStringsPass'] = fn (): array => $this->runPass(
+                new TopStringsPass($dummy_factory(), 0, $substrate, $top_strings, $frame_labels)
+            );
+            $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
+                new NonTreeEdgePass($dummy_factory(), 0, $substrate, $non_tree_edge_stats)
+            );
+            $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
+                new StructuralDedupPass($dummy_factory(), 0, $substrate, $resolver_factory())
+            );
+            $pass_factories['DrillDownPass'] = fn (): array => $this->runPass(
+                new DrillDownPass($substrate, $dummy_factory(), 0)
+            );
+            $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
+                new ChokePointPass(
+                    $substrate, $dummy_factory(), 0, $heap_usage,
+                    $objects_store_nodes, $frame_labels,
+                )
+            );
+            $pass_factories['BlameAllocationPass'] = fn (): array => $this->runPass(
+                new BlameAllocationPass($substrate)
+            );
+            $pass_factories['RetainedSizeConfidencePass'] = fn (): array => $this->runPass(
+                new RetainedSizeConfidencePass($substrate)
+            );
+            $pass_factories['GcPendingPass'] = fn (): array => $this->runPass(
+                new GcPendingPass($substrate)
+            );
+
+            $runner = new ParallelPassRunner($worker_count);
+            $findings = array_merge($findings, $runner->run($pass_factories));
         }
 
         $findings = $this->deduplicateFindings($findings);

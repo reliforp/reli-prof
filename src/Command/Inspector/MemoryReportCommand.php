@@ -188,7 +188,12 @@ final class MemoryReportCommand extends Command
                 LibcFileReader::prefetchFile($db_file);
             }
 
-            $result = $generator->generateFromBinary($db_file, $ffi_csr);
+            /** @var string $workers_raw */
+            $workers_raw = $input->getOption('report-workers');
+            $worker_count = (ctype_digit($workers_raw) && (int)$workers_raw >= 1)
+                ? (int)$workers_raw : 1;
+
+            $result = $generator->generateFromBinary($db_file, $ffi_csr, $worker_count);
         } else {
             // SQLite path (original)
             $run_id = (int)$input->getOption('run-id');
