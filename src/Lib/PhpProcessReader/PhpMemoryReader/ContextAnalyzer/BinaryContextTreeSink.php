@@ -317,6 +317,75 @@ final class BinaryContextTreeSink implements ContextTreeSink
     }
 
     /**
+     * Backfill region_id and bin_overhead for location rows that were
+     * emitted before region_boundaries was set. Scans the location
+     * temp file and patches rows where region_id == NULL_STRING_ID.
+     *
+     * Must be called after setRegionBoundaries() and flush().
+     */
+    public function backfillRegions(): void
+    {
+        if ($this->region_boundaries === null) {
+            return;
+        }
+        $this->flush();
+
+        $fh = fopen($this->locationTmpPath, 'r+b');
+        if ($fh === false) {
+            return;
+        }
+
+        $null_id = Format::NULL_STRING_ID;
+        $row_size = Format::LOCATION_ROW_SIZE;
+        // region_id is at offset 40 within a 48-byte location row
+        $region_offset = 40;
+        // bin_overhead is at offset 44
+        $overhead_offset = 44;
+        // address is at offset 12, size at offset 20
+        $addr_offset = 12;
+        $size_offset = 20;
+
+        $pos = 0;
+        $total = $this->locationCount * $row_size;
+        while ($pos < $total) {
+            // Read region_id field
+            fseek($fh, $pos + $region_offset);
+            $raw = fread($fh, 4);
+            if ($raw === false || strlen($raw) < 4) {
+                break;
+            }
+            $rid = unpack('V', $raw)[1];
+
+            if ((int)$rid === $null_id) {
+                // Read address + size for classifyRegion
+                fseek($fh, $pos + $addr_offset);
+                $addr_raw = fread($fh, 8);
+                fseek($fh, $pos + $size_offset);
+                $size_raw = fread($fh, 8);
+                if ($addr_raw === false || $size_raw === false) {
+                    break;
+                }
+                $address = unpack('P', $addr_raw)[1];
+                $size = unpack('P', $size_raw)[1];
+
+                $loc = new MemoryLocation((int)$address, (int)$size);
+                $region = $this->region_boundaries->classifyRegion($loc);
+                $region_id = $this->stringDict->intern($region);
+                $bin_overhead = $this->region_boundaries->computeBinOverhead($loc);
+
+                // Patch region_id
+                fseek($fh, $pos + $region_offset);
+                fwrite($fh, pack('V', $region_id));
+                // Patch bin_overhead
+                fseek($fh, $pos + $overhead_offset);
+                fwrite($fh, pack('V', $bin_overhead));
+            }
+            $pos += $row_size;
+        }
+        fclose($fh);
+    }
+
+    /**
      * Close temp file handles. Called by BinaryMemoryOutput after
      * it has consumed the temp files.
      */

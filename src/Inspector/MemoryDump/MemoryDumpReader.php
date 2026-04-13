@@ -175,6 +175,10 @@ final class MemoryDumpReader
         );
         $sink->setRegionBoundaries($region_boundaries);
 
+        // Backfill region_id for locations emitted before region_boundaries
+        // was available (same role as PdoMemoryOutput's backfillRegions).
+        $sink->backfillRegions();
+
         $region_analyzer = new RegionAnalyzer(
             $collected_memories->chunk_memory_locations,
             $collected_memories->huge_memory_locations,
@@ -189,7 +193,13 @@ final class MemoryDumpReader
         $rss_reader = new RssReader();
         $rss_bytes = $rss_reader->read($this->pid);
 
-        $summary_base = $analyzed_regions->summary->toArray();
+        // Use corrected summary if region sums are available from the
+        // backfilled locations. Compute region sums directly from the
+        // location temp file since we don't have a SQL DB.
+        $region_sums = $this->computeRegionSumsFromSink($sink);
+        $summary_base = $region_sums !== []
+            ? $analyzed_regions->summary->correctedToArray($region_sums)
+            : $analyzed_regions->summary->toArray();
         $summary = $this->buildSummary(
             $summary_base,
             $collected_memories,
@@ -200,6 +210,42 @@ final class MemoryDumpReader
         unset($collected_memories, $analyzed_regions, $region_analyzer);
 
         $binary_output->finalizeStreaming($sink, $summary);
+    }
+
+    /**
+     * Compute region → total_size sums from the location temp file.
+     * Equivalent to RegionsSummary::queryRegionSums but without SQL.
+     *
+     * @return array<string, int> region_name => total_size
+     */
+    private function computeRegionSumsFromSink(
+        \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
+    ): array {
+        $path = $sink->getLocationTmpPath();
+        $fh = fopen($path, 'rb');
+        if ($fh === false) {
+            return [];
+        }
+        $dict = $sink->getStringDict();
+        $row_size = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format::LOCATION_ROW_SIZE;
+
+        /** @var array<string, int> $sums */
+        $sums = [];
+        while (true) {
+            $row = fread($fh, $row_size);
+            if ($row === false || strlen($row) < $row_size) {
+                break;
+            }
+            $size = (int)unpack('P', $row, 20)[1];
+            $region_id = (int)unpack('V', $row, 40)[1];
+            $region = $dict->lookup($region_id);
+            if ($region === null) {
+                continue;
+            }
+            $sums[$region] = ($sums[$region] ?? 0) + $size;
+        }
+        fclose($fh);
+        return $sums;
     }
 
     /**
