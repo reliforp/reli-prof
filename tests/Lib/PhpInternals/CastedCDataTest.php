@@ -15,6 +15,9 @@ namespace Reli\Lib\PhpInternals;
 
 use FFI;
 use Reli\BaseTestCase;
+use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntryInfo;
+use Reli\Lib\PhpInternals\Types\Zend\ZendOpArray;
+use Reli\Lib\PhpInternals\Types\Zend\ZendValue;
 
 class CastedCDataTest extends BaseTestCase
 {
@@ -72,5 +75,117 @@ class CastedCDataTest extends BaseTestCase
         gc_collect_cycles();
 
         self::assertSame(456, $leaf->casted->value);
+    }
+
+    /**
+     * @psalm-suppress PossiblyNullArgument
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedPropertyAssignment
+     * @psalm-suppress MixedPropertyFetch
+     * @psalm-suppress ArgumentTypeCoercion
+     * @psalm-suppress UndefinedPropertyFetch
+     */
+    public function testZendValueKeepsSubviewOwnerAlive(): void
+    {
+        $ffi = FFI::cdef(
+            '
+            typedef union { long lval; double dval; void *ptr; } zend_value;
+            typedef struct { zend_value value; } root_t;
+            '
+        );
+        $root_cdata = $ffi->new('root_t');
+        $root_cdata->value->lval = 789;
+
+        $root = new CastedCData($root_cdata, $root_cdata);
+        $value = new ZendValue($root->createSubView($root_cdata->value));
+
+        unset($root);
+        unset($root_cdata);
+        gc_collect_cycles();
+
+        self::assertSame(789, $value->lval);
+    }
+
+    /**
+     * @psalm-suppress PossiblyNullArgument
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedPropertyAssignment
+     * @psalm-suppress MixedPropertyFetch
+     * @psalm-suppress ArgumentTypeCoercion
+     * @psalm-suppress UndefinedPropertyFetch
+     */
+    public function testZendClassEntryInfoKeepsSubviewOwnerAlive(): void
+    {
+        $ffi = FFI::cdef(
+            '
+            typedef struct {
+                char *filename;
+                int line_start;
+                int line_end;
+                char *doc_comment;
+            } zend_class_entry_info_user;
+            typedef struct {
+                zend_class_entry_info_user user;
+            } zend_class_entry_info;
+            typedef struct {
+                zend_class_entry_info info;
+            } root_t;
+            '
+        );
+        $root_cdata = $ffi->new('root_t');
+        $root_cdata->info->user->line_start = 12;
+        $root_cdata->info->user->line_end = 34;
+
+        $root = new CastedCData($root_cdata, $root_cdata);
+        $info = new ZendClassEntryInfo($root->createSubView($root_cdata->info));
+        $user = $info->user;
+
+        unset($root);
+        unset($info);
+        unset($root_cdata);
+        gc_collect_cycles();
+
+        self::assertSame(12, $user->line_start);
+        self::assertSame(34, $user->line_end);
+    }
+
+    /**
+     * @psalm-suppress PossiblyNullArgument
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedPropertyAssignment
+     * @psalm-suppress MixedPropertyFetch
+     * @psalm-suppress ArgumentTypeCoercion
+     * @psalm-suppress UndefinedPropertyFetch
+     */
+    public function testZendOpArrayKeepsSubviewOwnerAlive(): void
+    {
+        $ffi = FFI::cdef(
+            '
+            typedef struct {
+                unsigned int fn_flags;
+                int line_start;
+                int line_end;
+            } zend_op_array;
+            typedef struct {
+                zend_op_array op_array;
+            } root_t;
+            '
+        );
+        $root_cdata = $ffi->new('root_t');
+        $root_cdata->op_array->line_start = 55;
+        $root_cdata->op_array->line_end = 89;
+
+        $root = new CastedCData($root_cdata, $root_cdata);
+        $op_array = new ZendOpArray($root->createSubView($root_cdata->op_array));
+
+        unset($root);
+        unset($root_cdata);
+        gc_collect_cycles();
+
+        self::assertSame(55, $op_array->line_start);
+        self::assertSame(89, $op_array->line_end);
     }
 }

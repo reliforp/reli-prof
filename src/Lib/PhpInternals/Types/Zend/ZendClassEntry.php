@@ -118,7 +118,9 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
         unset($this->num_traits);
         unset($this->doc_comment);
         if ($this->casted_cdata !== null) {
-            $this->info = new ZendClassEntryInfo($this->casted_cdata->casted->info);
+            $this->info = new ZendClassEntryInfo(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->info)
+            );
         }
     }
 
@@ -187,7 +189,9 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
                 'properties_info',
                 ZendArray::class,
             ),
-            'info' => $this->info = new ZendClassEntryInfo($this->casted_cdata->casted->info),
+            'info' => $this->info = new ZendClassEntryInfo(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->info)
+            ),
             'default_properties_count' => $this->default_properties_count =
                 $this->casted_cdata->casted->default_properties_count
             ,

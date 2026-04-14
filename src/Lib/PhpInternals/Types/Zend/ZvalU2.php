@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use FFI\CData;
+use Reli\Lib\PhpInternals\CastedCData;
 
 final class ZvalU2
 {
@@ -39,7 +39,7 @@ final class ZvalU2
     public int $extra;
 
     public function __construct(
-        private CData $cdata
+        private CastedCData $cdata
     ) {
         unset($this->next);
         unset($this->opline_num);
@@ -55,6 +55,6 @@ final class ZvalU2
 
     public function __get(string $field_name): mixed
     {
-        return $this->cdata->$field_name;
+        return $this->cdata->casted->$field_name;
     }
 }

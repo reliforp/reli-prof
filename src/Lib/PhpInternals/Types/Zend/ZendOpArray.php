@@ -17,6 +17,7 @@ use FFI;
 use FFI\CData;
 use FFI\PhpInternals\zend_op_array;
 use PhpCast\Cast;
+use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\PointerArray;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -110,9 +111,9 @@ final class ZendOpArray
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $line_end;
 
-    /** @param zend_op_array $cdata */
+    /** @param CastedCData<zend_op_array> $cdata */
     public function __construct(
-        private CData $cdata,
+        private CastedCData $cdata,
     ) {
         unset($this->fn_flags);
         unset($this->filename);
@@ -141,26 +142,26 @@ final class ZendOpArray
     public function __get(string $field_name)
     {
         return match ($field_name) {
-            'fn_flags' => $this->fn_flags = $this->cdata->fn_flags,
-            'filename' => $this->filename = $this->cdata->filename !== null
+            'fn_flags' => $this->fn_flags = $this->cdata->casted->fn_flags,
+            'filename' => $this->filename = $this->cdata->casted->filename !== null
                 ? Pointer::fromCData(
                     ZendString::class,
-                    $this->cdata->filename,
+                    $this->cdata->casted->filename,
                 )
                 : null
             ,
-            'arg_info' => $this->arg_info = $this->cdata->arg_info !== null
+            'arg_info' => $this->arg_info = $this->cdata->casted->arg_info !== null
                 ? Pointer::fromCData(
                     ZendArgInfo::class,
-                    $this->cdata->arg_info,
+                    $this->cdata->casted->arg_info,
                 )
                 : null
             ,
             'doc_comment' => $this->doc_comment
-                = $this->cdata->doc_comment !== null
+                = $this->cdata->casted->doc_comment !== null
                 ? Pointer::fromCData(
                     ZendString::class,
-                    $this->cdata->doc_comment,
+                    $this->cdata->casted->doc_comment,
                 )
                 : null
             ,
@@ -171,60 +172,58 @@ final class ZendOpArray
             'static_variables_ptr' => $this->static_variables_ptr
                 = $this->readStaticVariablesPtr()
             ,
-            'last' => $this->cdata->last,
-            'T' => $this->cdata->T,
-            'num_args' => $this->cdata->num_args,
-            'last_var' => $this->cdata->last_var,
-            'vars' => $this->vars = $this->cdata->vars !== null
+            'last' => $this->last = $this->cdata->casted->last,
+            'T' => $this->T = $this->cdata->casted->T,
+            'num_args' => $this->num_args = $this->cdata->casted->num_args,
+            'last_var' => $this->last_var = $this->cdata->casted->last_var,
+            'vars' => $this->vars = $this->cdata->casted->vars !== null
                 ? PointerArray::createPointerToArray(
-                    Cast::toInt(\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->vars)?->cdata),
-                    $this->cdata->last_var,
+                    $this->readNullablePointerAddress('vars'),
+                    $this->cdata->casted->last_var,
                 )
                 : null
 
             ,
-            'opcodes' => $this->opcodes = $this->cdata->opcodes !== null
+            'opcodes' => $this->opcodes = $this->cdata->casted->opcodes !== null
                 ? Pointer::fromCData(
                     ZendOp::class,
-                    $this->cdata->opcodes,
+                    $this->cdata->casted->opcodes,
                 )
                 : null
             ,
             'last_live_range' => $this->last_live_range = $this->getLastLiveRange(),
             'live_range' => $this->live_range = $this->getLiveRange(),
-            'last_literal' => $this->last_literal = $this->cdata->last_literal,
-            'literals' => $this->literals = $this->cdata->literals !== null
+            'last_literal' => $this->last_literal = $this->cdata->casted->last_literal,
+            'literals' => $this->literals = $this->cdata->casted->literals !== null
                 ? Pointer::fromCData(
                     ZendArray::class,
-                    $this->cdata->literals,
+                    $this->cdata->casted->literals,
                 )
                 : null
             ,
             'num_dynamic_func_defs' => $this->num_dynamic_func_defs = $this->getNumDynamicFuncDefs(),
-            'dynamic_func_defs' => $this->dynamic_func_defs = $this->cdata->dynamic_func_defs !== null
+            'dynamic_func_defs' => $this->dynamic_func_defs = $this->cdata->casted->dynamic_func_defs !== null
                 ? PointerArray::createPointerToArray(
-                    Cast::toInt(
-                        \Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->dynamic_func_defs)?->cdata,
-                    ),
-                    $this->cdata->num_dynamic_func_defs,
+                    $this->readNullablePointerAddress('dynamic_func_defs'),
+                    $this->cdata->casted->num_dynamic_func_defs,
                 )
                 : null
             ,
-            'cache_size' => $this->cache_size = $this->cdata->cache_size,
+            'cache_size' => $this->cache_size = $this->cdata->casted->cache_size,
             'run_time_cache' => $this->getRuntimeCacheAddress(),
-            'line_start' => $this->line_start = $this->cdata->line_start,
-            'line_end' => $this->line_end = $this->cdata->line_end,
+            'line_start' => $this->line_start = $this->cdata->casted->line_start,
+            'line_end' => $this->line_end = $this->cdata->casted->line_end,
         };
     }
 
     /** @return Pointer<ZendLiveRange>|null */
     private function getLiveRange(): ?Pointer
     {
-        if (in_array('live_range', \FFI::typeof($this->cdata)->getStructFieldNames(), true)) {
-            return $this->cdata->live_range !== null
+        if (in_array('live_range', \FFI::typeof($this->cdata->casted)->getStructFieldNames(), true)) {
+            return $this->cdata->casted->live_range !== null
                 ? Pointer::fromCData(
                     ZendLiveRange::class,
-                    $this->cdata->live_range,
+                    $this->cdata->casted->live_range,
                 )
                 : null
             ;
@@ -234,8 +233,8 @@ final class ZendOpArray
 
     private function getLastLiveRange(): int
     {
-        if (in_array('last_live_range', \FFI::typeof($this->cdata)->getStructFieldNames(), true)) {
-            return $this->cdata->last_live_range;
+        if (in_array('last_live_range', \FFI::typeof($this->cdata->casted)->getStructFieldNames(), true)) {
+            return $this->cdata->casted->last_live_range;
         }
         return 0;
     }
@@ -267,11 +266,11 @@ final class ZendOpArray
 
     public function getRuntimeCacheAddress(): int
     {
-        $ctype = FFI::typeof($this->cdata);
+        $ctype = FFI::typeof($this->cdata->casted);
         if (in_array('run_time_cache__ptr', $ctype->getStructFieldNames(), true)) {
-            return Cast::toInt(\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache__ptr)?->cdata);
+            return $this->readNullablePointerAddress('run_time_cache__ptr');
         } else {
-            return Cast::toInt(\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache)?->cdata);
+            return $this->readNullablePointerAddress('run_time_cache');
         }
     }
 
@@ -311,9 +310,9 @@ final class ZendOpArray
 
     private function getNumDynamicFuncDefs(): int
     {
-        $ctype = FFI::typeof($this->cdata);
+        $ctype = FFI::typeof($this->cdata->casted);
         if (in_array('num_dynamic_func_defs', $ctype->getStructFieldNames(), true)) {
-            return $this->cdata->num_dynamic_func_defs;
+            return $this->cdata->casted->num_dynamic_func_defs;
         }
         return 0;
     }
@@ -335,7 +334,7 @@ final class ZendOpArray
     private function readStaticVariablesPtr(): int
     {
         try {
-            $ptr = $this->cdata->static_variables_ptr__ptr;
+            $ptr = $this->cdata->casted->static_variables_ptr__ptr;
             if ($ptr === null) {
                 return 0;
             }
@@ -404,7 +403,7 @@ final class ZendOpArray
      */
     private function readPointerFieldOrNull(string $field_name, string $pointed_type): ?Pointer
     {
-        $value = $this->cdata->$field_name;
+        $value = $this->cdata->casted->$field_name;
         if ($value === null) {
             return null;
         }
@@ -412,5 +411,22 @@ final class ZendOpArray
             return null;
         }
         return Pointer::fromCData($pointed_type, $value);
+    }
+
+    /**
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress MixedAssignment
+     */
+    private function readNullablePointerAddress(string $field_name): int
+    {
+        $value = $this->cdata->casted->$field_name;
+        if ($value === null) {
+            return 0;
+        }
+        if (!$value instanceof CData) {
+            return 0;
+        }
+        /** @var \FFI\CPointer $value */
+        return \Reli\Lib\FFI\FFIHelper::castPointerToInt($value);
     }
 }

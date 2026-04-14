@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use FFI\CData;
 use FFI\CInteger;
+use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
@@ -71,9 +71,9 @@ final class ZendValue
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendValueWw $ww;
 
-    /** @param \FFI\PhpInternals\zend_value $cdata */
+    /** @param CastedCData<\FFI\PhpInternals\zend_value> $cdata */
     public function __construct(
-        private CData $cdata
+        private CastedCData $cdata
     ) {
         unset($this->lval);
         unset($this->dval);
@@ -94,54 +94,54 @@ final class ZendValue
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'lval' => $this->lval = $this->cdata->lval,
-            'dval' => $this->dval = $this->cdata->dval,
-            'str' => $this->str = $this->cdata->str !== null
+            'lval' => $this->lval = $this->cdata->casted->lval,
+            'dval' => $this->dval = $this->cdata->casted->dval,
+            'str' => $this->str = $this->cdata->casted->str !== null
                 ? Pointer::fromCData(
                     ZendString::class,
-                    $this->cdata->str,
+                    $this->cdata->casted->str,
                 )
                 : null
             ,
-            'arr' => $this->arr = $this->cdata->arr !== null
+            'arr' => $this->arr = $this->cdata->casted->arr !== null
                 ? Pointer::fromCData(
                     ZendArray::class,
-                    $this->cdata->arr,
+                    $this->cdata->casted->arr,
                 )
                 : null
             ,
-            'obj' => $this->obj = $this->cdata->obj !== null
+            'obj' => $this->obj = $this->cdata->casted->obj !== null
                 ? Pointer::fromCData(
                     ZendObject::class,
-                    $this->cdata->obj,
+                    $this->cdata->casted->obj,
                 )
                 : null
             ,
-            'ce' => $this->ce = $this->cdata->ce !== null
+            'ce' => $this->ce = $this->cdata->casted->ce !== null
                 ? Pointer::fromCData(
                     ZendClassEntry::class,
-                    $this->cdata->ce,
+                    $this->cdata->casted->ce,
                 )
                 : null
             ,
-            'func' => $this->func = $this->cdata->func !== null
+            'func' => $this->func = $this->cdata->casted->func !== null
                 ? Pointer::fromCData(
                     ZendFunction::class,
-                    $this->cdata->func,
+                    $this->cdata->casted->func,
                 )
                 : null
             ,
-            'ref' => $this->ref = $this->cdata->ref !== null
+            'ref' => $this->ref = $this->cdata->casted->ref !== null
                 ? Pointer::fromCData(
                     ZendReference::class,
-                    $this->cdata->ref,
+                    $this->cdata->casted->ref,
                 )
                 : null
             ,
-            'res' => $this->res = $this->cdata->res !== null
+            'res' => $this->res = $this->cdata->casted->res !== null
                 ? Pointer::fromCData(
                     ZendResource::class,
-                    $this->cdata->res,
+                    $this->cdata->casted->res,
                 )
                 : null
             ,
@@ -157,7 +157,7 @@ final class ZendValue
     {
         return new Pointer(
             $class_name,
-            $this->cdata->lval,
+            $this->cdata->casted->lval,
             $size,
         );
     }
