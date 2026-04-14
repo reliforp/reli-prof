@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\MemoryOutput\Comparison;
 
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
-use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
 
 final class ComparisonGenerator
@@ -47,50 +46,30 @@ final class ComparisonGenerator
     ];
 
     public function compare(
-        \PDO $baseline_db,
-        \PDO $target_db,
-        int $baseline_run_id = 1,
-        int $target_run_id = 1,
+        ComparisonDataProvider $baseline,
+        ComparisonDataProvider $target,
         float $threshold_percent = 0.0,
         bool $full_analysis = false,
         ?bool $ffi_csr = null,
     ): ComparisonResult {
-        $generator = new ReportGenerator();
-
-        $baseline_report = $generator->generateFromDb(
-            $baseline_db,
-            $baseline_run_id,
-            $full_analysis,
-            $ffi_csr,
-        );
-        $target_report = $generator->generateFromDb(
-            $target_db,
-            $target_run_id,
-            $full_analysis,
-            $ffi_csr,
-        );
+        $baseline_report = $baseline->generateReport($full_analysis, $ffi_csr);
+        $target_report = $target->generateReport($full_analysis, $ffi_csr);
 
         $summary_deltas = $this->compareSummaries(
-            $baseline_db,
-            $target_db,
-            $baseline_run_id,
-            $target_run_id,
+            $baseline->loadSummaryMap(),
+            $target->loadSummaryMap(),
             $threshold_percent,
         );
 
         $type_deltas = $this->compareTypes(
-            $baseline_db,
-            $target_db,
-            $baseline_run_id,
-            $target_run_id,
+            $baseline->loadTypeMap(),
+            $target->loadTypeMap(),
             $threshold_percent,
         );
 
         [$class_changes, $class_added, $class_removed] = $this->compareClasses(
-            $baseline_db,
-            $target_db,
-            $baseline_run_id,
-            $target_run_id,
+            $baseline->loadClassMap(),
+            $target->loadClassMap(),
             $threshold_percent,
         );
 
@@ -112,19 +91,15 @@ final class ComparisonGenerator
     }
 
     /**
+     * @param array<string, int|float> $baseline
+     * @param array<string, int|float> $target
      * @return list<SummaryDelta>
-     * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess
      */
     private function compareSummaries(
-        \PDO $baseline_db,
-        \PDO $target_db,
-        int $baseline_run_id,
-        int $target_run_id,
+        array $baseline,
+        array $target,
         float $threshold_percent,
     ): array {
-        $baseline = $this->loadSummaryMap($baseline_db, $baseline_run_id);
-        $target = $this->loadSummaryMap($target_db, $target_run_id);
-
         $deltas = [];
         foreach (self::SUMMARY_METRICS as $metric) {
             $b = $baseline[$metric] ?? null;
@@ -154,19 +129,15 @@ final class ComparisonGenerator
     }
 
     /**
+     * @param array<string, array{count: int, memory_usage: int}> $baseline
+     * @param array<string, array{count: int, memory_usage: int}> $target
      * @return list<TypeDelta>
-     * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess
      */
     private function compareTypes(
-        \PDO $baseline_db,
-        \PDO $target_db,
-        int $baseline_run_id,
-        int $target_run_id,
+        array $baseline,
+        array $target,
         float $threshold_percent,
     ): array {
-        $baseline = $this->loadTypeMap($baseline_db, $baseline_run_id);
-        $target = $this->loadTypeMap($target_db, $target_run_id);
-
         $all_types = array_unique(array_merge(
             array_keys($baseline),
             array_keys($target),
@@ -209,19 +180,15 @@ final class ComparisonGenerator
     }
 
     /**
+     * @param array<string, array{count: int, memory_usage: int}> $baseline
+     * @param array<string, array{count: int, memory_usage: int}> $target
      * @return array{list<ClassDelta>, list<ClassDelta>, list<ClassDelta>}
-     * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess
      */
     private function compareClasses(
-        \PDO $baseline_db,
-        \PDO $target_db,
-        int $baseline_run_id,
-        int $target_run_id,
+        array $baseline,
+        array $target,
         float $threshold_percent,
     ): array {
-        $baseline = $this->loadClassMap($baseline_db, $baseline_run_id);
-        $target = $this->loadClassMap($target_db, $target_run_id);
-
         $all_classes = array_unique(array_merge(
             array_keys($baseline),
             array_keys($target),
@@ -381,68 +348,5 @@ final class ComparisonGenerator
         }
 
         return '';
-    }
-
-    /**
-     * @return array<string, int|float>
-     * @psalm-suppress MixedAssignment, MixedArgument
-     */
-    private function loadSummaryMap(\PDO $db, int $run_id): array
-    {
-        $rows = $db->query(
-            "SELECT key, value FROM summary WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_KEY_PAIR);
-
-        $result = [];
-        foreach ($rows as $key => $value) {
-            if (is_numeric($value)) {
-                $result[(string)$key] = str_contains((string)$value, '.')
-                    ? (float)$value
-                    : (int)$value;
-            }
-        }
-        return $result;
-    }
-
-    /**
-     * @return array<string, array{count: int, memory_usage: int}>
-     * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess
-     */
-    private function loadTypeMap(\PDO $db, int $run_id): array
-    {
-        $rows = $db->query(
-            "SELECT type, count, memory_usage FROM location_types_summary"
-            . " WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_ASSOC);
-
-        $result = [];
-        foreach ($rows as $row) {
-            $result[(string)$row['type']] = [
-                'count' => (int)$row['count'],
-                'memory_usage' => (int)$row['memory_usage'],
-            ];
-        }
-        return $result;
-    }
-
-    /**
-     * @return array<string, array{count: int, memory_usage: int}>
-     * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess
-     */
-    private function loadClassMap(\PDO $db, int $run_id): array
-    {
-        $rows = $db->query(
-            "SELECT class_name, count, memory_usage FROM class_objects_summary"
-            . " WHERE run_id = {$run_id}"
-        )->fetchAll(\PDO::FETCH_ASSOC);
-
-        $result = [];
-        foreach ($rows as $row) {
-            $result[(string)$row['class_name']] = [
-                'count' => (int)$row['count'],
-                'memory_usage' => (int)$row['memory_usage'],
-            ];
-        }
-        return $result;
     }
 }

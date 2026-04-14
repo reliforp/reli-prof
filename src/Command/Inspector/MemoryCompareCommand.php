@@ -13,9 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
+use Reli\Inspector\Output\MemoryOutput\Comparison\BinaryComparisonDataProvider;
+use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonGenerator;
 use Reli\Inspector\Output\MemoryOutput\Comparison\Formatter\JsonComparisonFormatter;
 use Reli\Inspector\Output\MemoryOutput\Comparison\Formatter\TextComparisonFormatter;
+use Reli\Inspector\Output\MemoryOutput\Comparison\PdoComparisonDataProvider;
 use Reli\Lib\Log\Log;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -139,15 +142,13 @@ final class MemoryCompareCommand extends Command
         /** @var bool|null $ffi_csr */
         $ffi_csr = $input->getOption('ffi-csr');
 
-        $baseline_db = $this->openDb($baseline_file);
-        $target_db = $this->openDb($target_file);
+        $baseline_provider = $this->createProvider($baseline_file, $baseline_run_id);
+        $target_provider = $this->createProvider($target_file, $target_run_id);
 
         $generator = new ComparisonGenerator();
         $result = $generator->compare(
-            $baseline_db,
-            $target_db,
-            $baseline_run_id,
-            $target_run_id,
+            $baseline_provider,
+            $target_provider,
             $threshold,
             $full_analysis,
             $ffi_csr,
@@ -174,12 +175,26 @@ final class MemoryCompareCommand extends Command
         return 0;
     }
 
-    private function openDb(string $path): \PDO
+    private function createProvider(string $path, int $run_id): ComparisonDataProvider
     {
+        if (str_ends_with($path, '.rmem') || $this->isBinaryFile($path)) {
+            return new BinaryComparisonDataProvider($path);
+        }
         $db = new \PDO("sqlite:{$path}");
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $db->exec('PRAGMA journal_mode = WAL');
         $db->exec('PRAGMA mmap_size = 268435456');
-        return $db;
+        return new PdoComparisonDataProvider($db, $run_id);
+    }
+
+    private function isBinaryFile(string $path): bool
+    {
+        $fp = fopen($path, 'rb');
+        if ($fp === false) {
+            return false;
+        }
+        $magic = fread($fp, 4);
+        fclose($fp);
+        return $magic === 'RMEM';
     }
 }

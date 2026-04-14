@@ -177,8 +177,8 @@ class ComparisonGeneratorTest extends BaseTestCase
 
         $generator = new ComparisonGenerator();
         $result = $generator->compare(
-            $this->openDb($this->baseline_path),
-            $this->openDb($this->target_path),
+            new PdoComparisonDataProvider($this->openDb($this->baseline_path)),
+            new PdoComparisonDataProvider($this->openDb($this->target_path)),
             threshold_percent: 1.0,
         );
 
@@ -265,8 +265,8 @@ class ComparisonGeneratorTest extends BaseTestCase
     {
         $generator = new ComparisonGenerator();
         return $generator->compare(
-            $this->openDb($this->baseline_path),
-            $this->openDb($this->target_path),
+            new PdoComparisonDataProvider($this->openDb($this->baseline_path)),
+            new PdoComparisonDataProvider($this->openDb($this->target_path)),
         );
     }
 
