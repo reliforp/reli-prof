@@ -52,6 +52,7 @@ final class TraceAggregator
      */
     public function __construct(
         public readonly bool $no_line = false,
+        public readonly bool $with_opcode = false,
         public readonly ?string $hide_re = null,
         public readonly ?string $match_re = null,
         public readonly ?string $callers_re = null,
@@ -106,9 +107,13 @@ final class TraceAggregator
 
             $keys = [];
             foreach ($sample->trace->call_frames as $frame) {
-                $keys[] = $this->no_line
+                $key = $this->no_line
                     ? $frame->function_name
                     : $frame->function_name . ' ' . $frame->file_name . ':' . $frame->lineno;
+                if ($this->with_opcode && $frame->opcode_name !== null) {
+                    $key .= ' [' . $frame->opcode_name . ']';
+                }
+                $keys[] = $key;
             }
 
             $hide_re = $this->hide_re;

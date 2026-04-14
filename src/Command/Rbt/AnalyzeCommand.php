@@ -83,6 +83,12 @@ final class AnalyzeCommand extends Command
                 InputOption::VALUE_NONE,
                 'Group frames by function name only (ignore file:line)',
             )
+            ->addOption(
+                'with-opcode',
+                null,
+                InputOption::VALUE_NONE,
+                'Include the VM opcode in each frame key (e.g. [ZEND_RECV])',
+            )
         ;
     }
 
@@ -99,6 +105,7 @@ final class AnalyzeCommand extends Command
         /** @var string|null $hide_pattern */
         $hide_pattern = $input->getOption('hide');
         $no_line = (bool) $input->getOption('no-line');
+        $with_opcode = (bool) $input->getOption('with-opcode');
 
         // --last:
         //   absent  → false (no tail)
@@ -113,6 +120,7 @@ final class AnalyzeCommand extends Command
 
         $aggregator = new TraceAggregator(
             no_line: $no_line,
+            with_opcode: $with_opcode,
             hide_re: TraceAggregator::wrapPattern($hide_pattern),
             match_re: TraceAggregator::wrapPattern($match_pattern),
             callers_re: TraceAggregator::wrapPattern($callers_pattern),
