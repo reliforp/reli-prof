@@ -217,6 +217,236 @@ final class BinaryReportDataProvider
     }
 
     /**
+     * Compute dedup_candidate groups from a binary file.
+     *
+     * Uses a coarse first pass to shortlist likely groups, then a second pass
+     * that de-duplicates by child_node_id so shared fan-in does not inflate
+     * the reported size beyond the underlying node sizes.
+     *
+     * @return list<array{
+     *     link_name: string,
+     *     size: int,
+     *     cnt: int,
+     *     total_waste: int,
+     *     sample_parent_node_id: int,
+     *     sample_child_node_id: int,
+     *     sample_location_type: ?string,
+     *     sample_child_node_ids: list<int>,
+     *     examples: array<string, mixed>
+     * }>
+     */
+    public static function getDedupCandidateStats(
+        BinaryReader $reader,
+        int $limit = 10,
+    ): array {
+        if (
+            !$reader->hasSection(Format::SECTION_EDGES)
+            || !$reader->hasSection(Format::SECTION_LOCATIONS)
+        ) {
+            return [];
+        }
+
+        $dict = $reader->getStringDict();
+        $node_meta = self::loadNodeMeta($reader);
+        if ($node_meta === []) {
+            return [];
+        }
+
+        /** @var array<string, array{
+         *     link_name_id: int,
+         *     size: int,
+         *     ref_count: int,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int
+         * }> $coarse
+         */
+        $coarse = [];
+        $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+
+        if ($edgeRows !== null) {
+            for ($i = 0; $i < $edge_count; $i++) {
+                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                    continue;
+                }
+                $child = (int)$edgeRows[$i]->child_node_id;
+                $meta = $node_meta[$child] ?? null;
+                if ($meta === null || $meta['size'] <= 0) {
+                    continue;
+                }
+                $lid = (int)$edgeRows[$i]->link_name_id;
+                $key = $lid . ':' . $meta['size'];
+                if (!isset($coarse[$key])) {
+                    $coarse[$key] = [
+                        'link_name_id' => $lid,
+                        'size' => $meta['size'],
+                        'ref_count' => 0,
+                        'sample_parent_node_id' => (int)$edgeRows[$i]->parent_node_id,
+                        'sample_child_node_id' => $child,
+                    ];
+                }
+                $coarse[$key]['ref_count']++;
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_EDGES);
+            for ($i = 0; $i < $edge_count; $i++) {
+                $off = $i * Format::EDGE_ROW_SIZE;
+                $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $data, $off);
+                if ((int)$row['is_tree'] !== 0 || (int)$row['strength'] !== 0) {
+                    continue;
+                }
+                $child = (int)$row['child'];
+                $meta = $node_meta[$child] ?? null;
+                if ($meta === null || $meta['size'] <= 0) {
+                    continue;
+                }
+                $lid = (int)$row['lid'];
+                $key = $lid . ':' . $meta['size'];
+                if (!isset($coarse[$key])) {
+                    $coarse[$key] = [
+                        'link_name_id' => $lid,
+                        'size' => $meta['size'],
+                        'ref_count' => 0,
+                        'sample_parent_node_id' => (int)$row['parent'],
+                        'sample_child_node_id' => $child,
+                    ];
+                }
+                $coarse[$key]['ref_count']++;
+            }
+        }
+
+        $candidate_limit = max($limit * 16, 64);
+        /** @var list<array{
+         *     key: string,
+         *     link_name: string,
+         *     size: int,
+         *     coarse_total: int,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int,
+         *     sample_location_type: ?string
+         * }> $candidates
+         */
+        $candidates = [];
+        foreach ($coarse as $key => $info) {
+            $coarse_total = $info['ref_count'] * $info['size'];
+            if ($info['ref_count'] <= 50 || $coarse_total <= 10240) {
+                continue;
+            }
+            $link_name = $dict->lookup($info['link_name_id']);
+            if ($link_name === null || $link_name === 'key') {
+                continue;
+            }
+            $sample_child_meta = $node_meta[$info['sample_child_node_id']] ?? null;
+            $candidates[] = [
+                'key' => $key,
+                'link_name' => $link_name,
+                'size' => $info['size'],
+                'coarse_total' => $coarse_total,
+                'sample_parent_node_id' => $info['sample_parent_node_id'],
+                'sample_child_node_id' => $info['sample_child_node_id'],
+                'sample_location_type' => $sample_child_meta['location_type'] ?? null,
+            ];
+        }
+        usort($candidates, fn ($a, $b) => $b['coarse_total'] <=> $a['coarse_total']);
+        $candidates = array_slice($candidates, 0, $candidate_limit);
+
+        /** @var array<string, array{
+         *     link_name: string,
+         *     size: int,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int,
+         *     sample_location_type: ?string,
+         *     sample_child_node_ids: list<int>,
+         *     seen_children: array<int, true>,
+         *     string_counts: array<string, int>,
+         *     object_samples: list<string>
+         * }> $groups
+         */
+        $groups = [];
+        foreach ($candidates as $candidate) {
+            $groups[$candidate['key']] = [
+                'link_name' => $candidate['link_name'],
+                'size' => $candidate['size'],
+                'sample_parent_node_id' => $candidate['sample_parent_node_id'],
+                'sample_child_node_id' => $candidate['sample_child_node_id'],
+                'sample_location_type' => $candidate['sample_location_type'],
+                'sample_child_node_ids' => [],
+                'seen_children' => [],
+                'string_counts' => [],
+                'object_samples' => [],
+            ];
+        }
+
+        if ($groups === []) {
+            return [];
+        }
+
+        if ($edgeRows !== null) {
+            for ($i = 0; $i < $edge_count; $i++) {
+                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                    continue;
+                }
+                $child = (int)$edgeRows[$i]->child_node_id;
+                $meta = $node_meta[$child] ?? null;
+                if ($meta === null || $meta['size'] <= 0) {
+                    continue;
+                }
+                $key = (int)$edgeRows[$i]->link_name_id . ':' . $meta['size'];
+                if (!isset($groups[$key])) {
+                    continue;
+                }
+                self::accumulateDedupGroup($groups[$key], $child, $meta, $dict);
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_EDGES);
+            for ($i = 0; $i < $edge_count; $i++) {
+                $off = $i * Format::EDGE_ROW_SIZE;
+                $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $data, $off);
+                if ((int)$row['is_tree'] !== 0 || (int)$row['strength'] !== 0) {
+                    continue;
+                }
+                $child = (int)$row['child'];
+                $meta = $node_meta[$child] ?? null;
+                if ($meta === null || $meta['size'] <= 0) {
+                    continue;
+                }
+                $key = (int)$row['lid'] . ':' . $meta['size'];
+                if (!isset($groups[$key])) {
+                    continue;
+                }
+                self::accumulateDedupGroup($groups[$key], $child, $meta, $dict);
+            }
+        }
+
+        $results = [];
+        foreach ($groups as $group) {
+            $cnt = count($group['seen_children']);
+            $total_waste = $cnt * $group['size'];
+            if ($cnt <= 50 || $total_waste <= 10240) {
+                continue;
+            }
+
+            $results[] = [
+                'link_name' => $group['link_name'],
+                'size' => $group['size'],
+                'cnt' => $cnt,
+                'total_waste' => $total_waste,
+                'sample_parent_node_id' => $group['sample_parent_node_id'],
+                'sample_child_node_id' => $group['sample_child_node_id'],
+                'sample_location_type' => $group['sample_location_type'],
+                'sample_child_node_ids' => $group['sample_child_node_ids'],
+                'examples' => self::buildDedupExamples(
+                    $group['string_counts'],
+                    $group['object_samples'],
+                ),
+            ];
+        }
+
+        usort($results, fn ($a, $b) => $b['total_waste'] <=> $a['total_waste']);
+        return array_slice($results, 0, $limit);
+    }
+
+    /**
      * Load frame labels (function_name:lineno) from the binary attributes section.
      *
      * Replaces NodeLabeler's SQL query on context_node_attributes.
@@ -263,5 +493,191 @@ final class BinaryReportDataProvider
             $labels[$node_id] = $ln !== '' ? "{$fn}:{$ln}" : $fn;
         }
         return $labels;
+    }
+
+    /**
+     * @return array<int, array{
+     *     size: int,
+     *     location_type: ?string,
+     *     class_name: ?string,
+     *     string_value_id: ?int
+     * }>
+     */
+    private static function loadNodeMeta(BinaryReader $reader): array
+    {
+        $dict = $reader->getStringDict();
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+
+        /** @var array<int, array{
+         *     size: int,
+         *     location_type: ?string,
+         *     class_name: ?string,
+         *     string_value_id: ?int
+         * }> $meta
+         */
+        $meta = [];
+        if ($locRows !== null) {
+            for ($i = 0; $i < $count; $i++) {
+                $node_id = (int)$locRows[$i]->node_id;
+                if (!isset($meta[$node_id])) {
+                    $meta[$node_id] = [
+                        'size' => 0,
+                        'location_type' => null,
+                        'class_name' => null,
+                        'string_value_id' => null,
+                    ];
+                }
+                $meta[$node_id]['size'] += (int)$locRows[$i]->size;
+                if ($meta[$node_id]['location_type'] === null) {
+                    $meta[$node_id]['location_type'] = $dict->lookup((int)$locRows[$i]->location_type_id);
+                }
+                if (
+                    $meta[$node_id]['class_name'] === null
+                    && (int)$locRows[$i]->class_id !== Format::NULL_STRING_ID
+                ) {
+                    $meta[$node_id]['class_name'] = $dict->lookup((int)$locRows[$i]->class_id);
+                }
+                if (
+                    $meta[$node_id]['string_value_id'] === null
+                    && (int)$locRows[$i]->string_value_id !== Format::NULL_STRING_ID
+                ) {
+                    $meta[$node_id]['string_value_id'] = (int)$locRows[$i]->string_value_id;
+                }
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+            for ($i = 0; $i < $count; $i++) {
+                $off = $i * Format::LOCATION_ROW_SIZE;
+                $row = unpack(
+                    'Vnode_id/Vlocation_type_id/Vclass_id/Paddress/Psize/Vstring_value_id',
+                    $data,
+                    $off,
+                );
+                $node_id = (int)$row['node_id'];
+                if (!isset($meta[$node_id])) {
+                    $meta[$node_id] = [
+                        'size' => 0,
+                        'location_type' => null,
+                        'class_name' => null,
+                        'string_value_id' => null,
+                    ];
+                }
+                $meta[$node_id]['size'] += (int)$row['size'];
+                if ($meta[$node_id]['location_type'] === null) {
+                    $meta[$node_id]['location_type'] = $dict->lookup((int)$row['location_type_id']);
+                }
+                if (
+                    $meta[$node_id]['class_name'] === null
+                    && (int)$row['class_id'] !== Format::NULL_STRING_ID
+                ) {
+                    $meta[$node_id]['class_name'] = $dict->lookup((int)$row['class_id']);
+                }
+                if (
+                    $meta[$node_id]['string_value_id'] === null
+                    && (int)$row['string_value_id'] !== Format::NULL_STRING_ID
+                ) {
+                    $meta[$node_id]['string_value_id'] = (int)$row['string_value_id'];
+                }
+            }
+        }
+
+        return $meta;
+    }
+
+    /**
+     * @param array{
+     *     size: int,
+     *     sample_child_node_ids: list<int>,
+     *     seen_children: array<int, true>,
+     *     string_counts: array<string, int>,
+     *     object_samples: list<string>,
+     *     sample_location_type: ?string
+     * } $group
+     * @param array{
+     *     size: int,
+     *     location_type: ?string,
+     *     class_name: ?string,
+     *     string_value_id: ?int
+     * } $meta
+     */
+    private static function accumulateDedupGroup(
+        array &$group,
+        int $child_node_id,
+        array $meta,
+        StringDict $dict,
+    ): void {
+        if (isset($group['seen_children'][$child_node_id])) {
+            return;
+        }
+        $group['seen_children'][$child_node_id] = true;
+
+        if (count($group['sample_child_node_ids']) < 20) {
+            $group['sample_child_node_ids'][] = $child_node_id;
+        }
+
+        $string_value_id = $meta['string_value_id'];
+        if ($string_value_id !== null) {
+            $value = $dict->lookup($string_value_id);
+            if ($value !== null) {
+                $group['string_counts'][$value] = ($group['string_counts'][$value] ?? 0) + 1;
+            }
+            return;
+        }
+
+        if (count($group['object_samples']) >= 3) {
+            return;
+        }
+
+        $label = $meta['class_name']
+            ?? $meta['location_type']
+            ?? 'unknown';
+        $sample = "{$label} ({$meta['size']}B)";
+        if (!in_array($sample, $group['object_samples'], true)) {
+            $group['object_samples'][] = $sample;
+        }
+    }
+
+    /**
+     * @param array<string, int> $string_counts
+     * @param list<string> $object_samples
+     * @return array<string, mixed>
+     */
+    private static function buildDedupExamples(
+        array $string_counts,
+        array $object_samples,
+    ): array {
+        if ($string_counts !== []) {
+            arsort($string_counts);
+            $values = array_keys($string_counts);
+            $top_value = $values[0] ?? '';
+            if (strlen($top_value) > 60) {
+                $top_value = substr($top_value, 0, 57) . '...';
+            }
+
+            $samples = array_map(
+                static function (string $value): string {
+                    return strlen($value) > 40
+                        ? substr($value, 0, 37) . '...'
+                        : $value;
+                },
+                array_slice($values, 0, 5),
+            );
+
+            $top_count = (int)reset($string_counts);
+            return [
+                'type' => 'string',
+                'identical_count' => $top_count > 1 ? $top_count : 0,
+                'sample_value' => $top_value,
+                'samples' => $samples,
+                'distinct_values' => count($string_counts),
+            ];
+        }
+
+        return [
+            'type' => 'object',
+            'samples' => $object_samples,
+            'identical_count' => 0,
+        ];
     }
 }

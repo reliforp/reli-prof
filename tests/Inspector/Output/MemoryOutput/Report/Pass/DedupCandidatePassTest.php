@@ -17,14 +17,14 @@ use Reli\BaseTestCase;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 
-class NonTreeEdgePassTest extends BaseTestCase
+class DedupCandidatePassTest extends BaseTestCase
 {
     private string $db_path;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->db_path = tempnam(sys_get_temp_dir(), 'reli_non_tree_edge_test_') . '.db';
+        $this->db_path = tempnam(sys_get_temp_dir(), 'reli_dedup_candidate_test_') . '.db';
     }
 
     protected function tearDown(): void
@@ -33,30 +33,53 @@ class NonTreeEdgePassTest extends BaseTestCase
         parent::tearDown();
     }
 
-    public function testAnalyzeWithSubstrateMatchesSqlPathForSharedFindings(): void
+    public function testAnalyzeWithSubstrateMatchesSqlPathForDedupFindings(): void
     {
         $db = $this->createDirectDb();
         $this->seedRepresentativeScenario($db);
 
-        $sql_findings = (new NonTreeEdgePass($db, 1))->analyze();
+        $sql_findings = (new DedupCandidatePass($db, 1))->analyze();
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $graph_findings = (new NonTreeEdgePass($db, 1, $substrate))->analyze();
+        $graph_findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
 
-        $shared_sql = $this->findFinding(
+        $dedup_sql = $this->findFinding(
             $sql_findings,
-            'shared_singleton',
-            'App\\Owner::$service',
+            'dedup_candidate',
+            'App\\Owner::$names[value]',
         );
-        $shared_graph = $this->findFinding(
+        $dedup_graph = $this->findFinding(
             $graph_findings,
-            'shared_singleton',
-            'App\\Owner::$service',
+            'dedup_candidate',
+            'App\\Owner::$names[value]',
         );
-        $this->assertNotNull($shared_sql);
-        $this->assertNotNull($shared_graph);
-        $this->assertSame($shared_sql->summary, $shared_graph->summary);
-        $this->assertSame($shared_sql->facts, $shared_graph->facts);
+
+        $this->assertNotNull($dedup_sql);
+        $this->assertNotNull($dedup_graph);
+        $this->assertSame($dedup_sql->summary, $dedup_graph->summary);
+        $this->assertSame(
+            $dedup_sql->facts['count'],
+            $dedup_graph->facts['count'],
+        );
+        $this->assertSame(60, $dedup_sql->facts['count']);
+        $this->assertSame(
+            $dedup_sql->facts['examples']['sample_value'],
+            $dedup_graph->facts['examples']['sample_value'],
+        );
+    }
+
+    public function testAnalyzeDoesNotTreatSharedSingletonAsDedupCandidate(): void
+    {
+        $db = $this->createDirectDb();
+        $this->seedSharedSingletonScenario($db);
+
+        $findings = (new DedupCandidatePass($db, 1))->analyze();
+
+        $this->assertNull($this->findFinding(
+            $findings,
+            'dedup_candidate',
+            'App\\Owner::$names[value]',
+        ));
     }
 
     /**
@@ -91,17 +114,6 @@ class NonTreeEdgePassTest extends BaseTestCase
             . ' (run_id, node_id, address, size, location_type, class_name, string_value)'
             . ' VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
-
-        $edge_stmt->execute([1, null, 1, 'call_frames', 1, 'strong']);
-        $node_stmt->execute([
-            1,
-            900,
-            9000,
-            64,
-            'ZendObjectMemoryLocation',
-            'App\\Service',
-            null,
-        ]);
 
         for ($i = 0; $i < 60; $i++) {
             $owner_node_id = 1000 + $i * 10;
@@ -139,21 +151,13 @@ class NonTreeEdgePassTest extends BaseTestCase
                 'same-shared-string',
             ]);
 
-            $edge_stmt->execute([1, 1, $owner_node_id, "owner_{$i}", 1, 'strong']);
+            $edge_stmt->execute([1, null, $owner_node_id, "owner_{$i}", 1, 'strong']);
             $edge_stmt->execute([
                 1,
                 $owner_node_id,
                 $properties_node_id,
                 'object_properties',
                 1,
-                'strong',
-            ]);
-            $edge_stmt->execute([
-                1,
-                $properties_node_id,
-                900,
-                'service',
-                0,
                 'strong',
             ]);
             $edge_stmt->execute([
@@ -184,6 +188,100 @@ class NonTreeEdgePassTest extends BaseTestCase
                 1,
                 $array_element_node_id,
                 $string_node_id,
+                'value',
+                0,
+                'strong',
+            ]);
+        }
+    }
+
+    private function seedSharedSingletonScenario(\PDO $db): void
+    {
+        $edge_stmt = $db->prepare(
+            'INSERT INTO context_edges'
+            . ' (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
+            . ' VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $node_stmt = $db->prepare(
+            'INSERT INTO context_node_locations'
+            . ' (run_id, node_id, address, size, location_type, class_name, string_value)'
+            . ' VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+
+        $shared_string_node_id = 200000;
+        $node_stmt->execute([
+            1,
+            $shared_string_node_id,
+            5000000,
+            256,
+            'ZendStringMemoryLocation',
+            null,
+            'single-shared-string',
+        ]);
+
+        for ($i = 0; $i < 120; $i++) {
+            $owner_node_id = 3000 + $i * 10;
+            $properties_node_id = $owner_node_id + 1;
+            $array_header_node_id = $owner_node_id + 2;
+            $array_elements_node_id = $owner_node_id + 3;
+            $array_element_node_id = $owner_node_id + 4;
+
+            $node_stmt->execute([
+                1,
+                $owner_node_id,
+                6000000 + $i,
+                64,
+                'ZendObjectMemoryLocation',
+                'App\\Owner',
+                null,
+            ]);
+            $node_stmt->execute([
+                1,
+                $array_header_node_id,
+                7000000 + $i,
+                56,
+                'ZendArrayMemoryLocation',
+                null,
+                null,
+            ]);
+
+            $edge_stmt->execute([1, null, $owner_node_id, "owner_{$i}", 1, 'strong']);
+            $edge_stmt->execute([
+                1,
+                $owner_node_id,
+                $properties_node_id,
+                'object_properties',
+                1,
+                'strong',
+            ]);
+            $edge_stmt->execute([
+                1,
+                $properties_node_id,
+                $array_header_node_id,
+                'names',
+                1,
+                'strong',
+            ]);
+            $edge_stmt->execute([
+                1,
+                $array_header_node_id,
+                $array_elements_node_id,
+                'array_elements',
+                1,
+                'strong',
+            ]);
+            $edge_stmt->execute([
+                1,
+                $array_elements_node_id,
+                $array_element_node_id,
+                '0',
+                1,
+                'strong',
+            ]);
+            $edge_stmt->execute([
+                1,
+                $array_element_node_id,
+                $shared_string_node_id,
                 'value',
                 0,
                 'strong',

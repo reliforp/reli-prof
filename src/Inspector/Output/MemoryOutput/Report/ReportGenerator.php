@@ -20,6 +20,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\ChokePointPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\ClassRankingPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\CompanionDetectionPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\CycleClusterPass;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\DedupCandidatePass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\DrillDownPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\DynamicPropertiesPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\GcPendingPass;
@@ -131,6 +132,7 @@ final class ReportGenerator
                 $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
+                $findings = array_merge($findings, $this->runPass(new DedupCandidatePass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
             }
         }
@@ -239,6 +241,9 @@ final class ReportGenerator
             );
             $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
                 new NonTreeEdgePass($db_factory(), $run_id, $substrate)
+            );
+            $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
+                new DedupCandidatePass($db_factory(), $run_id, $substrate)
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
                 new StructuralDedupPass($db_factory(), $run_id, $substrate, $resolver_factory())
@@ -353,6 +358,7 @@ final class ReportGenerator
             );
             $top_strings = BinaryReportDataProvider::getTopStrings($reader, 10);
             $non_tree_edge_stats = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
+            $dedup_candidates = BinaryReportDataProvider::getDedupCandidateStats($reader, 10);
 
             // CallStackPass runs before the parallel batch (same as DB path)
             $dummy_db = new \PDO('sqlite::memory:');
@@ -398,6 +404,9 @@ final class ReportGenerator
             );
             $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
                 new NonTreeEdgePass($dummy_factory(), 0, $substrate, $non_tree_edge_stats)
+            );
+            $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
+                new DedupCandidatePass($dummy_factory(), 0, $substrate, $dedup_candidates)
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
                 new StructuralDedupPass($dummy_factory(), 0, $substrate, $resolver_factory())

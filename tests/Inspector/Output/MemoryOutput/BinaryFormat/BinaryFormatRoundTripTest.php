@@ -20,6 +20,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\Process\MemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 
@@ -289,5 +290,103 @@ class BinaryFormatRoundTripTest extends TestCase
         // All children should include node 2
         $all_children = $substrate->getChildren(1);
         $this->assertContains(2, $all_children);
+    }
+
+    public function testGenerateFromBinaryIncludesDedupCandidate(): void
+    {
+        $sink = new BinaryContextTreeSink(batch_size: 64);
+
+        for ($i = 0; $i < 60; $i++) {
+            $owner_node_id = 1000 + $i * 10;
+            $properties_node_id = $owner_node_id + 1;
+            $array_header_node_id = $owner_node_id + 2;
+            $array_elements_node_id = $owner_node_id + 3;
+            $array_element_node_id = $owner_node_id + 4;
+            $string_node_id = 100000 + $i;
+
+            $sink->emitNode(
+                $owner_node_id,
+                null,
+                "owner_{$i}",
+                'OwnerContext',
+                [new ZendObjectMemoryLocation(0x100000 + $i, 64, 1, 7, 'App\\Owner')],
+                [],
+            );
+            $sink->emitNode(
+                $properties_node_id,
+                $owner_node_id,
+                'object_properties',
+                'ObjectPropertiesContext',
+                [],
+                [],
+            );
+            $sink->emitNode(
+                $array_header_node_id,
+                $properties_node_id,
+                'names',
+                'ArrayContext',
+                [new ZendArrayMemoryLocation(0x200000 + $i, 56, 1, 7)],
+                [],
+            );
+            $sink->emitNode(
+                $array_elements_node_id,
+                $array_header_node_id,
+                'array_elements',
+                'ArrayElementsContext',
+                [],
+                [],
+            );
+            $sink->emitNode(
+                $array_element_node_id,
+                $array_elements_node_id,
+                '0',
+                'ArrayElementContext',
+                [],
+                [],
+            );
+            $sink->emitNode(
+                $string_node_id,
+                null,
+                "string_{$i}",
+                'StringContext',
+                [new ZendStringMemoryLocation(
+                    0x300000 + $i,
+                    256,
+                    1,
+                    6,
+                    'same-shared-string',
+                )],
+                [],
+            );
+            $sink->emitReference(
+                reference_node_id: $string_node_id,
+                parent_node_id: $array_element_node_id,
+                link_name: 'value',
+            );
+        }
+
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming($sink, [['zend_mm_heap_usage' => '300000']]);
+
+        $generator = new ReportGenerator();
+        $result = $generator->generateFromBinary($this->rmem_path, false);
+
+        $dedup_finding = null;
+        foreach ($result->findings as $finding) {
+            if (
+                $finding->kind === 'dedup_candidate'
+                && str_contains($finding->summary, 'App\\Owner::$names[value]')
+            ) {
+                $dedup_finding = $finding;
+                break;
+            }
+        }
+
+        $this->assertNotNull($dedup_finding);
+        $this->assertSame(60, $dedup_finding->facts['count']);
+        $this->assertSame(
+            'same-shared-string',
+            $dedup_finding->facts['examples']['sample_value'],
+        );
     }
 }
