@@ -38,9 +38,18 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
 {
     /** @var array<string, resource> path => cached file handle */
     private array $fp_cache = [];
-    /** @var list<array{address: int, size: int, file_offset: int}> */
-    private array $sorted_region_index = [];
-    private bool $can_use_sorted_lookup = false;
+    /**
+     * Disjoint regions sorted by address — used for binary search.
+     * @var list<array{address: int, size: int, file_offset: int}>
+     */
+    private array $disjoint_regions = [];
+
+    /**
+     * Overlapping regions that were removed from the disjoint set.
+     * Checked linearly only when binary search misses.
+     * @var list<array{address: int, size: int, file_offset: int}>
+     */
+    private array $overlap_regions = [];
 
     /**
      * @param list<array{address: int, size: int, file_offset: int}> $region_index
@@ -51,20 +60,23 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
         private ProcessMemoryMap $process_memory_map,
         private MappedPathResolver $path_resolver,
     ) {
-        $this->sorted_region_index = $this->region_index;
+        $sorted = $this->region_index;
         usort(
-            $this->sorted_region_index,
+            $sorted,
             static fn (array $a, array $b): int => $a['address'] <=> $b['address'],
         );
-        $previous_end = null;
-        $this->can_use_sorted_lookup = true;
-        foreach ($this->sorted_region_index as $region) {
-            $region_end = $region['address'] + $region['size'];
-            if ($previous_end !== null && $region['address'] < $previous_end) {
-                $this->can_use_sorted_lookup = false;
-                break;
+        // Partition into disjoint (binary-searchable) and overlapping regions.
+        $previous_end = 0;
+        foreach ($sorted as $region) {
+            if ($region['address'] < $previous_end) {
+                $this->overlap_regions[] = $region;
+            } else {
+                $this->disjoint_regions[] = $region;
             }
-            $previous_end = $region_end;
+            $region_end = $region['address'] + $region['size'];
+            if ($region_end > $previous_end) {
+                $previous_end = $region_end;
+            }
         }
     }
 
@@ -91,9 +103,8 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     #[\Override]
     public function read(int $pid, int $remote_address, int $size): CData
     {
-        $region = $this->can_use_sorted_lookup
-            ? $this->findContainingRegionSorted($remote_address, $size)
-            : $this->findContainingRegionLinear($remote_address, $size);
+        $region = $this->findContainingRegionSorted($remote_address, $size)
+            ?? $this->findContainingRegionOverlap($remote_address, $size);
         if ($region !== null) {
             $region_start = $region['address'];
             $offset_in_region = $remote_address - $region_start;
@@ -153,12 +164,14 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     }
 
     /**
+     * Slow path: linear scan over overlapping regions only.
+     *
      * @return array{address: int, size: int, file_offset: int}|null
      */
-    private function findContainingRegionLinear(int $remote_address, int $size): ?array
+    private function findContainingRegionOverlap(int $remote_address, int $size): ?array
     {
         $remote_end = $remote_address + $size;
-        foreach ($this->region_index as $region) {
+        foreach ($this->overlap_regions as $region) {
             $region_start = $region['address'];
             $region_end = $region_start + $region['size'];
             if ($remote_address >= $region_start && $remote_end <= $region_end) {
@@ -169,19 +182,19 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     }
 
     /**
-     * Fast path for modern dumps whose captured intervals are disjoint.
+     * Fast path: binary search over disjoint regions.
      *
      * @return array{address: int, size: int, file_offset: int}|null
      */
     private function findContainingRegionSorted(int $remote_address, int $size): ?array
     {
         $lo = 0;
-        $hi = count($this->sorted_region_index) - 1;
+        $hi = count($this->disjoint_regions) - 1;
         $candidate = -1;
 
         while ($lo <= $hi) {
             $mid = ($lo + $hi) >> 1;
-            $region = $this->sorted_region_index[$mid];
+            $region = $this->disjoint_regions[$mid];
             if ($region['address'] <= $remote_address) {
                 $candidate = $mid;
                 $lo = $mid + 1;
@@ -194,7 +207,7 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
             return null;
         }
 
-        $region = $this->sorted_region_index[$candidate];
+        $region = $this->disjoint_regions[$candidate];
         $region_start = $region['address'];
         $region_end = $region_start + $region['size'];
         $remote_end = $remote_address + $size;

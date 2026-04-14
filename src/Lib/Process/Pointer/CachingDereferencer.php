@@ -50,7 +50,7 @@ final class CachingDereferencer implements Dereferencer
      * @return T
      */
     #[\Override]
-    public function deref(Pointer $pointer): mixed
+    public function deref(/* Pointer */ $pointer): mixed
     {
         $type = $pointer->type;
         $addr = $pointer->address;

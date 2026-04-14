@@ -35,7 +35,7 @@ final class RemoteProcessDereferencer implements Dereferencer
      * @return T
      */
     #[\Override]
-    public function deref(Pointer $pointer): mixed
+    public function deref(/* Pointer */ $pointer): mixed
     {
         $buffer = $this->memory_reader->read(
             $this->process_specifier->pid,

@@ -16,9 +16,13 @@ namespace Reli\Lib\Process\Pointer;
 interface Dereferencer
 {
     /**
+     * Runtime type hint removed from $pointer to avoid ZEND_RECV
+     * overhead on this ultra-hot path. The @param doc preserves
+     * static analysis coverage.
+     *
      * @template T of Dereferencable
      * @param Pointer<T> $pointer
      * @return T
      */
-    public function deref(Pointer $pointer): mixed;
+    public function deref(/* Pointer */ $pointer): mixed;
 }
