@@ -32,20 +32,11 @@ final class CollectorContext
     /** Tracks the function context matching a memory limit error location */
     public ?UserFunctionDefinitionContext $memory_limit_error_function_context = null;
 
-    /**
-     * $memo is retained for source compatibility but unused —
-     * the emit-state memo now lives on the Context objects as
-     * a private slot reachable through ReferenceContext::getMemoNodeId()
-     * / setMemoNodeId(). See ContextAnalyzer's class docblock.
-     *
-     * @param \WeakMap<ReferenceContext, int> $memo
-     */
     public function __construct(
         public Dereferencer $dereferencer,
         public ZendTypeReader $zend_type_reader,
         public ContextTreeSink $sink,
         public ContextAnalyzer $analyzer,
-        public \WeakMap $memo,
         public MemoryLocations $memory_locations,
         public ContextPools $context_pools,
         public int $map_ptr_base,

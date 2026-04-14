@@ -73,17 +73,16 @@ final class ObjectContextPool
     }
 
     /**
-     * Drain only entries that have been emitted (exist in memo).
-     * Unemitted entries are kept in the pool.
+     * Drain contexts that have been emitted (memo_node_id set) and
+     * keep unemitted ones in the pool.
      *
-     * @param \WeakMap<\Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext, int> $memo
      * @return \Generator<int, ObjectContext|ObjectHandlersContext>
      */
-    public function drainEmittedWithAddresses(\WeakMap $memo): \Generator
+    public function drainEmittedWithAddresses(): \Generator
     {
         $remaining = [];
         foreach ($this->contexts as $address => $context) {
-            if (isset($memo[$context])) {
+            if ($context->getMemoNodeId() !== null) {
                 yield $address => $context;
             } else {
                 $remaining[$address] = $context;
@@ -92,7 +91,7 @@ final class ObjectContextPool
         $this->contexts = $remaining;
         $remaining_handlers = [];
         foreach ($this->handlers_contexts as $address => $context) {
-            if (isset($memo[$context])) {
+            if ($context->getMemoNodeId() !== null) {
                 yield $address => $context;
             } else {
                 $remaining_handlers[$address] = $context;

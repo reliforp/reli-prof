@@ -59,14 +59,8 @@ final class ContextPools
     }
 
     /**
-     * Drain all pool entries that have been emitted and record
-     * their address→node_id mappings in the given map. Entries not
-     * yet emitted remain in the pool for later use.
-     *
-     * The memo that used to be a WeakMap parameter now lives on the
-     * Context objects as `$context->memo_node_id` (see
-     * ReferenceContextDefault), so this method just walks the pools
-     * and reads the property directly — no WeakMap lookup.
+     * Drain all pool entries (regardless of emit state) and record
+     * their address→node_id mappings in the given map.
      *
      * @param array<int, int> $address_map
      */
@@ -85,6 +79,29 @@ final class ContextPools
             $address_map,
         );
         $this->drainPoolToAddressMap($this->closure_context_pool->drainWithAddresses(), $address_map);
+    }
+
+    /**
+     * Drain only emitted pool entries and record their address→node_id
+     * mappings. Unemitted entries remain in the pools.
+     *
+     * @param array<int, int> $address_map
+     */
+    public function drainEmittedToAddressMap(array &$address_map): void
+    {
+        $this->drainPoolToAddressMap($this->string_context_pool->drainEmittedWithAddresses(), $address_map);
+        $this->drainPoolToAddressMap($this->array_context_pool->drainEmittedWithAddresses(), $address_map);
+        $this->drainPoolToAddressMap($this->object_context_pool->drainEmittedWithAddresses(), $address_map);
+        $this->drainPoolToAddressMap(
+            $this->php_reference_context_pool->drainEmittedWithAddresses(),
+            $address_map,
+        );
+        $this->drainPoolToAddressMap($this->resource_context_pool->drainEmittedWithAddresses(), $address_map);
+        $this->drainPoolToAddressMap(
+            $this->user_function_definition_context_pool->drainEmittedWithAddresses(),
+            $address_map,
+        );
+        $this->drainPoolToAddressMap($this->closure_context_pool->drainEmittedWithAddresses(), $address_map);
     }
 
     /**

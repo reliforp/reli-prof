@@ -51,14 +51,16 @@ final class ResourceContextPool
     }
 
     /**
-     * @param \WeakMap<ReferenceContext, int> $memo
+     * Drain contexts that have been emitted (memo_node_id set) and
+     * keep unemitted ones in the pool.
+     *
      * @return \Generator<int, ResourceContext>
      */
-    public function drainEmittedWithAddresses(\WeakMap $memo): \Generator
+    public function drainEmittedWithAddresses(): \Generator
     {
         $remaining = [];
         foreach ($this->contexts as $address => $context) {
-            if (isset($memo[$context])) {
+            if ($context->getMemoNodeId() !== null) {
                 yield $address => $context;
             } else {
                 $remaining[$address] = $context;

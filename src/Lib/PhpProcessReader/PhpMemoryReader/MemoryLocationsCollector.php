@@ -223,8 +223,6 @@ final class MemoryLocationsCollector
             $sink->setRegionBoundaries($region_boundaries);
         }
         $analyzer = new ContextAnalyzer();
-        /** @var \WeakMap<\Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext, int> $memo */
-        $memo = new \WeakMap();
 
         assert(!is_null($eg->function_table));
         assert(!is_null($eg->class_table));
@@ -240,7 +238,6 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $sink,
             $analyzer,
-            $memo,
             $memory_locations,
             $context_pools,
             $cg->map_ptr_base,
@@ -266,6 +263,7 @@ final class MemoryLocationsCollector
         $queue->push(new Collector\Job\EmitIncludedFilesJob($eg->included_files));
 
         // Main iterative loop
+        $drain_counter = 0;
         while (!$queue->isEmpty()) {
             $job = $queue->pop();
             assert($job !== null);
@@ -275,7 +273,17 @@ final class MemoryLocationsCollector
                 // Skip failed jobs (bad pointers, unmapped memory, etc.)
                 // and continue processing remaining queue
             }
+            // Periodically drain emitted contexts from the pools to
+            // free memory. Once a context has been emitted and its
+            // node_id recorded in address_map, the pool entry is no
+            // longer needed — subsequent dedup hits address_map directly.
+            if (++$drain_counter >= 10000) {
+                $context_pools->drainEmittedToAddressMap($ctx->address_map);
+                $drain_counter = 0;
+            }
         }
+        // Final drain for any remaining emitted contexts
+        $context_pools->drainEmittedToAddressMap($ctx->address_map);
 
         // Post-processing: memory limit violation real call stack recovery.
         // This is a rare edge case that reconstructs the call stack from
