@@ -214,6 +214,8 @@ final class MemoryDumpReader
     private function computeRegionSumsFromSink(
         \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
     ): array {
+        $sink->flush();
+
         $path = $sink->getLocationTmpPath();
         $fh = fopen($path, 'rb');
         if ($fh === false) {

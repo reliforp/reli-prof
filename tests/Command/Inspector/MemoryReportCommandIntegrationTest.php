@@ -399,6 +399,10 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
         $binary_report = json_decode($binary_json, true);
         $this->assertIsArray($sqlite_report);
         $this->assertIsArray($binary_report);
+        $this->assertSame(
+            $sqlite_report['meta']['heap_memory_analyzed_percentage'] ?? null,
+            $binary_report['meta']['heap_memory_analyzed_percentage'] ?? null,
+        );
 
         $sqlite_findings = $sqlite_report['findings'] ?? [];
         $binary_findings = $binary_report['findings'] ?? [];
