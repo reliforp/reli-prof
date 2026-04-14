@@ -75,7 +75,9 @@ final class ZendMmChunk implements CDataDereferencable
                 \FFI::sizeof($this->casted_cdata->casted->heap_slot),
             ),
         );
-        $this->map = new ZendMmPageMap($this->casted_cdata->casted->map);
+        $this->map = new ZendMmPageMap(
+            $this->casted_cdata->createSubView($this->casted_cdata->casted->map)
+        );
     }
 
     public function __get(string $field_name): mixed

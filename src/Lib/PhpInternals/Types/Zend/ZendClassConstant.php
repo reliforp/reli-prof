@@ -82,7 +82,7 @@ class ZendClassConstant implements PointedTypeResolverAware
                 : null
             ,
             'type' => $this->type = new ZendType(
-                $this->casted_cdata->casted->type,
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->type),
             ),
         };
     }

@@ -99,7 +99,7 @@ final class ZendString implements LazyDereferencable, CDataDereferencable
         assert($this->casted_cdata !== null);
         return match ($field_name) {
             'gc' => $this->gc = new ZendRefcountedH(
-                $this->casted_cdata->casted->gc,
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->gc),
             ),
             'h' => $this->h = $this->casted_cdata->casted->h,
             'len' => $this->len = $this->casted_cdata->casted->len,

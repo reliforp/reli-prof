@@ -98,7 +98,9 @@ class ZendArray implements CDataDereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'gc' => new ZendRefcountedH($this->casted_cdata->casted->gc),
+            'gc' => new ZendRefcountedH(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->gc)
+            ),
             'flags' => $this->flags = $this->casted_cdata->casted->u->flags,
             'nTableMask' => $this->nTableMask = $this->casted_cdata->casted->nTableMask,
             'arData' => $this->arData = $this->casted_cdata->casted->arData !== null

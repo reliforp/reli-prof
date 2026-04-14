@@ -47,7 +47,9 @@ class ZendReference implements PointedTypeResolverAware
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'gc' => $this->gc = new ZendRefcountedH($this->casted_cdata->casted->gc),
+            'gc' => $this->gc = new ZendRefcountedH(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->gc)
+            ),
             'val' => $this->val = $this->createInlineDereferencable('val', Zval::class),
         };
     }

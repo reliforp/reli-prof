@@ -52,7 +52,9 @@ final class ZendObject implements CDataDereferencable
         private CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
-        $this->zend_refcounted_h = new ZendRefcountedH($casted_cdata->casted->gc);
+        $this->zend_refcounted_h = new ZendRefcountedH(
+            $casted_cdata->createSubView($casted_cdata->casted->gc)
+        );
         unset($this->properties);
         unset($this->ce);
         unset($this->properties_table);

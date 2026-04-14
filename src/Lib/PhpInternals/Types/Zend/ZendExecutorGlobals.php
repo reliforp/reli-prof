@@ -230,7 +230,7 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
                 : null
             ,
             'objects_store' => $this->objects_store = new ZendObjectsStore(
-                $this->casted_cdata->casted->objects_store,
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->objects_store),
             ),
             'included_files' => $this->included_files = $this->createInlineDereferencable(
                 'included_files',

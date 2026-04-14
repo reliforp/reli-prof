@@ -17,6 +17,8 @@ use FFI;
 use Reli\BaseTestCase;
 use Reli\Lib\PhpInternals\Types\Zend\ZendClassEntryInfo;
 use Reli\Lib\PhpInternals\Types\Zend\ZendOpArray;
+use Reli\Lib\PhpInternals\Types\Zend\ZendObjectsStore;
+use Reli\Lib\PhpInternals\Types\Zend\ZendRefcountedH;
 use Reli\Lib\PhpInternals\Types\Zend\ZendValue;
 
 class CastedCDataTest extends BaseTestCase
@@ -187,5 +189,80 @@ class CastedCDataTest extends BaseTestCase
 
         self::assertSame(55, $op_array->line_start);
         self::assertSame(89, $op_array->line_end);
+    }
+
+    /**
+     * @psalm-suppress PossiblyNullArgument
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedPropertyAssignment
+     * @psalm-suppress MixedPropertyFetch
+     * @psalm-suppress ArgumentTypeCoercion
+     * @psalm-suppress UndefinedPropertyFetch
+     */
+    public function testZendRefcountedHKeepsSubviewOwnerAlive(): void
+    {
+        $ffi = FFI::cdef(
+            '
+            typedef struct { unsigned int type_info; } zend_refcounted_u;
+            typedef struct { unsigned int refcount; zend_refcounted_u u; } zend_refcounted_h;
+            typedef struct { zend_refcounted_h gc; } root_t;
+            '
+        );
+        $root_cdata = $ffi->new('root_t');
+        $root_cdata->gc->refcount = 7;
+        $root_cdata->gc->u->type_info = 0x1234;
+
+        $root = new CastedCData($root_cdata, $root_cdata);
+        $gc = new ZendRefcountedH($root->createSubView($root_cdata->gc));
+
+        unset($root);
+        unset($root_cdata);
+        gc_collect_cycles();
+
+        self::assertSame(7, $gc->refcount);
+        self::assertSame(0x1234, $gc->type_info);
+    }
+
+    /**
+     * @psalm-suppress PossiblyNullArgument
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedPropertyAssignment
+     * @psalm-suppress MixedPropertyFetch
+     * @psalm-suppress ArgumentTypeCoercion
+     * @psalm-suppress UndefinedPropertyFetch
+     */
+    public function testZendObjectsStoreKeepsSubviewOwnerAlive(): void
+    {
+        $ffi = FFI::cdef(
+            '
+            typedef struct {
+                unsigned int size;
+                unsigned int top;
+                unsigned int free_list_head;
+                void *object_buckets;
+            } zend_objects_store;
+            typedef struct {
+                zend_objects_store objects_store;
+            } root_t;
+            '
+        );
+        $root_cdata = $ffi->new('root_t');
+        $root_cdata->objects_store->size = 11;
+        $root_cdata->objects_store->top = 22;
+        $root_cdata->objects_store->free_list_head = 33;
+        $root_cdata->objects_store->object_buckets = null;
+
+        $root = new CastedCData($root_cdata, $root_cdata);
+        $store = new ZendObjectsStore($root->createSubView($root_cdata->objects_store));
+
+        unset($root);
+        unset($root_cdata);
+        gc_collect_cycles();
+
+        self::assertSame(11, $store->size);
+        self::assertSame(22, $store->top);
+        self::assertSame(33, $store->free_list_head);
     }
 }
