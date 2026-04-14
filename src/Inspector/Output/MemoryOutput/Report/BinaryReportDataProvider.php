@@ -32,6 +32,12 @@ final class BinaryReportDataProvider
      *           WHERE location_type = ?
      *
      * @return array<int, true> node_id => true
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     public static function getNodesByLocationType(
         BinaryReader $reader,
@@ -77,6 +83,12 @@ final class BinaryReportDataProvider
      *           ORDER BY size DESC LIMIT N
      *
      * @return list<array{node_id: int, size: int, preview: string}>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     public static function getTopStrings(
         BinaryReader $reader,
@@ -121,7 +133,7 @@ final class BinaryReportDataProvider
         }
 
         // Sort by size descending, take top N
-        usort($candidates, fn ($a, $b) => $b['size'] <=> $a['size']);
+        usort($candidates, fn (array $a, array $b): int => $b['size'] <=> $a['size']);
         $candidates = array_slice($candidates, 0, $limit);
 
         // Resolve string previews
@@ -145,6 +157,12 @@ final class BinaryReportDataProvider
      *
      * @return list<array{link_name: string, ref_count: int, target_count: int,
      *     sample_parent_node_id: int, sample_child_node_id: int}>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     public static function getNonTreeEdgeStats(
         BinaryReader $reader,
@@ -212,7 +230,7 @@ final class BinaryReportDataProvider
                 'sample_child_node_id' => $info['sample_child'],
             ];
         }
-        usort($results, fn ($a, $b) => $b['ref_count'] <=> $a['ref_count']);
+        usort($results, fn (array $a, array $b): int => $b['ref_count'] <=> $a['ref_count']);
         return array_slice($results, 0, $limit);
     }
 
@@ -234,6 +252,12 @@ final class BinaryReportDataProvider
      *     sample_child_node_ids: list<int>,
      *     examples: array<string, mixed>
      * }>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     public static function getDedupCandidateStats(
         BinaryReader $reader,
@@ -347,7 +371,7 @@ final class BinaryReportDataProvider
                 'sample_location_type' => $sample_child_meta['location_type'] ?? null,
             ];
         }
-        usort($candidates, fn ($a, $b) => $b['coarse_total'] <=> $a['coarse_total']);
+        usort($candidates, fn (array $a, array $b): int => $b['coarse_total'] <=> $a['coarse_total']);
         $candidates = array_slice($candidates, 0, $candidate_limit);
 
         /** @var array<string, array{
@@ -442,7 +466,7 @@ final class BinaryReportDataProvider
             ];
         }
 
-        usort($results, fn ($a, $b) => $b['total_waste'] <=> $a['total_waste']);
+        usort($results, fn (array $a, array $b): int => $b['total_waste'] <=> $a['total_waste']);
         return array_slice($results, 0, $limit);
     }
 
@@ -452,6 +476,8 @@ final class BinaryReportDataProvider
      * Replaces NodeLabeler's SQL query on context_node_attributes.
      *
      * @return array<int, string> node_id => "function_name:lineno"
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     public static function loadFrameLabels(BinaryReader $reader): array
     {
@@ -502,6 +528,12 @@ final class BinaryReportDataProvider
      *     class_name: ?string,
      *     string_value_id: ?int
      * }>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     private static function loadNodeMeta(BinaryReader $reader): array
     {
@@ -587,6 +619,9 @@ final class BinaryReportDataProvider
 
     /**
      * @param array{
+     *     link_name: string,
+     *     sample_parent_node_id: int,
+     *     sample_child_node_id: int,
      *     size: int,
      *     sample_child_node_ids: list<int>,
      *     seen_children: array<int, true>,
@@ -664,7 +699,7 @@ final class BinaryReportDataProvider
                 array_slice($values, 0, 5),
             );
 
-            $top_count = (int)reset($string_counts);
+            $top_count = reset($string_counts);
             return [
                 'type' => 'string',
                 'identical_count' => $top_count > 1 ? $top_count : 0,

@@ -62,30 +62,30 @@ final class DedupCandidatePass implements PassInterface
             && $this->substrate->hasSubtreeSizes();
 
         foreach ($rows as $row) {
-            $link_name = (string)$row['link_name'];
+            $link_name = $row['link_name'];
             if ($link_name === 'key') {
                 continue;
             }
 
-            $sample_child_node_id = (int)$row['sample_child_node_id'];
+            $sample_child_node_id = $row['sample_child_node_id'];
             $sample_location_type = $row['sample_location_type']
                 ?? $this->loadNodeLocationInfo($sample_child_node_id)['location_type'];
             if ($sample_location_type === 'ZendArrayMemoryLocation') {
                 continue;
             }
 
-            $cnt = (int)$row['cnt'];
-            $shallow_size = (int)$row['size'];
-            $total = (int)$row['total_waste'];
+            $cnt = $row['cnt'];
+            $shallow_size = $row['size'];
+            $total = $row['total_waste'];
             $size = $shallow_size;
+            /** @var list<int>|null $sample_child_node_ids */
+            $sample_child_node_ids = $row['sample_child_node_ids'] ?? null;
 
             if ($use_retained) {
                 $retained = $this->getRetainedForDedup(
                     $link_name,
                     $shallow_size,
-                    isset($row['sample_child_node_ids']) && is_array($row['sample_child_node_ids'])
-                        ? array_map('intval', $row['sample_child_node_ids'])
-                        : null,
+                    $sample_child_node_ids,
                 );
                 if ($retained > $shallow_size) {
                     $size = $retained;
@@ -93,7 +93,7 @@ final class DedupCandidatePass implements PassInterface
                 }
             }
 
-            $sample_parent_node_id = (int)$row['sample_parent_node_id'];
+            $sample_parent_node_id = $row['sample_parent_node_id'];
             if ($this->substrate !== null) {
                 [
                     'source_class' => $dedup_src,
@@ -115,9 +115,8 @@ final class DedupCandidatePass implements PassInterface
                 $dedup_tgt,
             );
 
-            $examples = isset($row['examples']) && is_array($row['examples'])
-                ? $row['examples']
-                : $this->getDedupExamples($link_name, $shallow_size);
+            /** @var array<string, mixed> $examples */
+            $examples = $row['examples'] ?? $this->getDedupExamples($link_name, $shallow_size);
 
             [
                 'hypothesis' => $hypothesis,
@@ -168,7 +167,16 @@ final class DedupCandidatePass implements PassInterface
      */
     private function loadDedupRowsFromSql(): array
     {
-        return $this->db->query($this->childSizesCteSql() . "
+        /** @var list<array{
+         *     link_name: string,
+         *     size: int,
+         *     cnt: int,
+         *     total_waste: int,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int
+         * }> $rows
+         */
+        $rows = $this->db->query($this->childSizesCteSql() . "
             SELECT
                 e.link_name,
                 cs.node_size as size,
@@ -189,6 +197,7 @@ final class DedupCandidatePass implements PassInterface
             ORDER BY total_waste DESC
             LIMIT 10
         ")->fetchAll(\PDO::FETCH_ASSOC);
+        return $rows;
     }
 
     private function childSizesCteSql(): string
@@ -407,10 +416,16 @@ final class DedupCandidatePass implements PassInterface
         $this->tree_parent_stmt->execute([$this->run_id, $child_node_id]);
         /** @var array{parent_node_id?: int|null, link_name?: string}|false $row */
         $row = $this->tree_parent_stmt->fetch(\PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return [
+                'parent_node_id' => null,
+                'link_name' => null,
+            ];
+        }
 
         return [
-            'parent_node_id' => array_key_exists('parent_node_id', $row ?: [])
-                ? ($row['parent_node_id'] !== null ? (int)$row['parent_node_id'] : null)
+            'parent_node_id' => array_key_exists('parent_node_id', $row)
+                ? ($row['parent_node_id'] !== null ? $row['parent_node_id'] : null)
                 : null,
             'link_name' => $row['link_name'] ?? null,
         ];
@@ -461,7 +476,12 @@ final class DedupCandidatePass implements PassInterface
             ");
 
             $sample_child_node_ids = [];
-            while (($nid = $stmt->fetchColumn()) !== false) {
+            while (true) {
+                /** @var int|string|false $nid */
+                $nid = $stmt->fetchColumn();
+                if ($nid === false) {
+                    break;
+                }
                 $sample_child_node_ids[] = (int)$nid;
             }
         }
@@ -588,7 +608,9 @@ final class DedupCandidatePass implements PassInterface
         if (($examples['type'] ?? null) === 'string') {
             $identical_count = (int)($examples['identical_count'] ?? 0);
             if ($identical_count > 0) {
-                $pct = $count > 0 ? $identical_count / $count * 100.0 : 0.0;
+                $pct = $count > 0
+                    ? ((float)$identical_count / (float)$count) * 100.0
+                    : 0.0;
                 $hypothesis = sprintf(
                     '%d/%d copies have identical content (%.0f%%). Example: "%s"',
                     $identical_count,
@@ -600,18 +622,22 @@ final class DedupCandidatePass implements PassInterface
                     ? FindingConfidence::High
                     : FindingConfidence::Medium;
             } else {
+                /** @var list<string> $samples */
                 $samples = is_array($examples['samples'] ?? null)
                     ? $examples['samples']
                     : [];
                 $hypothesis = sprintf(
                     'Same size but different content. Examples: "%s", "%s"',
-                    (string)($samples[0] ?? '?'),
-                    (string)($samples[1] ?? '?'),
+                    $samples[0] ?? '?',
+                    $samples[1] ?? '?',
                 );
             }
         } elseif (($examples['type'] ?? null) === 'object') {
-            $samples = is_array($examples['samples'] ?? null)
-                ? array_slice($examples['samples'], 0, 3)
+            /** @var mixed $raw_samples */
+            $raw_samples = $examples['samples'] ?? null;
+            /** @var list<string> $samples */
+            $samples = is_array($raw_samples)
+                ? array_slice($raw_samples, 0, 3)
                 : [];
             if ($samples !== []) {
                 $hypothesis .= sprintf('. Examples: %s', implode(', ', $samples));

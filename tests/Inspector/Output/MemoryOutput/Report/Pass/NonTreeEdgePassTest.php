@@ -19,14 +19,18 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 
 class NonTreeEdgePassTest extends BaseTestCase
 {
-    private string $db_path;
+    private string $db_path = '';
 
+    #[\Override]
     protected function setUp(): void
     {
         parent::setUp();
-        $this->db_path = tempnam(sys_get_temp_dir(), 'reli_non_tree_edge_test_') . '.db';
+        $path = tempnam(sys_get_temp_dir(), 'reli_non_tree_edge_test_');
+        self::assertNotFalse($path);
+        $this->db_path = $path . '.db';
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         @unlink($this->db_path);

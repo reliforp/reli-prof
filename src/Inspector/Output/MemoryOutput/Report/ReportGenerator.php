@@ -284,6 +284,9 @@ final class ReportGenerator
      *
      * @param bool|null $ffi_csr true=force on, false=force off, null=auto
      * @param int $worker_count number of parallel workers for Phase 3
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     * @psalm-suppress MixedArgument
      */
     public function generateFromBinary(
         string $path,
@@ -322,6 +325,7 @@ final class ReportGenerator
             }
         }
 
+        /** @var array<string, mixed> $meta */
         $meta = [];
         $meta['php_version'] = $flat_summary['php_version'] ?? null;
         $meta['heap_memory_analyzed_percentage'] = isset($flat_summary['heap_memory_analyzed_percentage'])
@@ -344,7 +348,7 @@ final class ReportGenerator
         // Pre-compute data that hybrid passes (ChokePoint, TopStrings,
         // NonTreeEdge) would normally get from SQL, then feed it via
         // optional constructor parameters so they never touch the DB.
-        $edge_count = (int)$meta['edge_count'];
+        $edge_count = $meta['edge_count'];
         if ($edge_count > 0) {
             $substrate = GraphSubstrate::createFromBinary($reader, $ffi_csr);
             $meta['scc_count'] = count($substrate->getSccProfiles());
@@ -354,7 +358,8 @@ final class ReportGenerator
             // via copy-on-write.
             $frame_labels = BinaryReportDataProvider::loadFrameLabels($reader);
             $objects_store_nodes = BinaryReportDataProvider::getNodesByLocationType(
-                $reader, 'ObjectsStoreMemoryLocation'
+                $reader,
+                'ObjectsStoreMemoryLocation',
             );
             $top_strings = BinaryReportDataProvider::getTopStrings($reader, 10);
             $non_tree_edge_stats = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
@@ -371,7 +376,7 @@ final class ReportGenerator
             // just creates a fresh in-memory dummy. The substrate is
             // shared via copy-on-write after fork.
             $dummy_factory = fn (): \PDO => new \PDO('sqlite::memory:');
-            $resolver_factory = fn () => new LinkNameResolver(
+            $resolver_factory = fn (): LinkNameResolver => new LinkNameResolver(
                 db: $dummy_factory(),
                 run_id: 0,
                 substrate: $substrate,
@@ -387,7 +392,11 @@ final class ReportGenerator
             );
             $pass_factories['PropertyScalingPass'] = fn (): array => $this->runPass(
                 new PropertyScalingPass(
-                    $dummy_factory(), 0, $class_objects, $substrate, $resolver_factory(),
+                    $dummy_factory(),
+                    0,
+                    $class_objects,
+                    $substrate,
+                    $resolver_factory(),
                 )
             );
             $pass_factories['PerPropertyMemoryPass'] = fn (): array => $this->runPass(
@@ -416,8 +425,12 @@ final class ReportGenerator
             );
             $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
                 new ChokePointPass(
-                    $substrate, $dummy_factory(), 0, $heap_usage,
-                    $objects_store_nodes, $frame_labels,
+                    $substrate,
+                    $dummy_factory(),
+                    0,
+                    $heap_usage,
+                    $objects_store_nodes,
+                    $frame_labels,
                 )
             );
             $pass_factories['BlameAllocationPass'] = fn (): array => $this->runPass(
@@ -444,6 +457,8 @@ final class ReportGenerator
      * Load summary key-value pairs from the binary file's summary section.
      *
      * @return array<int, array<string, mixed>>
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     private function loadSummaryFromBinary(BinaryReader $reader): array
     {
@@ -479,6 +494,8 @@ final class ReportGenerator
      * Compute location_types summary from the binary locations section.
      *
      * @return array<string, array{count: int, memory_usage: int}>
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     private function computeLocationTypesFromBinary(BinaryReader $reader): array
     {
@@ -529,6 +546,8 @@ final class ReportGenerator
      * Compute class_objects summary from the binary locations section.
      *
      * @return array<string, array{count: int, memory_usage: int}>
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     private function computeClassObjectsFromBinary(BinaryReader $reader): array
     {

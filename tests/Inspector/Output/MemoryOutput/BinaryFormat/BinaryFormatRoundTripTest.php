@@ -26,13 +26,17 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLoc
 
 class BinaryFormatRoundTripTest extends TestCase
 {
-    private string $rmem_path;
+    private string $rmem_path = '';
 
+    #[\Override]
     protected function setUp(): void
     {
-        $this->rmem_path = tempnam(sys_get_temp_dir(), 'reli_test_') . '.rmem';
+        $path = tempnam(sys_get_temp_dir(), 'reli_test_');
+        self::assertNotFalse($path);
+        $this->rmem_path = $path . '.rmem';
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         if (file_exists($this->rmem_path)) {
@@ -82,6 +86,7 @@ class BinaryFormatRoundTripTest extends TestCase
 
         $data = $reader->getSectionData('another');
         $vals = unpack('V2', $data);
+        self::assertIsArray($vals);
         $this->assertSame(42, $vals[1]);
         $this->assertSame(99, $vals[2]);
         $this->assertSame(2, $reader->getSectionElementCount('another'));
@@ -384,9 +389,11 @@ class BinaryFormatRoundTripTest extends TestCase
 
         $this->assertNotNull($dedup_finding);
         $this->assertSame(60, $dedup_finding->facts['count']);
+        $examples = $dedup_finding->facts['examples'] ?? null;
+        self::assertIsArray($examples);
         $this->assertSame(
             'same-shared-string',
-            $dedup_finding->facts['examples']['sample_value'],
+            $examples['sample_value'] ?? null,
         );
     }
 }

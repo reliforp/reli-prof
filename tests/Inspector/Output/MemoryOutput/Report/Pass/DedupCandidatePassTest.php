@@ -19,14 +19,18 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 
 class DedupCandidatePassTest extends BaseTestCase
 {
-    private string $db_path;
+    private string $db_path = '';
 
+    #[\Override]
     protected function setUp(): void
     {
         parent::setUp();
-        $this->db_path = tempnam(sys_get_temp_dir(), 'reli_dedup_candidate_test_') . '.db';
+        $path = tempnam(sys_get_temp_dir(), 'reli_dedup_candidate_test_');
+        self::assertNotFalse($path);
+        $this->db_path = $path . '.db';
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         @unlink($this->db_path);
@@ -62,9 +66,13 @@ class DedupCandidatePassTest extends BaseTestCase
             $dedup_graph->facts['count'],
         );
         $this->assertSame(60, $dedup_sql->facts['count']);
+        $sql_examples = $dedup_sql->facts['examples'] ?? null;
+        $graph_examples = $dedup_graph->facts['examples'] ?? null;
+        self::assertIsArray($sql_examples);
+        self::assertIsArray($graph_examples);
         $this->assertSame(
-            $dedup_sql->facts['examples']['sample_value'],
-            $dedup_graph->facts['examples']['sample_value'],
+            $sql_examples['sample_value'] ?? null,
+            $graph_examples['sample_value'] ?? null,
         );
     }
 
