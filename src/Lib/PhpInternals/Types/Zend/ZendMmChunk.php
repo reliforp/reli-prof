@@ -66,10 +66,7 @@ final class ZendMmChunk implements CDataDereferencable
         unset($this->num);
         unset($this->free_pages);
         $this->heap_slot = new ZendMmHeap(
-            new CastedCData(
-                $this->casted_cdata->raw,
-                $this->casted_cdata->casted->heap_slot,
-            ),
+            $this->casted_cdata->createSubView($this->casted_cdata->casted->heap_slot),
             new Pointer(
                 ZendMmHeap::class,
                 $this->pointer->address

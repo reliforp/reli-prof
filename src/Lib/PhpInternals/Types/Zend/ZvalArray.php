@@ -107,10 +107,7 @@ final class ZvalArray implements \ArrayAccess, PointedTypeResolverAware
         $zval_class = $this->pointed_type_resolver->resolve(Zval::class);
         assert(is_a($zval_class, CDataDereferencable::class, true));
         return $zval_class::fromCastedCData(
-            new CastedCData(
-                $this->casted_cdata->casted[$offset],
-                $this->casted_cdata->casted[$offset],
-            ),
+            $this->casted_cdata->createSubView($this->casted_cdata->casted[$offset]),
             new Pointer(
                 $zval_class,
                 $this->pointer->address + 16 * $offset,
