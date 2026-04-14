@@ -48,7 +48,7 @@ final class Aggregator
                 continue;
             }
             $matched++;
-            $leaf_id = self::projectId($model, $stack[0], $opts->no_line);
+            $leaf_id = self::projectId($model, $stack[0], $opts->no_line, $opts->with_opcode);
             $counts[$leaf_id] = ($counts[$leaf_id] ?? 0) + 1;
         }
         return ['counts' => $counts, 'matched_samples' => $matched];
@@ -71,7 +71,7 @@ final class Aggregator
             $matched++;
             $seen = [];
             foreach ($stack as $fid) {
-                $kid = self::projectId($model, $fid, $opts->no_line);
+                $kid = self::projectId($model, $fid, $opts->no_line, $opts->with_opcode);
                 if (isset($seen[$kid])) {
                     continue;
                 }
@@ -102,12 +102,12 @@ final class Aggregator
             }
             $n = count($stack);
             for ($i = 0; $i < $n; $i++) {
-                if (self::projectId($model, $stack[$i], $opts->no_line) !== $focus_id) {
+                if (self::projectId($model, $stack[$i], $opts->no_line, $opts->with_opcode) !== $focus_id) {
                     continue;
                 }
                 $matched++;
                 if ($i + 1 < $n) {
-                    $caller = self::projectId($model, $stack[$i + 1], $opts->no_line);
+                    $caller = self::projectId($model, $stack[$i + 1], $opts->no_line, $opts->with_opcode);
                 } else {
                     $caller = -1;
                 }
@@ -138,13 +138,13 @@ final class Aggregator
             }
             $n = count($stack);
             for ($i = $n - 1; $i >= 0; $i--) {
-                if (self::projectId($model, $stack[$i], $opts->no_line) !== $focus_id) {
+                if (self::projectId($model, $stack[$i], $opts->no_line, $opts->with_opcode) !== $focus_id) {
                     continue;
                 }
                 $matched++;
                 $prev = $i - 1;
                 if ($prev >= 0) {
-                    $callee = self::projectId($model, $stack[$prev], $opts->no_line);
+                    $callee = self::projectId($model, $stack[$prev], $opts->no_line, $opts->with_opcode);
                 } else {
                     $callee = -2;
                 }
@@ -159,7 +159,7 @@ final class Aggregator
      * Look up the display label for a key id, including the synthetic
      * `<root>` (-1) and `<leaf>` (-2) markers used by callers/callees.
      */
-    public static function labelFor(TraceModel $model, int $key_id, bool $no_line): string
+    public static function labelFor(TraceModel $model, int $key_id, bool $no_line, bool $with_opcode = false): string
     {
         if ($key_id === -1) {
             return '<root>';
@@ -167,12 +167,17 @@ final class Aggregator
         if ($key_id === -2) {
             return '<leaf>';
         }
-        $keys = $model->keysFor($no_line);
+        $keys = $model->keysFor($no_line, $with_opcode);
         return $keys[$key_id] ?? "??:{$key_id}";
     }
 
-    private static function projectId(TraceModel $model, int $frame_id, bool $no_line): int
+    private static function projectId(TraceModel $model, int $frame_id, bool $no_line, bool $with_opcode = false): int
     {
+        if ($with_opcode) {
+            return $no_line
+                ? $model->no_line_opcode_map[$frame_id]
+                : $model->opcode_map[$frame_id];
+        }
         return $no_line ? $model->no_line_map[$frame_id] : $frame_id;
     }
 
@@ -184,10 +189,10 @@ final class Aggregator
         if ($opts->match_re === null) {
             return true;
         }
-        $keys = $model->keysFor($opts->no_line);
+        $keys = $model->keysFor($opts->no_line, $opts->with_opcode);
         $seen = [];
         foreach ($stack as $frame_id) {
-            $kid = self::projectId($model, $frame_id, $opts->no_line);
+            $kid = self::projectId($model, $frame_id, $opts->no_line, $opts->with_opcode);
             if (isset($seen[$kid])) {
                 continue;
             }
