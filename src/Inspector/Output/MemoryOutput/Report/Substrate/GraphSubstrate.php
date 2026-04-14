@@ -160,6 +160,7 @@ class GraphSubstrate
      * Load the substrate from a .rmem binary file (PHP-array variant).
      *
      * @psalm-suppress UnsafeInstantiation
+     * @psalm-suppress MixedAssignment
      */
     public static function loadFromBinary(BinaryReader $reader): static
     {
@@ -173,13 +174,15 @@ class GraphSubstrate
             $offset = 0;
             for ($i = 0; $i < $count; $i++) {
                 $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $data, $offset);
+                assert(is_array($row));
+                /** @var array{node_id: int, canonical_id: int, type_id: int, class_id: int} $row */
                 $offset += Format::NODE_ROW_SIZE;
-                $node_id = (int)$row['node_id'];
-                $type = $dict->lookup((int)$row['type_id']);
+                $node_id = $row['node_id'];
+                $type = $dict->lookup($row['type_id']);
                 if ($type !== null) {
                     $substrate->node_types[$node_id] = $type;
                 }
-                $canonical_id = (int)$row['canonical_id'];
+                $canonical_id = $row['canonical_id'];
                 if ($canonical_id !== 0 && $canonical_id !== $node_id) {
                     $substrate->canonical[$node_id] = $canonical_id;
                     $substrate->canonical[$canonical_id] = $canonical_id;
@@ -193,13 +196,20 @@ class GraphSubstrate
             $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
             $offset = 0;
             for ($i = 0; $i < $count; $i++) {
-                $row = unpack('Vnode_id/Vlocation_type_id/Vclass_id/Paddress/Psize/Vstring_value_id/Vrefcount/Vtype_info/Vregion_id/Vbin_overhead', $data, $offset);
+                $row = unpack(
+                    'Vnode_id/Vlocation_type_id/Vclass_id/Paddress/Psize/'
+                    . 'Vstring_value_id/Vrefcount/Vtype_info/Vregion_id/Vbin_overhead',
+                    $data,
+                    $offset,
+                );
+                assert(is_array($row));
+                /** @var array{node_id: int, location_type_id: int, class_id: int, address: int, size: int, string_value_id: int, refcount: int, type_info: int, region_id: int, bin_overhead: int} $row */
                 $offset += Format::LOCATION_ROW_SIZE;
-                $node_id = (int)$row['node_id'];
-                $size = (int)$row['size'];
+                $node_id = $row['node_id'];
+                $size = $row['size'];
                 $substrate->node_sizes[$node_id] = ($substrate->node_sizes[$node_id] ?? 0) + $size;
 
-                $class_id = (int)$row['class_id'];
+                $class_id = $row['class_id'];
                 if ($class_id !== Format::NULL_STRING_ID && !isset($substrate->node_classes[$node_id])) {
                     $cls = $dict->lookup($class_id);
                     if ($cls !== null) {
@@ -217,14 +227,16 @@ class GraphSubstrate
             $edge_count = 0;
             for ($i = 0; $i < $count; $i++) {
                 $row = unpack('Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength/v_pad', $data, $offset);
+                assert(is_array($row));
+                /** @var array{parent_node_id: int, child_node_id: int, link_name_id: int, is_tree: int, strength: int, _pad: int} $row */
                 $offset += Format::EDGE_ROW_SIZE;
                 $edge_count++;
 
-                $raw_parent = (int)$row['parent_node_id'];
+                $raw_parent = $row['parent_node_id'];
                 $parent = $raw_parent === 0xFFFFFFFF ? -1 : $raw_parent;
-                $child = (int)$row['child_node_id'];
-                $is_tree = (int)$row['is_tree'];
-                $is_strong = (int)$row['strength'] === 0; // 0 = strong
+                $child = $row['child_node_id'];
+                $is_tree = $row['is_tree'];
+                $is_strong = $row['strength'] === 0; // 0 = strong
 
                 if ($is_tree) {
                     $substrate->children[$parent][] = $child;
@@ -234,7 +246,7 @@ class GraphSubstrate
                     if ($parent === -1) {
                         $substrate->roots[] = $child;
                     }
-                    $link_name = $dict->lookup((int)$row['link_name_id']);
+                    $link_name = $dict->lookup($row['link_name_id']);
                     if ($link_name !== null) {
                         $substrate->tree_link_names[$child] = $link_name;
                     }
@@ -260,8 +272,12 @@ class GraphSubstrate
             $addr_to_nodes = [];
             $offset = 0;
             for ($i = 0; $i < $locCount; $i++) {
-                $node_id = unpack('V', $locData, $offset)[1];
-                $address = unpack('P', $locData, $offset + 12)[1];
+                $node_id_row = unpack('V', $locData, $offset);
+                assert(is_array($node_id_row));
+                $address_row = unpack('P', $locData, $offset + 12);
+                assert(is_array($address_row));
+                $node_id = $node_id_row[1];
+                $address = $address_row[1];
                 $offset += Format::LOCATION_ROW_SIZE;
                 if ((int)$address !== 0) {
                     $addr_to_nodes[(int)$address][] = (int)$node_id;

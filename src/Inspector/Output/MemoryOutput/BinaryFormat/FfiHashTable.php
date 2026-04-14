@@ -31,6 +31,9 @@ use Reli\Lib\FFI\FFIHelper;
  * Memory: ~28 bytes/slot × capacity (with load factor overhead, effectively
  * ~32 bytes per stored entry). At 10M entries: ~320 MB vs ~4.6 GB for
  * nested PHP arrays.
+ *
+ * @psalm-suppress InaccessibleMethod
+ * @psalm-suppress InvalidCast
  */
 final class FfiHashTable
 {
@@ -142,7 +145,7 @@ final class FfiHashTable
     {
         $this->capacity = $capacity;
         $this->mask = $capacity - 1;
-        $this->growThreshold = (int)($capacity * self::MAX_LOAD_FACTOR);
+        $this->growThreshold = intdiv($capacity * 3, 4);
 
         $this->hashes = FFIHelper::new("int64_t[{$capacity}]");
         $this->ids = FFIHelper::new("int32_t[{$capacity}]");

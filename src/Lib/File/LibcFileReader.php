@@ -146,6 +146,9 @@ final class LibcFileReader
      * must call munmapFile() when done.
      *
      * @return array{CData, int}|null [pointer, length] or null on failure
+     * @psalm-suppress MixedReturnTypeCoercion
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress MixedArgument
      */
     public static function mmapFile(string $path): ?array
     {

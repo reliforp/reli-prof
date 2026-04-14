@@ -84,10 +84,14 @@ final class StringDict
     {
         $dict = new self();
         $offset = 0;
-        $count = unpack('V', $data, $offset)[1];
+        $count_row = unpack('V', $data, $offset);
+        assert(is_array($count_row));
+        $count = (int)$count_row[1];
         $offset += 4;
         for ($i = 0; $i < $count; $i++) {
-            $len = unpack('V', $data, $offset)[1];
+            $len_row = unpack('V', $data, $offset);
+            assert(is_array($len_row));
+            $len = (int)$len_row[1];
             $offset += 4;
             $s = substr($data, $offset, $len);
             $offset += $len;

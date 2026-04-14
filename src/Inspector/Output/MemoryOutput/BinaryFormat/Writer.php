@@ -23,7 +23,7 @@ namespace Reli\Inspector\Output\MemoryOutput\BinaryFormat;
  */
 final class Writer
 {
-    /** @var resource */
+    /** @var resource|null */
     private $fh;
 
     /** @var list<array{name: string, offset: int, length: int, element_count: int}> */
@@ -56,7 +56,7 @@ final class Writer
     {
         $offset = $this->pos;
         $length = strlen($data);
-        fwrite($this->fh, $data);
+        fwrite($this->getFileHandle(), $data);
         $this->pos += $length;
 
         $this->toc[] = [
@@ -91,7 +91,7 @@ final class Writer
         $offset = $this->pos;
         $length = 0;
         while (!feof($source)) {
-            $copied = stream_copy_to_stream($source, $this->fh, $copy_chunk);
+            $copied = stream_copy_to_stream($source, $this->getFileHandle(), $copy_chunk);
             if ($copied === false || $copied === 0) {
                 break;
             }
@@ -124,7 +124,7 @@ final class Writer
         int $element_count,
     ): void {
         $offset = $this->pos;
-        $length = $writer_fn($this->fh);
+        $length = $writer_fn($this->getFileHandle());
         $this->pos += $length;
 
         $this->toc[] = [
@@ -145,17 +145,17 @@ final class Writer
         foreach ($this->toc as $entry) {
             // name: 16 bytes, null-padded
             $name_padded = str_pad($entry['name'], Format::TOC_NAME_SIZE, "\0");
-            fwrite($this->fh, substr($name_padded, 0, Format::TOC_NAME_SIZE));
+            fwrite($this->getFileHandle(), substr($name_padded, 0, Format::TOC_NAME_SIZE));
             // offset: uint64 LE
-            fwrite($this->fh, pack('P', $entry['offset']));
+            fwrite($this->getFileHandle(), pack('P', $entry['offset']));
             // length: uint64 LE
-            fwrite($this->fh, pack('P', $entry['length']));
+            fwrite($this->getFileHandle(), pack('P', $entry['length']));
             // element_count: uint64 LE
-            fwrite($this->fh, pack('P', $entry['element_count']));
+            fwrite($this->getFileHandle(), pack('P', $entry['element_count']));
         }
 
         // Rewind and write the header
-        fseek($this->fh, 0);
+        fseek($this->getFileHandle(), 0);
         $header = Format::MAGIC;                                  // 4 bytes
         $header .= pack('V', Format::VERSION);                    // 4 bytes: version (uint32 LE)
         $header .= pack('V', Format::FLAG_LITTLE_ENDIAN);         // 4 bytes: flags (uint32 LE)
@@ -163,8 +163,21 @@ final class Writer
         $header .= pack('P', $toc_offset);                        // 8 bytes: toc_offset (uint64 LE)
         // Pad to 64 bytes
         $header .= str_repeat("\0", Format::HEADER_SIZE - strlen($header));
-        fwrite($this->fh, $header);
+        $fh = $this->getFileHandle();
+        fwrite($fh, $header);
 
-        fclose($this->fh);
+        fclose($fh);
+        $this->fh = null;
+    }
+
+    /**
+     * @return resource
+     */
+    private function getFileHandle()
+    {
+        if (!is_resource($this->fh)) {
+            throw new \RuntimeException('Binary writer is already closed');
+        }
+        return $this->fh;
     }
 }

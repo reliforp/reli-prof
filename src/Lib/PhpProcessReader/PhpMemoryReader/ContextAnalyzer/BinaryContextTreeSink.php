@@ -74,13 +74,13 @@ final class BinaryContextTreeSink implements ContextTreeSink
     private string $attrBuf = '';
     private int $attrBufRows = 0;
 
-    /** @var resource */
+    /** @var resource|null */
     private $nodeFile;
-    /** @var resource */
+    /** @var resource|null */
     private $edgeFile;
-    /** @var resource */
+    /** @var resource|null */
     private $locationFile;
-    /** @var resource */
+    /** @var resource|null */
     private $attrFile;
 
     private string $nodeTmpPath;
@@ -117,10 +117,14 @@ final class BinaryContextTreeSink implements ContextTreeSink
         $this->locationTmpPath = $this->createTmpFile('rmem_locs_');
         $this->attrTmpPath = $this->createTmpFile('rmem_attrs_');
 
-        $this->nodeFile = fopen($this->nodeTmpPath, 'w+b') ?: throw new \RuntimeException('Cannot open node temp file');
-        $this->edgeFile = fopen($this->edgeTmpPath, 'w+b') ?: throw new \RuntimeException('Cannot open edge temp file');
-        $this->locationFile = fopen($this->locationTmpPath, 'w+b') ?: throw new \RuntimeException('Cannot open location temp file');
-        $this->attrFile = fopen($this->attrTmpPath, 'w+b') ?: throw new \RuntimeException('Cannot open attr temp file');
+        $this->nodeFile = fopen($this->nodeTmpPath, 'w+b')
+            ?: throw new \RuntimeException('Cannot open node temp file');
+        $this->edgeFile = fopen($this->edgeTmpPath, 'w+b')
+            ?: throw new \RuntimeException('Cannot open edge temp file');
+        $this->locationFile = fopen($this->locationTmpPath, 'w+b')
+            ?: throw new \RuntimeException('Cannot open location temp file');
+        $this->attrFile = fopen($this->attrTmpPath, 'w+b')
+            ?: throw new \RuntimeException('Cannot open attr temp file');
     }
 
     public function __destruct()
@@ -200,7 +204,8 @@ final class BinaryContextTreeSink implements ContextTreeSink
         // Node row: node_id:u32, canonical_id:u32(0=unset), type_id:u32, class_id:u32(NULL_STRING_ID)
         // class_id is left as NULL_STRING_ID — the substrate loader
         // derives class from the locations section.
-        $this->nodeBuf .= pack('VVVV',
+        $this->nodeBuf .= pack(
+            'VVVV',
             $node_id,
             0,
             $type_id,
@@ -244,7 +249,8 @@ final class BinaryContextTreeSink implements ContextTreeSink
             $bin_overhead = $this->region_boundaries?->computeBinOverhead($location) ?? 0;
 
             // Location row: 48 bytes (3V + 2P + 5V = 12 + 16 + 20)
-            $this->locationBuf .= pack('VVVPPVVVVV',
+            $this->locationBuf .= pack(
+                'VVVPPVVVVV',
                 $node_id,           // 4
                 $location_type_id,  // 4
                 $class_id,          // 4
@@ -271,7 +277,8 @@ final class BinaryContextTreeSink implements ContextTreeSink
             assert(is_string($string_value));
             $value_id = $this->stringDict->intern($string_value);
 
-            $this->attrBuf .= pack('VVV',
+            $this->attrBuf .= pack(
+                'VVV',
                 $node_id,
                 $key_id,
                 $value_id,
@@ -322,6 +329,10 @@ final class BinaryContextTreeSink implements ContextTreeSink
      * temp file and patches rows where region_id == NULL_STRING_ID.
      *
      * Must be called after setRegionBoundaries() and flush().
+     */
+    /**
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     public function backfillRegions(): void
     {
@@ -391,17 +402,25 @@ final class BinaryContextTreeSink implements ContextTreeSink
      */
     public function closeTempFiles(): void
     {
-        if (is_resource($this->nodeFile)) {
-            fclose($this->nodeFile);
+        $node_file = $this->nodeFile;
+        if (is_resource($node_file)) {
+            fclose($node_file);
+            $this->nodeFile = null;
         }
-        if (is_resource($this->edgeFile)) {
-            fclose($this->edgeFile);
+        $edge_file = $this->edgeFile;
+        if (is_resource($edge_file)) {
+            fclose($edge_file);
+            $this->edgeFile = null;
         }
-        if (is_resource($this->locationFile)) {
-            fclose($this->locationFile);
+        $location_file = $this->locationFile;
+        if (is_resource($location_file)) {
+            fclose($location_file);
+            $this->locationFile = null;
         }
-        if (is_resource($this->attrFile)) {
-            fclose($this->attrFile);
+        $attr_file = $this->attrFile;
+        if (is_resource($attr_file)) {
+            fclose($attr_file);
+            $this->attrFile = null;
         }
     }
 
@@ -434,7 +453,8 @@ final class BinaryContextTreeSink implements ContextTreeSink
             EdgeStrength::Structural => 2,
         };
 
-        $this->edgeBuf .= pack('VVVCCv',
+        $this->edgeBuf .= pack(
+            'VVVCCv',
             $parent_node_id ?? 0xFFFFFFFF,
             $child_node_id,
             $link_name_id,
@@ -451,30 +471,74 @@ final class BinaryContextTreeSink implements ContextTreeSink
 
     private function flushNodes(): void
     {
-        fwrite($this->nodeFile, $this->nodeBuf);
+        fwrite($this->getNodeFile(), $this->nodeBuf);
         $this->nodeBuf = '';
         $this->nodeBufRows = 0;
     }
 
     private function flushEdges(): void
     {
-        fwrite($this->edgeFile, $this->edgeBuf);
+        fwrite($this->getEdgeFile(), $this->edgeBuf);
         $this->edgeBuf = '';
         $this->edgeBufRows = 0;
     }
 
     private function flushLocations(): void
     {
-        fwrite($this->locationFile, $this->locationBuf);
+        fwrite($this->getLocationFile(), $this->locationBuf);
         $this->locationBuf = '';
         $this->locationBufRows = 0;
     }
 
     private function flushAttrs(): void
     {
-        fwrite($this->attrFile, $this->attrBuf);
+        fwrite($this->getAttrFile(), $this->attrBuf);
         $this->attrBuf = '';
         $this->attrBufRows = 0;
+    }
+
+    /**
+     * @return resource
+     */
+    private function getNodeFile()
+    {
+        if (!is_resource($this->nodeFile)) {
+            throw new \RuntimeException('Node temp file is already closed');
+        }
+        return $this->nodeFile;
+    }
+
+    /**
+     * @return resource
+     */
+    private function getEdgeFile()
+    {
+        if (!is_resource($this->edgeFile)) {
+            throw new \RuntimeException('Edge temp file is already closed');
+        }
+        return $this->edgeFile;
+    }
+
+    /**
+     * @return resource
+     */
+    private function getLocationFile()
+    {
+        if (!is_resource($this->locationFile)) {
+            throw new \RuntimeException('Location temp file is already closed');
+        }
+        return $this->locationFile;
+    }
+
+    /**
+     * @return resource
+     */
+    private function getAttrFile()
+    {
+        if (!is_resource($this->attrFile)) {
+            throw new \RuntimeException('Attribute temp file is already closed');
+        }
+        return $this->attrFile;
     }
 
     private function createTmpFile(string $prefix): string

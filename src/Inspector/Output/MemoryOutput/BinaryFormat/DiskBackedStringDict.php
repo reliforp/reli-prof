@@ -46,7 +46,7 @@ final class DiskBackedStringDict
     /** Total number of interned strings */
     private int $count = 0;
 
-    /** @var resource disk file for string bodies */
+    /** @var resource|null disk file for string bodies */
     private $diskFh;
     private string $diskPath;
     private int $diskPos = 0;
@@ -134,7 +134,7 @@ final class DiskBackedStringDict
         // New string — append to disk
         $id = $this->count;
         $offset = $this->diskPos;
-        fwrite($this->diskFh, $s);
+        fwrite($this->getDiskFh(), $s);
         $this->diskPos += $len;
         $this->count++;
 
@@ -190,20 +190,29 @@ final class DiskBackedStringDict
 
         $written = 0;
         $w = fwrite($outFh, pack('V', $this->count));
+        if ($w === false) {
+            throw new \RuntimeException('Failed to write string dict header');
+        }
         $written += $w;
 
         foreach ($entries as [$offset, $len]) {
             $w = fwrite($outFh, pack('V', $len));
+            if ($w === false) {
+                throw new \RuntimeException('Failed to write string dict entry length');
+            }
             $written += $w;
-            fseek($this->diskFh, $offset);
+            fseek($this->getDiskFh(), $offset);
             $remaining = $len;
             while ($remaining > 0) {
                 $chunk = min($remaining, 65536);
-                $data = fread($this->diskFh, $chunk);
+                $data = fread($this->getDiskFh(), $chunk);
                 if ($data === false || $data === '') {
                     break;
                 }
                 $w = fwrite($outFh, $data);
+                if ($w === false) {
+                    throw new \RuntimeException('Failed to write string dict entry body');
+                }
                 $written += $w;
                 $remaining -= strlen($data);
             }
@@ -214,8 +223,10 @@ final class DiskBackedStringDict
     public function cleanup(): void
     {
         $this->hotExactCache = [];
-        if (is_resource($this->diskFh)) {
-            fclose($this->diskFh);
+        $disk_fh = $this->diskFh;
+        if (is_resource($disk_fh)) {
+            fclose($disk_fh);
+            $this->diskFh = null;
         }
         if (file_exists($this->diskPath)) {
             @unlink($this->diskPath);
@@ -240,6 +251,7 @@ final class DiskBackedStringDict
         $pLen = strlen($packed);
         for ($i = 0; $i < $pLen; $i += 16) {
             $entry = unpack('Vid/Poffset/Vlen', $packed, $i);
+            assert(is_array($entry));
             $result[] = [(int)$entry['id'], (int)$entry['offset'], (int)$entry['len']];
         }
         return $result;
@@ -263,10 +275,11 @@ final class DiskBackedStringDict
             return $this->ffiTable->iterateAll();
         }
         $result = [];
-        foreach ($this->phpIndex as $packed) {
+        foreach ($this->phpIndex ?? [] as $packed) {
             $pLen = strlen($packed);
             for ($i = 0; $i < $pLen; $i += 16) {
                 $entry = unpack('Vid/Poffset/Vlen', $packed, $i);
+                assert(is_array($entry));
                 $result[] = [(int)$entry['id'], (int)$entry['offset'], (int)$entry['len']];
             }
         }
@@ -285,12 +298,24 @@ final class DiskBackedStringDict
 
     private function readFromDisk(int $offset, int $len): string
     {
-        fseek($this->diskFh, $offset);
-        $data = fread($this->diskFh, $len);
+        $disk_fh = $this->getDiskFh();
+        fseek($disk_fh, $offset);
+        $data = fread($disk_fh, $len);
         if ($data === false || strlen($data) !== $len) {
             throw new \RuntimeException("Failed to read {$len} bytes at offset {$offset} from dict disk");
         }
         return $data;
+    }
+
+    /**
+     * @return resource
+     */
+    private function getDiskFh()
+    {
+        if (!is_resource($this->diskFh)) {
+            throw new \RuntimeException('String dict temp file is already closed');
+        }
+        return $this->diskFh;
     }
 
     private function cacheString(int $id, string $s): void

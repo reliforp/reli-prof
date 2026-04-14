@@ -229,8 +229,12 @@ final class MemoryDumpReader
             if ($row === false || strlen($row) < $row_size) {
                 break;
             }
-            $size = (int)unpack('P', $row, 20)[1];
-            $region_id = (int)unpack('V', $row, 40)[1];
+            $size_row = unpack('P', $row, 20);
+            assert(is_array($size_row));
+            $region_id_row = unpack('V', $row, 40);
+            assert(is_array($region_id_row));
+            $size = (int)$size_row[1];
+            $region_id = (int)$region_id_row[1];
             $region = $dict->lookup($region_id);
             if ($region === null) {
                 continue;

@@ -162,5 +162,4 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
     {
         return pack('V', strlen($s)) . $s;
     }
-
 }

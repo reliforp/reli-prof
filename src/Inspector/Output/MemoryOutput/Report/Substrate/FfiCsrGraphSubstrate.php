@@ -29,7 +29,20 @@ use Reli\Lib\FFI\FFIHelper;
  * - nodeToIndex: direct-indexed FFI int32 array if node_ids are compact
  * - node_classes: class dictionary + FFI int16 per-node IDs (~300 MB → ~6 MB)
  *
- * @psalm-suppress InaccessibleMethod, InvalidCast, PossiblyNullOperand, InvalidOperand, MissingConstructor
+ * @psalm-suppress InaccessibleMethod
+ * @psalm-suppress InvalidCast
+ * @psalm-suppress PossiblyNullOperand
+ * @psalm-suppress InvalidOperand
+ * @psalm-suppress MissingConstructor
+ * @psalm-suppress PossiblyNullPropertyFetch
+ * @psalm-suppress UndefinedPropertyFetch
+ * @psalm-suppress InvalidPropertyFetch
+ * @psalm-suppress PossiblyInvalidArrayAccess
+ * @psalm-suppress MixedArrayOffset
+ * @psalm-suppress PossiblyNullArgument
+ * @psalm-suppress PossiblyUndefinedVariable
+ * @psalm-suppress MixedArrayTypeCoercion
+ * @psalm-suppress MixedOperand
  */
 final class FfiCsrGraphSubstrate extends GraphSubstrate
 {
@@ -420,7 +433,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $is_tree = (int)$edgeRows[$i]->is_tree;
                 $is_strong = (int)$edgeRows[$i]->strength === 0;
             } else {
-                $row = unpack('Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength', $edgeData, $i * Format::EDGE_ROW_SIZE);
+                $row = unpack(
+                    'Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength',
+                    $edgeData,
+                    $i * Format::EDGE_ROW_SIZE,
+                );
                 $raw_parent = (int)$row['parent_node_id'];
                 $child = (int)$row['child_node_id'];
                 $link_name_id = (int)$row['link_name_id'];

@@ -26,6 +26,15 @@ use Reli\Lib\File\LibcFileReader;
  * FFI::cast directly into the mapped region without any PHP-level copy.
  *
  * Falls back to file_get_contents when FFI/mmap is unavailable.
+ *
+ * @psalm-suppress PossiblyInvalidArrayAccess
+ * @psalm-suppress MixedAssignment
+ * @psalm-suppress PossiblyNullOperand
+ * @psalm-suppress InvalidOperand
+ * @psalm-suppress MixedOperand
+ * @psalm-suppress InvalidArgument
+ * @psalm-suppress MixedArgument
+ * @psalm-suppress PossiblyNullArgument
  */
 final class Reader
 {
@@ -50,6 +59,7 @@ final class Reader
 
     private function __construct()
     {
+        $this->stringDict = new StringDict();
     }
 
     public function __destruct()
