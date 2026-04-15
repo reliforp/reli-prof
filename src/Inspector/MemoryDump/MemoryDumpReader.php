@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
 use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\CollectedMemories;
+use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
@@ -37,6 +38,7 @@ final class MemoryDumpReader
         private int $eg_address,
         private int $cg_address,
         private ?int $bg_address = null,
+        private ?FastPathReader $fast_path = null,
     ) {
     }
 
@@ -74,6 +76,7 @@ final class MemoryDumpReader
                 $memory_profiler_settings->memory_exhaustion_error_details,
                 $this->bg_address,
                 $sink,
+                $this->fast_path,
             );
 
             $region_boundaries = new RegionBoundaries(
@@ -165,6 +168,7 @@ final class MemoryDumpReader
             $memory_profiler_settings->memory_exhaustion_error_details,
             $this->bg_address,
             $sink,
+            $this->fast_path,
         );
 
         // RegionBoundaries is already set on the sink by collectAll()

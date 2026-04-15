@@ -23,6 +23,9 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
+use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
+use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;
+
 use function DI\autowire;
 
 final class MemoryDumpReaderFactory
@@ -93,12 +96,27 @@ final class MemoryDumpReaderFactory
 
         /** @var value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
         $php_version = $parsed['php_version'];
+
+        // Build FastPathReader for dump analysis
+        $fast_path = null;
+        $fast_path_ns = "Reli\\Inspector\\MemoryDump\\FastPath\\Generated\\{$php_version}\\ZvalLayout";
+        if (class_exists($fast_path_ns)) {
+            $fast_fp = fopen($file_path, 'rb');
+            if ($fast_fp !== false) {
+                $fast_path = new FastPathReader(
+                    new RegionByteProvider($region_index, $fast_fp),
+                    $php_version,
+                );
+            }
+        }
+
         return new MemoryDumpReader(
             $container->get(MemoryLocationsCollector::class),
             $parsed['pid'],
             $php_version,
             $parsed['eg_address'],
             $parsed['cg_address'],
+            fast_path: $fast_path,
         );
     }
 

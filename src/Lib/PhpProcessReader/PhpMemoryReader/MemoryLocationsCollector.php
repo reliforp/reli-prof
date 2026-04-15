@@ -103,7 +103,12 @@ final class MemoryLocationsCollector
         return $chunk_address;
     }
 
-    /** @param TargetPhpSettings<VersionDecided> $target_php_settings */
+    /**
+     * @param TargetPhpSettings<VersionDecided> $target_php_settings
+     * @param \Reli\Inspector\MemoryDump\FastPath\FastPathReader|null $fast_path
+     *     Optional fast-path reader for dump analysis. When provided,
+     *     hot collector jobs use string-buffer reads instead of FFI.
+     */
     public function collectAll(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
@@ -112,6 +117,7 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details = null,
         ?int $bg_address = null,
         ?ContextTreeSink $sink = null,
+        ?\Reli\Inspector\MemoryDump\FastPath\FastPathReader $fast_path = null,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -244,6 +250,7 @@ final class MemoryLocationsCollector
             $memory_limit_error_details,
             $vm_stack_memory_locations,
             $chunk_memory_locations,
+            $fast_path,
         );
 
         // Create the job queue

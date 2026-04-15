@@ -60,7 +60,7 @@ final class MemoryDumpNormalizer
         $merged = $this->mergeRegions($regions);
 
         // Write to a temp file first, then rename (atomic for same-file overwrite)
-        $temp_path = $output_path . '.tmp.' . getmypid();
+        $temp_path = $output_path . '.tmp.' . (string)getmypid();
         try {
             $writer = new MemoryDumpWriter();
             $writer->write(
