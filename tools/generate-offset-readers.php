@@ -522,7 +522,7 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $ce_dpc_read = inlineReadExpr('i32le', '$region->bytes', "\$off + {$ce_dpc_offset}");
     $ce_name_read = inlineReadExpr('ptr', '$region->bytes', "\$off + {$ce_name_offset}");
     $str_len_offset = $str['OFFSET_LEN'] ?? 16;
-    $str_len_read = inlineReadExpr('u64le', '$region->bytes', "\$soff + {$str_len_offset}");
+    $str_len_read = inlineReadExpr('u64le', '$sregion->bytes', "\$soff + {$str_len_offset}");
 
     $lines[] = '    /** @var array<int, array{class_name: string, default_properties_count: int}> */';
     $lines[] = '    private array $ce_cache = [];';

@@ -349,7 +349,7 @@ final class FastPathReader implements FastPathReaderInterface
             return null;
         }
         $soff = $sregion->offsetOf($name_ptr);
-        $len = unpack('P', $region->bytes, $soff + 16)[1];
+        $len = unpack('P', $sregion->bytes, $soff + 16)[1];
         $name = substr($sregion->bytes, $soff + 32, $len);
         $result = ['class_name' => $name, 'default_properties_count' => $dpc];
         $this->ce_cache[$ce_addr] = $result;
