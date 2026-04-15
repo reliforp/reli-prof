@@ -180,10 +180,10 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
         $lines[] = sprintf(
             '  %-30s %10s %12s %12s %14s',
             'Type',
-            'Count \xce\x94',
+            "Count \xce\x94",
             'Baseline',
             'Target',
-            'Memory \xce\x94',
+            "Memory \xce\x94",
         );
         $lines[] = '  ' . str_repeat('-', 82);
 
@@ -226,8 +226,8 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
             $lines[] = sprintf(
                 '  %-40s %10s %14s %14s',
                 'Class',
-                'Count \xce\x94',
-                'Memory \xce\x94',
+                "Count \xce\x94",
+                "Memory \xce\x94",
                 'Target Memory',
             );
             $lines[] = '  ' . str_repeat('-', 82);
@@ -315,14 +315,14 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
                 $parts = ["    {$tf->kind}:"];
                 if ($bf->severity !== $tf->severity) {
                     $parts[] = sprintf(
-                        'severity %s \xe2\x86\x92 %s',
+                        "severity %s → %s",
                         $bf->severity->value,
                         $tf->severity->value,
                     );
                 }
                 if ($bf->impact_bytes !== $tf->impact_bytes) {
                     $parts[] = sprintf(
-                        'impact %s \xe2\x86\x92 %s',
+                        "impact %s → %s",
                         SizeFormatter::format($bf->impact_bytes),
                         SizeFormatter::format($tf->impact_bytes),
                     );
@@ -341,7 +341,7 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
         $tag = strtoupper($f->severity->value);
         $impact = $f->impact_bytes > 0
             ? SizeFormatter::format($f->impact_bytes)
-            : "\xe2\x80\x94";
+            : "—";
         $lines[] = "    {$prefix} [{$tag}] {$impact}: {$f->kind}: {$f->summary}";
     }
 
