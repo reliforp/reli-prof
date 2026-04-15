@@ -115,7 +115,7 @@ final class EmitArrayJob implements CollectorJob
             ->array_context_pool
             ->getContextForLocation($array_header_location);
 
-        if ($ar_data === 0) {
+        if ($ar_data === 0 || $is_uninitialized) {
             $node_id = $ctx->emitNode(
                 $array_header_context,
                 $this->parent_node_id,
@@ -222,7 +222,7 @@ final class EmitArrayJob implements CollectorJob
             ->array_context_pool
             ->getContextForLocation($array_header_location);
 
-        if (is_null($array->arData)) {
+        if (is_null($array->arData) || $array->isUninitialized()) {
             $node_id = $ctx->emitNode($array_header_context, $parent_node_id, $link_name, $edge_strength);
             if ($node_id >= 0) {
                 $ctx->address_map[$array_header_location->address] = $node_id;
