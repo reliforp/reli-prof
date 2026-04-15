@@ -13,12 +13,15 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Comparison\BinaryComparisonDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonGenerator;
 use Reli\Inspector\Output\MemoryOutput\Comparison\Formatter\JsonComparisonFormatter;
 use Reli\Inspector\Output\MemoryOutput\Comparison\Formatter\TextComparisonFormatter;
 use Reli\Inspector\Output\MemoryOutput\Comparison\PdoComparisonDataProvider;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 use Reli\Lib\Log\Log;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -104,6 +107,19 @@ final class MemoryCompareCommand extends Command
             InputOption::VALUE_NEGATABLE,
             'force FFI CSR graph substrate (default: auto)',
         );
+        $this->addOption(
+            'diff-nodes',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'show sample nodes present only in one side: "baseline-only" or "target-only" (binary .rmem only)',
+        );
+        $this->addOption(
+            'diff-limit',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'max samples to show for --diff-nodes (default: 20)',
+            '20',
+        );
     }
 
     #[\Override]
@@ -171,8 +187,160 @@ final class MemoryCompareCommand extends Command
             $output->write($formatted);
         }
 
+        // Node diff for binary files
+        /** @var string|null $diff_nodes */
+        $diff_nodes = $input->getOption('diff-nodes');
+        if ($diff_nodes !== null) {
+            $diff_limit = (int)$input->getOption('diff-limit');
+            $this->printNodeDiff(
+                $output,
+                $baseline_file,
+                $target_file,
+                $diff_nodes,
+                $diff_limit,
+            );
+        }
+
         Log::info('end memory:compare command');
         return 0;
+    }
+
+    /**
+     * @psalm-suppress MixedAssignment, MixedArrayAccess, PossiblyInvalidArrayAccess
+     */
+    private function printNodeDiff(
+        OutputInterface $output,
+        string $baseline_file,
+        string $target_file,
+        string $side,
+        int $limit,
+    ): void {
+        if (!$this->isBinaryFile($baseline_file) || !$this->isBinaryFile($target_file)) {
+            $output->writeln('<error>--diff-nodes requires binary (.rmem) files</error>');
+            return;
+        }
+
+        $baseline_reader = BinaryReader::open($baseline_file);
+        $target_reader = BinaryReader::open($target_file);
+
+        // Build address sets from locations sections
+        $baseline_addrs = $this->collectAddresses($baseline_reader);
+        $target_addrs = $this->collectAddresses($target_reader);
+
+        if ($side === 'baseline-only') {
+            $diff = array_diff_key($baseline_addrs, $target_addrs);
+            $reader = $baseline_reader;
+            $label = 'Baseline-only';
+        } elseif ($side === 'target-only') {
+            $diff = array_diff_key($target_addrs, $baseline_addrs);
+            $reader = $target_reader;
+            $label = 'Target-only';
+        } else {
+            $output->writeln('<error>--diff-nodes must be "baseline-only" or "target-only"</error>');
+            return;
+        }
+
+        $output->writeln('');
+        $output->writeln(sprintf(
+            '<comment>%s nodes: %d total (showing %d)</comment>',
+            $label,
+            count($diff),
+            min(count($diff), $limit),
+        ));
+
+        if ($diff === []) {
+            $output->writeln('  (none)');
+            return;
+        }
+
+        $dict = $reader->getStringDict();
+        $locations = $this->loadLocationsByAddress($reader);
+        $shown = 0;
+
+        foreach ($diff as $addr => $_) {
+            if ($shown >= $limit) {
+                break;
+            }
+            $loc = $locations[$addr] ?? null;
+            if ($loc === null) {
+                continue;
+            }
+            $type_name = $dict->lookup($loc['location_type_id']) ?? '?';
+            $class_name = $loc['class_id'] !== Format::NULL_STRING_ID
+                ? ($dict->lookup($loc['class_id']) ?? '')
+                : '';
+            $size = $loc['size'];
+            $node_id = $loc['node_id'];
+
+            $display = sprintf(
+                '  node=%d addr=0x%x type=%s size=%s',
+                $node_id,
+                $addr,
+                $type_name,
+                SizeFormatter::format($size),
+            );
+            if ($class_name !== '') {
+                $display .= " class={$class_name}";
+            }
+            $output->writeln($display);
+            $shown++;
+        }
+    }
+
+    /**
+     * @return array<int, true> address => true
+     * @psalm-suppress MixedAssignment, PossiblyInvalidArrayAccess
+     */
+    private function collectAddresses(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $result = [];
+        for ($i = 0; $i < $count; $i++) {
+            $off = $i * Format::LOCATION_ROW_SIZE;
+            /** @var array{1: int} */
+            $addr_u = unpack('P', $data, $off + 12); // address at offset 12
+            $result[$addr_u[1]] = true;
+        }
+        return $result;
+    }
+
+    /**
+     * @return array<int, array{node_id: int, location_type_id: int, class_id: int, size: int}>
+     * @psalm-suppress MixedAssignment, PossiblyInvalidArrayAccess
+     */
+    private function loadLocationsByAddress(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $result = [];
+        for ($i = 0; $i < $count; $i++) {
+            $off = $i * Format::LOCATION_ROW_SIZE;
+            /** @var array{1: int} */
+            $node_id_u = unpack('V', $data, $off);
+            /** @var array{1: int} */
+            $type_id_u = unpack('V', $data, $off + 4);
+            /** @var array{1: int} */
+            $class_id_u = unpack('V', $data, $off + 8);
+            /** @var array{1: int} */
+            $addr_u = unpack('P', $data, $off + 12);
+            /** @var array{1: int} */
+            $size_u = unpack('P', $data, $off + 20);
+
+            $result[$addr_u[1]] = [
+                'node_id' => $node_id_u[1],
+                'location_type_id' => $type_id_u[1],
+                'class_id' => $class_id_u[1],
+                'size' => (int)$size_u[1],
+            ];
+        }
+        return $result;
     }
 
     private function createProvider(string $path, int $run_id): ComparisonDataProvider
