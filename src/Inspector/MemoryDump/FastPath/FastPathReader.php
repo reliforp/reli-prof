@@ -77,6 +77,12 @@ interface FastPathReader
     public function bucketSize(): int;
     public function arraySize(): int;
     /**
+     * Element stride for packed arrays. PHP < 8.2 uses Bucket layout
+     * (sizeof(Bucket) = 32) even for packed arrays; PHP >= 8.2 uses
+     * zval layout (sizeof(zval) = 16) via arPacked.
+     */
+    public function packedElementSize(): int;
+    /**
      * Size of the zend_string fixed header (excluding val[]).
      * Equal to the offset of the val field, NOT sizeof(zend_string).
      * Use this for MemoryLocation size calculation: header + strlen.

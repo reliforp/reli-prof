@@ -131,6 +131,7 @@ final class EmitArrayJob implements CollectorJob
         // Compute table addresses and sizes
         $bucket_size = $fp->bucketSize();
         $zval_size = $fp->zvalSize();
+        $packed_elem_size = $fp->packedElementSize();
         // nTableMask is stored as a negative uint32 (e.g. 0xFFFFFFF8 for -8).
         // Convert to signed int32 for the hash size calculation.
         if ($n_table_mask > 0x7FFFFFFF) {
@@ -144,11 +145,11 @@ final class EmitArrayJob implements CollectorJob
         }
         $real_table_address = $ar_data - $hash_size;
         $used_data_size = $is_packed
-            ? $n_num_used * $zval_size
+            ? $n_num_used * $packed_elem_size
             : $n_num_used * $bucket_size;
         $used_table_size = $hash_size + $used_data_size;
         $total_data_size = $is_packed
-            ? $n_table_size * $zval_size
+            ? $n_table_size * $packed_elem_size
             : $n_table_size * $bucket_size;
         $total_table_size = $hash_size + $total_data_size;
 

@@ -57,8 +57,9 @@ final class ArrayElementsIteratorFastPathJob implements CollectorJob
         $this->index++;
 
         if ($this->is_packed) {
-            // Packed array: zval[nNumUsed] at arData
-            $zval_addr = $this->ar_data_address + $i * $fp->zvalSize();
+            // Packed array: element stride depends on PHP version.
+            // PHP < 8.2: Bucket[] layout (32 bytes), PHP >= 8.2: zval[] (16 bytes)
+            $zval_addr = $this->ar_data_address + $i * $fp->packedElementSize();
             $type = $fp->zvalType($zval_addr);
             if ($type === null || $type === ZvalType::IS_UNDEF) {
                 if ($this->index < $this->n_num_used) {

@@ -368,4 +368,6 @@ final class FastPathReader implements FastPathReaderInterface
     public function stringValOffset(): int { return 24; }
     #[\Override]
     public function objectHeaderSize(): int { return 56; }
+    #[\Override]
+    public function packedElementSize(): int { return 32; }
 }

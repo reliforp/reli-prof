@@ -572,6 +572,11 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $lines[] = "    public function stringValOffset(): int { return {$str_val_off}; }";
     $lines[] = '    #[\Override]';
     $lines[] = "    public function objectHeaderSize(): int { return {$obj_size}; }";
+    // Packed array element size: v82+ uses zval (arPacked), older uses Bucket
+    $has_ar_packed = in_array($version, ['v82', 'v83', 'v84', 'v85'], true);
+    $packed_elem_size = $has_ar_packed ? $zval_size : $bucket_size;
+    $lines[] = '    #[\Override]';
+    $lines[] = "    public function packedElementSize(): int { return {$packed_elem_size}; }";
 
     $lines[] = '}';
     $lines[] = '';
