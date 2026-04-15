@@ -26,6 +26,7 @@ use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
 use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;
 
+
 use function DI\autowire;
 
 final class MemoryDumpReaderFactory
@@ -99,13 +100,13 @@ final class MemoryDumpReaderFactory
 
         // Build FastPathReader for dump analysis
         $fast_path = null;
-        $fast_path_ns = "Reli\\Inspector\\MemoryDump\\FastPath\\Generated\\{$php_version}\\ZvalLayout";
-        if (class_exists($fast_path_ns)) {
+        /** @var class-string<FastPathReader>|null $fast_path_class */
+        $fast_path_class = "Reli\\Inspector\\MemoryDump\\FastPath\\Generated\\{$php_version}\\FastPathReader";
+        if (class_exists($fast_path_class)) {
             $fast_fp = fopen($file_path, 'rb');
             if ($fast_fp !== false) {
-                $fast_path = new FastPathReader(
+                $fast_path = new $fast_path_class(
                     new RegionByteProvider($region_index, $fast_fp),
-                    $php_version,
                 );
             }
         }

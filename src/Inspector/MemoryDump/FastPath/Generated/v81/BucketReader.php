@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v81;
 
+/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
+
 function bucket_val_value_ptr(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 0)[1];

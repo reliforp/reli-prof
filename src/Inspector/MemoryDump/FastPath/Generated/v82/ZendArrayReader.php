@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v82;
 
+/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
+
 function zendarray_gc_refcount(string $buf, int $off): int
 {
     return ord($buf[$off + 0]) | (ord($buf[$off + 0 + 1]) << 8) | (ord($buf[$off + 0 + 2]) << 16) | (ord($buf[$off + 0 + 3]) << 24);
