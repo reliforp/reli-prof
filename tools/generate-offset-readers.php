@@ -502,15 +502,16 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     }
 
     // stringVal — special (variable length)
+    $str_val_offset_for_val = $str['OFFSET_VAL_OFFSET'] ?? 24;
     $lines[] = '    #[\Override]';
     $lines[] = '    public function stringVal(int $address, int $len): ?string';
     $lines[] = '    {';
-    $lines[] = "        \$region = \$this->regions->regionFor(\$address, {$str_size} + \$len);";
+    $lines[] = "        \$region = \$this->regions->regionFor(\$address, {$str_val_offset_for_val} + \$len);";
     $lines[] = '        if ($region === null) {';
     $lines[] = '            return null;';
     $lines[] = '        }';
     $lines[] = '        $off = $region->offsetOf($address);';
-    $lines[] = "        return substr(\$region->bytes, \$off + {$str_size}, \$len);";
+    $lines[] = "        return substr(\$region->bytes, \$off + {$str_val_offset_for_val}, \$len);";
     $lines[] = '    }';
     $lines[] = '';
 
@@ -548,8 +549,9 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $lines[] = '            return null;';
     $lines[] = '        }';
     $lines[] = '        $soff = $sregion->offsetOf($name_ptr);';
+    $str_val_offset = $str['OFFSET_VAL_OFFSET'] ?? 24;
     $lines[] = "        \$len = {$str_len_read};";
-    $lines[] = "        \$name = substr(\$sregion->bytes, \$soff + {$str_size}, \$len);";
+    $lines[] = "        \$name = substr(\$sregion->bytes, \$soff + {$str_val_offset}, \$len);";
     $lines[] = '        $result = [\'class_name\' => $name, \'default_properties_count\' => $dpc];';
     $lines[] = '        $this->ce_cache[$ce_addr] = $result;';
     $lines[] = '        return $result;';
@@ -563,8 +565,11 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $lines[] = "    public function bucketSize(): int { return {$bucket_size}; }";
     $lines[] = '    #[\Override]';
     $lines[] = "    public function arraySize(): int { return {$arr_size}; }";
+    $str_val_off = $str['OFFSET_VAL_OFFSET'] ?? 24;
     $lines[] = '    #[\Override]';
-    $lines[] = "    public function stringHeaderSize(): int { return {$str_size}; }";
+    $lines[] = "    public function stringHeaderSize(): int { return {$str_val_off}; }";
+    $lines[] = '    #[\Override]';
+    $lines[] = "    public function stringValOffset(): int { return {$str_val_off}; }";
     $lines[] = '    #[\Override]';
     $lines[] = "    public function objectHeaderSize(): int { return {$obj_size}; }";
 

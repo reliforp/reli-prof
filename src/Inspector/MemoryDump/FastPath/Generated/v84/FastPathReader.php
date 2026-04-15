@@ -317,12 +317,12 @@ final class FastPathReader implements FastPathReaderInterface
     #[\Override]
     public function stringVal(int $address, int $len): ?string
     {
-        $region = $this->regions->regionFor($address, 32 + $len);
+        $region = $this->regions->regionFor($address, 24 + $len);
         if ($region === null) {
             return null;
         }
         $off = $region->offsetOf($address);
-        return substr($region->bytes, $off + 32, $len);
+        return substr($region->bytes, $off + 24, $len);
     }
 
     /** @var array<int, array{class_name: string, default_properties_count: int}> */
@@ -350,7 +350,7 @@ final class FastPathReader implements FastPathReaderInterface
         }
         $soff = $sregion->offsetOf($name_ptr);
         $len = unpack('P', $sregion->bytes, $soff + 16)[1];
-        $name = substr($sregion->bytes, $soff + 32, $len);
+        $name = substr($sregion->bytes, $soff + 24, $len);
         $result = ['class_name' => $name, 'default_properties_count' => $dpc];
         $this->ce_cache[$ce_addr] = $result;
         return $result;
@@ -363,7 +363,9 @@ final class FastPathReader implements FastPathReaderInterface
     #[\Override]
     public function arraySize(): int { return 56; }
     #[\Override]
-    public function stringHeaderSize(): int { return 32; }
+    public function stringHeaderSize(): int { return 24; }
+    #[\Override]
+    public function stringValOffset(): int { return 24; }
     #[\Override]
     public function objectHeaderSize(): int { return 56; }
 }

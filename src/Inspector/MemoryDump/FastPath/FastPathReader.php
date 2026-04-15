@@ -76,6 +76,13 @@ interface FastPathReader
     public function zvalSize(): int;
     public function bucketSize(): int;
     public function arraySize(): int;
+    /**
+     * Size of the zend_string fixed header (excluding val[]).
+     * Equal to the offset of the val field, NOT sizeof(zend_string).
+     * Use this for MemoryLocation size calculation: header + strlen.
+     */
     public function stringHeaderSize(): int;
     public function objectHeaderSize(): int;
+    /** Offset of zend_string.val within the struct. */
+    public function stringValOffset(): int;
 }
