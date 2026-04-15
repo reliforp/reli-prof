@@ -57,6 +57,10 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
     /**
      * @param list<string> $lines
      */
+    /**
+     * @param list<string> $lines
+     * @psalm-suppress MixedArrayAccess, MixedOperand, MixedArgument
+     */
     private function formatMeta(array &$lines, ComparisonResult $result): void
     {
         /** @var string|null $baseline_at */
@@ -67,8 +71,41 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
         if ($baseline_at !== null || $target_at !== null) {
             $lines[] = '  Baseline: ' . ($baseline_at ?? '(unknown)');
             $lines[] = '  Target:   ' . ($target_at ?? '(unknown)');
-            $lines[] = '';
         }
+
+        // Node/edge counts
+        $bm = $result->baseline_meta;
+        $tm = $result->target_meta;
+        $meta_keys = ['node_count', 'edge_count'];
+        $has_meta = false;
+        foreach ($meta_keys as $key) {
+            if (isset($bm[$key]) || isset($tm[$key])) {
+                $has_meta = true;
+                break;
+            }
+        }
+        if ($has_meta) {
+            foreach ($meta_keys as $key) {
+                $b = (int)($bm[$key] ?? 0);
+                $t = (int)($tm[$key] ?? 0);
+                $delta = $t - $b;
+                if ($b !== 0 || $t !== 0) {
+                    $label = match ($key) {
+                        'node_count' => 'Nodes',
+                        'edge_count' => 'Edges',
+                        default => $key,
+                    };
+                    $lines[] = sprintf(
+                        '  %s: %s → %s (%+d)',
+                        $label,
+                        number_format($b),
+                        number_format($t),
+                        $delta,
+                    );
+                }
+            }
+        }
+        $lines[] = '';
     }
 
     /**

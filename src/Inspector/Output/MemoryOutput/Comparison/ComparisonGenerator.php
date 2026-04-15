@@ -40,7 +40,6 @@ final class ComparisonGenerator
         'call_stack',
         'type_ranking',
         'class_ranking',
-        'root_blame',
         'retained_exact',
         'retained_approximate',
     ];
