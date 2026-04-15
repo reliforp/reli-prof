@@ -34,9 +34,17 @@ final class MemoryDumpReaderFactory
     ) {
     }
 
-    /** @param array<string, string> $path_mapping */
-    public function createFromPath(string $file_path, array $path_mapping): MemoryDumpReader
-    {
+    /**
+     * @param array<string, string> $path_mapping
+     * @param int $read_buffer_size Read-ahead buffer size for dump reads.
+     *     Larger values trade memory for fewer fseek/fread syscalls.
+     *     0 disables buffering. Default 256 KiB.
+     */
+    public function createFromPath(
+        string $file_path,
+        array $path_mapping,
+        int $read_buffer_size = 256 * 1024,
+    ): MemoryDumpReader {
         $fp = fopen($file_path, 'rb');
         if ($fp === false) {
             throw new \RuntimeException("failed to open file: {$file_path}");
@@ -56,6 +64,7 @@ final class MemoryDumpReaderFactory
             $region_index,
             $process_memory_map,
             $path_resolver,
+            $read_buffer_size,
         );
 
         $container = $this->container_builder
