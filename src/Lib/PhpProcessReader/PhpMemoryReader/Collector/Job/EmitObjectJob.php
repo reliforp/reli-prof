@@ -111,7 +111,7 @@ final class EmitObjectJob implements CollectorJob
         // Compute object memory size (same logic as ZendObject::getMemorySize)
         $base_size = $this->pointer->size;
         $obj_address = $address;
-        $size = $base_size + max(0, $default_properties_count - 1) * 16;
+        $size = $base_size + ($default_properties_count - 1) * 16;
 
         // Special classes need std_offset adjustment — fall back to FFI
         if (
