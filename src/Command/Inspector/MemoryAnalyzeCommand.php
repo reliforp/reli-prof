@@ -66,6 +66,12 @@ final class MemoryAnalyzeCommand extends Command
             'read-ahead buffer size for dump file reads (e.g. 256K, 1M, 0 to disable)',
             '256K',
         );
+        $this->addOption(
+            'no-fast-path',
+            null,
+            InputOption::VALUE_NONE,
+            'disable the offset-table fast path (use FFI path for all reads)',
+        );
     }
 
     #[\Override]
@@ -95,10 +101,12 @@ final class MemoryAnalyzeCommand extends Command
         }
 
         $read_buffer_size = self::parseByteSize((string) $input->getOption('read-buffer'));
+        $no_fast_path = (bool) $input->getOption('no-fast-path');
         $dump_reader = $this->memory_dump_reader_factory->createFromPath(
             $dump_file,
             $path_mapping,
             $read_buffer_size,
+            $no_fast_path,
         );
         $dump_reader->read($memory_profiler_settings);
 

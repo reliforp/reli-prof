@@ -48,6 +48,7 @@ final class MemoryDumpReaderFactory
         string $file_path,
         array $path_mapping,
         int $read_buffer_size = 256 * 1024,
+        bool $disable_fast_path = false,
     ): MemoryDumpReader {
         $fp = fopen($file_path, 'rb');
         if ($fp === false) {
@@ -102,7 +103,7 @@ final class MemoryDumpReaderFactory
         $fast_path = null;
         /** @var class-string<FastPathReader>|null $fast_path_class */
         $fast_path_class = "Reli\\Inspector\\MemoryDump\\FastPath\\Generated\\{$php_version}\\FastPathReader";
-        if (class_exists($fast_path_class)) {
+        if (!$disable_fast_path && class_exists($fast_path_class)) {
             $fast_fp = fopen($file_path, 'rb');
             if ($fast_fp !== false) {
                 $fast_path = new $fast_path_class(
