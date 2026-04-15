@@ -370,4 +370,6 @@ final class FastPathReader implements FastPathReaderInterface
     public function objectHeaderSize(): int { return 56; }
     #[\Override]
     public function packedElementSize(): int { return 32; }
+    #[\Override]
+    public function isArrayUninitialized(int $flags): bool { return !($flags & (1 << 3)); }
 }

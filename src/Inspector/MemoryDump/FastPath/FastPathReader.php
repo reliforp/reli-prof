@@ -82,6 +82,13 @@ interface FastPathReader
      * zval layout (sizeof(zval) = 16) via arPacked.
      */
     public function packedElementSize(): int;
+
+    /**
+     * Interpret the array flags to determine if uninitialized.
+     * PHP <= 7.3: bit 3 = HASH_FLAG_INITIALIZED (1 = initialized)
+     * PHP >= 7.4: bit 3 = HASH_FLAG_UNINITIALIZED (1 = uninitialized)
+     */
+    public function isArrayUninitialized(int $flags): bool;
     /**
      * Size of the zend_string fixed header (excluding val[]).
      * Equal to the offset of the val field, NOT sizeof(zend_string).

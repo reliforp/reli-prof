@@ -102,7 +102,7 @@ final class EmitArrayJob implements CollectorJob
 
         $array_size = $fp->arraySize();
         $is_packed = (bool)($flags & (1 << 2));
-        $is_uninitialized = (bool)($flags & (1 << 3));
+        $is_uninitialized = $fp->isArrayUninitialized($flags);
 
         $array_header_location = new ZendArrayMemoryLocation(
             $address,

@@ -578,6 +578,16 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $lines[] = '    #[\Override]';
     $lines[] = "    public function packedElementSize(): int { return {$packed_elem_size}; }";
 
+    // isArrayUninitialized: v70-v73 use HASH_FLAG_INITIALIZED (bit3=1 means initialized)
+    // v74+ use HASH_FLAG_UNINITIALIZED (bit3=1 means uninitialized)
+    $flag_inverted = in_array($version, ['v70', 'v71', 'v72', 'v73'], true);
+    $lines[] = '    #[\Override]';
+    if ($flag_inverted) {
+        $lines[] = '    public function isArrayUninitialized(int $flags): bool { return !($flags & (1 << 3)); }';
+    } else {
+        $lines[] = '    public function isArrayUninitialized(int $flags): bool { return (bool)($flags & (1 << 3)); }';
+    }
+
     $lines[] = '}';
     $lines[] = '';
     return implode("\n", $lines);
