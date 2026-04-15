@@ -282,6 +282,17 @@ final class FastPathReader implements FastPathReaderInterface
     }
 
     #[\Override]
+    public function objectProperties(int $address): ?int
+    {
+        $region = $this->regions->regionFor($address, 56);
+        if ($region === null) {
+            return null;
+        }
+        $off = $region->offsetOf($address);
+        return unpack('P', $region->bytes, $off + 32)[1];
+    }
+
+    #[\Override]
     public function objectRefcount(int $address): ?int
     {
         $region = $this->regions->regionFor($address, 56);
@@ -293,6 +304,17 @@ final class FastPathReader implements FastPathReaderInterface
     }
 
     #[\Override]
+    public function objectTypeInfo(int $address): ?int
+    {
+        $region = $this->regions->regionFor($address, 56);
+        if ($region === null) {
+            return null;
+        }
+        $off = $region->offsetOf($address);
+        return ord($region->bytes[$off + 4]) | (ord($region->bytes[$off + 4 + 1]) << 8) | (ord($region->bytes[$off + 4 + 2]) << 16) | (ord($region->bytes[$off + 4 + 3]) << 24);
+    }
+
+    #[\Override]
     public function stringVal(int $address, int $len): ?string
     {
         $region = $this->regions->regionFor($address, 32 + $len);
@@ -301,6 +323,37 @@ final class FastPathReader implements FastPathReaderInterface
         }
         $off = $region->offsetOf($address);
         return substr($region->bytes, $off + 32, $len);
+    }
+
+    /** @var array<int, array{class_name: string, default_properties_count: int}> */
+    private array $ce_cache = [];
+
+    #[\Override]
+    public function resolveClassEntry(int $ce_addr): ?array
+    {
+        if (isset($this->ce_cache[$ce_addr])) {
+            return $this->ce_cache[$ce_addr];
+        }
+        $region = $this->regions->regionFor($ce_addr, 64);
+        if ($region === null) {
+            return null;
+        }
+        $off = $region->offsetOf($ce_addr);
+        $name_ptr = unpack('P', $region->bytes, $off + 8)[1];
+        $dpc = unpack('l', $region->bytes, $off + 32)[1];
+        if ($name_ptr === 0) {
+            return null;
+        }
+        $sregion = $this->regions->regionFor($name_ptr, 32);
+        if ($sregion === null) {
+            return null;
+        }
+        $soff = $sregion->offsetOf($name_ptr);
+        $len = unpack('P', $region->bytes, $soff + 16)[1];
+        $name = substr($sregion->bytes, $soff + 32, $len);
+        $result = ['class_name' => $name, 'default_properties_count' => $dpc];
+        $this->ce_cache[$ce_addr] = $result;
+        return $result;
     }
 
     #[\Override]

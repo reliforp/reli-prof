@@ -88,6 +88,14 @@ $struct_defs = [
             'CE' => [['ce'], 'ptr'],
             'HANDLERS' => [['handlers'], 'ptr'],
             'PROPERTIES_TABLE' => [['properties_table'], 'ptr'],
+            'PROPERTIES' => [['properties'], 'ptr'],
+        ],
+    ],
+    'ZendClassEntry' => [
+        'c_type' => 'zend_class_entry',
+        'fields' => [
+            'NAME' => [['name'], 'ptr'],
+            'DEFAULT_PROPERTIES_COUNT' => [['default_properties_count'], 'i32le'],
         ],
     ],
     'ZendRefcounted' => [
@@ -461,7 +469,9 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $methods[] = genMethod('objectHandle', $obj_size, 'u32le', $obj['OFFSET_HANDLE'] ?? 8);
     $methods[] = genMethod('objectHandlers', $obj_size, 'ptr', $obj['OFFSET_HANDLERS'] ?? 24);
     $methods[] = genMethod('objectPropertiesTable', $obj_size, 'ptr', $obj['OFFSET_PROPERTIES_TABLE'] ?? 32);
+    $methods[] = genMethod('objectProperties', $obj_size, 'ptr', $obj['OFFSET_PROPERTIES'] ?? 40);
     $methods[] = genMethod('objectRefcount', $obj_size, 'u32le', $obj['OFFSET_GC_REFCOUNT'] ?? 0);
+    $methods[] = genMethod('objectTypeInfo', $obj_size, 'u32le', $obj['OFFSET_GC_TYPE_INFO'] ?? 4);
 
     $lines = [];
     $lines[] = '<?php';
@@ -501,6 +511,48 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $lines[] = '        }';
     $lines[] = '        $off = $region->offsetOf($address);';
     $lines[] = "        return substr(\$region->bytes, \$off + {$str_size}, \$len);";
+    $lines[] = '    }';
+    $lines[] = '';
+
+    // resolveClassEntry with cache
+    $ce = $all_offsets['ZendClassEntry'] ?? [];
+    $ce_name_offset = $ce['OFFSET_NAME'] ?? 8;
+    $ce_dpc_offset = $ce['OFFSET_DEFAULT_PROPERTIES_COUNT'] ?? 0;
+    // Determine if i32 or u32 for default_properties_count
+    $ce_dpc_read = inlineReadExpr('i32le', '$region->bytes', "\$off + {$ce_dpc_offset}");
+    $ce_name_read = inlineReadExpr('ptr', '$region->bytes', "\$off + {$ce_name_offset}");
+    $str_len_offset = $str['OFFSET_LEN'] ?? 16;
+    $str_len_read = inlineReadExpr('u64le', '$region->bytes', "\$soff + {$str_len_offset}");
+
+    $lines[] = '    /** @var array<int, array{class_name: string, default_properties_count: int}> */';
+    $lines[] = '    private array $ce_cache = [];';
+    $lines[] = '';
+    $lines[] = '    #[\Override]';
+    $lines[] = '    public function resolveClassEntry(int $ce_addr): ?array';
+    $lines[] = '    {';
+    $lines[] = '        if (isset($this->ce_cache[$ce_addr])) {';
+    $lines[] = '            return $this->ce_cache[$ce_addr];';
+    $lines[] = '        }';
+    $lines[] = '        $region = $this->regions->regionFor($ce_addr, 64);';
+    $lines[] = '        if ($region === null) {';
+    $lines[] = '            return null;';
+    $lines[] = '        }';
+    $lines[] = '        $off = $region->offsetOf($ce_addr);';
+    $lines[] = "        \$name_ptr = {$ce_name_read};";
+    $lines[] = "        \$dpc = {$ce_dpc_read};";
+    $lines[] = '        if ($name_ptr === 0) {';
+    $lines[] = '            return null;';
+    $lines[] = '        }';
+    $lines[] = "        \$sregion = \$this->regions->regionFor(\$name_ptr, {$str_size});";
+    $lines[] = '        if ($sregion === null) {';
+    $lines[] = '            return null;';
+    $lines[] = '        }';
+    $lines[] = '        $soff = $sregion->offsetOf($name_ptr);';
+    $lines[] = "        \$len = {$str_len_read};";
+    $lines[] = "        \$name = substr(\$sregion->bytes, \$soff + {$str_size}, \$len);";
+    $lines[] = '        $result = [\'class_name\' => $name, \'default_properties_count\' => $dpc];';
+    $lines[] = '        $this->ce_cache[$ce_addr] = $result;';
+    $lines[] = '        return $result;';
     $lines[] = '    }';
     $lines[] = '';
 

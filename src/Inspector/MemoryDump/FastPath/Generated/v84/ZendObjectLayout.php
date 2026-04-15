@@ -15,4 +15,5 @@ final class ZendObjectLayout
     public const OFFSET_CE = 16;
     public const OFFSET_HANDLERS = 24;
     public const OFFSET_PROPERTIES_TABLE = 40;
+    public const OFFSET_PROPERTIES = 32;
 }

@@ -37,3 +37,8 @@ function zendobject_properties_table(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 40)[1];
 }
+
+function zendobject_properties(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 32)[1];
+}

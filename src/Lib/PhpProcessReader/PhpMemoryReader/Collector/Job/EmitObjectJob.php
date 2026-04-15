@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
+use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
+use Reli\Inspector\MemoryDump\FastPath\ZvalType;
 use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
@@ -21,6 +23,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectHandlersM
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectPropertiesContext;
+use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
@@ -67,8 +70,127 @@ final class EmitObjectJob implements CollectorJob
             }
         }
 
+        $fp = $ctx->fast_path;
+        if ($fp !== null) {
+            $refcount = $fp->objectRefcount($address);
+            if ($refcount !== null) {
+                $ce_addr = $fp->objectCe($address);
+                if ($ce_addr !== null && $ce_addr !== 0) {
+                    $ce_info = $fp->resolveClassEntry($ce_addr);
+                    if ($ce_info !== null) {
+                        $this->processObjectFastPath($fp, $address, $ce_addr, $ce_info, $ctx, $queue);
+                        return;
+                    }
+                }
+            }
+        }
+
         $object = $ctx->dereferencer->deref($this->pointer);
         $this->processObject($object, $ctx, $queue);
+    }
+
+    /**
+     * @param array{class_name: string, default_properties_count: int} $ce_info
+     */
+    private function processObjectFastPath(
+        FastPathReader $fp,
+        int $address,
+        int $ce_addr,
+        array $ce_info,
+        CollectorContext $ctx,
+        JobQueue $queue,
+    ): void {
+        $refcount = $fp->objectRefcount($address) ?? 0;
+        $type_info = $fp->objectTypeInfo($address) ?? 0;
+        $handle = $fp->objectHandle($address) ?? 0;
+        $handlers_addr = $fp->objectHandlers($address) ?? 0;
+
+        $class_name = $ce_info['class_name'];
+        $default_properties_count = $ce_info['default_properties_count'];
+
+        // Compute object memory size (same logic as ZendObject::getMemorySize)
+        $base_size = $this->pointer->size;
+        $obj_address = $address;
+        $size = $base_size + max(0, $default_properties_count - 1) * 16;
+
+        // Special classes need std_offset adjustment — fall back to FFI
+        if (
+            $class_name === \Fiber::class
+            || $class_name === \Closure::class
+            || $class_name === \Generator::class
+            || $class_name === \WeakReference::class
+            || $class_name === \WeakMap::class
+            || $class_name === \PDO::class
+            || $class_name === \PDOStatement::class
+        ) {
+            $object = $ctx->dereferencer->deref($this->pointer);
+            $this->processObject($object, $ctx, $queue);
+            return;
+        }
+
+        $object_location = new ZendObjectMemoryLocation(
+            $obj_address,
+            $size,
+            $refcount,
+            $type_info,
+            $class_name,
+        );
+
+        $object_handlers_location = new ZendObjectHandlersMemoryLocation(
+            $handlers_addr,
+            $ctx->zend_type_reader->sizeOf('zend_object_handlers'),
+        );
+
+        $ctx->memory_locations->add($object_location);
+        if ($object_location->address !== $address) {
+            $ctx->memory_locations->addAlias($address, $object_location);
+        }
+        $ctx->memory_locations->add($object_handlers_location);
+
+        $object_context = $ctx->context_pools
+            ->object_context_pool->getContextForLocation($object_location);
+        $object_handlers_context = $ctx->context_pools
+            ->object_context_pool
+            ->getHandlersContextForLocation($object_handlers_location);
+        $object_context->add('object_handlers', $object_handlers_context);
+
+        $object_properties_context = new ObjectPropertiesContext();
+        $object_properties_context->setCount($default_properties_count);
+        $object_context->add('object_properties', $object_properties_context);
+
+        $object_node_id = $ctx->emitNode(
+            $object_context,
+            $this->parent_node_id,
+            $this->link_name,
+            $this->edge_strength,
+        );
+        if ($object_node_id >= 0) {
+            $ctx->address_map[$object_location->address] = $object_node_id;
+            if ($object_location->address !== $address) {
+                $ctx->address_map[$address] = $object_node_id;
+            }
+        }
+
+        $raw_properties = $object_properties_context->getMemoNodeId();
+        $properties_node_id = $raw_properties === null
+            ? null
+            : ($raw_properties < 0 ? -$raw_properties - 1 : $raw_properties);
+
+        $obj_node_id = $object_node_id >= 0 ? $object_node_id : null;
+
+        // Properties iterator — fast path using zval array at properties_table offset
+        if ($default_properties_count > 0) {
+            [$table_offset,] = $ctx->zend_type_reader->getOffsetAndSizeOfMember('zend_object', 'properties_table');
+            $props_base = $address + $table_offset;
+            $queue->push(new ObjectPropertiesFastPathJob(
+                $fp,
+                $props_base,
+                $default_properties_count,
+                $ce_addr,
+                $properties_node_id,
+                $ctx,
+            ));
+        }
     }
 
     private function processObject(ZendObject $object, CollectorContext $ctx, JobQueue $queue): void

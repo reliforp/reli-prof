@@ -56,7 +56,21 @@ interface FastPathReader
     public function objectHandle(int $address): ?int;
     public function objectHandlers(int $address): ?int;
     public function objectPropertiesTable(int $address): ?int;
+    public function objectProperties(int $address): ?int;
     public function objectRefcount(int $address): ?int;
+    public function objectTypeInfo(int $address): ?int;
+
+    // ---- Class Entry Cache ----
+
+    /**
+     * Resolve class_name for a ce address, caching the result.
+     * Returns null if the address is not in a dump region.
+     * The first call for a given ce_addr reads the name via string
+     * chain; subsequent calls return the cached value.
+     *
+     * @return array{class_name: string, default_properties_count: int}|null
+     */
+    public function resolveClassEntry(int $ce_addr): ?array;
 
     // ---- Sizes ----
     public function zvalSize(): int;
