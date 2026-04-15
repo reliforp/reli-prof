@@ -144,17 +144,17 @@ final class EmitArrayJob implements CollectorJob
             $hash_size = 0;
         }
         $real_table_address = $ar_data - $hash_size;
-        // Table size calculation uses zval size for packed arrays
-        // (matching ZendArray::getUsedDataSize / getDataSize).
-        // This differs from the iteration stride on PHP < 8.2 where
-        // packed arrays use Bucket layout for data access but zval
-        // size for memory allocation.
+        // Table size uses packedElementSize: on PHP < 8.2 packed arrays
+        // allocate at Bucket granularity (32 bytes), on PHP >= 8.2 at
+        // zval granularity (16 bytes). The FFI path's getUsedDataSize
+        // unconditionally uses * 16 for packed, which undercounts on
+        // PHP < 8.2 — the fast path uses the correct version-aware size.
         $used_data_size = $is_packed
-            ? $n_num_used * $zval_size
+            ? $n_num_used * $packed_elem_size
             : $n_num_used * $bucket_size;
         $used_table_size = $hash_size + $used_data_size;
         $total_data_size = $is_packed
-            ? $n_table_size * $zval_size
+            ? $n_table_size * $packed_elem_size
             : $n_table_size * $bucket_size;
         $total_table_size = $hash_size + $total_data_size;
 
