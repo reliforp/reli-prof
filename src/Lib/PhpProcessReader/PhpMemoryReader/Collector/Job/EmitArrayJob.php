@@ -115,7 +115,7 @@ final class EmitArrayJob implements CollectorJob
             ->array_context_pool
             ->getContextForLocation($array_header_location);
 
-        if ($ar_data === 0 || $is_uninitialized) {
+        if ($ar_data === 0) {
             $node_id = $ctx->emitNode(
                 $array_header_context,
                 $this->parent_node_id,
