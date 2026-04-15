@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
+use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
+use Reli\Lib\PhpInternals\Types\Zend\Bucket;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
@@ -23,6 +25,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableOverh
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayElementsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayPossibleOverheadContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
+use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
@@ -69,8 +72,122 @@ final class EmitArrayJob implements CollectorJob
             }
         }
 
+        $fp = $ctx->fast_path;
+        if ($fp !== null) {
+            $refcount = $fp->arrayRefcount($address);
+            if ($refcount !== null) {
+                $this->processArrayFastPath($fp, $address, $ctx, $queue);
+                return;
+            }
+        }
+
         $array = $ctx->dereferencer->deref($this->pointer);
         $this->processArray($array, $ctx, $queue);
+    }
+
+    private function processArrayFastPath(
+        FastPathReader $fp,
+        int $address,
+        CollectorContext $ctx,
+        JobQueue $queue,
+    ): void {
+        $refcount = $fp->arrayRefcount($address) ?? 0;
+        $type_info = $fp->arrayTypeInfo($address) ?? 0;
+        $flags = $fp->arrayFlags($address) ?? 0;
+        $ar_data = $fp->arrayArData($address) ?? 0;
+        $n_table_mask = $fp->arrayNTableMask($address) ?? 0;
+        $n_num_used = $fp->arrayNNumUsed($address) ?? 0;
+        $n_num_of_elements = $fp->arrayNNumOfElements($address) ?? 0;
+        $n_table_size = $fp->arrayNTableSize($address) ?? 0;
+
+        $array_size = $fp->arraySize();
+        $is_packed = (bool)($flags & (1 << 2));
+        $is_uninitialized = (bool)($flags & (1 << 3));
+
+        $array_header_location = new ZendArrayMemoryLocation(
+            $address,
+            $array_size,
+            $refcount,
+            $type_info,
+        );
+        $ctx->memory_locations->add($array_header_location);
+        $array_header_context = $ctx->context_pools
+            ->array_context_pool
+            ->getContextForLocation($array_header_location);
+
+        if ($ar_data === 0 || $is_uninitialized) {
+            $node_id = $ctx->emitNode(
+                $array_header_context,
+                $this->parent_node_id,
+                $this->link_name,
+                $this->edge_strength,
+            );
+            if ($node_id >= 0) {
+                $ctx->address_map[$address] = $node_id;
+            }
+            return;
+        }
+
+        // Compute table addresses and sizes
+        $bucket_size = $fp->bucketSize();
+        $zval_size = $fp->zvalSize();
+        $hash_size = -$n_table_mask * 4; // uint32_t[nTableMask] before arData
+        if ($hash_size < 0) {
+            $hash_size = 0;
+        }
+        $real_table_address = $ar_data - $hash_size;
+        $used_data_size = $is_packed
+            ? $n_num_used * $zval_size
+            : $n_num_used * $bucket_size;
+        $used_table_size = $hash_size + $used_data_size;
+        $total_data_size = $is_packed
+            ? $n_table_size * $zval_size
+            : $n_table_size * $bucket_size;
+        $total_table_size = $hash_size + $total_data_size;
+
+        $array_table_location = new ZendArrayTableMemoryLocation(
+            $real_table_address,
+            $used_table_size,
+            $is_packed,
+        );
+        $overhead_size = $total_table_size - $used_table_size;
+        $array_table_overhead_location = new ZendArrayTableOverheadMemoryLocation(
+            $real_table_address + $used_table_size,
+            max(0, $overhead_size),
+        );
+
+        $ctx->memory_locations->add($array_table_location);
+        $ctx->memory_locations->add($array_table_overhead_location);
+
+        $array_elements_context = new ArrayElementsContext($array_table_location);
+        $array_elements_context->setCount($n_num_of_elements);
+        $overhead_context = new ArrayPossibleOverheadContext($array_table_overhead_location);
+
+        $array_header_context->add('possible_unused_area', $overhead_context);
+        $array_header_context->add('array_elements', $array_elements_context);
+
+        $header_node_id = $ctx->emitNode(
+            $array_header_context,
+            $this->parent_node_id,
+            $this->link_name,
+            $this->edge_strength,
+        );
+        if ($header_node_id >= 0) {
+            $ctx->address_map[$address] = $header_node_id;
+        }
+
+        $raw_elements = $array_elements_context->getMemoNodeId();
+        $elements_node_id = $raw_elements === null
+            ? null
+            : ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements);
+
+        $queue->push(new ArrayElementsIteratorFastPathJob(
+            $fp,
+            $ar_data,
+            $n_num_used,
+            $is_packed,
+            $elements_node_id,
+        ));
     }
 
     /**

@@ -11,6 +11,7 @@ final class ZendArrayLayout
     public const SIZE = 56;
     public const OFFSET_GC_REFCOUNT = 0;
     public const OFFSET_GC_TYPE_INFO = 4;
+    public const OFFSET_FLAGS = 8;
     public const OFFSET_N_TABLE_MASK = 12;
     public const OFFSET_AR_DATA = 16;
     public const OFFSET_N_NUM_USED = 24;

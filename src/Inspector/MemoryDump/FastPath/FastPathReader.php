@@ -36,6 +36,8 @@ interface FastPathReader
 
     // ---- ZendArray ----
     public function arrayArData(int $address): ?int;
+    public function arrayFlags(int $address): ?int;
+    public function arrayNTableMask(int $address): ?int;
     public function arrayNNumUsed(int $address): ?int;
     public function arrayNNumOfElements(int $address): ?int;
     public function arrayNTableSize(int $address): ?int;

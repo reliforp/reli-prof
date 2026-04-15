@@ -18,6 +18,11 @@ function zendarray_gc_type_info(string $buf, int $off): int
     return ord($buf[$off + 4]) | (ord($buf[$off + 4 + 1]) << 8) | (ord($buf[$off + 4 + 2]) << 16) | (ord($buf[$off + 4 + 3]) << 24);
 }
 
+function zendarray_flags(string $buf, int $off): int
+{
+    return ord($buf[$off + 8]) | (ord($buf[$off + 8 + 1]) << 8) | (ord($buf[$off + 8 + 2]) << 16) | (ord($buf[$off + 8 + 3]) << 24);
+}
+
 function zendarray_n_table_mask(string $buf, int $off): int
 {
     return ord($buf[$off + 12]) | (ord($buf[$off + 12 + 1]) << 8) | (ord($buf[$off + 12 + 2]) << 16) | (ord($buf[$off + 12 + 3]) << 24);

@@ -61,6 +61,7 @@ $struct_defs = [
         'fields' => [
             'GC_REFCOUNT' => [['gc', 'refcount'], 'u32le'],
             'GC_TYPE_INFO' => [['gc', 'u', 'type_info'], 'u32le'],
+            'FLAGS' => [['u', 'flags'], 'u32le'],
             'N_TABLE_MASK' => [['nTableMask'], 'u32le'],
             'AR_DATA' => [['arData'], 'ptr'],
             'N_NUM_USED' => [['nNumUsed'], 'u32le'],
@@ -441,6 +442,8 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
 
     // ZendArray methods
     $methods[] = genMethod('arrayArData', $arr_size, 'ptr', $arr['OFFSET_AR_DATA'] ?? 16);
+    $methods[] = genMethod('arrayFlags', $arr_size, 'u32le', $arr['OFFSET_FLAGS'] ?? 8);
+    $methods[] = genMethod('arrayNTableMask', $arr_size, 'u32le', $arr['OFFSET_N_TABLE_MASK'] ?? 12);
     $methods[] = genMethod('arrayNNumUsed', $arr_size, 'u32le', $arr['OFFSET_N_NUM_USED'] ?? 24);
     $methods[] = genMethod('arrayNNumOfElements', $arr_size, 'u32le', $arr['OFFSET_N_NUM_OF_ELEMENTS'] ?? 28);
     $methods[] = genMethod('arrayNTableSize', $arr_size, 'u32le', $arr['OFFSET_N_TABLE_SIZE'] ?? 32);

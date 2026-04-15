@@ -117,6 +117,28 @@ final class FastPathReader implements FastPathReaderInterface
     }
 
     #[\Override]
+    public function arrayFlags(int $address): ?int
+    {
+        $region = $this->regions->regionFor($address, 56);
+        if ($region === null) {
+            return null;
+        }
+        $off = $region->offsetOf($address);
+        return ord($region->bytes[$off + 8]) | (ord($region->bytes[$off + 8 + 1]) << 8) | (ord($region->bytes[$off + 8 + 2]) << 16) | (ord($region->bytes[$off + 8 + 3]) << 24);
+    }
+
+    #[\Override]
+    public function arrayNTableMask(int $address): ?int
+    {
+        $region = $this->regions->regionFor($address, 56);
+        if ($region === null) {
+            return null;
+        }
+        $off = $region->offsetOf($address);
+        return ord($region->bytes[$off + 12]) | (ord($region->bytes[$off + 12 + 1]) << 8) | (ord($region->bytes[$off + 12 + 2]) << 16) | (ord($region->bytes[$off + 12 + 3]) << 24);
+    }
+
+    #[\Override]
     public function arrayNNumUsed(int $address): ?int
     {
         $region = $this->regions->regionFor($address, 56);
