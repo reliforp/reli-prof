@@ -163,8 +163,8 @@ foreach ($versions as $version) {
         $layout_code = generateLayoutClass($version, $class_name, $layout_constants);
         file_put_contents("{$version_dir}/{$class_name}Layout.php", $layout_code);
 
-        // Emit Reader class
-        $reader_code = generateReaderClass($version, $class_name, $reader_methods);
+        // Emit Reader functions (regular functions, not static methods)
+        $reader_code = generateReaderFunctions($version, $class_name, $layout_constants, $reader_methods);
         file_put_contents("{$version_dir}/{$class_name}Reader.php", $reader_code);
 
         fprintf(
@@ -389,11 +389,15 @@ function generateLayoutClass(string $version, string $class_name, array $constan
     return implode("\n", $lines);
 }
 
-function generateReaderClass(string $version, string $class_name, array $methods): string
+/**
+ * Generate reader as regular functions (not static methods) with
+ * primitive reads inlined. This enables DO_UCALL in the JIT and
+ * avoids the cross-class static call penalty.
+ */
+function generateReaderFunctions(string $version, string $class_name, array $constants, array $methods): string
 {
     $ns = "Reli\\Inspector\\MemoryDump\\FastPath\\Generated\\{$version}";
-    $use = "use Reli\\Inspector\\MemoryDump\\FastPath\\PrimitiveReaders;";
-    $layout_class = "{$class_name}Layout";
+    $prefix = strtolower($class_name);
 
     $lines = [];
     $lines[] = '<?php';
@@ -404,28 +408,43 @@ function generateReaderClass(string $version, string $class_name, array $methods
     $lines[] = '';
     $lines[] = "namespace {$ns};";
     $lines[] = '';
-    $lines[] = $use;
-    $lines[] = '';
-    $lines[] = "final class {$class_name}Reader";
-    $lines[] = '{';
 
     foreach ($methods as $const_name => $info) {
-        $method_name = $info['method_name'];
+        $func_name = $prefix . '_' . strtolower($const_name);
         $read_type = $info['read_type'];
-        $offset_const = $info['offset_const'];
+        $offset = $constants['OFFSET_' . $const_name] ?? null;
+        if ($offset === null) {
+            continue;
+        }
 
-        $lines[] = "    public static function {$method_name}(string \$buf, int \$base): int";
-        $lines[] = '    {';
-        $lines[] = "        return PrimitiveReaders::{$read_type}(\$buf, \$base + {$layout_class}::{$offset_const});";
-        $lines[] = '    }';
+        $body = inlineReadExpr($read_type, '$buf', "\$off + {$offset}");
+
+        $lines[] = "function {$func_name}(string \$buf, int \$off): int";
+        $lines[] = '{';
+        $lines[] = "    return {$body};";
+        $lines[] = '}';
         $lines[] = '';
     }
 
-    // Remove trailing blank line before closing brace
-    if (end($lines) === '') {
-        array_pop($lines);
-    }
-    $lines[] = '}';
-    $lines[] = '';
     return implode("\n", $lines);
+}
+
+/**
+ * Generate an inline read expression for the given type, avoiding
+ * PrimitiveReaders calls. u8/u16/u32 use ord()/bitwise directly.
+ * u64/ptr/i32 use unpack() since manual decoding is verbose.
+ */
+function inlineReadExpr(string $read_type, string $buf_var, string $off_expr): string
+{
+    return match ($read_type) {
+        'u8' => "ord({$buf_var}[{$off_expr}])",
+        'u16le' => "ord({$buf_var}[{$off_expr}]) | (ord({$buf_var}[{$off_expr} + 1]) << 8)",
+        'u32le' => "ord({$buf_var}[{$off_expr}])"
+            . " | (ord({$buf_var}[{$off_expr} + 1]) << 8)"
+            . " | (ord({$buf_var}[{$off_expr} + 2]) << 16)"
+            . " | (ord({$buf_var}[{$off_expr} + 3]) << 24)",
+        'u64le', 'ptr' => "unpack('P', {$buf_var}, {$off_expr})[1]",
+        'i32le' => "unpack('l', {$buf_var}, {$off_expr})[1]",
+        default => throw new \RuntimeException("Unknown read type: {$read_type}"),
+    };
 }

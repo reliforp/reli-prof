@@ -6,42 +6,37 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v74;
 
-use Reli\Inspector\MemoryDump\FastPath\PrimitiveReaders;
-
-final class ZvalReader
+function zval_value_ptr(string $buf, int $off): int
 {
-    public static function readValuePtr(string $buf, int $base): int
-    {
-        return PrimitiveReaders::ptr($buf, $base + ZvalLayout::OFFSET_VALUE_PTR);
-    }
+    return unpack('P', $buf, $off + 0)[1];
+}
 
-    public static function readValueLval(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u64le($buf, $base + ZvalLayout::OFFSET_VALUE_LVAL);
-    }
+function zval_value_lval(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 0)[1];
+}
 
-    public static function readValueDval(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u64le($buf, $base + ZvalLayout::OFFSET_VALUE_DVAL);
-    }
+function zval_value_dval(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 0)[1];
+}
 
-    public static function readU1TypeInfo(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZvalLayout::OFFSET_U1_TYPE_INFO);
-    }
+function zval_u1_type_info(string $buf, int $off): int
+{
+    return ord($buf[$off + 8]) | (ord($buf[$off + 8 + 1]) << 8) | (ord($buf[$off + 8 + 2]) << 16) | (ord($buf[$off + 8 + 3]) << 24);
+}
 
-    public static function readU1VType(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u8($buf, $base + ZvalLayout::OFFSET_U1_V_TYPE);
-    }
+function zval_u1_v_type(string $buf, int $off): int
+{
+    return ord($buf[$off + 8]);
+}
 
-    public static function readU1VTypeFlags(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u8($buf, $base + ZvalLayout::OFFSET_U1_V_TYPE_FLAGS);
-    }
+function zval_u1_v_type_flags(string $buf, int $off): int
+{
+    return ord($buf[$off + 9]);
+}
 
-    public static function readU2Next(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZvalLayout::OFFSET_U2_NEXT);
-    }
+function zval_u2_next(string $buf, int $off): int
+{
+    return ord($buf[$off + 12]) | (ord($buf[$off + 12 + 1]) << 8) | (ord($buf[$off + 12 + 2]) << 16) | (ord($buf[$off + 12 + 3]) << 24);
 }

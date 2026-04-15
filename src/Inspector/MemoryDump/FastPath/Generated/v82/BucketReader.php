@@ -6,37 +6,32 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v82;
 
-use Reli\Inspector\MemoryDump\FastPath\PrimitiveReaders;
-
-final class BucketReader
+function bucket_val_value_ptr(string $buf, int $off): int
 {
-    public static function readValValuePtr(string $buf, int $base): int
-    {
-        return PrimitiveReaders::ptr($buf, $base + BucketLayout::OFFSET_VAL_VALUE_PTR);
-    }
+    return unpack('P', $buf, $off + 0)[1];
+}
 
-    public static function readValU1VType(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u8($buf, $base + BucketLayout::OFFSET_VAL_U1_V_TYPE);
-    }
+function bucket_val_u1_v_type(string $buf, int $off): int
+{
+    return ord($buf[$off + 8]);
+}
 
-    public static function readValU1VTypeFlags(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u8($buf, $base + BucketLayout::OFFSET_VAL_U1_V_TYPE_FLAGS);
-    }
+function bucket_val_u1_v_type_flags(string $buf, int $off): int
+{
+    return ord($buf[$off + 9]);
+}
 
-    public static function readValU1TypeInfo(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + BucketLayout::OFFSET_VAL_U1_TYPE_INFO);
-    }
+function bucket_val_u1_type_info(string $buf, int $off): int
+{
+    return ord($buf[$off + 8]) | (ord($buf[$off + 8 + 1]) << 8) | (ord($buf[$off + 8 + 2]) << 16) | (ord($buf[$off + 8 + 3]) << 24);
+}
 
-    public static function readH(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u64le($buf, $base + BucketLayout::OFFSET_H);
-    }
+function bucket_h(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 16)[1];
+}
 
-    public static function readKey(string $buf, int $base): int
-    {
-        return PrimitiveReaders::ptr($buf, $base + BucketLayout::OFFSET_KEY);
-    }
+function bucket_key(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 24)[1];
 }

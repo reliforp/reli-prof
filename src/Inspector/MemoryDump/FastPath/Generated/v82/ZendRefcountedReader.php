@@ -6,17 +6,12 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v82;
 
-use Reli\Inspector\MemoryDump\FastPath\PrimitiveReaders;
-
-final class ZendRefcountedReader
+function zendrefcounted_gc_refcount(string $buf, int $off): int
 {
-    public static function readGcRefcount(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendRefcountedLayout::OFFSET_GC_REFCOUNT);
-    }
+    return ord($buf[$off + 0]) | (ord($buf[$off + 0 + 1]) << 8) | (ord($buf[$off + 0 + 2]) << 16) | (ord($buf[$off + 0 + 3]) << 24);
+}
 
-    public static function readGcTypeInfo(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendRefcountedLayout::OFFSET_GC_TYPE_INFO);
-    }
+function zendrefcounted_gc_type_info(string $buf, int $off): int
+{
+    return ord($buf[$off + 4]) | (ord($buf[$off + 4 + 1]) << 8) | (ord($buf[$off + 4 + 2]) << 16) | (ord($buf[$off + 4 + 3]) << 24);
 }

@@ -6,42 +6,37 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v84;
 
-use Reli\Inspector\MemoryDump\FastPath\PrimitiveReaders;
-
-final class ZendArrayReader
+function zendarray_gc_refcount(string $buf, int $off): int
 {
-    public static function readGcRefcount(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendArrayLayout::OFFSET_GC_REFCOUNT);
-    }
+    return ord($buf[$off + 0]) | (ord($buf[$off + 0 + 1]) << 8) | (ord($buf[$off + 0 + 2]) << 16) | (ord($buf[$off + 0 + 3]) << 24);
+}
 
-    public static function readGcTypeInfo(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendArrayLayout::OFFSET_GC_TYPE_INFO);
-    }
+function zendarray_gc_type_info(string $buf, int $off): int
+{
+    return ord($buf[$off + 4]) | (ord($buf[$off + 4 + 1]) << 8) | (ord($buf[$off + 4 + 2]) << 16) | (ord($buf[$off + 4 + 3]) << 24);
+}
 
-    public static function readNTableMask(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendArrayLayout::OFFSET_N_TABLE_MASK);
-    }
+function zendarray_n_table_mask(string $buf, int $off): int
+{
+    return ord($buf[$off + 12]) | (ord($buf[$off + 12 + 1]) << 8) | (ord($buf[$off + 12 + 2]) << 16) | (ord($buf[$off + 12 + 3]) << 24);
+}
 
-    public static function readArData(string $buf, int $base): int
-    {
-        return PrimitiveReaders::ptr($buf, $base + ZendArrayLayout::OFFSET_AR_DATA);
-    }
+function zendarray_ar_data(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 16)[1];
+}
 
-    public static function readNNumUsed(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendArrayLayout::OFFSET_N_NUM_USED);
-    }
+function zendarray_n_num_used(string $buf, int $off): int
+{
+    return ord($buf[$off + 24]) | (ord($buf[$off + 24 + 1]) << 8) | (ord($buf[$off + 24 + 2]) << 16) | (ord($buf[$off + 24 + 3]) << 24);
+}
 
-    public static function readNNumOfElements(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendArrayLayout::OFFSET_N_NUM_OF_ELEMENTS);
-    }
+function zendarray_n_num_of_elements(string $buf, int $off): int
+{
+    return ord($buf[$off + 28]) | (ord($buf[$off + 28 + 1]) << 8) | (ord($buf[$off + 28 + 2]) << 16) | (ord($buf[$off + 28 + 3]) << 24);
+}
 
-    public static function readNTableSize(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendArrayLayout::OFFSET_N_TABLE_SIZE);
-    }
+function zendarray_n_table_size(string $buf, int $off): int
+{
+    return ord($buf[$off + 32]) | (ord($buf[$off + 32 + 1]) << 8) | (ord($buf[$off + 32 + 2]) << 16) | (ord($buf[$off + 32 + 3]) << 24);
 }

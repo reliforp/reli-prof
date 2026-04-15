@@ -6,37 +6,32 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v70;
 
-use Reli\Inspector\MemoryDump\FastPath\PrimitiveReaders;
-
-final class ZendObjectReader
+function zendobject_gc_refcount(string $buf, int $off): int
 {
-    public static function readGcRefcount(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendObjectLayout::OFFSET_GC_REFCOUNT);
-    }
+    return ord($buf[$off + 0]) | (ord($buf[$off + 0 + 1]) << 8) | (ord($buf[$off + 0 + 2]) << 16) | (ord($buf[$off + 0 + 3]) << 24);
+}
 
-    public static function readGcTypeInfo(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendObjectLayout::OFFSET_GC_TYPE_INFO);
-    }
+function zendobject_gc_type_info(string $buf, int $off): int
+{
+    return ord($buf[$off + 4]) | (ord($buf[$off + 4 + 1]) << 8) | (ord($buf[$off + 4 + 2]) << 16) | (ord($buf[$off + 4 + 3]) << 24);
+}
 
-    public static function readHandle(string $buf, int $base): int
-    {
-        return PrimitiveReaders::u32le($buf, $base + ZendObjectLayout::OFFSET_HANDLE);
-    }
+function zendobject_handle(string $buf, int $off): int
+{
+    return ord($buf[$off + 8]) | (ord($buf[$off + 8 + 1]) << 8) | (ord($buf[$off + 8 + 2]) << 16) | (ord($buf[$off + 8 + 3]) << 24);
+}
 
-    public static function readCe(string $buf, int $base): int
-    {
-        return PrimitiveReaders::ptr($buf, $base + ZendObjectLayout::OFFSET_CE);
-    }
+function zendobject_ce(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 16)[1];
+}
 
-    public static function readHandlers(string $buf, int $base): int
-    {
-        return PrimitiveReaders::ptr($buf, $base + ZendObjectLayout::OFFSET_HANDLERS);
-    }
+function zendobject_handlers(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 24)[1];
+}
 
-    public static function readPropertiesTable(string $buf, int $base): int
-    {
-        return PrimitiveReaders::ptr($buf, $base + ZendObjectLayout::OFFSET_PROPERTIES_TABLE);
-    }
+function zendobject_properties_table(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 40)[1];
 }

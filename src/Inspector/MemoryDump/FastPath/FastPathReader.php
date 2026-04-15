@@ -24,16 +24,56 @@ namespace Reli\Inspector\MemoryDump\FastPath;
  */
 final class FastPathReader
 {
-    /** @var class-string */
-    private string $zval_reader;
-    /** @var class-string */
-    private string $bucket_reader;
-    /** @var class-string */
-    private string $array_reader;
-    /** @var class-string */
-    private string $string_reader;
-    /** @var class-string */
-    private string $object_reader;
+    /** @var callable(string, int): int */
+    private $fn_zval_type;
+    /** @var callable(string, int): int */
+    private $fn_zval_value_ptr;
+    /** @var callable(string, int): int */
+    private $fn_zval_value_lval;
+    /** @var callable(string, int): int */
+    private $fn_zval_type_info;
+
+    /** @var callable(string, int): int */
+    private $fn_bucket_val_type;
+    /** @var callable(string, int): int */
+    private $fn_bucket_val_value_ptr;
+    /** @var callable(string, int): int */
+    private $fn_bucket_key;
+    /** @var callable(string, int): int */
+    private $fn_bucket_h;
+
+    /** @var callable(string, int): int */
+    private $fn_array_ar_data;
+    /** @var callable(string, int): int */
+    private $fn_array_n_num_used;
+    /** @var callable(string, int): int */
+    private $fn_array_n_num_of_elements;
+    /** @var callable(string, int): int */
+    private $fn_array_n_table_size;
+    /** @var callable(string, int): int */
+    private $fn_array_refcount;
+    /** @var callable(string, int): int */
+    private $fn_array_type_info;
+
+    /** @var callable(string, int): int */
+    private $fn_string_len;
+    /** @var callable(string, int): int */
+    private $fn_string_h;
+    /** @var callable(string, int): int */
+    private $fn_string_refcount;
+    /** @var callable(string, int): int */
+    private $fn_string_type_info;
+
+    /** @var callable(string, int): int */
+    private $fn_object_ce;
+    /** @var callable(string, int): int */
+    private $fn_object_handle;
+    /** @var callable(string, int): int */
+    private $fn_object_handlers;
+    /** @var callable(string, int): int */
+    private $fn_object_properties_table;
+    /** @var callable(string, int): int */
+    private $fn_object_refcount;
 
     private int $zval_size;
     private int $bucket_size;
@@ -42,7 +82,6 @@ final class FastPathReader
     private int $object_header_size;
 
     /**
-     * @psalm-suppress PropertyTypeCoercion — class-strings built from version
      * @psalm-suppress MixedAssignment
      */
     public function __construct(
@@ -50,28 +89,55 @@ final class FastPathReader
         string $php_version,
     ) {
         $ns = "Reli\\Inspector\\MemoryDump\\FastPath\\Generated\\{$php_version}";
-        /** @psalm-suppress PropertyTypeCoercion */
-        $this->zval_reader = "{$ns}\\ZvalReader";
-        /** @psalm-suppress PropertyTypeCoercion */
-        $this->bucket_reader = "{$ns}\\BucketReader";
-        /** @psalm-suppress PropertyTypeCoercion */
-        $this->array_reader = "{$ns}\\ZendArrayReader";
-        /** @psalm-suppress PropertyTypeCoercion */
-        $this->string_reader = "{$ns}\\ZendStringReader";
-        /** @psalm-suppress PropertyTypeCoercion */
-        $this->object_reader = "{$ns}\\ZendObjectReader";
 
-        $layout_ns = $ns;
+        // Load the generated function files
+        $gen_dir = __DIR__ . "/Generated/{$php_version}";
+        foreach (['ZvalReader', 'BucketReader', 'ZendArrayReader', 'ZendStringReader', 'ZendObjectReader', 'ZendRefcountedReader'] as $f) {
+            $path = "{$gen_dir}/{$f}.php";
+            if (is_file($path)) {
+                require_once $path;
+            }
+        }
+
+        // Bind function references
+        $this->fn_zval_type = "{$ns}\\zval_u1_v_type";
+        $this->fn_zval_value_ptr = "{$ns}\\zval_value_ptr";
+        $this->fn_zval_value_lval = "{$ns}\\zval_value_lval";
+        $this->fn_zval_type_info = "{$ns}\\zval_u1_type_info";
+
+        $this->fn_bucket_val_type = "{$ns}\\bucket_val_u1_v_type";
+        $this->fn_bucket_val_value_ptr = "{$ns}\\bucket_val_value_ptr";
+        $this->fn_bucket_key = "{$ns}\\bucket_key";
+        $this->fn_bucket_h = "{$ns}\\bucket_h";
+
+        $this->fn_array_ar_data = "{$ns}\\zendarray_ar_data";
+        $this->fn_array_n_num_used = "{$ns}\\zendarray_n_num_used";
+        $this->fn_array_n_num_of_elements = "{$ns}\\zendarray_n_num_of_elements";
+        $this->fn_array_n_table_size = "{$ns}\\zendarray_n_table_size";
+        $this->fn_array_refcount = "{$ns}\\zendarray_gc_refcount";
+        $this->fn_array_type_info = "{$ns}\\zendarray_gc_type_info";
+
+        $this->fn_string_len = "{$ns}\\zendstring_len";
+        $this->fn_string_h = "{$ns}\\zendstring_h";
+        $this->fn_string_refcount = "{$ns}\\zendstring_gc_refcount";
+        $this->fn_string_type_info = "{$ns}\\zendstring_gc_type_info";
+
+        $this->fn_object_ce = "{$ns}\\zendobject_ce";
+        $this->fn_object_handle = "{$ns}\\zendobject_handle";
+        $this->fn_object_handlers = "{$ns}\\zendobject_handlers";
+        $this->fn_object_properties_table = "{$ns}\\zendobject_properties_table";
+        $this->fn_object_refcount = "{$ns}\\zendobject_gc_refcount";
+
         /** @var int */
-        $this->zval_size = constant("{$layout_ns}\\ZvalLayout::SIZE");
+        $this->zval_size = constant("{$ns}\\ZvalLayout::SIZE");
         /** @var int */
-        $this->bucket_size = constant("{$layout_ns}\\BucketLayout::SIZE");
+        $this->bucket_size = constant("{$ns}\\BucketLayout::SIZE");
         /** @var int */
-        $this->array_size = constant("{$layout_ns}\\ZendArrayLayout::SIZE");
+        $this->array_size = constant("{$ns}\\ZendArrayLayout::SIZE");
         /** @var int */
-        $this->string_header_size = constant("{$layout_ns}\\ZendStringLayout::SIZE");
+        $this->string_header_size = constant("{$ns}\\ZendStringLayout::SIZE");
         /** @var int */
-        $this->object_header_size = constant("{$layout_ns}\\ZendObjectLayout::SIZE");
+        $this->object_header_size = constant("{$ns}\\ZendObjectLayout::SIZE");
     }
 
     // ---- Zval ----
@@ -82,8 +148,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->zval_reader, 'readU1VType']($region->bytes, $off);
+        return ($this->fn_zval_type)($region->bytes, $region->offsetOf($address));
     }
 
     public function zvalValuePtr(int $address): ?int
@@ -92,8 +157,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->zval_reader, 'readValuePtr']($region->bytes, $off);
+        return ($this->fn_zval_value_ptr)($region->bytes, $region->offsetOf($address));
     }
 
     public function zvalValueLval(int $address): ?int
@@ -102,8 +166,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->zval_reader, 'readValueLval']($region->bytes, $off);
+        return ($this->fn_zval_value_lval)($region->bytes, $region->offsetOf($address));
     }
 
     public function zvalTypeInfo(int $address): ?int
@@ -112,8 +175,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->zval_reader, 'readU1TypeInfo']($region->bytes, $off);
+        return ($this->fn_zval_type_info)($region->bytes, $region->offsetOf($address));
     }
 
     // ---- Bucket ----
@@ -124,8 +186,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->bucket_reader, 'readValU1VType']($region->bytes, $off);
+        return ($this->fn_bucket_val_type)($region->bytes, $region->offsetOf($address));
     }
 
     public function bucketValValuePtr(int $address): ?int
@@ -134,8 +195,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->bucket_reader, 'readValValuePtr']($region->bytes, $off);
+        return ($this->fn_bucket_val_value_ptr)($region->bytes, $region->offsetOf($address));
     }
 
     public function bucketKeyPtr(int $address): ?int
@@ -144,8 +204,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->bucket_reader, 'readKey']($region->bytes, $off);
+        return ($this->fn_bucket_key)($region->bytes, $region->offsetOf($address));
     }
 
     public function bucketH(int $address): ?int
@@ -154,8 +213,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->bucket_reader, 'readH']($region->bytes, $off);
+        return ($this->fn_bucket_h)($region->bytes, $region->offsetOf($address));
     }
 
     // ---- ZendArray ----
@@ -166,8 +224,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->array_reader, 'readArData']($region->bytes, $off);
+        return ($this->fn_array_ar_data)($region->bytes, $region->offsetOf($address));
     }
 
     public function arrayNNumUsed(int $address): ?int
@@ -176,8 +233,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->array_reader, 'readNNumUsed']($region->bytes, $off);
+        return ($this->fn_array_n_num_used)($region->bytes, $region->offsetOf($address));
     }
 
     public function arrayNNumOfElements(int $address): ?int
@@ -186,8 +242,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->array_reader, 'readNNumOfElements']($region->bytes, $off);
+        return ($this->fn_array_n_num_of_elements)($region->bytes, $region->offsetOf($address));
     }
 
     public function arrayNTableSize(int $address): ?int
@@ -196,8 +251,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->array_reader, 'readNTableSize']($region->bytes, $off);
+        return ($this->fn_array_n_table_size)($region->bytes, $region->offsetOf($address));
     }
 
     public function arrayRefcount(int $address): ?int
@@ -206,8 +260,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->array_reader, 'readGcRefcount']($region->bytes, $off);
+        return ($this->fn_array_refcount)($region->bytes, $region->offsetOf($address));
     }
 
     public function arrayTypeInfo(int $address): ?int
@@ -216,8 +269,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->array_reader, 'readGcTypeInfo']($region->bytes, $off);
+        return ($this->fn_array_type_info)($region->bytes, $region->offsetOf($address));
     }
 
     // ---- ZendString ----
@@ -228,8 +280,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->string_reader, 'readLen']($region->bytes, $off);
+        return ($this->fn_string_len)($region->bytes, $region->offsetOf($address));
     }
 
     public function stringH(int $address): ?int
@@ -238,20 +289,19 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->string_reader, 'readH']($region->bytes, $off);
+        return ($this->fn_string_h)($region->bytes, $region->offsetOf($address));
     }
 
     public function stringVal(int $address, int $len): ?string
     {
-        $val_offset = $this->string_header_size; // val is right after the header
+        $val_offset = $this->string_header_size;
         $total = $val_offset + $len;
         $region = $this->regions->regionFor($address, $total);
         if ($region === null) {
             return null;
         }
         $off = $region->offsetOf($address);
-        return PrimitiveReaders::slice($region->bytes, $off + $val_offset, $len);
+        return substr($region->bytes, $off + $val_offset, $len);
     }
 
     public function stringRefcount(int $address): ?int
@@ -260,8 +310,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->string_reader, 'readGcRefcount']($region->bytes, $off);
+        return ($this->fn_string_refcount)($region->bytes, $region->offsetOf($address));
     }
 
     public function stringTypeInfo(int $address): ?int
@@ -270,8 +319,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->string_reader, 'readGcTypeInfo']($region->bytes, $off);
+        return ($this->fn_string_type_info)($region->bytes, $region->offsetOf($address));
     }
 
     // ---- ZendObject ----
@@ -282,8 +330,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->object_reader, 'readCe']($region->bytes, $off);
+        return ($this->fn_object_ce)($region->bytes, $region->offsetOf($address));
     }
 
     public function objectHandle(int $address): ?int
@@ -292,8 +339,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->object_reader, 'readHandle']($region->bytes, $off);
+        return ($this->fn_object_handle)($region->bytes, $region->offsetOf($address));
     }
 
     public function objectHandlers(int $address): ?int
@@ -302,8 +348,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->object_reader, 'readHandlers']($region->bytes, $off);
+        return ($this->fn_object_handlers)($region->bytes, $region->offsetOf($address));
     }
 
     public function objectPropertiesTable(int $address): ?int
@@ -312,8 +357,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->object_reader, 'readPropertiesTable']($region->bytes, $off);
+        return ($this->fn_object_properties_table)($region->bytes, $region->offsetOf($address));
     }
 
     public function objectRefcount(int $address): ?int
@@ -322,8 +366,7 @@ final class FastPathReader
         if ($region === null) {
             return null;
         }
-        $off = $region->offsetOf($address);
-        return [$this->object_reader, 'readGcRefcount']($region->bytes, $off);
+        return ($this->fn_object_refcount)($region->bytes, $region->offsetOf($address));
     }
 
     // ---- Sizes ----
