@@ -131,7 +131,14 @@ final class EmitArrayJob implements CollectorJob
         // Compute table addresses and sizes
         $bucket_size = $fp->bucketSize();
         $zval_size = $fp->zvalSize();
-        $hash_size = -$n_table_mask * 4; // uint32_t[nTableMask] before arData
+        // nTableMask is stored as a negative uint32 (e.g. 0xFFFFFFF8 for -8).
+        // Convert to signed int32 for the hash size calculation.
+        if ($n_table_mask > 0x7FFFFFFF) {
+            $n_table_mask_signed = $n_table_mask - 0x100000000;
+        } else {
+            $n_table_mask_signed = $n_table_mask;
+        }
+        $hash_size = -$n_table_mask_signed * 4; // uint32_t[-nTableMask] before arData
         if ($hash_size < 0) {
             $hash_size = 0;
         }
@@ -154,6 +161,7 @@ final class EmitArrayJob implements CollectorJob
         $array_table_overhead_location = new ZendArrayTableOverheadMemoryLocation(
             $real_table_address + $used_table_size,
             max(0, $overhead_size),
+            $array_table_location,
         );
 
         $ctx->memory_locations->add($array_table_location);
