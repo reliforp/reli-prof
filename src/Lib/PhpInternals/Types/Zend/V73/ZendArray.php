@@ -85,6 +85,12 @@ class ZendArray extends BaseZendArray implements CDataDereferencable
     }
 
     #[\Override]
+    protected function packedElementSize(): int
+    {
+        return self::BUCKET_SIZE_IN_BYTES;
+    }
+
+    #[\Override]
     public function getDataSize(): int
     {
         return $this->nTableSize * self::BUCKET_SIZE_IN_BYTES;

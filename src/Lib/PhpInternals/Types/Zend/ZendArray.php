@@ -204,16 +204,14 @@ class ZendArray implements CDataDereferencable
     }
 
     /**
-     * Element size for packed arrays. PHP < 8.2 allocates packed
-     * arrays at sizeof(Bucket) = 32; PHP >= 8.2 uses sizeof(zval) = 16
-     * via arPacked. Detected by whether arPacked is available.
+     * Element size for packed arrays. Base class returns 16 (PHP >= 8.2
+     * uses sizeof(zval) via arPacked). V73\ZendArray overrides this to
+     * return BUCKET_SIZE (PHP < 8.2 allocates packed arrays at
+     * sizeof(Bucket) = 32).
      */
-    private function packedElementSize(): int
+    protected function packedElementSize(): int
     {
-        // arPacked exists only on PHP >= 8.2. On older versions the
-        // lazy property resolves to null because the FFI header has
-        // no arPacked union member.
-        return $this->arPacked !== null ? 16 : self::BUCKET_SIZE_IN_BYTES;
+        return 16;
     }
 
     public function getDataSize(): int
