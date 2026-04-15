@@ -203,10 +203,23 @@ class ZendArray implements CDataDereferencable
         return $this->getHashSize($this->nTableMask) + $this->getUsedDataSize();
     }
 
+    /**
+     * Element size for packed arrays. PHP < 8.2 allocates packed
+     * arrays at sizeof(Bucket) = 32; PHP >= 8.2 uses sizeof(zval) = 16
+     * via arPacked. Detected by whether arPacked is available.
+     */
+    private function packedElementSize(): int
+    {
+        // arPacked exists only on PHP >= 8.2. On older versions the
+        // lazy property resolves to null because the FFI header has
+        // no arPacked union member.
+        return $this->arPacked !== null ? 16 : self::BUCKET_SIZE_IN_BYTES;
+    }
+
     public function getDataSize(): int
     {
         if ($this->isPacked()) {
-            return $this->nTableSize * 16;
+            return $this->nTableSize * $this->packedElementSize();
         } else {
             return $this->nTableSize * self::BUCKET_SIZE_IN_BYTES;
         }
@@ -215,7 +228,7 @@ class ZendArray implements CDataDereferencable
     public function getUsedDataSize(): int
     {
         if ($this->isPacked()) {
-            return $this->nNumUsed * 16;
+            return $this->nNumUsed * $this->packedElementSize();
         } else {
             return $this->nNumUsed * self::BUCKET_SIZE_IN_BYTES;
         }
