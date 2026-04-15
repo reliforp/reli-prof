@@ -178,6 +178,34 @@ final class EmitObjectJob implements CollectorJob
 
         $obj_node_id = $object_node_id >= 0 ? $object_node_id : null;
 
+        // Dynamic properties (hash table pointed to by zend_object.properties)
+        $properties_ptr = $fp->objectProperties($address);
+        if ($properties_ptr !== null && $properties_ptr !== 0) {
+            // Check if this is an enum (enums don't have dynamic properties)
+            $is_enum = false;
+            try {
+                $ce_pointer = new Pointer(
+                    \Reli\Lib\PhpInternals\Types\Zend\ZendClassEntry::class,
+                    $ce_addr,
+                    $ctx->zend_type_reader->sizeOf('zend_class_entry'),
+                );
+                $ce_obj = $ctx->dereferencer->deref($ce_pointer);
+                $is_enum = $ce_obj->isEnum();
+            } catch (\Throwable) {
+            }
+            if (!$is_enum) {
+                $queue->push(new EmitArrayJob(
+                    new Pointer(
+                        \Reli\Lib\PhpInternals\Types\Zend\ZendArray::class,
+                        $properties_ptr,
+                        $ctx->zend_type_reader->sizeOf('zend_array'),
+                    ),
+                    $obj_node_id,
+                    'dynamic_properties',
+                ));
+            }
+        }
+
         // Properties iterator — fast path using zval array at properties_table offset
         if ($default_properties_count > 0) {
             [$table_offset,] = $ctx->zend_type_reader->getOffsetAndSizeOfMember('zend_object', 'properties_table');
