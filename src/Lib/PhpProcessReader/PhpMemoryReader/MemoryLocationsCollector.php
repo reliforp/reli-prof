@@ -284,7 +284,7 @@ final class MemoryLocationsCollector
             // free memory. Once a context has been emitted and its
             // node_id recorded in address_map, the pool entry is no
             // longer needed — subsequent dedup hits address_map directly.
-            if (++$drain_counter >= 10000) {
+            if (++$drain_counter >= 100000) {
                 $context_pools->drainEmittedToAddressMap($ctx->address_map);
                 $drain_counter = 0;
             }
