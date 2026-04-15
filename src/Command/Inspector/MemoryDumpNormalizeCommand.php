@@ -65,7 +65,7 @@ final class MemoryDumpNormalizeCommand extends Command
             '<info>%d regions → %d merged regions (%.2f MB)</info>',
             $result['original_count'],
             $result['merged_count'],
-            $result['total_bytes'] / 1024 / 1024,
+            (float)$result['total_bytes'] / 1024 / 1024,
         ));
 
         if ($result['original_count'] === $result['merged_count']) {
