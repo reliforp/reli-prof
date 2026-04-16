@@ -1838,19 +1838,15 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $canonical_neighbors = [];
 
         // ---- Degree trimming: remove nodes that cannot participate in cycles ----
-        // Nodes with in-degree=0 in the strong-all graph cannot be in any
-        // non-trivial SCC. Queue-based peeling on in-degree only, using
-        // FFI arrays for degree tracking — no PHP successor/predecessor
-        // arrays needed (which would be 30+ GB on large dumps).
-        //
-        // Out-degree peeling requires a strong reverse CSR which we don't
-        // have. In-degree-only peeling still removes all leaf nodes and
-        // nodes reachable only from the root direction, which covers the
-        // vast majority of a tree-heavy memory graph.
+        // Queue-based bidirectional peeling using FFI arrays only.
+        // Builds a strong-only reverse CSR (~376 MB FFI for 60M edges)
+        // to enable both in-degree and out-degree peeling.
         $active = FFIHelper::new("int8_t[{$nc}]");
         $in_deg = FFIHelper::new("int32_t[{$nc}]");
+        $out_deg = FFIHelper::new("int32_t[{$nc}]");
 
-        // Pass 1: compute canonical in-degree from strong-all CSR
+        // Build strong reverse CSR (strong edges only, canonical-resolved)
+        $srevDeg = FFIHelper::new("int32_t[{$nc}]");
         for ($v = 0; $v < $nc; $v++) {
             if ((int)$indexToNodeFfi[$v] === -1) {
                 $active[$v] = 0;
@@ -1863,7 +1859,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
             $active[$v] = 1;
 
-            // Count unique canonical successors for in-degree of targets
             $seen = [];
             foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
                 $start = (int)$strongAllOffsets[$oi];
@@ -1874,15 +1869,52 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     if ($cw !== $v && !isset($seen[$cw])) {
                         $seen[$cw] = true;
                         $in_deg[$cw] = (int)$in_deg[$cw] + 1;
+                        $srevDeg[$cw] = (int)$srevDeg[$cw] + 1;
+                    }
+                }
+            }
+            $out_deg[$v] = count($seen);
+        }
+
+        // Build strong reverse CSR offsets + edges
+        $srevOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $srevOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $srevOffsets[$i + 1] = (int)$srevOffsets[$i] + (int)$srevDeg[$i];
+        }
+        $srevTotal = (int)$srevOffsets[$nc];
+        $srevEdges = FFIHelper::new("int32_t[" . max(1, $srevTotal) . "]");
+        $srevPos = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $srevPos[$i] = (int)$srevOffsets[$i];
+        }
+        // Fill reverse edges
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $seen = [];
+            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
+                $start = (int)$strongAllOffsets[$oi];
+                $end = (int)$strongAllOffsets[$oi + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    $cw = $canonIdx[$w] ?? $w;
+                    if ($cw !== $v && !isset($seen[$cw])) {
+                        $seen[$cw] = true;
+                        $p = (int)$srevPos[$cw];
+                        $srevEdges[$p] = $v;
+                        $srevPos[$cw] = $p + 1;
                     }
                 }
             }
         }
+        unset($srevDeg, $srevPos);
 
-        // Queue-based in-degree peeling
+        // Queue-based bidirectional peeling
         $queue = [];
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] !== 0 && (int)$in_deg[$v] === 0) {
+            if ((int)$active[$v] !== 0 && ((int)$in_deg[$v] === 0 || (int)$out_deg[$v] === 0)) {
                 $queue[] = $v;
             }
         }
@@ -1894,7 +1926,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
             $active[$v] = 0;
 
-            // Decrement successors' in-degree (dedupe via $seen)
+            // Decrement successors' in-degree via forward strong CSR
             $seen = [];
             foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
                 $start = (int)$strongAllOffsets[$oi];
@@ -1911,8 +1943,21 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                 }
             }
+
+            // Decrement predecessors' out-degree via strong reverse CSR
+            $start = (int)$srevOffsets[$v];
+            $end = (int)$srevOffsets[$v + 1];
+            for ($j = $start; $j < $end; $j++) {
+                $cw = (int)$srevEdges[$j];
+                if ((int)$active[$cw] !== 0) {
+                    $out_deg[$cw] = (int)$out_deg[$cw] - 1;
+                    if ((int)$out_deg[$cw] === 0) {
+                        $queue[] = $cw;
+                    }
+                }
+            }
         }
-        unset($in_deg);
+        unset($in_deg, $out_deg, $srevOffsets, $srevEdges);
 
         // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
         // tarjan_on_stack uses 0/1 because int8 is plenty.
