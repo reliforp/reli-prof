@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DiskBackedStringDict;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Writer;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
@@ -127,10 +128,243 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
             . $this->packString(gmdate('Y-m-d\TH:i:s\Z'));
         $writer->writeSection(Format::SECTION_RUNS, $runs_data, 1);
 
+        // Section 8+: On-disk CSR sections for fast report loading.
+        // Built from the edge temp file in two passes without loading
+        // all edges into PHP memory.
+        $this->buildCsrSections(
+            $writer,
+            $sink->getEdgeTmpPath(),
+            $sink->getEdgeCount(),
+            $sink->getNodeCount(),
+        );
+
         $writer->finish();
 
         // Clean up temp files
         $sink->cleanup();
+    }
+
+    /**
+     * Build CSR sections from the edge temp file and write them
+     * to the rmem. Uses two passes over the temp file to avoid
+     * loading all edges into PHP memory:
+     *
+     * Pass 1: count degrees per parent (tree and all-edges)
+     * Pass 2: fill col_idx arrays at the correct positions
+     *
+     * Produces:
+     * - SECTION_TREE_CSR_ROWPTR / COLIDX / LINKNAMES / STRENGTH
+     * - SECTION_TREE_PARENTS
+     * - SECTION_NONTREE_CSR_ROWPTR / COLIDX
+     *
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function buildCsrSections(
+        Writer $writer,
+        string $edgeTmpPath,
+        int $edgeCount,
+        int $nodeCount,
+    ): void {
+        if ($edgeCount === 0 || $nodeCount === 0) {
+            return;
+        }
+
+        // node_id range: 0..nodeCount-1 plus -1 sentinel (mapped to nodeCount)
+        $nc = $nodeCount + 1; // +1 for sentinel -1 → index $nodeCount
+
+        // Allocate degree arrays
+        $treeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $allDeg = FFIHelper::new("int32_t[{$nc}]");
+        $nontreeDeg = FFIHelper::new("int32_t[{$nc}]");
+
+        // Tree parent tracking
+        $treeParents = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $treeParents[$i] = -1;
+        }
+
+        $treeEdgeCount = 0;
+        $nontreeEdgeCount = 0;
+
+        // ---- Pass 1: count degrees ----
+        $fp = fopen($edgeTmpPath, 'rb');
+        if ($fp === false) {
+            return;
+        }
+
+        $chunk_size = 16 * 10000; // read 10K edges at a time
+        $remaining = $edgeCount;
+        while ($remaining > 0) {
+            $batch = min($remaining, 10000);
+            $data = fread($fp, $batch * 16);
+            if ($data === false || strlen($data) < $batch * 16) {
+                break;
+            }
+            for ($i = 0; $i < $batch; $i++) {
+                $off = $i * 16;
+                /** @var array{1: int} */
+                $parent_raw = unpack('V', $data, $off);
+                $parent = $parent_raw[1];
+                if ($parent === 0xFFFFFFFF) {
+                    $parent_idx = $nodeCount; // sentinel -1
+                } else {
+                    $parent_idx = $parent;
+                }
+                $is_tree = ord($data[$off + 12]);
+
+                if ($parent_idx < $nc) {
+                    $allDeg[$parent_idx] = (int)$allDeg[$parent_idx] + 1;
+                    if ($is_tree === 1) {
+                        $treeDeg[$parent_idx] = (int)$treeDeg[$parent_idx] + 1;
+                        $treeEdgeCount++;
+
+                        // Track tree parent for child
+                        /** @var array{1: int} */
+                        $child_raw = unpack('V', $data, $off + 4);
+                        $child_idx = $child_raw[1];
+                        if ($child_idx < $nc) {
+                            $treeParents[$child_idx] = $parent_idx;
+                        }
+                    } else {
+                        $nontreeDeg[$parent_idx] = (int)$nontreeDeg[$parent_idx] + 1;
+                        $nontreeEdgeCount++;
+                    }
+                }
+            }
+            $remaining -= $batch;
+        }
+        fclose($fp);
+
+        // ---- Build row_ptr from degrees ----
+        $treeRowPtr = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $allRowPtr = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $nontreeRowPtr = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+
+        $treeRowPtr[0] = 0;
+        $allRowPtr[0] = 0;
+        $nontreeRowPtr[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $treeRowPtr[$i + 1] = (int)$treeRowPtr[$i] + (int)$treeDeg[$i];
+            $allRowPtr[$i + 1] = (int)$allRowPtr[$i] + (int)$allDeg[$i];
+            $nontreeRowPtr[$i + 1] = (int)$nontreeRowPtr[$i] + (int)$nontreeDeg[$i];
+        }
+
+        $totalAllEdges = (int)$allRowPtr[$nc];
+        $totalTreeEdges = (int)$treeRowPtr[$nc];
+        $totalNontreeEdges = (int)$nontreeRowPtr[$nc];
+
+        // Allocate col_idx + link_name + strength arrays
+        $allColIdx = FFIHelper::new("int32_t[" . max(1, $totalAllEdges) . "]");
+        $treeColIdx = FFIHelper::new("int32_t[" . max(1, $totalTreeEdges) . "]");
+        $treeLinkNames = FFIHelper::new("int32_t[" . max(1, $totalTreeEdges) . "]");
+        $treeStrength = FFIHelper::new("int8_t[" . max(1, $totalTreeEdges) . "]");
+        $nontreeColIdx = FFIHelper::new("int32_t[" . max(1, $totalNontreeEdges) . "]");
+
+        // Position counters (reuse degree arrays)
+        $treePos = FFIHelper::new("int32_t[{$nc}]");
+        $allPos = FFIHelper::new("int32_t[{$nc}]");
+        $nontreePos = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $treePos[$i] = (int)$treeRowPtr[$i];
+            $allPos[$i] = (int)$allRowPtr[$i];
+            $nontreePos[$i] = (int)$nontreeRowPtr[$i];
+        }
+
+        // ---- Pass 2: fill col_idx ----
+        $fp = fopen($edgeTmpPath, 'rb');
+        if ($fp === false) {
+            return;
+        }
+
+        $remaining = $edgeCount;
+        while ($remaining > 0) {
+            $batch = min($remaining, 10000);
+            $data = fread($fp, $batch * 16);
+            if ($data === false || strlen($data) < $batch * 16) {
+                break;
+            }
+            for ($i = 0; $i < $batch; $i++) {
+                $off = $i * 16;
+                /** @var array{1: int} */
+                $parent_raw = unpack('V', $data, $off);
+                $parent = $parent_raw[1];
+                $parent_idx = ($parent === 0xFFFFFFFF) ? $nodeCount : $parent;
+
+                /** @var array{1: int} */
+                $child_raw = unpack('V', $data, $off + 4);
+                $child_idx = $child_raw[1];
+
+                /** @var array{1: int} */
+                $link_raw = unpack('V', $data, $off + 8);
+                $link_name_id = $link_raw[1];
+
+                $is_tree = ord($data[$off + 12]);
+                $strength = ord($data[$off + 13]);
+
+                if ($parent_idx < $nc) {
+                    // All edges
+                    $pos = (int)$allPos[$parent_idx];
+                    $allColIdx[$pos] = $child_idx;
+                    $allPos[$parent_idx] = $pos + 1;
+
+                    if ($is_tree === 1) {
+                        $pos = (int)$treePos[$parent_idx];
+                        $treeColIdx[$pos] = $child_idx;
+                        $treeLinkNames[$pos] = $link_name_id;
+                        $treeStrength[$pos] = $strength;
+                        $treePos[$parent_idx] = $pos + 1;
+                    } else {
+                        $pos = (int)$nontreePos[$parent_idx];
+                        $nontreeColIdx[$pos] = $child_idx;
+                        $nontreePos[$parent_idx] = $pos + 1;
+                    }
+                }
+            }
+            $remaining -= $batch;
+        }
+        fclose($fp);
+
+        // ---- Write CSR sections ----
+        // Helper to serialize FFI array to string
+        $ffiToString = function (\FFI\CData $arr, int $count, int $elem_size): string {
+            return \FFI::string($arr, $count * $elem_size);
+        };
+
+        $writer->writeSection(
+            'tree_csr_rowptr',
+            $ffiToString($treeRowPtr, $nc + 1, 4),
+            $nc + 1,
+        );
+        $writer->writeSection(
+            'tree_csr_colidx',
+            $ffiToString($treeColIdx, max(1, $totalTreeEdges), 4),
+            $totalTreeEdges,
+        );
+        $writer->writeSection(
+            'tree_csr_linknames',
+            $ffiToString($treeLinkNames, max(1, $totalTreeEdges), 4),
+            $totalTreeEdges,
+        );
+        $writer->writeSection(
+            'tree_csr_strength',
+            $ffiToString($treeStrength, max(1, $totalTreeEdges), 1),
+            $totalTreeEdges,
+        );
+        $writer->writeSection(
+            'tree_parents',
+            $ffiToString($treeParents, $nc, 4),
+            $nc,
+        );
+        $writer->writeSection(
+            'nontree_csr_rowptr',
+            $ffiToString($nontreeRowPtr, $nc + 1, 4),
+            $nc + 1,
+        );
+        $writer->writeSection(
+            'nontree_csr_colidx',
+            $ffiToString($nontreeColIdx, max(1, $totalNontreeEdges), 4),
+            $totalNontreeEdges,
+        );
     }
 
     /**
