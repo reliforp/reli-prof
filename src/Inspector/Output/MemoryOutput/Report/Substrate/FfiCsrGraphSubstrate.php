@@ -1884,11 +1884,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 }
             }
             $succ_list = array_keys($seen);
-            $successors[$v] = $succ_list;
-            $out_deg[$v] = count($succ_list);
-            foreach ($succ_list as $cw) {
-                $in_deg[$cw] = (int)$in_deg[$cw] + 1;
-                $predecessors[$cw][] = $v;
+            $d = count($succ_list);
+            $out_deg[$v] = $d;
+            if ($d > 0) {
+                $successors[$v] = $succ_list;
+                foreach ($succ_list as $cw) {
+                    $in_deg[$cw] = (int)$in_deg[$cw] + 1;
+                    $predecessors[$cw][] = $v;
+                }
             }
         }
 
