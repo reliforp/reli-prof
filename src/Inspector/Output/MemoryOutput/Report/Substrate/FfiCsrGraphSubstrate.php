@@ -1847,59 +1847,72 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // ways that are hard to track cheaply during peeling.
         $active = FFIHelper::new("int8_t[{$nc}]");
 
-        if (!$has_canonical) {
-            $out_deg = FFIHelper::new("int32_t[{$nc}]");
-            $in_deg = FFIHelper::new("int32_t[{$nc}]");
+        // Build degree arrays on canonical-resolved nodes.
+        // For each canonical node, collect unique canonical neighbors
+        // and compute out-degree/in-degree at the canonical level.
+        $out_deg = FFIHelper::new("int32_t[{$nc}]");
+        $in_deg = FFIHelper::new("int32_t[{$nc}]");
 
-            for ($v = 0; $v < $nc; $v++) {
-                if ((int)$indexToNodeFfi[$v] === -1) {
-                    $active[$v] = 0;
-                    continue;
-                }
-                $active[$v] = 1;
-                $start = (int)$strongAllOffsets[$v];
-                $end = (int)$strongAllOffsets[$v + 1];
-                $d = 0;
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$indexToNodeFfi[$v] === -1) {
+                $active[$v] = 0;
+                continue;
+            }
+            $cv = $canonIdx[$v] ?? $v;
+            if ($cv !== $v) {
+                $active[$v] = 0; // non-canonical; peeling works on canonical only
+                continue;
+            }
+            $active[$v] = 1;
+
+            // Collect unique canonical neighbors from all original indices
+            $seen_neighbors = [];
+            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
+                $start = (int)$strongAllOffsets[$oi];
+                $end = (int)$strongAllOffsets[$oi + 1];
                 for ($j = $start; $j < $end; $j++) {
                     $w = (int)$strongAllEdges[$j];
-                    if ($w !== $v) {
-                        $d++;
-                        $in_deg[$w] = (int)$in_deg[$w] + 1;
-                    }
-                }
-                $out_deg[$v] = $d;
-            }
-
-            // Iterative peeling
-            $changed = true;
-            while ($changed) {
-                $changed = false;
-                for ($v = 0; $v < $nc; $v++) {
-                    if ((int)$active[$v] === 0) {
-                        continue;
-                    }
-                    if ((int)$in_deg[$v] === 0 || (int)$out_deg[$v] === 0) {
-                        $active[$v] = 0;
-                        $changed = true;
-                        $start = (int)$strongAllOffsets[$v];
-                        $end = (int)$strongAllOffsets[$v + 1];
-                        for ($j = $start; $j < $end; $j++) {
-                            $w = (int)$strongAllEdges[$j];
-                            if ($w !== $v && (int)$active[$w] !== 0) {
-                                $in_deg[$w] = (int)$in_deg[$w] - 1;
-                            }
-                        }
-                        $out_deg[$v] = 0;
+                    $cw = $canonIdx[$w] ?? $w;
+                    if ($cw !== $v && !isset($seen_neighbors[$cw])) {
+                        $seen_neighbors[$cw] = true;
                     }
                 }
             }
-            unset($out_deg, $in_deg);
-        } else {
-            // With canonical: mark all valid nodes as active (no trimming)
-            for ($v = 0; $v < $nc; $v++) {
-                $active[$v] = ((int)$indexToNodeFfi[$v] !== -1) ? 1 : 0;
+            $d = count($seen_neighbors);
+            $out_deg[$v] = $d;
+            foreach ($seen_neighbors as $cw => $_) {
+                $in_deg[$cw] = (int)$in_deg[$cw] + 1;
             }
         }
+
+        // Iterative peeling: remove nodes with in-degree=0 or out-degree=0
+        $changed = true;
+        while ($changed) {
+            $changed = false;
+            for ($v = 0; $v < $nc; $v++) {
+                if ((int)$active[$v] === 0) {
+                    continue;
+                }
+                if ((int)$in_deg[$v] === 0 || (int)$out_deg[$v] === 0) {
+                    $active[$v] = 0;
+                    $changed = true;
+                    // Decrement neighbors' in-degree
+                    foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
+                        $start = (int)$strongAllOffsets[$oi];
+                        $end = (int)$strongAllOffsets[$oi + 1];
+                        for ($j = $start; $j < $end; $j++) {
+                            $w = (int)$strongAllEdges[$j];
+                            $cw = $canonIdx[$w] ?? $w;
+                            if ($cw !== $v && (int)$active[$cw] !== 0) {
+                                $in_deg[$cw] = (int)$in_deg[$cw] - 1;
+                            }
+                        }
+                    }
+                    $out_deg[$v] = 0;
+                }
+            }
+        }
+        unset($out_deg, $in_deg);
 
         // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
         // tarjan_on_stack uses 0/1 because int8 is plenty.
