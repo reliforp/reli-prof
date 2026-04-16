@@ -1840,17 +1840,23 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // ---- Degree trimming: remove nodes that cannot participate in cycles ----
         // Nodes with in-degree=0 or out-degree=0 in the strong-all graph
         // cannot be in any non-trivial SCC. Queue-based peeling removes
-        // them, updating both successor in-degree and predecessor out-degree
-        // via the reverse CSR (revOffsets/revEdges).
+        // them using canonical-level unique neighbor sets (strong edges only).
         //
-        // Degrees are computed at the canonical-node level so that
-        // canonical groups are treated as single nodes.
+        // We build explicit successor/predecessor lists at the canonical
+        // level using only strong edges. This avoids two correctness issues:
+        // 1. revEdges includes weak edges — using it for predecessor
+        //    out-degree would allow weak edges to break strong cycles.
+        // 2. Raw-edge iteration without dedupe can decrement degrees
+        //    multiple times for duplicate/canonical-collapsed edges.
         $active = FFIHelper::new("int8_t[{$nc}]");
+
+        // Build canonical-level successor and predecessor lists (strong only)
+        /** @var array<int, list<int>> canonical csrIdx → unique canonical successors */
+        $successors = [];
+        /** @var array<int, list<int>> canonical csrIdx → unique canonical predecessors */
+        $predecessors = [];
         $out_deg = FFIHelper::new("int32_t[{$nc}]");
         $in_deg = FFIHelper::new("int32_t[{$nc}]");
-
-        $revOffsets = $this->revOffsets;
-        $revEdges = $this->revEdges;
 
         for ($v = 0; $v < $nc; $v++) {
             if ((int)$indexToNodeFfi[$v] === -1) {
@@ -1859,12 +1865,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
             $cv = $canonIdx[$v] ?? $v;
             if ($cv !== $v) {
-                $active[$v] = 0; // non-canonical
+                $active[$v] = 0;
                 continue;
             }
             $active[$v] = 1;
 
-            // Collect unique canonical successors
+            // Unique canonical successors (strong edges only)
             $seen = [];
             foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
                 $start = (int)$strongAllOffsets[$oi];
@@ -1877,9 +1883,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                 }
             }
-            $out_deg[$v] = count($seen);
-            foreach ($seen as $cw => $_) {
+            $succ_list = array_keys($seen);
+            $successors[$v] = $succ_list;
+            $out_deg[$v] = count($succ_list);
+            foreach ($succ_list as $cw) {
                 $in_deg[$cw] = (int)$in_deg[$cw] + 1;
+                $predecessors[$cw][] = $v;
             }
         }
 
@@ -1898,39 +1907,27 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
             $active[$v] = 0;
 
-            // Decrement successors' in-degree
-            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
-                $start = (int)$strongAllOffsets[$oi];
-                $end = (int)$strongAllOffsets[$oi + 1];
-                for ($j = $start; $j < $end; $j++) {
-                    $w = (int)$strongAllEdges[$j];
-                    $cw = $canonIdx[$w] ?? $w;
-                    if ($cw !== $v && (int)$active[$cw] !== 0) {
-                        $in_deg[$cw] = (int)$in_deg[$cw] - 1;
-                        if ((int)$in_deg[$cw] === 0) {
-                            $queue[] = $cw;
-                        }
+            // Decrement successors' in-degree (1 per unique successor)
+            foreach ($successors[$v] ?? [] as $cw) {
+                if ((int)$active[$cw] !== 0) {
+                    $in_deg[$cw] = (int)$in_deg[$cw] - 1;
+                    if ((int)$in_deg[$cw] === 0) {
+                        $queue[] = $cw;
                     }
                 }
             }
 
-            // Decrement predecessors' out-degree via reverse graph
-            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
-                $start = (int)$revOffsets[$oi];
-                $end = (int)$revOffsets[$oi + 1];
-                for ($j = $start; $j < $end; $j++) {
-                    $w = (int)$revEdges[$j];
-                    $cw = $canonIdx[$w] ?? $w;
-                    if ($cw !== $v && (int)$active[$cw] !== 0) {
-                        $out_deg[$cw] = (int)$out_deg[$cw] - 1;
-                        if ((int)$out_deg[$cw] === 0) {
-                            $queue[] = $cw;
-                        }
+            // Decrement predecessors' out-degree (1 per unique predecessor)
+            foreach ($predecessors[$v] ?? [] as $cw) {
+                if ((int)$active[$cw] !== 0) {
+                    $out_deg[$cw] = (int)$out_deg[$cw] - 1;
+                    if ((int)$out_deg[$cw] === 0) {
+                        $queue[] = $cw;
                     }
                 }
             }
         }
-        unset($out_deg, $in_deg);
+        unset($out_deg, $in_deg, $successors, $predecessors);
 
         // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
         // tarjan_on_stack uses 0/1 because int8 is plenty.
