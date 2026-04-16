@@ -1837,16 +1837,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
 
-        // ---- Degree trimming: remove nodes that cannot participate in cycles ----
-        // Queue-based bidirectional peeling using FFI arrays only.
-        // Builds a strong-only reverse CSR (~376 MB FFI for 60M edges)
-        // to enable both in-degree and out-degree peeling.
+        // ---- Degree trimming: two-phase peeling ----
+        //
+        // Phase A: in-degree peeling (forward strongAll only, no reverse).
+        // Phase B: active-only reverse CSR + out-degree peeling.
+        //   After Phase A, only ~0.2% of nodes remain active. The
+        //   active-only reverse CSR is tiny (proportional to active
+        //   edges) instead of the full 60M-edge reverse.
+
         $active = FFIHelper::new("int8_t[{$nc}]");
         $in_deg = FFIHelper::new("int32_t[{$nc}]");
-        $out_deg = FFIHelper::new("int32_t[{$nc}]");
 
-        // Build strong reverse CSR (strong edges only, canonical-resolved)
-        $srevDeg = FFIHelper::new("int32_t[{$nc}]");
+        // Phase A: compute in-degree and initial active set
         for ($v = 0; $v < $nc; $v++) {
             if ((int)$indexToNodeFfi[$v] === -1) {
                 $active[$v] = 0;
@@ -1869,64 +1871,24 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     if ($cw !== $v && !isset($seen[$cw])) {
                         $seen[$cw] = true;
                         $in_deg[$cw] = (int)$in_deg[$cw] + 1;
-                        $srevDeg[$cw] = (int)$srevDeg[$cw] + 1;
-                    }
-                }
-            }
-            $out_deg[$v] = count($seen);
-        }
-
-        // Build strong reverse CSR offsets + edges
-        $srevOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $srevOffsets[0] = 0;
-        for ($i = 0; $i < $nc; $i++) {
-            $srevOffsets[$i + 1] = (int)$srevOffsets[$i] + (int)$srevDeg[$i];
-        }
-        $srevTotal = (int)$srevOffsets[$nc];
-        $srevEdges = FFIHelper::new("int32_t[" . max(1, $srevTotal) . "]");
-        $srevPos = FFIHelper::new("int32_t[{$nc}]");
-        for ($i = 0; $i < $nc; $i++) {
-            $srevPos[$i] = (int)$srevOffsets[$i];
-        }
-        // Fill reverse edges
-        for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] === 0) {
-                continue;
-            }
-            $seen = [];
-            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
-                $start = (int)$strongAllOffsets[$oi];
-                $end = (int)$strongAllOffsets[$oi + 1];
-                for ($j = $start; $j < $end; $j++) {
-                    $w = (int)$strongAllEdges[$j];
-                    $cw = $canonIdx[$w] ?? $w;
-                    if ($cw !== $v && !isset($seen[$cw])) {
-                        $seen[$cw] = true;
-                        $p = (int)$srevPos[$cw];
-                        $srevEdges[$p] = $v;
-                        $srevPos[$cw] = $p + 1;
                     }
                 }
             }
         }
-        unset($srevDeg, $srevPos);
 
-        // Queue-based bidirectional peeling
+        // Phase A: in-degree queue peeling
         $queue = [];
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] !== 0 && ((int)$in_deg[$v] === 0 || (int)$out_deg[$v] === 0)) {
+            if ((int)$active[$v] !== 0 && (int)$in_deg[$v] === 0) {
                 $queue[] = $v;
             }
         }
-
         while ($queue !== []) {
             $v = array_pop($queue);
             if ((int)$active[$v] === 0) {
                 continue;
             }
             $active[$v] = 0;
-
-            // Decrement successors' in-degree via forward strong CSR
             $seen = [];
             foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
                 $start = (int)$strongAllOffsets[$oi];
@@ -1943,12 +1905,84 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                 }
             }
+        }
+        unset($in_deg);
 
-            // Decrement predecessors' out-degree via strong reverse CSR
-            $start = (int)$srevOffsets[$v];
-            $end = (int)$srevOffsets[$v + 1];
+        // Phase B: active-only reverse CSR + out-degree peeling
+        $out_deg = FFIHelper::new("int32_t[{$nc}]");
+        $arevDeg = FFIHelper::new("int32_t[{$nc}]");
+        $active_edge_count = 0;
+
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $seen = [];
+            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
+                $start = (int)$strongAllOffsets[$oi];
+                $end = (int)$strongAllOffsets[$oi + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    $cw = $canonIdx[$w] ?? $w;
+                    if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                        $seen[$cw] = true;
+                        $arevDeg[$cw] = (int)$arevDeg[$cw] + 1;
+                        $active_edge_count++;
+                    }
+                }
+            }
+            $out_deg[$v] = count($seen);
+        }
+
+        $arevOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $arevOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $arevOffsets[$i + 1] = (int)$arevOffsets[$i] + (int)$arevDeg[$i];
+        }
+        $arevEdges = FFIHelper::new("int32_t[" . max(1, $active_edge_count) . "]");
+        $arevPos = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $arevPos[$i] = (int)$arevOffsets[$i];
+        }
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $seen = [];
+            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
+                $start = (int)$strongAllOffsets[$oi];
+                $end = (int)$strongAllOffsets[$oi + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    $cw = $canonIdx[$w] ?? $w;
+                    if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                        $seen[$cw] = true;
+                        $p = (int)$arevPos[$cw];
+                        $arevEdges[$p] = $v;
+                        $arevPos[$cw] = $p + 1;
+                    }
+                }
+            }
+        }
+        unset($arevDeg, $arevPos);
+
+        // Out-degree queue peeling
+        $queue = [];
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] !== 0 && (int)$out_deg[$v] === 0) {
+                $queue[] = $v;
+            }
+        }
+        while ($queue !== []) {
+            $v = array_pop($queue);
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $active[$v] = 0;
+            $start = (int)$arevOffsets[$v];
+            $end = (int)$arevOffsets[$v + 1];
             for ($j = $start; $j < $end; $j++) {
-                $cw = (int)$srevEdges[$j];
+                $cw = (int)$arevEdges[$j];
                 if ((int)$active[$cw] !== 0) {
                     $out_deg[$cw] = (int)$out_deg[$cw] - 1;
                     if ((int)$out_deg[$cw] === 0) {
@@ -1957,7 +1991,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 }
             }
         }
-        unset($in_deg, $out_deg, $srevOffsets, $srevEdges);
+        unset($out_deg, $arevOffsets, $arevEdges);
 
         // Debug: log trimming effectiveness
         $active_after = 0;
