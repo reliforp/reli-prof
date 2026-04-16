@@ -128,7 +128,29 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
             . $this->packString(gmdate('Y-m-d\TH:i:s\Z'));
         $writer->writeSection(Format::SECTION_RUNS, $runs_data, 1);
 
-        // Section 8+: On-disk CSR sections for fast report loading.
+        // Section 8-9: Per-node sizes and classes for fast report loading.
+        $maxNodeId = $sink->getMaxNodeId();
+        if ($maxNodeId >= 0) {
+            $nodeSlots = $maxNodeId + 1;
+            $perNodeSizes = $sink->getPerNodeSizes();
+            if ($perNodeSizes !== null) {
+                $writer->writeSection(
+                    'node_sizes',
+                    \FFI::string($perNodeSizes, $nodeSlots * 8),
+                    $nodeSlots,
+                );
+            }
+            $perNodeClasses = $sink->getPerNodeClasses();
+            if ($perNodeClasses !== null) {
+                $writer->writeSection(
+                    'node_classes',
+                    \FFI::string($perNodeClasses, $nodeSlots * 4),
+                    $nodeSlots,
+                );
+            }
+        }
+
+        // Section 10+: On-disk CSR sections for fast report loading.
         // Built from the edge temp file in two passes without loading
         // all edges into PHP memory.
         $this->buildCsrSections(

@@ -93,6 +93,13 @@ final class BinaryContextTreeSink implements ContextTreeSink
     private int $locationCount = 0;
     private int $attrCount = 0;
 
+    // Per-node size/class accumulators for on-disk sections.
+    // FFI int64/int32 arrays, grown as needed.
+    private ?\FFI\CData $perNodeSizes = null;
+    private ?\FFI\CData $perNodeClasses = null;
+    private int $perNodeCapacity = 0;
+    private int $maxNodeId = -1;
+
     /** Rows to accumulate before flushing each section to its temp file */
     private int $batchSize;
 
@@ -267,6 +274,16 @@ final class BinaryContextTreeSink implements ContextTreeSink
             if ($this->locationBufRows >= $this->batchSize) {
                 $this->flushLocations();
             }
+
+            // Accumulate per-node sizes and classes for on-disk sections
+            $this->ensurePerNodeCapacity($node_id);
+            $this->perNodeSizes[$node_id] = (int)$this->perNodeSizes[$node_id] + $location->size;
+            if (
+                $class_id !== Format::NULL_STRING_ID
+                && (int)$this->perNodeClasses[$node_id] === (int)Format::NULL_STRING_ID
+            ) {
+                $this->perNodeClasses[$node_id] = $class_id;
+            }
         }
 
         // Buffer attributes
@@ -436,6 +453,56 @@ final class BinaryContextTreeSink implements ContextTreeSink
                 @unlink($path);
             }
         }
+    }
+
+    private function ensurePerNodeCapacity(int $node_id): void
+    {
+        if ($node_id > $this->maxNodeId) {
+            $this->maxNodeId = $node_id;
+        }
+        if ($node_id < $this->perNodeCapacity) {
+            return;
+        }
+        $new_cap = max(4096, $this->perNodeCapacity);
+        while ($new_cap <= $node_id) {
+            $new_cap *= 2;
+        }
+        $new_sizes = \Reli\Lib\FFI\FFIHelper::new("int64_t[{$new_cap}]");
+        $new_classes = \Reli\Lib\FFI\FFIHelper::new("int32_t[{$new_cap}]");
+        // Initialize new class slots to NULL_STRING_ID
+        for ($i = 0; $i < $new_cap; $i++) {
+            $new_classes[$i] = Format::NULL_STRING_ID;
+        }
+        // Copy old data
+        if ($this->perNodeSizes !== null && $this->perNodeCapacity > 0) {
+            \FFI::memcpy($new_sizes, $this->perNodeSizes, $this->perNodeCapacity * 8);
+            \FFI::memcpy($new_classes, $this->perNodeClasses, $this->perNodeCapacity * 4);
+        }
+        $this->perNodeSizes = $new_sizes;
+        $this->perNodeClasses = $new_classes;
+        $this->perNodeCapacity = $new_cap;
+    }
+
+    /**
+     * Get per-node sizes as FFI int64 array. Used by BinaryMemoryOutput
+     * to write the node_sizes section.
+     */
+    public function getPerNodeSizes(): ?\FFI\CData
+    {
+        return $this->perNodeSizes;
+    }
+
+    /**
+     * Get per-node class IDs as FFI int32 array (string dict IDs).
+     */
+    public function getPerNodeClasses(): ?\FFI\CData
+    {
+        return $this->perNodeClasses;
+    }
+
+    public function getMaxNodeId(): int
+    {
+        return $this->maxNodeId;
     }
 
     private function bufferEdge(

@@ -297,7 +297,58 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         unset($nodeData, $nodeRows);
 
         // ---- Phase 3: Load node sizes + classes + canonical address grouping ----
-        // Single pass over the locations section for all three purposes.
+        // If on-disk node_sizes and node_classes sections exist, use them
+        // for sizes and classes (skipping the expensive locations scan for
+        // those two purposes). Canonical address grouping still needs
+        // the locations section.
+        $sizesLoaded = false;
+        if ($reader->hasSection('node_sizes') && $reader->hasSection('node_classes')) {
+            $sizesData = $reader->getSectionData('node_sizes');
+            $classesData = $reader->getSectionData('node_classes');
+            $slotsCount = $reader->getSectionElementCount('node_sizes');
+
+            $ffiNodeSizes = $substrate->ffiNodeSizes;
+            $nodeClassIds = $substrate->nodeClassIds;
+            $substrate->nodeSizesSum = 0;
+
+            for ($i = 0; $i < min($slotsCount, $nc); $i++) {
+                // node_id == i (dense), map to CSR index
+                if ($directMap !== null) {
+                    $slot = $i + $directOffset;
+                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                } else {
+                    $csrIdx = $phpMap[$i] ?? -1;
+                }
+                if ($csrIdx < 0) {
+                    continue;
+                }
+
+                /** @var array{1: int} */
+                $size_u = unpack('P', $sizesData, $i * 8);
+                $size = (int)$size_u[1];
+                $ffiNodeSizes[$csrIdx] = $size;
+                $substrate->nodeSizesSum += $size;
+
+                /** @var array{1: int} */
+                $cls_u = unpack('V', $classesData, $i * 4);
+                $cls_id = (int)$cls_u[1];
+                if ($cls_id !== Format::NULL_STRING_ID) {
+                    $className = $dict->lookup($cls_id);
+                    if ($className !== null) {
+                        if (!isset($substrate->classDictReverse[$className])) {
+                            $substrate->classDictReverse[$className] = count($substrate->classDict);
+                            $substrate->classDict[] = $className;
+                        }
+                        $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
+                    }
+                }
+            }
+            $sizesLoaded = true;
+        }
+
+        // Canonical address grouping still needs the locations section
+        // (and if node_sizes/classes weren't available, this pass also
+        // loads sizes and classes).
         /** @var array<int, list<int>> $addr_to_nodes address → [node_id, ...] for canonical */
         $addr_to_nodes = [];
         if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
@@ -307,39 +358,51 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $ffiNodeSizes = $substrate->ffiNodeSizes;
             $nodeClassIds = $substrate->nodeClassIds;
 
-            $substrate->nodeSizesSum = 0;
+            if (!$sizesLoaded) {
+                $substrate->nodeSizesSum = 0;
+            }
             for ($i = 0; $i < $locCount; $i++) {
                 if ($locRows !== null) {
                     $node_id = (int)$locRows[$i]->node_id;
-                    $class_id = (int)$locRows[$i]->class_id;
-                    $size = (int)$locRows[$i]->size;
                     $address = (int)$locRows[$i]->address;
+                    if (!$sizesLoaded) {
+                        $class_id = (int)$locRows[$i]->class_id;
+                        $size = (int)$locRows[$i]->size;
+                    }
                 } else {
                     $off = $i * Format::LOCATION_ROW_SIZE;
                     $node_id = unpack('V', $locData, $off)[1];
-                    $class_id = unpack('V', $locData, $off + 8)[1];
-                    $size = unpack('P', $locData, $off + 20)[1];
                     $address = unpack('P', $locData, $off + 12)[1];
+                    if (!$sizesLoaded) {
+                        $class_id = unpack('V', $locData, $off + 8)[1];
+                        $size = unpack('P', $locData, $off + 20)[1];
+                    }
                 }
 
-                if ($directMap !== null) {
-                    $slot = $node_id + $directOffset;
-                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
-                } else {
-                    $csrIdx = $phpMap[$node_id] ?? -1;
-                }
-                if ($csrIdx >= 0) {
-                    $ffiNodeSizes[$csrIdx] = (int)$ffiNodeSizes[$csrIdx] + (int)$size;
-                    $substrate->nodeSizesSum += (int)$size;
+                if (!$sizesLoaded) {
+                    if ($directMap !== null) {
+                        $slot = $node_id + $directOffset;
+                        $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                    } else {
+                        $csrIdx = $phpMap[$node_id] ?? -1;
+                    }
+                    if ($csrIdx >= 0) {
+                        /** @psalm-suppress PossiblyUndefinedVariable */
+                        $ffiNodeSizes[$csrIdx] = (int)$ffiNodeSizes[$csrIdx] + (int)$size;
+                        /** @psalm-suppress PossiblyUndefinedVariable */
+                        $substrate->nodeSizesSum += (int)$size;
 
-                    if ((int)$class_id !== Format::NULL_STRING_ID && (int)$nodeClassIds[$csrIdx] === -1) {
-                        $className = $dict->lookup((int)$class_id);
-                        if ($className !== null) {
-                            if (!isset($substrate->classDictReverse[$className])) {
-                                $substrate->classDictReverse[$className] = count($substrate->classDict);
-                                $substrate->classDict[] = $className;
+                        /** @psalm-suppress PossiblyUndefinedVariable */
+                        if ((int)$class_id !== Format::NULL_STRING_ID && (int)$nodeClassIds[$csrIdx] === -1) {
+                            /** @psalm-suppress PossiblyUndefinedVariable */
+                            $className = $dict->lookup((int)$class_id);
+                            if ($className !== null) {
+                                if (!isset($substrate->classDictReverse[$className])) {
+                                    $substrate->classDictReverse[$className] = count($substrate->classDict);
+                                    $substrate->classDict[] = $className;
+                                }
+                                $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
                             }
-                            $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
                         }
                     }
                 }
