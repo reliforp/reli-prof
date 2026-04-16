@@ -597,8 +597,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // Read tree CSR
         $treeRowPtrData = $reader->getSectionData('tree_csr_rowptr');
         $treeColIdxData = $reader->getSectionData('tree_csr_colidx');
-        $treeLinkData = $reader->getSectionData('tree_csr_linknames');
-        $treeStrengthData = $reader->getSectionData('tree_csr_strength');
+        $treeLinkData = $reader->getSectionData('tcsr_links');
+        $treeStrengthData = $reader->getSectionData('tcsr_strength');
         $treeParentsData = $reader->getSectionData('tree_parents');
 
         $treeEdgeCount = $reader->getSectionElementCount('tree_csr_colidx');
@@ -690,10 +690,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // Read nontree CSR
         $nontreeEdgeCount = 0;
-        if ($reader->hasSection('nontree_csr_rowptr')) {
-            $ntRowPtrData = $reader->getSectionData('nontree_csr_rowptr');
-            $ntColIdxData = $reader->getSectionData('nontree_csr_colidx');
-            $nontreeEdgeCount = $reader->getSectionElementCount('nontree_csr_colidx');
+        if ($reader->hasSection('ntcsr_rowptr')) {
+            $ntRowPtrData = $reader->getSectionData('ntcsr_rowptr');
+            $ntColIdxData = $reader->getSectionData('ntcsr_colidx');
+            $nontreeEdgeCount = $reader->getSectionElementCount('ntcsr_colidx');
         }
 
         $this->edge_count = $treeEdgeCount + $nontreeEdgeCount;

@@ -341,12 +341,12 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
             $totalTreeEdges,
         );
         $writer->writeSection(
-            'tree_csr_linknames',
+            'tcsr_links',
             $ffiToString($treeLinkNames, max(1, $totalTreeEdges), 4),
             $totalTreeEdges,
         );
         $writer->writeSection(
-            'tree_csr_strength',
+            'tcsr_strength',
             $ffiToString($treeStrength, max(1, $totalTreeEdges), 1),
             $totalTreeEdges,
         );
@@ -356,12 +356,12 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
             $nc,
         );
         $writer->writeSection(
-            'nontree_csr_rowptr',
+            'ntcsr_rowptr',
             $ffiToString($nontreeRowPtr, $nc + 1, 4),
             $nc + 1,
         );
         $writer->writeSection(
-            'nontree_csr_colidx',
+            'ntcsr_colidx',
             $ffiToString($nontreeColIdx, max(1, $totalNontreeEdges), 4),
             $totalNontreeEdges,
         );
