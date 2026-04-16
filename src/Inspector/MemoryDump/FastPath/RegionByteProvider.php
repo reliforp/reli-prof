@@ -26,6 +26,9 @@ final class RegionByteProvider
     private array $cache = [];
     private int $cached_bytes = 0;
 
+    /** Last-hit cache for consecutive accesses to the same region */
+    private ?RegionBytes $last_hit = null;
+
     /**
      * @param list<array{address: int, size: int, file_offset: int}> $region_index
      * @param resource $fp file handle for the dump file
@@ -49,9 +52,16 @@ final class RegionByteProvider
      */
     public function regionFor(int $address, int $size = 1): ?RegionBytes
     {
-        // Check cache first
+        // Fast path: last-hit check (covers consecutive field reads
+        // on the same structure, which is the common case)
+        if ($this->last_hit !== null && $this->last_hit->contains($address, $size)) {
+            return $this->last_hit;
+        }
+
+        // Check cache
         foreach ($this->cache as $region) {
             if ($region->contains($address, $size)) {
+                $this->last_hit = $region;
                 return $region;
             }
         }
@@ -117,6 +127,7 @@ final class RegionByteProvider
         $region = new RegionBytes($addr, $data);
         $this->cache[$addr] = $region;
         $this->cached_bytes += $entry['size'];
+        $this->last_hit = $region;
 
         return $region;
     }
