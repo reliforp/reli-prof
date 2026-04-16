@@ -159,6 +159,12 @@ final class Reader
         return isset($this->toc[$name]);
     }
 
+    /** @return list<string> */
+    public function getSectionNames(): array
+    {
+        return array_keys($this->toc);
+    }
+
     /**
      * Get raw section data as a PHP string.
      *

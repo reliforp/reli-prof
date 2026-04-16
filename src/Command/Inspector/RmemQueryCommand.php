@@ -51,6 +51,12 @@ final class RmemQueryCommand extends Command
                 InputOption::VALUE_NONE,
                 'also show direct children of the node',
             )
+            ->addOption(
+                'sections',
+                null,
+                InputOption::VALUE_NONE,
+                'list all sections in the rmem file with sizes and element counts',
+            )
         ;
     }
 
@@ -67,6 +73,12 @@ final class RmemQueryCommand extends Command
         }
 
         $reader = BinaryReader::open($file);
+
+        if ((bool) $input->getOption('sections')) {
+            $this->printSections($output, $reader);
+            return 0;
+        }
+
         $dict = $reader->getStringDict();
 
         /** @var string|null $node_opt */
@@ -119,6 +131,29 @@ final class RmemQueryCommand extends Command
     /**
      * @psalm-suppress MixedAssignment, PossiblyInvalidArrayAccess
      */
+    private function printSections(OutputInterface $output, BinaryReader $reader): void
+    {
+        $names = $reader->getSectionNames();
+        $output->writeln(sprintf('<comment>%d sections:</comment>', count($names)));
+        $output->writeln(sprintf(
+            '  %-20s %12s %12s %12s',
+            'Name',
+            'Elements',
+            'Length',
+            'Offset',
+        ));
+        $output->writeln('  ' . str_repeat('-', 58));
+        foreach ($names as $name) {
+            $output->writeln(sprintf(
+                '  %-20s %12s %12s %12s',
+                $name,
+                number_format($reader->getSectionElementCount($name)),
+                SizeFormatter::format($reader->getSectionLength($name)),
+                '0x' . dechex($reader->getSectionOffset($name)),
+            ));
+        }
+    }
+
     private function findNodeByAddress(BinaryReader $reader, int $address): ?int
     {
         if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
