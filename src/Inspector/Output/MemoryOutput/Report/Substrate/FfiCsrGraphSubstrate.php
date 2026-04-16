@@ -1839,19 +1839,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // ---- Degree trimming: remove nodes that cannot participate in cycles ----
         // Nodes with in-degree=0 or out-degree=0 in the strong-all graph
-        // cannot be in any SCC with >1 member. Iteratively peel them off
-        // to shrink the graph before running Tarjan.
+        // cannot be in any non-trivial SCC. Queue-based peeling removes
+        // them, updating both successor in-degree and predecessor out-degree
+        // via the reverse CSR (revOffsets/revEdges).
         //
-        // Only applied when there is no canonical mapping, because
-        // canonical merging changes the effective degree of nodes in
-        // ways that are hard to track cheaply during peeling.
+        // Degrees are computed at the canonical-node level so that
+        // canonical groups are treated as single nodes.
         $active = FFIHelper::new("int8_t[{$nc}]");
-
-        // Build degree arrays on canonical-resolved nodes.
-        // For each canonical node, collect unique canonical neighbors
-        // and compute out-degree/in-degree at the canonical level.
         $out_deg = FFIHelper::new("int32_t[{$nc}]");
         $in_deg = FFIHelper::new("int32_t[{$nc}]");
+
+        $revOffsets = $this->revOffsets;
+        $revEdges = $this->revEdges;
 
         for ($v = 0; $v < $nc; $v++) {
             if ((int)$indexToNodeFfi[$v] === -1) {
@@ -1860,55 +1859,74 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
             $cv = $canonIdx[$v] ?? $v;
             if ($cv !== $v) {
-                $active[$v] = 0; // non-canonical; peeling works on canonical only
+                $active[$v] = 0; // non-canonical
                 continue;
             }
             $active[$v] = 1;
 
-            // Collect unique canonical neighbors from all original indices
-            $seen_neighbors = [];
+            // Collect unique canonical successors
+            $seen = [];
             foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
                 $start = (int)$strongAllOffsets[$oi];
                 $end = (int)$strongAllOffsets[$oi + 1];
                 for ($j = $start; $j < $end; $j++) {
                     $w = (int)$strongAllEdges[$j];
                     $cw = $canonIdx[$w] ?? $w;
-                    if ($cw !== $v && !isset($seen_neighbors[$cw])) {
-                        $seen_neighbors[$cw] = true;
+                    if ($cw !== $v && !isset($seen[$cw])) {
+                        $seen[$cw] = true;
                     }
                 }
             }
-            $d = count($seen_neighbors);
-            $out_deg[$v] = $d;
-            foreach ($seen_neighbors as $cw => $_) {
+            $out_deg[$v] = count($seen);
+            foreach ($seen as $cw => $_) {
                 $in_deg[$cw] = (int)$in_deg[$cw] + 1;
             }
         }
 
-        // Iterative peeling: remove nodes with in-degree=0 or out-degree=0
-        $changed = true;
-        while ($changed) {
-            $changed = false;
-            for ($v = 0; $v < $nc; $v++) {
-                if ((int)$active[$v] === 0) {
-                    continue;
-                }
-                if ((int)$in_deg[$v] === 0 || (int)$out_deg[$v] === 0) {
-                    $active[$v] = 0;
-                    $changed = true;
-                    // Decrement neighbors' in-degree
-                    foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
-                        $start = (int)$strongAllOffsets[$oi];
-                        $end = (int)$strongAllOffsets[$oi + 1];
-                        for ($j = $start; $j < $end; $j++) {
-                            $w = (int)$strongAllEdges[$j];
-                            $cw = $canonIdx[$w] ?? $w;
-                            if ($cw !== $v && (int)$active[$cw] !== 0) {
-                                $in_deg[$cw] = (int)$in_deg[$cw] - 1;
-                            }
+        // Queue-based peeling
+        $queue = [];
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] !== 0 && ((int)$in_deg[$v] === 0 || (int)$out_deg[$v] === 0)) {
+                $queue[] = $v;
+            }
+        }
+
+        while ($queue !== []) {
+            $v = array_pop($queue);
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $active[$v] = 0;
+
+            // Decrement successors' in-degree
+            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
+                $start = (int)$strongAllOffsets[$oi];
+                $end = (int)$strongAllOffsets[$oi + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    $cw = $canonIdx[$w] ?? $w;
+                    if ($cw !== $v && (int)$active[$cw] !== 0) {
+                        $in_deg[$cw] = (int)$in_deg[$cw] - 1;
+                        if ((int)$in_deg[$cw] === 0) {
+                            $queue[] = $cw;
                         }
                     }
-                    $out_deg[$v] = 0;
+                }
+            }
+
+            // Decrement predecessors' out-degree via reverse graph
+            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
+                $start = (int)$revOffsets[$oi];
+                $end = (int)$revOffsets[$oi + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$revEdges[$j];
+                    $cw = $canonIdx[$w] ?? $w;
+                    if ($cw !== $v && (int)$active[$cw] !== 0) {
+                        $out_deg[$cw] = (int)$out_deg[$cw] - 1;
+                        if ((int)$out_deg[$cw] === 0) {
+                            $queue[] = $cw;
+                        }
+                    }
                 }
             }
         }
@@ -1959,7 +1977,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                             for ($j = $start; $j < $end; $j++) {
                                 $w = (int)$strongAllEdges[$j];
                                 $cw = $canonIdx[$w] ?? $w;
-                                if ($cw !== $node && !isset($seen[$cw])) {
+                                if ($cw !== $node && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
                                     $seen[$cw] = true;
                                     $neighbors[] = $cw;
                                 }
@@ -1975,7 +1993,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $end = (int)$strongAllOffsets[$node + 1];
                     for ($j = $start; $j < $end; $j++) {
                         $w = (int)$strongAllEdges[$j];
-                        if ($w !== $node && !isset($seen[$w])) {
+                        if ($w !== $node && (int)$active[$w] !== 0 && !isset($seen[$w])) {
                             $seen[$w] = true;
                             $neighbors[] = $w;
                         }
