@@ -377,6 +377,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
 
         // ---- Phase 4: Load edges → build CSR ----
+        // If on-disk CSR sections exist, load them directly.
+        if ($reader->hasSection('tree_csr_rowptr')) {
+            $substrate->loadCsrFromSections($reader, $nc, $dict);
+            $substrate->buildSccAdjacency();
+            $substrate->computeSubtreeSizesFfi();
+            $substrate->computeSccFfi();
+            return $substrate;
+        }
+
+        // Fallback: build CSR from raw edge rows.
         $edgeCount = $reader->getSectionElementCount(Format::SECTION_EDGES);
         $substrate->edge_count = $edgeCount;
         $rootParentIdx = $substrate->nodeIdToIndex(-1);
@@ -567,6 +577,274 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate->computeSubtreeSizesFfi();
         $substrate->computeSccFfi();
         return $substrate;
+    }
+
+    /**
+     * Load pre-built CSR sections from the rmem file.
+     *
+     * Reads tree and nontree CSR row_ptr + col_idx, then derives:
+     * - strong tree/all CSR (filtering by strength byte)
+     * - reverse CSR (inverting the all-edges graph)
+     * - treeLinkIds, treeParentIdx, roots
+     *
+     * @psalm-suppress MixedAssignment, PossiblyInvalidArrayAccess, MixedArrayAccess
+     */
+    private function loadCsrFromSections(
+        BinaryReader $reader,
+        int $nc,
+        \Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict $dict,
+    ): void {
+        // Read tree CSR
+        $treeRowPtrData = $reader->getSectionData('tree_csr_rowptr');
+        $treeColIdxData = $reader->getSectionData('tree_csr_colidx');
+        $treeLinkData = $reader->getSectionData('tree_csr_linknames');
+        $treeStrengthData = $reader->getSectionData('tree_csr_strength');
+        $treeParentsData = $reader->getSectionData('tree_parents');
+
+        $treeEdgeCount = $reader->getSectionElementCount('tree_csr_colidx');
+        $this->edge_count = $treeEdgeCount; // will be updated after nontree
+
+        // Allocate and populate tree CSR from raw bytes
+        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        \FFI::memcpy($this->treeOffsets, $treeRowPtrData, ($nc + 1) * 4);
+
+        $this->treeEdges = FFIHelper::new("int32_t[" . max(1, $treeEdgeCount) . "]");
+        if ($treeEdgeCount > 0) {
+            \FFI::memcpy($this->treeEdges, $treeColIdxData, $treeEdgeCount * 4);
+        }
+
+        // Tree link names
+        $this->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $this->treeLinkIds[$i] = -1;
+        }
+        // Populate from the CSR linknames array: for each parent, walk
+        // its children and set treeLinkIds[child] = link_name_dict_id
+        for ($p = 0; $p < $nc; $p++) {
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            for ($j = $start; $j < $end; $j++) {
+                $child = (int)$this->treeEdges[$j];
+                /** @var array{1: int} */
+                $lid_raw = unpack('V', $treeLinkData, $j * 4);
+                $link_name_id = $lid_raw[1];
+                $link_name = $dict->lookup($link_name_id);
+                if ($link_name !== null) {
+                    if (!isset($this->linkDictReverse[$link_name])) {
+                        $this->linkDictReverse[$link_name] = count($this->linkDict);
+                        $this->linkDict[] = $link_name;
+                    }
+                    $this->treeLinkIds[$child] = $this->linkDictReverse[$link_name];
+                }
+            }
+        }
+
+        // Tree parents
+        $this->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        \FFI::memcpy($this->treeParentIdx, $treeParentsData, $nc * 4);
+
+        // Roots: children of the sentinel node (last index)
+        $sentinelIdx = $nc - 1;
+        $rstart = (int)$this->treeOffsets[$sentinelIdx];
+        $rend = (int)$this->treeOffsets[$sentinelIdx + 1];
+        for ($j = $rstart; $j < $rend; $j++) {
+            $child_node_id = (int)$this->indexToNodeFfi[(int)$this->treeEdges[$j]];
+            $this->roots[] = $child_node_id;
+        }
+
+        // Strong tree CSR: filter tree edges by strength == 0
+        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongTreeCount = 0;
+        for ($p = 0; $p < $nc; $p++) {
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            for ($j = $start; $j < $end; $j++) {
+                if (ord($treeStrengthData[$j]) === 0) {
+                    $strongTreeDeg[$p] = (int)$strongTreeDeg[$p] + 1;
+                    $strongTreeCount++;
+                }
+            }
+        }
+        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongTreeOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $this->strongTreeOffsets[$i + 1] = (int)$this->strongTreeOffsets[$i] + (int)$strongTreeDeg[$i];
+        }
+        $this->strongTreeEdges = FFIHelper::new("int32_t[" . max(1, $strongTreeCount) . "]");
+        $stPos = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $stPos[$i] = (int)$this->strongTreeOffsets[$i];
+        }
+        for ($p = 0; $p < $nc; $p++) {
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            for ($j = $start; $j < $end; $j++) {
+                if (ord($treeStrengthData[$j]) === 0) {
+                    $pos = (int)$stPos[$p];
+                    $this->strongTreeEdges[$pos] = (int)$this->treeEdges[$j];
+                    $stPos[$p] = $pos + 1;
+                }
+            }
+        }
+        unset($strongTreeDeg, $stPos);
+
+        // Read nontree CSR
+        $nontreeEdgeCount = 0;
+        if ($reader->hasSection('nontree_csr_rowptr')) {
+            $ntRowPtrData = $reader->getSectionData('nontree_csr_rowptr');
+            $ntColIdxData = $reader->getSectionData('nontree_csr_colidx');
+            $nontreeEdgeCount = $reader->getSectionElementCount('nontree_csr_colidx');
+        }
+
+        $this->edge_count = $treeEdgeCount + $nontreeEdgeCount;
+
+        // All-edges CSR = tree + nontree (excluding root-parent edges)
+        // Strong all-edges = strong tree + strong nontree (nontree are strong by default)
+        $allDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
+        $revDeg = FFIHelper::new("int32_t[{$nc}]");
+
+        // Count: tree edges (excluding root parent)
+        $rootIdx = $nc - 1; // sentinel
+        for ($p = 0; $p < $nc; $p++) {
+            if ($p === $rootIdx) {
+                continue;
+            }
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            $deg = $end - $start;
+            $allDeg[$p] = (int)$allDeg[$p] + $deg;
+            for ($j = $start; $j < $end; $j++) {
+                if (ord($treeStrengthData[$j]) === 0) {
+                    $strongAllDeg[$p] = (int)$strongAllDeg[$p] + 1;
+                }
+                $ci = (int)$this->treeEdges[$j];
+                $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+            }
+        }
+        // Also count root tree edges for reverse
+        {
+            $start = (int)$this->treeOffsets[$rootIdx];
+            $end = (int)$this->treeOffsets[$rootIdx + 1];
+            for ($j = $start; $j < $end; $j++) {
+                $ci = (int)$this->treeEdges[$j];
+                $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+            }
+        }
+
+        // Count: nontree edges
+        $allCount = 0;
+        $strongAllCount = 0;
+        if ($nontreeEdgeCount > 0) {
+            $ntOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+            \FFI::memcpy($ntOffsets, $ntRowPtrData, ($nc + 1) * 4);
+            $ntEdges = FFIHelper::new("int32_t[" . max(1, $nontreeEdgeCount) . "]");
+            \FFI::memcpy($ntEdges, $ntColIdxData, $nontreeEdgeCount * 4);
+
+            for ($p = 0; $p < $nc; $p++) {
+                $start = (int)$ntOffsets[$p];
+                $end = (int)$ntOffsets[$p + 1];
+                $deg = $end - $start;
+                $allDeg[$p] = (int)$allDeg[$p] + $deg;
+                $strongAllDeg[$p] = (int)$strongAllDeg[$p] + $deg; // nontree are strong
+                for ($j = $start; $j < $end; $j++) {
+                    $ci = (int)$ntEdges[$j];
+                    $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+                }
+            }
+        }
+
+        // Build all-edges CSR
+        $totalAll = 0;
+        $totalStrongAll = 0;
+        $totalRev = 0;
+        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->allOffsets[0] = 0;
+        $this->strongAllOffsets[0] = 0;
+        $this->revOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $this->allOffsets[$i + 1] = (int)$this->allOffsets[$i] + (int)$allDeg[$i];
+            $this->strongAllOffsets[$i + 1] = (int)$this->strongAllOffsets[$i] + (int)$strongAllDeg[$i];
+            $this->revOffsets[$i + 1] = (int)$this->revOffsets[$i] + (int)$revDeg[$i];
+        }
+        $totalAll = (int)$this->allOffsets[$nc];
+        $totalStrongAll = (int)$this->strongAllOffsets[$nc];
+        $totalRev = (int)$this->revOffsets[$nc];
+
+        $this->allEdges = FFIHelper::new("int32_t[" . max(1, $totalAll) . "]");
+        $this->strongAllEdges = FFIHelper::new("int32_t[" . max(1, $totalStrongAll) . "]");
+        $this->revEdges = FFIHelper::new("int32_t[" . max(1, $totalRev) . "]");
+
+        $allP = FFIHelper::new("int32_t[{$nc}]");
+        $sallP = FFIHelper::new("int32_t[{$nc}]");
+        $revP = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $allP[$i] = (int)$this->allOffsets[$i];
+            $sallP[$i] = (int)$this->strongAllOffsets[$i];
+            $revP[$i] = (int)$this->revOffsets[$i];
+        }
+
+        // Fill: tree edges (excluding root)
+        for ($p = 0; $p < $nc; $p++) {
+            if ($p === $rootIdx) {
+                // Still fill reverse for root's children
+                $start = (int)$this->treeOffsets[$p];
+                $end = (int)$this->treeOffsets[$p + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $ci = (int)$this->treeEdges[$j];
+                    $rp = (int)$revP[$ci];
+                    $this->revEdges[$rp] = $p;
+                    $revP[$ci] = $rp + 1;
+                }
+                continue;
+            }
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            for ($j = $start; $j < $end; $j++) {
+                $ci = (int)$this->treeEdges[$j];
+                $ap = (int)$allP[$p];
+                $this->allEdges[$ap] = $ci;
+                $allP[$p] = $ap + 1;
+
+                if (ord($treeStrengthData[$j]) === 0) {
+                    $sp = (int)$sallP[$p];
+                    $this->strongAllEdges[$sp] = $ci;
+                    $sallP[$p] = $sp + 1;
+                }
+
+                $rp = (int)$revP[$ci];
+                $this->revEdges[$rp] = $p;
+                $revP[$ci] = $rp + 1;
+            }
+        }
+
+        // Fill: nontree edges
+        if ($nontreeEdgeCount > 0 && isset($ntOffsets) && isset($ntEdges)) {
+            for ($p = 0; $p < $nc; $p++) {
+                $start = (int)$ntOffsets[$p];
+                $end = (int)$ntOffsets[$p + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $ci = (int)$ntEdges[$j];
+                    $ap = (int)$allP[$p];
+                    $this->allEdges[$ap] = $ci;
+                    $allP[$p] = $ap + 1;
+
+                    $sp = (int)$sallP[$p];
+                    $this->strongAllEdges[$sp] = $ci;
+                    $sallP[$p] = $sp + 1;
+
+                    $rp = (int)$revP[$ci];
+                    $this->revEdges[$rp] = $p;
+                    $revP[$ci] = $rp + 1;
+                }
+            }
+        }
+
+        unset($allDeg, $strongAllDeg, $revDeg, $allP, $sallP, $revP);
+
+        $this->subtreeSizesComputed = false;
     }
 
     /** @return list<int> */
