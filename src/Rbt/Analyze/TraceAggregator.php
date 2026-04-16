@@ -185,7 +185,10 @@ final class TraceAggregator
             }
 
             if ($this->last_count > 0) {
-                $tail_buffer[] = $keys;
+                $tail_buffer[] = [
+                    'frames' => $keys,
+                    'annotations' => $sample->annotations,
+                ];
                 if (count($tail_buffer) > $this->last_count) {
                     array_shift($tail_buffer);
                 }

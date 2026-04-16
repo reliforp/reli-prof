@@ -177,12 +177,9 @@ final class AnalyzeCommand extends Command
     }
 
     /**
-     * Render the most recent samples' call stacks. Each frame is printed on
-     * its own line in phpspy depth order — depth 0 (the leaf, i.e. the
-     * actual current execution position) at the top of each stack — so the
-     * line a glance lands on is the one that matters for "where am I now?".
+     * Render the most recent samples' call stacks with annotations.
      *
-     * @param list<list<string>> $tail
+     * @param list<array{frames: list<string>, annotations: array<string, string>|null}> $tail
      */
     private function printTail(OutputInterface $output, array $tail): void
     {
@@ -193,18 +190,19 @@ final class AnalyzeCommand extends Command
             return;
         }
         $count = count($tail);
-        foreach ($tail as $i => $stack) {
-            // tail is in chronological order (oldest first, newest last) so
-            // the line a glance lands on at the bottom of the output is
-            // always the most recent sample. Label each header by how many
-            // samples ago it was, using "(now)" for the latest entry.
+        foreach ($tail as $i => $entry) {
             $offset = $count - $i - 1;
             $label = $count === 1
                 ? '(now)'
                 : ($offset === 0 ? '(now)' : sprintf('(%d ago)', $offset));
             $output->writeln("  ── sample {$label} ──");
-            foreach ($stack as $depth => $frame) {
+            foreach ($entry['frames'] as $depth => $frame) {
                 $output->writeln(sprintf('  [%2d] %s', $depth, $frame));
+            }
+            if (($entry['annotations'] ?? null) !== null && $entry['annotations'] !== []) {
+                foreach ($entry['annotations'] as $key => $value) {
+                    $output->writeln(sprintf('  # %s = %s', $key, $value));
+                }
             }
         }
     }

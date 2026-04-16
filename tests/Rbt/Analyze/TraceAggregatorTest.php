@@ -185,8 +185,8 @@ class TraceAggregatorTest extends BaseTestCase
         ))->aggregate($samples);
 
         $this->assertCount(2, $result->tail);
-        $this->assertSame(['s3'], $result->tail[0]);
-        $this->assertSame(['s4'], $result->tail[1]);
+        $this->assertSame(['s3'], $result->tail[0]['frames']);
+        $this->assertSame(['s4'], $result->tail[1]['frames']);
     }
 
     public function testLastCountZeroLeavesTailBufferEmpty(): void
