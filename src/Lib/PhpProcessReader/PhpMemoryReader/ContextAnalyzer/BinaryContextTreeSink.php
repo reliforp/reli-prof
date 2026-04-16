@@ -100,9 +100,12 @@ final class BinaryContextTreeSink implements ContextTreeSink
     private int $perNodeCapacity = 0;
     private int $maxNodeId = -1;
 
-    // Canonical address grouping: address → list of node_ids
-    /** @var array<int, list<int>> */
-    private array $addressToNodes = [];
+    // Canonical address grouping: address → min node_id seen so far.
+    // Tracks whether multiple distinct node_ids share an address.
+    /** @var array<int, int> address → min_node_id */
+    private array $addressMinNode = [];
+    /** @var array<int, true> addresses with more than one distinct node_id */
+    private array $addressMultiple = [];
 
     /** Rows to accumulate before flushing each section to its temp file */
     private int $batchSize;
@@ -289,9 +292,19 @@ final class BinaryContextTreeSink implements ContextTreeSink
                 $this->perNodeClasses[$node_id] = $class_id;
             }
 
-            // Track address → node_id for canonical grouping
+            // Track address → min node_id for canonical grouping
             if ($location->address !== 0) {
-                $this->addressToNodes[$location->address][] = $node_id;
+                $addr = $location->address;
+                if (!isset($this->addressMinNode[$addr])) {
+                    $this->addressMinNode[$addr] = $node_id;
+                } else {
+                    if ($this->addressMinNode[$addr] !== $node_id) {
+                        $this->addressMultiple[$addr] = true;
+                        if ($node_id < $this->addressMinNode[$addr]) {
+                            $this->addressMinNode[$addr] = $node_id;
+                        }
+                    }
+                }
             }
         }
 
@@ -518,31 +531,63 @@ final class BinaryContextTreeSink implements ContextTreeSink
      * Build canonical map: for each node_id, the canonical node_id
      * (min among all nodes sharing the same address).
      * Returns FFI int32[maxNodeId+1], -1 for self-canonical.
+     *
+     * Uses a two-pass approach: addressMinNode (built during emit)
+     * gives the min node_id per address. Then re-scans the locations
+     * temp file to find all node_ids at multi-node addresses and
+     * assigns them the canonical.
      */
     public function buildCanonicalMap(): ?\FFI\CData
     {
         if ($this->maxNodeId < 0) {
             return null;
         }
+        if ($this->addressMultiple === []) {
+            return null; // no shared addresses
+        }
+
         $slots = $this->maxNodeId + 1;
         $map = \Reli\Lib\FFI\FFIHelper::new("int32_t[{$slots}]");
-        // Initialize to -1 (self-canonical)
         for ($i = 0; $i < $slots; $i++) {
             $map[$i] = -1;
         }
-        foreach ($this->addressToNodes as $nodes) {
-            if (count($nodes) <= 1) {
-                continue;
+
+        // Re-scan locations temp file to find node_ids at shared addresses
+        $locPath = $this->locationTmpPath;
+        $fp = fopen($locPath, 'rb');
+        if ($fp === false) {
+            return $map;
+        }
+
+        $row_size = Format::LOCATION_ROW_SIZE; // 48 bytes
+        $chunk_rows = 10000;
+        while (!feof($fp)) {
+            $data = fread($fp, $chunk_rows * $row_size);
+            if ($data === false || $data === '') {
+                break;
             }
-            $unique = array_values(array_unique($nodes));
-            if (count($unique) <= 1) {
-                continue;
-            }
-            $canon = min($unique);
-            foreach ($unique as $nid) {
-                $map[$nid] = $canon;
+            $rows = (int)(strlen($data) / $row_size);
+            for ($i = 0; $i < $rows; $i++) {
+                $off = $i * $row_size;
+                /** @var array{1: int} */
+                $nid_u = unpack('V', $data, $off);
+                $node_id = $nid_u[1];
+                /** @var array{1: int} */
+                $addr_u = unpack('P', $data, $off + 12);
+                $address = $addr_u[1];
+
+                if ($address !== 0 && isset($this->addressMultiple[$address])) {
+                    $canon = $this->addressMinNode[$address];
+                    $map[$node_id] = $canon;
+                }
             }
         }
+        fclose($fp);
+
+        // Free the tracking arrays
+        $this->addressMinNode = [];
+        $this->addressMultiple = [];
+
         return $map;
     }
 
