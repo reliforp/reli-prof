@@ -100,6 +100,10 @@ final class BinaryContextTreeSink implements ContextTreeSink
     private int $perNodeCapacity = 0;
     private int $maxNodeId = -1;
 
+    // Canonical address grouping: address → list of node_ids
+    /** @var array<int, list<int>> */
+    private array $addressToNodes = [];
+
     /** Rows to accumulate before flushing each section to its temp file */
     private int $batchSize;
 
@@ -283,6 +287,11 @@ final class BinaryContextTreeSink implements ContextTreeSink
                 && (int)$this->perNodeClasses[$node_id] === (int)Format::NULL_STRING_ID
             ) {
                 $this->perNodeClasses[$node_id] = $class_id;
+            }
+
+            // Track address → node_id for canonical grouping
+            if ($location->address !== 0) {
+                $this->addressToNodes[$location->address][] = $node_id;
             }
         }
 
@@ -503,6 +512,38 @@ final class BinaryContextTreeSink implements ContextTreeSink
     public function getMaxNodeId(): int
     {
         return $this->maxNodeId;
+    }
+
+    /**
+     * Build canonical map: for each node_id, the canonical node_id
+     * (min among all nodes sharing the same address).
+     * Returns FFI int32[maxNodeId+1], -1 for self-canonical.
+     */
+    public function buildCanonicalMap(): ?\FFI\CData
+    {
+        if ($this->maxNodeId < 0) {
+            return null;
+        }
+        $slots = $this->maxNodeId + 1;
+        $map = \Reli\Lib\FFI\FFIHelper::new("int32_t[{$slots}]");
+        // Initialize to -1 (self-canonical)
+        for ($i = 0; $i < $slots; $i++) {
+            $map[$i] = -1;
+        }
+        foreach ($this->addressToNodes as $nodes) {
+            if (count($nodes) <= 1) {
+                continue;
+            }
+            $unique = array_values(array_unique($nodes));
+            if (count($unique) <= 1) {
+                continue;
+            }
+            $canon = min($unique);
+            foreach ($unique as $nid) {
+                $map[$nid] = $canon;
+            }
+        }
+        return $map;
     }
 
     private function bufferEdge(

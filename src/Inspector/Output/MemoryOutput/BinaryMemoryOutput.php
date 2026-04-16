@@ -150,7 +150,19 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
             }
         }
 
-        // Section 10+: On-disk CSR sections for fast report loading.
+        // Section 10: Canonical map
+        if ($maxNodeId >= 0) {
+            $canonicalMap = $sink->buildCanonicalMap();
+            if ($canonicalMap !== null) {
+                $writer->writeSection(
+                    'canonical_map',
+                    \FFI::string($canonicalMap, $nodeSlots * 4),
+                    $nodeSlots,
+                );
+            }
+        }
+
+        // Section 11+: On-disk CSR sections for fast report loading.
         // Built from the edge temp file in two passes without loading
         // all edges into PHP memory.
         $this->buildCsrSections(

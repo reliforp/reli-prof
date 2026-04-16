@@ -346,12 +346,37 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $sizesLoaded = true;
         }
 
-        // Canonical address grouping still needs the locations section
-        // (and if node_sizes/classes weren't available, this pass also
-        // loads sizes and classes).
+        // Load canonical map from on-disk section if available.
+        $canonicalLoaded = false;
+        if ($sizesLoaded && $reader->hasSection('canonical_map')) {
+            $canonData = $reader->getSectionData('canonical_map');
+            $canonSlots = $reader->getSectionElementCount('canonical_map');
+            for ($i = 0; $i < min($canonSlots, $nc); $i++) {
+                /** @var array{1: int} */
+                $c = unpack('l', $canonData, $i * 4); // signed int32
+                $canon_id = $c[1];
+                if ($canon_id >= 0 && $canon_id !== $i) {
+                    $substrate->canonical[$i] = $canon_id;
+                    $substrate->canonical[$canon_id] = $canon_id;
+                }
+            }
+            if ($substrate->canonical !== []) {
+                foreach ($substrate->canonical as $node => $parent) {
+                    $canon = $substrate->findCanonical($node);
+                    $substrate->canonicalToOriginals[$canon][] = $node;
+                }
+                foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
+                    $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
+                }
+            }
+            $canonicalLoaded = true;
+        }
+
+        // If canonical was not loaded from cache, scan locations.
+        // Also needed if sizes/classes weren't loaded from on-disk sections.
         /** @var array<int, list<int>> $addr_to_nodes address → [node_id, ...] for canonical */
         $addr_to_nodes = [];
-        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
+        if (!$canonicalLoaded && $reader->hasSection(Format::SECTION_LOCATIONS)) {
             $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
             $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
             $locData = $locRows === null ? $reader->getSectionData(Format::SECTION_LOCATIONS) : null;
@@ -415,27 +440,29 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             unset($locData, $locRows);
         }
 
-        // Canonical: group nodes by address, assign min(node_id) as canonical
-        foreach ($addr_to_nodes as $nodes) {
-            $unique_nodes = array_values(array_unique($nodes));
-            if (count($unique_nodes) <= 1) {
-                continue;
+        if (!$canonicalLoaded) {
+            // Canonical: group nodes by address, assign min(node_id) as canonical
+            foreach ($addr_to_nodes as $nodes) {
+                $unique_nodes = array_values(array_unique($nodes));
+                if (count($unique_nodes) <= 1) {
+                    continue;
+                }
+                $canon = min($unique_nodes);
+                foreach ($unique_nodes as $nid) {
+                    $substrate->canonical[$nid] = $canon;
+                    $substrate->canonical[$canon] = $canon;
+                }
             }
-            $canon = min($unique_nodes);
-            foreach ($unique_nodes as $nid) {
-                $substrate->canonical[$nid] = $canon;
-                $substrate->canonical[$canon] = $canon;
-            }
-        }
-        unset($addr_to_nodes);
+            unset($addr_to_nodes);
 
-        if ($substrate->canonical !== []) {
-            foreach ($substrate->canonical as $node => $parent) {
-                $canon = $substrate->findCanonical($node);
-                $substrate->canonicalToOriginals[$canon][] = $node;
-            }
-            foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
-                $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
+            if ($substrate->canonical !== []) {
+                foreach ($substrate->canonical as $node => $parent) {
+                    $canon = $substrate->findCanonical($node);
+                    $substrate->canonicalToOriginals[$canon][] = $node;
+                }
+                foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
+                    $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
+                }
             }
         }
 
