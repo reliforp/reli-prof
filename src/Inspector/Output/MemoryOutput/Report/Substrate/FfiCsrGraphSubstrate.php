@@ -1837,6 +1837,70 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
 
+        // ---- Degree trimming: remove nodes that cannot participate in cycles ----
+        // Nodes with in-degree=0 or out-degree=0 in the strong-all graph
+        // cannot be in any SCC with >1 member. Iteratively peel them off
+        // to shrink the graph before running Tarjan.
+        //
+        // Only applied when there is no canonical mapping, because
+        // canonical merging changes the effective degree of nodes in
+        // ways that are hard to track cheaply during peeling.
+        $active = FFIHelper::new("int8_t[{$nc}]");
+
+        if (!$has_canonical) {
+            $out_deg = FFIHelper::new("int32_t[{$nc}]");
+            $in_deg = FFIHelper::new("int32_t[{$nc}]");
+
+            for ($v = 0; $v < $nc; $v++) {
+                if ((int)$indexToNodeFfi[$v] === -1) {
+                    $active[$v] = 0;
+                    continue;
+                }
+                $active[$v] = 1;
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
+                $d = 0;
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    if ($w !== $v) {
+                        $d++;
+                        $in_deg[$w] = (int)$in_deg[$w] + 1;
+                    }
+                }
+                $out_deg[$v] = $d;
+            }
+
+            // Iterative peeling
+            $changed = true;
+            while ($changed) {
+                $changed = false;
+                for ($v = 0; $v < $nc; $v++) {
+                    if ((int)$active[$v] === 0) {
+                        continue;
+                    }
+                    if ((int)$in_deg[$v] === 0 || (int)$out_deg[$v] === 0) {
+                        $active[$v] = 0;
+                        $changed = true;
+                        $start = (int)$strongAllOffsets[$v];
+                        $end = (int)$strongAllOffsets[$v + 1];
+                        for ($j = $start; $j < $end; $j++) {
+                            $w = (int)$strongAllEdges[$j];
+                            if ($w !== $v && (int)$active[$w] !== 0) {
+                                $in_deg[$w] = (int)$in_deg[$w] - 1;
+                            }
+                        }
+                        $out_deg[$v] = 0;
+                    }
+                }
+            }
+            unset($out_deg, $in_deg);
+        } else {
+            // With canonical: mark all valid nodes as active (no trimming)
+            for ($v = 0; $v < $nc; $v++) {
+                $active[$v] = ((int)$indexToNodeFfi[$v] !== -1) ? 1 : 0;
+            }
+        }
+
         // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
         // tarjan_on_stack uses 0/1 because int8 is plenty.
         $tarjan_index = FFIHelper::new("int32_t[{$nc}]");
@@ -1853,7 +1917,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $sccs = [];
 
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$indexToNodeFfi[$v] === -1) {
+            if ((int)$active[$v] === 0) {
                 continue;
             }
             // Use canonical index if available
