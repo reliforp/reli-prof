@@ -1959,6 +1959,15 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         unset($in_deg, $out_deg, $srevOffsets, $srevEdges);
 
+        // Debug: log trimming effectiveness
+        $active_after = 0;
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] !== 0) {
+                $active_after++;
+            }
+        }
+        fwrite(STDERR, "SCC trimming: {$active_after} active of {$nc} canonical nodes\n");
+
         // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
         // tarjan_on_stack uses 0/1 because int8 is plenty.
         $tarjan_index = FFIHelper::new("int32_t[{$nc}]");
