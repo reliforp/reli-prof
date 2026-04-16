@@ -505,6 +505,78 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
         $this->assertSame([2, 3], $direct_parents_4);
     }
 
+    /**
+     * Strong cycle A <-> B must survive trimming even when a weak
+     * edge also points at a cycle member. The weak edge must not
+     * cause the predecessor's out-degree to drop, breaking the cycle.
+     */
+    public function testStrongCycleSurvivesWeakEdgeTrimming(): void
+    {
+        $db = $this->openManualDb();
+
+        // Graph: root -> A -> B (strong tree), B -> A (strong non-tree = cycle)
+        // Also: root -> C -> A (weak non-tree, should not break the cycle)
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'a'), (1, 2, 'a'), (1, 3, 'a')");
+        $db->exec("INSERT INTO context_node_locations
+            (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 1, 1000, 64, 'ZendObjectMemoryLocation', 'App\\A'),
+            (1, 2, 2000, 64, 'ZendObjectMemoryLocation', 'App\\B'),
+            (1, 3, 3000, 64, 'ZendObjectMemoryLocation', 'App\\C')");
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'root', 1, 'strong'),
+            (1, 1, 2, 'next', 1, 'strong'),
+            (1, 2, 1, 'back', 0, 'strong'),
+            (1, NULL, 3, 'root2', 1, 'strong'),
+            (1, 3, 1, 'weak_ref', 0, 'weak')");
+
+        $substrate = FfiCsrGraphSubstrate::loadFromDb($db, 1);
+        $profiles = $substrate->getSccProfiles();
+
+        // The strong cycle {1, 2} must still be detected
+        $this->assertNotEmpty($profiles, 'Strong cycle should survive weak edge trimming');
+        $cycle_nodes = $profiles[0]['nodes'];
+        sort($cycle_nodes);
+        $this->assertSame([1, 2], $cycle_nodes);
+    }
+
+    /**
+     * Duplicate edges A -> B (multiple strong edges) must not cause
+     * B's in-degree to be decremented multiple times when A is peeled,
+     * which could falsely peel B and break a cycle.
+     */
+    public function testDuplicateEdgeDoesNotBreakCycle(): void
+    {
+        $db = $this->openManualDb();
+
+        // Graph: root -> A -> B (tree), A -> B (non-tree duplicate),
+        //        B -> C (tree), C -> B (non-tree = cycle {B, C})
+        $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 1, 'a'), (1, 2, 'a'), (1, 3, 'a')");
+        $db->exec("INSERT INTO context_node_locations
+            (run_id, node_id, address, size, location_type, class_name) VALUES
+            (1, 1, 1000, 64, 'ZendObjectMemoryLocation', 'App\\A'),
+            (1, 2, 2000, 64, 'ZendObjectMemoryLocation', 'App\\B'),
+            (1, 3, 3000, 64, 'ZendObjectMemoryLocation', 'App\\C')");
+        $db->exec("INSERT INTO context_edges
+            (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
+            (1, NULL, 1, 'root', 1, 'strong'),
+            (1, 1, 2, 'link1', 1, 'strong'),
+            (1, 1, 2, 'link2', 0, 'strong'),
+            (1, 2, 3, 'next', 1, 'strong'),
+            (1, 3, 2, 'back', 0, 'strong')");
+
+        $substrate = FfiCsrGraphSubstrate::loadFromDb($db, 1);
+        $profiles = $substrate->getSccProfiles();
+
+        // The cycle {2, 3} must still be detected despite duplicate A->B edges
+        $this->assertNotEmpty($profiles, 'Cycle should survive duplicate edge trimming');
+        $cycle_nodes = $profiles[0]['nodes'];
+        sort($cycle_nodes);
+        $this->assertSame([2, 3], $cycle_nodes);
+    }
+
     private function openManualDb(): \PDO
     {
         $db = new \PDO('sqlite::memory:');
