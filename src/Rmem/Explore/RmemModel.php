@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Rmem\Explore;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
@@ -34,14 +35,29 @@ final class RmemModel
     /** @var array<int, string> node_id => "function:line" label */
     private array $frameLabels;
 
+    /** @var array<int, int> node_id => address */
+    private array $nodeAddresses = [];
+
+    /** @var array<int, string> node_id => string value (for ZendString nodes) */
+    private array $nodeStringValues = [];
+
+    /** @var array<int, array<string, string>> node_id => [key => value] from attributes */
+    private array $nodeAttributes = [];
+
     private function __construct(
         private GraphSubstrate $substrate,
         array $frameLabels,
+        array $nodeAddresses,
+        array $nodeStringValues,
+        array $nodeAttributes,
     ) {
         $this->nodeCount = count($this->getTopRetained(PHP_INT_MAX));
         $this->edgeCount = $substrate->getEdgeCount();
         $this->roots = $substrate->getRoots();
         $this->frameLabels = $frameLabels;
+        $this->nodeAddresses = $nodeAddresses;
+        $this->nodeStringValues = $nodeStringValues;
+        $this->nodeAttributes = $nodeAttributes;
     }
 
     public static function fromSubstrate(
@@ -49,7 +65,82 @@ final class RmemModel
         BinaryReader $reader,
     ): self {
         $frameLabels = BinaryReportDataProvider::loadFrameLabels($reader);
-        return new self($substrate, $frameLabels);
+        [$addresses, $stringValues] = self::loadLocationInfo($reader);
+        $attributes = self::loadAttributes($reader);
+        return new self($substrate, $frameLabels, $addresses, $stringValues, $attributes);
+    }
+
+    /**
+     * Load address and string_value per node from locations section.
+     * @return array{array<int, int>, array<int, string>}
+     */
+    private static function loadLocationInfo(BinaryReader $reader): array
+    {
+        $addresses = [];
+        $stringValues = [];
+
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return [$addresses, $stringValues];
+        }
+
+        $dict = $reader->getStringDict();
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+
+        if ($locRows !== null) {
+            for ($i = 0; $i < $count; $i++) {
+                $nid = (int)$locRows[$i]->node_id;
+                if (!isset($addresses[$nid])) {
+                    $addr = (int)$locRows[$i]->address;
+                    if ($addr !== 0) {
+                        $addresses[$nid] = $addr;
+                    }
+                }
+                if (!isset($stringValues[$nid])) {
+                    $svId = (int)$locRows[$i]->string_value_id;
+                    if ($svId !== Format::NULL_STRING_ID) {
+                        $sv = $dict->lookup($svId);
+                        if ($sv !== null) {
+                            $stringValues[$nid] = $sv;
+                        }
+                    }
+                }
+            }
+        }
+
+        return [$addresses, $stringValues];
+    }
+
+    /**
+     * Load all attributes (key=value pairs) per node.
+     * @return array<int, array<string, string>>
+     */
+    private static function loadAttributes(BinaryReader $reader): array
+    {
+        $attrs = [];
+        if (!$reader->hasSection(Format::SECTION_ATTRIBUTES)) {
+            return $attrs;
+        }
+        $dict = $reader->getStringDict();
+        $data = $reader->getSectionData(Format::SECTION_ATTRIBUTES);
+        $count = $reader->getSectionElementCount(Format::SECTION_ATTRIBUTES);
+        $offset = 0;
+        for ($i = 0; $i < $count; $i++) {
+            if ($offset + 12 > strlen($data)) {
+                break;
+            }
+            $nid = unpack('V', $data, $offset)[1];
+            $keyId = unpack('V', $data, $offset + 4)[1];
+            $valId = unpack('V', $data, $offset + 8)[1];
+            $offset += 12;
+
+            $key = $dict->lookup((int)$keyId);
+            $val = $dict->lookup((int)$valId);
+            if ($key !== null && $val !== null && $key !== 'function_name' && $key !== 'lineno') {
+                $attrs[(int)$nid][$key] = $val;
+            }
+        }
+        return $attrs;
     }
 
     /**
@@ -216,7 +307,7 @@ final class RmemModel
 
     /**
      * Get detailed info for a node (for focus bar / detail view).
-     * @return array{type: string, class: ?string, shallow: int, retained: int}
+     * @return array{type: string, class: ?string, shallow: int, retained: int, address: ?int, string_value: ?string, attributes: array<string, string>}
      */
     public function nodeDetail(int $nodeId): array
     {
@@ -225,6 +316,9 @@ final class RmemModel
             'class' => $this->substrate->getNodeClass($nodeId),
             'shallow' => $this->substrate->getNodeSize($nodeId),
             'retained' => $this->substrate->getSubtreeSize($nodeId),
+            'address' => $this->nodeAddresses[$nodeId] ?? null,
+            'string_value' => $this->nodeStringValues[$nodeId] ?? null,
+            'attributes' => $this->nodeAttributes[$nodeId] ?? [],
         ];
     }
 

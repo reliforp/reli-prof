@@ -334,31 +334,55 @@ final class RmemExploreTui
     }
 
     /**
-     * Build sidebar lines showing path-to-root for the given node.
+     * Build sidebar lines showing node detail + path-to-root.
      * @return list<string>
      */
     private function buildSidebarLines(int $nodeId, int $width, int $totalRows): array
     {
-        $path = $this->model->pathToRoot($nodeId);
         $lines = [];
+        $detail = $this->model->nodeDetail($nodeId);
+        $trunc = fn (string $s): string => strlen($s) > $width - 2
+            ? substr($s, 0, $width - 5) . '...'
+            : $s;
+
+        // Node detail
+        $lines[] = "\e[1m Node detail:\e[0m";
+        $lines[] = ' ' . $trunc("type: {$detail['type']}");
+        if ($detail['class'] !== null) {
+            $lines[] = ' ' . $trunc("class: {$detail['class']}");
+        }
+        $lines[] = ' ' . $trunc("shallow: " . SizeFormatter::format($detail['shallow']));
+        $lines[] = ' ' . $trunc("retained: " . SizeFormatter::format($detail['retained']));
+        if ($detail['address'] !== null) {
+            $lines[] = ' ' . $trunc("addr: 0x" . dechex($detail['address']));
+        }
+        if ($detail['string_value'] !== null) {
+            $preview = $detail['string_value'];
+            if (strlen($preview) > $width - 10) {
+                $preview = substr($preview, 0, $width - 13) . '...';
+            }
+            $lines[] = ' ' . $trunc("val: \"{$preview}\"");
+        }
+        foreach ($detail['attributes'] as $key => $val) {
+            $lines[] = ' ' . $trunc("{$key}: {$val}");
+        }
+
+        $lines[] = '';
         $lines[] = "\e[1m Path to root:\e[0m";
 
+        $path = $this->model->pathToRoot($nodeId);
         foreach ($path as $i => $step) {
             $indent = str_repeat(' ', min($i, 8));
             $link = $step['link_name'];
             $label = $step['label'];
             $text = "{$indent}[{$link}] {$label}";
-            if (strlen($text) > $width - 1) {
-                $text = substr($text, 0, $width - 4) . '...';
-            }
-            $lines[] = " {$text}";
+            $lines[] = ' ' . $trunc($text);
             if (count($lines) >= $totalRows - 3) {
                 $lines[] = ' ...';
                 break;
             }
         }
 
-        // Pad to fill height
         while (count($lines) < $totalRows - 2) {
             $lines[] = '';
         }
