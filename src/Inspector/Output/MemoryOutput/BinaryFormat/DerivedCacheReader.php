@@ -238,18 +238,25 @@ final class DerivedCacheReader
         // segfaults on typed array elements.
         $buf = FFIHelper::new("{$type}[{$count}]");
 
-        // Read the section as a PHP string then bulk-memcpy into the
-        // FFI buffer. The PHP string is ephemeral — freed as soon as
-        // memcpy completes, so peak overhead is 1× section size above
-        // the destination buffer. Pointer arithmetic on typed FFI arrays
-        // (cast to char*) segfaults in PHP FFI, so chunked offset writes
-        // into the destination are not feasible without mmap.
+        // Read in element-aligned chunks directly into the destination
+        // FFI buffer via FFI::addr($buf[$elemOffset]). No staging buffer
+        // needed — peak overhead is just the ~4 MB PHP string chunk.
         fseek($this->fh, $entry['offset']);
-        $raw = fread($this->fh, $totalBytes);
-        if ($raw === false || strlen($raw) < $totalBytes) {
-            return null;
+        $chunkElems = (int)(4 * 1024 * 1024 / $elemSize); // ~4 MB in elements
+        if ($chunkElems < 1) {
+            $chunkElems = 1;
         }
-        FFI::memcpy($buf, $raw, $totalBytes);
+        $elemOffset = 0;
+        while ($elemOffset < $count) {
+            $batch = min($chunkElems, $count - $elemOffset);
+            $bytes = $batch * $elemSize;
+            $chunk = fread($this->fh, $bytes);
+            if ($chunk === false || strlen($chunk) === 0) {
+                return null;
+            }
+            FFI::memcpy(FFI::addr($buf[$elemOffset]), $chunk, strlen($chunk));
+            $elemOffset += $batch;
+        }
         return $buf;
     }
 }

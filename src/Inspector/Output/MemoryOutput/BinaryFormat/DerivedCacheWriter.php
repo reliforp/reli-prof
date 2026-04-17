@@ -246,20 +246,20 @@ final class DerivedCacheWriter
         $totalBytes = $count * $elemSize;
         $offset = $this->pos;
 
-        // Copy into a char[] staging buffer for safe byte-offset pointer
-        // arithmetic (PHP FFI cast('char*', typed_array) produces dangling
-        // views). The staging buffer is freed when this method returns.
-        $ffi = FFI::cdef();
-        $staging = $ffi->new("char[{$totalBytes}]");
-        FFI::memcpy($staging, $data, $totalBytes);
-
-        $chunkSize = 4 * 1024 * 1024; // 4 MB
-        $written = 0;
-        while ($written < $totalBytes) {
-            $toWrite = min($chunkSize, $totalBytes - $written);
-            $chunk = FFI::string($staging + $written, $toWrite);
+        // Write in element-aligned chunks via FFI::addr($data[$offset])
+        // + FFI::string. No staging buffer — peak overhead is just the
+        // ~4 MB PHP string chunk.
+        $chunkElems = (int)(4 * 1024 * 1024 / $elemSize); // ~4 MB in elements
+        if ($chunkElems < 1) {
+            $chunkElems = 1;
+        }
+        $elemOffset = 0;
+        while ($elemOffset < $count) {
+            $batch = min($chunkElems, $count - $elemOffset);
+            $bytes = $batch * $elemSize;
+            $chunk = FFI::string(FFI::addr($data[$elemOffset]), $bytes);
             fwrite($this->fh, $chunk);
-            $written += $toWrite;
+            $elemOffset += $batch;
         }
         $this->pos += $totalBytes;
 
