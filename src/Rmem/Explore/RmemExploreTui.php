@@ -50,10 +50,11 @@ final class RmemExploreTui
     private int $parentTopRow = 0;
     private int $childSelected = 0;
     private int $childTopRow = 0;
-    /** 'parents' | 'children' */
+    /** 'parents' | 'children' | 'sidebar' */
     private string $activePane = 'children';
     /** @var list<array{node_id: int, label: string, pane: string}> sandwich history */
     private array $sandwichHistory = [];
+    private int $sidebarScroll = 0;
 
     private bool $showHelp = false;
     private bool $showSidebar = true;
@@ -105,6 +106,7 @@ final class RmemExploreTui
             Keymap::ACTION_FOCUS_ENTER => $this->enter(),
             Keymap::ACTION_BACK => $this->back(),
             Keymap::ACTION_TOGGLE_PANE => $this->togglePane(),
+            Keymap::ACTION_TOGGLE_PANE_REVERSE => $this->togglePane(true),
             Keymap::ACTION_VIEW_SELF => $this->switchToTopRetained(),
             Keymap::ACTION_VIEW_TOTAL => $this->switchToRoots(),
             Keymap::ACTION_TOGGLE_OVERVIEW => $this->showSidebar = !$this->showSidebar,
@@ -119,6 +121,10 @@ final class RmemExploreTui
 
     private function moveSelection(int $delta): void
     {
+        if ($this->activePane === 'sidebar') {
+            $this->sidebarScroll = max(0, $this->sidebarScroll + $delta);
+            return;
+        }
         if ($this->sandwich) {
             $this->moveSandwichSelection($delta);
             return;
@@ -211,6 +217,7 @@ final class RmemExploreTui
         $this->childSelected = 0;
         $this->childTopRow = 0;
         $this->activePane = 'children';
+        $this->sidebarScroll = 0;
     }
 
     private function back(): void
@@ -259,12 +266,21 @@ final class RmemExploreTui
         $this->childTopRow = 0;
     }
 
-    private function togglePane(): void
+    private function togglePane(bool $reverse = false): void
     {
         if (!$this->sandwich) {
+            // In list mode, toggle between list and sidebar
+            $this->activePane = $this->activePane === 'sidebar' ? 'children' : 'sidebar';
             return;
         }
-        $this->activePane = $this->activePane === 'children' ? 'parents' : 'children';
+        $panes = $this->showSidebar
+            ? ['children', 'parents', 'sidebar']
+            : ['children', 'parents'];
+        if ($reverse) {
+            $panes = array_reverse($panes);
+        }
+        $idx = array_search($this->activePane, $panes, true);
+        $this->activePane = $panes[($idx + 1) % count($panes)];
     }
 
     private function toggleAllEdges(): void
@@ -324,7 +340,14 @@ final class RmemExploreTui
                 $focusId = $this->rows[$this->selected]['node_id'] ?? null;
             }
             if ($focusId !== null) {
-                $sidebarLines = $this->buildSidebarLines($focusId, $sidebarW, $rows);
+                $allSidebarLines = $this->buildSidebarLines($focusId, $sidebarW, $rows + $this->sidebarScroll);
+                // Apply scroll
+                $sidebarLines = array_slice($allSidebarLines, $this->sidebarScroll);
+                // Clamp scroll
+                $maxScroll = max(0, count($allSidebarLines) - ($rows - 2));
+                if ($this->sidebarScroll > $maxScroll) {
+                    $this->sidebarScroll = $maxScroll;
+                }
             }
         }
         $mainW = $cols - $sidebarW;
@@ -547,7 +570,8 @@ final class RmemExploreTui
     {
         $title = " rmem:explore";
         $edgeMode = $this->allEdges ? ' all-edges' : '';
-        $mode = $this->sandwich ? "[sandwich{$edgeMode}]" : "[list{$edgeMode}]";
+        $paneInfo = $this->activePane === 'sidebar' ? ' sidebar' : '';
+        $mode = $this->sandwich ? "[sandwich{$edgeMode}{$paneInfo}]" : "[list{$edgeMode}{$paneInfo}]";
         $info = sprintf(
             "%s %s nodes, %s edges ",
             $mode,
