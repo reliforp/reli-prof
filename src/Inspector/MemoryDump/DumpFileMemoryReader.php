@@ -79,7 +79,15 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
         $sorted = $this->region_index;
         usort(
             $sorted,
-            static fn (array $a, array $b): int => $a['address'] <=> $b['address'],
+            static function (array $a, array $b): int {
+                // Primary: by address ascending.
+                // Secondary: by size descending — when multiple regions
+                // share the same start address, the largest one should
+                // be picked for the disjoint set so binary search finds
+                // the widest coverage.
+                return $a['address'] <=> $b['address']
+                    ?: $b['size'] <=> $a['size'];
+            },
         );
         // Partition into disjoint (binary-searchable) and overlapping regions.
         $previous_end = 0;
@@ -173,11 +181,15 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     private function readFromRegion(array $region, int $remote_address, int $size): string
     {
         $region_start = $region['address'];
+        $region_size = $region['size'];
 
-        // Check per-region full cache
-        if (isset($this->region_cache[$region_start])) {
+        // Check per-region full cache. Key includes size to distinguish
+        // multiple regions sharing the same start address (e.g. a 2036K
+        // process_vm_readv region and a 2048K ZendMM chunk region).
+        $cache_key = $region_start . ':' . $region_size;
+        if (isset($this->region_cache[$cache_key])) {
             $offset = $remote_address - $region_start;
-            return substr($this->region_cache[$region_start], $offset, $size);
+            return substr($this->region_cache[$cache_key], $offset, $size);
         }
 
         // Check read-ahead buffer hit
@@ -196,7 +208,6 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
         }
 
         // If the buffer is large enough for the whole region, cache it entirely
-        $region_size = $region['size'];
         if ($this->read_buffer_size > 0 && $region_size <= $this->read_buffer_size) {
             fseek($fp, $region['file_offset']);
             $region_data = fread($fp, $region_size);
@@ -205,7 +216,7 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
                     "failed to read region of {$region_size} bytes"
                 );
             }
-            $this->region_cache[$region_start] = $region_data;
+            $this->region_cache[$cache_key] = $region_data;
             $offset = $remote_address - $region_start;
             return substr($region_data, $offset, $size);
         }
