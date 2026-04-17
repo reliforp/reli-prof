@@ -66,15 +66,14 @@ final class RmemExploreCommand extends Command
 
         $output->writeln("<info>loading {$file} ...</info>");
         $reader = BinaryReader::open($file);
+        $output->writeln('<info>building substrate ...</info>');
         $substrate = GraphSubstrate::createFromBinary($reader);
-
+        $output->writeln('<info>building model ...</info>');
         $model = RmemModel::fromSubstrate($substrate, $reader);
         $output->writeln(sprintf(
-            '<info>loaded %s nodes, %s edges</info>',
-            number_format($model->nodeCount),
+            '<info>loaded %s edges, starting TUI</info>',
             number_format($model->edgeCount),
         ));
-
         $reader->clearCastCache();
 
         $term = new Terminal();

@@ -44,20 +44,19 @@ final class RmemModel
     /** @var array<int, array<string, string>> node_id => [key => value] from attributes */
     private array $nodeAttributes = [];
 
+    private ?BinaryReader $reader;
+
     private function __construct(
         private GraphSubstrate $substrate,
         array $frameLabels,
-        array $nodeAddresses,
-        array $nodeStringValues,
-        array $nodeAttributes,
+        BinaryReader $reader,
     ) {
-        $this->nodeCount = count($this->getTopRetained(PHP_INT_MAX));
         $this->edgeCount = $substrate->getEdgeCount();
         $this->roots = $substrate->getRoots();
         $this->frameLabels = $frameLabels;
-        $this->nodeAddresses = $nodeAddresses;
-        $this->nodeStringValues = $nodeStringValues;
-        $this->nodeAttributes = $nodeAttributes;
+        $this->reader = $reader;
+        // nodeCount: count roots + rough estimate from edges
+        $this->nodeCount = $this->edgeCount > 0 ? $this->edgeCount : count($this->roots);
     }
 
     public static function fromSubstrate(
@@ -65,9 +64,22 @@ final class RmemModel
         BinaryReader $reader,
     ): self {
         $frameLabels = BinaryReportDataProvider::loadFrameLabels($reader);
-        [$addresses, $stringValues] = self::loadLocationInfo($reader);
-        $attributes = self::loadAttributes($reader);
-        return new self($substrate, $frameLabels, $addresses, $stringValues, $attributes);
+        return new self($substrate, $frameLabels, $reader);
+    }
+
+    /**
+     * Lazily load location info (addresses + string values) on first access.
+     */
+    private function ensureLocationInfo(): void
+    {
+        if ($this->nodeAddresses !== []) {
+            return;
+        }
+        if ($this->reader === null) {
+            return;
+        }
+        [$this->nodeAddresses, $this->nodeStringValues] = self::loadLocationInfo($this->reader);
+        $this->nodeAttributes = self::loadAttributes($this->reader);
     }
 
     /**
@@ -311,6 +323,7 @@ final class RmemModel
      */
     public function nodeDetail(int $nodeId): array
     {
+        $this->ensureLocationInfo();
         return [
             'type' => $this->substrate->getNodeType($nodeId) ?? '?',
             'class' => $this->substrate->getNodeClass($nodeId),
