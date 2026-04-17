@@ -324,10 +324,19 @@ final class DiskBackedStringDict
             return;
         }
         $len = strlen($s);
-        while ($this->cacheBytes + $len > $this->maxCacheBytes && $this->cache !== []) {
-            $evictId = array_key_first($this->cache);
-            $this->cacheBytes -= strlen($this->cache[$evictId]);
-            unset($this->cache[$evictId]);
+        if ($this->cacheBytes + $len > $this->maxCacheBytes && $this->cache !== []) {
+            // Batch eviction: drop the oldest half of the cache.
+            // The old one-by-one array_key_first loop was O(N) per
+            // intern call, causing O(N²) on large string dictionaries
+            // (~93% of wall time on 2.7M strings).
+            // Note: array_splice re-indexes numeric keys, so we use
+            // array_slice + manual unset to preserve the id→string mapping.
+            $half = max(1, (int)(count($this->cache) / 2));
+            $evictKeys = array_slice(array_keys($this->cache), 0, $half);
+            foreach ($evictKeys as $evictId) {
+                $this->cacheBytes -= strlen($this->cache[$evictId]);
+                unset($this->cache[$evictId]);
+            }
         }
         if ($len <= $this->maxCacheBytes) {
             $this->cache[$id] = $s;
