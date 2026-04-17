@@ -57,7 +57,7 @@ final class RmemExploreTui
 
     private bool $showHelp = false;
     private bool $showSidebar = true;
-    private bool $allEdges = false;
+    private bool $allEdges = true;
 
     public function __construct(
         private RmemModel $model,
