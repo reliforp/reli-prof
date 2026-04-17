@@ -59,24 +59,42 @@ final class RmemModel
      *
      * @return list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>
      */
+    /**
+     * Get the "root level" entries.
+     *
+     * If there's a single root with named children (TopReferenceContext
+     * pattern: call_frames, class_table, etc.), return those children
+     * directly — that's the useful first view.
+     *
+     * Otherwise return the roots themselves.
+     *
+     * @return list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>
+     */
     public function getRootChildren(): array
     {
-        $entries = [];
+        // Collect root-level nodes (children of -1 sentinel)
+        $rootEntries = [];
         foreach ($this->roots as $rootId) {
-            $children = $this->substrate->getChildren($rootId);
-            foreach ($children as $childId) {
-                $linkName = $this->substrate->getTreeLinkName($childId) ?? '?';
-                $entries[] = [
-                    'node_id' => $childId,
-                    'retained' => $this->substrate->getSubtreeSize($childId),
-                    'shallow' => $this->substrate->getNodeSize($childId),
-                    'link_name' => $linkName,
-                    'label' => $this->nodeLabel($childId),
-                ];
+            $rootEntries[] = [
+                'node_id' => $rootId,
+                'retained' => $this->substrate->getSubtreeSize($rootId),
+                'shallow' => $this->substrate->getNodeSize($rootId),
+                'link_name' => $this->substrate->getTreeLinkName($rootId) ?? '?',
+                'label' => $this->nodeLabel($rootId),
+            ];
+        }
+
+        // If single root, show its children (the named branches)
+        if (count($rootEntries) === 1) {
+            $onlyRoot = $rootEntries[0]['node_id'];
+            $children = $this->getChildren($onlyRoot);
+            if ($children !== []) {
+                return $children;
             }
         }
-        usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
-        return $entries;
+
+        usort($rootEntries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        return $rootEntries;
     }
 
     /**
