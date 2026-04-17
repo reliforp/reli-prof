@@ -59,7 +59,7 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
     /**
      * Per-region full cache. Populated lazily when read_buffer_size
      * is large enough to cover an entire region.
-     * @var array<int, string> region_address => region data
+     * @var array<string, string> region cache key => region data
      */
     private array $region_cache = [];
 
@@ -186,7 +186,7 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
         // Check per-region full cache. Key includes size to distinguish
         // multiple regions sharing the same start address (e.g. a 2036K
         // process_vm_readv region and a 2048K ZendMM chunk region).
-        $cache_key = $region_start . ':' . $region_size;
+        $cache_key = $region_start . ':' . $region_size . ':' . $region['file_offset'];
         if (isset($this->region_cache[$cache_key])) {
             $offset = $remote_address - $region_start;
             return substr($this->region_cache[$cache_key], $offset, $size);
