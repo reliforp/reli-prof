@@ -261,6 +261,9 @@ final class RmemModel
                 'label' => $this->nodeLabel($childId),
             ];
         }
+        // Add pseudo-edges to definitions
+        $this->addDefinitionLinks($nodeId, $entries);
+
         if ($sort === 'link') {
             usort($entries, function (array $a, array $b): int {
                 // Numeric link names (frame numbers, array keys) sort numerically
@@ -523,6 +526,69 @@ final class RmemModel
                         $this->classDefIndex[$childLink] = $childId;
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Add pseudo-edges to function/class definitions for explore navigation.
+     * These appear as virtual children with link_name "[def]".
+     * @param list<array{node_id: int, retained: int, shallow: int, link_name: string, label: string}> &$entries
+     */
+    private function addDefinitionLinks(int $nodeId, array &$entries): void
+    {
+        $seen = [];
+        foreach ($entries as $e) {
+            $seen[$e['node_id']] = true;
+        }
+
+        // Frame label → function definition
+        $frameLabel = $this->frameLabels[$nodeId] ?? null;
+        if ($frameLabel !== null) {
+            $funcName = preg_replace('/:\d+$/', '', $frameLabel);
+            if ($funcName !== null && $funcName !== '') {
+                $defId = $this->findFunctionDef($funcName);
+                if ($defId !== null && !isset($seen[$defId])) {
+                    $entries[] = [
+                        'node_id' => $defId,
+                        'retained' => $this->substrate->getSubtreeSize($defId),
+                        'shallow' => $this->substrate->getNodeSize($defId),
+                        'link_name' => '⇒ def',
+                        'label' => $this->nodeLabel($defId),
+                    ];
+                    $seen[$defId] = true;
+                }
+                // Class definition
+                $classEnd = strrpos($funcName, '::');
+                if ($classEnd !== false) {
+                    $className = substr($funcName, 0, $classEnd);
+                    $classDefId = $this->findClassDef($className);
+                    if ($classDefId !== null && !isset($seen[$classDefId])) {
+                        $entries[] = [
+                            'node_id' => $classDefId,
+                            'retained' => $this->substrate->getSubtreeSize($classDefId),
+                            'shallow' => $this->substrate->getNodeSize($classDefId),
+                            'link_name' => '⇒ class',
+                            'label' => $this->nodeLabel($classDefId),
+                        ];
+                        $seen[$classDefId] = true;
+                    }
+                }
+            }
+        }
+
+        // Object class → class definition
+        $class = $this->resolveClass($nodeId);
+        if ($class !== null) {
+            $classDefId = $this->findClassDef($class);
+            if ($classDefId !== null && !isset($seen[$classDefId])) {
+                $entries[] = [
+                    'node_id' => $classDefId,
+                    'retained' => $this->substrate->getSubtreeSize($classDefId),
+                    'shallow' => $this->substrate->getNodeSize($classDefId),
+                    'link_name' => '⇒ class',
+                    'label' => $this->nodeLabel($classDefId),
+                ];
             }
         }
     }

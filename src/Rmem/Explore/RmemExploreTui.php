@@ -373,16 +373,26 @@ final class RmemExploreTui
             return;
         }
 
-        // Try function name from frame label
+        // Try function name from frame label ("Class::method:42" or "func:42")
         $frameLabel = $this->model->getFrameLabel($nodeId);
         if ($frameLabel !== null) {
-            // "FunctionName:line" → extract function name
-            $funcName = explode(':', $frameLabel)[0] ?? '';
-            if ($funcName !== '') {
+            // Strip trailing :lineno
+            $funcName = preg_replace('/:\d+$/', '', $frameLabel);
+            if ($funcName !== null && $funcName !== '') {
                 $defId = $this->model->findFunctionDef($funcName);
                 if ($defId !== null) {
                     $this->enterSandwich($defId, "def: {$funcName}");
                     return;
+                }
+                // Try class part only for class definition lookup
+                $classEnd = strrpos($funcName, '::');
+                if ($classEnd !== false) {
+                    $className = substr($funcName, 0, $classEnd);
+                    $defId = $this->model->findClassDef($className);
+                    if ($defId !== null) {
+                        $this->enterSandwich($defId, "def: {$className}");
+                        return;
+                    }
                 }
             }
         }
