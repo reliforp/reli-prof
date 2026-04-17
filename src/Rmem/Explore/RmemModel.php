@@ -60,13 +60,8 @@ final class RmemModel
      * @return list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>
      */
     /**
-     * Get the "root level" entries.
-     *
-     * If there's a single root with named children (TopReferenceContext
-     * pattern: call_frames, class_table, etc.), return those children
-     * directly — that's the useful first view.
-     *
-     * Otherwise return the roots themselves.
+     * Get root-level branches (call_frames, class_table, objects_store, etc.)
+     * sorted by retained size descending.
      *
      * @return list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>
      */
@@ -85,19 +80,6 @@ final class RmemModel
         }
 
         usort($rootEntries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
-
-        // The main root (TopReferenceContext, largest retained) typically
-        // has named branches (call_frames, class_table, etc.). Show its
-        // children as the first view. Other roots (e.g. static_variables
-        // emitted with parent=-1) are noise at the top level.
-        if ($rootEntries !== []) {
-            $mainRoot = $rootEntries[0]['node_id'];
-            $children = $this->getChildren($mainRoot);
-            if ($children !== []) {
-                return $children;
-            }
-        }
-
         return $rootEntries;
     }
 
