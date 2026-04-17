@@ -53,6 +53,33 @@ final class RmemModel
     }
 
     /**
+     * Get root-level children sorted by retained size descending.
+     * These correspond to report's Root Blame Allocation branches
+     * (call_frames, class_table, objects_store, etc.).
+     *
+     * @return list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>
+     */
+    public function getRootChildren(): array
+    {
+        $entries = [];
+        foreach ($this->roots as $rootId) {
+            $children = $this->substrate->getChildren($rootId);
+            foreach ($children as $childId) {
+                $linkName = $this->substrate->getTreeLinkName($childId) ?? '?';
+                $entries[] = [
+                    'node_id' => $childId,
+                    'retained' => $this->substrate->getSubtreeSize($childId),
+                    'shallow' => $this->substrate->getNodeSize($childId),
+                    'link_name' => $linkName,
+                    'label' => $this->nodeLabel($childId),
+                ];
+            }
+        }
+        usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        return $entries;
+    }
+
+    /**
      * Get nodes sorted by retained (subtree) size descending.
      *
      * @return list<array{node_id: int, retained: int, shallow: int, label: string}>

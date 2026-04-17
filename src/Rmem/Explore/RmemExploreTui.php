@@ -35,7 +35,7 @@ final class RmemExploreTui
     private array $focusStack = [];
 
     private ?int $focusNodeId = null;
-    private string $focusLabel = 'Top retained';
+    private string $focusLabel = 'Roots';
 
     private bool $showHelp = false;
 
@@ -49,7 +49,7 @@ final class RmemExploreTui
     public function run(): void
     {
         $this->running = true;
-        $this->rows = $this->model->getTopRetained(10000);
+        $this->rows = $this->model->getRootChildren();
 
         $this->term->enter();
         try {
@@ -136,10 +136,10 @@ final class RmemExploreTui
         $prevNodeId = $prev['node_id'];
 
         if ($prevNodeId === -1) {
-            // Back to top
+            // Back to root
             $this->focusNodeId = null;
-            $this->focusLabel = 'Top retained';
-            $this->rows = $this->model->getTopRetained(10000);
+            $this->focusLabel = 'Roots';
+            $this->rows = $this->model->getRootChildren();
         } else {
             $this->focusNodeId = $prevNodeId;
             $this->focusLabel = $prev['label'];
