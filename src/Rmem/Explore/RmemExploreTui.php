@@ -369,33 +369,36 @@ final class RmemExploreTui
     {
         $lines = [];
         $detail = $this->model->nodeDetail($nodeId);
-        $trunc = fn (string $s): string => strlen($s) > $width - 2
-            ? substr($s, 0, $width - 5) . '...'
-            : $s;
+        $usable = $width - 2; // 1 space indent + 1 margin
+
+        $wrap = function (string $s) use (&$lines, $usable): void {
+            while (strlen($s) > $usable) {
+                $lines[] = ' ' . substr($s, 0, $usable);
+                $s = '  ' . substr($s, $usable); // continuation indent
+            }
+            $lines[] = ' ' . $s;
+        };
 
         // Node detail
         $lines[] = "\e[1m Node detail:\e[0m";
-        $lines[] = ' ' . $trunc("type: {$detail['type']}");
+        $wrap("type: {$detail['type']}");
         if ($detail['class'] !== null) {
-            $lines[] = ' ' . $trunc("class: {$detail['class']}");
+            $wrap("class: {$detail['class']}");
         }
-        $lines[] = ' ' . $trunc("shallow: " . SizeFormatter::format($detail['shallow']));
-        $lines[] = ' ' . $trunc("retained: " . SizeFormatter::format($detail['retained']));
+        $wrap("shallow: " . SizeFormatter::format($detail['shallow']));
+        $wrap("retained: " . SizeFormatter::format($detail['retained']));
         if ($detail['address'] !== null) {
-            $lines[] = ' ' . $trunc("addr: 0x" . dechex($detail['address']));
+            $wrap("addr: 0x" . dechex($detail['address']));
         }
         if ($detail['refcount'] !== null) {
-            $lines[] = ' ' . $trunc("refcount: {$detail['refcount']}");
+            $wrap("refcount: {$detail['refcount']}");
         }
         if ($detail['string_value'] !== null) {
-            $preview = $detail['string_value'];
-            if (strlen($preview) > $width - 10) {
-                $preview = substr($preview, 0, $width - 13) . '...';
-            }
-            $lines[] = ' ' . $trunc("val: \"{$preview}\"");
+            $val = str_replace(["\n", "\r", "\t"], ['\n', '\r', '\t'], $detail['string_value']);
+            $wrap("val: \"{$val}\"");
         }
         foreach ($detail['attributes'] as $key => $val) {
-            $lines[] = ' ' . $trunc("{$key}: {$val}");
+            $wrap("{$key}: {$val}");
         }
 
         $lines[] = '';
@@ -407,7 +410,7 @@ final class RmemExploreTui
             $link = $step['link_name'];
             $label = $step['label'];
             $text = "{$indent}[{$link}] {$label}";
-            $lines[] = ' ' . $trunc($text);
+            $wrap($text);
             if (count($lines) >= $totalRows - 3) {
                 $lines[] = ' ...';
                 break;
