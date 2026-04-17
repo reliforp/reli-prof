@@ -327,6 +327,7 @@ final class RmemExploreTui
             'c' => $this->switchToClassRanking(),
             'y' => $this->switchToTypeRanking(),
             'r' => $this->toggleSort(),
+            'g' => $this->goToDefinition(),
             default => null,
         };
     }
@@ -349,6 +350,44 @@ final class RmemExploreTui
             $this->childRows = $this->model->getChildren($this->sandwichNodeId, $this->allEdges, $this->sortMode);
             $this->childSelected = 0;
             $this->childTopRow = 0;
+        }
+    }
+
+    private function goToDefinition(): void
+    {
+        // Determine which node to look up
+        $nodeId = null;
+        if ($this->sandwich) {
+            $nodeId = $this->sandwichNodeId;
+        } elseif (isset($this->rows[$this->selected])) {
+            $nodeId = $this->rows[$this->selected]['node_id'];
+        }
+        if ($nodeId === null || $nodeId < 0) {
+            return;
+        }
+
+        // Try function name from frame label
+        $frameLabel = $this->model->getFrameLabel($nodeId);
+        if ($frameLabel !== null) {
+            // "FunctionName:line" → extract function name
+            $funcName = explode(':', $frameLabel)[0] ?? '';
+            if ($funcName !== '') {
+                $defId = $this->model->findFunctionDef($funcName);
+                if ($defId !== null) {
+                    $this->enterSandwich($defId, "def: {$funcName}");
+                    return;
+                }
+            }
+        }
+
+        // Try class name
+        $class = $this->model->resolveClassPublic($nodeId);
+        if ($class !== null) {
+            $defId = $this->model->findClassDef($class);
+            if ($defId !== null) {
+                $this->enterSandwich($defId, "def: {$class}");
+                return;
+            }
         }
     }
 
@@ -733,7 +772,7 @@ final class RmemExploreTui
     private function renderFooter(int $cols): string
     {
         $hints = $this->sandwich
-            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  r:sort  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit'
+            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  g:def  r:sort  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit'
             : ' ↑↓:select  Enter:drill  Bksp:back  r:sort  c:class  y:type  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit';
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
@@ -758,6 +797,7 @@ final class RmemExploreTui
             '    t               Root branches',
             '    c               Class ranking',
             '    y               Type ranking',
+            '    g               Go to definition (func/class table)',
             '    r               Toggle sort: retained / link name',
             '    n               Toggle tree/all edges',
             '    o               Toggle sidebar (path to root)',

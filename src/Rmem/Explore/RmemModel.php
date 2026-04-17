@@ -474,6 +474,69 @@ final class RmemModel
         return $entries;
     }
 
+    // ---- Function/class definition lookup ----
+
+    /** @var array<string, int>|null function_name → node_id in function_table */
+    private ?array $functionIndex = null;
+    /** @var array<string, int>|null class_name → node_id in class_table */
+    private ?array $classDefIndex = null;
+
+    /**
+     * Find the function_table definition node for a given function name.
+     */
+    public function findFunctionDef(string $funcName): ?int
+    {
+        $this->buildDefinitionIndexes();
+        return $this->functionIndex[strtolower($funcName)] ?? null;
+    }
+
+    /**
+     * Find the class_table definition node for a given class name.
+     */
+    public function findClassDef(string $className): ?int
+    {
+        $this->buildDefinitionIndexes();
+        // class_table uses lowercase keys
+        return $this->classDefIndex[strtolower($className)] ?? null;
+    }
+
+    private function buildDefinitionIndexes(): void
+    {
+        if ($this->functionIndex !== null) {
+            return;
+        }
+        $this->functionIndex = [];
+        $this->classDefIndex = [];
+
+        foreach ($this->roots as $rootId) {
+            $linkName = $this->substrate->getTreeLinkName($rootId);
+            if ($linkName === 'function_table' || $linkName === 'class_table') {
+                $children = $this->substrate->getChildren($rootId);
+                foreach ($children as $childId) {
+                    $childLink = $this->substrate->getTreeLinkName($childId);
+                    if ($childLink === null) {
+                        continue;
+                    }
+                    if ($linkName === 'function_table') {
+                        $this->functionIndex[$childLink] = $childId;
+                    } else {
+                        $this->classDefIndex[$childLink] = $childId;
+                    }
+                }
+            }
+        }
+    }
+
+    public function getFrameLabel(int $nodeId): ?string
+    {
+        return $this->frameLabels[$nodeId] ?? null;
+    }
+
+    public function resolveClassPublic(int $nodeId): ?string
+    {
+        return $this->resolveClass($nodeId);
+    }
+
     private function resolveClass(int $nodeId): ?string
     {
         return $this->substrate->getNodeClass($nodeId)
