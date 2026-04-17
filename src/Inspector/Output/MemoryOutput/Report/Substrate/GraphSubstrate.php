@@ -162,7 +162,7 @@ class GraphSubstrate
      * @psalm-suppress UnsafeInstantiation
      * @psalm-suppress MixedAssignment
      */
-    public static function loadFromBinary(BinaryReader $reader, bool $useCache = true, bool $rebuildCache = false): static
+    public static function loadFromBinary(BinaryReader $reader, bool $useCache = true, bool $rebuildCache = false, bool $skipScc = false): static
     {
         $substrate = new static();
         $dict = $reader->getStringDict();
@@ -324,18 +324,19 @@ class GraphSubstrate
         ?bool $forceFfiCsr = null,
         bool $useCache = true,
         bool $rebuildCache = false,
+        bool $skipScc = false,
     ): self {
         if ($forceFfiCsr === false) {
-            return self::loadFromBinary($reader, $useCache, $rebuildCache);
+            return self::loadFromBinary($reader, $useCache, $rebuildCache, $skipScc);
         }
 
         $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
         $useFfi = $forceFfiCsr === true || $edge_count > self::FFI_CSR_THRESHOLD;
 
         if ($useFfi && extension_loaded('ffi')) {
-            return FfiCsrGraphSubstrate::loadFromBinary($reader, $useCache, $rebuildCache);
+            return FfiCsrGraphSubstrate::loadFromBinary($reader, $useCache, $rebuildCache, $skipScc);
         }
-        return self::loadFromBinary($reader, $useCache, $rebuildCache);
+        return self::loadFromBinary($reader, $useCache, $rebuildCache, $skipScc);
     }
 
     // ---- Accessor methods ----

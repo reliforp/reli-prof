@@ -178,7 +178,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion
      */
     #[\Override]
-    public static function loadFromBinary(BinaryReader $reader, bool $useCache = true, bool $rebuildCache = false): static
+    public static function loadFromBinary(BinaryReader $reader, bool $useCache = true, bool $rebuildCache = false, bool $skipScc = false): static
     {
         $substrate = new self();
         $dict = $reader->getStringDict();
@@ -484,6 +484,20 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $substrate->loadCsrFromSections($reader, $nc, $dict);
             $substrate->linkDictReverse = []; // Free after edge loading (~80 MB)
             $substrate->buildSccAdjacency();
+
+            if ($skipScc) {
+                // Explore mode: only need CSR + subtree sizes, skip SCC.
+                // Try loading subtree sizes from sidecar cache.
+                $rmemPath = $reader->getFilePath();
+                $cacheLoaded = false;
+                if ($useCache && $rmemPath !== '') {
+                    $cacheLoaded = $substrate->loadDerivedFromCache($rmemPath, $nc);
+                }
+                if (!$cacheLoaded) {
+                    $substrate->computeSubtreeSizesFfi();
+                }
+                return $substrate;
+            }
 
             // Build FFI canonical mapping before cache check so it's
             // available for pass APIs regardless of cache hit/miss.

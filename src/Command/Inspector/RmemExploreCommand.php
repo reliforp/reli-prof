@@ -67,7 +67,7 @@ final class RmemExploreCommand extends Command
         $output->writeln("<info>loading {$file} ...</info>");
         $reader = BinaryReader::open($file);
         $output->writeln('<info>building substrate ...</info>');
-        $substrate = GraphSubstrate::createFromBinary($reader);
+        $substrate = GraphSubstrate::createFromBinary($reader, skipScc: true);
         $output->writeln('<info>building model ...</info>');
         $model = RmemModel::fromSubstrate($substrate, $reader);
         $output->writeln(sprintf(
