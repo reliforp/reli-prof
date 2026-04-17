@@ -44,6 +44,9 @@ final class RmemModel
     /** @var array<int, int> node_id => refcount */
     private array $nodeRefcounts = [];
 
+    /** @var array<int, string> node_id => class name (from locations, fallback for missing node_classes section) */
+    private array $nodeClasses = [];
+
     /** @var array<int, array<string, string>> node_id => [key => value] from attributes */
     private array $nodeAttributes = [];
 
@@ -81,22 +84,23 @@ final class RmemModel
         if ($this->reader === null) {
             return;
         }
-        [$this->nodeAddresses, $this->nodeStringValues, $this->nodeRefcounts] = self::loadLocationInfo($this->reader);
+        [$this->nodeAddresses, $this->nodeStringValues, $this->nodeRefcounts, $this->nodeClasses] = self::loadLocationInfo($this->reader);
         $this->nodeAttributes = self::loadAttributes($this->reader);
     }
 
     /**
-     * Load address, string_value, and refcount per node from locations section.
-     * @return array{array<int, int>, array<int, string>, array<int, int>}
+     * Load address, string_value, refcount, and class per node from locations section.
+     * @return array{array<int, int>, array<int, string>, array<int, int>, array<int, string>}
      */
     private static function loadLocationInfo(BinaryReader $reader): array
     {
         $addresses = [];
         $stringValues = [];
         $refcounts = [];
+        $classes = [];
 
         if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
-            return [$addresses, $stringValues, $refcounts];
+            return [$addresses, $stringValues, $refcounts, $classes];
         }
 
         $dict = $reader->getStringDict();
@@ -127,10 +131,19 @@ final class RmemModel
                         $refcounts[$nid] = $rc;
                     }
                 }
+                if (!isset($classes[$nid])) {
+                    $cid = (int)$locRows[$i]->class_id;
+                    if ($cid !== Format::NULL_STRING_ID) {
+                        $cn = $dict->lookup($cid);
+                        if ($cn !== null) {
+                            $classes[$nid] = $cn;
+                        }
+                    }
+                }
             }
         }
 
-        return [$addresses, $stringValues, $refcounts];
+        return [$addresses, $stringValues, $refcounts, $classes];
     }
 
     /**
@@ -309,19 +322,26 @@ final class RmemModel
         return $path;
     }
 
+    private function resolveClass(int $nodeId): ?string
+    {
+        return $this->substrate->getNodeClass($nodeId)
+            ?? $this->nodeClasses[$nodeId]
+            ?? null;
+    }
+
     public function nodeLabel(int $nodeId): string
     {
         // Frame label (function:line) if available
         if (isset($this->frameLabels[$nodeId])) {
             $label = $this->frameLabels[$nodeId];
-            $class = $this->substrate->getNodeClass($nodeId);
+            $class = $this->resolveClass($nodeId);
             if ($class !== null) {
                 $label .= " ({$class})";
             }
             return $label;
         }
         // Class name + type
-        $class = $this->substrate->getNodeClass($nodeId);
+        $class = $this->resolveClass($nodeId);
         $type = $this->substrate->getNodeType($nodeId);
         if ($class !== null && $type !== null) {
             return "{$type}: {$class}";
@@ -344,7 +364,7 @@ final class RmemModel
         $this->ensureLocationInfo();
         return [
             'type' => $this->substrate->getNodeType($nodeId) ?? '?',
-            'class' => $this->substrate->getNodeClass($nodeId),
+            'class' => $this->resolveClass($nodeId),
             'shallow' => $this->substrate->getNodeSize($nodeId),
             'retained' => $this->substrate->getSubtreeSize($nodeId),
             'address' => $this->nodeAddresses[$nodeId] ?? null,
