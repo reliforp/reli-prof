@@ -84,16 +84,20 @@ final class RmemModel
             ];
         }
 
-        // If single root, show its children (the named branches)
-        if (count($rootEntries) === 1) {
-            $onlyRoot = $rootEntries[0]['node_id'];
-            $children = $this->getChildren($onlyRoot);
+        usort($rootEntries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+
+        // The main root (TopReferenceContext, largest retained) typically
+        // has named branches (call_frames, class_table, etc.). Show its
+        // children as the first view. Other roots (e.g. static_variables
+        // emitted with parent=-1) are noise at the top level.
+        if ($rootEntries !== []) {
+            $mainRoot = $rootEntries[0]['node_id'];
+            $children = $this->getChildren($mainRoot);
             if ($children !== []) {
                 return $children;
             }
         }
 
-        usort($rootEntries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
         return $rootEntries;
     }
 
