@@ -251,10 +251,10 @@ final class DerivedCacheReader
             $batch = min($chunkElems, $count - $elemOffset);
             $bytes = $batch * $elemSize;
             $chunk = fread($this->fh, $bytes);
-            if ($chunk === false || strlen($chunk) === 0) {
+            if ($chunk === false || strlen($chunk) !== $bytes) {
                 return null;
             }
-            FFI::memcpy(FFI::addr($buf[$elemOffset]), $chunk, strlen($chunk));
+            FFI::memcpy(FFI::addr($buf[$elemOffset]), $chunk, $bytes);
             $elemOffset += $batch;
         }
         return $buf;

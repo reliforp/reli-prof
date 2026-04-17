@@ -37,6 +37,7 @@ final class DerivedCacheWriter
     /** @var list<array{name: string, offset: int, length: int, element_count: int}> */
     private array $toc = [];
     private int $pos;
+    private bool $failed = false;
 
     private function __construct(
         string $finalPath,
@@ -53,8 +54,19 @@ final class DerivedCacheWriter
         $this->fh = $fh;
 
         // Reserve header space
-        fwrite($this->fh, str_repeat("\0", DerivedCacheFormat::HEADER_SIZE));
+        $this->safeWrite(str_repeat("\0", DerivedCacheFormat::HEADER_SIZE));
         $this->pos = DerivedCacheFormat::HEADER_SIZE;
+    }
+
+    private function safeWrite(string $data): void
+    {
+        if ($this->fh === null || $this->failed) {
+            return;
+        }
+        $written = @fwrite($this->fh, $data);
+        if ($written !== strlen($data)) {
+            $this->failed = true;
+        }
     }
 
     /**
@@ -106,12 +118,12 @@ final class DerivedCacheWriter
      */
     public function writeRawSection(string $name, string $data, int $elementCount): void
     {
-        if ($this->fh === null) {
+        if ($this->fh === null || $this->failed) {
             return;
         }
         $offset = $this->pos;
         $length = strlen($data);
-        fwrite($this->fh, $data);
+        $this->safeWrite($data);
         $this->pos += $length;
 
         $this->toc[] = [
@@ -128,10 +140,11 @@ final class DerivedCacheWriter
      */
     /**
      * Store a SHA-256 hash of the rmem file's header + TOC bytes as a
-     * content fingerprint. This catches same-second same-size overwrites
-     * that mtime + size alone would miss. The TOC encodes section names,
-     * offsets, sizes, and element counts — any structural change to the
-     * rmem invalidates the derived cache.
+     * structural fingerprint. This catches same-second same-size
+     * overwrites that change section layout (names, offsets, sizes,
+     * element counts). It does NOT detect overwrites that keep the
+     * same structure but change section content — that would require
+     * hashing the full file, which is too expensive for multi-GB rmem.
      */
     public function writeFingerprint(string $rmemPath): void
     {
@@ -175,7 +188,8 @@ final class DerivedCacheWriter
      */
     public function finish(string $rmemPath): bool
     {
-        if ($this->fh === null) {
+        if ($this->fh === null || $this->failed) {
+            $this->cleanup();
             return false;
         }
 
@@ -183,10 +197,15 @@ final class DerivedCacheWriter
         $tocOffset = $this->pos;
         foreach ($this->toc as $entry) {
             $namePadded = str_pad($entry['name'], DerivedCacheFormat::TOC_NAME_SIZE, "\0");
-            fwrite($this->fh, substr($namePadded, 0, DerivedCacheFormat::TOC_NAME_SIZE));
-            fwrite($this->fh, pack('P', $entry['offset']));
-            fwrite($this->fh, pack('P', $entry['length']));
-            fwrite($this->fh, pack('P', $entry['element_count']));
+            $this->safeWrite(substr($namePadded, 0, DerivedCacheFormat::TOC_NAME_SIZE));
+            $this->safeWrite(pack('P', $entry['offset']));
+            $this->safeWrite(pack('P', $entry['length']));
+            $this->safeWrite(pack('P', $entry['element_count']));
+        }
+
+        if ($this->failed) {
+            $this->cleanup();
+            return false;
         }
 
         // Write header
@@ -197,7 +216,12 @@ final class DerivedCacheWriter
         $header .= pack('P', $this->rmemSize);             // 8 bytes
         $header .= pack('V', count($this->toc));           // 4 bytes: section_count
         $header .= pack('V', $tocOffset);                  // 4 bytes: toc_offset
-        fwrite($this->fh, $header);
+        $this->safeWrite($header);
+
+        if ($this->failed) {
+            $this->cleanup();
+            return false;
+        }
 
         fclose($this->fh);
         $this->fh = null;
@@ -227,11 +251,16 @@ final class DerivedCacheWriter
 
     public function __destruct()
     {
+        $this->cleanup();
+    }
+
+    private function cleanup(): void
+    {
         if ($this->fh !== null) {
             fclose($this->fh);
             $this->fh = null;
-            @unlink($this->tempPath);
         }
+        @unlink($this->tempPath);
     }
 
     /**
@@ -240,25 +269,22 @@ final class DerivedCacheWriter
      */
     private function writeFfiSection(string $name, \FFI\CData $data, int $count, int $elemSize): void
     {
-        if ($this->fh === null) {
+        if ($this->fh === null || $this->failed) {
             return;
         }
         $totalBytes = $count * $elemSize;
         $offset = $this->pos;
 
-        // Write in element-aligned chunks via FFI::addr($data[$offset])
-        // + FFI::string. No staging buffer — peak overhead is just the
-        // ~4 MB PHP string chunk.
-        $chunkElems = (int)(4 * 1024 * 1024 / $elemSize); // ~4 MB in elements
+        $chunkElems = (int)(4 * 1024 * 1024 / $elemSize);
         if ($chunkElems < 1) {
             $chunkElems = 1;
         }
         $elemOffset = 0;
-        while ($elemOffset < $count) {
+        while ($elemOffset < $count && !$this->failed) {
             $batch = min($chunkElems, $count - $elemOffset);
             $bytes = $batch * $elemSize;
             $chunk = FFI::string(FFI::addr($data[$elemOffset]), $bytes);
-            fwrite($this->fh, $chunk);
+            $this->safeWrite($chunk);
             $elemOffset += $batch;
         }
         $this->pos += $totalBytes;
