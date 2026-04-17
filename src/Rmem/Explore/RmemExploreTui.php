@@ -343,17 +343,6 @@ final class RmemExploreTui
             $this->renderHelpOverlay($lines, $cols, $rows);
         }
 
-        // Debug: dump state to file on first render
-        static $debugDone = false;
-        if (!$debugDone) {
-            $debugDone = true;
-            $dbg = sprintf(
-                "cols=%d rows=%d mainW=%d sidebarW=%d line_count=%d row_count=%d selected=%d sandwich=%d\n",
-                $cols, $rows, $mainW, $sidebarW, count($lines), count($this->rows), $this->selected, (int)$this->sandwich,
-            );
-            @file_put_contents('/tmp/rmem_explore_debug.txt', $dbg);
-        }
-
         $this->term->clear();
         $this->term->write(implode("\n", $lines));
     }
@@ -433,7 +422,11 @@ final class RmemExploreTui
 
         $lines[] = $this->renderFooter($cols);
         $lines[] = sprintf(
-            ' %s nodes | %s total | depth %d',
+            ' %s rows | bodyH=%d | sel=%d | top=%d | depth %d',
+            number_format(count($this->rows)),
+            $bodyH,
+            $this->selected,
+            $this->topRow,
             number_format(count($this->rows)),
             SizeFormatter::format($this->model->nodeSizesSum()),
             count($this->focusStack),
