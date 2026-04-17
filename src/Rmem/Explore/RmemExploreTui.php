@@ -58,6 +58,11 @@ final class RmemExploreTui
 
     private bool $showHelp = false;
     private bool $showSidebar = true;
+    private ?string $filterPattern = null;
+    private string $filterInput = '';
+    private bool $filterPrompt = false;
+    /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
+    private array $unfilteredRows = [];
     private bool $allEdges = true;
     /** 'retained' | 'link' */
     private string $sortMode = 'retained';
@@ -102,6 +107,11 @@ final class RmemExploreTui
             return;
         }
 
+        if ($this->filterPrompt) {
+            $this->handleFilterInput($key);
+            return;
+        }
+
         match ($action) {
             Keymap::ACTION_UP => $this->moveSelection(-1),
             Keymap::ACTION_DOWN => $this->moveSelection(1),
@@ -117,6 +127,7 @@ final class RmemExploreTui
             Keymap::ACTION_VIEW_TOTAL => $this->switchToRoots(),
             Keymap::ACTION_TOGGLE_OVERVIEW => $this->showSidebar = !$this->showSidebar,
             Keymap::ACTION_NO_LINE => $this->toggleAllEdges(),
+            Keymap::ACTION_FILTER_VIEW => $this->startFilter(),
             Keymap::ACTION_HELP => $this->showHelp = true,
             Keymap::ACTION_QUIT => $this->running = false,
             default => $this->dispatchRaw($key),
@@ -321,6 +332,88 @@ final class RmemExploreTui
         $this->activePane = $panes[($idx + 1) % count($panes)];
     }
 
+    private function startFilter(): void
+    {
+        $this->filterPrompt = true;
+        $this->filterInput = $this->filterPattern ?? '';
+    }
+
+    private function handleFilterInput(string $key): void
+    {
+        if ($key === "\n" || $key === "\r") {
+            // Apply filter
+            $this->filterPrompt = false;
+            $pattern = trim($this->filterInput);
+            if ($pattern === '') {
+                $this->clearFilter();
+            } else {
+                $this->applyFilter($pattern);
+            }
+        } elseif ($key === "\e" || $key === "\x03") {
+            // Cancel
+            $this->filterPrompt = false;
+        } elseif ($key === "\x7f" || $key === "\x08") {
+            // Backspace
+            $this->filterInput = substr($this->filterInput, 0, -1);
+        } else {
+            $c = ord($key);
+            if ($c >= 32 && $c < 127) {
+                $this->filterInput .= $key;
+            }
+        }
+    }
+
+    private function applyFilter(string $pattern): void
+    {
+        $this->filterPattern = $pattern;
+        $lower = strtolower($pattern);
+
+        // Save unfiltered rows if not already saved
+        if ($this->unfilteredRows === []) {
+            $this->unfilteredRows = $this->sandwich
+                ? $this->childRows
+                : $this->rows;
+        }
+
+        $source = $this->unfilteredRows;
+        $filtered = [];
+        foreach ($source as $row) {
+            $label = $this->model->nodeLabel($row['node_id']);
+            $link = $row['link_name'] ?? '';
+            $haystack = strtolower($link . ' ' . $label);
+            if (str_contains($haystack, $lower)) {
+                $filtered[] = $row;
+            }
+        }
+
+        if ($this->sandwich) {
+            $this->childRows = $filtered;
+            $this->childSelected = 0;
+            $this->childTopRow = 0;
+        } else {
+            $this->rows = $filtered;
+            $this->selected = 0;
+            $this->topRow = 0;
+        }
+    }
+
+    private function clearFilter(): void
+    {
+        $this->filterPattern = null;
+        if ($this->unfilteredRows !== []) {
+            if ($this->sandwich) {
+                $this->childRows = $this->unfilteredRows;
+                $this->childSelected = 0;
+                $this->childTopRow = 0;
+            } else {
+                $this->rows = $this->unfilteredRows;
+                $this->selected = 0;
+                $this->topRow = 0;
+            }
+            $this->unfilteredRows = [];
+        }
+    }
+
     private function dispatchRaw(string $key): void
     {
         match ($key) {
@@ -410,6 +503,7 @@ final class RmemExploreTui
 
     private function switchToTopRetained(): void
     {
+        $this->clearFilter();
         $this->sandwich = false;
         $this->focusStack = [];
         $this->focusNodeId = null;
@@ -422,6 +516,7 @@ final class RmemExploreTui
 
     private function switchToRoots(): void
     {
+        $this->clearFilter();
         $this->sandwich = false;
         $this->focusStack = [];
         $this->focusNodeId = null;
@@ -546,6 +641,15 @@ final class RmemExploreTui
 
         if ($this->showHelp) {
             $this->renderHelpOverlay($lines, $cols, $rows);
+        }
+
+        // Filter prompt or status overlay on last line
+        if ($this->filterPrompt) {
+            $lastIdx = count($lines) - 1;
+            $lines[$lastIdx] = "\e[1m/\e[0m" . $this->filterInput . "\e[5m▌\e[0m";
+        } elseif ($this->filterPattern !== null) {
+            $lastIdx = count($lines) - 1;
+            $lines[$lastIdx] .= "  \e[33m[filter: {$this->filterPattern}]\e[0m";
         }
 
         $this->term->clear();
@@ -790,7 +894,7 @@ final class RmemExploreTui
     {
         $hints = $this->sandwich
             ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  g:def  r:sort  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit'
-            : ' ↑↓:select  Enter:drill  Bksp:back  r:sort  c:class  y:type  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit';
+            : ' ↑↓:select  Enter:drill  Bksp:back  /:filter  r:sort  c:class  y:type  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit';
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -814,6 +918,7 @@ final class RmemExploreTui
             '    t               Root branches',
             '    c               Class ranking',
             '    y               Type ranking',
+            '    /               Filter current list (Enter to apply)',
             '    g               Go to definition (func/class table)',
             '    r               Toggle sort: retained / link name',
             '    n               Toggle tree/all edges',
