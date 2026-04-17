@@ -13,9 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report;
 
+use FFI;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict;
+use Reli\Lib\FFI\FFIHelper;
 
 /**
  * Extracts report-pass data from a .rmem binary file.
@@ -271,9 +273,27 @@ final class BinaryReportDataProvider
         }
 
         $dict = $reader->getStringDict();
-        $node_meta = self::loadNodeMeta($reader);
-        if ($node_meta === []) {
-            return [];
+
+        // Use on-disk node_sizes (int64, indexed by node_id) instead
+        // of loading all locations into a PHP array. This avoids the ~1 GB
+        // $node_meta PHP array that was the #1 PHP heap consumer.
+        $nodeSizesSlots = $reader->getSectionElementCount('node_sizes');
+        if (!$reader->hasSection('node_sizes') || $nodeSizesSlots === 0) {
+            return self::getDedupCandidateStatsFallback($reader, $limit);
+        }
+        $expected = $nodeSizesSlots * 8;
+        $nodeSizes = FFIHelper::new("int64_t[{$nodeSizesSlots}]");
+        $sizePtr = $reader->getSectionPointer('node_sizes');
+        if ($sizePtr !== null) {
+            // Zero-copy from mmap
+            FFI::memcpy($nodeSizes, $sizePtr, $expected);
+        } else {
+            $rawSizes = $reader->getSectionData('node_sizes');
+            if (strlen($rawSizes) < $expected) {
+                return self::getDedupCandidateStatsFallback($reader, $limit);
+            }
+            FFI::memcpy($nodeSizes, $rawSizes, $expected);
+            unset($rawSizes);
         }
 
         /** @var array<string, array{
@@ -294,16 +314,19 @@ final class BinaryReportDataProvider
                     continue;
                 }
                 $child = (int)$edgeRows[$i]->child_node_id;
-                $meta = $node_meta[$child] ?? null;
-                if ($meta === null || $meta['size'] <= 0) {
+                if ($child < 0 || $child >= $nodeSizesSlots) {
+                    continue;
+                }
+                $size = (int)$nodeSizes[$child];
+                if ($size <= 0) {
                     continue;
                 }
                 $lid = (int)$edgeRows[$i]->link_name_id;
-                $key = $lid . ':' . $meta['size'];
+                $key = $lid . ':' . $size;
                 if (!isset($coarse[$key])) {
                     $coarse[$key] = [
                         'link_name_id' => $lid,
-                        'size' => $meta['size'],
+                        'size' => $size,
                         'ref_count' => 0,
                         'sample_parent_node_id' => (int)$edgeRows[$i]->parent_node_id,
                         'sample_child_node_id' => $child,
@@ -320,22 +343,43 @@ final class BinaryReportDataProvider
                     continue;
                 }
                 $child = (int)$row['child'];
-                $meta = $node_meta[$child] ?? null;
-                if ($meta === null || $meta['size'] <= 0) {
+                if ($child < 0 || $child >= $nodeSizesSlots) {
+                    continue;
+                }
+                $size = (int)$nodeSizes[$child];
+                if ($size <= 0) {
                     continue;
                 }
                 $lid = (int)$row['lid'];
-                $key = $lid . ':' . $meta['size'];
+                $key = $lid . ':' . $size;
                 if (!isset($coarse[$key])) {
                     $coarse[$key] = [
                         'link_name_id' => $lid,
-                        'size' => $meta['size'],
+                        'size' => $size,
                         'ref_count' => 0,
                         'sample_parent_node_id' => (int)$row['parent'],
                         'sample_child_node_id' => $child,
                     ];
                 }
                 $coarse[$key]['ref_count']++;
+            }
+        }
+
+        // Build a location index: node_id → first LocationRow index.
+        // This is a dense FFI int32 array indexed by node_id (-1 = no location).
+        // Used for on-demand lookup of location_type, class_name, string_value_id.
+        $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+        /** @var \FFI\CData|null $locIndex int32[nodeSizesSlots], -1 = no location */
+        $locIndex = null;
+        if ($locRows !== null && $nodeSizesSlots > 0) {
+            $locIndex = FFIHelper::new("int32_t[{$nodeSizesSlots}]");
+            FFI::memset($locIndex, 0xFF, $nodeSizesSlots * 4); // fill with -1
+            for ($i = 0; $i < $locCount; $i++) {
+                $nid = (int)$locRows[$i]->node_id;
+                if ($nid >= 0 && $nid < $nodeSizesSlots && (int)$locIndex[$nid] === -1) {
+                    $locIndex[$nid] = $i;
+                }
             }
         }
 
@@ -360,7 +404,13 @@ final class BinaryReportDataProvider
             if ($link_name === null || $link_name === 'key') {
                 continue;
             }
-            $sample_child_meta = $node_meta[$info['sample_child_node_id']] ?? null;
+            $sampleLocType = null;
+            if ($locIndex !== null && $locRows !== null) {
+                $li = (int)$locIndex[$info['sample_child_node_id']];
+                if ($li >= 0) {
+                    $sampleLocType = $dict->lookup((int)$locRows[$li]->location_type_id);
+                }
+            }
             $candidates[] = [
                 'key' => $key,
                 'link_name' => $link_name,
@@ -368,7 +418,7 @@ final class BinaryReportDataProvider
                 'coarse_total' => $coarse_total,
                 'sample_parent_node_id' => $info['sample_parent_node_id'],
                 'sample_child_node_id' => $info['sample_child_node_id'],
-                'sample_location_type' => $sample_child_meta['location_type'] ?? null,
+                'sample_location_type' => $sampleLocType,
             ];
         }
         usort($candidates, fn (array $a, array $b): int => $b['coarse_total'] <=> $a['coarse_total']);
@@ -405,20 +455,26 @@ final class BinaryReportDataProvider
             return [];
         }
 
+        // 2nd edge scan: accumulate dedup details per group.
+        // Build $meta on demand from nodeSizes + locIndex/locRows.
         if ($edgeRows !== null) {
             for ($i = 0; $i < $edge_count; $i++) {
                 if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
                     continue;
                 }
                 $child = (int)$edgeRows[$i]->child_node_id;
-                $meta = $node_meta[$child] ?? null;
-                if ($meta === null || $meta['size'] <= 0) {
+                if ($child < 0 || $child >= $nodeSizesSlots) {
                     continue;
                 }
-                $key = (int)$edgeRows[$i]->link_name_id . ':' . $meta['size'];
+                $size = (int)$nodeSizes[$child];
+                if ($size <= 0) {
+                    continue;
+                }
+                $key = (int)$edgeRows[$i]->link_name_id . ':' . $size;
                 if (!isset($groups[$key])) {
                     continue;
                 }
+                $meta = self::buildNodeMeta($child, $size, $locIndex, $locRows, $dict);
                 self::accumulateDedupGroup($groups[$key], $child, $meta, $dict);
             }
         } else {
@@ -430,14 +486,18 @@ final class BinaryReportDataProvider
                     continue;
                 }
                 $child = (int)$row['child'];
-                $meta = $node_meta[$child] ?? null;
-                if ($meta === null || $meta['size'] <= 0) {
+                if ($child < 0 || $child >= $nodeSizesSlots) {
                     continue;
                 }
-                $key = (int)$row['lid'] . ':' . $meta['size'];
+                $size = (int)$nodeSizes[$child];
+                if ($size <= 0) {
+                    continue;
+                }
+                $key = (int)$row['lid'] . ':' . $size;
                 if (!isset($groups[$key])) {
                     continue;
                 }
+                $meta = self::buildNodeMeta($child, $size, $locIndex, $locRows, $dict);
                 self::accumulateDedupGroup($groups[$key], $child, $meta, $dict);
             }
         }
@@ -519,6 +579,177 @@ final class BinaryReportDataProvider
             $labels[$node_id] = $ln !== '' ? "{$fn}:{$ln}" : $fn;
         }
         return $labels;
+    }
+
+    /**
+     * Build a single node's meta on demand from nodeSizes + locIndex/locRows.
+     *
+     * @return array{size: int, location_type: ?string, class_name: ?string, string_value_id: ?int}
+     */
+    private static function buildNodeMeta(
+        int $nodeId,
+        int $size,
+        ?\FFI\CData $locIndex,
+        ?\FFI\CData $locRows,
+        StringDict $dict,
+    ): array {
+        $meta = [
+            'size' => $size,
+            'location_type' => null,
+            'class_name' => null,
+            'string_value_id' => null,
+        ];
+        if ($locIndex === null || $locRows === null) {
+            return $meta;
+        }
+        $li = (int)$locIndex[$nodeId];
+        if ($li < 0) {
+            return $meta;
+        }
+        $meta['location_type'] = $dict->lookup((int)$locRows[$li]->location_type_id);
+        $classId = (int)$locRows[$li]->class_id;
+        if ($classId !== Format::NULL_STRING_ID) {
+            $meta['class_name'] = $dict->lookup($classId);
+        }
+        $svId = (int)$locRows[$li]->string_value_id;
+        if ($svId !== Format::NULL_STRING_ID) {
+            $meta['string_value_id'] = $svId;
+        }
+        return $meta;
+    }
+
+    /**
+     * Fallback for getDedupCandidateStats when node_sizes section is missing.
+     * Uses the original loadNodeMeta approach.
+     *
+     * @return list<array<string, mixed>>
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private static function getDedupCandidateStatsFallback(
+        BinaryReader $reader,
+        int $limit,
+    ): array {
+        // Delegate to the original full-meta approach
+        $node_meta = self::loadNodeMeta($reader);
+        if ($node_meta === []) {
+            return [];
+        }
+        $dict = $reader->getStringDict();
+        $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+
+        $coarse = [];
+        if ($edgeRows !== null) {
+            for ($i = 0; $i < $edge_count; $i++) {
+                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                    continue;
+                }
+                $child = (int)$edgeRows[$i]->child_node_id;
+                $meta = $node_meta[$child] ?? null;
+                if ($meta === null || $meta['size'] <= 0) {
+                    continue;
+                }
+                $lid = (int)$edgeRows[$i]->link_name_id;
+                $key = $lid . ':' . $meta['size'];
+                if (!isset($coarse[$key])) {
+                    $coarse[$key] = [
+                        'link_name_id' => $lid,
+                        'size' => $meta['size'],
+                        'ref_count' => 0,
+                        'sample_parent_node_id' => (int)$edgeRows[$i]->parent_node_id,
+                        'sample_child_node_id' => $child,
+                    ];
+                }
+                $coarse[$key]['ref_count']++;
+            }
+        }
+
+        // Build results using the same logic but with full $node_meta
+        $candidate_limit = max($limit * 16, 64);
+        $candidates = [];
+        foreach ($coarse as $key => $info) {
+            $coarse_total = $info['ref_count'] * $info['size'];
+            if ($info['ref_count'] <= 50 || $coarse_total <= 10240) {
+                continue;
+            }
+            $link_name = $dict->lookup($info['link_name_id']);
+            if ($link_name === null || $link_name === 'key') {
+                continue;
+            }
+            $sample_child_meta = $node_meta[$info['sample_child_node_id']] ?? null;
+            $candidates[] = [
+                'key' => $key,
+                'link_name' => $link_name,
+                'size' => $info['size'],
+                'coarse_total' => $coarse_total,
+                'sample_parent_node_id' => $info['sample_parent_node_id'],
+                'sample_child_node_id' => $info['sample_child_node_id'],
+                'sample_location_type' => $sample_child_meta['location_type'] ?? null,
+            ];
+        }
+        usort($candidates, fn (array $a, array $b): int => $b['coarse_total'] <=> $a['coarse_total']);
+        $candidates = array_slice($candidates, 0, $candidate_limit);
+
+        $groups = [];
+        foreach ($candidates as $candidate) {
+            $groups[$candidate['key']] = [
+                'link_name' => $candidate['link_name'],
+                'size' => $candidate['size'],
+                'sample_parent_node_id' => $candidate['sample_parent_node_id'],
+                'sample_child_node_id' => $candidate['sample_child_node_id'],
+                'sample_location_type' => $candidate['sample_location_type'],
+                'sample_child_node_ids' => [],
+                'seen_children' => [],
+                'string_counts' => [],
+                'object_samples' => [],
+            ];
+        }
+        if ($groups === []) {
+            return [];
+        }
+        if ($edgeRows !== null) {
+            for ($i = 0; $i < $edge_count; $i++) {
+                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                    continue;
+                }
+                $child = (int)$edgeRows[$i]->child_node_id;
+                $meta = $node_meta[$child] ?? null;
+                if ($meta === null || $meta['size'] <= 0) {
+                    continue;
+                }
+                $key = (int)$edgeRows[$i]->link_name_id . ':' . $meta['size'];
+                if (!isset($groups[$key])) {
+                    continue;
+                }
+                self::accumulateDedupGroup($groups[$key], $child, $meta, $dict);
+            }
+        }
+
+        $results = [];
+        foreach ($groups as $group) {
+            $cnt = count($group['seen_children']);
+            $total_waste = $cnt * $group['size'];
+            if ($cnt <= 50 || $total_waste <= 10240) {
+                continue;
+            }
+            $results[] = [
+                'link_name' => $group['link_name'],
+                'size' => $group['size'],
+                'cnt' => $cnt,
+                'total_waste' => $total_waste,
+                'sample_parent_node_id' => $group['sample_parent_node_id'],
+                'sample_child_node_id' => $group['sample_child_node_id'],
+                'sample_location_type' => $group['sample_location_type'],
+                'sample_child_node_ids' => $group['sample_child_node_ids'],
+                'examples' => self::buildDedupExamples(
+                    $group['string_counts'],
+                    $group['object_samples'],
+                ),
+            ];
+        }
+        usort($results, fn (array $a, array $b): int => $b['total_waste'] <=> $a['total_waste']);
+        return array_slice($results, 0, $limit);
     }
 
     /**
