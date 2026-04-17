@@ -57,6 +57,12 @@ final class RmemQueryCommand extends Command
                 InputOption::VALUE_NONE,
                 'list all sections in the rmem file with sizes and element counts',
             )
+            ->addOption(
+                'check-integrity',
+                null,
+                InputOption::VALUE_NONE,
+                'validate string_dict and other sections for truncation or corruption',
+            )
         ;
     }
 
@@ -77,6 +83,10 @@ final class RmemQueryCommand extends Command
         if ((bool) $input->getOption('sections')) {
             $this->printSections($output, $reader);
             return 0;
+        }
+
+        if ((bool) $input->getOption('check-integrity')) {
+            return $this->checkIntegrity($output, $reader);
         }
 
         $dict = $reader->getStringDict();
@@ -152,6 +162,111 @@ final class RmemQueryCommand extends Command
                 '0x' . dechex($reader->getSectionOffset($name)),
             ));
         }
+    }
+
+    private function checkIntegrity(OutputInterface $output, BinaryReader $reader): int
+    {
+        $errors = 0;
+
+        // Check string_dict
+        if ($reader->hasSection('string_dict')) {
+            $output->writeln('<comment>Checking string_dict...</comment>');
+            $data = $reader->getSectionData('string_dict');
+            $dataLen = strlen($data);
+            $output->writeln("  section_bytes: {$dataLen}");
+
+            if ($dataLen < 4) {
+                $output->writeln('  <error>Too short for header</error>');
+                $errors++;
+            } else {
+                $count = unpack('V', $data, 0)[1];
+                $output->writeln("  declared_count: {$count}");
+
+                $offset = 4;
+                $readable = 0;
+                $maxLen = 0;
+                $badLen = false;
+                for ($i = 0; $i < $count; $i++) {
+                    if ($offset + 4 > $dataLen) {
+                        $output->writeln("  <error>TRUNCATED at string #{$i}: need len header at offset {$offset}, section ends at {$dataLen}</error>");
+                        $errors++;
+                        break;
+                    }
+                    $len = unpack('V', $data, $offset)[1];
+                    $offset += 4;
+                    if ($len > 100_000_000) {
+                        $output->writeln("  <error>BAD_LEN at string #{$i}: len={$len} at offset " . ($offset - 4) . "</error>");
+                        $errors++;
+                        $badLen = true;
+                        break;
+                    }
+                    if ($offset + $len > $dataLen) {
+                        $output->writeln("  <error>TRUNCATED at string #{$i}: need {$len} bytes at offset {$offset}, only " . ($dataLen - $offset) . " available</error>");
+                        $errors++;
+                        break;
+                    }
+                    if ($len > $maxLen) {
+                        $maxLen = $len;
+                    }
+                    $offset += $len;
+                    $readable++;
+                }
+
+                if ($readable === $count && !$badLen) {
+                    $output->writeln("  <info>OK: all {$count} strings readable ({$offset}/{$dataLen} bytes consumed)</info>");
+                    if ($offset < $dataLen) {
+                        $output->writeln("  warning: " . ($dataLen - $offset) . " trailing bytes after last string");
+                    }
+                } else {
+                    $output->writeln("  readable: {$readable}/{$count}");
+                }
+                $output->writeln("  max_string_len: {$maxLen}");
+            }
+        } else {
+            $output->writeln('<comment>No string_dict section</comment>');
+        }
+
+        // Check node/edge/location counts vs section sizes
+        foreach ([
+            [Format::SECTION_NODES, Format::NODE_ROW_SIZE, 'nodes'],
+            [Format::SECTION_EDGES, Format::EDGE_ROW_SIZE, 'edges'],
+            [Format::SECTION_LOCATIONS, Format::LOCATION_ROW_SIZE, 'locations'],
+        ] as [$section, $rowSize, $label]) {
+            if (!$reader->hasSection($section)) {
+                continue;
+            }
+            $elemCount = $reader->getSectionElementCount($section);
+            $sectionLen = $reader->getSectionLength($section);
+            $expected = $elemCount * $rowSize;
+            $status = $sectionLen >= $expected ? '<info>OK</info>' : '<error>SHORT</error>';
+            $output->writeln("{$status} {$label}: {$elemCount} elements × {$rowSize} = {$expected} bytes, section has {$sectionLen}");
+            if ($sectionLen < $expected) {
+                $errors++;
+            }
+        }
+
+        // Check node_sizes / node_classes
+        foreach (['node_sizes' => 8, 'node_classes' => 4] as $section => $elemSize) {
+            if (!$reader->hasSection($section)) {
+                continue;
+            }
+            $elemCount = $reader->getSectionElementCount($section);
+            $sectionLen = $reader->getSectionLength($section);
+            $expected = $elemCount * $elemSize;
+            $status = $sectionLen >= $expected ? '<info>OK</info>' : '<error>SHORT</error>';
+            $output->writeln("{$status} {$section}: {$elemCount} slots × {$elemSize} = {$expected} bytes, section has {$sectionLen}");
+            if ($sectionLen < $expected) {
+                $errors++;
+            }
+        }
+
+        $output->writeln('');
+        if ($errors > 0) {
+            $output->writeln("<error>{$errors} integrity error(s) found</error>");
+            return 1;
+        }
+        $output->writeln('<info>All checks passed</info>');
+        return 0;
     }
 
     private function findNodeByAddress(BinaryReader $reader, int $address): ?int
