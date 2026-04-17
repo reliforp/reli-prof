@@ -139,11 +139,13 @@ final class MemoryLocationsCollector
         $chunk_memory_locations = new MemoryLocations();
 
         $zend_mm_main_chunk = $dereferencer->deref($main_chunk_header_pointer);
+        $walked_chunk_count = 0;
         foreach ($zend_mm_main_chunk->iterateChunks($dereferencer) as $chunk) {
             $chunk_memory_location = ZendMmChunkMemoryLocation::fromZendMmChunk($chunk);
             $chunk_memory_locations->add(
                 $chunk_memory_location
             );
+            $walked_chunk_count++;
         }
         $huge_memory_locations = new MemoryLocations();
         foreach ($zend_mm_main_chunk->heap_slot->iterateHugeList($dereferencer) as $huge_list) {
@@ -160,6 +162,17 @@ final class MemoryLocationsCollector
         $memory_get_peak_usage = $zend_mm_main_chunk->heap_slot->peak;
         $memory_limit = $zend_mm_main_chunk->heap_slot->limit;
         $cached_chunks_size = $zend_mm_main_chunk->heap_slot->cached_chunks_count * ZendMmChunk::SIZE;
+
+        // Warn if chunk walk was incomplete (corrupt next pointer or
+        // chunks outside dump region).
+        $walked_chunk_bytes = $walked_chunk_count * ZendMmChunk::SIZE;
+        if ($memory_get_usage_real_size > 0 && $walked_chunk_bytes < $memory_get_usage_real_size * 0.5) {
+            $walked_mb = number_format($walked_chunk_bytes / 1024 / 1024, 1);
+            $real_mb = number_format($memory_get_usage_real_size / 1024 / 1024, 1);
+            fwrite(STDERR, "WARNING: ZendMM chunk walk incomplete — found {$walked_mb} MB"
+                . " in {$walked_chunk_count} chunks, but real_size is {$real_mb} MB."
+                . " Some chunks may be outside the dump region.\n");
+        }
 
         $eg_pointer = new Pointer(
             ZendExecutorGlobals::class,
