@@ -297,7 +297,18 @@ final class RmemExploreTui
         $sidebarLines = [];
         if ($this->showSidebar && $cols > 80) {
             $sidebarW = min(40, (int)($cols * 0.3));
-            $focusId = $this->sandwich ? $this->sandwichNodeId : ($this->rows[$this->selected]['node_id'] ?? null);
+            if ($this->sandwich) {
+                // Show detail for the selected row in the active pane
+                if ($this->activePane === 'children' && isset($this->childRows[$this->childSelected])) {
+                    $focusId = $this->childRows[$this->childSelected]['node_id'];
+                } elseif ($this->activePane === 'parents' && isset($this->parentRows[$this->parentSelected])) {
+                    $focusId = $this->parentRows[$this->parentSelected]['node_id'];
+                } else {
+                    $focusId = $this->sandwichNodeId;
+                }
+            } else {
+                $focusId = $this->rows[$this->selected]['node_id'] ?? null;
+            }
             if ($focusId !== null) {
                 $sidebarLines = $this->buildSidebarLines($focusId, $sidebarW, $rows);
             }
