@@ -84,6 +84,8 @@ final class RmemExploreTui
             Keymap::ACTION_END => $this->moveSelection(999999),
             Keymap::ACTION_FOCUS_ENTER => $this->drillInto(),
             Keymap::ACTION_BACK => $this->drillOut(),
+            Keymap::ACTION_VIEW_SELF => $this->switchToTopRetained(),
+            Keymap::ACTION_VIEW_TOTAL => $this->switchToRoots(),
             Keymap::ACTION_HELP => $this->showHelp = true,
             Keymap::ACTION_QUIT => $this->running = false,
             default => null,
@@ -147,6 +149,26 @@ final class RmemExploreTui
         }
         $this->selected = $prev['selected'] ?? 0;
         $this->topRow = $prev['topRow'] ?? 0;
+    }
+
+    private function switchToTopRetained(): void
+    {
+        $this->focusStack = [];
+        $this->focusNodeId = null;
+        $this->focusLabel = 'Top retained';
+        $this->rows = $this->model->getTopRetained(10000);
+        $this->selected = 0;
+        $this->topRow = 0;
+    }
+
+    private function switchToRoots(): void
+    {
+        $this->focusStack = [];
+        $this->focusNodeId = null;
+        $this->focusLabel = 'Roots';
+        $this->rows = $this->model->getRootChildren();
+        $this->selected = 0;
+        $this->topRow = 0;
     }
 
     // ---- Rendering ----
@@ -247,7 +269,7 @@ final class RmemExploreTui
 
     private function renderFooter(int $cols): string
     {
-        $hints = ' ↑↓:select  Enter:children  Backspace:back  ?:help  q:quit';
+        $hints = ' ↑↓:select  Enter:children  Bksp:back  s:top-retained  t:roots  ?:help  q:quit';
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -268,6 +290,10 @@ final class RmemExploreTui
             '  Display:',
             '    Retained        Subtree size (node + all descendants)',
             '    Shallow         Node\'s own size only',
+            '',
+            '  Views:',
+            '    s               Top retained ranking',
+            '    t               Root branches',
             '',
             '  Other:',
             '    ?               Toggle this help',
