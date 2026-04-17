@@ -18,8 +18,12 @@ use FFI;
 /**
  * Writes a .rmem.derived sidecar cache file.
  *
- * Uses atomic write: writes to a temp file then renames.
- * The header stores the rmem file's mtime and size for validation.
+ * Uses atomic write (temp file → rename). FFI sections are written
+ * in chunks via FFI::string to avoid materializing a single PHP string
+ * for the entire section.
+ *
+ * Stores an rmem content fingerprint (section_count + toc_offset from
+ * the rmem header) to detect same-second same-size overwrites.
  */
 final class DerivedCacheWriter
 {
@@ -82,25 +86,23 @@ final class DerivedCacheWriter
     }
 
     /**
-     * Write an FFI int32 array as a section.
+     * Write an FFI int32 array as a section using chunked FFI::string.
      */
     public function writeInt32Section(string $name, \FFI\CData $data, int $count): void
     {
-        $bytes = $count * 4;
-        $this->writeRawSection($name, FFI::string($data, $bytes), $count);
+        $this->writeFfiSection($name, $data, $count, 4);
     }
 
     /**
-     * Write an FFI int64 array as a section.
+     * Write an FFI int64 array as a section using chunked FFI::string.
      */
     public function writeInt64Section(string $name, \FFI\CData $data, int $count): void
     {
-        $bytes = $count * 8;
-        $this->writeRawSection($name, FFI::string($data, $bytes), $count);
+        $this->writeFfiSection($name, $data, $count, 8);
     }
 
     /**
-     * Write a raw string section.
+     * Write a raw string section (for small sections like JSON profiles).
      */
     public function writeRawSection(string $name, string $data, int $elementCount): void
     {
@@ -118,6 +120,27 @@ final class DerivedCacheWriter
             'length' => $length,
             'element_count' => $elementCount,
         ];
+    }
+
+    /**
+     * Write rmem content fingerprint (section_count + toc_offset).
+     * Called by FfiCsrGraphSubstrate after writing all derived sections.
+     */
+    public function writeFingerprint(string $rmemPath): void
+    {
+        $rmemFh = @fopen($rmemPath, 'rb');
+        if ($rmemFh === false) {
+            return;
+        }
+        $rmemHeader = fread($rmemFh, 24);
+        fclose($rmemFh);
+        if ($rmemHeader === false || strlen($rmemHeader) < 24) {
+            return;
+        }
+        $sectionCount = unpack('V', $rmemHeader, 12)[1];
+        $tocOffset = unpack('P', $rmemHeader, 16)[1];
+        $fp = pack('VP', $sectionCount, $tocOffset);
+        $this->writeRawSection('__fingerprint', $fp, 1);
     }
 
     /**
@@ -187,5 +210,41 @@ final class DerivedCacheWriter
             $this->fh = null;
             @unlink($this->tempPath);
         }
+    }
+
+    /**
+     * Chunked writer for FFI arrays. Converts FFI buffer to PHP strings
+     * in 4 MB chunks instead of one huge FFI::string call.
+     */
+    private function writeFfiSection(string $name, \FFI\CData $data, int $count, int $elemSize): void
+    {
+        if ($this->fh === null) {
+            return;
+        }
+        $totalBytes = $count * $elemSize;
+        $offset = $this->pos;
+
+        // Copy the typed FFI buffer into a flat char[] owned by a
+        // bare FFI instance so we can safely do pointer arithmetic.
+        $ffi = FFI::cdef();
+        $charBuf = $ffi->new("char[{$totalBytes}]");
+        FFI::memcpy($charBuf, $data, $totalBytes);
+
+        $chunkSize = 4 * 1024 * 1024; // 4 MB
+        $written = 0;
+        while ($written < $totalBytes) {
+            $toWrite = min($chunkSize, $totalBytes - $written);
+            $chunk = FFI::string($charBuf + $written, $toWrite);
+            fwrite($this->fh, $chunk);
+            $written += $toWrite;
+        }
+        $this->pos += $totalBytes;
+
+        $this->toc[] = [
+            'name' => $name,
+            'offset' => $offset,
+            'length' => $totalBytes,
+            'element_count' => $count,
+        ];
     }
 }

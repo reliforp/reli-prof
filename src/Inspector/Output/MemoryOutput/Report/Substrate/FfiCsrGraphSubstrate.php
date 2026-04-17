@@ -1902,13 +1902,19 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // These replace the PHP arrays $canonIdx and $canonical_original_indices
         // that previously consumed ~8 GB for 34M nodes. FFI version: ~400 MB.
         // Stored as class fields so pass-level canonical APIs can use them too.
-        $this->canonIdxFfi = FFIHelper::new("int32_t[{$nc}]");
-        $this->origOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $canonIdxFfi = $this->canonIdxFfi;
-        $origOffsets = $this->origOffsets;
+        // When has_canonical is false, these stay null — the overridden
+        // canonical accessors fall back to parent, and the peeling/Tarjan
+        // loops use the no-canonical code paths that need no mapping.
+        $canonIdxFfi = null;
+        $origOffsets = null;
         $origData = null;
 
         if ($has_canonical) {
+            $this->canonIdxFfi = FFIHelper::new("int32_t[{$nc}]");
+            $this->origOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+            $canonIdxFfi = $this->canonIdxFfi;
+            $origOffsets = $this->origOffsets;
+
             // Pass 1: compute canonIdxFfi and count originals per canonical
             $origCount = FFIHelper::new("int32_t[{$nc}]");
             for ($v = 0; $v < $nc; $v++) {
@@ -1952,18 +1958,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $origPos[$c] = $p + 1;
             }
             unset($origCount, $origPos);
+            $this->origData = $origData;
 
             // Free parent PHP arrays — FFI canonical replaces them.
             $this->canonical = [];
             $this->canonicalToOriginals = [];
-        } else {
-            for ($v = 0; $v < $nc; $v++) {
-                $canonIdxFfi[$v] = $v;
-                $origOffsets[$v] = $v;
-            }
-            $origOffsets[$nc] = $nc;
         }
-        $this->origData = $origData;
 
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
@@ -2189,15 +2189,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
         }
         unset($out_deg, $arevOffsets, $arevEdges);
-
-        // Debug: log trimming effectiveness
-        $active_after = 0;
-        for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] !== 0) {
-                $active_after++;
-            }
-        }
-        fwrite(STDERR, "SCC trimming: {$active_after} active of {$nc} canonical nodes\n");
 
         // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
         // tarjan_on_stack uses 0/1 because int8 is plenty.
@@ -2471,7 +2462,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $this->ffiNodeToScc = $sccBuf;
         $this->scc_profiles = $profiles;
 
-        fwrite(STDERR, "Derived cache loaded from {$rmemPath}.derived\n");
         return true;
     }
 
@@ -2509,6 +2499,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             );
         }
 
+        $writer->writeFingerprint($rmemPath);
         $writer->finish($rmemPath);
     }
 }
