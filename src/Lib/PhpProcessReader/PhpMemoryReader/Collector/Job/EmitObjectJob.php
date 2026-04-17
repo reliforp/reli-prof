@@ -245,34 +245,58 @@ final class EmitObjectJob implements CollectorJob
         CollectorContext $ctx,
     ): void {
         try {
+            // zend_ffi_cdata layout after zend_object:
+            //   +0: zend_ffi_type *type    (8, low bit is ownership tag)
+            //   +8: void *ptr              (8, actual data address)
+            //  +16: void *ptr_holder       (8)
+            //  +24: uint32_t flags         (4)
+            //
+            // zend_ffi_flags:
+            //   ZEND_FFI_FLAG_CONST      = 1
+            //   ZEND_FFI_FLAG_OWNED      = 2
+            //   ZEND_FFI_FLAG_PERSISTENT = 4
             $sizeof_zend_object = $ctx->zend_type_reader->sizeOf('zend_object');
             $ffi_fields_base = $obj_address + $sizeof_zend_object;
 
             $deref = $ctx->dereferencer;
             $i64size = 8;
 
-            // Read type pointer (zend_ffi_cdata.type at std_end + 0)
+            // Read flags (uint32 at std_end + 24)
+            /** @var \Reli\Lib\PhpInternals\Types\C\RawInt32 $flags_raw */
+            $flags_raw = $deref->deref(new Pointer(
+                \Reli\Lib\PhpInternals\Types\C\RawInt32::class,
+                $ffi_fields_base + 24,
+                4,
+            ));
+            $flags = $flags_raw->value;
+
+            // Only track owned CData (FFI::new). Skip views (FFI::cast/addr).
+            if (($flags & 2) === 0) { // ZEND_FFI_FLAG_OWNED
+                return;
+            }
+
+            // Read ptr (the actual data address, at std_end + 8)
+            /** @var \Reli\Lib\PhpInternals\Types\C\RawInt64 $ptr_raw */
+            $ptr_raw = $deref->deref(new Pointer(
+                \Reli\Lib\PhpInternals\Types\C\RawInt64::class,
+                $ffi_fields_base + 8,
+                $i64size,
+            ));
+            $data_ptr = $ptr_raw->value;
+            if ($data_ptr === 0) {
+                return;
+            }
+
+            // Read type pointer (std_end + 0), strip low-bit tag (ZEND_FFI_TYPE_OWNED)
             /** @var \Reli\Lib\PhpInternals\Types\C\RawInt64 $type_raw */
             $type_raw = $deref->deref(new Pointer(
                 \Reli\Lib\PhpInternals\Types\C\RawInt64::class,
                 $ffi_fields_base,
                 $i64size,
             ));
-            $type_ptr = $type_raw->value;
+            $type_ptr = $type_raw->value & ~1; // strip tag bit
             if ($type_ptr === 0) {
                 return;
-            }
-
-            // Read ptr_holder (zend_ffi_cdata.ptr_holder at std_end + 16)
-            /** @var \Reli\Lib\PhpInternals\Types\C\RawInt64 $holder_raw */
-            $holder_raw = $deref->deref(new Pointer(
-                \Reli\Lib\PhpInternals\Types\C\RawInt64::class,
-                $ffi_fields_base + 16,
-                $i64size,
-            ));
-            $ptr_holder = $holder_raw->value;
-            if ($ptr_holder === 0) {
-                return; // Not an owned CData (view/cast), skip
             }
 
             // Read type->size (size_t at offset 8 in zend_ffi_type)
@@ -288,10 +312,12 @@ final class EmitObjectJob implements CollectorJob
                 return;
             }
 
+            $is_persistent = ($flags & 4) !== 0; // ZEND_FFI_FLAG_PERSISTENT
+
             $location = new FfiAllocationMemoryLocation(
-                $ptr_holder,
+                $data_ptr,
                 (int)$alloc_size,
-                'FFI\\CData::buffer',
+                $is_persistent ? 'FFI\\CData::buffer(persistent)' : 'FFI\\CData::buffer',
             );
             $ctx->memory_locations->add($location);
 

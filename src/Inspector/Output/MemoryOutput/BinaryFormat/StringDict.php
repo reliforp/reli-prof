@@ -88,9 +88,6 @@ final class StringDict
 
     /**
      * Load a dictionary from a serialized binary buffer.
-     */
-    /**
-     * Load a dictionary from a serialized binary buffer.
      *
      * @param bool $reverseOnly If true, skip building the forward map
      *     (string→id). Use when only lookup(id) is needed (e.g. report).
