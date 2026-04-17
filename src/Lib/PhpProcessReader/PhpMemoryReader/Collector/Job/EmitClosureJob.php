@@ -61,14 +61,13 @@ final class EmitClosureJob implements CollectorJob
         $closure_context->add('func', $func_result->context);
 
         $closure_node_id = $ctx->emitNode($closure_context, $this->object_node_id, 'closure');
+        $closure_fallback_pid = $closure_node_id >= 0 ? $closure_node_id : null;
 
-        // Push deferred static_variables arrays.
-        // See EmitObjectJob for why this reads from getMemoNodeId().
         foreach ($func_result->deferred_arrays as [$arr_pointer, $arr_link, $parent_ctx]) {
             $raw_parent_id = $parent_ctx->getMemoNodeId();
-            $parent_id = $raw_parent_id === null
-                ? null
-                : ($raw_parent_id < 0 ? -$raw_parent_id - 1 : $raw_parent_id);
+            $parent_id = $raw_parent_id !== null
+                ? ($raw_parent_id < 0 ? -$raw_parent_id - 1 : $raw_parent_id)
+                : $closure_fallback_pid;
             /** @psalm-suppress ArgumentTypeCoercion */
             $queue->push(new EmitArrayJob($arr_pointer, $parent_id, $arr_link));
         }
