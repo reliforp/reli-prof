@@ -182,6 +182,13 @@ final class RmemModel
             ];
         }
 
+        // Filter out empty roots (e.g. interned_strings whose array was
+        // already emitted by call_frames via pool cache hit → reference
+        // edge only, no children).
+        $rootEntries = array_values(array_filter(
+            $rootEntries,
+            fn (array $e) => $e['retained'] > 0 || $this->substrate->getChildren($e['node_id']) !== [],
+        ));
         usort($rootEntries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
         return $rootEntries;
     }
