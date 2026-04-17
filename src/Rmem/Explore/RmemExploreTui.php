@@ -321,7 +321,8 @@ final class RmemExploreTui
                 $mainLine = $lines[$i];
                 // Pad main line to mainW based on visible width
                 // (ANSI escapes don't consume terminal columns)
-                $visibleLen = mb_strlen(preg_replace('/\e\[[0-9;]*m/', '', $mainLine) ?? '');
+                $stripped = preg_replace('/\x1b\[[0-9;]*m/', '', $mainLine);
+                $visibleLen = strlen($stripped ?? '');
                 $pad = max(0, $mainW - $visibleLen);
                 $lines[$i] = $mainLine . str_repeat(' ', $pad) . $sep . str_pad($sLine, $sidebarW);
             }
