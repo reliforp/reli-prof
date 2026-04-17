@@ -355,10 +355,17 @@ final class RmemExploreTui
 
     private function goToDefinition(): void
     {
-        // Determine which node to look up
+        // Determine which node to look up — use the selected row in
+        // the active pane, not just the sandwich focus.
         $nodeId = null;
         if ($this->sandwich) {
-            $nodeId = $this->sandwichNodeId;
+            if ($this->activePane === 'children' && isset($this->childRows[$this->childSelected])) {
+                $nodeId = $this->childRows[$this->childSelected]['node_id'];
+            } elseif ($this->activePane === 'parents' && isset($this->parentRows[$this->parentSelected])) {
+                $nodeId = $this->parentRows[$this->parentSelected]['node_id'];
+            } else {
+                $nodeId = $this->sandwichNodeId;
+            }
         } elseif (isset($this->rows[$this->selected])) {
             $nodeId = $this->rows[$this->selected]['node_id'];
         }
