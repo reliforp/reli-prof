@@ -22,8 +22,8 @@ use FFI;
  * in chunks via FFI::string to avoid materializing a single PHP string
  * for the entire section.
  *
- * Stores an rmem content fingerprint (section_count + toc_offset from
- * the rmem header) to detect same-second same-size overwrites.
+ * Stores a SHA-256 structural fingerprint of the rmem header + TOC
+ * to detect same-second same-size overwrites that change section layout.
  */
 final class DerivedCacheWriter
 {

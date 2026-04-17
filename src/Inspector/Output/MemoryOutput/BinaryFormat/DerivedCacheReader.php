@@ -23,8 +23,8 @@ use Reli\Lib\FFI\FFIHelper;
  * into a PHP string. Large FFI sections are read in chunks directly
  * into FFI buffers via FFI::memcpy to avoid PHP string temporaries.
  *
- * Validates the cache against the rmem file's fingerprint (section
- * count + TOC offset + size) to detect same-second overwrites.
+ * Validates the cache against mtime + size + a SHA-256 structural
+ * fingerprint of the rmem header and TOC.
  */
 final class DerivedCacheReader
 {
@@ -210,7 +210,10 @@ final class DerivedCacheReader
         $entry = $this->toc[$name];
         fseek($this->fh, $entry['offset']);
         $data = fread($this->fh, $entry['length']);
-        return $data === false ? null : $data;
+        if ($data === false || strlen($data) !== $entry['length']) {
+            return null;
+        }
+        return $data;
     }
 
     /**
@@ -232,15 +235,11 @@ final class DerivedCacheReader
             return null;
         }
 
-        // Allocate a flat char buffer, read into it in chunks, then
-        // cast to the typed array. This avoids a single huge PHP string
-        // (the codex review concern) while sidestepping FFI::addr
-        // segfaults on typed array elements.
         $buf = FFIHelper::new("{$type}[{$count}]");
 
         // Read in element-aligned chunks directly into the destination
-        // FFI buffer via FFI::addr($buf[$elemOffset]). No staging buffer
-        // needed — peak overhead is just the ~4 MB PHP string chunk.
+        // FFI buffer via FFI::addr($buf[$elemOffset]). Peak overhead is
+        // just the ~4 MB PHP string chunk per iteration.
         fseek($this->fh, $entry['offset']);
         $chunkElems = (int)(4 * 1024 * 1024 / $elemSize); // ~4 MB in elements
         if ($chunkElems < 1) {
