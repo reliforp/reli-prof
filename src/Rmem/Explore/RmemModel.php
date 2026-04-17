@@ -126,6 +126,35 @@ final class RmemModel
     }
 
     /**
+     * Get all parents (reverse edges) of a node, sorted by retained size.
+     *
+     * @return list<array{node_id: int, retained: int, shallow: int, link_name: string, label: string}>
+     */
+    public function getParents(int $nodeId): array
+    {
+        $parents = $this->substrate->getAllParents($nodeId);
+        $entries = [];
+        $seen = [];
+        foreach ($parents as $parentId) {
+            if (isset($seen[$parentId])) {
+                continue;
+            }
+            $seen[$parentId] = true;
+            // Find the link name: what edge label does the parent use to reference this child?
+            $linkName = $this->substrate->getTreeLinkName($nodeId) ?? '?';
+            $entries[] = [
+                'node_id' => $parentId,
+                'retained' => $this->substrate->getSubtreeSize($parentId),
+                'shallow' => $this->substrate->getNodeSize($parentId),
+                'link_name' => $linkName,
+                'label' => $this->nodeLabel($parentId),
+            ];
+        }
+        usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        return $entries;
+    }
+
+    /**
      * Get the path from a node to root.
      *
      * @return list<array{node_id: int, link_name: string, label: string}>

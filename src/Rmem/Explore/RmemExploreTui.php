@@ -20,22 +20,38 @@ use Reli\Rbt\Explore\TerminalInterface;
 /**
  * Interactive TUI for browsing a .rmem memory snapshot.
  *
- * Prototype: TopN retained list + children drill-down + path to root.
+ * Modes:
+ * - List: flat list (roots or TopN retained)
+ * - Sandwich: parents | focus | children (3-pane)
  */
 final class RmemExploreTui
 {
     private bool $running = false;
 
+    // ---- List mode state ----
     /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
     private array $rows = [];
     private int $selected = 0;
     private int $topRow = 0;
-
-    /** @var list<array{node_id: int, label: string}> focus stack */
+    /** @var list<array<string, mixed>> focus stack for list drill-down */
     private array $focusStack = [];
-
     private ?int $focusNodeId = null;
     private string $focusLabel = 'Roots';
+
+    // ---- Sandwich mode state ----
+    private bool $sandwich = false;
+    private int $sandwichNodeId = 0;
+    private string $sandwichLabel = '';
+    /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
+    private array $parentRows = [];
+    /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
+    private array $childRows = [];
+    private int $parentSelected = 0;
+    private int $parentTopRow = 0;
+    private int $childSelected = 0;
+    private int $childTopRow = 0;
+    /** 'parents' | 'children' */
+    private string $activePane = 'children';
 
     private bool $showHelp = false;
 
@@ -82,8 +98,9 @@ final class RmemExploreTui
             Keymap::ACTION_PAGE_DOWN => $this->moveSelection($this->bodyHeight()),
             Keymap::ACTION_HOME => $this->moveSelection(-999999),
             Keymap::ACTION_END => $this->moveSelection(999999),
-            Keymap::ACTION_FOCUS_ENTER => $this->drillInto(),
-            Keymap::ACTION_BACK => $this->drillOut(),
+            Keymap::ACTION_FOCUS_ENTER => $this->enter(),
+            Keymap::ACTION_BACK => $this->back(),
+            Keymap::ACTION_TOGGLE_PANE => $this->togglePane(),
             Keymap::ACTION_VIEW_SELF => $this->switchToTopRetained(),
             Keymap::ACTION_VIEW_TOTAL => $this->switchToRoots(),
             Keymap::ACTION_HELP => $this->showHelp = true,
@@ -92,8 +109,14 @@ final class RmemExploreTui
         };
     }
 
+    // ---- Navigation ----
+
     private function moveSelection(int $delta): void
     {
+        if ($this->sandwich) {
+            $this->moveSandwichSelection($delta);
+            return;
+        }
         $count = count($this->rows);
         if ($count === 0) {
             return;
@@ -107,38 +130,88 @@ final class RmemExploreTui
         }
     }
 
-    private function drillInto(): void
+    private function moveSandwichSelection(int $delta): void
     {
+        $halfH = (int)($this->bodyHeight() / 2);
+        if ($this->activePane === 'parents') {
+            $count = count($this->parentRows);
+            if ($count === 0) {
+                return;
+            }
+            $this->parentSelected = max(0, min($count - 1, $this->parentSelected + $delta));
+            if ($this->parentSelected < $this->parentTopRow) {
+                $this->parentTopRow = $this->parentSelected;
+            } elseif ($this->parentSelected >= $this->parentTopRow + $halfH) {
+                $this->parentTopRow = $this->parentSelected - $halfH + 1;
+            }
+        } else {
+            $count = count($this->childRows);
+            if ($count === 0) {
+                return;
+            }
+            $this->childSelected = max(0, min($count - 1, $this->childSelected + $delta));
+            if ($this->childSelected < $this->childTopRow) {
+                $this->childTopRow = $this->childSelected;
+            } elseif ($this->childSelected >= $this->childTopRow + $halfH) {
+                $this->childTopRow = $this->childSelected - $halfH + 1;
+            }
+        }
+    }
+
+    private function enter(): void
+    {
+        if ($this->sandwich) {
+            $this->sandwichEnter();
+            return;
+        }
         if (!isset($this->rows[$this->selected])) {
             return;
         }
         $row = $this->rows[$this->selected];
-        $nodeId = $row['node_id'];
-
-        $this->focusStack[] = [
-            'node_id' => $this->focusNodeId ?? -1,
-            'label' => $this->focusLabel,
-            'selected' => $this->selected,
-            'topRow' => $this->topRow,
-        ];
-
-        $this->focusNodeId = $nodeId;
-        $this->focusLabel = $row['label'];
-        $this->rows = $this->model->getChildren($nodeId);
-        $this->selected = 0;
-        $this->topRow = 0;
+        $this->enterSandwich($row['node_id'], $row['label']);
     }
 
-    private function drillOut(): void
+    private function sandwichEnter(): void
     {
+        if ($this->activePane === 'children') {
+            if (isset($this->childRows[$this->childSelected])) {
+                $row = $this->childRows[$this->childSelected];
+                $this->enterSandwich($row['node_id'], $row['label']);
+            }
+        } else {
+            if (isset($this->parentRows[$this->parentSelected])) {
+                $row = $this->parentRows[$this->parentSelected];
+                $this->enterSandwich($row['node_id'], $row['label']);
+            }
+        }
+    }
+
+    private function enterSandwich(int $nodeId, string $label): void
+    {
+        $this->sandwich = true;
+        $this->sandwichNodeId = $nodeId;
+        $this->sandwichLabel = $label;
+        $this->parentRows = $this->model->getParents($nodeId);
+        $this->childRows = $this->model->getChildren($nodeId);
+        $this->parentSelected = 0;
+        $this->parentTopRow = 0;
+        $this->childSelected = 0;
+        $this->childTopRow = 0;
+        $this->activePane = 'children';
+    }
+
+    private function back(): void
+    {
+        if ($this->sandwich) {
+            $this->sandwich = false;
+            return;
+        }
         if ($this->focusStack === []) {
             return;
         }
         $prev = array_pop($this->focusStack);
         $prevNodeId = $prev['node_id'];
-
         if ($prevNodeId === -1) {
-            // Back to root
             $this->focusNodeId = null;
             $this->focusLabel = 'Roots';
             $this->rows = $this->model->getRootChildren();
@@ -151,8 +224,17 @@ final class RmemExploreTui
         $this->topRow = $prev['topRow'] ?? 0;
     }
 
+    private function togglePane(): void
+    {
+        if (!$this->sandwich) {
+            return;
+        }
+        $this->activePane = $this->activePane === 'children' ? 'parents' : 'children';
+    }
+
     private function switchToTopRetained(): void
     {
+        $this->sandwich = false;
         $this->focusStack = [];
         $this->focusNodeId = null;
         $this->focusLabel = 'Top retained';
@@ -163,6 +245,7 @@ final class RmemExploreTui
 
     private function switchToRoots(): void
     {
+        $this->sandwich = false;
         $this->focusStack = [];
         $this->focusNodeId = null;
         $this->focusLabel = 'Roots';
@@ -178,61 +261,14 @@ final class RmemExploreTui
         [$cols, $rows] = $this->term->size();
         $lines = [];
 
-        // Header
         $lines[] = $this->renderHeader($cols);
-        $lines[] = $this->renderBreadcrumb($cols);
 
-        // Column headers
-        $lines[] = sprintf(
-            "\e[1m  %12s %12s  %-*s\e[0m",
-            'Retained',
-            'Shallow',
-            max(10, $cols - 30),
-            $this->focusNodeId !== null ? 'Link → Label' : 'Label',
-        );
-        $lines[] = '  ' . str_repeat('─', min($cols - 2, 120));
-
-        // Body
-        $bodyH = $rows - count($lines) - 2; // -2 for footer + status
-        $count = count($this->rows);
-        for ($i = $this->topRow; $i < min($this->topRow + $bodyH, $count); $i++) {
-            $row = $this->rows[$i];
-            $retained = SizeFormatter::format($row['retained']);
-            $shallow = SizeFormatter::format($row['shallow']);
-            $link = isset($row['link_name']) ? $row['link_name'] . ' → ' : '';
-            $label = $link . $row['label'];
-            if (strlen($label) > $cols - 30) {
-                $label = substr($label, 0, $cols - 33) . '...';
-            }
-
-            $prefix = $i === $this->selected ? "\e[7m" : '';
-            $suffix = $i === $this->selected ? "\e[0m" : '';
-            $lines[] = sprintf(
-                "%s  %12s %12s  %-*s%s",
-                $prefix,
-                $retained,
-                $shallow,
-                max(10, $cols - 30),
-                $label,
-                $suffix,
-            );
+        if ($this->sandwich) {
+            $this->renderSandwich($lines, $cols, $rows);
+        } else {
+            $this->renderList($lines, $cols, $rows);
         }
 
-        // Pad empty lines
-        while (count($lines) < $rows - 2) {
-            $lines[] = '';
-        }
-
-        // Footer
-        $lines[] = $this->renderFooter($cols);
-        $lines[] = sprintf(
-            ' %s nodes | %s total | depth %d',
-            number_format(count($this->rows)),
-            SizeFormatter::format($this->model->nodeSizesSum()),
-            count($this->focusStack),
-        );
-
-        // Help overlay
         if ($this->showHelp) {
             $this->renderHelpOverlay($lines, $cols, $rows);
         }
@@ -241,11 +277,125 @@ final class RmemExploreTui
         $this->term->write(implode("\n", $lines));
     }
 
+    private function renderList(array &$lines, int $cols, int $totalRows): void
+    {
+        $lines[] = $this->renderBreadcrumb($cols);
+        $lines[] = $this->colHeader($cols);
+        $lines[] = '  ' . str_repeat('─', min($cols - 2, 120));
+
+        $bodyH = $totalRows - count($lines) - 2;
+        $count = count($this->rows);
+        for ($i = $this->topRow; $i < min($this->topRow + $bodyH, $count); $i++) {
+            $lines[] = $this->formatRow($this->rows[$i], $i === $this->selected, $cols);
+        }
+
+        while (count($lines) < $totalRows - 2) {
+            $lines[] = '';
+        }
+
+        $lines[] = $this->renderFooter($cols);
+        $lines[] = sprintf(
+            ' %s nodes | %s total | depth %d',
+            number_format(count($this->rows)),
+            SizeFormatter::format($this->model->nodeSizesSum()),
+            count($this->focusStack),
+        );
+    }
+
+    private function renderSandwich(array &$lines, int $cols, int $totalRows): void
+    {
+        $bodyH = $totalRows - 4; // header + focus bar + footer + status
+        $halfH = (int)($bodyH / 2);
+
+        // Parents pane
+        $pLabel = $this->activePane === 'parents' ? "\e[1m▸ Parents\e[0m" : "\e[2m  Parents\e[0m";
+        $lines[] = $pLabel . sprintf(' (%d)', count($this->parentRows));
+        $pCount = count($this->parentRows);
+        for ($i = $this->parentTopRow; $i < min($this->parentTopRow + $halfH, $pCount); $i++) {
+            $sel = $this->activePane === 'parents' && $i === $this->parentSelected;
+            $lines[] = $this->formatRow($this->parentRows[$i], $sel, $cols);
+        }
+        while (count($lines) < $halfH + 2) {
+            $lines[] = '';
+        }
+
+        // Focus bar
+        $nodeInfo = sprintf(
+            '%s | %s | shallow %s | retained %s',
+            $this->sandwichLabel,
+            $this->model->nodeType($this->sandwichNodeId),
+            SizeFormatter::format($this->model->nodeSize($this->sandwichNodeId)),
+            SizeFormatter::format($this->model->subtreeSize($this->sandwichNodeId)),
+        );
+        if (strlen($nodeInfo) > $cols - 2) {
+            $nodeInfo = substr($nodeInfo, 0, $cols - 5) . '...';
+        }
+        $lines[] = "\e[1;43;30m " . str_pad($nodeInfo, $cols - 1) . "\e[0m";
+
+        // Children pane
+        $cLabel = $this->activePane === 'children' ? "\e[1m▸ Children\e[0m" : "\e[2m  Children\e[0m";
+        $lines[] = $cLabel . sprintf(' (%d)', count($this->childRows));
+        $remainH = $totalRows - count($lines) - 2;
+        $cCount = count($this->childRows);
+        for ($i = $this->childTopRow; $i < min($this->childTopRow + $remainH, $cCount); $i++) {
+            $sel = $this->activePane === 'children' && $i === $this->childSelected;
+            $lines[] = $this->formatRow($this->childRows[$i], $sel, $cols);
+        }
+
+        while (count($lines) < $totalRows - 2) {
+            $lines[] = '';
+        }
+
+        $lines[] = $this->renderFooter($cols);
+        $lines[] = sprintf(
+            ' node#%d | Tab:switch pane | Enter:focus | Bksp:back to list',
+            $this->sandwichNodeId,
+        );
+    }
+
+    /** @param array{node_id: int, retained: int, shallow: int, label: string, link_name?: string} $row */
+    private function formatRow(array $row, bool $selected, int $cols): string
+    {
+        $retained = SizeFormatter::format($row['retained']);
+        $shallow = SizeFormatter::format($row['shallow']);
+        $link = isset($row['link_name']) ? $row['link_name'] . ' → ' : '';
+        $label = $link . $row['label'];
+        $maxLabel = max(10, $cols - 30);
+        if (strlen($label) > $maxLabel) {
+            $label = substr($label, 0, $maxLabel - 3) . '...';
+        }
+
+        $prefix = $selected ? "\e[7m" : '';
+        $suffix = $selected ? "\e[0m" : '';
+        return sprintf(
+            "%s  %12s %12s  %-*s%s",
+            $prefix,
+            $retained,
+            $shallow,
+            $maxLabel,
+            $label,
+            $suffix,
+        );
+    }
+
+    private function colHeader(int $cols): string
+    {
+        return sprintf(
+            "\e[1m  %12s %12s  %-*s\e[0m",
+            'Retained',
+            'Shallow',
+            max(10, $cols - 30),
+            $this->focusNodeId !== null ? 'Link → Label' : 'Label',
+        );
+    }
+
     private function renderHeader(int $cols): string
     {
         $title = " rmem:explore";
+        $mode = $this->sandwich ? '[sandwich]' : '[list]';
         $info = sprintf(
-            "%s nodes, %s edges ",
+            "%s %s nodes, %s edges ",
+            $mode,
             number_format($this->model->nodeCount),
             number_format($this->model->edgeCount),
         );
@@ -269,7 +419,9 @@ final class RmemExploreTui
 
     private function renderFooter(int $cols): string
     {
-        $hints = ' ↑↓:select  Enter:children  Bksp:back  s:top-retained  t:roots  ?:help  q:quit';
+        $hints = $this->sandwich
+            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  s:top  t:roots  ?:help  q:quit'
+            : ' ↑↓:select  Enter:sandwich  Bksp:back  s:top-retained  t:roots  ?:help  q:quit';
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -284,29 +436,30 @@ final class RmemExploreTui
             '    ↑/↓ or k/j     Select node',
             '    PgUp/PgDn      Page scroll',
             '    Home/End        Jump to top/bottom',
-            '    Enter           Drill into children',
-            '    Backspace/←     Go back to parent',
-            '',
-            '  Display:',
-            '    Retained        Subtree size (node + all descendants)',
-            '    Shallow         Node\'s own size only',
+            '    Enter           Open sandwich view / change focus',
+            '    Backspace/←     Go back',
+            '    Tab             Switch pane (sandwich mode)',
             '',
             '  Views:',
             '    s               Top retained ranking',
             '    t               Root branches',
+            '',
+            '  Sandwich view:',
+            '    Top pane        Parents (who retains this node)',
+            '    Focus bar       Selected node details',
+            '    Bottom pane     Children (what this node retains)',
             '',
             '  Other:',
             '    ?               Toggle this help',
             '    q               Quit',
         ];
 
-        $boxW = 56;
+        $boxW = 60;
         $boxH = count($help) + 2;
-        $startRow = max(0, ($rows - $boxH) / 2);
-        $startCol = max(0, ($cols - $boxW) / 2);
+        $startRow = max(0, (int)(($rows - $boxH) / 2));
 
         for ($i = 0; $i < $boxH; $i++) {
-            $lineIdx = (int)$startRow + $i;
+            $lineIdx = $startRow + $i;
             if ($lineIdx >= count($lines)) {
                 break;
             }
@@ -316,10 +469,8 @@ final class RmemExploreTui
                 $text = $help[$i - 1] ?? '';
                 $content = str_pad($text, $boxW);
             }
-            $before = substr($lines[$lineIdx], 0, (int)$startCol);
-            // Simple overlay: replace the middle portion
-            $lines[$lineIdx] = "\e[" . ($lineIdx + 1) . ";1H"
-                . "\e[" . ($lineIdx + 1) . ";" . ((int)$startCol + 1) . "H"
+            $startCol = max(0, (int)(($cols - $boxW) / 2));
+            $lines[$lineIdx] = "\e[" . ($lineIdx + 1) . ";" . ($startCol + 1) . "H"
                 . "\e[47;30m" . $content . "\e[0m";
         }
     }
@@ -327,6 +478,6 @@ final class RmemExploreTui
     private function bodyHeight(): int
     {
         [, $rows] = $this->term->size();
-        return max(1, $rows - 6); // header(1) + breadcrumb(1) + col_header(2) + footer(1) + status(1)
+        return max(1, $rows - 6);
     }
 }
