@@ -409,12 +409,16 @@ final class RmemExploreTui
         }
 
         // Focus bar
-        $nodeInfo = sprintf(
-            '%s | %s | shallow %s | retained %s',
-            $this->sandwichLabel,
-            $this->model->nodeType($this->sandwichNodeId),
-            SizeFormatter::format($this->model->nodeSize($this->sandwichNodeId)),
-            SizeFormatter::format($this->model->subtreeSize($this->sandwichNodeId)),
+        $detail = $this->model->nodeDetail($this->sandwichNodeId);
+        $nodeInfo = $detail['type'];
+        if ($detail['class'] !== null) {
+            $nodeInfo .= ': ' . $detail['class'];
+        }
+        $nodeInfo .= sprintf(
+            ' | shallow %s | retained %s | node#%d',
+            SizeFormatter::format($detail['shallow']),
+            SizeFormatter::format($detail['retained']),
+            $this->sandwichNodeId,
         );
         if (strlen($nodeInfo) > $cols - 2) {
             $nodeInfo = substr($nodeInfo, 0, $cols - 5) . '...';

@@ -192,19 +192,40 @@ final class RmemModel
     {
         // Frame label (function:line) if available
         if (isset($this->frameLabels[$nodeId])) {
-            return $this->frameLabels[$nodeId];
+            $label = $this->frameLabels[$nodeId];
+            $class = $this->substrate->getNodeClass($nodeId);
+            if ($class !== null) {
+                $label .= " ({$class})";
+            }
+            return $label;
         }
-        // Class name
+        // Class name + type
         $class = $this->substrate->getNodeClass($nodeId);
+        $type = $this->substrate->getNodeType($nodeId);
+        if ($class !== null && $type !== null) {
+            return "{$type}: {$class}";
+        }
         if ($class !== null) {
             return $class;
         }
-        // Type
-        $type = $this->substrate->getNodeType($nodeId);
         if ($type !== null) {
             return $type;
         }
         return "node#{$nodeId}";
+    }
+
+    /**
+     * Get detailed info for a node (for focus bar / detail view).
+     * @return array{type: string, class: ?string, shallow: int, retained: int}
+     */
+    public function nodeDetail(int $nodeId): array
+    {
+        return [
+            'type' => $this->substrate->getNodeType($nodeId) ?? '?',
+            'class' => $this->substrate->getNodeClass($nodeId),
+            'shallow' => $this->substrate->getNodeSize($nodeId),
+            'retained' => $this->substrate->getSubtreeSize($nodeId),
+        ];
     }
 
     public function nodeType(int $nodeId): string
