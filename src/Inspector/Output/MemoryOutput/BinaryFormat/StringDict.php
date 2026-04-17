@@ -102,11 +102,18 @@ final class StringDict
         assert(is_array($count_row));
         $count = (int)$count_row[1];
         $offset += 4;
+        $dataLen = strlen($data);
         for ($i = 0; $i < $count; $i++) {
+            if ($offset + 4 > $dataLen) {
+                break; // truncated string_dict section
+            }
             $len_row = unpack('V', $data, $offset);
             assert(is_array($len_row));
             $len = (int)$len_row[1];
             $offset += 4;
+            if ($offset + $len > $dataLen) {
+                break; // truncated string entry
+            }
             $s = substr($data, $offset, $len);
             $offset += $len;
             if (!$reverseOnly) {
