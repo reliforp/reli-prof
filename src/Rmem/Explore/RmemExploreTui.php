@@ -54,6 +54,7 @@ final class RmemExploreTui
     private string $activePane = 'children';
 
     private bool $showHelp = false;
+    private bool $showSidebar = true;
 
     public function __construct(
         private RmemModel $model,
@@ -103,6 +104,7 @@ final class RmemExploreTui
             Keymap::ACTION_TOGGLE_PANE => $this->togglePane(),
             Keymap::ACTION_VIEW_SELF => $this->switchToTopRetained(),
             Keymap::ACTION_VIEW_TOTAL => $this->switchToRoots(),
+            Keymap::ACTION_TOGGLE_OVERVIEW => $this->showSidebar = !$this->showSidebar,
             Keymap::ACTION_HELP => $this->showHelp = true,
             Keymap::ACTION_QUIT => $this->running = false,
             default => null,
@@ -259,14 +261,37 @@ final class RmemExploreTui
     private function render(): void
     {
         [$cols, $rows] = $this->term->size();
-        $lines = [];
 
+        $sidebarW = 0;
+        $sidebarLines = [];
+        if ($this->showSidebar && $cols > 80) {
+            $sidebarW = min(40, (int)($cols * 0.3));
+            $focusId = $this->sandwich ? $this->sandwichNodeId : ($this->rows[$this->selected]['node_id'] ?? null);
+            if ($focusId !== null) {
+                $sidebarLines = $this->buildSidebarLines($focusId, $sidebarW, $rows);
+            }
+        }
+        $mainW = $cols - $sidebarW;
+
+        $lines = [];
         $lines[] = $this->renderHeader($cols);
 
         if ($this->sandwich) {
-            $this->renderSandwich($lines, $cols, $rows);
+            $this->renderSandwich($lines, $mainW, $rows);
         } else {
-            $this->renderList($lines, $cols, $rows);
+            $this->renderList($lines, $mainW, $rows);
+        }
+
+        // Merge sidebar
+        if ($sidebarW > 0 && $sidebarLines !== []) {
+            $sep = "\e[2m│\e[22m";
+            for ($i = 1; $i < count($lines); $i++) {
+                $sLine = $sidebarLines[$i - 1] ?? '';
+                // Pad main line to mainW, then append separator + sidebar
+                $mainLine = $lines[$i];
+                // Strip trailing spaces/escapes for clean padding
+                $lines[$i] = $mainLine . $sep . str_pad($sLine, $sidebarW);
+            }
         }
 
         if ($this->showHelp) {
@@ -275,6 +300,39 @@ final class RmemExploreTui
 
         $this->term->clear();
         $this->term->write(implode("\n", $lines));
+    }
+
+    /**
+     * Build sidebar lines showing path-to-root for the given node.
+     * @return list<string>
+     */
+    private function buildSidebarLines(int $nodeId, int $width, int $totalRows): array
+    {
+        $path = $this->model->pathToRoot($nodeId);
+        $lines = [];
+        $lines[] = "\e[1m Path to root:\e[0m";
+
+        foreach ($path as $i => $step) {
+            $indent = str_repeat(' ', min($i, 8));
+            $link = $step['link_name'];
+            $label = $step['label'];
+            $text = "{$indent}[{$link}] {$label}";
+            if (strlen($text) > $width - 1) {
+                $text = substr($text, 0, $width - 4) . '...';
+            }
+            $lines[] = " {$text}";
+            if (count($lines) >= $totalRows - 3) {
+                $lines[] = ' ...';
+                break;
+            }
+        }
+
+        // Pad to fill height
+        while (count($lines) < $totalRows - 2) {
+            $lines[] = '';
+        }
+
+        return $lines;
     }
 
     private function renderList(array &$lines, int $cols, int $totalRows): void
@@ -420,8 +478,8 @@ final class RmemExploreTui
     private function renderFooter(int $cols): string
     {
         $hints = $this->sandwich
-            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  s:top  t:roots  ?:help  q:quit'
-            : ' ↑↓:select  Enter:sandwich  Bksp:back  s:top-retained  t:roots  ?:help  q:quit';
+            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  o:sidebar  s:top  t:roots  ?:help  q:quit'
+            : ' ↑↓:select  Enter:sandwich  Bksp:back  o:sidebar  s:top-retained  t:roots  ?:help  q:quit';
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -443,6 +501,7 @@ final class RmemExploreTui
             '  Views:',
             '    s               Top retained ranking',
             '    t               Root branches',
+            '    o               Toggle sidebar (path to root)',
             '',
             '  Sandwich view:',
             '    Top pane        Parents (who retains this node)',
