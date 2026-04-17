@@ -318,10 +318,12 @@ final class RmemExploreTui
             $sep = "\e[2m│\e[22m";
             for ($i = 1; $i < count($lines); $i++) {
                 $sLine = $sidebarLines[$i - 1] ?? '';
-                // Pad main line to mainW, then append separator + sidebar
                 $mainLine = $lines[$i];
-                // Strip trailing spaces/escapes for clean padding
-                $lines[$i] = $mainLine . $sep . str_pad($sLine, $sidebarW);
+                // Pad main line to mainW based on visible width
+                // (ANSI escapes don't consume terminal columns)
+                $visibleLen = mb_strlen(preg_replace('/\e\[[0-9;]*m/', '', $mainLine) ?? '');
+                $pad = max(0, $mainW - $visibleLen);
+                $lines[$i] = $mainLine . str_repeat(' ', $pad) . $sep . str_pad($sLine, $sidebarW);
             }
         }
 
