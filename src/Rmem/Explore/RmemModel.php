@@ -41,6 +41,9 @@ final class RmemModel
     /** @var array<int, string> node_id => string value (for ZendString nodes) */
     private array $nodeStringValues = [];
 
+    /** @var array<int, int> node_id => refcount */
+    private array $nodeRefcounts = [];
+
     /** @var array<int, array<string, string>> node_id => [key => value] from attributes */
     private array $nodeAttributes = [];
 
@@ -78,21 +81,22 @@ final class RmemModel
         if ($this->reader === null) {
             return;
         }
-        [$this->nodeAddresses, $this->nodeStringValues] = self::loadLocationInfo($this->reader);
+        [$this->nodeAddresses, $this->nodeStringValues, $this->nodeRefcounts] = self::loadLocationInfo($this->reader);
         $this->nodeAttributes = self::loadAttributes($this->reader);
     }
 
     /**
-     * Load address and string_value per node from locations section.
-     * @return array{array<int, int>, array<int, string>}
+     * Load address, string_value, and refcount per node from locations section.
+     * @return array{array<int, int>, array<int, string>, array<int, int>}
      */
     private static function loadLocationInfo(BinaryReader $reader): array
     {
         $addresses = [];
         $stringValues = [];
+        $refcounts = [];
 
         if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
-            return [$addresses, $stringValues];
+            return [$addresses, $stringValues, $refcounts];
         }
 
         $dict = $reader->getStringDict();
@@ -117,10 +121,16 @@ final class RmemModel
                         }
                     }
                 }
+                if (!isset($refcounts[$nid])) {
+                    $rc = (int)$locRows[$i]->refcount;
+                    if ($rc > 0) {
+                        $refcounts[$nid] = $rc;
+                    }
+                }
             }
         }
 
-        return [$addresses, $stringValues];
+        return [$addresses, $stringValues, $refcounts];
     }
 
     /**
@@ -339,6 +349,7 @@ final class RmemModel
             'retained' => $this->substrate->getSubtreeSize($nodeId),
             'address' => $this->nodeAddresses[$nodeId] ?? null,
             'string_value' => $this->nodeStringValues[$nodeId] ?? null,
+            'refcount' => $this->nodeRefcounts[$nodeId] ?? null,
             'attributes' => $this->nodeAttributes[$nodeId] ?? [],
         ];
     }

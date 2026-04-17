@@ -383,6 +383,9 @@ final class RmemExploreTui
         if ($detail['address'] !== null) {
             $lines[] = ' ' . $trunc("addr: 0x" . dechex($detail['address']));
         }
+        if ($detail['refcount'] !== null) {
+            $lines[] = ' ' . $trunc("refcount: {$detail['refcount']}");
+        }
         if ($detail['string_value'] !== null) {
             $preview = $detail['string_value'];
             if (strlen($preview) > $width - 10) {
