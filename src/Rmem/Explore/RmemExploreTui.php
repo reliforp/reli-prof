@@ -60,6 +60,10 @@ final class RmemExploreTui
     private bool $showSidebar = true;
     private bool $allEdges = true;
 
+    /** @var 'normal'|'class_ranking'|'type_ranking'|'class_instances'|'type_instances' */
+    private string $listMode = 'normal';
+    private string $listModeParam = '';
+
     public function __construct(
         private RmemModel $model,
         private TerminalInterface $term,
@@ -113,7 +117,7 @@ final class RmemExploreTui
             Keymap::ACTION_NO_LINE => $this->toggleAllEdges(),
             Keymap::ACTION_HELP => $this->showHelp = true,
             Keymap::ACTION_QUIT => $this->running = false,
-            default => null,
+            default => $this->dispatchRaw($key),
         };
     }
 
@@ -180,7 +184,30 @@ final class RmemExploreTui
             return;
         }
         $row = $this->rows[$this->selected];
-        $this->enterSandwich($row['node_id'], $row['label']);
+
+        // Ranking → instance list drill-down
+        if ($this->listMode === 'class_ranking' && isset($row['_class'])) {
+            $className = $row['_class'];
+            $this->focusLabel = "Class: {$className}";
+            $this->listMode = 'class_instances';
+            $this->listModeParam = $className;
+            $this->rows = $this->model->getNodesByClass($className);
+            $this->selected = 0;
+            $this->topRow = 0;
+            return;
+        }
+        if ($this->listMode === 'type_ranking' && isset($row['_type'])) {
+            $typeName = $row['_type'];
+            $this->focusLabel = "Type: {$typeName}";
+            $this->listMode = 'type_instances';
+            $this->listModeParam = $typeName;
+            $this->rows = $this->model->getNodesByType($typeName);
+            $this->selected = 0;
+            $this->topRow = 0;
+            return;
+        }
+
+        $this->enterSandwich($row['node_id'], $this->model->nodeLabel($row['node_id']));
     }
 
     private function sandwichEnter(): void
@@ -235,6 +262,15 @@ final class RmemExploreTui
             $this->sandwichHistory = [];
             return;
         }
+        // Instance list → back to ranking
+        if ($this->listMode === 'class_instances') {
+            $this->switchToClassRanking();
+            return;
+        }
+        if ($this->listMode === 'type_instances') {
+            $this->switchToTypeRanking();
+            return;
+        }
         if ($this->focusStack === []) {
             return;
         }
@@ -283,6 +319,15 @@ final class RmemExploreTui
         $this->activePane = $panes[($idx + 1) % count($panes)];
     }
 
+    private function dispatchRaw(string $key): void
+    {
+        match ($key) {
+            'c' => $this->switchToClassRanking(),
+            'y' => $this->switchToTypeRanking(),
+            default => null,
+        };
+    }
+
     private function toggleAllEdges(): void
     {
         $this->allEdges = !$this->allEdges;
@@ -300,6 +345,7 @@ final class RmemExploreTui
         $this->focusStack = [];
         $this->focusNodeId = null;
         $this->focusLabel = 'Top retained';
+        $this->listMode = 'normal';
         $this->rows = $this->model->getTopRetained(10000);
         $this->selected = 0;
         $this->topRow = 0;
@@ -311,7 +357,60 @@ final class RmemExploreTui
         $this->focusStack = [];
         $this->focusNodeId = null;
         $this->focusLabel = 'Roots';
+        $this->listMode = 'normal';
         $this->rows = $this->model->getRootChildren();
+        $this->selected = 0;
+        $this->topRow = 0;
+    }
+
+    private function switchToClassRanking(): void
+    {
+        $this->sandwich = false;
+        $this->focusStack = [];
+        $this->focusLabel = 'Class ranking';
+        $this->listMode = 'class_ranking';
+        $ranking = $this->model->getClassRanking();
+        $this->rows = [];
+        foreach ($ranking as $r) {
+            $this->rows[] = [
+                'node_id' => -1,
+                'retained' => $r['total_shallow'],
+                'shallow' => $r['avg_shallow'],
+                'label' => sprintf('%s (%s instances, avg %s)',
+                    $r['class'],
+                    number_format($r['count']),
+                    SizeFormatter::format($r['avg_shallow']),
+                ),
+                'link_name' => number_format($r['count']),
+                '_class' => $r['class'],
+                '_count' => $r['count'],
+            ];
+        }
+        $this->selected = 0;
+        $this->topRow = 0;
+    }
+
+    private function switchToTypeRanking(): void
+    {
+        $this->sandwich = false;
+        $this->focusStack = [];
+        $this->focusLabel = 'Type ranking';
+        $this->listMode = 'type_ranking';
+        $ranking = $this->model->getTypeRanking();
+        $this->rows = [];
+        foreach ($ranking as $r) {
+            $this->rows[] = [
+                'node_id' => -1,
+                'retained' => $r['total_shallow'],
+                'shallow' => 0,
+                'label' => sprintf('%s (%s nodes)',
+                    $r['type'],
+                    number_format($r['count']),
+                ),
+                '_type' => $r['type'],
+                '_count' => $r['count'],
+            ];
+        }
         $this->selected = 0;
         $this->topRow = 0;
     }
@@ -557,6 +656,24 @@ final class RmemExploreTui
 
     private function colHeader(int $cols): string
     {
+        if ($this->listMode === 'class_ranking') {
+            return sprintf(
+                "\e[1m  %12s %12s  %-*s\e[0m",
+                'Total',
+                'Avg Size',
+                max(10, $cols - 30),
+                'Count × Class',
+            );
+        }
+        if ($this->listMode === 'type_ranking') {
+            return sprintf(
+                "\e[1m  %12s %12s  %-*s\e[0m",
+                'Total',
+                '',
+                max(10, $cols - 30),
+                'Type (count)',
+            );
+        }
         return sprintf(
             "\e[1m  %12s %12s  %-*s\e[0m",
             'Retained',
@@ -600,7 +717,7 @@ final class RmemExploreTui
     {
         $hints = $this->sandwich
             ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit'
-            : ' ↑↓:select  Enter:sandwich  Bksp:back  n:edges  o:sidebar  s:top-retained  t:roots  ?:help  q:quit';
+            : ' ↑↓:select  Enter:drill  Bksp:back  c:class  y:type  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit';
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -622,6 +739,8 @@ final class RmemExploreTui
             '  Views:',
             '    s               Top retained ranking',
             '    t               Root branches',
+            '    c               Class ranking',
+            '    y               Type ranking',
             '    n               Toggle tree/all edges',
             '    o               Toggle sidebar (path to root)',
             '',

@@ -324,6 +324,116 @@ final class RmemModel
         return $path;
     }
 
+    // ---- Rankings (cached) ----
+
+    /** @var list<array{class: string, count: int, total_shallow: int, avg_shallow: int}>|null */
+    private ?array $classRanking = null;
+
+    /** @var list<array{type: string, count: int, total_shallow: int}>|null */
+    private ?array $typeRanking = null;
+
+    /**
+     * @return list<array{class: string, count: int, total_shallow: int, avg_shallow: int}>
+     */
+    public function getClassRanking(): array
+    {
+        if ($this->classRanking !== null) {
+            return $this->classRanking;
+        }
+        $groups = [];
+        foreach ($this->substrate->iterateNodeClasses() as $nodeId => $className) {
+            if (!isset($groups[$className])) {
+                $groups[$className] = ['count' => 0, 'total' => 0];
+            }
+            $groups[$className]['count']++;
+            $groups[$className]['total'] += $this->substrate->getNodeSize($nodeId);
+        }
+        $result = [];
+        foreach ($groups as $class => $g) {
+            $result[] = [
+                'class' => $class,
+                'count' => $g['count'],
+                'total_shallow' => $g['total'],
+                'avg_shallow' => $g['count'] > 0 ? (int)($g['total'] / $g['count']) : 0,
+            ];
+        }
+        usort($result, fn (array $a, array $b) => $b['total_shallow'] <=> $a['total_shallow']);
+        $this->classRanking = $result;
+        return $result;
+    }
+
+    /**
+     * @return list<array{type: string, count: int, total_shallow: int}>
+     */
+    public function getTypeRanking(): array
+    {
+        if ($this->typeRanking !== null) {
+            return $this->typeRanking;
+        }
+        $groups = [];
+        foreach ($this->substrate->iterateNodeSizes() as $nodeId => $size) {
+            $type = $this->substrate->getNodeType($nodeId) ?? '?';
+            if (!isset($groups[$type])) {
+                $groups[$type] = ['count' => 0, 'total' => 0];
+            }
+            $groups[$type]['count']++;
+            $groups[$type]['total'] += $size;
+        }
+        $result = [];
+        foreach ($groups as $type => $g) {
+            $result[] = [
+                'type' => $type,
+                'count' => $g['count'],
+                'total_shallow' => $g['total'],
+            ];
+        }
+        usort($result, fn (array $a, array $b) => $b['total_shallow'] <=> $a['total_shallow']);
+        $this->typeRanking = $result;
+        return $result;
+    }
+
+    /**
+     * Get all nodes of a given class, sorted by retained size.
+     * @return list<array{node_id: int, retained: int, shallow: int, label: string}>
+     */
+    public function getNodesByClass(string $className): array
+    {
+        $entries = [];
+        foreach ($this->substrate->iterateNodeClasses() as $nodeId => $cls) {
+            if ($cls === $className) {
+                $entries[] = [
+                    'node_id' => $nodeId,
+                    'retained' => $this->substrate->getSubtreeSize($nodeId),
+                    'shallow' => $this->substrate->getNodeSize($nodeId),
+                    'label' => $this->nodeLabel($nodeId),
+                ];
+            }
+        }
+        usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        return $entries;
+    }
+
+    /**
+     * Get all nodes of a given type, sorted by retained size.
+     * @return list<array{node_id: int, retained: int, shallow: int, label: string}>
+     */
+    public function getNodesByType(string $typeName): array
+    {
+        $entries = [];
+        foreach ($this->substrate->iterateNodeSizes() as $nodeId => $size) {
+            if (($this->substrate->getNodeType($nodeId) ?? '?') === $typeName) {
+                $entries[] = [
+                    'node_id' => $nodeId,
+                    'retained' => $this->substrate->getSubtreeSize($nodeId),
+                    'shallow' => $size,
+                    'label' => $this->nodeLabel($nodeId),
+                ];
+            }
+        }
+        usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        return $entries;
+    }
+
     private function resolveClass(int $nodeId): ?string
     {
         return $this->substrate->getNodeClass($nodeId)
