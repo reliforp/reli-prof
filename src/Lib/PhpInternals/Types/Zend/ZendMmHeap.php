@@ -214,8 +214,17 @@ final class ZendMmHeap implements LazyDereferencable, CDataDereferencable
     public function iterateHugeList(Dereferencer $dereferencer): iterable
     {
         $huge_list_pointer = $this->huge_list;
+        $visited = [];
         while ($huge_list_pointer !== null) {
-            $huge_list = $dereferencer->deref($huge_list_pointer);
+            if (isset($visited[$huge_list_pointer->address])) {
+                break;
+            }
+            $visited[$huge_list_pointer->address] = true;
+            try {
+                $huge_list = $dereferencer->deref($huge_list_pointer);
+            } catch (\Throwable) {
+                break;
+            }
             yield $huge_list;
             $huge_list_pointer = $huge_list->next;
         }
