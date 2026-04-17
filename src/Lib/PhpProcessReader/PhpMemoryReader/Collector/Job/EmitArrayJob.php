@@ -191,9 +191,9 @@ final class EmitArrayJob implements CollectorJob
         }
 
         $raw_elements = $array_elements_context->getMemoNodeId();
-        $elements_node_id = $raw_elements === null
-            ? null
-            : ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements);
+        $elements_node_id = $raw_elements !== null
+            ? ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements)
+            : ($header_node_id >= 0 ? $header_node_id : null);
 
         $queue->push(new ArrayElementsIteratorFastPathJob(
             $fp,
@@ -256,9 +256,9 @@ final class EmitArrayJob implements CollectorJob
         // See EmitObjectJob for why this reads from getMemoNodeId() now
         // instead of $ctx->memo[$context].
         $raw_elements = $array_elements_context->getMemoNodeId();
-        $elements_node_id = $raw_elements === null
-            ? null
-            : ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements);
+        $elements_node_id = $raw_elements !== null
+            ? ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements)
+            : ($header_node_id >= 0 ? $header_node_id : null);
 
         // Push the iterator job for array elements
         $queue->push(new ArrayElementsIteratorJob(
