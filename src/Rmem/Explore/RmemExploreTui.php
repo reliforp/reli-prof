@@ -57,6 +57,7 @@ final class RmemExploreTui
 
     private bool $showHelp = false;
     private bool $showSidebar = true;
+    private bool $allEdges = false;
 
     public function __construct(
         private RmemModel $model,
@@ -107,6 +108,7 @@ final class RmemExploreTui
             Keymap::ACTION_VIEW_SELF => $this->switchToTopRetained(),
             Keymap::ACTION_VIEW_TOTAL => $this->switchToRoots(),
             Keymap::ACTION_TOGGLE_OVERVIEW => $this->showSidebar = !$this->showSidebar,
+            Keymap::ACTION_NO_LINE => $this->toggleAllEdges(),
             Keymap::ACTION_HELP => $this->showHelp = true,
             Keymap::ACTION_QUIT => $this->running = false,
             default => null,
@@ -203,7 +205,7 @@ final class RmemExploreTui
         $this->sandwichNodeId = $nodeId;
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
-        $this->childRows = $this->model->getChildren($nodeId);
+        $this->childRows = $this->model->getChildren($nodeId, $this->allEdges);
         $this->parentSelected = 0;
         $this->parentTopRow = 0;
         $this->childSelected = 0;
@@ -250,7 +252,7 @@ final class RmemExploreTui
         $this->sandwichNodeId = $nodeId;
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
-        $this->childRows = $this->model->getChildren($nodeId);
+        $this->childRows = $this->model->getChildren($nodeId, $this->allEdges);
         $this->parentSelected = 0;
         $this->parentTopRow = 0;
         $this->childSelected = 0;
@@ -263,6 +265,17 @@ final class RmemExploreTui
             return;
         }
         $this->activePane = $this->activePane === 'children' ? 'parents' : 'children';
+    }
+
+    private function toggleAllEdges(): void
+    {
+        $this->allEdges = !$this->allEdges;
+        // Refresh current view
+        if ($this->sandwich) {
+            $this->childRows = $this->model->getChildren($this->sandwichNodeId, $this->allEdges);
+            $this->childSelected = 0;
+            $this->childTopRow = 0;
+        }
     }
 
     private function switchToTopRetained(): void
@@ -525,7 +538,8 @@ final class RmemExploreTui
     private function renderHeader(int $cols): string
     {
         $title = " rmem:explore";
-        $mode = $this->sandwich ? '[sandwich]' : '[list]';
+        $edgeMode = $this->allEdges ? ' all-edges' : '';
+        $mode = $this->sandwich ? "[sandwich{$edgeMode}]" : "[list{$edgeMode}]";
         $info = sprintf(
             "%s %s nodes, %s edges ",
             $mode,
@@ -553,8 +567,8 @@ final class RmemExploreTui
     private function renderFooter(int $cols): string
     {
         $hints = $this->sandwich
-            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  o:sidebar  s:top  t:roots  ?:help  q:quit'
-            : ' ↑↓:select  Enter:sandwich  Bksp:back  o:sidebar  s:top-retained  t:roots  ?:help  q:quit';
+            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit'
+            : ' ↑↓:select  Enter:sandwich  Bksp:back  n:edges  o:sidebar  s:top-retained  t:roots  ?:help  q:quit';
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -576,6 +590,7 @@ final class RmemExploreTui
             '  Views:',
             '    s               Top retained ranking',
             '    t               Root branches',
+            '    n               Toggle tree/all edges',
             '    o               Toggle sidebar (path to root)',
             '',
             '  Sandwich view:',

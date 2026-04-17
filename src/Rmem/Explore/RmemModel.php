@@ -156,13 +156,6 @@ final class RmemModel
     }
 
     /**
-     * Get root-level children sorted by retained size descending.
-     * These correspond to report's Root Blame Allocation branches
-     * (call_frames, class_table, objects_store, etc.).
-     *
-     * @return list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>
-     */
-    /**
      * Get root-level branches (call_frames, class_table, objects_store, etc.)
      * sorted by retained size descending.
      *
@@ -219,13 +212,21 @@ final class RmemModel
     /**
      * Get children of a node sorted by retained size descending.
      *
+     * @param bool $allEdges If true, include non-tree edges (reference edges).
      * @return list<array{node_id: int, retained: int, shallow: int, link_name: string, label: string}>
      */
-    public function getChildren(int $nodeId): array
+    public function getChildren(int $nodeId, bool $allEdges = false): array
     {
-        $children = $this->substrate->getChildren($nodeId);
+        $children = $allEdges
+            ? $this->substrate->getAllChildren($nodeId)
+            : $this->substrate->getChildren($nodeId);
         $entries = [];
+        $seen = [];
         foreach ($children as $childId) {
+            if (isset($seen[$childId])) {
+                continue;
+            }
+            $seen[$childId] = true;
             $linkName = $this->substrate->getTreeLinkName($childId) ?? '?';
             $entries[] = [
                 'node_id' => $childId,
