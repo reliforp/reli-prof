@@ -331,6 +331,31 @@ final class RmemModel
             ?? null;
     }
 
+    /**
+     * Get a short inline preview for string/scalar nodes.
+     * Returns null for non-value nodes.
+     */
+    private function valuePreview(int $nodeId): ?string
+    {
+        $sv = $this->nodeStringValues[$nodeId] ?? null;
+        if ($sv !== null) {
+            $preview = str_replace(["\n", "\r", "\t"], ['\n', '\r', '\t'], $sv);
+            if (strlen($preview) > 40) {
+                $preview = substr($preview, 0, 37) . '...';
+            }
+            return "\"{$preview}\"";
+        }
+        $attrs = $this->nodeAttributes[$nodeId] ?? [];
+        if (isset($attrs['value'])) {
+            $val = $attrs['value'];
+            if (strlen($val) > 40) {
+                $val = substr($val, 0, 37) . '...';
+            }
+            return $val;
+        }
+        return null;
+    }
+
     public function nodeLabel(int $nodeId): string
     {
         // Frame label (function:line) if available
@@ -345,6 +370,14 @@ final class RmemModel
         // Class name + type
         $class = $this->resolveClass($nodeId);
         $type = $this->substrate->getNodeType($nodeId);
+
+        // Value preview for string/scalar
+        $preview = $this->valuePreview($nodeId);
+        if ($preview !== null) {
+            $base = $type ?? 'value';
+            return "{$base} = {$preview}";
+        }
+
         if ($class !== null && $type !== null) {
             return "{$type}: {$class}";
         }
