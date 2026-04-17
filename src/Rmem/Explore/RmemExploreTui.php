@@ -304,6 +304,7 @@ final class RmemExploreTui
 
     private function render(): void
     {
+        $this->model->ensureLocationInfoLoaded();
         [$cols, $rows] = $this->term->size();
 
         $sidebarW = 0;
@@ -508,7 +509,8 @@ final class RmemExploreTui
         $retained = SizeFormatter::format($row['retained']);
         $shallow = SizeFormatter::format($row['shallow']);
         $link = isset($row['link_name']) ? $row['link_name'] . ' → ' : '';
-        $label = $link . $row['label'];
+        // Use live label (may have class from lazy-loaded locations)
+        $label = $link . $this->model->nodeLabel($row['node_id']);
         $maxLabel = max(10, $cols - 30);
         if (strlen($label) > $maxLabel) {
             $label = substr($label, 0, $maxLabel - 3) . '...';

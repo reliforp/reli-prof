@@ -74,9 +74,11 @@ final class RmemModel
     }
 
     /**
-     * Lazily load location info (addresses + string values) on first access.
+     * Lazily load location info (addresses, string values, refcounts, classes).
+     * Called automatically on first nodeDetail()/resolveClass(), or explicitly
+     * from the TUI render loop.
      */
-    private function ensureLocationInfo(): void
+    public function ensureLocationInfoLoaded(): void
     {
         if ($this->nodeAddresses !== []) {
             return;
@@ -361,7 +363,7 @@ final class RmemModel
      */
     public function nodeDetail(int $nodeId): array
     {
-        $this->ensureLocationInfo();
+        $this->ensureLocationInfoLoaded();
         return [
             'type' => $this->substrate->getNodeType($nodeId) ?? '?',
             'class' => $this->resolveClass($nodeId),
