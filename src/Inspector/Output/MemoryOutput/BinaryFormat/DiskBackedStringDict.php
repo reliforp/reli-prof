@@ -134,7 +134,14 @@ final class DiskBackedStringDict
         // New string — append to disk
         $id = $this->count;
         $offset = $this->diskPos;
-        fwrite($this->getDiskFh(), $s);
+        $w = fwrite($this->getDiskFh(), $s);
+        if ($w !== $len) {
+            throw new \RuntimeException(
+                "DiskBackedStringDict: short write to temp file at offset {$offset}"
+                . " (expected {$len}, wrote " . ($w === false ? 'false' : $w) . ")"
+                . " — disk full or temp directory quota exceeded?"
+            );
+        }
         $this->diskPos += $len;
         $this->count++;
 
@@ -195,7 +202,7 @@ final class DiskBackedStringDict
         }
         $written += $w;
 
-        foreach ($entries as [$offset, $len]) {
+        foreach ($entries as $entryId => [$offset, $len]) {
             $w = fwrite($outFh, pack('V', $len));
             if ($w === false) {
                 throw new \RuntimeException('Failed to write string dict entry length');
@@ -207,7 +214,10 @@ final class DiskBackedStringDict
                 $chunk = min($remaining, 65536);
                 $data = fread($this->getDiskFh(), $chunk);
                 if ($data === false || $data === '') {
-                    break;
+                    throw new \RuntimeException(
+                        "DiskBackedStringDict: short read from temp file for string id {$entryId}"
+                        . " at disk offset {$offset}, remaining {$remaining}/{$len} bytes"
+                    );
                 }
                 $w = fwrite($outFh, $data);
                 if ($w === false) {
