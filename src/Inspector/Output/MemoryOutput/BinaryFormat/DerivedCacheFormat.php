@@ -24,7 +24,7 @@ namespace Reli\Inspector\Output\MemoryOutput\BinaryFormat;
 final class DerivedCacheFormat
 {
     public const MAGIC = "RMDC";
-    public const VERSION = 1;
+    public const VERSION = 2;
 
     public const HEADER_SIZE = 32;
 

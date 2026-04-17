@@ -162,6 +162,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate->loadEdgesFfi($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
         $substrate->buildSccAdjacency();
+        $substrate->buildCanonicalFfi();
         $substrate->computeSubtreeSizesFfi();
         $substrate->computeSccFfi();
         return $substrate;
@@ -483,6 +484,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $substrate->loadCsrFromSections($reader, $nc, $dict);
             $substrate->buildSccAdjacency();
 
+            // Build FFI canonical mapping before cache check so it's
+            // available for pass APIs regardless of cache hit/miss.
+            $substrate->buildCanonicalFfi();
+
             // ---- Phase 5: Derived data (subtree sizes + SCC) ----
             // Try loading from sidecar cache first.
             $rmemPath = $reader->getFilePath();
@@ -691,6 +696,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // ---- Phase 5: compute derived structures ----
         $substrate->buildSccAdjacency();
+        $substrate->buildCanonicalFfi();
         $substrate->computeSubtreeSizesFfi();
         $substrate->computeSccFfi();
         return $substrate;
@@ -1881,89 +1887,90 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
      *
      * @psalm-suppress UnsupportedReferenceUsage, MixedArgument
      */
+    /**
+     * Build FFI canonical index from the parent PHP arrays.
+     *
+     * canonIdxFfi[v] = canonical csrIdx of v (identity when unique).
+     * origOffsets + origData form a CSR of originals per canonical.
+     * Frees the parent PHP arrays afterward.
+     *
+     * Called before derived cache check so the FFI canonical mapping
+     * is always available for pass-level APIs, regardless of cache hit.
+     */
+    private function buildCanonicalFfi(): void
+    {
+        if ($this->canonical === []) {
+            return;
+        }
+        $nc = $this->nodeCount;
+        $indexToNodeFfi = $this->indexToNodeFfi;
+
+        $this->canonIdxFfi = FFIHelper::new("int32_t[{$nc}]");
+        $this->origOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $canonIdxFfi = $this->canonIdxFfi;
+        $origOffsets = $this->origOffsets;
+
+        // Pass 1: compute canonIdxFfi and count originals per canonical
+        $origCount = FFIHelper::new("int32_t[{$nc}]");
+        for ($v = 0; $v < $nc; $v++) {
+            $nid = (int)$indexToNodeFfi[$v];
+            if ($nid === -1) {
+                $canonIdxFfi[$v] = $v;
+                continue;
+            }
+            $canon = $this->findCanonical($nid);
+            if ($canon !== $nid) {
+                $canonIdxFfi[$v] = $this->nodeIdToIndex($canon);
+            } else {
+                $canonIdxFfi[$v] = $v;
+            }
+            $c = (int)$canonIdxFfi[$v];
+            $origCount[$c] = (int)$origCount[$c] + 1;
+        }
+
+        // Pass 2: build origOffsets (prefix sum)
+        $origOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $origOffsets[$i + 1] = (int)$origOffsets[$i] + (int)$origCount[$i];
+        }
+        $totalOrig = (int)$origOffsets[$nc];
+        $origData = FFIHelper::new("int32_t[" . max(1, $totalOrig) . "]");
+
+        // Pass 3: fill origData
+        $origPos = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $origPos[$i] = (int)$origOffsets[$i];
+        }
+        for ($v = 0; $v < $nc; $v++) {
+            $nid = (int)$indexToNodeFfi[$v];
+            if ($nid === -1) {
+                continue;
+            }
+            $c = (int)$canonIdxFfi[$v];
+            $p = (int)$origPos[$c];
+            $origData[$p] = $v;
+            $origPos[$c] = $p + 1;
+        }
+        unset($origCount, $origPos);
+        $this->origData = $origData;
+
+        // Free parent PHP arrays — FFI canonical replaces them.
+        $this->canonical = [];
+        $this->canonicalToOriginals = [];
+    }
+
     private function computeSccFfi(): void
     {
         $nc = $this->nodeCount;
-        $has_canonical = $this->canonical !== [];
+        $has_canonical = $this->canonIdxFfi !== null;
 
-        // Localise hot FFI handles so the inner loop reads them as
-        // local variables. PHP property access has measurable overhead
-        // per call; the SCC pass touches these millions of times.
         $strongAllOffsets = $this->strongAllOffsets;
         $strongAllEdges = $this->strongAllEdges;
         $indexToNodeFfi = $this->indexToNodeFfi;
 
-        // If canonical mapping exists, build index-level canonical map
-        // as an FFI int32 array: canonIdxFfi[v] = canonical csrIdx of v.
-        // Self-canonical nodes map to themselves.
-        // Also build a CSR for originals: origOffsets[c]..origOffsets[c+1]
-        // indexes into origData[] to give all original csrIdx for canon c.
-        //
-        // These replace the PHP arrays $canonIdx and $canonical_original_indices
-        // that previously consumed ~8 GB for 34M nodes. FFI version: ~400 MB.
-        // Stored as class fields so pass-level canonical APIs can use them too.
-        // When has_canonical is false, these stay null — the overridden
-        // canonical accessors fall back to parent, and the peeling/Tarjan
-        // loops use the no-canonical code paths that need no mapping.
-        $canonIdxFfi = null;
-        $origOffsets = null;
-        $origData = null;
-
-        if ($has_canonical) {
-            $this->canonIdxFfi = FFIHelper::new("int32_t[{$nc}]");
-            $this->origOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-            $canonIdxFfi = $this->canonIdxFfi;
-            $origOffsets = $this->origOffsets;
-
-            // Pass 1: compute canonIdxFfi and count originals per canonical
-            $origCount = FFIHelper::new("int32_t[{$nc}]");
-            for ($v = 0; $v < $nc; $v++) {
-                $nid = (int)$indexToNodeFfi[$v];
-                if ($nid === -1) {
-                    $canonIdxFfi[$v] = $v;
-                    continue;
-                }
-                $canon = $this->findCanonical($nid);
-                if ($canon !== $nid) {
-                    $ci = $this->nodeIdToIndex($canon);
-                    $canonIdxFfi[$v] = $ci;
-                } else {
-                    $canonIdxFfi[$v] = $v;
-                }
-                $c = (int)$canonIdxFfi[$v];
-                $origCount[$c] = (int)$origCount[$c] + 1;
-            }
-
-            // Pass 2: build origOffsets (prefix sum)
-            $origOffsets[0] = 0;
-            for ($i = 0; $i < $nc; $i++) {
-                $origOffsets[$i + 1] = (int)$origOffsets[$i] + (int)$origCount[$i];
-            }
-            $totalOrig = (int)$origOffsets[$nc];
-            $origData = FFIHelper::new("int32_t[" . max(1, $totalOrig) . "]");
-
-            // Pass 3: fill origData
-            $origPos = FFIHelper::new("int32_t[{$nc}]");
-            for ($i = 0; $i < $nc; $i++) {
-                $origPos[$i] = (int)$origOffsets[$i];
-            }
-            for ($v = 0; $v < $nc; $v++) {
-                $nid = (int)$indexToNodeFfi[$v];
-                if ($nid === -1) {
-                    continue;
-                }
-                $c = (int)$canonIdxFfi[$v];
-                $p = (int)$origPos[$c];
-                $origData[$p] = $v;
-                $origPos[$c] = $p + 1;
-            }
-            unset($origCount, $origPos);
-            $this->origData = $origData;
-
-            // Free parent PHP arrays — FFI canonical replaces them.
-            $this->canonical = [];
-            $this->canonicalToOriginals = [];
-        }
+        $canonIdxFfi = $this->canonIdxFfi;
+        $origOffsets = $this->origOffsets;
+        $origData = $this->origData;
 
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
@@ -1985,7 +1992,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $active[$v] = 0;
                 continue;
             }
-            $cv = (int)$canonIdxFfi[$v];
+            $cv = $has_canonical ? (int)$canonIdxFfi[$v] : $v;
             if ($cv !== $v) {
                 $active[$v] = 0;
                 continue;
@@ -2209,7 +2216,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             if ((int)$active[$v] === 0) {
                 continue;
             }
-            $cv = (int)$canonIdxFfi[$v];
+            $cv = $has_canonical ? (int)$canonIdxFfi[$v] : $v;
             if ((int)$tarjan_index[$cv] !== -1) {
                 continue;
             }

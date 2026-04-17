@@ -131,30 +131,43 @@ final class DerivedCacheReader
             ];
         }
 
-        // Validate rmem content fingerprint: compare stored rmem section
-        // count + TOC offset against current rmem file. This catches
-        // same-second same-size overwrites that mtime+size would miss.
-        $rmemFh = @fopen($rmemPath, 'rb');
-        if ($rmemFh !== false) {
-            $rmemHeader = fread($rmemFh, 24);
-            fclose($rmemFh);
-            if ($rmemHeader !== false && strlen($rmemHeader) >= 24) {
-                $rmemSectionCount = unpack('V', $rmemHeader, 12)[1];
-                $rmemTocOffset = unpack('P', $rmemHeader, 16)[1];
-                $currentFp = pack('VP', $rmemSectionCount, $rmemTocOffset);
+        // Validate rmem content fingerprint: SHA-256 of rmem header + TOC.
+        // VERSION was bumped to 2, so old caches without __fingerprint
+        // are already rejected by the version check above.
+        if (!isset($reader->toc['__fingerprint'])) {
+            return null;
+        }
+        $fpEntry = $reader->toc['__fingerprint'];
+        fseek($reader->fh, $fpEntry['offset']);
+        $storedFp = fread($reader->fh, $fpEntry['length']);
+        if ($storedFp === false || strlen($storedFp) !== 32) {
+            return null;
+        }
 
-                // Read stored fingerprint from sidecar (bytes 32..41)
-                if (isset($reader->toc['__fingerprint'])) {
-                    $fpEntry = $reader->toc['__fingerprint'];
-                    fseek($reader->fh, $fpEntry['offset']);
-                    $storedFp = fread($reader->fh, $fpEntry['length']);
-                    if ($storedFp !== $currentFp) {
-                        return null;
-                    }
-                }
-                // If no __fingerprint section, skip fingerprint check
-                // (backwards compat with older sidecar files).
+        $rmemFh = @fopen($rmemPath, 'rb');
+        if ($rmemFh === false) {
+            return null;
+        }
+        $rmemHeader = fread($rmemFh, 64);
+        if ($rmemHeader === false || strlen($rmemHeader) < 24) {
+            fclose($rmemFh);
+            return null;
+        }
+        $rmemSectionCount = unpack('V', $rmemHeader, 12)[1];
+        $rmemTocOffset = unpack('P', $rmemHeader, 16)[1];
+        $rmemTocSize = $rmemSectionCount * 40;
+        $rmemTocData = '';
+        if ($rmemTocSize > 0) {
+            fseek($rmemFh, (int)$rmemTocOffset);
+            $rmemTocData = fread($rmemFh, $rmemTocSize);
+            if ($rmemTocData === false) {
+                $rmemTocData = '';
             }
+        }
+        fclose($rmemFh);
+        $currentFp = hash('sha256', $rmemHeader . $rmemTocData, true);
+        if ($storedFp !== $currentFp) {
+            return null;
         }
 
         return $reader;
@@ -225,27 +238,18 @@ final class DerivedCacheReader
         // segfaults on typed array elements.
         $buf = FFIHelper::new("{$type}[{$count}]");
 
-        // Read in 4 MB chunks. Each chunk is fread into a PHP string,
-        // then memcpy'd into the target FFI buffer via a temporary
-        // char[] owned by a bare FFI instance (safe for pointer math).
+        // Read the section as a PHP string then bulk-memcpy into the
+        // FFI buffer. The PHP string is ephemeral — freed as soon as
+        // memcpy completes, so peak overhead is 1× section size above
+        // the destination buffer. Pointer arithmetic on typed FFI arrays
+        // (cast to char*) segfaults in PHP FFI, so chunked offset writes
+        // into the destination are not feasible without mmap.
         fseek($this->fh, $entry['offset']);
-        $chunkSize = 4 * 1024 * 1024;
-        $offset = 0;
-        $ffi = FFI::cdef();
-        // We need a char* view of $buf for offset writes.
-        // memcpy into a flat staging buffer, then bulk-copy into $buf.
-        $staging = $ffi->new("char[{$totalBytes}]");
-        while ($offset < $totalBytes) {
-            $toRead = min($chunkSize, $totalBytes - $offset);
-            $chunk = fread($this->fh, $toRead);
-            if ($chunk === false || strlen($chunk) === 0) {
-                return null;
-            }
-            $read = strlen($chunk);
-            FFI::memcpy($staging + $offset, $chunk, $read);
-            $offset += $read;
+        $raw = fread($this->fh, $totalBytes);
+        if ($raw === false || strlen($raw) < $totalBytes) {
+            return null;
         }
-        FFI::memcpy($buf, $staging, $totalBytes);
+        FFI::memcpy($buf, $raw, $totalBytes);
         return $buf;
     }
 }

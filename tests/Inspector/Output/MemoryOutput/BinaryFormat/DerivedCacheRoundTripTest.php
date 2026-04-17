@@ -85,6 +85,7 @@ class DerivedCacheRoundTripTest extends TestCase
             $profilesJson,
             count($profiles),
         );
+        $writer->writeFingerprint($this->rmemPath);
         $this->assertTrue($writer->finish($this->rmemPath));
 
         // Read
@@ -123,6 +124,7 @@ class DerivedCacheRoundTripTest extends TestCase
         $data = FFIHelper::new("int32_t[1]");
         $data[0] = 42;
         $writer->writeInt32Section('test', $data, 1);
+        $writer->writeFingerprint($this->rmemPath);
         $this->assertTrue($writer->finish($this->rmemPath));
 
         // Verify it reads
@@ -151,6 +153,7 @@ class DerivedCacheRoundTripTest extends TestCase
         $data = FFIHelper::new("int32_t[1]");
         $data[0] = 1;
         $writer->writeInt32Section('existing', $data, 1);
+        $writer->writeFingerprint($this->rmemPath);
         $this->assertTrue($writer->finish($this->rmemPath));
 
         $reader = DerivedCacheReader::open($this->rmemPath);

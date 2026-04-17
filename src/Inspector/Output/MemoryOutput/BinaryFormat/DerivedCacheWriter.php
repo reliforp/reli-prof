@@ -126,20 +126,42 @@ final class DerivedCacheWriter
      * Write rmem content fingerprint (section_count + toc_offset).
      * Called by FfiCsrGraphSubstrate after writing all derived sections.
      */
+    /**
+     * Store a SHA-256 hash of the rmem file's header + TOC bytes as a
+     * content fingerprint. This catches same-second same-size overwrites
+     * that mtime + size alone would miss. The TOC encodes section names,
+     * offsets, sizes, and element counts — any structural change to the
+     * rmem invalidates the derived cache.
+     */
     public function writeFingerprint(string $rmemPath): void
     {
         $rmemFh = @fopen($rmemPath, 'rb');
         if ($rmemFh === false) {
             return;
         }
-        $rmemHeader = fread($rmemFh, 24);
-        fclose($rmemFh);
+        // Read rmem header (64 bytes) to find TOC location
+        $rmemHeader = fread($rmemFh, 64);
         if ($rmemHeader === false || strlen($rmemHeader) < 24) {
+            fclose($rmemFh);
             return;
         }
         $sectionCount = unpack('V', $rmemHeader, 12)[1];
         $tocOffset = unpack('P', $rmemHeader, 16)[1];
-        $fp = pack('VP', $sectionCount, $tocOffset);
+        $tocSize = $sectionCount * 40; // TOC_ENTRY_SIZE = 40
+
+        // Read the full TOC
+        $tocData = '';
+        if ($tocSize > 0) {
+            fseek($rmemFh, (int)$tocOffset);
+            $tocData = fread($rmemFh, $tocSize);
+            if ($tocData === false) {
+                $tocData = '';
+            }
+        }
+        fclose($rmemFh);
+
+        // Hash header + TOC
+        $fp = hash('sha256', $rmemHeader . $tocData, true); // 32 bytes
         $this->writeRawSection('__fingerprint', $fp, 1);
     }
 
@@ -224,17 +246,18 @@ final class DerivedCacheWriter
         $totalBytes = $count * $elemSize;
         $offset = $this->pos;
 
-        // Copy the typed FFI buffer into a flat char[] owned by a
-        // bare FFI instance so we can safely do pointer arithmetic.
+        // Copy into a char[] staging buffer for safe byte-offset pointer
+        // arithmetic (PHP FFI cast('char*', typed_array) produces dangling
+        // views). The staging buffer is freed when this method returns.
         $ffi = FFI::cdef();
-        $charBuf = $ffi->new("char[{$totalBytes}]");
-        FFI::memcpy($charBuf, $data, $totalBytes);
+        $staging = $ffi->new("char[{$totalBytes}]");
+        FFI::memcpy($staging, $data, $totalBytes);
 
         $chunkSize = 4 * 1024 * 1024; // 4 MB
         $written = 0;
         while ($written < $totalBytes) {
             $toWrite = min($chunkSize, $totalBytes - $written);
-            $chunk = FFI::string($charBuf + $written, $toWrite);
+            $chunk = FFI::string($staging + $written, $toWrite);
             fwrite($this->fh, $chunk);
             $written += $toWrite;
         }
