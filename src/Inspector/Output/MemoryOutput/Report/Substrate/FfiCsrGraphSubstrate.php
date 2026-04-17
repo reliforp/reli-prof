@@ -482,6 +482,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // If on-disk CSR sections exist, load them directly.
         if ($reader->hasSection('tree_csr_rowptr')) {
             $substrate->loadCsrFromSections($reader, $nc, $dict);
+            $substrate->linkDictReverse = []; // Free after edge loading (~80 MB)
             $substrate->buildSccAdjacency();
 
             // Build FFI canonical mapping before cache check so it's
@@ -695,6 +696,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         unset($stageParentIdx, $stageChildIdx, $stageFlags);
 
         // ---- Phase 5: compute derived structures ----
+        $substrate->linkDictReverse = []; // Free after edge loading (~80 MB)
         $substrate->buildSccAdjacency();
         $substrate->buildCanonicalFfi();
         $substrate->computeSubtreeSizesFfi();
@@ -1176,8 +1178,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($this->treeLinkIds === null) {
             return;
         }
-        $link_id = $this->linkDictReverse[$link_name] ?? null;
-        if ($link_id === null) {
+        // Find link_id via reverse dict if available, else linear scan of forward dict.
+        $link_id = $this->linkDictReverse[$link_name] ?? array_search($link_name, $this->linkDict, true);
+        if ($link_id === false || $link_id === null) {
             return;
         }
         $n = $this->nodeCount;

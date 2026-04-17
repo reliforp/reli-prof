@@ -80,7 +80,14 @@ final class StringDict
     /**
      * Load a dictionary from a serialized binary buffer.
      */
-    public static function deserialize(string $data): self
+    /**
+     * Load a dictionary from a serialized binary buffer.
+     *
+     * @param bool $reverseOnly If true, skip building the forward map
+     *     (string→id). Use when only lookup(id) is needed (e.g. report).
+     *     Saves ~40% memory (the forward PHP hashmap).
+     */
+    public static function deserialize(string $data, bool $reverseOnly = false): self
     {
         $dict = new self();
         $offset = 0;
@@ -95,7 +102,9 @@ final class StringDict
             $offset += 4;
             $s = substr($data, $offset, $len);
             $offset += $len;
-            $dict->forward[$s] = $i;
+            if (!$reverseOnly) {
+                $dict->forward[$s] = $i;
+            }
             $dict->reverse[] = $s;
         }
         return $dict;

@@ -155,7 +155,9 @@ final class Reader
         }
         $entry = $this->toc[Format::SECTION_STRING_DICT];
         $data = $this->readBytes($entry['offset'], $entry['length']);
-        $this->stringDict = StringDict::deserialize($data);
+        // Reader only needs lookup(id→string), not intern(string→id).
+        // Skip building the forward map to save ~40% StringDict memory.
+        $this->stringDict = StringDict::deserialize($data, reverseOnly: true);
     }
 
     public function getStringDict(): StringDict
