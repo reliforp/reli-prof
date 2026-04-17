@@ -126,6 +126,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
 
+    // FFI canonical mapping (replaces parent PHP arrays for SCC + pass queries).
+    // canonIdxFfi[csrIdx] = canonical csrIdx (self for unique nodes).
+    // origOffsets + origData form a CSR: originals of canon c are
+    // origData[origOffsets[c]..origOffsets[c+1]].
+    private ?\FFI\CData $canonIdxFfi = null;
+    private ?\FFI\CData $origOffsets = null;
+    private ?\FFI\CData $origData = null;
+
     /**
      * Rows per chunked fetchAll inside the loader paths. Plumbed in
      * from GraphSubstrate::createFromDb so the user can size it for
@@ -1012,6 +1020,57 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     #[\Override]
+    public function isCanonicalOrUnique(int $nodeId): bool
+    {
+        if ($this->canonIdxFfi === null) {
+            return parent::isCanonicalOrUnique($nodeId);
+        }
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return true;
+        }
+        return (int)$this->canonIdxFfi[$idx] === $idx;
+    }
+
+    #[\Override]
+    public function getCanonical(int $nodeId): int
+    {
+        if ($this->canonIdxFfi === null) {
+            return parent::getCanonical($nodeId);
+        }
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return $nodeId;
+        }
+        $canonIdx = (int)$this->canonIdxFfi[$idx];
+        return $this->indexToNodeId($canonIdx);
+    }
+
+    /** @return list<int> */
+    #[\Override]
+    public function getCanonicalGroup(int $nodeId): array
+    {
+        if ($this->canonIdxFfi === null || $this->origOffsets === null) {
+            return parent::getCanonicalGroup($nodeId);
+        }
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return [$nodeId];
+        }
+        $canonIdx = (int)$this->canonIdxFfi[$idx];
+        $oStart = (int)$this->origOffsets[$canonIdx];
+        $oEnd = (int)$this->origOffsets[$canonIdx + 1];
+        if ($oEnd <= $oStart) {
+            return [$nodeId];
+        }
+        $group = [];
+        for ($i = $oStart; $i < $oEnd; $i++) {
+            $group[] = $this->indexToNodeId((int)$this->origData[$i]);
+        }
+        return $group;
+    }
+
+    #[\Override]
     public function getNodeClass(int $nodeId): ?string
     {
         $idx = $this->nodeIdToIndex($nodeId);
@@ -1815,25 +1874,78 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $strongAllEdges = $this->strongAllEdges;
         $indexToNodeFfi = $this->indexToNodeFfi;
 
-        // If canonical mapping exists, build index-level canonical map:
-        // csrIdx → canonical csrIdx. This avoids repeated node_id lookups.
-        /** @var array<int, int> $canonIdx  csrIdx → canonical csrIdx */
-        $canonIdx = [];
-        /** @var array<int, list<int>> $canonical_original_indices canonical csrIdx => original csrIdx list */
-        $canonical_original_indices = [];
+        // If canonical mapping exists, build index-level canonical map
+        // as an FFI int32 array: canonIdxFfi[v] = canonical csrIdx of v.
+        // Self-canonical nodes map to themselves.
+        // Also build a CSR for originals: origOffsets[c]..origOffsets[c+1]
+        // indexes into origData[] to give all original csrIdx for canon c.
+        //
+        // These replace the PHP arrays $canonIdx and $canonical_original_indices
+        // that previously consumed ~8 GB for 34M nodes. FFI version: ~400 MB.
+        // Stored as class fields so pass-level canonical APIs can use them too.
+        $this->canonIdxFfi = FFIHelper::new("int32_t[{$nc}]");
+        $this->origOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $canonIdxFfi = $this->canonIdxFfi;
+        $origOffsets = $this->origOffsets;
+        $origData = null;
+
         if ($has_canonical) {
+            // Pass 1: compute canonIdxFfi and count originals per canonical
+            $origCount = FFIHelper::new("int32_t[{$nc}]");
+            for ($v = 0; $v < $nc; $v++) {
+                $nid = (int)$indexToNodeFfi[$v];
+                if ($nid === -1) {
+                    $canonIdxFfi[$v] = $v;
+                    continue;
+                }
+                $canon = $this->findCanonical($nid);
+                if ($canon !== $nid) {
+                    $ci = $this->nodeIdToIndex($canon);
+                    $canonIdxFfi[$v] = $ci;
+                } else {
+                    $canonIdxFfi[$v] = $v;
+                }
+                $c = (int)$canonIdxFfi[$v];
+                $origCount[$c] = (int)$origCount[$c] + 1;
+            }
+
+            // Pass 2: build origOffsets (prefix sum)
+            $origOffsets[0] = 0;
+            for ($i = 0; $i < $nc; $i++) {
+                $origOffsets[$i + 1] = (int)$origOffsets[$i] + (int)$origCount[$i];
+            }
+            $totalOrig = (int)$origOffsets[$nc];
+            $origData = FFIHelper::new("int32_t[" . max(1, $totalOrig) . "]");
+
+            // Pass 3: fill origData
+            $origPos = FFIHelper::new("int32_t[{$nc}]");
+            for ($i = 0; $i < $nc; $i++) {
+                $origPos[$i] = (int)$origOffsets[$i];
+            }
             for ($v = 0; $v < $nc; $v++) {
                 $nid = (int)$indexToNodeFfi[$v];
                 if ($nid === -1) {
                     continue;
                 }
-                $canon = $this->findCanonical($nid);
-                if ($canon !== $nid) {
-                    $canonIdx[$v] = $this->nodeIdToIndex($canon);
-                }
-                $canonical_original_indices[$canonIdx[$v] ?? $v][] = $v;
+                $c = (int)$canonIdxFfi[$v];
+                $p = (int)$origPos[$c];
+                $origData[$p] = $v;
+                $origPos[$c] = $p + 1;
             }
+            unset($origCount, $origPos);
+
+            // Free parent PHP arrays — FFI canonical replaces them.
+            $this->canonical = [];
+            $this->canonicalToOriginals = [];
+        } else {
+            for ($v = 0; $v < $nc; $v++) {
+                $canonIdxFfi[$v] = $v;
+                $origOffsets[$v] = $v;
+            }
+            $origOffsets[$nc] = $nc;
         }
+        $this->origData = $origData;
+
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
 
@@ -1854,7 +1966,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $active[$v] = 0;
                 continue;
             }
-            $cv = $canonIdx[$v] ?? $v;
+            $cv = (int)$canonIdxFfi[$v];
             if ($cv !== $v) {
                 $active[$v] = 0;
                 continue;
@@ -1862,15 +1974,30 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $active[$v] = 1;
 
             $seen = [];
-            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
-                $start = (int)$strongAllOffsets[$oi];
-                $end = (int)$strongAllOffsets[$oi + 1];
+            if ($has_canonical) {
+                $oStart = (int)$origOffsets[$v];
+                $oEnd = (int)$origOffsets[$v + 1];
+                for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                    $origIdx = (int)$origData[$oi];
+                    $start = (int)$strongAllOffsets[$origIdx];
+                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$strongAllEdges[$j];
+                        $cw = (int)$canonIdxFfi[$w];
+                        if ($cw !== $v && !isset($seen[$cw])) {
+                            $seen[$cw] = true;
+                            $in_deg[$cw] = (int)$in_deg[$cw] + 1;
+                        }
+                    }
+                }
+            } else {
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
                 for ($j = $start; $j < $end; $j++) {
                     $w = (int)$strongAllEdges[$j];
-                    $cw = $canonIdx[$w] ?? $w;
-                    if ($cw !== $v && !isset($seen[$cw])) {
-                        $seen[$cw] = true;
-                        $in_deg[$cw] = (int)$in_deg[$cw] + 1;
+                    if ($w !== $v && !isset($seen[$w])) {
+                        $seen[$w] = true;
+                        $in_deg[$w] = (int)$in_deg[$w] + 1;
                     }
                 }
             }
@@ -1890,17 +2017,35 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
             $active[$v] = 0;
             $seen = [];
-            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
-                $start = (int)$strongAllOffsets[$oi];
-                $end = (int)$strongAllOffsets[$oi + 1];
+            if ($has_canonical) {
+                $oStart = (int)$origOffsets[$v];
+                $oEnd = (int)$origOffsets[$v + 1];
+                for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                    $origIdx = (int)$origData[$oi];
+                    $start = (int)$strongAllOffsets[$origIdx];
+                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$strongAllEdges[$j];
+                        $cw = (int)$canonIdxFfi[$w];
+                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                            $seen[$cw] = true;
+                            $in_deg[$cw] = (int)$in_deg[$cw] - 1;
+                            if ((int)$in_deg[$cw] === 0) {
+                                $queue[] = $cw;
+                            }
+                        }
+                    }
+                }
+            } else {
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
                 for ($j = $start; $j < $end; $j++) {
                     $w = (int)$strongAllEdges[$j];
-                    $cw = $canonIdx[$w] ?? $w;
-                    if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
-                        $seen[$cw] = true;
-                        $in_deg[$cw] = (int)$in_deg[$cw] - 1;
-                        if ((int)$in_deg[$cw] === 0) {
-                            $queue[] = $cw;
+                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                        $seen[$w] = true;
+                        $in_deg[$w] = (int)$in_deg[$w] - 1;
+                        if ((int)$in_deg[$w] === 0) {
+                            $queue[] = $w;
                         }
                     }
                 }
@@ -1918,15 +2063,31 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 continue;
             }
             $seen = [];
-            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
-                $start = (int)$strongAllOffsets[$oi];
-                $end = (int)$strongAllOffsets[$oi + 1];
+            if ($has_canonical) {
+                $oStart = (int)$origOffsets[$v];
+                $oEnd = (int)$origOffsets[$v + 1];
+                for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                    $origIdx = (int)$origData[$oi];
+                    $start = (int)$strongAllOffsets[$origIdx];
+                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$strongAllEdges[$j];
+                        $cw = (int)$canonIdxFfi[$w];
+                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                            $seen[$cw] = true;
+                            $arevDeg[$cw] = (int)$arevDeg[$cw] + 1;
+                            $active_edge_count++;
+                        }
+                    }
+                }
+            } else {
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
                 for ($j = $start; $j < $end; $j++) {
                     $w = (int)$strongAllEdges[$j];
-                    $cw = $canonIdx[$w] ?? $w;
-                    if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
-                        $seen[$cw] = true;
-                        $arevDeg[$cw] = (int)$arevDeg[$cw] + 1;
+                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                        $seen[$w] = true;
+                        $arevDeg[$w] = (int)$arevDeg[$w] + 1;
                         $active_edge_count++;
                     }
                 }
@@ -1949,17 +2110,34 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 continue;
             }
             $seen = [];
-            foreach ($has_canonical ? ($canonical_original_indices[$v] ?? [$v]) : [$v] as $oi) {
-                $start = (int)$strongAllOffsets[$oi];
-                $end = (int)$strongAllOffsets[$oi + 1];
+            if ($has_canonical) {
+                $oStart = (int)$origOffsets[$v];
+                $oEnd = (int)$origOffsets[$v + 1];
+                for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                    $origIdx = (int)$origData[$oi];
+                    $start = (int)$strongAllOffsets[$origIdx];
+                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$strongAllEdges[$j];
+                        $cw = (int)$canonIdxFfi[$w];
+                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                            $seen[$cw] = true;
+                            $p = (int)$arevPos[$cw];
+                            $arevEdges[$p] = $v;
+                            $arevPos[$cw] = $p + 1;
+                        }
+                    }
+                }
+            } else {
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
                 for ($j = $start; $j < $end; $j++) {
                     $w = (int)$strongAllEdges[$j];
-                    $cw = $canonIdx[$w] ?? $w;
-                    if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
-                        $seen[$cw] = true;
-                        $p = (int)$arevPos[$cw];
+                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                        $seen[$w] = true;
+                        $p = (int)$arevPos[$w];
                         $arevEdges[$p] = $v;
-                        $arevPos[$cw] = $p + 1;
+                        $arevPos[$w] = $p + 1;
                     }
                 }
             }
@@ -2021,8 +2199,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             if ((int)$active[$v] === 0) {
                 continue;
             }
-            // Use canonical index if available
-            $cv = $canonIdx[$v] ?? $v;
+            $cv = (int)$canonIdxFfi[$v];
             if ((int)$tarjan_index[$cv] !== -1) {
                 continue;
             }
@@ -2041,12 +2218,15 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     if (!isset($canonical_neighbors[$node])) {
                         $neighbors = [];
                         $seen = [];
-                        foreach ($canonical_original_indices[$node] ?? [$node] as $oi) {
-                            $start = (int)$strongAllOffsets[$oi];
-                            $end = (int)$strongAllOffsets[$oi + 1];
+                        $oStart = (int)$origOffsets[$node];
+                        $oEnd = (int)$origOffsets[$node + 1];
+                        for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                            $origIdx = (int)$origData[$oi];
+                            $start = (int)$strongAllOffsets[$origIdx];
+                            $end = (int)$strongAllOffsets[$origIdx + 1];
                             for ($j = $start; $j < $end; $j++) {
                                 $w = (int)$strongAllEdges[$j];
-                                $cw = $canonIdx[$w] ?? $w;
+                                $cw = (int)$canonIdxFfi[$w];
                                 if ($cw !== $node && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
                                     $seen[$cw] = true;
                                     $neighbors[] = $cw;
@@ -2086,8 +2266,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $found_unvisited = true;
                         break;
                     } elseif ((int)$tarjan_on_stack[$w] !== 0) {
-                        // Inlined min() — the builtin call adds
-                        // measurable overhead in this hot loop.
                         $cur = (int)$tarjan_lowlink[$node];
                         if ($w_index < $cur) {
                             $tarjan_lowlink[$node] = $w_index;
@@ -2127,8 +2305,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             foreach ($sccs as &$scc) {
                 $expanded = [];
                 foreach ($scc as $canonical_idx) {
-                    foreach ($canonical_original_indices[$canonical_idx] ?? [$canonical_idx] as $original_idx) {
-                        $expanded[] = $original_idx;
+                    $oStart = (int)$origOffsets[$canonical_idx];
+                    $oEnd = (int)$origOffsets[$canonical_idx + 1];
+                    for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                        $expanded[] = (int)$origData[$oi];
                     }
                 }
                 $scc = $expanded;
@@ -2216,4 +2396,5 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             ];
         }
     }
+
 }
