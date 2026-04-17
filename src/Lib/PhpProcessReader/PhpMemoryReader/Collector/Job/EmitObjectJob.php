@@ -19,6 +19,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\FfiAllocationMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectHandlersMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
@@ -112,6 +113,12 @@ final class EmitObjectJob implements CollectorJob
         $base_size = $this->pointer->size;
         $obj_address = $address;
         $size = $base_size + ($default_properties_count - 1) * 16;
+
+        // FFI\CData: adjust size to include zend_ffi_cdata fields
+        // (type ptr + ptr + ptr_holder + flags = 3*8 + 4 = 28, padded to 32)
+        if ($class_name === 'FFI\\CData') {
+            $size = $base_size + 32; // sizeof(zend_ffi_cdata) - sizeof(zend_object) + sizeof(zend_object)
+        }
 
         // Special classes need std_offset adjustment — fall back to FFI
         if (
@@ -218,6 +225,85 @@ final class EmitObjectJob implements CollectorJob
                 $properties_node_id,
                 $ctx,
             ));
+        }
+
+        // FFI\CData: track the emalloc'd backing buffer.
+        // zend_ffi_cdata layout after zend_object std:
+        //   +0: zend_ffi_type *type    (8 bytes)
+        //   +8: void *ptr              (8 bytes)
+        //  +16: void *ptr_holder       (8 bytes)
+        //  +24: uint32_t flags         (4 bytes)
+        // type->size at offset 8 in zend_ffi_type (after kind:u32 + padding).
+        if ($class_name === 'FFI\\CData' && $obj_node_id !== null) {
+            $this->emitFfiAllocation($address, $obj_node_id, $ctx);
+        }
+    }
+
+    private function emitFfiAllocation(
+        int $obj_address,
+        int $parent_node_id,
+        CollectorContext $ctx,
+    ): void {
+        try {
+            $sizeof_zend_object = $ctx->zend_type_reader->sizeOf('zend_object');
+            $ffi_fields_base = $obj_address + $sizeof_zend_object;
+
+            $deref = $ctx->dereferencer;
+            $i64size = 8;
+
+            // Read type pointer (zend_ffi_cdata.type at std_end + 0)
+            /** @var \Reli\Lib\PhpInternals\Types\C\RawInt64 $type_raw */
+            $type_raw = $deref->deref(new Pointer(
+                \Reli\Lib\PhpInternals\Types\C\RawInt64::class,
+                $ffi_fields_base,
+                $i64size,
+            ));
+            $type_ptr = $type_raw->value;
+            if ($type_ptr === 0) {
+                return;
+            }
+
+            // Read ptr_holder (zend_ffi_cdata.ptr_holder at std_end + 16)
+            /** @var \Reli\Lib\PhpInternals\Types\C\RawInt64 $holder_raw */
+            $holder_raw = $deref->deref(new Pointer(
+                \Reli\Lib\PhpInternals\Types\C\RawInt64::class,
+                $ffi_fields_base + 16,
+                $i64size,
+            ));
+            $ptr_holder = $holder_raw->value;
+            if ($ptr_holder === 0) {
+                return; // Not an owned CData (view/cast), skip
+            }
+
+            // Read type->size (size_t at offset 8 in zend_ffi_type)
+            /** @var \Reli\Lib\PhpInternals\Types\C\RawInt64 $size_raw */
+            $size_raw = $deref->deref(new Pointer(
+                \Reli\Lib\PhpInternals\Types\C\RawInt64::class,
+                $type_ptr + 8,
+                $i64size,
+            ));
+            $alloc_size = $size_raw->value;
+
+            if ($alloc_size <= 0) {
+                return;
+            }
+
+            $location = new FfiAllocationMemoryLocation(
+                $ptr_holder,
+                (int)$alloc_size,
+                'FFI\\CData::buffer',
+            );
+            $ctx->memory_locations->add($location);
+
+            $ffi_context = new \Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\FfiAllocationContext($location);
+            $ctx->emitNode(
+                $ffi_context,
+                $parent_node_id,
+                'ffi_buffer',
+                EdgeStrength::Strong,
+            );
+        } catch (\Throwable) {
+            // Fail silently — FFI introspection is best-effort
         }
     }
 
