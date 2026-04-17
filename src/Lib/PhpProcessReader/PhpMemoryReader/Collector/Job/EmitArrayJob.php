@@ -190,7 +190,18 @@ final class EmitArrayJob implements CollectorJob
             $ctx->address_map[$address] = $header_node_id;
         }
 
+        // The array_elements_context we just created may not have a memo
+        // if the ArrayHeaderContext was retrieved from pool cache (same
+        // address already emitted by an earlier branch, e.g. call_frames
+        // referencing symbol_table before global_variables does). In that
+        // case, the cached header's existing array_elements has the memo.
         $raw_elements = $array_elements_context->getMemoNodeId();
+        if ($raw_elements === null) {
+            $existing_elements = $array_header_context->getElements();
+            if ($existing_elements !== null) {
+                $raw_elements = $existing_elements->getMemoNodeId();
+            }
+        }
         $elements_node_id = $raw_elements !== null
             ? ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements)
             : ($header_node_id >= 0 ? $header_node_id : null);
@@ -256,6 +267,12 @@ final class EmitArrayJob implements CollectorJob
         // See EmitObjectJob for why this reads from getMemoNodeId() now
         // instead of $ctx->memo[$context].
         $raw_elements = $array_elements_context->getMemoNodeId();
+        if ($raw_elements === null) {
+            $existing_elements = $array_header_context->getElements();
+            if ($existing_elements !== null) {
+                $raw_elements = $existing_elements->getMemoNodeId();
+            }
+        }
         $elements_node_id = $raw_elements !== null
             ? ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements)
             : ($header_node_id >= 0 ? $header_node_id : null);
