@@ -422,12 +422,10 @@ final class RmemExploreTui
 
         $lines[] = $this->renderFooter($cols);
         $lines[] = sprintf(
-            ' %s rows | bodyH=%d | sel=%d | top=%d | depth %d',
+            ' %s nodes | %s total | depth %d',
             number_format(count($this->rows)),
-            $bodyH,
-            $this->selected,
-            $this->topRow,
-            number_format(count($this->rows)),
+            SizeFormatter::format($this->model->nodeSizesSum()),
+            count($this->focusStack),
             SizeFormatter::format($this->model->nodeSizesSum()),
             count($this->focusStack),
         );
