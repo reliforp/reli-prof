@@ -52,6 +52,8 @@ final class RmemExploreTui
     private int $childTopRow = 0;
     /** 'parents' | 'children' */
     private string $activePane = 'children';
+    /** @var list<array{node_id: int, label: string, pane: string}> sandwich history */
+    private array $sandwichHistory = [];
 
     private bool $showHelp = false;
     private bool $showSidebar = true;
@@ -190,6 +192,13 @@ final class RmemExploreTui
 
     private function enterSandwich(int $nodeId, string $label): void
     {
+        if ($this->sandwich) {
+            $this->sandwichHistory[] = [
+                'node_id' => $this->sandwichNodeId,
+                'label' => $this->sandwichLabel,
+                'pane' => $this->activePane,
+            ];
+        }
         $this->sandwich = true;
         $this->sandwichNodeId = $nodeId;
         $this->sandwichLabel = $label;
@@ -204,8 +213,17 @@ final class RmemExploreTui
 
     private function back(): void
     {
+        if ($this->sandwich && $this->sandwichHistory !== []) {
+            // History back within sandwich
+            $prev = array_pop($this->sandwichHistory);
+            $this->enterSandwichDirect($prev['node_id'], $prev['label']);
+            $this->activePane = $prev['pane'];
+            return;
+        }
         if ($this->sandwich) {
+            // Exit sandwich to list
             $this->sandwich = false;
+            $this->sandwichHistory = [];
             return;
         }
         if ($this->focusStack === []) {
@@ -224,6 +242,19 @@ final class RmemExploreTui
         }
         $this->selected = $prev['selected'] ?? 0;
         $this->topRow = $prev['topRow'] ?? 0;
+    }
+
+    /** Set sandwich focus without pushing history (used by back) */
+    private function enterSandwichDirect(int $nodeId, string $label): void
+    {
+        $this->sandwichNodeId = $nodeId;
+        $this->sandwichLabel = $label;
+        $this->parentRows = $this->model->getParents($nodeId);
+        $this->childRows = $this->model->getChildren($nodeId);
+        $this->parentSelected = 0;
+        $this->parentTopRow = 0;
+        $this->childSelected = 0;
+        $this->childTopRow = 0;
     }
 
     private function togglePane(): void
