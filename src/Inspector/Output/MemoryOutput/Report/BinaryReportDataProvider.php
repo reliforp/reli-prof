@@ -979,13 +979,14 @@ final class BinaryReportDataProvider
         if ($string_counts !== []) {
             arsort($string_counts);
             $values = array_keys($string_counts);
-            $top_value = $values[0] ?? '';
+            $top_value = (string)($values[0] ?? '');
             if (strlen($top_value) > 60) {
                 $top_value = substr($top_value, 0, 57) . '...';
             }
 
             $samples = array_map(
-                static function (string $value): string {
+                static function (string|int $value): string {
+                    $value = (string)$value;
                     return strlen($value) > 40
                         ? substr($value, 0, 37) . '...'
                         : $value;
