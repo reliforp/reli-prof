@@ -131,9 +131,12 @@ final class DiskBackedStringDict
             }
         }
 
-        // New string — append to disk
+        // New string — append to disk.
+        // Must seek to diskPos because readFromDisk may have moved
+        // the file pointer during hash-collision comparison above.
         $id = $this->count;
         $offset = $this->diskPos;
+        fseek($this->getDiskFh(), $offset);
         $w = fwrite($this->getDiskFh(), $s);
         if ($w !== $len) {
             throw new \RuntimeException(
