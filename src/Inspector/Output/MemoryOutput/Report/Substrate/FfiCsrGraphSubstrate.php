@@ -1871,12 +1871,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
         }
         $this->subtreeSizesComputed = true;
-
-        // strongTree CSR is only needed for subtree size computation.
-        // Free it to save ~480 MB on 60M-edge graphs.
-        unset($this->strongTreeOffsets, $this->strongTreeEdges);
-        $this->strongTreeOffsets = FFIHelper::new("int32_t[1]");
-        $this->strongTreeEdges = FFIHelper::new("int32_t[1]");
     }
 
     /**
