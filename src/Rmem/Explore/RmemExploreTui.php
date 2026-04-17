@@ -324,18 +324,18 @@ final class RmemExploreTui
             $this->renderList($lines, $mainW, $rows);
         }
 
-        // Merge sidebar
+        // Sidebar: render using cursor positioning instead of string concat.
+        // This avoids ANSI visible-width miscalculation entirely.
+        $sidebarBuf = '';
         if ($sidebarW > 0 && $sidebarLines !== []) {
-            $sep = "\e[2m│\e[22m";
+            $sepCol = $mainW + 1;
             for ($i = 1; $i < count($lines); $i++) {
+                $row = $i + 1; // 1-based terminal row
                 $sLine = $sidebarLines[$i - 1] ?? '';
-                $mainLine = $lines[$i];
-                // Pad main line to mainW based on visible width
-                // (ANSI escapes don't consume terminal columns)
-                $stripped = preg_replace('/\x1b\[[0-9;]*m/', '', $mainLine);
-                $visibleLen = strlen($stripped ?? '');
-                $pad = max(0, $mainW - $visibleLen);
-                $lines[$i] = $mainLine . str_repeat(' ', $pad) . $sep . str_pad($sLine, $sidebarW);
+                if (strlen($sLine) > $sidebarW - 1) {
+                    $sLine = substr($sLine, 0, $sidebarW - 4) . '...';
+                }
+                $sidebarBuf .= "\e[{$row};{$sepCol}H\e[2m│\e[22m{$sLine}";
             }
         }
 
@@ -344,7 +344,7 @@ final class RmemExploreTui
         }
 
         $this->term->clear();
-        $this->term->write(implode("\n", $lines));
+        $this->term->write(implode("\n", $lines) . $sidebarBuf);
     }
 
     /**
