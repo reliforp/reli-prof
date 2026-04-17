@@ -271,16 +271,25 @@ final class MemoryLocationsCollector
 
         // Seed the queue with root branches in reverse order for LIFO DFS.
         // Last pushed = first processed.
+        //
+        // Ordering matters: when two branches reference the same object
+        // (e.g. symbol_table is also a call frame's variable table),
+        // the branch processed FIRST gets the "real" tree structure;
+        // later branches get a reference edge to the existing node.
+        //
+        // Process "definition" branches before "usage" branches so the
+        // canonical tree lives under the named globals/tables, not
+        // buried inside a call frame.
         $queue->push(new Collector\Job\EmitObjectsStoreJob($eg->objects_store));
+        $queue->push(new Collector\Job\EmitCallFramesJob($eg));
         $queue->push(new Collector\Job\EmitModulesJob($bg_address));
         $queue->push(new Collector\Job\EmitGlobalCallbacksJob($eg));
-        $queue->push(new Collector\Job\EmitGlobalConstantsJob($zend_constants));
-        $queue->push(new Collector\Job\EmitClassTableJob($class_table));
-        $queue->push(new Collector\Job\EmitFunctionTableJob($function_table));
-        $queue->push(new Collector\Job\EmitGlobalVariablesJob($eg->symbol_table));
-        $queue->push(new Collector\Job\EmitCallFramesJob($eg));
-        $queue->push(new Collector\Job\EmitInternedStringsJob($cg->interned_strings));
         $queue->push(new Collector\Job\EmitIncludedFilesJob($eg->included_files));
+        $queue->push(new Collector\Job\EmitGlobalConstantsJob($zend_constants));
+        $queue->push(new Collector\Job\EmitFunctionTableJob($function_table));
+        $queue->push(new Collector\Job\EmitClassTableJob($class_table));
+        $queue->push(new Collector\Job\EmitGlobalVariablesJob($eg->symbol_table));
+        $queue->push(new Collector\Job\EmitInternedStringsJob($cg->interned_strings));
 
         // Main iterative loop
         $drain_counter = 0;
