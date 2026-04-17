@@ -13,6 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheReader;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheWriter;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Lib\FFI\FFIHelper;
@@ -174,7 +177,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion
      */
     #[\Override]
-    public static function loadFromBinary(BinaryReader $reader): static
+    public static function loadFromBinary(BinaryReader $reader, bool $useCache = true, bool $rebuildCache = false): static
     {
         $substrate = new self();
         $dict = $reader->getStringDict();
@@ -479,8 +482,24 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($reader->hasSection('tree_csr_rowptr')) {
             $substrate->loadCsrFromSections($reader, $nc, $dict);
             $substrate->buildSccAdjacency();
-            $substrate->computeSubtreeSizesFfi();
-            $substrate->computeSccFfi();
+
+            // ---- Phase 5: Derived data (subtree sizes + SCC) ----
+            // Try loading from sidecar cache first.
+            $rmemPath = $reader->getFilePath();
+            $cacheLoaded = false;
+            if ($useCache && !$rebuildCache && $rmemPath !== '') {
+                $cacheLoaded = $substrate->loadDerivedFromCache($rmemPath, $nc);
+            }
+
+            if (!$cacheLoaded) {
+                $substrate->computeSubtreeSizesFfi();
+                $substrate->computeSccFfi();
+
+                // Write sidecar cache (fail-open)
+                if ($useCache && $rmemPath !== '') {
+                    $substrate->writeDerivedCache($rmemPath, $nc);
+                }
+            }
             return $substrate;
         }
 
@@ -2397,4 +2416,99 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
     }
 
+    // ---- Derived cache (sidecar) ----
+
+    /**
+     * Try loading subtree sizes, SCC node map, and SCC profiles from
+     * the .rmem.derived sidecar cache.
+     *
+     * Returns true if all sections were loaded successfully.
+     */
+    private function loadDerivedFromCache(string $rmemPath, int $nc): bool
+    {
+        $cache = DerivedCacheReader::open($rmemPath);
+        if ($cache === null) {
+            return false;
+        }
+
+        // subtree_by_idx: int64[nc]
+        if (
+            !$cache->hasSection(DerivedCacheFormat::SECTION_SUBTREE_SIZES)
+            || $cache->getSectionElementCount(DerivedCacheFormat::SECTION_SUBTREE_SIZES) !== $nc
+        ) {
+            return false;
+        }
+        $subtreeBuf = $cache->loadInt64Section(DerivedCacheFormat::SECTION_SUBTREE_SIZES);
+        if ($subtreeBuf === null) {
+            return false;
+        }
+
+        // scc_by_idx: int32[nc]
+        if (
+            !$cache->hasSection(DerivedCacheFormat::SECTION_SCC_NODE_MAP)
+            || $cache->getSectionElementCount(DerivedCacheFormat::SECTION_SCC_NODE_MAP) !== $nc
+        ) {
+            return false;
+        }
+        $sccBuf = $cache->loadInt32Section(DerivedCacheFormat::SECTION_SCC_NODE_MAP);
+        if ($sccBuf === null) {
+            return false;
+        }
+
+        // scc_profiles: JSON
+        $profilesJson = $cache->getSectionData(DerivedCacheFormat::SECTION_SCC_PROFILES);
+        if ($profilesJson === null) {
+            return false;
+        }
+        $profiles = json_decode($profilesJson, true);
+        if (!is_array($profiles)) {
+            return false;
+        }
+
+        // All sections valid — apply them
+        $this->ffiSubtreeSizes = $subtreeBuf;
+        $this->subtreeSizesComputed = true;
+        $this->ffiNodeToScc = $sccBuf;
+        $this->scc_profiles = $profiles;
+
+        fwrite(STDERR, "Derived cache loaded from {$rmemPath}.derived\n");
+        return true;
+    }
+
+    /**
+     * Write subtree sizes, SCC node map, and SCC profiles to
+     * the .rmem.derived sidecar cache.
+     *
+     * Fail-open: errors are silently ignored.
+     */
+    private function writeDerivedCache(string $rmemPath, int $nc): void
+    {
+        $writer = DerivedCacheWriter::create($rmemPath);
+        if ($writer === null) {
+            return;
+        }
+
+        $writer->writeInt64Section(
+            DerivedCacheFormat::SECTION_SUBTREE_SIZES,
+            $this->ffiSubtreeSizes,
+            $nc,
+        );
+
+        $writer->writeInt32Section(
+            DerivedCacheFormat::SECTION_SCC_NODE_MAP,
+            $this->ffiNodeToScc,
+            $nc,
+        );
+
+        $profilesJson = json_encode($this->scc_profiles, JSON_UNESCAPED_UNICODE);
+        if ($profilesJson !== false) {
+            $writer->writeRawSection(
+                DerivedCacheFormat::SECTION_SCC_PROFILES,
+                $profilesJson,
+                count($this->scc_profiles),
+            );
+        }
+
+        $writer->finish($rmemPath);
+    }
 }

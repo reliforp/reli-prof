@@ -292,6 +292,8 @@ final class ReportGenerator
         string $path,
         ?bool $ffi_csr = null,
         int $worker_count = 1,
+        bool $useCache = true,
+        bool $rebuildCache = false,
     ): ReportResult {
         $reader = BinaryReader::open($path);
         $dict = $reader->getStringDict();
@@ -350,7 +352,7 @@ final class ReportGenerator
         // optional constructor parameters so they never touch the DB.
         $edge_count = $meta['edge_count'];
         if ($edge_count > 0) {
-            $substrate = GraphSubstrate::createFromBinary($reader, $ffi_csr);
+            $substrate = GraphSubstrate::createFromBinary($reader, $ffi_csr, $useCache, $rebuildCache);
             $meta['scc_count'] = count($substrate->getSccProfiles());
 
             // Pre-compute data from binary sections for hybrid passes.

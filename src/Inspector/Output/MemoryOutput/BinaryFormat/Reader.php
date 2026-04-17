@@ -54,6 +54,9 @@ final class Reader
     // Fallback: entire file in a PHP string
     private ?string $fileData = null;
 
+    /** The file path this reader was opened from */
+    private string $filePath = '';
+
     /** FFI instance for struct casts (lazy-initialized) */
     private static ?FFI $structFfi = null;
 
@@ -70,9 +73,15 @@ final class Reader
         }
     }
 
+    public function getFilePath(): string
+    {
+        return $this->filePath;
+    }
+
     public static function open(string $path): self
     {
         $reader = new self();
+        $reader->filePath = $path;
 
         // Try mmap first
         $mmapResult = LibcFileReader::mmapFile($path);

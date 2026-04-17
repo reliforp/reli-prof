@@ -147,6 +147,20 @@ final class MemoryReportCommand extends Command
             . ' Default: on.',
             true,
         );
+        $this->addOption(
+            'no-derived-cache',
+            null,
+            InputOption::VALUE_NONE,
+            'skip reading and writing the .rmem.derived sidecar cache'
+            . ' (subtree sizes, SCC). By default, the cache is read on'
+            . ' hit and written on miss to speed up subsequent report runs.',
+        );
+        $this->addOption(
+            'rebuild-derived-cache',
+            null,
+            InputOption::VALUE_NONE,
+            'ignore existing .rmem.derived sidecar and recompute + rewrite it',
+        );
     }
 
     #[\Override]
@@ -193,7 +207,16 @@ final class MemoryReportCommand extends Command
             $worker_count = (ctype_digit($workers_raw) && (int)$workers_raw >= 1)
                 ? (int)$workers_raw : 1;
 
-            $result = $generator->generateFromBinary($db_file, $ffi_csr, $worker_count);
+            $noCache = (bool)$input->getOption('no-derived-cache');
+            $rebuildCache = (bool)$input->getOption('rebuild-derived-cache');
+
+            $result = $generator->generateFromBinary(
+                $db_file,
+                $ffi_csr,
+                $worker_count,
+                useCache: !$noCache,
+                rebuildCache: $rebuildCache,
+            );
         } else {
             // SQLite path (original)
             $run_id = (int)$input->getOption('run-id');
