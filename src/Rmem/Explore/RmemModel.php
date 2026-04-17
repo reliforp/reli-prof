@@ -240,7 +240,7 @@ final class RmemModel
      * @param bool $allEdges If true, include non-tree edges (reference edges).
      * @return list<array{node_id: int, retained: int, shallow: int, link_name: string, label: string}>
      */
-    public function getChildren(int $nodeId, bool $allEdges = false): array
+    public function getChildren(int $nodeId, bool $allEdges = false, string $sort = 'retained'): array
     {
         $children = $allEdges
             ? $this->substrate->getAllChildren($nodeId)
@@ -261,7 +261,19 @@ final class RmemModel
                 'label' => $this->nodeLabel($childId),
             ];
         }
-        usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        if ($sort === 'link') {
+            usort($entries, function (array $a, array $b): int {
+                // Numeric link names (frame numbers, array keys) sort numerically
+                $aNum = is_numeric($a['link_name']);
+                $bNum = is_numeric($b['link_name']);
+                if ($aNum && $bNum) {
+                    return (int)$a['link_name'] <=> (int)$b['link_name'];
+                }
+                return strnatcasecmp($a['link_name'], $b['link_name']);
+            });
+        } else {
+            usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        }
         return $entries;
     }
 

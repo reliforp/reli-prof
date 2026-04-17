@@ -59,6 +59,8 @@ final class RmemExploreTui
     private bool $showHelp = false;
     private bool $showSidebar = true;
     private bool $allEdges = true;
+    /** 'retained' | 'link' */
+    private string $sortMode = 'retained';
 
     /** @var 'normal'|'class_ranking'|'type_ranking'|'class_instances'|'type_instances' */
     private string $listMode = 'normal';
@@ -238,7 +240,7 @@ final class RmemExploreTui
         $this->sandwichNodeId = $nodeId;
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
-        $this->childRows = $this->model->getChildren($nodeId, $this->allEdges);
+        $this->childRows = $this->model->getChildren($nodeId, $this->allEdges, $this->sortMode);
         $this->parentSelected = 0;
         $this->parentTopRow = 0;
         $this->childSelected = 0;
@@ -295,7 +297,7 @@ final class RmemExploreTui
         $this->sandwichNodeId = $nodeId;
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
-        $this->childRows = $this->model->getChildren($nodeId, $this->allEdges);
+        $this->childRows = $this->model->getChildren($nodeId, $this->allEdges, $this->sortMode);
         $this->parentSelected = 0;
         $this->parentTopRow = 0;
         $this->childSelected = 0;
@@ -324,6 +326,7 @@ final class RmemExploreTui
         match ($key) {
             'c' => $this->switchToClassRanking(),
             'y' => $this->switchToTypeRanking(),
+            'r' => $this->toggleSort(),
             default => null,
         };
     }
@@ -331,9 +334,19 @@ final class RmemExploreTui
     private function toggleAllEdges(): void
     {
         $this->allEdges = !$this->allEdges;
-        // Refresh current view
+        $this->refreshChildren();
+    }
+
+    private function toggleSort(): void
+    {
+        $this->sortMode = $this->sortMode === 'retained' ? 'link' : 'retained';
+        $this->refreshChildren();
+    }
+
+    private function refreshChildren(): void
+    {
         if ($this->sandwich) {
-            $this->childRows = $this->model->getChildren($this->sandwichNodeId, $this->allEdges);
+            $this->childRows = $this->model->getChildren($this->sandwichNodeId, $this->allEdges, $this->sortMode);
             $this->childSelected = 0;
             $this->childTopRow = 0;
         }
@@ -690,8 +703,9 @@ final class RmemExploreTui
     {
         $title = " rmem:explore";
         $edgeMode = $this->allEdges ? ' all-edges' : '';
+        $sortInfo = $this->sortMode === 'link' ? ' by-name' : '';
         $paneInfo = $this->activePane === 'sidebar' ? ' sidebar' : '';
-        $mode = $this->sandwich ? "[sandwich{$edgeMode}{$paneInfo}]" : "[list{$edgeMode}{$paneInfo}]";
+        $mode = $this->sandwich ? "[sandwich{$edgeMode}{$sortInfo}{$paneInfo}]" : "[list{$edgeMode}{$sortInfo}{$paneInfo}]";
         $info = sprintf(
             "%s %s nodes, %s edges ",
             $mode,
@@ -719,8 +733,8 @@ final class RmemExploreTui
     private function renderFooter(int $cols): string
     {
         $hints = $this->sandwich
-            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit'
-            : ' ↑↓:select  Enter:drill  Bksp:back  c:class  y:type  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit';
+            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  r:sort  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit'
+            : ' ↑↓:select  Enter:drill  Bksp:back  r:sort  c:class  y:type  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit';
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -744,6 +758,7 @@ final class RmemExploreTui
             '    t               Root branches',
             '    c               Class ranking',
             '    y               Type ranking',
+            '    r               Toggle sort: retained / link name',
             '    n               Toggle tree/all edges',
             '    o               Toggle sidebar (path to root)',
             '',
