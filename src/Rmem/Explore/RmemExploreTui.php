@@ -635,7 +635,10 @@ final class RmemExploreTui
         $shallow = SizeFormatter::format($row['shallow']);
         $link = isset($row['link_name']) ? $row['link_name'] . ' → ' : '';
         // Use live label (may have class from lazy-loaded locations)
-        $label = $link . $this->model->nodeLabel($row['node_id']);
+        // Ranking rows have node_id=-1; use pre-computed label.
+        $label = $link . ($row['node_id'] >= 0
+            ? $this->model->nodeLabel($row['node_id'])
+            : $row['label']);
         $maxLabel = max(10, $cols - 30);
         if (strlen($label) > $maxLabel) {
             $label = substr($label, 0, $maxLabel - 3) . '...';

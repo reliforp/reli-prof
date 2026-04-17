@@ -340,6 +340,10 @@ final class RmemModel
         if ($this->classRanking !== null) {
             return $this->classRanking;
         }
+        $this->ensureLocationInfoLoaded();
+
+        // Use substrate's iterateNodeClasses first, fall back to
+        // location-derived nodeClasses for broader coverage.
         $groups = [];
         foreach ($this->substrate->iterateNodeClasses() as $nodeId => $className) {
             if (!isset($groups[$className])) {
@@ -347,6 +351,17 @@ final class RmemModel
             }
             $groups[$className]['count']++;
             $groups[$className]['total'] += $this->substrate->getNodeSize($nodeId);
+        }
+        // Supplement from locations (catches nodes missed by substrate)
+        foreach ($this->nodeClasses as $nodeId => $className) {
+            if (!isset($groups[$className])) {
+                $groups[$className] = ['count' => 0, 'total' => 0];
+            }
+            // Avoid double-counting: only add if substrate didn't have it
+            if ($this->substrate->getNodeClass($nodeId) === null) {
+                $groups[$className]['count']++;
+                $groups[$className]['total'] += $this->substrate->getNodeSize($nodeId);
+            }
         }
         $result = [];
         foreach ($groups as $class => $g) {
@@ -398,9 +413,22 @@ final class RmemModel
      */
     public function getNodesByClass(string $className): array
     {
+        $this->ensureLocationInfoLoaded();
+        $seen = [];
         $entries = [];
         foreach ($this->substrate->iterateNodeClasses() as $nodeId => $cls) {
             if ($cls === $className) {
+                $seen[$nodeId] = true;
+                $entries[] = [
+                    'node_id' => $nodeId,
+                    'retained' => $this->substrate->getSubtreeSize($nodeId),
+                    'shallow' => $this->substrate->getNodeSize($nodeId),
+                    'label' => $this->nodeLabel($nodeId),
+                ];
+            }
+        }
+        foreach ($this->nodeClasses as $nodeId => $cls) {
+            if ($cls === $className && !isset($seen[$nodeId])) {
                 $entries[] = [
                     'node_id' => $nodeId,
                     'retained' => $this->substrate->getSubtreeSize($nodeId),
