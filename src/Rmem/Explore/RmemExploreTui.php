@@ -258,6 +258,8 @@ final class RmemExploreTui
         $this->childTopRow = 0;
         $this->activePane = 'children';
         $this->sidebarScroll = 0;
+        $this->filterPattern = null;
+        $this->unfilteredRows = [];
     }
 
     private function back(): void
@@ -313,6 +315,8 @@ final class RmemExploreTui
         $this->parentTopRow = 0;
         $this->childSelected = 0;
         $this->childTopRow = 0;
+        $this->filterPattern = null;
+        $this->unfilteredRows = [];
     }
 
     private function togglePane(bool $reverse = false): void
