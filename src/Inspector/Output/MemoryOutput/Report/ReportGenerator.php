@@ -367,6 +367,10 @@ final class ReportGenerator
             $non_tree_edge_stats = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
             $dedup_candidates = BinaryReportDataProvider::getDedupCandidateStats($reader, 10);
 
+            // Release Reader's castSection cache — substrate and data
+            // providers are done with it. Frees ~2 GB of FFI buffers.
+            $reader->clearCastCache();
+
             // CallStackPass runs before the parallel batch (same as DB path)
             $dummy_db = new \PDO('sqlite::memory:');
             $dummy_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);

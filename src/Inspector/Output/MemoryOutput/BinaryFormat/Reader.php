@@ -218,6 +218,17 @@ final class Reader
         return $this->mmapPtr !== null;
     }
 
+    /**
+     * Release the castSection cache. Call after substrate loading and
+     * BinaryReportDataProvider queries are complete — the cached FFI
+     * arrays (NodeRow, EdgeRow, LocationRow) are no longer needed and
+     * can consume multiple GB.
+     */
+    public function clearCastCache(): void
+    {
+        $this->castCache = [];
+    }
+
     public function getSectionElementCount(string $name): int
     {
         if (!isset($this->toc[$name])) {
