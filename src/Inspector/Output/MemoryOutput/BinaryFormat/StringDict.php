@@ -29,14 +29,23 @@ final class StringDict
     /** @var list<string> id → string */
     private array $reverse = [];
 
+    private bool $reverseOnly = false;
+
     /**
      * Intern a string and return its id. Returns existing id if already interned.
      * Returns Format::NULL_STRING_ID for null.
+     *
+     * @throws \LogicException if the dict was loaded with reverseOnly=true
      */
     public function intern(?string $s): int
     {
         if ($s === null) {
             return Format::NULL_STRING_ID;
+        }
+        if ($this->reverseOnly) {
+            throw new \LogicException(
+                'Cannot intern() on a reverseOnly StringDict (loaded for lookup only)'
+            );
         }
         if (isset($this->forward[$s])) {
             return $this->forward[$s];
@@ -90,6 +99,7 @@ final class StringDict
     public static function deserialize(string $data, bool $reverseOnly = false): self
     {
         $dict = new self();
+        $dict->reverseOnly = $reverseOnly;
         $offset = 0;
         $count_row = unpack('V', $data, $offset);
         assert(is_array($count_row));

@@ -365,9 +365,11 @@ final class BinaryReportDataProvider
             }
         }
 
-        // Build a location index: node_id → first LocationRow index.
-        // This is a dense FFI int32 array indexed by node_id (-1 = no location).
-        // Used for on-demand lookup of location_type, class_name, string_value_id.
+        // Build a location index: node_id → best LocationRow index.
+        // Dense FFI int32 array indexed by node_id (-1 = no location).
+        // A node may have multiple LocationRows (e.g. array header + table).
+        // Prefer the row that has class_id or string_value_id set, matching
+        // the first-non-null logic in the original loadNodeMeta.
         $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
         /** @var \FFI\CData|null $locIndex int32[nodeSizesSlots], -1 = no location */
@@ -377,8 +379,24 @@ final class BinaryReportDataProvider
             FFI::memset($locIndex, 0xFF, $nodeSizesSlots * 4); // fill with -1
             for ($i = 0; $i < $locCount; $i++) {
                 $nid = (int)$locRows[$i]->node_id;
-                if ($nid >= 0 && $nid < $nodeSizesSlots && (int)$locIndex[$nid] === -1) {
+                if ($nid < 0 || $nid >= $nodeSizesSlots) {
+                    continue;
+                }
+                $cur = (int)$locIndex[$nid];
+                if ($cur === -1) {
+                    // First row for this node
                     $locIndex[$nid] = $i;
+                } else {
+                    // Prefer a row with richer metadata (class_id or string_value_id)
+                    $curHas = ((int)$locRows[$cur]->class_id !== Format::NULL_STRING_ID)
+                           || ((int)$locRows[$cur]->string_value_id !== Format::NULL_STRING_ID);
+                    if (!$curHas) {
+                        $newHas = ((int)$locRows[$i]->class_id !== Format::NULL_STRING_ID)
+                               || ((int)$locRows[$i]->string_value_id !== Format::NULL_STRING_ID);
+                        if ($newHas) {
+                            $locIndex[$nid] = $i;
+                        }
+                    }
                 }
             }
         }
@@ -663,6 +681,32 @@ final class BinaryReportDataProvider
                 }
                 $coarse[$key]['ref_count']++;
             }
+        } else {
+            $edgeData = $reader->getSectionData(Format::SECTION_EDGES);
+            for ($i = 0; $i < $edge_count; $i++) {
+                $off = $i * Format::EDGE_ROW_SIZE;
+                $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $edgeData, $off);
+                if ((int)$row['is_tree'] !== 0 || (int)$row['strength'] !== 0) {
+                    continue;
+                }
+                $child = (int)$row['child'];
+                $meta = $node_meta[$child] ?? null;
+                if ($meta === null || $meta['size'] <= 0) {
+                    continue;
+                }
+                $lid = (int)$row['lid'];
+                $key = $lid . ':' . $meta['size'];
+                if (!isset($coarse[$key])) {
+                    $coarse[$key] = [
+                        'link_name_id' => $lid,
+                        'size' => $meta['size'],
+                        'ref_count' => 0,
+                        'sample_parent_node_id' => (int)$row['parent'],
+                        'sample_child_node_id' => $child,
+                    ];
+                }
+                $coarse[$key]['ref_count']++;
+            }
         }
 
         // Build results using the same logic but with full $node_meta
@@ -719,6 +763,25 @@ final class BinaryReportDataProvider
                     continue;
                 }
                 $key = (int)$edgeRows[$i]->link_name_id . ':' . $meta['size'];
+                if (!isset($groups[$key])) {
+                    continue;
+                }
+                self::accumulateDedupGroup($groups[$key], $child, $meta, $dict);
+            }
+        } else {
+            $edgeData = $reader->getSectionData(Format::SECTION_EDGES);
+            for ($i = 0; $i < $edge_count; $i++) {
+                $off = $i * Format::EDGE_ROW_SIZE;
+                $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $edgeData, $off);
+                if ((int)$row['is_tree'] !== 0 || (int)$row['strength'] !== 0) {
+                    continue;
+                }
+                $child = (int)$row['child'];
+                $meta = $node_meta[$child] ?? null;
+                if ($meta === null || $meta['size'] <= 0) {
+                    continue;
+                }
+                $key = (int)$row['lid'] . ':' . $meta['size'];
                 if (!isset($groups[$key])) {
                     continue;
                 }
