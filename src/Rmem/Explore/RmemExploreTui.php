@@ -419,6 +419,88 @@ final class RmemExploreTui
         }
     }
 
+    private function showSubtreeInfo(): void
+    {
+        $nodeId = null;
+        if ($this->sandwich) {
+            $nodeId = $this->sandwichNodeId;
+        } elseif (isset($this->rows[$this->selected])) {
+            $nodeId = $this->rows[$this->selected]['node_id'];
+        }
+        if ($nodeId === null || $nodeId < 0) {
+            return;
+        }
+
+        // Compute subtree stats using RmemQueryService logic inline
+        $typeGroups = [];
+        $classGroups = [];
+        $totalSize = 0;
+        $scanned = 0;
+        $maxNodes = 100000;
+        $maxDepth = 50;
+
+        $stack = [[$nodeId, 0]];
+        $visited = [];
+        while ($stack) {
+            [$nid, $depth] = array_pop($stack);
+            if (isset($visited[$nid]) || $depth > $maxDepth) {
+                continue;
+            }
+            $visited[$nid] = true;
+            $scanned++;
+            if ($scanned > $maxNodes) {
+                break;
+            }
+            $size = $this->model->nodeSize($nid);
+            $totalSize += $size;
+
+            $type = $this->model->nodeType($nid);
+            $typeGroups[$type] = ($typeGroups[$type] ?? 0) + $size;
+
+            $class = $this->model->resolveClassPublic($nid);
+            if ($class !== null) {
+                $classGroups[$class] = ($classGroups[$class] ?? 0) + $size;
+            }
+
+            foreach ($this->model->getChildrenRaw($nid) as $childId) {
+                if (!isset($visited[$childId])) {
+                    $stack[] = [$childId, $depth + 1];
+                }
+            }
+        }
+
+        arsort($typeGroups);
+        arsort($classGroups);
+
+        // Display as a list
+        $this->sandwich = false;
+        $this->clearFilter();
+        $this->focusStack = [];
+        $label = $this->model->nodeLabel($nodeId);
+        $this->focusLabel = "Subtree: {$label} (" . SizeFormatter::format($totalSize) . ", {$scanned} nodes)";
+        $this->listMode = 'normal';
+        $this->rows = [];
+
+        foreach (array_slice($typeGroups, 0, 20, true) as $type => $total) {
+            $this->rows[] = [
+                'node_id' => -1,
+                'retained' => $total,
+                'shallow' => 0,
+                'label' => "[type] {$type}",
+            ];
+        }
+        foreach (array_slice($classGroups, 0, 20, true) as $class => $total) {
+            $this->rows[] = [
+                'node_id' => -1,
+                'retained' => $total,
+                'shallow' => 0,
+                'label' => "[class] {$class}",
+            ];
+        }
+        $this->selected = 0;
+        $this->topRow = 0;
+    }
+
     private function switchToBookmarks(): void
     {
         if ($this->bookmarks === []) {
@@ -574,6 +656,7 @@ final class RmemExploreTui
             'a' => $this->startAddressJump(),
             'm' => $this->toggleBookmark(),
             "'" => $this->switchToBookmarks(),
+            'i' => $this->showSubtreeInfo(),
             default => null,
         };
     }
@@ -1088,6 +1171,7 @@ final class RmemExploreTui
             '    /               Filter current list (Enter to apply)',
             '    a               Jump to address (0x...) or node (#N)',
             '    g               Go to definition (func/class table)',
+            '    i               Subtree info (type/class breakdown)',
             '    m               Toggle bookmark on selected node',
             "    '               Show bookmarks list",
             '    r               Toggle sort: retained / link name',
