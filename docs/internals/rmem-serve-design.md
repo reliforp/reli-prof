@@ -3,7 +3,6 @@
 ## Status
 
 Design proposal. Not yet implemented.
-Reviewed by codex (see rmem-serve-review-notes.md).
 
 ## Problem
 
