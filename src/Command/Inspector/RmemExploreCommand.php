@@ -60,6 +60,12 @@ final class RmemExploreCommand extends Command
                 'start with sandwich view focused on the node at this address (hex or decimal)',
             )
             ->addOption(
+                'memory-limit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'set PHP memory_limit (e.g. 4G, 512M)',
+            )
+            ->addOption(
                 'serve',
                 null,
                 InputOption::VALUE_OPTIONAL,
@@ -72,6 +78,12 @@ final class RmemExploreCommand extends Command
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $memoryLimit */
+        $memoryLimit = $input->getOption('memory-limit');
+        if (is_string($memoryLimit) && $memoryLimit !== '') {
+            ini_set('memory_limit', $memoryLimit);
+        }
+
         $file = (string) $input->getArgument('file');
         if (!is_file($file)) {
             $output->writeln("<error>File not found: {$file}</error>");

@@ -51,12 +51,24 @@ final class RmemServeCommand extends Command
                 'Auto-shutdown after N seconds of inactivity (default: 3600, 0 = never)',
                 '3600',
             )
+            ->addOption(
+                'memory-limit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'set PHP memory_limit (e.g. 4G, 512M)',
+            )
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $memoryLimit */
+        $memoryLimit = $input->getOption('memory-limit');
+        if (is_string($memoryLimit) && $memoryLimit !== '') {
+            ini_set('memory_limit', $memoryLimit);
+        }
+
         $file = (string)$input->getArgument('file');
         if (!is_file($file)) {
             $output->writeln("<error>File not found: {$file}</error>");
