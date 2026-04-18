@@ -603,3 +603,29 @@ wrap it later.
 - Sidecar merge writer for multiple independent builders
 - `skipCanonical` minimal-load mode for faster explore startup
 - Sorted address index / inverted class index as builder outputs
+
+## Bonus: activity indicators in TUI
+
+The async parent event loop enables free activity indicators.
+Since the parent is not blocked on `pollKey()`, it can update the
+TUI header/status bar on every tick (stream_select with ~100ms
+timeout):
+
+```
+┌─────────────────────────────────────────────────────┐
+│ rmem:explore [list all-edges]          ⣾ SCC...    │
+│ ...                                                 │
+│ ↑↓:select  Enter:drill  ...   ⠹ query processing  │
+└─────────────────────────────────────────────────────┘
+```
+
+- **SCC builder running**: Braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) in
+  header while builder child is alive (detected via
+  `pcntl_waitpid(WNOHANG)` each tick). Disappears on exit.
+- **Query in progress**: spinner in status bar while query child
+  is processing an AI request (parent knows via IPC pipe state).
+- **Sidecar reload**: brief flash `✓ SCC ready` after query child
+  reloads derived cache.
+
+Implementation cost: one `$spinner_frame = ($spinner_frame + 1) % 10`
+per render cycle, a few characters in the header/status line.
