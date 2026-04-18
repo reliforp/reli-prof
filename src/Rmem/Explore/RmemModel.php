@@ -57,12 +57,11 @@ final class RmemModel
         array $frameLabels,
         BinaryReader $reader,
     ) {
+        $this->nodeCount = $substrate->getNodeCount();
         $this->edgeCount = $substrate->getEdgeCount();
         $this->roots = $substrate->getRoots();
         $this->frameLabels = $frameLabels;
         $this->reader = $reader;
-        // nodeCount: count roots + rough estimate from edges
-        $this->nodeCount = $this->edgeCount > 0 ? $this->edgeCount : count($this->roots);
     }
 
     public static function fromSubstrate(

@@ -426,6 +426,11 @@ class GraphSubstrate
         return $this->edge_count;
     }
 
+    public function getNodeCount(): int
+    {
+        return count($this->node_sizes);
+    }
+
     public function hasSubtreeSizes(): bool
     {
         return $this->subtree_sizes !== [];
