@@ -23,26 +23,29 @@ connect, send a JSON query, receive a JSON response, and disconnect
 ## Architecture
 
 The primary mode is **explore-integrated**: `rmem:explore --serve`
-forks a query child after substrate construction. Parent runs the
-TUI, child serves the socket. Substrate is shared via CoW.
+forks a query child after substrate construction. Parent runs an
+async event loop (stream_select over tty + supervisor pipes),
+serving as both TUI and orchestrator. Child serves query socket.
 
 A standalone `rmem:serve` (headless) wraps the same query service
 for CI / AI-only use cases.
 
 ```
-┌──────────────────────────────────────────────┐
-│  rmem:explore --serve=/path/to/sock          │
-│                                              │
-│  load substrate + model                      │
-│  prewarm shared caches                       │
-│  clear build-only cast caches                │
-│  fork()                                      │
-│  ├─ parent: TUI loop (unchanged)             │
-│  └─ child:  socket accept → query → respond  │
-│             (read-only, never mutates TUI)    │
-│                                              │
-│  Substrate shared via CoW (FFI + PHP arrays) │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  rmem:explore --serve=/path/to/sock              │
+│                                                  │
+│  load substrate + model                          │
+│  prewarm shared caches                           │
+│  clear build-only cast caches                    │
+│  fork()                                          │
+│  ├─ parent: async event loop (tty + supervision) │
+│  │   owns TUI state, handles ui.*, server.*      │
+│  │   supervises query child + builder children   │
+│  └─ child:  socket accept → query.* → respond    │
+│             (read-only, never mutates TUI)        │
+│                                                  │
+│  Substrate shared via CoW (FFI + PHP arrays)     │
+└──────────────────────────────────────────────────┘
         ↕ Unix domain socket
 ┌──────────────┐  ┌──────────────┐
 │  rmem:query   │  │ AI assistant │
@@ -61,11 +64,20 @@ when `$XDG_RUNTIME_DIR` is not set.
 
 ### Action namespaces
 
-Actions are namespaced to separate concerns:
+Actions are namespaced to separate concerns and ownership:
 
-- `query.*` — read-only data queries (always available)
-- `ui.*` — TUI state read/write (requires `--serve-control`, phase 2)
-- `server.*` — lifecycle management
+- `query.*` — read-only data queries, handled by query child
+- `ui.*` — TUI state read/write, handled by parent (requires `--serve-control`)
+- `server.*` — lifecycle management, handled by parent
+
+When parent acts as router (async mode), it dispatches `query.*`
+to the child via IPC and handles `ui.*` / `server.*` directly.
+Alternatively, two sockets can separate the concerns:
+
+```
+control socket: parent owns server.* and ui.*
+query socket:   query child owns query.*
+```
 
 ### Request format
 
@@ -91,6 +103,7 @@ Actions are namespaced to separate concerns:
 {"action": "query.find_class_def", "name": "App\\Models\\User"}
 {"action": "query.subtree_stats", "node_id": 123, "max_nodes": 100000, "max_depth": 50}
 {"action": "query.filter", "node_id": 123, "pattern": "password", "limit": 100}
+{"action": "query.scc_ranking", "limit": 50}
 ```
 
 ### Response format
@@ -105,15 +118,20 @@ Actions are namespaced to separate concerns:
 }
 {"ok": true, "data": {"type": "ObjectContext", "class": "User", ...}}
 {"ok": false, "error": "Node not found: 999999"}
+{"ok": false, "error_code": "not_ready", "error": "SCC data is still computing"}
 ```
 
 All list responses include `total_count`, `truncated`, and `limit`
 fields. Default limit is 100 for children/parents/rankings, 50 for
 top_retained, configurable per-request.
 
+Distinguish empty results from not-ready: `query.scc_ranking` returns
+`error_code: "not_ready"` while computing, `data: []` when ready but
+no cycles found.
+
 ### server.hello response
 
-Returns file identity and protocol version for client validation:
+Returns file identity, protocol version, and derived data readiness:
 
 ```json
 {
@@ -124,7 +142,12 @@ Returns file identity and protocol version for client validation:
     "rmem_path": "/path/to/output.rmem",
     "rmem_size": 1234567890,
     "node_count": 34000000,
-    "edge_count": 60000000
+    "edge_count": 60000000,
+    "derived": {
+      "generation": "mtime:size:hash",
+      "scc_status": "computing",
+      "scc_ready": false
+    }
   }
 }
 ```
@@ -132,14 +155,14 @@ Returns file identity and protocol version for client validation:
 ### Composite actions
 
 `query.sandwich` returns parents + node_detail + children in one
-response, avoiding 3 round-trips:
+response:
 
 ```json
 {
   "ok": true,
   "data": {
     "parents": [...],
-    "detail": {"type": "...", "class": "...", ...},
+    "detail": {"type": "...", "class": "...", "scc_status": "ready", ...},
     "children": [...]
   },
   "truncated": {"parents": false, "children": true}
@@ -147,7 +170,8 @@ response, avoiding 3 round-trips:
 ```
 
 `query.subtree_stats` returns type/class breakdown under a node.
-Bounded by `max_nodes` and `max_depth` to prevent runaway walks:
+Bounded by `max_nodes` and `max_depth` to limit both response size
+and internal work:
 
 ```json
 {
@@ -155,12 +179,35 @@ Bounded by `max_nodes` and `max_depth` to prevent runaway walks:
   "data": {
     "total_retained": 12345678,
     "node_count": 456,
+    "scanned_count": 456,
     "type_breakdown": [{"type": "ZendArray", "count": 200, "total": 5000000}, ...],
     "class_breakdown": [{"class": "User", "count": 50, "total": 3000000}, ...],
     "truncated": false
   }
 }
 ```
+
+### Work budgets
+
+Response `limit` bounds output size but not internal work. For
+actions that scan large node sets, work budgets prevent CPU and
+memory pressure in the query child:
+
+| Action | Work budget strategy |
+|--------|---------------------|
+| children, parents | CSR slice, naturally bounded |
+| top_retained | top-k heap (O(N) scan, O(limit) memory) |
+| class_ranking, type_ranking | prewarm/cached, O(1) to serve |
+| nodes_by_class, nodes_by_type | full scan, use `scanned_count` + `has_more` |
+| subtree_stats | `max_nodes` + `max_depth` bound traversal |
+| filter | scan only current children list, not global |
+
+For `nodes_by_class` with 34M nodes, an `exact_total=false` option
+avoids full-scan counting: return `scanned_count` and `has_more`
+instead of `total_count`.
+
+Cached rankings (class, type) are cheap after prewarm. Uncached
+rankings return `error_code: "not_ready"` rather than blocking.
 
 ## Implementation
 
@@ -188,6 +235,20 @@ final class RmemQueryService
 }
 ```
 
+### Substrate public API for derived reload
+
+The query child needs to reload derived sections at request
+boundaries. Required additions to FfiCsrGraphSubstrate:
+
+```php
+public function reloadDerivedCacheIfAvailable(string $rmemPath): bool
+public function hasSccData(): bool
+public function getDerivedGeneration(): ?string
+```
+
+`reloadDerivedCacheIfAvailable()` must only be called between
+requests, never during query processing.
+
 ### Prewarm before fork
 
 Shared caches should be populated before fork so both parent and
@@ -204,27 +265,52 @@ $reader->clearCastCache();           // drop build-only FFI copies
 
 Lazy caches created after fork (e.g. subtree_stats, search results)
 are worker-local. This is fine — they are transient and should be
-bounded by response limits.
+bounded by work budgets.
 
 ### Process model
 
+Parent runs an async event loop using `stream_select` over the tty
+fd and supervisor pipes. This replaces the current blocking
+`pollKey()`, enabling the parent to:
+
+- Render TUI without blocking on input
+- Detect child exits via `pcntl_waitpid(WNOHANG)` each loop tick
+- Handle `ui.*` requests via pipe from query child (phase 2)
+- Restart query child after builder completion
+
+CPU-heavy work (graph traversal, ranking computation, SCC) must
+never run in the parent — it blocks the event loop and freezes the
+TUI. All heavy read-only operations are isolated in child processes.
+
 ```
-parent:
+parent (async event loop):
   open rmem
   build substrate/model (skipScc: true)
   prewarm shared indexes
   clear build-only cast caches
+  optionally fork SCC builder child
   fork query child
-  run normal TUI loop (unchanged)
+  event loop:
+    stream_select(tty_fd, child_pipes, ...)
+    handle tty input → TUI dispatch
+    handle child status → restart if needed
+    handle ui.* pipe → TUI state mutation (phase 2)
 
-child:
+query child:
   create unix socket (owner-only directory)
   write PID to <socket_path>.pid
   accept loop:
+    check sidecar generation (between requests)
+    if changed: reload derived cache, update capabilities
     read newline-delimited JSON
     route to RmemQueryService
     write JSON response
-  handle SIGTERM → unlink socket → exit
+  handle SIGTERM → drain current request → unlink socket → exit
+
+SCC builder child (optional):
+  compute SCC using inherited substrate (CoW)
+  write complete sidecar atomically
+  exit
 ```
 
 ### Client integration
@@ -232,11 +318,9 @@ child:
 For CLI:
 
 ```bash
-# One-shot query
 echo '{"action":"query.children","node_id":123}' | \
   nc -U $XDG_RUNTIME_DIR/reli/rmem-serve/abc123.sock
 
-# Or a thin PHP wrapper
 php reli rmem:query --server=$XDG_RUNTIME_DIR/reli/rmem-serve/abc123.sock \
   --node=123 --children
 ```
@@ -244,7 +328,6 @@ php reli rmem:query --server=$XDG_RUNTIME_DIR/reli/rmem-serve/abc123.sock \
 For AI assistants:
 
 ```bash
-# Direct socket query via Bash tool
 echo '{"action":"query.sandwich","node_id":123}' | \
   nc -U $XDG_RUNTIME_DIR/reli/rmem-serve/abc123.sock | jq .
 ```
@@ -253,38 +336,35 @@ echo '{"action":"query.sandwich","node_id":123}' | \
 
 ### FFI C buffers
 
-FFI CSR buffers (int32/int64 arrays allocated by FFI::new) live in
-the C heap. After fork, both processes map the same physical pages.
-As long as the query child treats them as read-only, no CoW page
-faults occur on the bulk data. These are expected to share well.
+FFI CSR buffers are expected to share well under CoW as long as
+workers treat them as read-only. The C-heap buffers allocated by
+FFI::new() are shared at the physical page level after fork, and
+read-only access does not trigger page faults.
 
 ### PHP arrays and CData wrappers
 
-Both FFI CData wrappers and PHP arrays are refcounted zvals. When
-the child process accesses one, the refcount increment triggers a
-CoW copy — but only of the page containing the refcount header
-(zend_refcounted_h). The actual data (C buffer behind CData, Bucket
-table behind PHP array) resides on separate pages and remains shared.
+Both FFI CData wrappers and PHP arrays are refcounted zvals. CoW
+copies occur on the page containing the refcount header, not the
+bulk data. However, PHP array CoW behavior is less predictable
+than FFI C buffers — zval, HashTable, and allocator metadata can
+be dirtied by runtime operations beyond simple reads.
 
-However, PHP array CoW behavior is less predictable than FFI C
-buffers. zval, HashTable, and allocator metadata can be dirtied by
-runtime operations beyond simple reads. Memory assumptions should
-be validated with PSS / Private_Dirty measurements, not RSS.
+Memory assumptions should be validated with PSS / Private_Dirty
+measurements, not RSS.
 
 ### Measurement
 
 Validate CoW effectiveness using `/proc/<pid>/smaps_rollup`:
 
 ```
-parent after load:         Pss, Private_Dirty
+parent after load:              Pss, Private_Dirty
 child immediately after fork:   Pss, Private_Dirty
 child after query.node_detail:  Pss, Private_Dirty
 child after class_ranking:      Pss, Private_Dirty
 child after subtree_stats:      Pss, Private_Dirty
 ```
 
-This shows which lazy operations increase private memory. Use the
-results to classify operations as "prewarm before fork" vs
+Use results to classify operations as "prewarm before fork" vs
 "budgeted worker-local".
 
 ## Resource management
@@ -308,13 +388,12 @@ and optionally requires it as a token in requests.
 - `--timeout`: auto-shutdown after N seconds of inactivity (default: 3600)
 - PID written to `<socket_path>.pid` for management
 - `rmem:serve --status` or `rmem:serve --stop` for lifecycle control
-- Parent monitors child via `pcntl_waitpid(WNOHANG)` in TUI loop;
-  restarts on unexpected exit
+- Parent monitors query child via `pcntl_waitpid(WNOHANG)` in
+  event loop; restarts on unexpected exit
 
 ### Response limits
 
-All list-returning actions enforce default limits to prevent
-multi-GB JSON responses:
+All list-returning actions enforce default limits:
 
 | Action | Default limit | Configurable |
 |--------|--------------|-------------|
@@ -325,8 +404,8 @@ multi-GB JSON responses:
 | subtree_stats | max_nodes=100000, max_depth=50 | yes |
 | filter | 100 | yes |
 
-Responses include `total_count` and `truncated: true` when results
-are clipped.
+Responses include `total_count` (or `scanned_count` + `has_more`)
+and `truncated: true` when results are clipped.
 
 ## Background computation (phase 1.5)
 
@@ -338,12 +417,12 @@ exploration:
 | Data | Cost | Needed for |
 |------|------|-----------|
 | SCC (Tarjan + degree trimming) | 30-60s, ~400 MB FFI | cycle detection, retained accuracy |
-| Canonical grouping | 10-20s, ~400 MB FFI | dedup, address grouping |
-| Future: address index | seconds | find_by_address optimization |
-| Future: owner paths | seconds | pre-computed root-to-node labels |
+| Future: sorted address index | seconds | find_by_address optimization |
+| Future: inverted class index | seconds | fast nodes_by_class |
 
-With the fork model, these can be computed in a background child
-process while the TUI and query server are already running.
+Note: canonical grouping is part of the initial load path in the
+current loader and cannot be moved to background without a
+`skipCanonical` minimal-load refactor.
 
 ### Architecture
 
@@ -351,16 +430,41 @@ process while the TUI and query server are already running.
 load substrate (CSR + subtree sizes)   ← minimal, explore starts here
 fork query child                       ← query.* ready immediately
 fork SCC builder child                 ← background, heavy computation
-  ├─ buildCanonicalFfi()
-  ├─ computeSccFfi()
+  ├─ computeSccFfi() (using inherited CSR via CoW)
   ├─ writeDerivedCache() → .rmem.derived
-  ├─ signal parent + query child (SIGUSR1)
   └─ exit
 ```
 
-The SCC builder writes results to the sidecar cache (.rmem.derived),
-which already exists as a persistence mechanism. Parent and query
-child reload the sidecar on signal to gain SCC-aware capabilities.
+Phase 1.5 is limited to a **single SCC builder**. The current
+`DerivedCacheWriter` writes the entire sidecar file atomically
+(temp + rename). Multiple concurrent builders writing different
+sections would clobber each other — the last rename wins. True
+independent builders require a merge writer with file locking.
+
+### Query child self-reload
+
+The query child detects sidecar updates at request boundaries,
+without parent involvement:
+
+```
+query child accept loop:
+  before accepting next request:
+    check sidecar mtime/size/generation
+    if changed:
+      reloadDerivedCacheIfAvailable()
+      update scc_status capability flag
+  handle next request
+```
+
+This avoids the need for the parent to manage query child restarts
+or signal handling. The parent's event loop does not need to
+participate in derived data lifecycle.
+
+The alternative — parent-driven graceful restart of query child —
+is viable when the parent has an async event loop (stream_select).
+Both approaches are valid; self-reload is simpler for phase 1.5,
+parent-driven restart is cleaner for phase 2 when the parent is
+already an orchestrator.
 
 ### Progressive capability
 
@@ -371,68 +475,15 @@ Before SCC completes, queries return SCC-unaware results:
 → {"ok": true, "data": {..., "scc_id": null, "scc_status": "computing"}}
 
 {"action": "query.scc_ranking"}
-→ {"ok": true, "data": [], "scc_status": "computing"}
+→ {"ok": false, "error_code": "not_ready", "error": "SCC data is still computing"}
 ```
 
-After SIGUSR1 → sidecar reload:
+After sidecar reload:
 
 ```json
 {"action": "query.node_detail", "node_id": 123}
 → {"ok": true, "data": {..., "scc_id": 3, "scc_node_count": 12, "scc_status": "ready"}}
-
-{"action": "query.scc_ranking"}
-→ {"ok": true, "data": [{"scc_id": 0, "node_count": 45, "total_size": ...}, ...]}
 ```
-
-The `scc_status` field (`"computing"` / `"ready"` / `"unavailable"`)
-lets clients decide whether to show cycle information or defer.
-
-### Sidecar as shared state
-
-The sidecar cache is the natural exchange mechanism:
-
-1. **Already implemented**: `writeDerivedCache` / `loadDerivedFromCache`
-   handle subtree sizes, SCC node map, and SCC profiles.
-2. **File-based**: no shared memory or pipe bandwidth concerns.
-   SCC results are int32[N] arrays (~136 MB for 34M nodes), which
-   write/read in ~1 second via chunked FFI::addr I/O.
-3. **Persistent**: next startup gets SCC for free (cache hit).
-4. **Extensible**: future derived data (address index, owner paths)
-   follows the same pattern — add a section, write in background,
-   signal on completion.
-
-### Query child restart on completion
-
-When the SCC builder finishes writing the sidecar and exits, the
-parent gracefully restarts the query child:
-
-```
-SCC builder child exits
-  → parent notices via pcntl_waitpid(WNOHANG) in TUI loop
-  → parent sends SIGTERM to query child
-  → query child drains current request, exits
-  → parent forks new query child
-  → new child loads model + sidecar (now includes SCC)
-  → prewarm shared caches
-  → ready to serve (with SCC-aware responses)
-```
-
-This is simpler and safer than hot-reloading FFI arrays via
-signal handlers:
-
-- No risk of replacing buffers mid-query
-- New child starts in a clean state with correct sidecar data
-- No signal handler complexity
-- prewarm runs naturally as part of child initialization
-
-The restart cost is sidecar read + prewarm (a few seconds). During
-this gap, clients get connection-refused and can retry. The protocol
-should document this transient unavailability.
-
-For the TUI parent, no restart is needed — explore uses skipScc
-and does not display SCC information. If future TUI features need
-SCC, the parent can read the sidecar independently (single-threaded,
-no concurrency concern).
 
 ### Builder isolation
 
@@ -445,30 +496,6 @@ The builder's only output is the sidecar file. It does not
 communicate results via pipe or shared memory. This makes the
 design robust against builder crashes — the worst case is no SCC
 data, which is the same as the current skipScc mode.
-
-### Generalization
-
-The same background-builder pattern works for any expensive derived
-data:
-
-```
-fork derived-data builder
-  ├─ compute expensive thing
-  ├─ write to sidecar section
-  ├─ signal parent + query child
-  └─ exit
-```
-
-Candidates beyond SCC:
-- **Sorted address index**: enables O(log N) find_by_address
-- **Inverted class index**: class_name → [node_id, ...] for fast
-  nodes_by_class without full scan
-- **Pre-computed owner paths**: root-to-node path labels for report
-  findings, avoiding per-query DFS
-
-Each builder is independent and can run concurrently with others
-(separate fork children). Sidecar sections are independent — one
-builder crashing does not invalidate other sections.
 
 ## UI navigation (phase 2)
 
@@ -486,12 +513,14 @@ Phase 2 adds `ui.*` actions behind `--serve-control` opt-in:
 {"action": "ui.get_current_selection"}
 ```
 
-`ui.*` actions require IPC between child and parent (pipe pair).
-The parent TUI loop must be modified to check the pipe — either
-via `stream_select` on tty + pipe, or via a timeout-based poll.
+With the async parent event loop already in place, `ui.*` requests
+arrive via pipe from query child (or via a control socket owned by
+parent). The parent applies state mutations and renders on the next
+tick.
 
 `ui.*` responses include a `ui_revision` counter. Navigation
-requests can include `if_revision` to reject stale navigations.
+requests can include `if_revision` to reject stale navigations
+(e.g. AI sending a navigate based on an outdated get_current_focus).
 
 ### Guided investigation workflow
 
@@ -508,55 +537,69 @@ AI:    query.subtree_stats result_node
 AI:    "3,000 User instances, 2.8 KB each. Eloquent models."
 ```
 
+### State query (AI ← human screen)
+
+AI can read what the human is looking at:
+
+```json
+{"action": "ui.get_current_focus"}
+→ {"ok": true, "data": {"node_id": 456, "label": "...", "mode": "sandwich"}, "ui_revision": 42}
+```
+
 ## Alternatives considered
 
 ### HTTP server
 
-Heavier than needed. JSON over TCP adds HTTP parsing overhead.
-Unix socket is simpler, faster, and avoids port management.
-Could add HTTP as a future option if remote access is needed.
+Heavier than needed. Unix socket is simpler and avoids port management.
 
 ### stdin/stdout line mode
 
-Works well for single-session use but cannot be shared between
-explore and AI, and background process stdin management is awkward.
+Cannot be shared between explore and AI, and background process
+stdin management is awkward.
 
 ### MCP (Model Context Protocol) server
 
-Good integration with Claude Code but vendor-specific. CLI users
-get no benefit. A socket server is more universal — an MCP adapter
-can wrap it later if needed.
+Vendor-specific. Socket server is more universal — MCP adapter can
+wrap it later.
 
 ## Implementation order
 
-### Phase 1: query-only fork
+### Phase 1: query-only fork + async parent
 
-1. `RmemQueryService` — extract model-to-protocol conversion from TUI
-2. `query.*` minimal set: `server.hello`, `query.node_detail`,
+1. Async TUI event loop: replace blocking `pollKey()` with
+   `stream_select` over tty fd
+2. `RmemQueryService` — extract model-to-protocol conversion
+3. `query.*` minimal set: `server.hello`, `query.node_detail`,
    `query.path_to_root`, `query.children`, `query.parents`,
    `query.sandwich`
-3. `rmem:explore --serve` — parent TUI, fork query child with socket
-4. Response limits: `limit`, `truncated`, `total_count`
-5. Socket security: `$XDG_RUNTIME_DIR`, owner-only dir, server_id
-6. Protocol: `server.hello` with file_identity + protocol_version
-7. Additional queries: `find_by_address`, definition lookup,
+4. `rmem:explore --serve` — parent event loop, fork query child
+5. Response limits: `limit`, `truncated`, `total_count`
+6. Work budgets: top-k heap for rankings, `scanned_count`/`has_more`
+7. Socket security: `$XDG_RUNTIME_DIR`, owner-only dir, server_id
+8. Additional queries: `find_by_address`, definition lookup,
    class/type/top_retained ranking, `subtree_stats`
-8. Standalone `rmem:serve` — headless wrapper around RmemQueryService
-9. PSS / Private_Dirty measurement to validate CoW assumptions
+9. Standalone `rmem:serve` — headless wrapper around RmemQueryService
+10. PSS / Private_Dirty measurement to validate CoW assumptions
 
-### Phase 1.5: background computation
+### Phase 1.5: background SCC builder
 
-10. SCC background builder: fork child, compute, write sidecar, exit
-11. Parent detects builder exit via pcntl_waitpid, restarts query child
-12. New query child loads sidecar with SCC data
-13. `scc_status` field in protocol responses
-14. `query.scc_ranking` action (available after query child restart)
-15. Generalized builder pattern for future derived data
+11. SCC builder: fork child, compute, write sidecar, exit
+12. Query child self-reload: check sidecar generation between requests
+13. Substrate public API: `reloadDerivedCacheIfAvailable()`, `hasSccData()`,
+    `getDerivedGeneration()`
+14. `scc_status` / `error_code: "not_ready"` in protocol responses
+15. `query.scc_ranking` action
+16. Parent-driven query child restart as optional upgrade
 
 ### Phase 2: UI navigation
 
-15. `ui.*` IPC via pipe between query child and TUI parent
-16. `ui.navigate_sandwich`, `ui.get_current_focus`, etc.
-17. TUI input loop timeout or stream_select for pipe reads
-18. `ui_revision` for stale navigation rejection
-19. `--serve-control` opt-in for `ui.*` actions
+17. `ui.*` IPC: pipe between query child and parent
+18. `ui.navigate_sandwich`, `ui.get_current_focus`, etc.
+19. `ui_revision` for stale navigation rejection
+20. `--serve-control` opt-in for `ui.*` actions
+
+### Future
+
+- Sidecar merge writer for multiple independent builders
+- `skipCanonical` minimal-load mode for faster explore startup
+- Sorted address index / inverted class index as builder outputs
