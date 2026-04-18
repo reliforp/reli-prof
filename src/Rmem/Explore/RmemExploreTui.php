@@ -282,21 +282,12 @@ final class RmemExploreTui
 
         // SCC → member list
         if (isset($row['_scc_nodes'])) {
-            $sccId = $row['_scc_id'] ?? '?';
-            $this->focusLabel = "SCC#{$sccId} members";
-            $this->listMode = 'scc_members';
-            $this->rows = [];
-            foreach ($row['_scc_nodes'] as $nid) {
-                $this->rows[] = [
-                    'node_id' => $nid,
-                    'retained' => $this->model->subtreeSize($nid),
-                    'shallow' => $this->model->nodeSize($nid),
-                    'label' => $this->model->nodeLabel($nid),
-                ];
-            }
-            usort($this->rows, fn ($a, $b) => $b['retained'] <=> $a['retained']);
-            $this->selected = 0;
-            $this->topRow = 0;
+            $this->showSccMembers([
+                'id' => $row['_scc_id'] ?? 0,
+                'nodes' => $row['_scc_nodes'],
+                'node_count' => count($row['_scc_nodes']),
+                'total_size' => $row['retained'],
+            ]);
             return;
         }
 
@@ -446,6 +437,30 @@ final class RmemExploreTui
 
     private function showCycles(): void
     {
+        // If current node belongs to an SCC, jump directly to its members
+        $focusNodeId = null;
+        if ($this->sandwich) {
+            if ($this->activePane === 'children' && isset($this->childRows[$this->childSelected])) {
+                $focusNodeId = $this->childRows[$this->childSelected]['node_id'];
+            } elseif ($this->activePane === 'parents' && isset($this->parentRows[$this->parentSelected])) {
+                $focusNodeId = $this->parentRows[$this->parentSelected]['node_id'];
+            } else {
+                $focusNodeId = $this->sandwichNodeId;
+            }
+        } elseif (isset($this->rows[$this->selected])) {
+            $focusNodeId = $this->rows[$this->selected]['node_id'];
+        }
+        if ($focusNodeId !== null && $focusNodeId >= 0) {
+            $sccId = $this->model->getNodeSccId($focusNodeId);
+            if ($sccId !== null) {
+                $profile = $this->model->getSccProfile($sccId);
+                if ($profile !== null) {
+                    $this->showSccMembers($profile);
+                    return;
+                }
+            }
+        }
+
         $profiles = $this->model->getSccProfiles();
         if ($profiles === null) {
             $this->sandwich = false;
@@ -498,6 +513,29 @@ final class RmemExploreTui
                 '_scc_id' => $profile['id'],
             ];
         }
+        $this->selected = 0;
+        $this->topRow = 0;
+    }
+
+    /** @param array{id: int, nodes: list<int>, node_count: int, total_size: int, signature?: string} $profile */
+    private function showSccMembers(array $profile): void
+    {
+        $sccId = $profile['id'];
+        $this->sandwich = false;
+        $this->clearFilter();
+        $this->focusStack = [];
+        $this->focusLabel = "SCC#{$sccId} members";
+        $this->listMode = 'scc_members';
+        $this->rows = [];
+        foreach ($profile['nodes'] as $nid) {
+            $this->rows[] = [
+                'node_id' => $nid,
+                'retained' => $this->model->subtreeSize($nid),
+                'shallow' => $this->model->nodeSize($nid),
+                'label' => $this->model->nodeLabel($nid),
+            ];
+        }
+        usort($this->rows, fn ($a, $b) => $b['retained'] <=> $a['retained']);
         $this->selected = 0;
         $this->topRow = 0;
     }
