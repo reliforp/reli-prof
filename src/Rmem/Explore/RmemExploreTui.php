@@ -578,16 +578,17 @@ final class RmemExploreTui
                     $targets[] = "→ [{$link}] {$childLabel}";
                 }
             }
-            $arrow = $targets !== [] ? ' → ' . implode(', ', $targets) : '';
-            if (strlen($arrow) > 80) {
-                $arrow = substr($arrow, 0, 77) . '...';
+            $arrow = $targets !== [] ? implode(', ', $targets) : '';
+            if (strlen($arrow) > 60) {
+                $arrow = substr($arrow, 0, 57) . '...';
             }
 
             $this->rows[] = [
                 'node_id' => $nid,
                 'retained' => $this->model->subtreeSize($nid),
                 'shallow' => $this->model->nodeSize($nid),
-                'label' => $this->model->nodeLabel($nid) . $arrow,
+                'label' => $this->model->nodeLabel($nid),
+                'link_name' => $arrow !== '' ? $arrow : null,
             ];
         }
 
