@@ -939,14 +939,17 @@ final class RmemExploreTui
             $lines[$lastIdx] .= "  \e[33m[filter: {$this->filterPattern}]\e[0m";
         }
 
-        $output = implode("\n", $lines) . $sidebarBuf;
-        if ($output === $this->lastRendered) {
-            return; // skip redraw if nothing changed
+        $body = implode("\n", array_slice($lines, 1)) . $sidebarBuf;
+        $header = $lines[0] ?? '';
+
+        if ($body !== $this->lastRendered) {
+            // Body changed: full redraw (cursor home, overwrite, clear trailing)
+            $this->lastRendered = $body;
+            $this->term->write("\e[H" . $header . "\n" . $body . "\e[J");
+        } else {
+            // Body unchanged: only update header line (spinner)
+            $this->term->write("\e[H" . $header . "\e[K");
         }
-        $this->lastRendered = $output;
-        // Move cursor home and overwrite instead of clear+write to reduce flicker.
-        // \e[H moves to top-left, \e[J clears from cursor to end (after write).
-        $this->term->write("\e[H" . $output . "\e[J");
     }
 
     /**
