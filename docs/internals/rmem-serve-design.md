@@ -239,14 +239,151 @@ Good integration with Claude Code but:
 ### Embedded in explore
 
 explore TUI with a `:query` command mode. Works for human use but
-AI cannot drive a TUI effectively.
+AI cannot drive a TUI effectively. See the integrated mode below
+for a better approach.
+
+## Explore-integrated serve mode
+
+### Concept
+
+Instead of a standalone serve process, explore itself opens a socket
+and serves queries while the human uses the TUI. One process, one
+substrate, shared between human and AI.
+
+```
+┌─────────────────────────────────────────────┐
+│  rmem:explore --serve=/tmp/rmem.sock        │
+│                                             │
+│  ┌───────────┐    ┌──────────────────────┐  │
+│  │  RmemModel │←──│  TUI (human via tty) │  │
+│  │ (substrate,│    └──────────────────────┘  │
+│  │  labels,   │    ┌──────────────────────┐  │
+│  │  locations)│←──│ Socket (AI via query) │  │
+│  └───────────┘    └──────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+### Why not separate processes
+
+- Substrate memory: 2-5 GB for large rmem. Two processes = double.
+- Data consistency: human and AI see exactly the same loaded data.
+- No synchronization needed — single-threaded, interleaved.
+
+### Event loop
+
+Replace the current blocking `pollKey()` with `stream_select` over
+both the tty file descriptor and the socket:
+
+```php
+while ($this->running) {
+    $this->render();
+
+    // Wait for tty input OR socket connection
+    $read = [$ttyFd];
+    if ($serverSocket) {
+        $read[] = $serverSocket;
+    }
+    if ($clientSocket) {
+        $read[] = $clientSocket;
+    }
+    stream_select($read, $w, $e, null); // block until either is ready
+
+    if (in_array($ttyFd, $read)) {
+        $key = $this->term->readKey();
+        $this->dispatch($key);
+    }
+    if ($serverSocket && in_array($serverSocket, $read)) {
+        $clientSocket = stream_socket_accept($serverSocket);
+    }
+    if ($clientSocket && in_array($clientSocket, $read)) {
+        $line = fgets($clientSocket);
+        $response = $this->handleQuery(json_decode($line, true));
+        fwrite($clientSocket, json_encode($response) . "\n");
+    }
+}
+```
+
+### Navigation actions (AI → human screen)
+
+Beyond query-only actions, the socket accepts navigation commands
+that change the TUI display state:
+
+```json
+{"action": "navigate", "node_id": 12345}
+{"action": "navigate_roots"}
+{"action": "navigate_class_ranking"}
+{"action": "navigate_sandwich", "node_id": 12345}
+{"action": "navigate_back"}
+```
+
+When the AI sends a navigate action:
+1. explore updates its internal state (enterSandwich, switchToRoots, etc.)
+2. The next render() reflects the change
+3. The human sees the screen update in real time
+
+This enables a guided investigation workflow:
+
+```
+Human: "このメモリの出所を追って"
+AI:    navigate to roots → query children → find largest
+AI:    navigate to call_frames → query children → find hotspot
+AI:    "call_frames が 1.5 GB で最大です。フレーム #8 を見ます"
+AI:    navigate to frame #8 → sandwich view appears
+AI:    "このフレームの $result 変数に 500 MB。User の配列です"
+Human: "そこもうちょい見せて"
+AI:    navigate into $result → children expand
+AI:    "3000 個の User インスタンス、各 2.8 KB。Eloquent ですね"
+```
+
+### State query (AI ← human screen)
+
+AI can also read what the human is looking at:
+
+```json
+{"action": "get_current_focus"}
+→ {"ok": true, "data": {"node_id": 456, "label": "...", "mode": "sandwich"}}
+
+{"action": "get_current_selection"}
+→ {"ok": true, "data": {"pane": "children", "selected_node_id": 789}}
+```
+
+This lets the AI react to human navigation:
+
+```
+Human navigates to an object in explore
+Human: "これ何？"
+AI:    get_current_focus → node #456
+AI:    query node_detail #456, path_to_root #456
+AI:    "これは ObjectContext: PDOStatement で、
+       call_frames → handle:42 → $stmt 経由で保持されてます"
+```
+
+### Standalone fallback
+
+When `--serve` is not specified, explore works exactly as today —
+no socket, no integration. The serve mode is opt-in.
+
+When explore is not needed (CI, batch analysis), a standalone
+`rmem:serve` command provides the same query interface without the
+TUI overhead:
+
+```bash
+# Headless mode — AI-only investigation
+php reli rmem:serve output.rmem --socket=/tmp/rmem.sock
+```
+
+This is a thin wrapper: load model, bind socket, run the same query
+router in a simple accept loop.
 
 ## Implementation order
 
-1. Socket server + query router (core)
+1. Socket server + query router (core) — standalone rmem:serve
 2. Basic actions: roots, children, parents, node_detail, path_to_root
 3. Rankings: class_ranking, type_ranking, top_retained
 4. Search: find_by_address, find_function_def, find_class_def
 5. Composite: sandwich, subtree_stats
 6. Lifecycle: timeout, --status, --stop, PID file
 7. Client wrapper: rmem:query --server=... flag
+8. Explore integration: stream_select event loop, --serve flag
+9. Navigation actions: navigate, navigate_back, get_current_focus
+10. State queries: get_current_selection, get_current_filter
