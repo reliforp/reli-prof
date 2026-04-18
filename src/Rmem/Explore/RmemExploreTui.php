@@ -280,6 +280,26 @@ final class RmemExploreTui
             return;
         }
 
+        // SCC → member list
+        if (isset($row['_scc_nodes'])) {
+            $sccId = $row['_scc_id'] ?? '?';
+            $this->focusLabel = "SCC#{$sccId} members";
+            $this->listMode = 'normal';
+            $this->rows = [];
+            foreach ($row['_scc_nodes'] as $nid) {
+                $this->rows[] = [
+                    'node_id' => $nid,
+                    'retained' => $this->model->subtreeSize($nid),
+                    'shallow' => $this->model->nodeSize($nid),
+                    'label' => $this->model->nodeLabel($nid),
+                ];
+            }
+            usort($this->rows, fn ($a, $b) => $b['retained'] <=> $a['retained']);
+            $this->selected = 0;
+            $this->topRow = 0;
+            return;
+        }
+
         $this->enterSandwich($row['node_id'], $this->model->nodeLabel($row['node_id']));
     }
 
@@ -463,14 +483,15 @@ final class RmemExploreTui
                 SizeFormatter::format($profile['total_size']),
                 $sig !== '' ? $sig : '(no classes)',
             );
-            // Use the first node as representative for Enter → sandwich
-            $repNode = $profile['nodes'][0] ?? -1;
+            // Store SCC profile for drill-down into members
             $this->rows[] = [
-                'node_id' => $repNode,
+                'node_id' => -1,
                 'retained' => $profile['total_size'],
-                'shallow' => 0,
+                'shallow' => $profile['node_count'],
                 'label' => $label,
                 'link_name' => 'SCC#' . $profile['id'],
+                '_scc_nodes' => $profile['nodes'] ?? [],
+                '_scc_id' => $profile['id'],
             ];
         }
         $this->selected = 0;
