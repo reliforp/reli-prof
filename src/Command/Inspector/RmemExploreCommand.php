@@ -163,19 +163,46 @@ final class RmemExploreCommand extends Command
             $output->writeln("<info>query server forked (pid={$queryChildPid}, socket={$socketPath})</info>");
         }
 
+        // Fork SCC builder if sidecar doesn't already have SCC
+        $sccBuilderPid = null;
+        if (extension_loaded('pcntl')) {
+            $rmemPath = realpath($file) ?: $file;
+            $cacheReader = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheReader::open($rmemPath);
+            $hasScc = $cacheReader !== null
+                && $cacheReader->hasSection(\Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SCC_NODE_MAP);
+            if (!$hasScc) {
+                $sccBuilderPid = pcntl_fork();
+                if ($sccBuilderPid === 0) {
+                    // Child: compute SCC and write sidecar
+                    $this->runSccBuilder($file);
+                    exit(0);
+                }
+                if ($sccBuilderPid > 0) {
+                    $output->writeln("<info>SCC builder forked (pid={$sccBuilderPid})</info>");
+                }
+            }
+        }
+
         $term = new Terminal();
         $tui = new RmemExploreTui($model, $term, $keymap, $initialNodeId, $socketPath);
         if ($queryChildPid !== null) {
             $tui->setQueryChildPid($queryChildPid);
         }
+        if ($sccBuilderPid !== null && $sccBuilderPid > 0) {
+            $tui->setSccBuilderPid($sccBuilderPid);
+        }
 
         try {
             $tui->run();
         } finally {
-            // Cleanup child
+            // Cleanup children
             if ($queryChildPid !== null && $queryChildPid > 0) {
                 posix_kill($queryChildPid, SIGTERM);
                 pcntl_waitpid($queryChildPid, $status, WNOHANG);
+            }
+            if ($sccBuilderPid !== null && $sccBuilderPid > 0) {
+                posix_kill($sccBuilderPid, SIGTERM);
+                pcntl_waitpid($sccBuilderPid, $status, WNOHANG);
             }
             if ($socketPath !== null) {
                 @unlink($socketPath);
@@ -249,6 +276,16 @@ final class RmemExploreCommand extends Command
         fclose($server);
         @unlink($socketPath);
         @unlink($socketPath . '.pid');
+        exit(0);
+    }
+
+    private function runSccBuilder(string $rmemPath): never
+    {
+        // Load substrate with full SCC computation
+        $reader = BinaryReader::open($rmemPath);
+        GraphSubstrate::createFromBinary($reader, skipScc: false);
+        // createFromBinary with skipScc=false writes sidecar cache
+        // automatically if useCache=true (the default).
         exit(0);
     }
 

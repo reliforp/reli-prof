@@ -76,6 +76,7 @@ final class RmemExploreTui
     private int $spinnerFrame = 0;
     private static array $SPINNER = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
     private ?int $queryChildPid = null;
+    private ?int $sccBuilderPid = null;
 
     public function __construct(
         private RmemModel $model,
@@ -91,6 +92,11 @@ final class RmemExploreTui
         $this->queryChildPid = $pid;
     }
 
+    public function setSccBuilderPid(int $pid): void
+    {
+        $this->sccBuilderPid = $pid;
+    }
+
     public function run(): void
     {
         $this->running = true;
@@ -101,7 +107,7 @@ final class RmemExploreTui
             $this->enterSandwich($this->initialNodeId, $label);
         }
 
-        $useTimeout = $this->socketPath !== null;
+        $useTimeout = $this->socketPath !== null || $this->sccBuilderPid !== null;
 
         $this->term->enter();
         try {
@@ -128,15 +134,20 @@ final class RmemExploreTui
 
     private function checkChildStatus(): void
     {
-        if ($this->queryChildPid === null) {
-            return;
-        }
         if (!function_exists('pcntl_waitpid')) {
             return;
         }
-        $result = pcntl_waitpid($this->queryChildPid, $status, WNOHANG);
-        if ($result > 0) {
-            $this->queryChildPid = null;
+        if ($this->queryChildPid !== null) {
+            $result = pcntl_waitpid($this->queryChildPid, $status, WNOHANG);
+            if ($result > 0) {
+                $this->queryChildPid = null;
+            }
+        }
+        if ($this->sccBuilderPid !== null) {
+            $result = pcntl_waitpid($this->sccBuilderPid, $status, WNOHANG);
+            if ($result > 0) {
+                $this->sccBuilderPid = null;
+            }
         }
     }
 
@@ -962,8 +973,11 @@ final class RmemExploreTui
         $mode = $this->sandwich ? "[sandwich{$edgeMode}{$sortInfo}{$paneInfo}]" : "[list{$edgeMode}{$sortInfo}{$paneInfo}]";
 
         $spinner = '';
+        if ($this->sccBuilderPid !== null) {
+            $spinner .= ' ' . self::$SPINNER[$this->spinnerFrame] . ' SCC';
+        }
         if ($this->queryChildPid !== null) {
-            $spinner = ' ' . self::$SPINNER[$this->spinnerFrame] . ' serving';
+            $spinner .= ' ' . self::$SPINNER[$this->spinnerFrame] . ' serving';
         }
 
         $info = sprintf(
