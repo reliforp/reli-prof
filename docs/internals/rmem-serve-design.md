@@ -62,22 +62,34 @@ Unix domain socket (SOCK_STREAM). Path convention:
 directory permissions. Falls back to `/tmp/reli-rmem-<pid>.sock`
 when `$XDG_RUNTIME_DIR` is not set.
 
+### Socket ownership: parent router (single socket)
+
+The parent owns the socket and routes requests by namespace:
+
+```
+client → parent socket
+  server.*  → parent handles directly
+  ui.*      → parent handles directly
+  query.*   → parent forwards to query child via pipe
+              query child responds via pipe
+              parent relays response to client
+```
+
+This gives the cleanest UX and permission model:
+- Client connects to one socket, sends any action
+- `--serve-control` is enforced in the parent for `ui.*`
+- `server.shutdown` is always available
+- No client wrapper needed to manage two sockets
+
+Tradeoff: query responses pass through parent. With response
+limits and work budgets enforced, payloads stay small enough
+(< 1 MB) for this to be practical.
+
 ### Action namespaces
 
-Actions are namespaced to separate concerns and ownership:
-
-- `query.*` — read-only data queries, handled by query child
+- `query.*` — read-only data queries, forwarded to query child
 - `ui.*` — TUI state read/write, handled by parent (requires `--serve-control`)
 - `server.*` — lifecycle management, handled by parent
-
-When parent acts as router (async mode), it dispatches `query.*`
-to the child via IPC and handles `ui.*` / `server.*` directly.
-Alternatively, two sockets can separate the concerns:
-
-```
-control socket: parent owns server.* and ui.*
-query socket:   query child owns query.*
-```
 
 ### Request format
 
@@ -213,9 +225,10 @@ rankings return `error_code: "not_ready"` rather than blocking.
 
 ### RmemQueryService
 
-A new class that converts RmemModel method results into protocol
-response format. Shared between explore-integrated mode and
-standalone rmem:serve:
+Not a thin adapter — a budget-aware service layer that enforces
+work limits on behalf of the query child. TUI-oriented model methods
+may materialize and sort entire node lists; the service layer must
+not do that for serve.
 
 ```php
 final class RmemQueryService
@@ -235,6 +248,16 @@ final class RmemQueryService
 }
 ```
 
+Budget strategies per action:
+
+| Action | TUI model method | Service strategy |
+|--------|-----------------|-----------------|
+| top_retained | getTopRetained (full sort) | top-k min-heap, O(N) scan, O(limit) memory |
+| nodes_by_class | getNodesByClass (full scan + sort) | budgeted scan, scanned_count/has_more |
+| class/type_ranking | getClassRanking (cached) | serve from cache; if uncached, return not_ready |
+| subtree_stats | (new) | bounded DFS with max_nodes/max_depth |
+| filter | applyFilter (current list) | scope to current children, never global |
+
 ### Substrate public API for derived reload
 
 The query child needs to reload derived sections at request
@@ -252,16 +275,28 @@ requests, never during query processing.
 ### Prewarm before fork
 
 Shared caches should be populated before fork so both parent and
-child benefit without CoW duplication:
+child benefit without CoW duplication. Prewarm is staged to control
+memory usage on constrained machines:
 
-```php
-// Before fork:
-$model->ensureLocationInfoLoaded();  // addresses, string values, refcounts, classes
-$model->getClassRanking();           // cached ranking
-$model->getTypeRanking();            // cached ranking
-$model->buildDefinitionIndexes();    // function/class definition lookup
-$reader->clearCastCache();           // drop build-only FFI copies
 ```
+--prewarm=basic (default)
+  definition index (function_table, class_table link_name → node_id)
+  Reader::clearCastCache()
+
+--prewarm=detail
+  + location info (addresses, refcounts, classes, string values)
+  + class/type rankings (cached O(N) scan)
+
+--prewarm=full
+  + attributes (from attributes section)
+  + address index for O(log N) find_by_address
+```
+
+`RmemModel::ensureLocationInfoLoaded()` currently loads location
+info and attributes together. For staged prewarm, split into:
+- `loadLocationBasics()` — addresses, refcounts, classes
+- `loadStringValues()` — string values (can be large)
+- `loadAttributes()` — arbitrary attributes
 
 Lazy caches created after fork (e.g. subtree_stats, search results)
 are worker-local. This is fine — they are transient and should be
@@ -485,6 +520,30 @@ After sidecar reload:
 → {"ok": true, "data": {..., "scc_id": 3, "scc_node_count": 12, "scc_status": "ready"}}
 ```
 
+### SCC builder API
+
+The builder should expose a single high-level API rather than
+requiring callers to sequence individual private methods:
+
+```php
+// On FfiCsrGraphSubstrate:
+public function computeAndWriteDerivedCache(string $rmemPath): bool
+```
+
+Internally handles dependency ordering:
+1. Build canonical FFI mapping if not present
+2. Compute subtree sizes if not present
+3. Compute SCC
+4. Atomic write sidecar
+
+The query child's reload counterpart:
+
+```php
+public function reloadDerivedCacheIfAvailable(string $rmemPath): bool
+```
+
+Called only at request boundaries or child startup.
+
 ### Builder isolation
 
 The SCC builder child has its own copy of the substrate (CoW shared,
@@ -623,9 +682,20 @@ timeout):
   header while builder child is alive (detected via
   `pcntl_waitpid(WNOHANG)` each tick). Disappears on exit.
 - **Query in progress**: spinner in status bar while query child
-  is processing an AI request (parent knows via IPC pipe state).
+  is processing an AI request.
 - **Sidecar reload**: brief flash `✓ SCC ready` after query child
   reloads derived cache.
+
+Query child sends status events to parent via a status pipe:
+
+```
+query child → parent status pipe:
+  query_start  {request_id, action}
+  query_done   {request_id, action, ok, elapsed_ms}
+  derived_reloaded {generation}
+```
+
+Builder child status is simpler: alive/dead via `pcntl_waitpid`.
 
 Implementation cost: one `$spinner_frame = ($spinner_frame + 1) % 10`
 per render cycle, a few characters in the header/status line.
