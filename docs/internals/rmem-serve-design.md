@@ -269,7 +269,11 @@ substrate, shared between human and AI.
 - Data consistency: human and AI see exactly the same loaded data.
 - No synchronization needed — single-threaded, interleaved.
 
-### Event loop
+### Implementation: fork vs stream_select
+
+Two approaches for serving queries while running the TUI:
+
+#### Approach A: stream_select (single-process, interleaved)
 
 Replace the current blocking `pollKey()` with `stream_select` over
 both the tty file descriptor and the socket:
@@ -302,6 +306,75 @@ while ($this->running) {
     }
 }
 ```
+
+Pros: single process, trivial navigation (AI directly mutates TUI state).
+Cons: query processing blocks TUI render; requires pollKey refactoring.
+
+#### Approach B: fork (two-process, CoW shared memory)
+
+Fork after substrate construction. Parent runs TUI, child serves
+the query socket. The substrate is shared via kernel CoW.
+
+```
+load substrate (2-5 GB)
+fork()
+├─ parent: TUI loop (unchanged)
+└─ child:  socket accept → query → respond loop
+```
+
+**Memory efficiency via CoW:**
+
+The substrate consists mostly of FFI-allocated arrays (CSR offsets/
+edges, node sizes, subtree sizes — int32/int64 C arrays). These
+live outside PHP's zval heap in the C allocator. After fork, both
+processes map the same physical pages. Since the query server only
+reads the substrate, no CoW page faults occur on the FFI data.
+
+PHP arrays ($classDict, $frameLabels, $nodeClasses, etc.) do use
+zval refcounting. Accessing a zval increments its refcount in the
+zend_refcounted_h header (first 8 bytes). This triggers a CoW
+copy of the page containing the header — but only that page.
+The element data (Bucket table) resides on separate pages and
+remains shared. For a 100K-entry array occupying 4 MB, the CoW
+cost is a single 4 KB page (the refcount header), not the full 4 MB.
+
+Net result: the child process adds only a few MB of CoW overhead
+on top of the shared substrate, not a full copy.
+
+**Navigation via IPC:**
+
+The fork approach requires inter-process communication for
+navigation actions (AI → parent screen) and state queries
+(parent focus → child). A pipe pair between parent and child
+handles this:
+
+```
+parent (TUI)
+  ├─ reads tty for keystrokes
+  ├─ reads pipe for navigation commands from child
+  └─ writes pipe with current focus state on request
+
+child (socket server)
+  ├─ reads socket for AI queries
+  ├─ writes pipe for navigation commands
+  └─ reads pipe for focus state responses
+```
+
+Parent checks the pipe in its render loop (non-blocking read).
+Navigation commands arriving between keystrokes are applied
+before the next render.
+
+Pros: TUI loop unchanged, AI queries never block rendering,
+CoW memory sharing is efficient.
+Cons: IPC complexity for navigation; two-process lifecycle.
+
+#### Recommendation
+
+Start with fork (Approach B). It requires no changes to the TUI
+event loop, works today with pcntl_fork (already used by the
+report parallel pass runner), and gives zero-copy sharing of
+FFI data. Add navigation IPC later if needed — query-only mode
+is valuable on its own.
 
 ### Navigation actions (AI → human screen)
 
