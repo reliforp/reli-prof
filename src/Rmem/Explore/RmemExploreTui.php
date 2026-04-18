@@ -358,6 +358,24 @@ final class RmemExploreTui
             return;
         }
         if ($this->listMode === 'scc_members') {
+            if ($this->preSccState !== null) {
+                // Restore state before SCC view
+                $s = $this->preSccState;
+                $this->sandwich = $s['sandwich'];
+                $this->sandwichNodeId = $s['sandwichNodeId'];
+                $this->sandwichLabel = $s['sandwichLabel'];
+                $this->sandwichHistory = $s['sandwichHistory'];
+                $this->rows = $s['rows'];
+                $this->selected = $s['selected'];
+                $this->topRow = $s['topRow'];
+                $this->focusLabel = $s['focusLabel'];
+                $this->listMode = $s['listMode'];
+                $this->parentRows = $s['parentRows'];
+                $this->childRows = $s['childRows'];
+                $this->activePane = $s['activePane'];
+                $this->preSccState = null;
+                return;
+            }
             $this->showCycles();
             return;
         }
@@ -517,9 +535,28 @@ final class RmemExploreTui
         $this->topRow = 0;
     }
 
+    /** @var array<string, mixed>|null saved state before SCC member view */
+    private ?array $preSccState = null;
+
     /** @param array{id: int, nodes: list<int>, node_count: int, total_size: int, signature?: string} $profile */
     private function showSccMembers(array $profile): void
     {
+        // Save current state for back navigation
+        $this->preSccState = [
+            'sandwich' => $this->sandwich,
+            'sandwichNodeId' => $this->sandwichNodeId,
+            'sandwichLabel' => $this->sandwichLabel,
+            'sandwichHistory' => $this->sandwichHistory,
+            'rows' => $this->rows,
+            'selected' => $this->selected,
+            'topRow' => $this->topRow,
+            'focusLabel' => $this->focusLabel,
+            'listMode' => $this->listMode,
+            'parentRows' => $this->parentRows,
+            'childRows' => $this->childRows,
+            'activePane' => $this->activePane,
+        ];
+
         $sccId = $profile['id'];
         $this->sandwich = false;
         $this->clearFilter();
