@@ -401,23 +401,38 @@ The sidecar cache is the natural exchange mechanism:
    follows the same pattern — add a section, write in background,
    signal on completion.
 
-### Signal handling
+### Query child restart on completion
 
-Parent and query child install a SIGUSR1 handler:
+When the SCC builder finishes writing the sidecar and exits, the
+parent gracefully restarts the query child:
 
-```php
-pcntl_signal(SIGUSR1, function () use ($model, $rmemPath, $nc) {
-    // Reload SCC data from sidecar
-    $model->reloadDerivedCache($rmemPath, $nc);
-});
+```
+SCC builder child exits
+  → parent notices via pcntl_waitpid(WNOHANG) in TUI loop
+  → parent sends SIGTERM to query child
+  → query child drains current request, exits
+  → parent forks new query child
+  → new child loads model + sidecar (now includes SCC)
+  → prewarm shared caches
+  → ready to serve (with SCC-aware responses)
 ```
 
-`reloadDerivedCache` reads the sidecar's `scc_by_idx` and
-`scc_profiles` sections into the existing FFI arrays, replacing
-the placeholder values. This is a hot reload — no restart needed.
+This is simpler and safer than hot-reloading FFI arrays via
+signal handlers:
 
-The SCC builder knows parent and query child PIDs (passed via
-fork), and sends SIGUSR1 to both on completion.
+- No risk of replacing buffers mid-query
+- New child starts in a clean state with correct sidecar data
+- No signal handler complexity
+- prewarm runs naturally as part of child initialization
+
+The restart cost is sidecar read + prewarm (a few seconds). During
+this gap, clients get connection-refused and can retry. The protocol
+should document this transient unavailability.
+
+For the TUI parent, no restart is needed — explore uses skipScc
+and does not display SCC information. If future TUI features need
+SCC, the parent can read the sidecar independently (single-threaded,
+no concurrency concern).
 
 ### Builder isolation
 
@@ -531,11 +546,12 @@ can wrap it later if needed.
 
 ### Phase 1.5: background computation
 
-10. SCC background builder: fork child, compute, write sidecar, signal
-11. SIGUSR1 handler in parent + query child: hot-reload sidecar
-12. `scc_status` field in protocol responses
-13. `query.scc_ranking` action (available after SCC completes)
-14. Generalized builder pattern for future derived data
+10. SCC background builder: fork child, compute, write sidecar, exit
+11. Parent detects builder exit via pcntl_waitpid, restarts query child
+12. New query child loads sidecar with SCC data
+13. `scc_status` field in protocol responses
+14. `query.scc_ranking` action (available after query child restart)
+15. Generalized builder pattern for future derived data
 
 ### Phase 2: UI navigation
 
