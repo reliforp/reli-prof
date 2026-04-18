@@ -74,6 +74,7 @@ final class RmemExploreTui
     private string $listModeParam = '';
 
     private int $spinnerFrame = 0;
+    private string $lastRendered = '';
     private static array $SPINNER = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
     private ?int $queryChildPid = null;
     private ?int $sccBuilderPid = null;
@@ -938,8 +939,14 @@ final class RmemExploreTui
             $lines[$lastIdx] .= "  \e[33m[filter: {$this->filterPattern}]\e[0m";
         }
 
-        $this->term->clear();
-        $this->term->write(implode("\n", $lines) . $sidebarBuf);
+        $output = implode("\n", $lines) . $sidebarBuf;
+        if ($output === $this->lastRendered) {
+            return; // skip redraw if nothing changed
+        }
+        $this->lastRendered = $output;
+        // Move cursor home and overwrite instead of clear+write to reduce flicker.
+        // \e[H moves to top-left, \e[J clears from cursor to end (after write).
+        $this->term->write("\e[H" . $output . "\e[J");
     }
 
     /**
@@ -957,7 +964,7 @@ final class RmemExploreTui
                 $lines[] = ' ' . $s;
                 return;
             }
-            $maxWrapLines = 20; // prevent runaway on huge values
+            $maxWrapLines = 3; // keep sidebar compact
             $wrapped = 0;
             while (strlen($s) > $usable && $wrapped < $maxWrapLines) {
                 $lines[] = ' ' . substr($s, 0, $usable);
