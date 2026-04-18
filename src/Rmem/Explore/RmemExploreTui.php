@@ -77,6 +77,8 @@ final class RmemExploreTui
     private static array $SPINNER = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
     private ?int $queryChildPid = null;
     private ?int $sccBuilderPid = null;
+    /** @var array<int, string> node_id => label */
+    private array $bookmarks = [];
 
     public function __construct(
         private RmemModel $model,
@@ -393,6 +395,54 @@ final class RmemExploreTui
         $this->activePane = $panes[($idx + 1) % count($panes)];
     }
 
+    private function toggleBookmark(): void
+    {
+        $nodeId = null;
+        if ($this->sandwich) {
+            if ($this->activePane === 'children' && isset($this->childRows[$this->childSelected])) {
+                $nodeId = $this->childRows[$this->childSelected]['node_id'];
+            } elseif ($this->activePane === 'parents' && isset($this->parentRows[$this->parentSelected])) {
+                $nodeId = $this->parentRows[$this->parentSelected]['node_id'];
+            } else {
+                $nodeId = $this->sandwichNodeId;
+            }
+        } elseif (isset($this->rows[$this->selected])) {
+            $nodeId = $this->rows[$this->selected]['node_id'];
+        }
+        if ($nodeId === null || $nodeId < 0) {
+            return;
+        }
+        if (isset($this->bookmarks[$nodeId])) {
+            unset($this->bookmarks[$nodeId]);
+        } else {
+            $this->bookmarks[$nodeId] = $this->model->nodeLabel($nodeId);
+        }
+    }
+
+    private function switchToBookmarks(): void
+    {
+        if ($this->bookmarks === []) {
+            return;
+        }
+        $this->sandwich = false;
+        $this->clearFilter();
+        $this->focusStack = [];
+        $this->focusLabel = 'Bookmarks';
+        $this->listMode = 'normal';
+        $this->rows = [];
+        foreach ($this->bookmarks as $nodeId => $label) {
+            $this->rows[] = [
+                'node_id' => $nodeId,
+                'retained' => $this->model->subtreeSize($nodeId),
+                'shallow' => $this->model->nodeSize($nodeId),
+                'label' => $label,
+            ];
+        }
+        usort($this->rows, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        $this->selected = 0;
+        $this->topRow = 0;
+    }
+
     private function startAddressJump(): void
     {
         $this->addrPrompt = true;
@@ -522,6 +572,8 @@ final class RmemExploreTui
             'r' => $this->toggleSort(),
             'g' => $this->goToDefinition(),
             'a' => $this->startAddressJump(),
+            'm' => $this->toggleBookmark(),
+            "'" => $this->switchToBookmarks(),
             default => null,
         };
     }
@@ -1008,8 +1060,8 @@ final class RmemExploreTui
     private function renderFooter(int $cols): string
     {
         $hints = $this->sandwich
-            ? ' ↑↓:select  Tab:pane  Enter:focus  Bksp:back  g:def  r:sort  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit'
-            : ' ↑↓:select  Enter:drill  Bksp:back  /:filter  r:sort  c:class  y:type  n:edges  o:sidebar  s:top  t:roots  ?:help  q:quit';
+            ? " ↑↓:sel Tab:pane Enter:focus Bksp:back g:def r:sort n:edges m:mark ':marks o:side s:top t:roots ?:help q:quit"
+            : " ↑↓:sel Enter:drill Bksp:back /:filt r:sort c:class y:type a:addr g:def m:mark ':marks o:side s:top t:roots q:quit";
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -1036,6 +1088,8 @@ final class RmemExploreTui
             '    /               Filter current list (Enter to apply)',
             '    a               Jump to address (0x...) or node (#N)',
             '    g               Go to definition (func/class table)',
+            '    m               Toggle bookmark on selected node',
+            "    '               Show bookmarks list",
             '    r               Toggle sort: retained / link name',
             '    n               Toggle tree/all edges',
             '    o               Toggle sidebar (path to root)',
