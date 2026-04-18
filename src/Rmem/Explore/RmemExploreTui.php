@@ -943,9 +943,10 @@ final class RmemExploreTui
         $header = $lines[0] ?? '';
 
         if ($body !== $this->lastRendered) {
-            // Body changed: full redraw (cursor home, overwrite, clear trailing)
+            // Body changed: full clear then redraw (sidebar uses cursor
+            // positioning, so \e[J alone can't clear stale sidebar content)
             $this->lastRendered = $body;
-            $this->term->write("\e[H" . $header . "\n" . $body . "\e[J");
+            $this->term->write("\e[2J\e[H" . $header . "\n" . $body);
         } else {
             // Body unchanged: only update header line (spinner)
             $this->term->write("\e[H" . $header . "\e[K");
