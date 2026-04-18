@@ -122,6 +122,7 @@ final class RmemQueryService
         $detail = $this->model->nodeDetail($nodeId);
         $detail['label'] = $this->model->nodeLabel($nodeId);
         $detail['node_id'] = $nodeId;
+        $detail['scc_id'] = $this->model->getNodeSccId($nodeId);
         return ['ok' => true, 'data' => $detail];
     }
 
@@ -136,6 +137,7 @@ final class RmemQueryService
         $detail = $this->model->nodeDetail($nodeId);
         $detail['label'] = $this->model->nodeLabel($nodeId);
         $detail['node_id'] = $nodeId;
+        $detail['scc_id'] = $this->model->getNodeSccId($nodeId);
 
         $pTrunc = count($parents) > $limit;
         $cTrunc = count($children) > $limit;
