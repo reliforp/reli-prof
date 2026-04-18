@@ -330,10 +330,9 @@ class GraphSubstrate
             return self::loadFromBinary($reader, $useCache, $rebuildCache, $skipScc);
         }
 
-        $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
-        $useFfi = $forceFfiCsr === true || $edge_count > self::FFI_CSR_THRESHOLD;
-
-        if ($useFfi && extension_loaded('ffi')) {
+        if (extension_loaded('ffi')) {
+            // Always prefer FFI CSR — it supports sidecar cache,
+            // on-disk CSR, and is needed by explore/serve.
             return FfiCsrGraphSubstrate::loadFromBinary($reader, $useCache, $rebuildCache, $skipScc);
         }
         return self::loadFromBinary($reader, $useCache, $rebuildCache, $skipScc);
