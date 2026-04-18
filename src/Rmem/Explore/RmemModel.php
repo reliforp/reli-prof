@@ -217,11 +217,25 @@ final class RmemModel
      */
     public function getTopRetained(int $limit): array
     {
-        $entries = [];
+        // Min-heap of size $limit: keep the top-k largest retained.
+        // O(N log k) vs O(N log N) for full sort. Memory: O(k) not O(N).
+        $heap = new \SplMinHeap();
         foreach ($this->substrate->iterateSubtreeSizes() as $nodeId => $retained) {
             if ($retained <= 0) {
                 continue;
             }
+            if ($heap->count() < $limit) {
+                $heap->insert([$retained, $nodeId]);
+            } elseif ($retained > $heap->top()[0]) {
+                $heap->extract();
+                $heap->insert([$retained, $nodeId]);
+            }
+        }
+
+        // Extract in descending order
+        $entries = [];
+        while (!$heap->isEmpty()) {
+            [$retained, $nodeId] = $heap->extract();
             $entries[] = [
                 'node_id' => $nodeId,
                 'retained' => $retained,
@@ -229,8 +243,7 @@ final class RmemModel
                 'label' => $this->nodeLabel($nodeId),
             ];
         }
-        usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
-        return array_slice($entries, 0, $limit);
+        return array_reverse($entries);
     }
 
     /**

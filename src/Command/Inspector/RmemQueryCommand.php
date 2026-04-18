@@ -32,7 +32,19 @@ final class RmemQueryCommand extends Command
     {
         $this->setName('inspector:rmem:query')
             ->setDescription('Query a .rmem file for node details and tree paths')
-            ->addArgument('file', InputArgument::REQUIRED, '.rmem file path')
+            ->addArgument('file', InputArgument::OPTIONAL, '.rmem file path (not needed with --server)')
+            ->addOption(
+                'server',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'query a running rmem:serve instance via Unix socket path',
+            )
+            ->addOption(
+                'action',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'raw JSON action to send to server (with --server)',
+            )
             ->addOption(
                 'node',
                 null,
@@ -72,8 +84,14 @@ final class RmemQueryCommand extends Command
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $serverPath */
+        $serverPath = $input->getOption('server');
+        if ($serverPath !== null) {
+            return $this->executeViaServer($serverPath, $input, $output);
+        }
+
         $file = (string) $input->getArgument('file');
-        if (!file_exists($file)) {
+        if ($file === '' || !file_exists($file)) {
             $output->writeln("<error>File not found: {$file}</error>");
             return 1;
         }
@@ -535,5 +553,73 @@ final class RmemQueryCommand extends Command
             $result[$nid[1]] = $dict->lookup($tid[1]) ?? '?';
         }
         return $result;
+    }
+
+    private function executeViaServer(
+        string $socketPath,
+        InputInterface $input,
+        OutputInterface $output,
+    ): int {
+        $sock = @stream_socket_client("unix://{$socketPath}", $errno, $errstr, 5);
+        if ($sock === false) {
+            $output->writeln("<error>Cannot connect to {$socketPath}: {$errstr}</error>");
+            return 1;
+        }
+
+        /** @var string|null $rawAction */
+        $rawAction = $input->getOption('action');
+        if ($rawAction !== null) {
+            // Raw JSON mode
+            fwrite($sock, $rawAction . "\n");
+            $response = fgets($sock);
+            fclose($sock);
+            if ($response === false) {
+                $output->writeln('<error>No response from server</error>');
+                return 1;
+            }
+            $output->writeln($response);
+            return 0;
+        }
+
+        // Build action from CLI options
+        /** @var string|null $nodeOpt */
+        $nodeOpt = $input->getOption('node');
+        /** @var string|null $addrOpt */
+        $addrOpt = $input->getOption('address');
+        $showChildren = (bool) $input->getOption('children');
+
+        $requests = [];
+
+        if ($addrOpt !== null) {
+            $requests[] = json_encode(['action' => 'query.find_by_address', 'address' => $addrOpt]);
+        }
+
+        if ($nodeOpt !== null) {
+            $nodeId = (int) $nodeOpt;
+            $requests[] = json_encode(['action' => 'query.node_detail', 'node_id' => $nodeId]);
+            $requests[] = json_encode(['action' => 'query.path_to_root', 'node_id' => $nodeId]);
+            if ($showChildren) {
+                $requests[] = json_encode(['action' => 'query.children', 'node_id' => $nodeId]);
+            }
+        }
+
+        if ($requests === []) {
+            // Default: hello
+            $requests[] = json_encode(['action' => 'server.hello']);
+        }
+
+        foreach ($requests as $req) {
+            fwrite($sock, $req . "\n");
+            $response = fgets($sock);
+            if ($response === false) {
+                break;
+            }
+            $decoded = json_decode($response, true);
+            $output->writeln(json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            $output->writeln('');
+        }
+
+        fclose($sock);
+        return 0;
     }
 }
