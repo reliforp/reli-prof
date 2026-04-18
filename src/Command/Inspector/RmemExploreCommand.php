@@ -164,7 +164,7 @@ final class RmemExploreCommand extends Command
         }
 
         $term = new Terminal();
-        $tui = new RmemExploreTui($model, $term, $keymap, $initialNodeId);
+        $tui = new RmemExploreTui($model, $term, $keymap, $initialNodeId, $socketPath);
 
         try {
             $tui->run();

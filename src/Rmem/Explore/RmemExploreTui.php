@@ -78,6 +78,7 @@ final class RmemExploreTui
         private TerminalInterface $term,
         private Keymap $keymap,
         private ?int $initialNodeId = null,
+        private ?string $socketPath = null,
     ) {
     }
 
@@ -795,14 +796,15 @@ final class RmemExploreTui
         }
 
         $lines[] = $this->renderFooter($cols);
-        $lines[] = sprintf(
-            ' %s nodes | %s total | depth %d',
-            number_format(count($this->rows)),
-            SizeFormatter::format($this->model->nodeSizesSum()),
-            count($this->focusStack),
-            SizeFormatter::format($this->model->nodeSizesSum()),
-            count($this->focusStack),
-        );
+        $statusParts = [
+            number_format(count($this->rows)) . ' nodes',
+            SizeFormatter::format($this->model->nodeSizesSum()) . ' total',
+            'depth ' . count($this->focusStack),
+        ];
+        if ($this->socketPath !== null) {
+            $statusParts[] = 'sock:' . $this->socketPath;
+        }
+        $lines[] = ' ' . implode(' | ', $statusParts);
     }
 
     private function renderSandwich(array &$lines, int $cols, int $totalRows): void
