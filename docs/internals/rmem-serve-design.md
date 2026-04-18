@@ -325,18 +325,19 @@ fork()
 **Memory efficiency via CoW:**
 
 The substrate consists mostly of FFI-allocated arrays (CSR offsets/
-edges, node sizes, subtree sizes — int32/int64 C arrays). These
-live outside PHP's zval heap in the C allocator. After fork, both
-processes map the same physical pages. Since the query server only
-reads the substrate, no CoW page faults occur on the FFI data.
+edges, node sizes, subtree sizes — int32/int64 C arrays). The bulk
+of this data lives in C-heap buffers allocated by FFI::new(). After
+fork, both processes map the same physical pages for these buffers.
 
-PHP arrays ($classDict, $frameLabels, $nodeClasses, etc.) do use
-zval refcounting. Accessing a zval increments its refcount in the
-zend_refcounted_h header (first 8 bytes). This triggers a CoW
-copy of the page containing the header — but only that page.
-The element data (Bucket table) resides on separate pages and
-remains shared. For a 100K-entry array occupying 4 MB, the CoW
-cost is a single 4 KB page (the refcount header), not the full 4 MB.
+Both FFI CData wrappers and PHP arrays are refcounted zvals. When
+the child process accesses one, the refcount increment triggers a
+CoW copy — but only of the page containing the refcount header
+(zend_refcounted_h, first 8 bytes of the zval). The actual data
+(the C buffer behind CData, or the Bucket table behind a PHP array)
+resides on separate pages and remains shared as long as neither
+process writes to it. For a 136 MB int32[34M] FFI array, the CoW
+cost is a single 4 KB page (the CData zval's refcount), not 136 MB.
+Same for PHP arrays: a 4 MB $frameLabels array costs one 4 KB page.
 
 Net result: the child process adds only a few MB of CoW overhead
 on top of the shared substrate, not a full copy.
