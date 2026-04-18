@@ -953,11 +953,20 @@ final class RmemExploreTui
         $usable = $width - 2; // 1 space indent + 1 margin
 
         $wrap = function (string $s) use (&$lines, $usable): void {
-            while (strlen($s) > $usable) {
-                $lines[] = ' ' . substr($s, 0, $usable);
-                $s = '  ' . substr($s, $usable); // continuation indent
+            if ($usable < 4) {
+                $lines[] = ' ' . $s;
+                return;
             }
-            $lines[] = ' ' . $s;
+            $maxWrapLines = 20; // prevent runaway on huge values
+            $wrapped = 0;
+            while (strlen($s) > $usable && $wrapped < $maxWrapLines) {
+                $lines[] = ' ' . substr($s, 0, $usable);
+                $s = substr($s, $usable);
+                $wrapped++;
+            }
+            if ($s !== '') {
+                $lines[] = ' ' . $s;
+            }
         };
 
         // Node detail
