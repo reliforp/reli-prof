@@ -569,12 +569,13 @@ final class RmemExploreTui
         $this->rows = [];
 
         foreach ($profile['nodes'] as $nid) {
-            // Find edges within the SCC
+            // Find edges within the SCC (all edges, not just tree)
             $targets = [];
-            foreach ($this->model->getChildrenRaw($nid) as $childId) {
+            foreach ($this->model->getSubstrate()->getAllChildren($nid) as $childId) {
                 if (isset($memberSet[$childId]) && $childId !== $nid) {
                     $link = $this->model->getSubstrate()->getTreeLinkName($childId) ?? '?';
-                    $targets[] = "[{$link}] → " . $this->model->nodeLabel($childId);
+                    $childLabel = $this->model->nodeLabel($childId);
+                    $targets[] = "→ [{$link}] {$childLabel}";
                 }
             }
             $arrow = $targets !== [] ? ' → ' . implode(', ', $targets) : '';
