@@ -618,6 +618,31 @@ final class RmemModel
         return $this->substrate->getChildren($nodeId);
     }
 
+    /**
+     * Load SCC profiles from sidecar cache if available.
+     * @return list<array{id: int, nodes: list<int>, node_count: int, total_size: int, signature: string}>|null
+     */
+    public function getSccProfiles(): ?array
+    {
+        if ($this->reader === null) {
+            return null;
+        }
+        $rmemPath = $this->reader->getFilePath();
+        $cache = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheReader::open($rmemPath);
+        if ($cache === null) {
+            return null;
+        }
+        if (!$cache->hasSection(\Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SCC_PROFILES)) {
+            return null;
+        }
+        $json = $cache->getSectionData(\Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SCC_PROFILES);
+        if ($json === null) {
+            return null;
+        }
+        $profiles = json_decode($json, true);
+        return is_array($profiles) ? $profiles : null;
+    }
+
     public function getFrameLabel(int $nodeId): ?string
     {
         return $this->frameLabels[$nodeId] ?? null;

@@ -419,6 +419,52 @@ final class RmemExploreTui
         }
     }
 
+    private function showCycles(): void
+    {
+        $profiles = $this->model->getSccProfiles();
+        if ($profiles === null) {
+            // SCC not yet available — builder may still be running
+            return;
+        }
+        if ($profiles === []) {
+            return;
+        }
+
+        $this->sandwich = false;
+        $this->clearFilter();
+        $this->focusStack = [];
+        $this->focusLabel = sprintf('Cycles (%d SCCs)', count($profiles));
+        $this->listMode = 'normal';
+        $this->rows = [];
+
+        usort($profiles, fn ($a, $b) => $b['total_size'] <=> $a['total_size']);
+
+        foreach ($profiles as $profile) {
+            $sig = $profile['signature'] ?? '';
+            if (strlen($sig) > 60) {
+                $sig = substr($sig, 0, 57) . '...';
+            }
+            $label = sprintf(
+                'SCC#%d: %d nodes, %s — %s',
+                $profile['id'],
+                $profile['node_count'],
+                SizeFormatter::format($profile['total_size']),
+                $sig !== '' ? $sig : '(no classes)',
+            );
+            // Use the first node as representative for Enter → sandwich
+            $repNode = $profile['nodes'][0] ?? -1;
+            $this->rows[] = [
+                'node_id' => $repNode,
+                'retained' => $profile['total_size'],
+                'shallow' => 0,
+                'label' => $label,
+                'link_name' => 'SCC#' . $profile['id'],
+            ];
+        }
+        $this->selected = 0;
+        $this->topRow = 0;
+    }
+
     private function showSubtreeInfo(): void
     {
         $nodeId = null;
@@ -657,6 +703,7 @@ final class RmemExploreTui
             'm' => $this->toggleBookmark(),
             "'" => $this->switchToBookmarks(),
             'i' => $this->showSubtreeInfo(),
+            'x' => $this->showCycles(),
             default => null,
         };
     }
@@ -1172,6 +1219,7 @@ final class RmemExploreTui
             '    a               Jump to address (0x...) or node (#N)',
             '    g               Go to definition (func/class table)',
             '    i               Subtree info (type/class breakdown)',
+            '    x               Cycle list (SCCs from sidecar)',
             '    m               Toggle bookmark on selected node',
             "    '               Show bookmarks list",
             '    r               Toggle sort: retained / link name',
