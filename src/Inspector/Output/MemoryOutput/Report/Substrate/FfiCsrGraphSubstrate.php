@@ -2536,6 +2536,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
 
         $writer->writeFingerprint($rmemPath);
-        $writer->finish($rmemPath);
+        if (!$writer->finish($rmemPath)) {
+            fwrite(STDERR, "WARNING: derived cache write failed for {$rmemPath}\n");
+        }
     }
 }

@@ -283,7 +283,7 @@ final class RmemExploreCommand extends Command
     {
         try {
             $reader = BinaryReader::open($rmemPath);
-            GraphSubstrate::createFromBinary($reader, skipScc: false);
+            GraphSubstrate::createFromBinary($reader, skipScc: false, forceFfiCsr: true);
             exit(0);
         } catch (\Throwable $e) {
             fwrite(STDERR, "SCC builder failed: {$e->getMessage()}\n");
