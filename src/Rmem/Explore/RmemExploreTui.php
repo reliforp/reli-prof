@@ -61,6 +61,8 @@ final class RmemExploreTui
     private ?string $filterPattern = null;
     private string $filterInput = '';
     private bool $filterPrompt = false;
+    private bool $addrPrompt = false;
+    private string $addrInput = '';
     /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
     private array $unfilteredRows = [];
     private bool $allEdges = true;
@@ -75,6 +77,7 @@ final class RmemExploreTui
         private RmemModel $model,
         private TerminalInterface $term,
         private Keymap $keymap,
+        private ?int $initialNodeId = null,
     ) {
     }
 
@@ -82,6 +85,11 @@ final class RmemExploreTui
     {
         $this->running = true;
         $this->rows = $this->model->getRootChildren();
+
+        if ($this->initialNodeId !== null) {
+            $label = $this->model->nodeLabel($this->initialNodeId);
+            $this->enterSandwich($this->initialNodeId, $label);
+        }
 
         $this->term->enter();
         try {
@@ -109,6 +117,10 @@ final class RmemExploreTui
 
         if ($this->filterPrompt) {
             $this->handleFilterInput($key);
+            return;
+        }
+        if ($this->addrPrompt) {
+            $this->handleAddrInput($key);
             return;
         }
 
@@ -336,6 +348,45 @@ final class RmemExploreTui
         $this->activePane = $panes[($idx + 1) % count($panes)];
     }
 
+    private function startAddressJump(): void
+    {
+        $this->addrPrompt = true;
+        $this->addrInput = '';
+    }
+
+    private function handleAddrInput(string $key): void
+    {
+        if ($key === "\n" || $key === "\r") {
+            $this->addrPrompt = false;
+            $input = trim($this->addrInput);
+            if ($input === '') {
+                return;
+            }
+            // Parse as node ID or address
+            if (str_starts_with($input, '0x') || str_starts_with($input, '0X')) {
+                $addr = (int)hexdec(substr($input, 2));
+                $nodeId = $this->model->findNodeByAddress($addr);
+            } elseif (str_starts_with($input, '#')) {
+                $nodeId = (int)substr($input, 1);
+            } else {
+                // Try as node ID first, then address
+                $nodeId = (int)$input;
+            }
+            if ($nodeId !== null && $nodeId >= 0) {
+                $this->enterSandwich($nodeId, $this->model->nodeLabel($nodeId));
+            }
+        } elseif ($key === "\e" || $key === "\x03") {
+            $this->addrPrompt = false;
+        } elseif ($key === "\x7f" || $key === "\x08") {
+            $this->addrInput = substr($this->addrInput, 0, -1);
+        } else {
+            $c = ord($key);
+            if ($c >= 32 && $c < 127) {
+                $this->addrInput .= $key;
+            }
+        }
+    }
+
     private function startFilter(): void
     {
         $this->filterPrompt = true;
@@ -425,6 +476,7 @@ final class RmemExploreTui
             'y' => $this->switchToTypeRanking(),
             'r' => $this->toggleSort(),
             'g' => $this->goToDefinition(),
+            'a' => $this->startAddressJump(),
             default => null,
         };
     }
@@ -647,8 +699,11 @@ final class RmemExploreTui
             $this->renderHelpOverlay($lines, $cols, $rows);
         }
 
-        // Filter prompt or status overlay on last line
-        if ($this->filterPrompt) {
+        // Prompt overlays on last line
+        if ($this->addrPrompt) {
+            $lastIdx = count($lines) - 1;
+            $lines[$lastIdx] = "\e[1m@\e[0m" . $this->addrInput . "\e[5m▌\e[0m  (0x... addr, #N node ID)";
+        } elseif ($this->filterPrompt) {
             $lastIdx = count($lines) - 1;
             $lines[$lastIdx] = "\e[1m/\e[0m" . $this->filterInput . "\e[5m▌\e[0m";
         } elseif ($this->filterPattern !== null) {
@@ -923,6 +978,7 @@ final class RmemExploreTui
             '    c               Class ranking',
             '    y               Type ranking',
             '    /               Filter current list (Enter to apply)',
+            '    a               Jump to address (0x...) or node (#N)',
             '    g               Go to definition (func/class table)',
             '    r               Toggle sort: retained / link name',
             '    n               Toggle tree/all edges',

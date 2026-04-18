@@ -46,6 +46,18 @@ final class RmemExploreCommand extends Command
                 InputOption::VALUE_REQUIRED,
                 'path to a JSON keymap file overriding the defaults',
             )
+            ->addOption(
+                'node',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'start with sandwich view focused on this node ID',
+            )
+            ->addOption(
+                'address',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'start with sandwich view focused on the node at this address (hex or decimal)',
+            )
         ;
     }
 
@@ -76,8 +88,29 @@ final class RmemExploreCommand extends Command
         ));
         $reader->clearCastCache();
 
+        // Resolve initial node from --node or --address
+        $initialNodeId = null;
+        /** @var string|null $nodeOpt */
+        $nodeOpt = $input->getOption('node');
+        /** @var string|null $addrOpt */
+        $addrOpt = $input->getOption('address');
+        if ($nodeOpt !== null) {
+            $initialNodeId = (int)$nodeOpt;
+        } elseif ($addrOpt !== null) {
+            $addr = str_starts_with($addrOpt, '0x')
+                ? (int)hexdec(substr($addrOpt, 2))
+                : (int)$addrOpt;
+            // Find node by address from locations
+            $model->ensureLocationInfoLoaded();
+            $initialNodeId = $model->findNodeByAddress($addr);
+            if ($initialNodeId === null) {
+                $output->writeln("<error>No node found at address 0x" . dechex($addr) . "</error>");
+                return 1;
+            }
+        }
+
         $term = new Terminal();
-        $tui = new RmemExploreTui($model, $term, $keymap);
+        $tui = new RmemExploreTui($model, $term, $keymap, $initialNodeId);
         $tui->run();
 
         return 0;

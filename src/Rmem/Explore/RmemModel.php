@@ -593,6 +593,13 @@ final class RmemModel
         }
     }
 
+    public function findNodeByAddress(int $address): ?int
+    {
+        $this->ensureLocationInfoLoaded();
+        $nodeId = array_search($address, $this->nodeAddresses, true);
+        return $nodeId !== false ? $nodeId : null;
+    }
+
     public function getFrameLabel(int $nodeId): ?string
     {
         return $this->frameLabels[$nodeId] ?? null;
