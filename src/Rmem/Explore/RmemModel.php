@@ -664,11 +664,22 @@ final class RmemModel
      * Get a short inline preview for string/scalar nodes.
      * Returns null for non-value nodes.
      */
+    public static function sanitizeForTerminal(string $s): string
+    {
+        // Replace common whitespace escapes with visible representations
+        $s = str_replace(["\n", "\r", "\t", "\0"], ['\n', '\r', '\t', '\0'], $s);
+        // Strip ANSI escape sequences
+        $s = preg_replace('/\x1b\[[0-9;]*[A-Za-z]/', '', $s) ?? $s;
+        // Replace remaining control chars (0x00-0x1f, 0x7f) with ·
+        $s = preg_replace('/[\x00-\x1f\x7f]/', "\xC2\xB7", $s) ?? $s;
+        return $s;
+    }
+
     private function valuePreview(int $nodeId): ?string
     {
         $sv = $this->nodeStringValues[$nodeId] ?? null;
         if ($sv !== null) {
-            $preview = str_replace(["\n", "\r", "\t"], ['\n', '\r', '\t'], $sv);
+            $preview = self::sanitizeForTerminal($sv);
             if (strlen($preview) > 40) {
                 $preview = substr($preview, 0, 37) . '...';
             }

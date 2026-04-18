@@ -994,7 +994,7 @@ final class RmemExploreTui
             $wrap("refcount: {$detail['refcount']}");
         }
         if ($detail['string_value'] !== null) {
-            $val = str_replace(["\n", "\r", "\t"], ['\n', '\r', '\t'], $detail['string_value']);
+            $val = RmemModel::sanitizeForTerminal($detail['string_value']);
             $wrap("val: \"{$val}\"");
         }
         foreach ($detail['attributes'] as $key => $val) {
