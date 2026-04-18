@@ -324,15 +324,15 @@ When the AI sends a navigate action:
 This enables a guided investigation workflow:
 
 ```
-Human: "このメモリの出所を追って"
+Human: "Trace where this memory comes from"
 AI:    navigate to roots → query children → find largest
 AI:    navigate to call_frames → query children → find hotspot
-AI:    "call_frames が 1.5 GB で最大です。フレーム #8 を見ます"
+AI:    "call_frames is 1.5 GB, the largest branch. Looking at frame #8."
 AI:    navigate to frame #8 → sandwich view appears
-AI:    "このフレームの $result 変数に 500 MB。User の配列です"
-Human: "そこもうちょい見せて"
+AI:    "$result in this frame holds 500 MB — it's an array of Users."
+Human: "Show me more detail there"
 AI:    navigate into $result → children expand
-AI:    "3000 個の User インスタンス、各 2.8 KB。Eloquent ですね"
+AI:    "3,000 User instances, 2.8 KB each. Eloquent models."
 ```
 
 ### State query (AI ← human screen)
@@ -351,11 +351,11 @@ This lets the AI react to human navigation:
 
 ```
 Human navigates to an object in explore
-Human: "これ何？"
+Human: "What is this?"
 AI:    get_current_focus → node #456
 AI:    query node_detail #456, path_to_root #456
-AI:    "これは ObjectContext: PDOStatement で、
-       call_frames → handle:42 → $stmt 経由で保持されてます"
+AI:    "This is an ObjectContext: PDOStatement, retained via
+       call_frames → handle:42 → $stmt"
 ```
 
 ### Standalone fallback
