@@ -73,6 +73,10 @@ final class RmemExploreTui
     private string $listMode = 'normal';
     private string $listModeParam = '';
 
+    private int $spinnerFrame = 0;
+    private static array $SPINNER = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+    private ?int $queryChildPid = null;
+
     public function __construct(
         private RmemModel $model,
         private TerminalInterface $term,
@@ -80,6 +84,11 @@ final class RmemExploreTui
         private ?int $initialNodeId = null,
         private ?string $socketPath = null,
     ) {
+    }
+
+    public function setQueryChildPid(int $pid): void
+    {
+        $this->queryChildPid = $pid;
     }
 
     public function run(): void
@@ -92,18 +101,42 @@ final class RmemExploreTui
             $this->enterSandwich($this->initialNodeId, $label);
         }
 
+        $useTimeout = $this->socketPath !== null;
+
         $this->term->enter();
         try {
             while ($this->running) {
                 $this->render();
-                $key = $this->term->pollKey();
-                if ($key === null) {
+
+                if ($useTimeout) {
+                    $key = $this->term->pollKeyTimeout(100);
+                    $this->spinnerFrame = ($this->spinnerFrame + 1) % 10;
+                    $this->checkChildStatus();
+                } else {
+                    $key = $this->term->pollKey();
+                }
+
+                if ($key === null || $key === '') {
                     continue;
                 }
                 $this->dispatch($key);
             }
         } finally {
             $this->term->leave();
+        }
+    }
+
+    private function checkChildStatus(): void
+    {
+        if ($this->queryChildPid === null) {
+            return;
+        }
+        if (!function_exists('pcntl_waitpid')) {
+            return;
+        }
+        $result = pcntl_waitpid($this->queryChildPid, $status, WNOHANG);
+        if ($result > 0) {
+            $this->queryChildPid = null;
         }
     }
 
@@ -927,11 +960,18 @@ final class RmemExploreTui
         $sortInfo = $this->sortMode === 'link' ? ' by-name' : '';
         $paneInfo = $this->activePane === 'sidebar' ? ' sidebar' : '';
         $mode = $this->sandwich ? "[sandwich{$edgeMode}{$sortInfo}{$paneInfo}]" : "[list{$edgeMode}{$sortInfo}{$paneInfo}]";
+
+        $spinner = '';
+        if ($this->queryChildPid !== null) {
+            $spinner = ' ' . self::$SPINNER[$this->spinnerFrame] . ' serving';
+        }
+
         $info = sprintf(
-            "%s %s nodes, %s edges ",
+            "%s %s nodes, %s edges%s ",
             $mode,
             number_format($this->model->nodeCount),
             number_format($this->model->edgeCount),
+            $spinner,
         );
         $pad = max(0, $cols - strlen($title) - strlen($info));
         return "\e[1;44;37m" . $title . str_repeat(' ', $pad) . $info . "\e[0m";
