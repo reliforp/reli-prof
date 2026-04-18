@@ -618,6 +618,53 @@ final class RmemModel
         return $this->substrate->getChildren($nodeId);
     }
 
+    /** @var array<int, int>|null node_id => scc_id */
+    private ?array $nodeSccMap = null;
+
+    /**
+     * Get SCC ID for a node, or null if not in any SCC.
+     */
+    public function getNodeSccId(int $nodeId): ?int
+    {
+        $this->ensureSccMap();
+        return $this->nodeSccMap[$nodeId] ?? null;
+    }
+
+    /**
+     * Get SCC profile by ID.
+     * @return array{id: int, nodes: list<int>, node_count: int, total_size: int, signature: string}|null
+     */
+    public function getSccProfile(int $sccId): ?array
+    {
+        $profiles = $this->getSccProfiles();
+        if ($profiles === null) {
+            return null;
+        }
+        foreach ($profiles as $p) {
+            if ($p['id'] === $sccId) {
+                return $p;
+            }
+        }
+        return null;
+    }
+
+    private function ensureSccMap(): void
+    {
+        if ($this->nodeSccMap !== null) {
+            return;
+        }
+        $this->nodeSccMap = [];
+        $profiles = $this->getSccProfiles();
+        if ($profiles === null) {
+            return;
+        }
+        foreach ($profiles as $profile) {
+            foreach ($profile['nodes'] as $nid) {
+                $this->nodeSccMap[$nid] = $profile['id'];
+            }
+        }
+    }
+
     /**
      * Load SCC profiles from sidecar cache if available.
      * @return list<array{id: int, nodes: list<int>, node_count: int, total_size: int, signature: string}>|null

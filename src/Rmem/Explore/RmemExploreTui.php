@@ -1038,6 +1038,23 @@ final class RmemExploreTui
             $wrap("{$key}: {$val}");
         }
 
+        // SCC membership
+        $sccId = $this->model->getNodeSccId($nodeId);
+        if ($sccId !== null) {
+            $sccProfile = $this->model->getSccProfile($sccId);
+            if ($sccProfile !== null) {
+                $lines[] = '';
+                $sig = $sccProfile['signature'] ?? '';
+                if (strlen($sig) > $usable - 10) {
+                    $sig = substr($sig, 0, $usable - 13) . '...';
+                }
+                $wrap("\e[33mSCC#{$sccId}: {$sccProfile['node_count']} nodes\e[0m");
+                if ($sig !== '') {
+                    $wrap($sig);
+                }
+            }
+        }
+
         $lines[] = '';
         $lines[] = "\e[1m Path to root:\e[0m";
 
