@@ -502,7 +502,7 @@ final class RmemModel
         return $this->classDefIndex[strtolower($className)] ?? null;
     }
 
-    private function buildDefinitionIndexes(): void
+    public function buildDefinitionIndexes(): void
     {
         if ($this->functionIndex !== null) {
             return;
@@ -597,6 +597,12 @@ final class RmemModel
         $this->ensureLocationInfoLoaded();
         $nodeId = array_search($address, $this->nodeAddresses, true);
         return $nodeId !== false ? $nodeId : null;
+    }
+
+    /** @return list<int> raw child node IDs (tree edges) */
+    public function getChildrenRaw(int $nodeId): array
+    {
+        return $this->substrate->getChildren($nodeId);
     }
 
     public function getFrameLabel(int $nodeId): ?string
