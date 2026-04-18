@@ -281,12 +281,14 @@ final class RmemExploreCommand extends Command
 
     private function runSccBuilder(string $rmemPath): never
     {
-        // Load substrate with full SCC computation
-        $reader = BinaryReader::open($rmemPath);
-        GraphSubstrate::createFromBinary($reader, skipScc: false);
-        // createFromBinary with skipScc=false writes sidecar cache
-        // automatically if useCache=true (the default).
-        exit(0);
+        try {
+            $reader = BinaryReader::open($rmemPath);
+            GraphSubstrate::createFromBinary($reader, skipScc: false);
+            exit(0);
+        } catch (\Throwable $e) {
+            fwrite(STDERR, "SCC builder failed: {$e->getMessage()}\n");
+            exit(1);
+        }
     }
 
     private function defaultSocketPath(): string

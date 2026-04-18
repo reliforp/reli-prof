@@ -424,10 +424,21 @@ final class RmemExploreTui
     {
         $profiles = $this->model->getSccProfiles();
         if ($profiles === null) {
-            // SCC not yet available — builder may still be running
+            $this->sandwich = false;
+            $this->focusLabel = $this->sccBuilderPid !== null
+                ? 'Cycles — SCC still computing...'
+                : 'Cycles — SCC not available (run report first or wait for builder)';
+            $this->rows = [];
+            $this->selected = 0;
+            $this->topRow = 0;
             return;
         }
         if ($profiles === []) {
+            $this->sandwich = false;
+            $this->focusLabel = 'Cycles — no cycles found';
+            $this->rows = [];
+            $this->selected = 0;
+            $this->topRow = 0;
             return;
         }
 
