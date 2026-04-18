@@ -328,6 +328,133 @@ multi-GB JSON responses:
 Responses include `total_count` and `truncated: true` when results
 are clipped.
 
+## Background computation (phase 1.5)
+
+### Problem
+
+Some derived data is expensive to compute but not needed for basic
+exploration:
+
+| Data | Cost | Needed for |
+|------|------|-----------|
+| SCC (Tarjan + degree trimming) | 30-60s, ~400 MB FFI | cycle detection, retained accuracy |
+| Canonical grouping | 10-20s, ~400 MB FFI | dedup, address grouping |
+| Future: address index | seconds | find_by_address optimization |
+| Future: owner paths | seconds | pre-computed root-to-node labels |
+
+With the fork model, these can be computed in a background child
+process while the TUI and query server are already running.
+
+### Architecture
+
+```
+load substrate (CSR + subtree sizes)   ← minimal, explore starts here
+fork query child                       ← query.* ready immediately
+fork SCC builder child                 ← background, heavy computation
+  ├─ buildCanonicalFfi()
+  ├─ computeSccFfi()
+  ├─ writeDerivedCache() → .rmem.derived
+  ├─ signal parent + query child (SIGUSR1)
+  └─ exit
+```
+
+The SCC builder writes results to the sidecar cache (.rmem.derived),
+which already exists as a persistence mechanism. Parent and query
+child reload the sidecar on signal to gain SCC-aware capabilities.
+
+### Progressive capability
+
+Before SCC completes, queries return SCC-unaware results:
+
+```json
+{"action": "query.node_detail", "node_id": 123}
+→ {"ok": true, "data": {..., "scc_id": null, "scc_status": "computing"}}
+
+{"action": "query.scc_ranking"}
+→ {"ok": true, "data": [], "scc_status": "computing"}
+```
+
+After SIGUSR1 → sidecar reload:
+
+```json
+{"action": "query.node_detail", "node_id": 123}
+→ {"ok": true, "data": {..., "scc_id": 3, "scc_node_count": 12, "scc_status": "ready"}}
+
+{"action": "query.scc_ranking"}
+→ {"ok": true, "data": [{"scc_id": 0, "node_count": 45, "total_size": ...}, ...]}
+```
+
+The `scc_status` field (`"computing"` / `"ready"` / `"unavailable"`)
+lets clients decide whether to show cycle information or defer.
+
+### Sidecar as shared state
+
+The sidecar cache is the natural exchange mechanism:
+
+1. **Already implemented**: `writeDerivedCache` / `loadDerivedFromCache`
+   handle subtree sizes, SCC node map, and SCC profiles.
+2. **File-based**: no shared memory or pipe bandwidth concerns.
+   SCC results are int32[N] arrays (~136 MB for 34M nodes), which
+   write/read in ~1 second via chunked FFI::addr I/O.
+3. **Persistent**: next startup gets SCC for free (cache hit).
+4. **Extensible**: future derived data (address index, owner paths)
+   follows the same pattern — add a section, write in background,
+   signal on completion.
+
+### Signal handling
+
+Parent and query child install a SIGUSR1 handler:
+
+```php
+pcntl_signal(SIGUSR1, function () use ($model, $rmemPath, $nc) {
+    // Reload SCC data from sidecar
+    $model->reloadDerivedCache($rmemPath, $nc);
+});
+```
+
+`reloadDerivedCache` reads the sidecar's `scc_by_idx` and
+`scc_profiles` sections into the existing FFI arrays, replacing
+the placeholder values. This is a hot reload — no restart needed.
+
+The SCC builder knows parent and query child PIDs (passed via
+fork), and sends SIGUSR1 to both on completion.
+
+### Builder isolation
+
+The SCC builder child has its own copy of the substrate (CoW shared,
+but it will dirty pages during Tarjan — stack, visited set, etc.).
+This dirty memory is freed when the child exits. The parent and
+query child never see the builder's working memory.
+
+The builder's only output is the sidecar file. It does not
+communicate results via pipe or shared memory. This makes the
+design robust against builder crashes — the worst case is no SCC
+data, which is the same as the current skipScc mode.
+
+### Generalization
+
+The same background-builder pattern works for any expensive derived
+data:
+
+```
+fork derived-data builder
+  ├─ compute expensive thing
+  ├─ write to sidecar section
+  ├─ signal parent + query child
+  └─ exit
+```
+
+Candidates beyond SCC:
+- **Sorted address index**: enables O(log N) find_by_address
+- **Inverted class index**: class_name → [node_id, ...] for fast
+  nodes_by_class without full scan
+- **Pre-computed owner paths**: root-to-node path labels for report
+  findings, avoiding per-query DFS
+
+Each builder is independent and can run concurrently with others
+(separate fork children). Sidecar sections are independent — one
+builder crashing does not invalidate other sections.
+
 ## UI navigation (phase 2)
 
 ### Design
@@ -387,12 +514,13 @@ can wrap it later if needed.
 
 ## Implementation order
 
+### Phase 1: query-only fork
+
 1. `RmemQueryService` — extract model-to-protocol conversion from TUI
 2. `query.*` minimal set: `server.hello`, `query.node_detail`,
    `query.path_to_root`, `query.children`, `query.parents`,
    `query.sandwich`
-3. `rmem:explore --serve --fork-query-server` — parent TUI, child
-   query-only socket server
+3. `rmem:explore --serve` — parent TUI, fork query child with socket
 4. Response limits: `limit`, `truncated`, `total_count`
 5. Socket security: `$XDG_RUNTIME_DIR`, owner-only dir, server_id
 6. Protocol: `server.hello` with file_identity + protocol_version
@@ -400,4 +528,19 @@ can wrap it later if needed.
    class/type/top_retained ranking, `subtree_stats`
 8. Standalone `rmem:serve` — headless wrapper around RmemQueryService
 9. PSS / Private_Dirty measurement to validate CoW assumptions
-10. Phase 2: `ui.*` IPC via pipe, TUI input loop timeout/stream_select
+
+### Phase 1.5: background computation
+
+10. SCC background builder: fork child, compute, write sidecar, signal
+11. SIGUSR1 handler in parent + query child: hot-reload sidecar
+12. `scc_status` field in protocol responses
+13. `query.scc_ranking` action (available after SCC completes)
+14. Generalized builder pattern for future derived data
+
+### Phase 2: UI navigation
+
+15. `ui.*` IPC via pipe between query child and TUI parent
+16. `ui.navigate_sandwich`, `ui.get_current_focus`, etc.
+17. TUI input loop timeout or stream_select for pipe reads
+18. `ui_revision` for stale navigation rejection
+19. `--serve-control` opt-in for `ui.*` actions
