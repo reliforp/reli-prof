@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Rbt\Explore\Keymap;
 use Reli\Rbt\Explore\Terminal;
+use Reli\Rmem\Serve\RmemQueryService;
 use Reli\Rmem\Explore\RmemExploreTui;
 use Reli\Rmem\Explore\RmemModel;
 use Symfony\Component\Console\Command\Command;
@@ -57,6 +58,13 @@ final class RmemExploreCommand extends Command
                 null,
                 InputOption::VALUE_REQUIRED,
                 'start with sandwich view focused on the node at this address (hex or decimal)',
+            )
+            ->addOption(
+                'serve',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'fork a query server child on the given Unix socket path (or auto-generated)',
+                false, // false = not passed, null = passed without value
             )
         ;
     }
@@ -109,10 +117,135 @@ final class RmemExploreCommand extends Command
             }
         }
 
+        // --serve: fork a query server child before starting TUI
+        $serveOpt = $input->getOption('serve');
+        $queryChildPid = null;
+        $socketPath = null;
+        if ($serveOpt !== false) {
+            // Prewarm before fork
+            $model->ensureLocationInfoLoaded();
+            $model->getClassRanking();
+            $model->getTypeRanking();
+            $model->buildDefinitionIndexes();
+
+            $socketPath = is_string($serveOpt) && $serveOpt !== ''
+                ? $serveOpt
+                : $this->defaultSocketPath();
+            $socketDir = dirname($socketPath);
+            if (!is_dir($socketDir)) {
+                mkdir($socketDir, 0700, true);
+            }
+
+            $serverId = bin2hex(random_bytes(6));
+            $queryChildPid = pcntl_fork();
+            if ($queryChildPid === -1) {
+                $output->writeln('<error>Fork failed</error>');
+                return 1;
+            }
+            if ($queryChildPid === 0) {
+                // Child: run query server (never returns)
+                $this->runQueryChild($model, $file, $serverId, $socketPath);
+                exit(0);
+            }
+            // Parent continues to TUI
+            $output->writeln("<info>query server forked (pid={$queryChildPid}, socket={$socketPath})</info>");
+        }
+
         $term = new Terminal();
         $tui = new RmemExploreTui($model, $term, $keymap, $initialNodeId);
-        $tui->run();
+
+        try {
+            $tui->run();
+        } finally {
+            // Cleanup child
+            if ($queryChildPid !== null && $queryChildPid > 0) {
+                posix_kill($queryChildPid, SIGTERM);
+                pcntl_waitpid($queryChildPid, $status, WNOHANG);
+            }
+            if ($socketPath !== null) {
+                @unlink($socketPath);
+                @unlink($socketPath . '.pid');
+            }
+        }
 
         return 0;
+    }
+
+    private function runQueryChild(
+        RmemModel $model,
+        string $rmemPath,
+        string $serverId,
+        string $socketPath,
+    ): never {
+        $service = new RmemQueryService($model, $rmemPath, $serverId);
+
+        if (file_exists($socketPath)) {
+            @unlink($socketPath);
+        }
+        $server = @stream_socket_server("unix://{$socketPath}", $errno, $errstr);
+        if ($server === false) {
+            fwrite(STDERR, "Query child: cannot bind socket: {$errstr}\n");
+            exit(1);
+        }
+        chmod($socketPath, 0600);
+        file_put_contents($socketPath . '.pid', (string)getmypid());
+
+        $running = true;
+        pcntl_signal(SIGTERM, function () use (&$running) {
+            $running = false;
+        });
+
+        while ($running) {
+            pcntl_signal_dispatch();
+
+            $read = [$server];
+            $write = null;
+            $except = null;
+            $changed = @stream_select($read, $write, $except, 1);
+            if ($changed === false || $changed === 0) {
+                continue;
+            }
+
+            $client = @stream_socket_accept($server, 0);
+            if ($client === false) {
+                continue;
+            }
+
+            while ($running && !feof($client)) {
+                $line = fgets($client);
+                if ($line === false || $line === '') {
+                    break;
+                }
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $request = json_decode($line, true);
+                if (!is_array($request)) {
+                    $response = ['ok' => false, 'error' => 'Invalid JSON'];
+                } else {
+                    $response = $service->handle($request);
+                }
+                fwrite($client, json_encode($response, JSON_UNESCAPED_UNICODE) . "\n");
+            }
+            fclose($client);
+        }
+
+        fclose($server);
+        @unlink($socketPath);
+        @unlink($socketPath . '.pid');
+        exit(0);
+    }
+
+    private function defaultSocketPath(): string
+    {
+        $runtimeDir = getenv('XDG_RUNTIME_DIR');
+        if ($runtimeDir !== false && $runtimeDir !== '') {
+            $dir = $runtimeDir . '/reli/rmem-serve';
+        } else {
+            $dir = sys_get_temp_dir() . '/reli-rmem-serve';
+        }
+        $id = bin2hex(random_bytes(4));
+        return "{$dir}/{$id}.sock";
     }
 }

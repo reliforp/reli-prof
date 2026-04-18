@@ -61,6 +61,13 @@ interface TerminalInterface
      */
     public function pollKey(): string;
 
+    /**
+     * Wait for a key with timeout. Returns null if no key arrived
+     * within $timeoutMs milliseconds. Enables event loops that need
+     * to check other I/O sources between keystrokes.
+     */
+    public function pollKeyTimeout(int $timeoutMs): ?string;
+
     public function write(string $s): void;
 
     public function clear(): void;
