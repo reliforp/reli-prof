@@ -63,6 +63,8 @@ final class RmemQueryService
                 'query.find_function_def' => $this->findFunctionDef($request),
                 'query.find_class_def' => $this->findClassDef($request),
                 'query.subtree_stats' => $this->subtreeStats($request),
+                'query.scc_for_node' => $this->sccForNode($request),
+                'query.scc_ranking' => $this->sccRanking($request),
 
                 default => ['ok' => false, 'error' => "Unknown action: {$action}"],
             };
@@ -326,6 +328,79 @@ final class RmemQueryService
                 'truncated' => $truncated,
             ],
         ];
+    }
+
+    /** @param array<string, mixed> $req */
+    private function sccForNode(array $req): array
+    {
+        $nodeId = (int)($req['node_id'] ?? -1);
+        $sccId = $this->model->getNodeSccId($nodeId);
+        if ($sccId === null) {
+            $profiles = $this->model->getSccProfiles();
+            if ($profiles === null) {
+                return ['ok' => false, 'error_code' => 'not_ready', 'error' => 'SCC data not available'];
+            }
+            return ['ok' => true, 'data' => null, 'message' => 'Node is not in any SCC'];
+        }
+        $profile = $this->model->getSccProfile($sccId);
+        if ($profile === null) {
+            return ['ok' => false, 'error' => 'SCC profile not found'];
+        }
+
+        // Enrich members with labels and intra-SCC edges
+        $memberSet = array_flip($profile['nodes']);
+        $members = [];
+        foreach ($profile['nodes'] as $nid) {
+            $edges = [];
+            foreach ($this->model->getSubstrate()->getAllChildren($nid) as $childId) {
+                if (isset($memberSet[$childId]) && $childId !== $nid) {
+                    $link = $this->model->getSubstrate()->getTreeLinkName($childId) ?? '?';
+                    $edges[] = [
+                        'target_node_id' => $childId,
+                        'link_name' => $link,
+                        'target_label' => $this->model->nodeLabel($childId),
+                    ];
+                }
+            }
+            $members[] = [
+                'node_id' => $nid,
+                'label' => $this->model->nodeLabel($nid),
+                'shallow' => $this->model->nodeSize($nid),
+                'edges_to_scc_members' => $edges,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'data' => [
+                'scc_id' => $sccId,
+                'node_count' => $profile['node_count'],
+                'total_size' => $profile['total_size'],
+                'signature' => $profile['signature'] ?? '',
+                'members' => $members,
+            ],
+        ];
+    }
+
+    /** @param array<string, mixed> $req */
+    private function sccRanking(array $req): array
+    {
+        $limit = (int)($req['limit'] ?? self::DEFAULT_RANKING_LIMIT);
+        $profiles = $this->model->getSccProfiles();
+        if ($profiles === null) {
+            return ['ok' => false, 'error_code' => 'not_ready', 'error' => 'SCC data not available'];
+        }
+        usort($profiles, fn ($a, $b) => $b['total_size'] <=> $a['total_size']);
+        $data = [];
+        foreach (array_slice($profiles, 0, $limit) as $p) {
+            $data[] = [
+                'scc_id' => $p['id'],
+                'node_count' => $p['node_count'],
+                'total_size' => $p['total_size'],
+                'signature' => $p['signature'] ?? '',
+            ];
+        }
+        return $this->paginatedResponse($data, $limit);
     }
 
     /**
