@@ -284,7 +284,7 @@ final class RmemExploreTui
         if (isset($row['_scc_nodes'])) {
             $sccId = $row['_scc_id'] ?? '?';
             $this->focusLabel = "SCC#{$sccId} members";
-            $this->listMode = 'normal';
+            $this->listMode = 'scc_members';
             $this->rows = [];
             foreach ($row['_scc_nodes'] as $nid) {
                 $this->rows[] = [
@@ -364,6 +364,10 @@ final class RmemExploreTui
         }
         if ($this->listMode === 'type_instances') {
             $this->switchToTypeRanking();
+            return;
+        }
+        if ($this->listMode === 'scc_members') {
+            $this->showCycles();
             return;
         }
         if ($this->focusStack === []) {
