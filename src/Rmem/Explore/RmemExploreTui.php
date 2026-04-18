@@ -558,21 +558,40 @@ final class RmemExploreTui
         ];
 
         $sccId = $profile['id'];
+        $memberSet = array_flip($profile['nodes']);
+
+        // Build cycle path: for each member, find which other members it references
         $this->sandwich = false;
         $this->clearFilter();
         $this->focusStack = [];
-        $this->focusLabel = "SCC#{$sccId} members";
+        $this->focusLabel = "SCC#{$sccId} members ({$profile['node_count']} nodes)";
         $this->listMode = 'scc_members';
         $this->rows = [];
+
         foreach ($profile['nodes'] as $nid) {
+            // Find edges within the SCC
+            $targets = [];
+            foreach ($this->model->getChildrenRaw($nid) as $childId) {
+                if (isset($memberSet[$childId]) && $childId !== $nid) {
+                    $link = $this->model->getSubstrate()->getTreeLinkName($childId) ?? '?';
+                    $targets[] = "[{$link}] → " . $this->model->nodeLabel($childId);
+                }
+            }
+            $arrow = $targets !== [] ? ' → ' . implode(', ', $targets) : '';
+            if (strlen($arrow) > 80) {
+                $arrow = substr($arrow, 0, 77) . '...';
+            }
+
             $this->rows[] = [
                 'node_id' => $nid,
                 'retained' => $this->model->subtreeSize($nid),
                 'shallow' => $this->model->nodeSize($nid),
-                'label' => $this->model->nodeLabel($nid),
+                'label' => $this->model->nodeLabel($nid) . $arrow,
             ];
         }
-        usort($this->rows, fn ($a, $b) => $b['retained'] <=> $a['retained']);
+
+        // Sort by position in cycle (keep original order, which is Tarjan discovery order)
+        // Don't sort by retained — cycle path order is more informative
         $this->selected = 0;
         $this->topRow = 0;
     }

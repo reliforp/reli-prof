@@ -612,6 +612,11 @@ final class RmemModel
         return $nodeId !== false ? $nodeId : null;
     }
 
+    public function getSubstrate(): GraphSubstrate
+    {
+        return $this->substrate;
+    }
+
     /** @return list<int> raw child node IDs (tree edges) */
     public function getChildrenRaw(int $nodeId): array
     {
