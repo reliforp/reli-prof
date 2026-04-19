@@ -143,9 +143,39 @@ class NativeTraceCollectorTest extends BaseTestCase
                 )
             );
             if ($isAlpine) {
-                // Debug output for Alpine investigation — always dump
-                // frame info regardless of pass/fail
+                // Debug: read registers directly to show RIP/RSP
+                $regDebug = '';
+                try {
+                    $ffi = \FFI::cdef('
+                        struct user_regs_struct {
+                            unsigned long r15, r14, r13, r12, bp, bx;
+                            unsigned long r11, r10, r9, r8;
+                            unsigned long ax, cx, dx, si, di, orig_ax;
+                            unsigned long ip, cs, flags, sp, ss;
+                            unsigned long fs_base, gs_base;
+                            unsigned long ds, es, fs, gs;
+                        };
+                    ');
+                    $regs = $ffi->new('struct user_regs_struct');
+                    $ptrace_result = $ptrace->ptrace(
+                        \Reli\Lib\Libc\Sys\Ptrace\PtraceRequest::PTRACE_GETREGS,
+                        $pid,
+                        null,
+                        \FFI::addr($regs),
+                    );
+                    $regDebug = sprintf(
+                        "PTRACE_GETREGS result=%d RIP=0x%x RSP=0x%x RBP=0x%x\n",
+                        $ptrace_result,
+                        $regs->ip,
+                        $regs->sp,
+                        $regs->bp,
+                    );
+                } catch (\Throwable $re) {
+                    $regDebug = "Register read failed: " . $re->getMessage() . "\n";
+                }
+
                 $debug = "Alpine native trace debug:\n";
+                $debug .= $regDebug;
                 $debug .= "Frame count: " . count($native_trace->frames) . "\n";
                 $debug .= "Resolved symbols: " . count($symbol_names) . "\n";
                 foreach ($native_trace->frames as $i => $frame) {
@@ -166,7 +196,6 @@ class NativeTraceCollectorTest extends BaseTestCase
                         }
                     }
                 }
-                // Force output via fail so it shows in CI logs
                 $this->fail("Alpine native trace investigation:\n{$debug}");
             }
             $this->assertNotEmpty(
