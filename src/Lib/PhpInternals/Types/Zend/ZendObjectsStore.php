@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use FFI\CData;
 use Reli\Lib\FFI\FFIHelper;
+use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\PointerArray;
 use Reli\Lib\Process\Pointer\Pointer;
 
@@ -32,9 +32,9 @@ final class ZendObjectsStore
     /** @var Pointer<PointerArray>|null */
     public ?Pointer $object_buckets;
 
-    /** @param \FFI\PhpInternals\zend_objects_store $cdata */
+    /** @param CastedCData<\FFI\PhpInternals\zend_objects_store> $cdata */
     public function __construct(
-        private CData $cdata,
+        private CastedCData $cdata,
     ) {
         unset($this->size);
         unset($this->top);
@@ -45,14 +45,14 @@ final class ZendObjectsStore
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'size' => $this->size = $this->cdata->size,
-            'top' => $this->top = $this->cdata->top,
-            'free_list_head' => $this->free_list_head = $this->cdata->free_list_head,
-            'object_buckets' => $this->object_buckets = $this->cdata->object_buckets !== null
+            'size' => $this->size = $this->cdata->casted->size,
+            'top' => $this->top = $this->cdata->casted->top,
+            'free_list_head' => $this->free_list_head = $this->cdata->casted->free_list_head,
+            'object_buckets' => $this->object_buckets = $this->cdata->casted->object_buckets !== null
                 ? new Pointer(
                     PointerArray::class,
-                    FFIHelper::castPointerToInt($this->cdata->object_buckets),
-                    $this->cdata->size * 8,
+                    FFIHelper::castPointerToInt($this->cdata->casted->object_buckets),
+                    $this->cdata->casted->size * 8,
                 )
                 : null
             ,

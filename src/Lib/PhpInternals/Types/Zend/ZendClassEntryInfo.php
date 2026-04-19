@@ -13,16 +13,18 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use FFI\CData;
+use Reli\Lib\PhpInternals\CastedCData;
 
 final class ZendClassEntryInfo
 {
     public ZendClassEntryInfoUser $user;
 
-    /** @param \FFI\PhpInternals\zend_class_entry_info $cdata */
+    /** @param CastedCData<\FFI\PhpInternals\zend_class_entry_info> $cdata */
     public function __construct(
-        private CData $cdata,
+        private CastedCData $cdata,
     ) {
-        $this->user = new ZendClassEntryInfoUser($this->cdata->user);
+        $this->user = new ZendClassEntryInfoUser(
+            $this->cdata->createSubView($this->cdata->casted->user)
+        );
     }
 }

@@ -1,5 +1,90 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <files psalm-version="6.16.1@f1f5de594dc76faf8784e02d3dc4716c91c6f6ac">
+  <file src="src/Command/Inspector/MemoryCompareCommand.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$size_u[1]]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="src/Command/Inspector/MemoryDumpNormalizeCommand.php">
+    <InvalidOperand>
+      <code><![CDATA[$result['total_bytes'] / 1024.0]]></code>
+    </InvalidOperand>
+  </file>
+  <file src="src/Command/Inspector/RmemExploreCommand.php">
+    <MixedArrayAssignment>
+      <code><![CDATA[$response['data']['serve_control']]]></code>
+    </MixedArrayAssignment>
+    <MixedAssignment>
+      <code><![CDATA[$decoded]]></code>
+    </MixedAssignment>
+    <RedundantCondition>
+      <code><![CDATA[$running]]></code>
+    </RedundantCondition>
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[realpath($file)]]></code>
+    </RiskyTruthyFalsyComparison>
+  </file>
+  <file src="src/Command/Inspector/RmemMcpCommand.php">
+    <MixedAssignment>
+      <code><![CDATA[$backendRequest[(string)$key]]]></code>
+      <code><![CDATA[$id]]></code>
+      <code><![CDATA[$resp]]></code>
+      <code><![CDATA[$value]]></code>
+    </MixedAssignment>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$key]]></code>
+    </RedundantCastGivenDocblockType>
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[!($result['ok'] ?? false)]]></code>
+    </RiskyTruthyFalsyComparison>
+  </file>
+  <file src="src/Command/Inspector/RmemQueryCommand.php">
+    <MixedArgument>
+      <code><![CDATA[$offset]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$count]]></code>
+      <code><![CDATA[$decoded]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$maxLen]]></code>
+      <code><![CDATA[$offset]]></code>
+    </MixedAssignment>
+    <MixedOperand>
+      <code><![CDATA[$dataLen - $offset]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$offset]]></code>
+      <code><![CDATA[$offset]]></code>
+    </MixedOperand>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('V', $data, $offset)[1]]]></code>
+      <code><![CDATA[unpack('V', $data, 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int) $size[1]]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="src/Command/Inspector/RmemServeCommand.php">
+    <MixedAssignment>
+      <code><![CDATA[$decoded]]></code>
+    </MixedAssignment>
+    <RedundantCondition>
+      <code><![CDATA[$running]]></code>
+    </RedundantCondition>
+  </file>
+  <file src="src/Command/Rbt/AnalyzeCommand.php">
+    <MixedArgument>
+      <code><![CDATA[$key]]></code>
+      <code><![CDATA[$value]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$key]]></code>
+      <code><![CDATA[$value]]></code>
+    </MixedAssignment>
+    <PossiblyNullIterator>
+      <code><![CDATA[$entry['annotations']]]></code>
+    </PossiblyNullIterator>
+  </file>
   <file src="src/Inspector/CoreDumpReader/CoreDumpReaderFactory.php">
     <TypeDoesNotContainNull>
       <code><![CDATA[is_null($buf)]]></code>
@@ -13,10 +98,1207 @@
       <code><![CDATA[is_null($cdata_buffer)]]></code>
     </TypeDoesNotContainNull>
   </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v70/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v70/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v70/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v70/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v70/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v70/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v70/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v71/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v71/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v71/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v71/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v71/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v71/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v71/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v72/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v72/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v72/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v72/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v72/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v72/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v72/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v73/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v73/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v73/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v73/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v73/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v73/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v73/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v74/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v74/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v74/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v74/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v74/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v74/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v74/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v80/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v80/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v80/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v80/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v80/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v80/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v80/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v81/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v81/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v81/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v81/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v81/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v81/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v81/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v82/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v82/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v82/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v82/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v82/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v82/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v82/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v83/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v83/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v83/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v83/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v83/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v83/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v83/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v84/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v84/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v84/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v84/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v84/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v84/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v84/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v85/BucketReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v85/FastPathReader.php">
+    <MixedArgument>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$dpc]]></code>
+      <code><![CDATA[$len]]></code>
+      <code><![CDATA[$name_ptr]]></code>
+    </MixedAssignment>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$this->ce_cache]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[?array]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v85/ZendArrayReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v85/ZendClassEntryReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('l', $buf, $off + 32)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v85/ZendObjectReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 24)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 32)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 40)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v85/ZendStringReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 8)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/FastPath/Generated/v85/ZvalReader.php">
+    <MixedReturnStatement>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </MixedReturnStatement>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+      <code><![CDATA[unpack('P', $buf, $off + 0)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/MemoryDump/MemoryDumpReaderFactory.php">
+    <PossiblyNullArgument>
+      <code><![CDATA[$fast_path_class]]></code>
+    </PossiblyNullArgument>
+  </file>
   <file src="src/Inspector/MemoryDump/MemoryDumper.php">
     <TypeDoesNotContainNull>
       <code><![CDATA[$buf === null]]></code>
     </TypeDoesNotContainNull>
+  </file>
+  <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheReader.php">
+    <InaccessibleMethod>
+      <code><![CDATA[$buf]]></code>
+    </InaccessibleMethod>
+    <MixedArgument>
+      <code><![CDATA[$rmemTocSize]]></code>
+      <code><![CDATA[$sectionCount * DerivedCacheFormat::TOC_ENTRY_SIZE]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$elementCount]]></code>
+      <code><![CDATA[$length]]></code>
+      <code><![CDATA[$offset]]></code>
+      <code><![CDATA[$rmemSectionCount]]></code>
+      <code><![CDATA[$rmemTocOffset]]></code>
+      <code><![CDATA[$rmemTocSize]]></code>
+      <code><![CDATA[$sectionCount]]></code>
+      <code><![CDATA[$storedMtime]]></code>
+      <code><![CDATA[$storedSize]]></code>
+      <code><![CDATA[$tocOffset]]></code>
+    </MixedAssignment>
+    <MixedOperand>
+      <code><![CDATA[$rmemSectionCount]]></code>
+      <code><![CDATA[$sectionCount]]></code>
+      <code><![CDATA[$sectionCount]]></code>
+    </MixedOperand>
+    <PossiblyInvalidArgument>
+      <code><![CDATA[$buf[$elemOffset]]]></code>
+    </PossiblyInvalidArgument>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $headerBytes, 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $headerBytes, 8)[1]]]></code>
+      <code><![CDATA[unpack('P', $rmemHeader, 16)[1]]]></code>
+      <code><![CDATA[unpack('P', $tocBytes, $pos)[1]]]></code>
+      <code><![CDATA[unpack('P', $tocBytes, $pos)[1]]]></code>
+      <code><![CDATA[unpack('P', $tocBytes, $pos)[1]]]></code>
+      <code><![CDATA[unpack('V', $headerBytes, 24)[1]]]></code>
+      <code><![CDATA[unpack('V', $headerBytes, 28)[1]]]></code>
+      <code><![CDATA[unpack('V', $headerBytes, 4)[1]]]></code>
+      <code><![CDATA[unpack('V', $rmemHeader, 12)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+    <RedundantConditionGivenDocblockType>
+      <code><![CDATA[is_resource($this->fh)]]></code>
+    </RedundantConditionGivenDocblockType>
+  </file>
+  <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheWriter.php">
+    <InaccessibleMethod>
+      <code><![CDATA[$data]]></code>
+    </InaccessibleMethod>
+    <InvalidOperand>
+      <code><![CDATA[getmypid()]]></code>
+    </InvalidOperand>
+    <InvalidPropertyAssignmentValue>
+      <code><![CDATA[$this->fh]]></code>
+      <code><![CDATA[$this->fh]]></code>
+    </InvalidPropertyAssignmentValue>
+    <MixedArgument>
+      <code><![CDATA[$tocSize]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$sectionCount]]></code>
+      <code><![CDATA[$this->fh]]></code>
+      <code><![CDATA[$tocOffset]]></code>
+      <code><![CDATA[$tocSize]]></code>
+    </MixedAssignment>
+    <MixedOperand>
+      <code><![CDATA[$sectionCount]]></code>
+    </MixedOperand>
+    <PossiblyFalseOperand>
+      <code><![CDATA[getmypid()]]></code>
+    </PossiblyFalseOperand>
+    <PossiblyInvalidArgument>
+      <code><![CDATA[$data[$elemOffset]]]></code>
+    </PossiblyInvalidArgument>
+    <PossiblyInvalidArrayAccess>
+      <code><![CDATA[unpack('P', $rmemHeader, 16)[1]]]></code>
+      <code><![CDATA[unpack('V', $rmemHeader, 12)[1]]]></code>
+    </PossiblyInvalidArrayAccess>
+  </file>
+  <file src="src/Inspector/Output/MemoryOutput/BinaryMemoryOutput.php">
+    <InaccessibleMethod>
+      <code><![CDATA[$allColIdx]]></code>
+      <code><![CDATA[$allColIdx]]></code>
+      <code><![CDATA[$allDeg]]></code>
+      <code><![CDATA[$allDeg]]></code>
+      <code><![CDATA[$allDeg]]></code>
+      <code><![CDATA[$allDeg]]></code>
+      <code><![CDATA[$allPos]]></code>
+      <code><![CDATA[$allPos]]></code>
+      <code><![CDATA[$allPos]]></code>
+      <code><![CDATA[$allPos]]></code>
+      <code><![CDATA[$allPos]]></code>
+      <code><![CDATA[$allRowPtr]]></code>
+      <code><![CDATA[$allRowPtr]]></code>
+      <code><![CDATA[$allRowPtr]]></code>
+      <code><![CDATA[$allRowPtr]]></code>
+      <code><![CDATA[$allRowPtr]]></code>
+      <code><![CDATA[$allRowPtr]]></code>
+      <code><![CDATA[$allRowPtr]]></code>
+      <code><![CDATA[$nontreeColIdx]]></code>
+      <code><![CDATA[$nontreeColIdx]]></code>
+      <code><![CDATA[$nontreeDeg]]></code>
+      <code><![CDATA[$nontreeDeg]]></code>
+      <code><![CDATA[$nontreeDeg]]></code>
+      <code><![CDATA[$nontreeDeg]]></code>
+      <code><![CDATA[$nontreePos]]></code>
+      <code><![CDATA[$nontreePos]]></code>
+      <code><![CDATA[$nontreePos]]></code>
+      <code><![CDATA[$nontreePos]]></code>
+      <code><![CDATA[$nontreePos]]></code>
+      <code><![CDATA[$nontreeRowPtr]]></code>
+      <code><![CDATA[$nontreeRowPtr]]></code>
+      <code><![CDATA[$nontreeRowPtr]]></code>
+      <code><![CDATA[$nontreeRowPtr]]></code>
+      <code><![CDATA[$nontreeRowPtr]]></code>
+      <code><![CDATA[$nontreeRowPtr]]></code>
+      <code><![CDATA[$nontreeRowPtr]]></code>
+      <code><![CDATA[$treeColIdx]]></code>
+      <code><![CDATA[$treeColIdx]]></code>
+      <code><![CDATA[$treeDeg]]></code>
+      <code><![CDATA[$treeDeg]]></code>
+      <code><![CDATA[$treeDeg]]></code>
+      <code><![CDATA[$treeDeg]]></code>
+      <code><![CDATA[$treeLinkNames]]></code>
+      <code><![CDATA[$treeLinkNames]]></code>
+      <code><![CDATA[$treeParents]]></code>
+      <code><![CDATA[$treeParents]]></code>
+      <code><![CDATA[$treeParents]]></code>
+      <code><![CDATA[$treeParents]]></code>
+      <code><![CDATA[$treePos]]></code>
+      <code><![CDATA[$treePos]]></code>
+      <code><![CDATA[$treePos]]></code>
+      <code><![CDATA[$treePos]]></code>
+      <code><![CDATA[$treePos]]></code>
+      <code><![CDATA[$treeRowPtr]]></code>
+      <code><![CDATA[$treeRowPtr]]></code>
+      <code><![CDATA[$treeRowPtr]]></code>
+      <code><![CDATA[$treeRowPtr]]></code>
+      <code><![CDATA[$treeRowPtr]]></code>
+      <code><![CDATA[$treeRowPtr]]></code>
+      <code><![CDATA[$treeRowPtr]]></code>
+      <code><![CDATA[$treeStrength]]></code>
+      <code><![CDATA[$treeStrength]]></code>
+    </InaccessibleMethod>
+    <InvalidCast>
+      <code><![CDATA[$allDeg[$i]]]></code>
+      <code><![CDATA[$allDeg[$parent_idx]]]></code>
+      <code><![CDATA[$allPos[$parent_idx]]]></code>
+      <code><![CDATA[$allRowPtr[$i]]]></code>
+      <code><![CDATA[$allRowPtr[$i]]]></code>
+      <code><![CDATA[$allRowPtr[$nc]]]></code>
+      <code><![CDATA[$nontreeDeg[$i]]]></code>
+      <code><![CDATA[$nontreeDeg[$parent_idx]]]></code>
+      <code><![CDATA[$nontreePos[$parent_idx]]]></code>
+      <code><![CDATA[$nontreeRowPtr[$i]]]></code>
+      <code><![CDATA[$nontreeRowPtr[$i]]]></code>
+      <code><![CDATA[$nontreeRowPtr[$nc]]]></code>
+      <code><![CDATA[$treeDeg[$i]]]></code>
+      <code><![CDATA[$treeDeg[$parent_idx]]]></code>
+      <code><![CDATA[$treePos[$parent_idx]]]></code>
+      <code><![CDATA[$treeRowPtr[$i]]]></code>
+      <code><![CDATA[$treeRowPtr[$i]]]></code>
+      <code><![CDATA[$treeRowPtr[$nc]]]></code>
+    </InvalidCast>
+    <MixedArgument>
+      <code><![CDATA[$nodeSlots]]></code>
+      <code><![CDATA[$nodeSlots * 4]]></code>
+    </MixedArgument>
+    <MixedOperand>
+      <code><![CDATA[$nodeSlots]]></code>
+    </MixedOperand>
+    <PossiblyUndefinedVariable>
+      <code><![CDATA[$nodeSlots]]></code>
+      <code><![CDATA[$nodeSlots]]></code>
+    </PossiblyUndefinedVariable>
+  </file>
+  <file src="src/Inspector/Output/MemoryOutput/Comparison/Formatter/TextComparisonFormatter.php">
+    <TypeDoesNotContainType>
+      <code><![CDATA[$key]]></code>
+    </TypeDoesNotContainType>
+  </file>
+  <file src="src/Inspector/Output/MemoryOutput/Report/BinaryReportDataProvider.php">
+    <InaccessibleMethod>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$edgeRows]]></code>
+      <code><![CDATA[$locIndex]]></code>
+      <code><![CDATA[$locRows]]></code>
+      <code><![CDATA[$locRows]]></code>
+      <code><![CDATA[$locRows]]></code>
+    </InaccessibleMethod>
+    <InvalidCast>
+      <code><![CDATA[$locIndex[$info['sample_child_node_id']]]]></code>
+      <code><![CDATA[$locIndex[$nid]]]></code>
+      <code><![CDATA[$locIndex[$nodeId]]]></code>
+      <code><![CDATA[$nodeSizes[$child]]]></code>
+      <code><![CDATA[$nodeSizes[$child]]]></code>
+      <code><![CDATA[$nodeSizes[$child]]]></code>
+      <code><![CDATA[$nodeSizes[$child]]]></code>
+    </InvalidCast>
+    <InvalidPropertyFetch>
+      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
+      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
+      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->parent_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->strength]]></code>
+      <code><![CDATA[$edgeRows[$i]->strength]]></code>
+      <code><![CDATA[$locRows[$li]->class_id]]></code>
+      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
+      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
+    </InvalidPropertyFetch>
+    <LessSpecificReturnStatement>
+      <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
+      <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
+    </LessSpecificReturnStatement>
+    <MoreSpecificReturnType>
+      <code><![CDATA[list<array{
+     *     link_name: string,
+     *     size: int,
+     *     cnt: int,
+     *     total_waste: int,
+     *     sample_parent_node_id: int,
+     *     sample_child_node_id: int,
+     *     sample_location_type: ?string,
+     *     sample_child_node_ids: list<int>,
+     *     examples: array<string, mixed>
+     * }>]]></code>
+    </MoreSpecificReturnType>
+    <PossiblyNullPropertyFetch>
+      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
+      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
+      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->parent_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->strength]]></code>
+      <code><![CDATA[$edgeRows[$i]->strength]]></code>
+      <code><![CDATA[$locRows[$li]->class_id]]></code>
+      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
+      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
+    </PossiblyNullPropertyFetch>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$value]]></code>
+      <code><![CDATA[(string)($values[0] ?? '')]]></code>
+    </RedundantCastGivenDocblockType>
+    <RedundantCondition>
+      <code><![CDATA[$cnt <= 50]]></code>
+      <code><![CDATA[$info['ref_count'] <= 50]]></code>
+    </RedundantCondition>
+    <UndefinedPropertyFetch>
+      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
+      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
+      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->parent_node_id]]></code>
+      <code><![CDATA[$edgeRows[$i]->strength]]></code>
+      <code><![CDATA[$edgeRows[$i]->strength]]></code>
+      <code><![CDATA[$locRows[$li]->class_id]]></code>
+      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
+      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
+    </UndefinedPropertyFetch>
+  </file>
+  <file src="src/Inspector/Output/MemoryOutput/Report/Substrate/FfiCsrGraphSubstrate.php">
+    <DocblockTypeContradiction>
+      <code><![CDATA[$link_id === false || $link_id === null]]></code>
+      <code><![CDATA[$link_id === null]]></code>
+    </DocblockTypeContradiction>
+    <MixedArgument>
+      <code><![CDATA[$ntColIdxData]]></code>
+      <code><![CDATA[$ntRowPtrData]]></code>
+    </MixedArgument>
+    <PossiblyNullArrayAccess>
+      <code><![CDATA[$canonIdxFfi[$v]]]></code>
+      <code><![CDATA[$canonIdxFfi[$v]]]></code>
+      <code><![CDATA[$canonIdxFfi[$w]]]></code>
+      <code><![CDATA[$canonIdxFfi[$w]]]></code>
+      <code><![CDATA[$canonIdxFfi[$w]]]></code>
+      <code><![CDATA[$canonIdxFfi[$w]]]></code>
+      <code><![CDATA[$canonIdxFfi[$w]]]></code>
+      <code><![CDATA[$origData[$oi]]]></code>
+      <code><![CDATA[$origData[$oi]]]></code>
+      <code><![CDATA[$origData[$oi]]]></code>
+      <code><![CDATA[$origData[$oi]]]></code>
+      <code><![CDATA[$origData[$oi]]]></code>
+      <code><![CDATA[$origData[$oi]]]></code>
+      <code><![CDATA[$origOffsets[$canonical_idx]]]></code>
+      <code><![CDATA[$origOffsets[$node]]]></code>
+      <code><![CDATA[$origOffsets[$v]]]></code>
+      <code><![CDATA[$origOffsets[$v]]]></code>
+      <code><![CDATA[$origOffsets[$v]]]></code>
+      <code><![CDATA[$origOffsets[$v]]]></code>
+      <code><![CDATA[$this->origData[$i]]]></code>
+    </PossiblyNullArrayAccess>
+    <PossiblyNullReference>
+      <code><![CDATA[$canonIdxFfi]]></code>
+      <code><![CDATA[$canonIdxFfi]]></code>
+      <code><![CDATA[$canonIdxFfi]]></code>
+      <code><![CDATA[$canonIdxFfi]]></code>
+      <code><![CDATA[$canonIdxFfi]]></code>
+      <code><![CDATA[$canonIdxFfi]]></code>
+      <code><![CDATA[$canonIdxFfi]]></code>
+      <code><![CDATA[$origData]]></code>
+      <code><![CDATA[$origData]]></code>
+      <code><![CDATA[$origData]]></code>
+      <code><![CDATA[$origData]]></code>
+      <code><![CDATA[$origData]]></code>
+      <code><![CDATA[$origData]]></code>
+      <code><![CDATA[$origOffsets]]></code>
+      <code><![CDATA[$origOffsets]]></code>
+      <code><![CDATA[$origOffsets]]></code>
+      <code><![CDATA[$origOffsets]]></code>
+      <code><![CDATA[$origOffsets]]></code>
+      <code><![CDATA[$origOffsets]]></code>
+      <code><![CDATA[$this->origData]]></code>
+    </PossiblyNullReference>
+    <PropertyTypeCoercion>
+      <code><![CDATA[$profiles]]></code>
+    </PropertyTypeCoercion>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$cls_u[1]]]></code>
+      <code><![CDATA[(int)$size_u[1]]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="src/Lib/Libc/Sys/Ptrace/PtraceAarch64.php">
     <RedundantCondition>
@@ -54,27 +1336,11 @@
     </TypeDoesNotContainNull>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOpArray.php">
-    <PossiblyNullArgument>
-      <code><![CDATA[$this->cdata->run_time_cache]]></code>
-      <code><![CDATA[$this->cdata->run_time_cache__ptr]]></code>
-    </PossiblyNullArgument>
-    <PropertyTypeCoercion>
-      <code><![CDATA[$this->cdata->dynamic_func_defs]]></code>
-      <code><![CDATA[$this->cdata->run_time_cache]]></code>
-      <code><![CDATA[$this->cdata->run_time_cache__ptr]]></code>
-      <code><![CDATA[$this->cdata->vars]]></code>
-    </PropertyTypeCoercion>
     <RedundantCondition>
       <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $ptr)?->cdata]]></code>
-      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache)?->cdata]]></code>
-      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache__ptr)?->cdata]]></code>
     </RedundantCondition>
     <TypeDoesNotContainNull>
       <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $ptr)]]></code>
-      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->dynamic_func_defs)]]></code>
-      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache)]]></code>
-      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->run_time_cache__ptr)]]></code>
-      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $this->cdata->vars)]]></code>
     </TypeDoesNotContainNull>
   </file>
   <file src="src/Lib/PhpInternals/ZendTypeReader.php">
@@ -84,5 +1350,205 @@
     <MixedOperand>
       <code><![CDATA[$member_addr]]></code>
     </MixedOperand>
+  </file>
+  <file src="src/Lib/PhpProcessReader/PhpMemoryReader/Collector/Job/EmitObjectJob.php">
+    <RedundantCast>
+      <code><![CDATA[(int)$alloc_size]]></code>
+    </RedundantCast>
+  </file>
+  <file src="src/Lib/PhpProcessReader/PhpMemoryReader/ContextAnalyzer/BinaryContextTreeSink.php">
+    <InaccessibleMethod>
+      <code><![CDATA[$map]]></code>
+      <code><![CDATA[$map]]></code>
+      <code><![CDATA[$map]]></code>
+      <code><![CDATA[$map]]></code>
+      <code><![CDATA[$new_classes]]></code>
+      <code><![CDATA[$new_classes]]></code>
+      <code><![CDATA[$this->perNodeClasses]]></code>
+      <code><![CDATA[$this->perNodeClasses]]></code>
+      <code><![CDATA[$this->perNodeClasses]]></code>
+      <code><![CDATA[$this->perNodeSizes]]></code>
+      <code><![CDATA[$this->perNodeSizes]]></code>
+      <code><![CDATA[$this->perNodeSizes]]></code>
+    </InaccessibleMethod>
+    <InvalidCast>
+      <code><![CDATA[$this->perNodeClasses[$node_id]]]></code>
+      <code><![CDATA[$this->perNodeSizes[$node_id]]]></code>
+    </InvalidCast>
+    <PossiblyNullArgument>
+      <code><![CDATA[$this->perNodeClasses]]></code>
+    </PossiblyNullArgument>
+    <PossiblyNullArrayAccess>
+      <code><![CDATA[$this->perNodeClasses[$node_id]]]></code>
+      <code><![CDATA[$this->perNodeSizes[$node_id]]]></code>
+    </PossiblyNullArrayAccess>
+    <PossiblyNullReference>
+      <code><![CDATA[$this->perNodeClasses]]></code>
+      <code><![CDATA[$this->perNodeSizes]]></code>
+    </PossiblyNullReference>
+    <RedundantCast>
+      <code><![CDATA[(int)Format::NULL_STRING_ID]]></code>
+    </RedundantCast>
+  </file>
+  <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocation/FfiIntSet.php">
+    <InaccessibleMethod>
+      <code><![CDATA[$old_slots]]></code>
+      <code><![CDATA[$this->slots]]></code>
+      <code><![CDATA[$this->slots]]></code>
+      <code><![CDATA[$this->slots]]></code>
+      <code><![CDATA[$this->slots]]></code>
+    </InaccessibleMethod>
+    <InvalidCast>
+      <code><![CDATA[$old_slots[$i]]]></code>
+      <code><![CDATA[$this->slots[$slot]]]></code>
+      <code><![CDATA[$this->slots[$slot]]]></code>
+    </InvalidCast>
+    <InvalidOperand>
+      <code><![CDATA[$capacity * self::MAX_LOAD_FACTOR]]></code>
+    </InvalidOperand>
+  </file>
+  <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocationsCollector.php">
+    <InvalidOperand>
+      <code><![CDATA[$memory_get_usage_real_size * 0.5]]></code>
+      <code><![CDATA[$memory_get_usage_real_size / 1024 / 1024]]></code>
+      <code><![CDATA[$walked_chunk_bytes / 1024 / 1024]]></code>
+    </InvalidOperand>
+  </file>
+  <file src="src/Rbt/Analyze/TraceAggregator.php">
+    <InvalidArgument>
+      <code><![CDATA[$tail_buffer]]></code>
+    </InvalidArgument>
+  </file>
+  <file src="src/Rmem/Explore/RmemExploreTui.php">
+    <ArgumentTypeCoercion>
+      <code><![CDATA[$lines]]></code>
+    </ArgumentTypeCoercion>
+    <DocblockTypeContradiction>
+      <code><![CDATA[$this->listMode === 'scc_members']]></code>
+      <code><![CDATA[$this->listMode === 'scc_members']]></code>
+      <code><![CDATA[$this->listMode === 'scc_members']]></code>
+      <code><![CDATA[$this->listMode === 'scc_members']]></code>
+    </DocblockTypeContradiction>
+    <InvalidArrayOffset>
+      <code><![CDATA[$help[$i - 1]]]></code>
+      <code><![CDATA[$row['_class']]]></code>
+      <code><![CDATA[$row['_scc_id']]]></code>
+      <code><![CDATA[$row['_scc_nodes']]]></code>
+      <code><![CDATA[$row['_type']]]></code>
+    </InvalidArrayOffset>
+    <InvalidOperand>
+      <code><![CDATA[$cols * 0.3]]></code>
+    </InvalidOperand>
+    <InvalidPropertyAssignmentValue>
+      <code><![CDATA[$results]]></code>
+      <code><![CDATA[$this->rows]]></code>
+      <code><![CDATA[$this->rows]]></code>
+      <code><![CDATA[$this->rows]]></code>
+      <code><![CDATA[$this->rows]]></code>
+      <code><![CDATA['scc_members']]></code>
+    </InvalidPropertyAssignmentValue>
+    <MixedArgument>
+      <code><![CDATA[$className]]></code>
+      <code><![CDATA[$prevNodeId]]></code>
+      <code><![CDATA[$row['_scc_nodes']]]></code>
+      <code><![CDATA[$text]]></code>
+      <code><![CDATA[$typeName]]></code>
+    </MixedArgument>
+    <MixedArgumentTypeCoercion>
+      <code><![CDATA[$parts]]></code>
+      <code><![CDATA[$response]]></code>
+      <code><![CDATA[[
+                'id' => $row['_scc_id'] ?? 0,
+                'nodes' => $row['_scc_nodes'],
+                'node_count' => count($row['_scc_nodes']),
+                'total_size' => $row['retained'],
+            ]]]></code>
+      <code><![CDATA[array_slice($lines, 1)]]></code>
+    </MixedArgumentTypeCoercion>
+    <MixedArrayAccess>
+      <code><![CDATA[$a['total_size']]]></code>
+      <code><![CDATA[$b['total_size']]]></code>
+    </MixedArrayAccess>
+    <MixedAssignment>
+      <code><![CDATA[$className]]></code>
+      <code><![CDATA[$header]]></code>
+      <code><![CDATA[$parts[]]]></code>
+      <code><![CDATA[$prevNodeId]]></code>
+      <code><![CDATA[$text]]></code>
+      <code><![CDATA[$this->activePane]]></code>
+      <code><![CDATA[$this->childRows]]></code>
+      <code><![CDATA[$this->focusLabel]]></code>
+      <code><![CDATA[$this->focusLabel]]></code>
+      <code><![CDATA[$this->focusNodeId]]></code>
+      <code><![CDATA[$this->listMode]]></code>
+      <code><![CDATA[$this->listModeParam]]></code>
+      <code><![CDATA[$this->listModeParam]]></code>
+      <code><![CDATA[$this->parentRows]]></code>
+      <code><![CDATA[$this->rows]]></code>
+      <code><![CDATA[$this->sandwich]]></code>
+      <code><![CDATA[$this->sandwichHistory]]></code>
+      <code><![CDATA[$this->sandwichLabel]]></code>
+      <code><![CDATA[$this->sandwichNodeId]]></code>
+      <code><![CDATA[$this->selected]]></code>
+      <code><![CDATA[$this->selected]]></code>
+      <code><![CDATA[$this->topRow]]></code>
+      <code><![CDATA[$this->topRow]]></code>
+      <code><![CDATA[$typeName]]></code>
+    </MixedAssignment>
+    <MixedOperand>
+      <code><![CDATA[$header]]></code>
+      <code><![CDATA[$header]]></code>
+      <code><![CDATA[$lines[$lastIdx]]]></code>
+      <code><![CDATA[self::$SPINNER[$this->spinnerFrame]]]></code>
+      <code><![CDATA[self::$SPINNER[$this->spinnerFrame]]]></code>
+    </MixedOperand>
+    <PossiblyFalseOperand>
+      <code><![CDATA[$idx]]></code>
+    </PossiblyFalseOperand>
+    <ReferenceConstraintViolation>
+      <code><![CDATA[$lines]]></code>
+    </ReferenceConstraintViolation>
+  </file>
+  <file src="src/Rmem/Explore/RmemModel.php">
+    <InvalidPropertyFetch>
+      <code><![CDATA[$locRows[$i]->address]]></code>
+      <code><![CDATA[$locRows[$i]->class_id]]></code>
+      <code><![CDATA[$locRows[$i]->node_id]]></code>
+      <code><![CDATA[$locRows[$i]->refcount]]></code>
+      <code><![CDATA[$locRows[$i]->string_value_id]]></code>
+    </InvalidPropertyFetch>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$frameLabels]]></code>
+    </MixedPropertyTypeCoercion>
+  </file>
+  <file src="src/Rmem/Serve/RmemQueryService.php">
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[array<string, mixed>]]></code>
+      <code><![CDATA[match ($action) {
+                'server.hello' => $this->hello(),
+                'server.ping' => ['ok' => true, 'data' => 'pong'],
+
+                'query.roots' => $this->roots($request),
+                'query.children' => $this->children($request),
+                'query.parents' => $this->parents($request),
+                'query.node_detail' => $this->nodeDetail($request),
+                'query.sandwich' => $this->sandwich($request),
+                'query.path_to_root' => $this->pathToRoot($request),
+                'query.class_ranking' => $this->classRanking($request),
+                'query.type_ranking' => $this->typeRanking($request),
+                'query.top_retained' => $this->topRetained($request),
+                'query.nodes_by_class' => $this->nodesByClass($request),
+                'query.nodes_by_type' => $this->nodesByType($request),
+                'query.find_by_address' => $this->findByAddress($request),
+                'query.find_function_def' => $this->findFunctionDef($request),
+                'query.find_class_def' => $this->findClassDef($request),
+                'query.subtree_stats' => $this->subtreeStats($request),
+                'query.search' => $this->search($request),
+                'query.scc_for_node' => $this->sccForNode($request),
+                'query.scc_ranking' => $this->sccRanking($request),
+
+                default => ['ok' => false, 'error' => "Unknown action: {$action}"],
+            }]]></code>
+    </MixedReturnTypeCoercion>
   </file>
 </files>

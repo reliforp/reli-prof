@@ -46,6 +46,7 @@ final class Keymap
     public const ACTION_FILTER_VIEW   = 'filter_view';
     public const ACTION_FILTER_MATCH  = 'filter_match';
     public const ACTION_NO_LINE       = 'no_line';
+    public const ACTION_WITH_OPCODE   = 'with_opcode';
     public const ACTION_TOGGLE_OVERVIEW = 'toggle_overview';
     public const ACTION_VIEW_OVERVIEW = 'view_overview';
     public const ACTION_TOGGLE_MINI_FLAME = 'toggle_mini_flame';
@@ -100,6 +101,7 @@ final class Keymap
             self::ACTION_FILTER_VIEW   => ['/'],
             self::ACTION_FILTER_MATCH  => ['m'],
             self::ACTION_NO_LINE       => ['n'],
+            self::ACTION_WITH_OPCODE   => ['c'],
             self::ACTION_TOGGLE_OVERVIEW => ['o'],
             self::ACTION_VIEW_OVERVIEW => ['O'],
             self::ACTION_TOGGLE_MINI_FLAME => ['F'],

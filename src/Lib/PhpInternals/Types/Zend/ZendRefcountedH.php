@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use FFI\CData;
+use Reli\Lib\PhpInternals\CastedCData;
 
 final class ZendRefcountedH
 {
@@ -23,9 +23,9 @@ final class ZendRefcountedH
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $type_info;
 
-    /** @param \FFI\PhpInternals\zend_refcounted_h $cdata */
+    /** @param CastedCData<\FFI\PhpInternals\zend_refcounted_h> $cdata */
     public function __construct(
-        private CData $cdata,
+        private CastedCData $cdata,
     ) {
         unset($this->refcount);
         unset($this->type_info);
@@ -34,8 +34,8 @@ final class ZendRefcountedH
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'refcount' => $this->cdata->refcount,
-            'type_info' => $this->cdata->u->type_info,
+            'refcount' => $this->cdata->casted->refcount,
+            'type_info' => $this->cdata->casted->u->type_info,
         };
     }
 }

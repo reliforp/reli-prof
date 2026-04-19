@@ -57,6 +57,10 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
     /**
      * @param list<string> $lines
      */
+    /**
+     * @param list<string> $lines
+     * @psalm-suppress MixedArrayAccess, MixedOperand, MixedArgument
+     */
     private function formatMeta(array &$lines, ComparisonResult $result): void
     {
         /** @var string|null $baseline_at */
@@ -67,8 +71,41 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
         if ($baseline_at !== null || $target_at !== null) {
             $lines[] = '  Baseline: ' . ($baseline_at ?? '(unknown)');
             $lines[] = '  Target:   ' . ($target_at ?? '(unknown)');
-            $lines[] = '';
         }
+
+        // Node/edge counts
+        $bm = $result->baseline_meta;
+        $tm = $result->target_meta;
+        $meta_keys = ['node_count', 'edge_count'];
+        $has_meta = false;
+        foreach ($meta_keys as $key) {
+            if (isset($bm[$key]) || isset($tm[$key])) {
+                $has_meta = true;
+                break;
+            }
+        }
+        if ($has_meta) {
+            foreach ($meta_keys as $key) {
+                $b = (int)($bm[$key] ?? 0);
+                $t = (int)($tm[$key] ?? 0);
+                $delta = $t - $b;
+                if ($b !== 0 || $t !== 0) {
+                    $label = match ($key) {
+                        'node_count' => 'Nodes',
+                        'edge_count' => 'Edges',
+                        default => $key,
+                    };
+                    $lines[] = sprintf(
+                        '  %s: %s → %s (%+d)',
+                        $label,
+                        number_format($b),
+                        number_format($t),
+                        $delta,
+                    );
+                }
+            }
+        }
+        $lines[] = '';
     }
 
     /**
@@ -143,10 +180,10 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
         $lines[] = sprintf(
             '  %-30s %10s %12s %12s %14s',
             'Type',
-            'Count \xce\x94',
+            "Count \xce\x94",
             'Baseline',
             'Target',
-            'Memory \xce\x94',
+            "Memory \xce\x94",
         );
         $lines[] = '  ' . str_repeat('-', 82);
 
@@ -189,8 +226,8 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
             $lines[] = sprintf(
                 '  %-40s %10s %14s %14s',
                 'Class',
-                'Count \xce\x94',
-                'Memory \xce\x94',
+                "Count \xce\x94",
+                "Memory \xce\x94",
                 'Target Memory',
             );
             $lines[] = '  ' . str_repeat('-', 82);
@@ -278,14 +315,14 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
                 $parts = ["    {$tf->kind}:"];
                 if ($bf->severity !== $tf->severity) {
                     $parts[] = sprintf(
-                        'severity %s \xe2\x86\x92 %s',
+                        "severity %s → %s",
                         $bf->severity->value,
                         $tf->severity->value,
                     );
                 }
                 if ($bf->impact_bytes !== $tf->impact_bytes) {
                     $parts[] = sprintf(
-                        'impact %s \xe2\x86\x92 %s',
+                        "impact %s → %s",
                         SizeFormatter::format($bf->impact_bytes),
                         SizeFormatter::format($tf->impact_bytes),
                     );
@@ -304,7 +341,7 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
         $tag = strtoupper($f->severity->value);
         $impact = $f->impact_bytes > 0
             ? SizeFormatter::format($f->impact_bytes)
-            : "\xe2\x80\x94";
+            : "—";
         $lines[] = "    {$prefix} [{$tag}] {$impact}: {$f->kind}: {$f->summary}";
     }
 

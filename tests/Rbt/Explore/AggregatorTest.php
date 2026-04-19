@@ -168,6 +168,82 @@ class AggregatorTest extends BaseTestCase
         $this->assertArrayNotHasKey(2, $r['counts']); // mid-as-leaf sample dropped
     }
 
+    public function testSelfTimeWithOpcodeDistinguishesSameFunctionByOpcode(): void
+    {
+        // Two frames for "handler" with different opcodes.
+        $model = new TraceModel(
+            frame_keys: ['handler /h.php:1', 'caller /c.php:1'],
+            frame_keys_no_line: ['handler', 'caller'],
+            no_line_map: [0, 1],
+            samples: [
+                [0, 1],
+                [0, 1],
+            ],
+            sampling_period_us: 10000,
+            source_path: '/dev/null',
+            frame_keys_opcode: ['handler /h.php:1 [ASSIGN]', 'caller /c.php:1'],
+            frame_keys_no_line_opcode: ['handler [ASSIGN]', 'caller'],
+            opcode_map: [0, 1],
+            no_line_opcode_map: [0, 1],
+        );
+
+        // Without opcode: both samples share frame_id 0.
+        $r = Aggregator::selfTime($model, new ViewOptions(with_opcode: false));
+        $this->assertSame([0 => 2], $r['counts']);
+
+        // With opcode: counts are keyed by opcode_map[frame_id].
+        $r = Aggregator::selfTime($model, new ViewOptions(with_opcode: true));
+        $this->assertSame([0 => 2], $r['counts']); // opcode_map[0] = 0
+    }
+
+    public function testTotalTimeWithOpcodeAndNoLine(): void
+    {
+        $model = new TraceModel(
+            frame_keys: ['foo /a.php:1', 'foo /a.php:2', 'bar /b.php:1'],
+            frame_keys_no_line: ['foo', 'bar'],
+            no_line_map: [0, 0, 1],
+            samples: [
+                [0, 2], // foo:1 -> bar
+                [1, 2], // foo:2 -> bar
+            ],
+            sampling_period_us: 10000,
+            source_path: '/dev/null',
+            frame_keys_opcode: ['foo /a.php:1 [ASSIGN]', 'foo /a.php:2 [RETURN]', 'bar /b.php:1'],
+            frame_keys_no_line_opcode: ['foo [ASSIGN]', 'foo [RETURN]', 'bar'],
+            opcode_map: [0, 1, 2],
+            no_line_opcode_map: [0, 1, 2],
+        );
+
+        // no_line + with_opcode: projects via no_line_opcode_map.
+        $r = Aggregator::totalTime($model, new ViewOptions(no_line: true, with_opcode: true));
+        // foo [ASSIGN] (nlo_id 0) in sample 0 only, foo [RETURN] (nlo_id 1) in sample 1 only.
+        $this->assertSame(1, $r['counts'][0]); // foo [ASSIGN]
+        $this->assertSame(1, $r['counts'][1]); // foo [RETURN]
+        $this->assertSame(2, $r['counts'][2]); // bar in both
+    }
+
+    public function testLabelForWithOpcodeKeys(): void
+    {
+        $model = new TraceModel(
+            frame_keys: ['foo /a.php:1'],
+            frame_keys_no_line: ['foo'],
+            no_line_map: [0],
+            samples: [[0]],
+            sampling_period_us: 10000,
+            source_path: '/dev/null',
+            frame_keys_opcode: ['foo /a.php:1 [ASSIGN]'],
+            frame_keys_no_line_opcode: ['foo [ASSIGN]'],
+            opcode_map: [0],
+            no_line_opcode_map: [0],
+        );
+
+        $this->assertSame('foo /a.php:1 [ASSIGN]', Aggregator::labelFor($model, 0, false, true));
+        $this->assertSame('foo [ASSIGN]', Aggregator::labelFor($model, 0, true, true));
+        // Synthetic markers still work with opcode flag.
+        $this->assertSame('<root>', Aggregator::labelFor($model, -1, false, true));
+        $this->assertSame('<leaf>', Aggregator::labelFor($model, -2, true, true));
+    }
+
     public function testLabelForSyntheticIds(): void
     {
         $model = $this->buildModel();

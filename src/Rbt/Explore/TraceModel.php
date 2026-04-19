@@ -28,10 +28,14 @@ use Reli\Converter\StreamDecompressor;
 final class TraceModel
 {
     /**
-     * @param list<string>     $frame_keys         frame_id => "function file:line"
-     * @param list<string>     $frame_keys_no_line no_line_id => "function"
-     * @param list<int>        $no_line_map        frame_id => no_line_id
-     * @param list<list<int>>  $samples            sample_idx => list of frame_ids (leaf->root)
+     * @param list<string>     $frame_keys             frame_id => "function file:line"
+     * @param list<string>     $frame_keys_no_line     no_line_id => "function"
+     * @param list<int>        $no_line_map            frame_id => no_line_id
+     * @param list<string>     $frame_keys_opcode      opcode_id => "function file:line [OP]"
+     * @param list<string>     $frame_keys_no_line_opcode nlo_id => "function [OP]"
+     * @param list<int>        $opcode_map             frame_id => opcode_id
+     * @param list<int>        $no_line_opcode_map     frame_id => nlo_id
+     * @param list<list<int>>  $samples                sample_idx => list of frame_ids (leaf->root)
      */
     public function __construct(
         public readonly array $frame_keys,
@@ -40,6 +44,10 @@ final class TraceModel
         public readonly array $samples,
         public readonly int $sampling_period_us,
         public readonly string $source_path,
+        public readonly array $frame_keys_opcode = [],
+        public readonly array $frame_keys_no_line_opcode = [],
+        public readonly array $opcode_map = [],
+        public readonly array $no_line_opcode_map = [],
     ) {
     }
 
@@ -74,6 +82,22 @@ final class TraceModel
             /** @var list<int> $no_line_map */
             $no_line_map = [];
 
+            // Opcode-qualified key sets (with_opcode variants)
+            /** @var array<string, int> $opcode_key_to_id */
+            $opcode_key_to_id = [];
+            /** @var list<string> $frame_keys_opcode */
+            $frame_keys_opcode = [];
+
+            /** @var array<string, int> $nlo_to_id */
+            $nlo_to_id = [];
+            /** @var list<string> $frame_keys_no_line_opcode */
+            $frame_keys_no_line_opcode = [];
+
+            /** @var list<int> $opcode_map */
+            $opcode_map = [];
+            /** @var list<int> $no_line_opcode_map */
+            $no_line_opcode_map = [];
+
             /** @var list<list<int>> $samples */
             $samples = [];
 
@@ -83,6 +107,8 @@ final class TraceModel
                     $function = $frame->function_name;
                     $file = $path_map !== [] ? self::mapPath($frame->file_name, $path_map) : $frame->file_name;
                     $line = $frame->lineno;
+                    $opcode = $frame->opcode_name;
+
                     $with_line = $function . ' ' . $file . ':' . $line;
 
                     $frame_id = $key_to_id[$with_line] ?? null;
@@ -97,9 +123,28 @@ final class TraceModel
                             $no_line_to_id[$function] = $no_line_id;
                             $frame_keys_no_line[] = $function;
                         }
-                        // frame_id == count($no_line_map) at this point,
-                        // so [] append keeps no_line_map[$frame_id] in sync.
                         $no_line_map[] = $no_line_id;
+
+                        // Opcode-qualified keys
+                        $op_suffix = ($opcode !== null && $opcode !== '') ? ' [' . $opcode . ']' : '';
+
+                        $with_line_op = $with_line . $op_suffix;
+                        $op_id = $opcode_key_to_id[$with_line_op] ?? null;
+                        if ($op_id === null) {
+                            $op_id = count($frame_keys_opcode);
+                            $opcode_key_to_id[$with_line_op] = $op_id;
+                            $frame_keys_opcode[] = $with_line_op;
+                        }
+                        $opcode_map[] = $op_id;
+
+                        $func_op = $function . $op_suffix;
+                        $nlo_id = $nlo_to_id[$func_op] ?? null;
+                        if ($nlo_id === null) {
+                            $nlo_id = count($frame_keys_no_line_opcode);
+                            $nlo_to_id[$func_op] = $nlo_id;
+                            $frame_keys_no_line_opcode[] = $func_op;
+                        }
+                        $no_line_opcode_map[] = $nlo_id;
                     }
                     $stack[] = $frame_id;
                 }
@@ -113,6 +158,10 @@ final class TraceModel
                 samples: $samples,
                 sampling_period_us: $reader->getSamplingPeriodUs(),
                 source_path: $path,
+                frame_keys_opcode: $frame_keys_opcode,
+                frame_keys_no_line_opcode: $frame_keys_no_line_opcode,
+                opcode_map: $opcode_map,
+                no_line_opcode_map: $no_line_opcode_map,
             );
         } finally {
             fclose($stream);
@@ -154,8 +203,11 @@ final class TraceModel
     /**
      * @return list<string>
      */
-    public function keysFor(bool $no_line): array
+    public function keysFor(bool $no_line, bool $with_opcode = false): array
     {
+        if ($with_opcode) {
+            return $no_line ? $this->frame_keys_no_line_opcode : $this->frame_keys_opcode;
+        }
         return $no_line ? $this->frame_keys_no_line : $this->frame_keys;
     }
 }

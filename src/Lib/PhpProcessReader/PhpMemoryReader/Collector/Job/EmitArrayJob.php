@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
+use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
+use Reli\Lib\PhpInternals\Types\Zend\Bucket;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
@@ -23,6 +25,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableOverh
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayElementsContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayPossibleOverheadContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
+use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
@@ -69,8 +72,147 @@ final class EmitArrayJob implements CollectorJob
             }
         }
 
+        $fp = $ctx->fast_path;
+        if ($fp !== null) {
+            $refcount = $fp->arrayRefcount($address);
+            if ($refcount !== null) {
+                $this->processArrayFastPath($fp, $address, $ctx, $queue);
+                return;
+            }
+        }
+
         $array = $ctx->dereferencer->deref($this->pointer);
         $this->processArray($array, $ctx, $queue);
+    }
+
+    private function processArrayFastPath(
+        FastPathReader $fp,
+        int $address,
+        CollectorContext $ctx,
+        JobQueue $queue,
+    ): void {
+        $refcount = $fp->arrayRefcount($address) ?? 0;
+        $type_info = $fp->arrayTypeInfo($address) ?? 0;
+        $flags = $fp->arrayFlags($address) ?? 0;
+        $ar_data = $fp->arrayArData($address) ?? 0;
+        $n_table_mask = $fp->arrayNTableMask($address) ?? 0;
+        $n_num_used = $fp->arrayNNumUsed($address) ?? 0;
+        $n_num_of_elements = $fp->arrayNNumOfElements($address) ?? 0;
+        $n_table_size = $fp->arrayNTableSize($address) ?? 0;
+
+        $array_size = $fp->arraySize();
+        $is_packed = (bool)($flags & (1 << 2));
+        $is_uninitialized = $fp->isArrayUninitialized($flags);
+
+        $array_header_location = new ZendArrayMemoryLocation(
+            $address,
+            $array_size,
+            $refcount,
+            $type_info,
+        );
+        $ctx->memory_locations->add($array_header_location);
+        $array_header_context = $ctx->context_pools
+            ->array_context_pool
+            ->getContextForLocation($array_header_location);
+
+        if ($ar_data === 0 || $is_uninitialized) {
+            $node_id = $ctx->emitNode(
+                $array_header_context,
+                $this->parent_node_id,
+                $this->link_name,
+                $this->edge_strength,
+            );
+            if ($node_id >= 0) {
+                $ctx->address_map[$address] = $node_id;
+            }
+            return;
+        }
+
+        // Compute table addresses and sizes
+        $bucket_size = $fp->bucketSize();
+        $zval_size = $fp->zvalSize();
+        $packed_elem_size = $fp->packedElementSize();
+        // nTableMask is stored as a negative uint32 (e.g. 0xFFFFFFF8 for -8).
+        // Convert to signed int32 for the hash size calculation.
+        if ($n_table_mask > 0x7FFFFFFF) {
+            $n_table_mask_signed = $n_table_mask - 0x100000000;
+        } else {
+            $n_table_mask_signed = $n_table_mask;
+        }
+        $hash_size = -$n_table_mask_signed * 4; // uint32_t[-nTableMask] before arData
+        if ($hash_size < 0) {
+            $hash_size = 0;
+        }
+        $real_table_address = $ar_data - $hash_size;
+        // Table size uses packedElementSize: on PHP < 8.2 packed arrays
+        // allocate at Bucket granularity (32 bytes), on PHP >= 8.2 at
+        // zval granularity (16 bytes). The FFI path's getUsedDataSize
+        // unconditionally uses * 16 for packed, which undercounts on
+        // PHP < 8.2 — the fast path uses the correct version-aware size.
+        $used_data_size = $is_packed
+            ? $n_num_used * $packed_elem_size
+            : $n_num_used * $bucket_size;
+        $used_table_size = $hash_size + $used_data_size;
+        $total_data_size = $is_packed
+            ? $n_table_size * $packed_elem_size
+            : $n_table_size * $bucket_size;
+        $total_table_size = $hash_size + $total_data_size;
+
+        $array_table_location = new ZendArrayTableMemoryLocation(
+            $real_table_address,
+            $used_table_size,
+            $is_packed,
+        );
+        $overhead_size = $total_table_size - $used_table_size;
+        $array_table_overhead_location = new ZendArrayTableOverheadMemoryLocation(
+            $real_table_address + $used_table_size,
+            max(0, $overhead_size),
+            $array_table_location,
+        );
+
+        $ctx->memory_locations->add($array_table_location);
+        $ctx->memory_locations->add($array_table_overhead_location);
+
+        $array_elements_context = new ArrayElementsContext($array_table_location);
+        $array_elements_context->setCount($n_num_of_elements);
+        $overhead_context = new ArrayPossibleOverheadContext($array_table_overhead_location);
+
+        $array_header_context->add('possible_unused_area', $overhead_context);
+        $array_header_context->add('array_elements', $array_elements_context);
+
+        $header_node_id = $ctx->emitNode(
+            $array_header_context,
+            $this->parent_node_id,
+            $this->link_name,
+            $this->edge_strength,
+        );
+        if ($header_node_id >= 0) {
+            $ctx->address_map[$address] = $header_node_id;
+        }
+
+        // The array_elements_context we just created may not have a memo
+        // if the ArrayHeaderContext was retrieved from pool cache (same
+        // address already emitted by an earlier branch, e.g. call_frames
+        // referencing symbol_table before global_variables does). In that
+        // case, the cached header's existing array_elements has the memo.
+        $raw_elements = $array_elements_context->getMemoNodeId();
+        if ($raw_elements === null) {
+            $existing_elements = $array_header_context->getElements();
+            if ($existing_elements !== null) {
+                $raw_elements = $existing_elements->getMemoNodeId();
+            }
+        }
+        $elements_node_id = $raw_elements !== null
+            ? ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements)
+            : ($header_node_id >= 0 ? $header_node_id : null);
+
+        $queue->push(new ArrayElementsIteratorFastPathJob(
+            $fp,
+            $ar_data,
+            $n_num_used,
+            $is_packed,
+            $elements_node_id,
+        ));
     }
 
     /**
@@ -91,7 +233,7 @@ final class EmitArrayJob implements CollectorJob
             ->array_context_pool
             ->getContextForLocation($array_header_location);
 
-        if (is_null($array->arData)) {
+        if (is_null($array->arData) || $array->isUninitialized()) {
             $node_id = $ctx->emitNode($array_header_context, $parent_node_id, $link_name, $edge_strength);
             if ($node_id >= 0) {
                 $ctx->address_map[$array_header_location->address] = $node_id;
@@ -125,9 +267,15 @@ final class EmitArrayJob implements CollectorJob
         // See EmitObjectJob for why this reads from getMemoNodeId() now
         // instead of $ctx->memo[$context].
         $raw_elements = $array_elements_context->getMemoNodeId();
-        $elements_node_id = $raw_elements === null
-            ? null
-            : ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements);
+        if ($raw_elements === null) {
+            $existing_elements = $array_header_context->getElements();
+            if ($existing_elements !== null) {
+                $raw_elements = $existing_elements->getMemoNodeId();
+            }
+        }
+        $elements_node_id = $raw_elements !== null
+            ? ($raw_elements < 0 ? -$raw_elements - 1 : $raw_elements)
+            : ($header_node_id >= 0 ? $header_node_id : null);
 
         // Push the iterator job for array elements
         $queue->push(new ArrayElementsIteratorJob(

@@ -26,10 +26,16 @@ final class TopStringsPass implements PassInterface
     private ?\PDOStatement $parentStmt = null;
     private ?\PDOStatement $nodeTypeStmt = null;
 
+    /**
+     * @param list<array{node_id: int, size: int, preview: string}>|null $top_strings_data Pre-computed (binary path)
+     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
+     */
     public function __construct(
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
+        private ?array $top_strings_data = null,
+        private ?array $frame_labels = null,
     ) {
     }
 
@@ -51,19 +57,30 @@ final class TopStringsPass implements PassInterface
         // of magnitude. The covering index
         // `idx_context_node_locations_run_type_size` lets this run as a
         // pure index scan.
-        $rows = $this->db->query("
-            SELECT
-                node_id,
-                size,
-                substr(string_value, 1, 80) as preview
-            FROM context_node_locations
-            WHERE run_id = {$this->run_id}
-                AND location_type = 'ZendStringMemoryLocation'
-            ORDER BY size DESC
-            LIMIT 10
-        ")->fetchAll(\PDO::FETCH_ASSOC);
+        if ($this->top_strings_data !== null) {
+            $rows = [];
+            foreach ($this->top_strings_data as $item) {
+                $rows[] = [
+                    'node_id' => $item['node_id'],
+                    'size' => $item['size'],
+                    'preview' => $item['preview'],
+                ];
+            }
+        } else {
+            $rows = $this->db->query("
+                SELECT
+                    node_id,
+                    size,
+                    substr(string_value, 1, 80) as preview
+                FROM context_node_locations
+                WHERE run_id = {$this->run_id}
+                    AND location_type = 'ZendStringMemoryLocation'
+                ORDER BY size DESC
+                LIMIT 10
+            ")->fetchAll(\PDO::FETCH_ASSOC);
+        }
 
-        $labeler = new NodeLabeler($this->db, $this->run_id);
+        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
         $findings = [];
         foreach ($rows as $row) {
             $size = (int)$row['size'];

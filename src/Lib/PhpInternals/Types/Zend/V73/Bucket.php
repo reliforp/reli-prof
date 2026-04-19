@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend\V73;
 
-use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\Zend\Bucket as BaseBucket;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -25,10 +24,7 @@ final class Bucket extends BaseBucket implements CDataDereferencable
     {
         return match ($field_name) {
             'val' => $this->val = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->val,
-                    $this->casted_cdata->casted->val,
-                ),
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->val),
                 new Pointer(
                     Zval::class,
                     $this->pointer->address

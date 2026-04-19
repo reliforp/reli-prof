@@ -19,6 +19,10 @@ use FFI\CData;
 final class CastedCData
 {
     /**
+     * The root owner CData that keeps the backing buffer alive for any
+     * subviews derived from it. This is intentionally not guaranteed to be
+     * the same object as `$casted`.
+     *
      * @param CData $raw
      * @param T $casted
      */
@@ -26,5 +30,21 @@ final class CastedCData
         public object $raw,
         public object $casted,
     ) {
+    }
+
+    /**
+     * Create a subview that shares the same root owner.
+     *
+     * Keeping subview construction behind this helper makes it easier to
+     * switch the ownership mechanism later without touching every wrapper.
+     *
+     * @template TSubView of CData
+     * @param TSubView $casted
+     * @return self<TSubView>
+     */
+    public function createSubView(object $casted): self
+    {
+        /** @var self<TSubView> */
+        return new self($this->raw, $casted);
     }
 }

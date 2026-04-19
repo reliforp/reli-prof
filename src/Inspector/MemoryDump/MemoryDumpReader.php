@@ -16,6 +16,8 @@ namespace Reli\Inspector\MemoryDump;
 use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
 use Reli\Inspector\Output\MemoryOutput\MemoryOutputFactory;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\CollectedMemories;
+use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
@@ -36,12 +38,25 @@ final class MemoryDumpReader
         private int $eg_address,
         private int $cg_address,
         private ?int $bg_address = null,
+        private ?FastPathReader $fast_path = null,
     ) {
     }
 
     public function read(
         MemoryProfilerSettings $memory_profiler_settings
     ): void {
+        if (MemoryOutputFactory::isBinaryFormat($memory_profiler_settings)) {
+            $this->readBinary($memory_profiler_settings);
+        } else {
+            $this->readPdo($memory_profiler_settings);
+        }
+    }
+
+    /**
+     * Original PDO-based streaming path (SQLite / MySQL / PostgreSQL / JSON / report).
+     */
+    private function readPdo(MemoryProfilerSettings $memory_profiler_settings): void
+    {
         $process_specifier = new ProcessSpecifier($this->pid);
 
         /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
@@ -61,6 +76,7 @@ final class MemoryDumpReader
                 $memory_profiler_settings->memory_exhaustion_error_details,
                 $this->bg_address,
                 $sink,
+                $this->fast_path,
             );
 
             $region_boundaries = new RegionBoundaries(
@@ -92,28 +108,12 @@ final class MemoryDumpReader
                 ? $analyzed_regions->summary->correctedToArray($region_sums)
                 : $analyzed_regions->summary->toArray();
 
-            $summary = [
-                $summary_base
-                + [
-                    'memory_get_usage' => $collected_memories->memory_get_usage_size,
-                    'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
-                    'memory_get_peak_usage' => $collected_memories->memory_get_peak_usage,
-                    'memory_limit' => $collected_memories->memory_limit,
-                    'cached_chunks_size' => $collected_memories->cached_chunks_size,
-                ]
-                + ($rss_bytes !== null ? ['rss' => $rss_bytes] : [])
-                + [
-                    'heap_memory_analyzed_percentage' =>
-                        (float)$summary_base['zend_mm_heap_usage']
-                        /
-                        (float)$collected_memories->memory_get_usage_size * 100.0
-                    ,
-                ]
-                + [
-                    'php_version' => $target_php_settings->php_version,
-                    'analyzer' => ReliProfiler::toolSignature(),
-                ]
-            ];
+            $summary = $this->buildSummary(
+                $summary_base,
+                $collected_memories,
+                $rss_bytes,
+                $target_php_settings,
+            );
 
             unset($collected_memories, $analyzed_regions, $region_analyzer);
 
@@ -140,5 +140,150 @@ final class MemoryDumpReader
                 @unlink($temp_path);
             }
         }
+    }
+
+    /**
+     * Binary (.rmem) streaming path.
+     *
+     * Collects with a BinaryContextTreeSink that streams to temp files,
+     * then assembles the final .rmem. No SQLite intermediate.
+     */
+    private function readBinary(MemoryProfilerSettings $memory_profiler_settings): void
+    {
+        $process_specifier = new ProcessSpecifier($this->pid);
+
+        /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
+        $target_php_settings = new TargetPhpSettings(php_version: $this->php_version);
+
+        $output_factory = new MemoryOutputFactory();
+        [$binary_output, $sink] = $output_factory->createBinaryStreamingSink(
+            $memory_profiler_settings,
+        );
+
+        $collected_memories = $this->memory_locations_collector->collectAll(
+            $process_specifier,
+            $target_php_settings,
+            $this->eg_address,
+            $this->cg_address,
+            $memory_profiler_settings->memory_exhaustion_error_details,
+            $this->bg_address,
+            $sink,
+            $this->fast_path,
+        );
+
+        // RegionBoundaries is already set on the sink by collectAll()
+        // (MemoryLocationsCollector builds it from chunk/huge/vm_stack/
+        // compiler_arena before the emit loop starts), so all locations
+        // are written with correct region_id inline — no backfill needed.
+
+        $region_analyzer = new RegionAnalyzer(
+            $collected_memories->chunk_memory_locations,
+            $collected_memories->huge_memory_locations,
+            $collected_memories->vm_stack_memory_locations,
+            $collected_memories->compiler_arena_memory_locations,
+        );
+
+        $analyzed_regions = $region_analyzer->analyze(
+            $collected_memories->memory_locations,
+        );
+
+        $rss_reader = new RssReader();
+        $rss_bytes = $rss_reader->read($this->pid);
+
+        // Use corrected summary if region sums are available from the
+        // backfilled locations. Compute region sums directly from the
+        // location temp file since we don't have a SQL DB.
+        $region_sums = $this->computeRegionSumsFromSink($sink);
+        $summary_base = $region_sums !== []
+            ? $analyzed_regions->summary->correctedToArray($region_sums)
+            : $analyzed_regions->summary->toArray();
+        $summary = $this->buildSummary(
+            $summary_base,
+            $collected_memories,
+            $rss_bytes,
+            $target_php_settings,
+        );
+
+        unset($collected_memories, $analyzed_regions, $region_analyzer);
+
+        $binary_output->finalizeStreaming($sink, $summary);
+    }
+
+    /**
+     * Compute region → total_size sums from the location temp file.
+     * Equivalent to RegionsSummary::queryRegionSums but without SQL.
+     *
+     * @return array<string, int> region_name => total_size
+     */
+    private function computeRegionSumsFromSink(
+        \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
+    ): array {
+        $sink->flush();
+
+        $path = $sink->getLocationTmpPath();
+        $fh = fopen($path, 'rb');
+        if ($fh === false) {
+            return [];
+        }
+        $dict = $sink->getStringDict();
+        $row_size = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format::LOCATION_ROW_SIZE;
+
+        /** @var array<string, int> $sums */
+        $sums = [];
+        while (true) {
+            $row = fread($fh, $row_size);
+            if ($row === false || strlen($row) < $row_size) {
+                break;
+            }
+            $size_row = unpack('P', $row, 20);
+            assert(is_array($size_row));
+            $region_id_row = unpack('V', $row, 40);
+            assert(is_array($region_id_row));
+            $size = (int)$size_row[1];
+            $region_id = (int)$region_id_row[1];
+            $region = $dict->lookup($region_id);
+            if ($region === null) {
+                continue;
+            }
+            $sums[$region] = ($sums[$region] ?? 0) + $size;
+        }
+        fclose($fh);
+        return $sums;
+    }
+
+    /**
+     * Build the summary array shared by both PDO and binary paths.
+     *
+     * @param array<string, mixed> $summary_base
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildSummary(
+        array $summary_base,
+        CollectedMemories $collected_memories,
+        ?int $rss_bytes,
+        TargetPhpSettings $target_php_settings,
+    ): array {
+        return [
+            $summary_base
+            + [
+                'memory_get_usage' => $collected_memories->memory_get_usage_size,
+                'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
+                'memory_get_peak_usage' => $collected_memories->memory_get_peak_usage,
+                'memory_limit' => $collected_memories->memory_limit,
+                'cached_chunks_size' => $collected_memories->cached_chunks_size,
+            ]
+            + ($rss_bytes !== null ? ['rss' => $rss_bytes] : [])
+            + [
+                'heap_memory_analyzed_percentage' =>
+                    (float)$summary_base['zend_mm_heap_usage']
+                    /
+                    (float)$collected_memories->memory_get_usage_size * 100.0
+                ,
+            ]
+            + [
+                'php_version' => $target_php_settings->php_version,
+                'analyzer' => ReliProfiler::toolSignature(),
+            ]
+        ];
     }
 }

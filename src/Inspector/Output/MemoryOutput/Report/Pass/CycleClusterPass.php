@@ -24,11 +24,13 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class CycleClusterPass implements PassInterface
 {
+    /** @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path) */
     public function __construct(
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
         private ?LinkNameResolver $link_resolver = null,
+        private ?array $frame_labels = null,
     ) {
     }
 
@@ -71,7 +73,7 @@ final class CycleClusterPass implements PassInterface
         // We now look them up on demand from the shared LinkNameResolver
         // inside findBackReference itself.
         $top_groups = array_slice($groups_sorted, 0, 10);
-        $labeler = new NodeLabeler($this->db, $this->run_id);
+        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
 
         $findings = [];
         foreach ($top_groups as $g) {
@@ -122,6 +124,7 @@ final class CycleClusterPass implements PassInterface
                         'Check if back-reference can use WeakReference',
                     ],
                     impact_bytes: $retained * $count,
+                    evidence_node_ids: array_slice($example['nodes'], 0, 2),
                 );
                 continue;
             }
@@ -152,6 +155,7 @@ final class CycleClusterPass implements PassInterface
                         . ' (workers/tests) reduces this',
                     ],
                     impact_bytes: $g['total'],
+                    evidence_node_ids: array_slice($example['nodes'], 0, 5),
                 );
                 continue;
             }

@@ -32,6 +32,17 @@ class KeymapTest extends BaseTestCase
         $this->assertSame(Keymap::ACTION_QUIT, $km->resolve("\x03"));
     }
 
+    public function testDefaultBindingsIncludeOpcodeAndTreeActions(): void
+    {
+        $km = Keymap::default();
+        $this->assertSame(Keymap::ACTION_WITH_OPCODE, $km->resolve('c'));
+        $this->assertSame(Keymap::ACTION_VIEW_FLAME, $km->resolve('S'));
+        $this->assertSame(Keymap::ACTION_VIEW_TREE_CALLEES, $km->resolve('>'));
+        $this->assertSame(Keymap::ACTION_VIEW_TREE_CALLERS, $km->resolve('<'));
+        $this->assertSame(Keymap::ACTION_TOGGLE_MINI_FLAME, $km->resolve('F'));
+        $this->assertSame(Keymap::ACTION_TOGGLE_OVERVIEW, $km->resolve('o'));
+    }
+
     public function testUnknownSequenceResolvesToNull(): void
     {
         $km = Keymap::default();

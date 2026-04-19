@@ -65,6 +65,34 @@ final class EmitStringJob implements CollectorJob
             }
         }
 
+        $fp = $ctx->fast_path;
+        if ($fp !== null) {
+            $len = $fp->stringLen($address);
+            if ($len !== null) {
+                $refcount = $fp->stringRefcount($address) ?? 0;
+                $type_info = $fp->stringTypeInfo($address) ?? 0;
+                $h = $fp->stringH($address) ?? 0;
+                $val = $fp->stringVal($address, $len) ?? '';
+                $memory_location = new ZendStringMemoryLocation(
+                    $address,
+                    $fp->stringHeaderSize() + $len,
+                    $refcount,
+                    $type_info,
+                    $val,
+                    $h,
+                );
+                $ctx->memory_locations->add($memory_location);
+                $string_context = $ctx->context_pools
+                    ->string_context_pool
+                    ->getContextForLocation($memory_location);
+                $node_id = $ctx->emitNode($string_context, $this->parent_node_id, $this->link_name, $this->edge_strength);
+                if ($node_id >= 0) {
+                    $ctx->address_map[$address] = $node_id;
+                }
+                return;
+            }
+        }
+
         $str = $ctx->dereferencer->deref($this->pointer);
         $memory_location = ZendStringMemoryLocation::fromZendString(
             $str,

@@ -59,6 +59,19 @@ final class MemoryAnalyzeCommand extends Command
             InputOption::VALUE_REQUIRED,
             'set PHP memory_limit for analysis (e.g. 2G, 512M)',
         );
+        $this->addOption(
+            'read-buffer',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'read-ahead buffer size for dump file reads (e.g. 256K, 1M, 0 to disable)',
+            '256K',
+        );
+        $this->addOption(
+            'no-fast-path',
+            null,
+            InputOption::VALUE_NONE,
+            'disable the offset-table fast path (use FFI path for all reads)',
+        );
     }
 
     #[\Override]
@@ -87,10 +100,33 @@ final class MemoryAnalyzeCommand extends Command
             $path_mapping['/'] = $dependency_root;
         }
 
-        $dump_reader = $this->memory_dump_reader_factory->createFromPath($dump_file, $path_mapping);
+        $read_buffer_size = self::parseByteSize((string) $input->getOption('read-buffer'));
+        $no_fast_path = (bool) $input->getOption('no-fast-path');
+        $dump_reader = $this->memory_dump_reader_factory->createFromPath(
+            $dump_file,
+            $path_mapping,
+            $read_buffer_size,
+            $no_fast_path,
+        );
         $dump_reader->read($memory_profiler_settings);
 
         Log::info('end memory:analyze command');
         return 0;
+    }
+
+    private static function parseByteSize(string $value): int
+    {
+        $value = trim($value);
+        if ($value === '0' || $value === '') {
+            return 0;
+        }
+        $last = strtoupper(substr($value, -1));
+        $num = (int) $value;
+        return match ($last) {
+            'K' => $num * 1024,
+            'M' => $num * 1024 * 1024,
+            'G' => $num * 1024 * 1024 * 1024,
+            default => $num,
+        };
     }
 }

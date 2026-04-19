@@ -58,10 +58,7 @@ class ZendClosure implements PointedTypeResolverAware
     {
         return match ($field_name) {
             'std' => $this->std = new ZendObject(
-                new CastedCData(
-                    $this->casted_cdata->casted->std,
-                    $this->casted_cdata->casted->std,
-                ),
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->std),
                 new Pointer(
                     ZendObject::class,
                     $this->pointer->address,
@@ -69,10 +66,7 @@ class ZendClosure implements PointedTypeResolverAware
                 ),
             ),
             'func' => $this->func = new ZendFunction(
-                new CastedCData(
-                    $this->casted_cdata->casted->func,
-                    $this->casted_cdata->casted->func,
-                ),
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->func),
                 new Pointer(
                     ZendFunction::class,
                     $this->pointer->address

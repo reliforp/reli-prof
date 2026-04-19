@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use FFI\CData;
 use FFI\PhpInternals\zval_u1;
+use Reli\Lib\PhpInternals\CastedCData;
 
 class ZvalU1
 {
@@ -27,9 +27,9 @@ class ZvalU1
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $extra;
 
-    /** @param zval_u1 $cdata */
+    /** @param CastedCData<zval_u1> $cdata */
     public function __construct(
-        private CData $cdata
+        private CastedCData $cdata
     ) {
         unset($this->type_info);
         unset($this->type);
@@ -40,10 +40,10 @@ class ZvalU1
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'type_info' => $this->cdata->type_info,
-            'type' => $this->cdata->v->type,
-            'type_flags' => $this->cdata->v->type_flags,
-            'extra' => $this->cdata->v->u->extra,
+            'type_info' => $this->cdata->casted->type_info,
+            'type' => $this->cdata->casted->v->type,
+            'type_flags' => $this->cdata->casted->v->type_flags,
+            'extra' => $this->cdata->casted->v->u->extra,
         };
     }
 

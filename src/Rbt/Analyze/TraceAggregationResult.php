@@ -30,7 +30,7 @@ final class TraceAggregationResult
      * @param array<string, int> $total_counts
      * @param array<string, int> $caller_counts
      * @param array<string, int> $callee_counts
-     * @param list<list<string>> $tail
+     * @param list<array{frames: list<string>, annotations: array<string, string>|null}> $tail
      */
     public function __construct(
         public readonly int $sample_count,

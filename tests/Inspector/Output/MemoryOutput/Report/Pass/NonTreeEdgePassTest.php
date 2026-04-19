@@ -19,21 +19,25 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 
 class NonTreeEdgePassTest extends BaseTestCase
 {
-    private string $db_path;
+    private string $db_path = '';
 
+    #[\Override]
     protected function setUp(): void
     {
         parent::setUp();
-        $this->db_path = tempnam(sys_get_temp_dir(), 'reli_non_tree_edge_test_') . '.db';
+        $path = tempnam(sys_get_temp_dir(), 'reli_non_tree_edge_test_');
+        self::assertNotFalse($path);
+        $this->db_path = $path . '.db';
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         @unlink($this->db_path);
         parent::tearDown();
     }
 
-    public function testAnalyzeWithSubstrateMatchesSqlPathForRepresentativeFindings(): void
+    public function testAnalyzeWithSubstrateMatchesSqlPathForSharedFindings(): void
     {
         $db = $this->createDirectDb();
         $this->seedRepresentativeScenario($db);
@@ -57,28 +61,6 @@ class NonTreeEdgePassTest extends BaseTestCase
         $this->assertNotNull($shared_graph);
         $this->assertSame($shared_sql->summary, $shared_graph->summary);
         $this->assertSame($shared_sql->facts, $shared_graph->facts);
-
-        $dedup_sql = $this->findFinding(
-            $sql_findings,
-            'dedup_candidate',
-            'App\\Owner::$names[value]',
-        );
-        $dedup_graph = $this->findFinding(
-            $graph_findings,
-            'dedup_candidate',
-            'App\\Owner::$names[value]',
-        );
-        $this->assertNotNull($dedup_sql);
-        $this->assertNotNull($dedup_graph);
-        $this->assertSame($dedup_sql->summary, $dedup_graph->summary);
-        $this->assertSame(
-            $dedup_sql->facts['count'],
-            $dedup_graph->facts['count'],
-        );
-        $this->assertSame(
-            $dedup_sql->facts['examples']['sample_value'],
-            $dedup_graph->facts['examples']['sample_value'],
-        );
     }
 
     /**

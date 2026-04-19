@@ -359,23 +359,32 @@ final class PropertyScalingPass implements PassInterface
         foreach ($shared as $s) {
             $child_ids[] = (int)$s['sample_child_id'];
         }
-        $placeholders = implode(',', $child_ids);
 
         $info = [];
-        $stmt = $this->db->query(
-            "SELECT cn.node_id, cn.type, cnl.location_type"
-            . " FROM context_nodes cn"
-            . " LEFT JOIN context_node_locations cnl"
-            . " ON cnl.node_id = cn.node_id"
-            . " AND cnl.run_id = cn.run_id"
-            . " WHERE cn.run_id = {$this->run_id}"
-            . " AND cn.node_id IN ({$placeholders})"
-        );
-        while ($r = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-            $info[(int)$r['node_id']] = [
-                'type' => (string)($r['type'] ?? ''),
-                'loc_type' => (string)($r['location_type'] ?? ''),
-            ];
+        if ($this->substrate !== null) {
+            // Substrate path: get node type directly, skip location_type
+            // (it's only used for label refinement, not critical)
+            foreach ($child_ids as $cid) {
+                $type = $this->substrate->getNodeType($cid) ?? '';
+                $info[$cid] = ['type' => $type, 'loc_type' => ''];
+            }
+        } else {
+            $placeholders = implode(',', $child_ids);
+            $stmt = $this->db->query(
+                "SELECT cn.node_id, cn.type, cnl.location_type"
+                . " FROM context_nodes cn"
+                . " LEFT JOIN context_node_locations cnl"
+                . " ON cnl.node_id = cn.node_id"
+                . " AND cnl.run_id = cn.run_id"
+                . " WHERE cn.run_id = {$this->run_id}"
+                . " AND cn.node_id IN ({$placeholders})"
+            );
+            while ($r = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                $info[(int)$r['node_id']] = [
+                    'type' => (string)($r['type'] ?? ''),
+                    'loc_type' => (string)($r['location_type'] ?? ''),
+                ];
+            }
         }
 
         foreach ($shared as &$s) {

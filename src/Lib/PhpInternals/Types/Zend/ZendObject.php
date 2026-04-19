@@ -52,7 +52,9 @@ final class ZendObject implements CDataDereferencable
         private CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
-        $this->zend_refcounted_h = new ZendRefcountedH($casted_cdata->casted->gc);
+        $this->zend_refcounted_h = new ZendRefcountedH(
+            $casted_cdata->createSubView($casted_cdata->casted->gc)
+        );
         unset($this->properties);
         unset($this->ce);
         unset($this->properties_table);
@@ -126,6 +128,8 @@ final class ZendObject implements CDataDereferencable
             $this->properties_table_initialized = true;
         }
 
+        // Track which slots are covered by properties_info
+        $visited_slots = [];
         foreach ($class_entry->properties_info->getItemIterator($dereferencer) as $name => $item) {
             $property_info_pointer = $item->value->getAsPointer(
                 ZendPropertyInfo::class,
@@ -139,7 +143,23 @@ final class ZendObject implements CDataDereferencable
                 continue;
             }
             $real_offset = $property_info->offset - $table_offset;
-            yield $name => $this->properties_table[(int)($real_offset / 16)];
+            $slot = (int)($real_offset / 16);
+            $visited_slots[$slot] = true;
+            yield $name => $this->properties_table[$slot];
+        }
+
+        // Yield any remaining slots not covered by properties_info
+        // (e.g. trait-defined properties that may not appear in the
+        // properties_info hash table in some configurations).
+        for ($i = 0; $i < $property_count; $i++) {
+            if (isset($visited_slots[$i])) {
+                continue;
+            }
+            $zval = $this->properties_table[$i];
+            if ($zval->isUndef()) {
+                continue;
+            }
+            yield "property_{$i}" => $zval;
         }
     }
 

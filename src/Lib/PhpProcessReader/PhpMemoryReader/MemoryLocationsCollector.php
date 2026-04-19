@@ -103,7 +103,12 @@ final class MemoryLocationsCollector
         return $chunk_address;
     }
 
-    /** @param TargetPhpSettings<VersionDecided> $target_php_settings */
+    /**
+     * @param TargetPhpSettings<VersionDecided> $target_php_settings
+     * @param \Reli\Inspector\MemoryDump\FastPath\FastPathReader|null $fast_path
+     *     Optional fast-path reader for dump analysis. When provided,
+     *     hot collector jobs use string-buffer reads instead of FFI.
+     */
     public function collectAll(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
@@ -112,6 +117,7 @@ final class MemoryLocationsCollector
         ?MemoryLimitErrorDetails $memory_limit_error_details = null,
         ?int $bg_address = null,
         ?ContextTreeSink $sink = null,
+        ?\Reli\Inspector\MemoryDump\FastPath\FastPathReader $fast_path = null,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -133,11 +139,13 @@ final class MemoryLocationsCollector
         $chunk_memory_locations = new MemoryLocations();
 
         $zend_mm_main_chunk = $dereferencer->deref($main_chunk_header_pointer);
+        $walked_chunk_count = 0;
         foreach ($zend_mm_main_chunk->iterateChunks($dereferencer) as $chunk) {
             $chunk_memory_location = ZendMmChunkMemoryLocation::fromZendMmChunk($chunk);
             $chunk_memory_locations->add(
                 $chunk_memory_location
             );
+            $walked_chunk_count++;
         }
         $huge_memory_locations = new MemoryLocations();
         foreach ($zend_mm_main_chunk->heap_slot->iterateHugeList($dereferencer) as $huge_list) {
@@ -154,6 +162,17 @@ final class MemoryLocationsCollector
         $memory_get_peak_usage = $zend_mm_main_chunk->heap_slot->peak;
         $memory_limit = $zend_mm_main_chunk->heap_slot->limit;
         $cached_chunks_size = $zend_mm_main_chunk->heap_slot->cached_chunks_count * ZendMmChunk::SIZE;
+
+        // Warn if chunk walk was incomplete (corrupt next pointer or
+        // chunks outside dump region).
+        $walked_chunk_bytes = $walked_chunk_count * ZendMmChunk::SIZE;
+        if ($memory_get_usage_real_size > 0 && $walked_chunk_bytes < $memory_get_usage_real_size * 0.5) {
+            $walked_mb = number_format($walked_chunk_bytes / 1024 / 1024, 1);
+            $real_mb = number_format($memory_get_usage_real_size / 1024 / 1024, 1);
+            fwrite(STDERR, "WARNING: ZendMM chunk walk incomplete — found {$walked_mb} MB"
+                . " in {$walked_chunk_count} chunks, but real_size is {$real_mb} MB."
+                . " Some chunks may be outside the dump region.\n");
+        }
 
         $eg_pointer = new Pointer(
             ZendExecutorGlobals::class,
@@ -219,9 +238,10 @@ final class MemoryLocationsCollector
         if ($sink instanceof \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink) {
             $sink->setRegionBoundaries($region_boundaries);
         }
+        if ($sink instanceof \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink) {
+            $sink->setRegionBoundaries($region_boundaries);
+        }
         $analyzer = new ContextAnalyzer();
-        /** @var \WeakMap<\Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext, int> $memo */
-        $memo = new \WeakMap();
 
         assert(!is_null($eg->function_table));
         assert(!is_null($eg->class_table));
@@ -237,13 +257,13 @@ final class MemoryLocationsCollector
             $zend_type_reader,
             $sink,
             $analyzer,
-            $memo,
             $memory_locations,
             $context_pools,
             $cg->map_ptr_base,
             $memory_limit_error_details,
             $vm_stack_memory_locations,
             $chunk_memory_locations,
+            $fast_path,
         );
 
         // Create the job queue
@@ -251,18 +271,28 @@ final class MemoryLocationsCollector
 
         // Seed the queue with root branches in reverse order for LIFO DFS.
         // Last pushed = first processed.
+        //
+        // Ordering matters: when two branches reference the same object
+        // (e.g. symbol_table is also a call frame's variable table),
+        // the branch processed FIRST gets the "real" tree structure;
+        // later branches get a reference edge to the existing node.
+        //
+        // Process "definition" branches before "usage" branches so the
+        // canonical tree lives under the named globals/tables, not
+        // buried inside a call frame.
         $queue->push(new Collector\Job\EmitObjectsStoreJob($eg->objects_store));
+        $queue->push(new Collector\Job\EmitCallFramesJob($eg));
         $queue->push(new Collector\Job\EmitModulesJob($bg_address));
         $queue->push(new Collector\Job\EmitGlobalCallbacksJob($eg));
-        $queue->push(new Collector\Job\EmitGlobalConstantsJob($zend_constants));
-        $queue->push(new Collector\Job\EmitClassTableJob($class_table));
-        $queue->push(new Collector\Job\EmitFunctionTableJob($function_table));
-        $queue->push(new Collector\Job\EmitGlobalVariablesJob($eg->symbol_table));
-        $queue->push(new Collector\Job\EmitCallFramesJob($eg));
-        $queue->push(new Collector\Job\EmitInternedStringsJob($cg->interned_strings));
         $queue->push(new Collector\Job\EmitIncludedFilesJob($eg->included_files));
+        $queue->push(new Collector\Job\EmitGlobalConstantsJob($zend_constants));
+        $queue->push(new Collector\Job\EmitFunctionTableJob($function_table));
+        $queue->push(new Collector\Job\EmitClassTableJob($class_table));
+        $queue->push(new Collector\Job\EmitGlobalVariablesJob($eg->symbol_table));
+        $queue->push(new Collector\Job\EmitInternedStringsJob($cg->interned_strings));
 
         // Main iterative loop
+        $drain_counter = 0;
         while (!$queue->isEmpty()) {
             $job = $queue->pop();
             assert($job !== null);
@@ -272,7 +302,17 @@ final class MemoryLocationsCollector
                 // Skip failed jobs (bad pointers, unmapped memory, etc.)
                 // and continue processing remaining queue
             }
+            // Periodically drain emitted contexts from the pools to
+            // free memory. Once a context has been emitted and its
+            // node_id recorded in address_map, the pool entry is no
+            // longer needed — subsequent dedup hits address_map directly.
+            if (++$drain_counter >= 100000) {
+                $context_pools->drainEmittedToAddressMap($ctx->address_map);
+                $drain_counter = 0;
+            }
         }
+        // Final drain for any remaining emitted contexts
+        $context_pools->drainEmittedToAddressMap($ctx->address_map);
 
         // Post-processing: memory limit violation real call stack recovery.
         // This is a rare edge case that reconstructs the call stack from

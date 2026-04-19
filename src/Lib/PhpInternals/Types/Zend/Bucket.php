@@ -47,10 +47,7 @@ class Bucket implements CDataDereferencable
     {
         return match ($field_name) {
             'val' => $this->val = new Zval(
-                new CastedCData(
-                    $this->casted_cdata->casted->val,
-                    $this->casted_cdata->casted->val,
-                ),
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->val),
                 new Pointer(
                     Zval::class,
                     $this->pointer->address

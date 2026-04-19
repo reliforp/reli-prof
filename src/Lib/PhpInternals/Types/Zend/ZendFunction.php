@@ -139,7 +139,7 @@ final class ZendFunction implements LazyDereferencable, CDataDereferencable
                     $this->pointer,
                     'op_array',
                     'zend_op_array',
-                )->casted,
+                ),
             ),
         };
     }
@@ -175,7 +175,9 @@ final class ZendFunction implements LazyDereferencable, CDataDereferencable
                     )
                     : null
             ,
-            'op_array' => $this->op_array = new ZendOpArray($this->casted_cdata->casted->op_array),
+            'op_array' => $this->op_array = new ZendOpArray(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->op_array)
+            ),
         };
     }
 

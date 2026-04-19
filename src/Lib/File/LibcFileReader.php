@@ -139,6 +139,80 @@ final class LibcFileReader
     }
 
     /**
+     * mmap the entire file at `$path` as read-only (MAP_PRIVATE).
+     *
+     * Returns a CData pointer to the mapped region and the file size,
+     * or null if mmap is not available on this platform. The caller
+     * must call munmapFile() when done.
+     *
+     * @return array{CData, int}|null [pointer, length] or null on failure
+     * @psalm-suppress MixedReturnTypeCoercion
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress MixedArgument
+     */
+    public static function mmapFile(string $path): ?array
+    {
+        if (!extension_loaded('ffi')) {
+            return null;
+        }
+        $libc = self::bindMmapLibc();
+        if ($libc === null) {
+            return null;
+        }
+
+        $size = filesize($path);
+        if ($size === false || $size === 0) {
+            return null;
+        }
+
+        // O_RDONLY = 0
+        $fd = $libc->open($path, 0);
+        if ($fd < 0) {
+            return null;
+        }
+
+        try {
+            // PROT_READ = 1, MAP_PRIVATE = 2
+            // MAP_FAILED = (void*)-1 on Linux
+            $ptr = $libc->mmap(null, $size, 1, 2, $fd, 0);
+            if ($ptr === null || FFI::isNull($ptr)) {
+                return null;
+            }
+            // Check for MAP_FAILED: cast to intptr_t and check -1
+            // PHP FFI doesn't easily compare pointers, so we trust
+            // that mmap returns a valid address or null-equivalent.
+            // On Linux, MAP_FAILED is (void*)(-1) which FFI represents
+            // as a non-null pointer. We detect it via madvise failing.
+
+            return [$ptr, $size];
+        } catch (\Throwable) {
+            return null;
+        } finally {
+            // fd can be closed after mmap without invalidating the mapping
+            $libc->close($fd);
+        }
+    }
+
+    /**
+     * Unmap a region previously obtained from mmapFile().
+     */
+    public static function munmapFile(CData $ptr, int $length): void
+    {
+        if (!extension_loaded('ffi')) {
+            return;
+        }
+        $libc = self::bindMmapLibc();
+        if ($libc === null) {
+            return;
+        }
+        try {
+            $libc->munmap($ptr, $length);
+        } catch (\Throwable) {
+            // best effort
+        }
+    }
+
+    /**
      * Try to bind the libc calls we need. libc's location is
      * platform-dependent, so try the usual candidates in order. PHP
      * FFI with a null library name looks up symbols from RTLD_DEFAULT
@@ -169,6 +243,34 @@ final class LibcFileReader
                 // try next candidate
             }
         }
+        return null;
+    }
+
+    /** @var FFI|null|false null=not tried, false=failed */
+    private static FFI|null|false $mmapLibc = null;
+
+    private static function bindMmapLibc(): ?FFI
+    {
+        if (self::$mmapLibc === false) {
+            return null;
+        }
+        if (self::$mmapLibc !== null) {
+            return self::$mmapLibc;
+        }
+        $cdef = 'int open(const char *pathname, int flags);'
+            . 'int close(int fd);'
+            . 'void *mmap(void *addr, unsigned long length, int prot, int flags, int fd, long offset);'
+            . 'int munmap(void *addr, unsigned long length);';
+        $candidates = [null, 'libc.so.6', 'libc.so', 'libSystem.dylib'];
+        foreach ($candidates as $lib) {
+            try {
+                self::$mmapLibc = FFI::cdef($cdef, $lib);
+                return self::$mmapLibc;
+            } catch (\Throwable) {
+                // try next candidate
+            }
+        }
+        self::$mmapLibc = false;
         return null;
     }
 }

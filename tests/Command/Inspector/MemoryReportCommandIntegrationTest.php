@@ -310,4 +310,208 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
         );
         $this->assertContains('TestUser', $class_names);
     }
+
+    #[DataProvider('provideFromV72')]
+    public function testBinaryAnalyzeReportMatchesSqliteReportForKeyFindings(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('no target version');
+        }
+
+        $dump_path = $this->createTmpFile();
+        $db_path = $this->createTmpFile('.db');
+        $rmem_path = $this->createTmpFile('.rmem');
+        $sqlite_report_path = $this->createTmpFile('.sqlite-report.json');
+        $binary_report_path = $this->createTmpFile('.binary-report.json');
+        $dump_container = $this->createContainer();
+        [, $pid, ] = $this->startTargetProcess($docker_image_name);
+
+        /** @var MemoryDumpCommand $dump_command */
+        $dump_command = $dump_container->make(MemoryDumpCommand::class);
+        $dump_input = new ArrayInput([
+            '--pid' => (string)$pid,
+            '--output' => $dump_path,
+            '--include-binary' => true,
+        ]);
+        $dump_input->setInteractive(false);
+        $this->assertSame(0, $dump_command->run($dump_input, new BufferedOutput()));
+
+        /** @var MemoryAnalyzeCommand $sqlite_analyze_command */
+        $sqlite_analyze_command = $this->createContainer()->make(MemoryAnalyzeCommand::class);
+
+        $sqlite_analyze_input = new ArrayInput([
+            'dump-file' => $dump_path,
+            '--output-format' => 'sqlite3',
+            '--output' => $db_path,
+        ]);
+        $sqlite_analyze_input->setInteractive(false);
+        ob_start();
+        try {
+            $sqlite_analyze_result = $sqlite_analyze_command->run($sqlite_analyze_input, new BufferedOutput());
+        } finally {
+            ob_end_clean();
+        }
+        $this->assertSame(0, $sqlite_analyze_result);
+
+        /** @var MemoryAnalyzeCommand $binary_analyze_command */
+        $binary_analyze_command = $this->createContainer()->make(MemoryAnalyzeCommand::class);
+        $binary_analyze_input = new ArrayInput([
+            'dump-file' => $dump_path,
+            '--output-format' => 'binary',
+            '--output' => $rmem_path,
+        ]);
+        $binary_analyze_input->setInteractive(false);
+        ob_start();
+        try {
+            $binary_analyze_result = $binary_analyze_command->run($binary_analyze_input, new BufferedOutput());
+        } finally {
+            ob_end_clean();
+        }
+        $this->assertSame(0, $binary_analyze_result);
+
+        /** @var MemoryReportCommand $report_command */
+        $report_command = $this->createContainer()->make(MemoryReportCommand::class);
+
+        $sqlite_report_input = new ArrayInput([
+            'db-file' => $db_path,
+            '--output-format' => 'report-json',
+            '--output' => $sqlite_report_path,
+        ]);
+        $sqlite_report_input->setInteractive(false);
+        $this->assertSame(0, $report_command->run($sqlite_report_input, new BufferedOutput()));
+
+        $binary_report_input = new ArrayInput([
+            'db-file' => $rmem_path,
+            '--output-format' => 'report-json',
+            '--output' => $binary_report_path,
+        ]);
+        $binary_report_input->setInteractive(false);
+        $this->assertSame(0, $report_command->run($binary_report_input, new BufferedOutput()));
+
+        $sqlite_json = file_get_contents($sqlite_report_path);
+        $binary_json = file_get_contents($binary_report_path);
+        $this->assertNotFalse($sqlite_json);
+        $this->assertNotFalse($binary_json);
+
+        $sqlite_report = json_decode($sqlite_json, true);
+        $binary_report = json_decode($binary_json, true);
+        $this->assertIsArray($sqlite_report);
+        $this->assertIsArray($binary_report);
+        $this->assertSame(
+            $sqlite_report['meta']['heap_memory_analyzed_percentage'] ?? null,
+            $binary_report['meta']['heap_memory_analyzed_percentage'] ?? null,
+        );
+
+        $sqlite_findings = $sqlite_report['findings'] ?? [];
+        $binary_findings = $binary_report['findings'] ?? [];
+        $this->assertIsArray($sqlite_findings);
+        $this->assertIsArray($binary_findings);
+
+        $this->assertSame(
+            $this->indexTypeRanking($sqlite_findings),
+            $this->indexTypeRanking($binary_findings),
+        );
+        $this->assertSame(
+            $this->indexClassRanking($sqlite_findings),
+            $this->indexClassRanking($binary_findings),
+        );
+        $this->assertSame(
+            $this->indexRootBlame($sqlite_findings),
+            $this->indexRootBlame($binary_findings),
+        );
+
+        $sqlite_bottleneck = $this->firstFindingByKind($sqlite_findings, 'bottleneck_path');
+        $binary_bottleneck = $this->firstFindingByKind($binary_findings, 'bottleneck_path');
+        $this->assertNotNull($sqlite_bottleneck);
+        $this->assertNotNull($binary_bottleneck);
+        $this->assertSame($sqlite_bottleneck['impact_bytes'], $binary_bottleneck['impact_bytes']);
+        $this->assertSame(
+            $sqlite_bottleneck['facts']['summary_path'] ?? null,
+            $binary_bottleneck['facts']['summary_path'] ?? null,
+        );
+    }
+
+    /**
+     * @param list<array<string, mixed>> $findings
+     * @return array<string, int>
+     */
+    private function indexTypeRanking(array $findings): array
+    {
+        $indexed = [];
+        foreach ($findings as $finding) {
+            if (($finding['kind'] ?? null) !== 'type_ranking') {
+                continue;
+            }
+            $facts = $finding['facts'] ?? null;
+            if (!is_array($facts) || !isset($facts['type'], $facts['memory_usage'])) {
+                continue;
+            }
+            $indexed[(string)$facts['type']] = (int)$facts['memory_usage'];
+        }
+        ksort($indexed);
+        return $indexed;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $findings
+     * @return array<string, int>
+     */
+    private function indexClassRanking(array $findings): array
+    {
+        $indexed = [];
+        foreach ($findings as $finding) {
+            if (($finding['kind'] ?? null) !== 'class_ranking') {
+                continue;
+            }
+            $facts = $finding['facts'] ?? null;
+            if (!is_array($facts)) {
+                continue;
+            }
+            $class_name = $facts['class_name'] ?? $facts['class'] ?? null;
+            $memory_usage = $facts['memory_usage'] ?? $facts['memory_bytes'] ?? null;
+            if (!is_string($class_name) || !is_int($memory_usage)) {
+                continue;
+            }
+            $indexed[$class_name] = $memory_usage;
+        }
+        ksort($indexed);
+        return $indexed;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $findings
+     * @return array<string, int>
+     */
+    private function indexRootBlame(array $findings): array
+    {
+        $indexed = [];
+        foreach ($findings as $finding) {
+            if (($finding['kind'] ?? null) !== 'root_blame') {
+                continue;
+            }
+            $facts = $finding['facts'] ?? null;
+            if (!is_array($facts) || !isset($facts['root_name'], $facts['total_bytes'])) {
+                continue;
+            }
+            $indexed[(string)$facts['root_name']] = (int)$facts['total_bytes'];
+        }
+        ksort($indexed);
+        return $indexed;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $findings
+     * @return array<string, mixed>|null
+     */
+    private function firstFindingByKind(array $findings, string $kind): ?array
+    {
+        foreach ($findings as $finding) {
+            if (($finding['kind'] ?? null) === $kind) {
+                return $finding;
+            }
+        }
+        return null;
+    }
 }

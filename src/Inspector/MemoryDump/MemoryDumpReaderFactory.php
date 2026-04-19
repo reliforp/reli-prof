@@ -22,6 +22,8 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
+use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;
 
 use function DI\autowire;
 
@@ -34,9 +36,18 @@ final class MemoryDumpReaderFactory
     ) {
     }
 
-    /** @param array<string, string> $path_mapping */
-    public function createFromPath(string $file_path, array $path_mapping): MemoryDumpReader
-    {
+    /**
+     * @param array<string, string> $path_mapping
+     * @param int $read_buffer_size Read-ahead buffer size for dump reads.
+     *     Larger values trade memory for fewer fseek/fread syscalls.
+     *     0 disables buffering. Default 256 KiB.
+     */
+    public function createFromPath(
+        string $file_path,
+        array $path_mapping,
+        int $read_buffer_size = 256 * 1024,
+        bool $disable_fast_path = false,
+    ): MemoryDumpReader {
         $fp = fopen($file_path, 'rb');
         if ($fp === false) {
             throw new \RuntimeException("failed to open file: {$file_path}");
@@ -56,6 +67,7 @@ final class MemoryDumpReaderFactory
             $region_index,
             $process_memory_map,
             $path_resolver,
+            $read_buffer_size,
         );
 
         $container = $this->container_builder
@@ -84,12 +96,27 @@ final class MemoryDumpReaderFactory
 
         /** @var value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
         $php_version = $parsed['php_version'];
+
+        // Build FastPathReader for dump analysis
+        $fast_path = null;
+        /** @var class-string<FastPathReader>|null $fast_path_class */
+        $fast_path_class = "Reli\\Inspector\\MemoryDump\\FastPath\\Generated\\{$php_version}\\FastPathReader";
+        if (!$disable_fast_path && class_exists($fast_path_class)) {
+            $fast_fp = fopen($file_path, 'rb');
+            if ($fast_fp !== false) {
+                $fast_path = new $fast_path_class(
+                    new RegionByteProvider($region_index, $fast_fp),
+                );
+            }
+        }
+
         return new MemoryDumpReader(
             $container->get(MemoryLocationsCollector::class),
             $parsed['pid'],
             $php_version,
             $parsed['eg_address'],
             $parsed['cg_address'],
+            fast_path: $fast_path,
         );
     }
 

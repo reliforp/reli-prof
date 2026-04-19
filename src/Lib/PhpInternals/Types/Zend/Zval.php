@@ -46,9 +46,15 @@ class Zval implements CDataDereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'value' => $this->value = new ZendValue($this->casted_cdata->casted->value),
-            'u1' => $this->u1 = new ZvalU1($this->casted_cdata->casted->u1),
-            'u2' => $this->u2 = new ZvalU2($this->casted_cdata->casted->u2),
+            'value' => $this->value = new ZendValue(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->value)
+            ),
+            'u1' => $this->u1 = new ZvalU1(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->u1)
+            ),
+            'u2' => $this->u2 = new ZvalU2(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->u2)
+            ),
         };
     }
 

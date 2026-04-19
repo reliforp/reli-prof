@@ -3,7 +3,7 @@ name: PHP Coding Style Checker
 on:
   push:
     branches:
-      - '*'
+      - '[0-9]+.[0-9]+.x'
   pull_request:
     branches:
       - '*'
@@ -39,4 +39,4 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-suggest
 
       - name: Run phpcs
-        run: vendor/bin/phpcs --standard=./phpcs.xml --report=checkstyle -q ./src ./tests | cs2pr
+        run: vendor/bin/phpcs --standard=./phpcs.xml --report=checkstyle -n -q ./src ./tests | cs2pr

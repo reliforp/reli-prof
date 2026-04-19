@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use FFI\CData;
+use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\Pointer;
 
 final class ZendClassEntryInfoUser
@@ -31,10 +31,10 @@ final class ZendClassEntryInfoUser
     public ?Pointer $doc_comment;
 
     /**
-     * @param \FFI\PhpInternals\zend_class_entry_info_user $cdata
+     * @param CastedCData<\FFI\PhpInternals\zend_class_entry_info_user> $cdata
      */
     public function __construct(
-        private CData $cdata,
+        private CastedCData $cdata,
     ) {
         unset($this->filename);
         unset($this->line_start);
@@ -45,19 +45,19 @@ final class ZendClassEntryInfoUser
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'filename' => $this->filename = $this->cdata->filename !== null
+            'filename' => $this->filename = $this->cdata->casted->filename !== null
                 ? Pointer::fromCData(
                     ZendString::class,
-                    $this->cdata->filename
+                    $this->cdata->casted->filename
                 )
                 : null
             ,
-            'line_start' => $this->line_start = $this->cdata->line_start,
-            'line_end' => $this->line_end = $this->cdata->line_end,
-            'doc_comment' => $this->doc_comment = $this->cdata->doc_comment !== null
+            'line_start' => $this->line_start = $this->cdata->casted->line_start,
+            'line_end' => $this->line_end = $this->cdata->casted->line_end,
+            'doc_comment' => $this->doc_comment = $this->cdata->casted->doc_comment !== null
                 ? Pointer::fromCData(
                     ZendString::class,
-                    $this->cdata->doc_comment
+                    $this->cdata->casted->doc_comment
                 )
                 : null
             ,

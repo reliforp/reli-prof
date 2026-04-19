@@ -201,6 +201,30 @@ final class Terminal implements TerminalInterface
     }
 
     #[\Override]
+    public function pollKeyTimeout(int $timeoutMs): ?string
+    {
+        if ($this->tty_in === null) {
+            return null;
+        }
+        $read = [$this->tty_in];
+        $write = null;
+        $except = null;
+        $sec = intdiv($timeoutMs, 1000);
+        $usec = ($timeoutMs % 1000) * 1000;
+        $changed = @stream_select($read, $write, $except, $sec, $usec);
+        if ($changed === false || $changed === 0) {
+            return null;
+        }
+        return $this->readKey();
+    }
+
+    #[\Override]
+    public function getInputStream()
+    {
+        return $this->tty_in;
+    }
+
+    #[\Override]
     public function write(string $s): void
     {
         if ($this->tty_out === null) {

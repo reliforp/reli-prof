@@ -39,10 +39,7 @@ final class PhpShutdownFunctionEntry implements CDataDereferencable
     public function getFunctionNameDirect(): Zval
     {
         return Zval::fromCastedCData(
-            new CastedCData(
-                $this->casted_cdata->casted->function_name,
-                $this->casted_cdata->casted->function_name,
-            ),
+            $this->casted_cdata->createSubView($this->casted_cdata->casted->function_name),
             new Pointer(
                 Zval::class,
                 $this->pointer->address
@@ -63,10 +60,7 @@ final class PhpShutdownFunctionEntry implements CDataDereferencable
     public function getFunctionNameFromFci(): Zval
     {
         return Zval::fromCastedCData(
-            new CastedCData(
-                $this->casted_cdata->casted->fci->function_name,
-                $this->casted_cdata->casted->fci->function_name,
-            ),
+            $this->casted_cdata->createSubView($this->casted_cdata->casted->fci->function_name),
             new Pointer(
                 Zval::class,
                 $this->pointer->address

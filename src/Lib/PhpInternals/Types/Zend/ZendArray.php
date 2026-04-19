@@ -98,7 +98,9 @@ class ZendArray implements CDataDereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'gc' => new ZendRefcountedH($this->casted_cdata->casted->gc),
+            'gc' => new ZendRefcountedH(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->gc)
+            ),
             'flags' => $this->flags = $this->casted_cdata->casted->u->flags,
             'nTableMask' => $this->nTableMask = $this->casted_cdata->casted->nTableMask,
             'arData' => $this->arData = $this->casted_cdata->casted->arData !== null
@@ -201,10 +203,21 @@ class ZendArray implements CDataDereferencable
         return $this->getHashSize($this->nTableMask) + $this->getUsedDataSize();
     }
 
+    /**
+     * Element size for packed arrays. Base class returns 16 (PHP >= 8.2
+     * uses sizeof(zval) via arPacked). V73\ZendArray overrides this to
+     * return BUCKET_SIZE (PHP < 8.2 allocates packed arrays at
+     * sizeof(Bucket) = 32).
+     */
+    protected function packedElementSize(): int
+    {
+        return 16;
+    }
+
     public function getDataSize(): int
     {
         if ($this->isPacked()) {
-            return $this->nTableSize * 16;
+            return $this->nTableSize * $this->packedElementSize();
         } else {
             return $this->nTableSize * self::BUCKET_SIZE_IN_BYTES;
         }
@@ -213,7 +226,7 @@ class ZendArray implements CDataDereferencable
     public function getUsedDataSize(): int
     {
         if ($this->isPacked()) {
-            return $this->nNumUsed * 16;
+            return $this->nNumUsed * $this->packedElementSize();
         } else {
             return $this->nNumUsed * self::BUCKET_SIZE_IN_BYTES;
         }

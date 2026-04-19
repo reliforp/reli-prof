@@ -66,10 +66,7 @@ final class ZendMmChunk implements CDataDereferencable
         unset($this->num);
         unset($this->free_pages);
         $this->heap_slot = new ZendMmHeap(
-            new CastedCData(
-                $this->casted_cdata->raw,
-                $this->casted_cdata->casted->heap_slot,
-            ),
+            $this->casted_cdata->createSubView($this->casted_cdata->casted->heap_slot),
             new Pointer(
                 ZendMmHeap::class,
                 $this->pointer->address
@@ -78,7 +75,9 @@ final class ZendMmChunk implements CDataDereferencable
                 \FFI::sizeof($this->casted_cdata->casted->heap_slot),
             ),
         );
-        $this->map = new ZendMmPageMap($this->casted_cdata->casted->map);
+        $this->map = new ZendMmPageMap(
+            $this->casted_cdata->createSubView($this->casted_cdata->casted->map)
+        );
     }
 
     public function __get(string $field_name): mixed
@@ -152,7 +151,13 @@ final class ZendMmChunk implements CDataDereferencable
                 break;
             }
             $visited[$chunk->next->address] = true;
-            $chunk = $dereferencer->deref($chunk->next);
+            try {
+                $chunk = $dereferencer->deref($chunk->next);
+            } catch (\Throwable) {
+                // Chunk list pointer is corrupt or points outside the
+                // dump region — stop walking rather than crashing.
+                break;
+            }
             yield $chunk;
         }
     }

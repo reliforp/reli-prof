@@ -154,11 +154,21 @@ final class CollectorHelpers
             ->user_function_definition_context_pool
             ->getContextForLocation($op_array_header_memory_location);
 
-        $op_array_context = new OpArrayContext(
-            $op_array_header_memory_location,
-            $op_array_body_memory_location,
-        );
-        $function_definition_context->add('op_array', $op_array_context);
+        // Check if this function_definition_context already has an op_array
+        // from a previous emit (pool cache hit). If so, reuse that context
+        // so deferred_arrays reference the already-emitted OpArrayContext
+        // (which has its memo set). Creating a new one would leave its memo
+        // null, causing static_variables to land on fallback parent.
+        $existing_op_array = $function_definition_context->getLinks()['op_array'] ?? null;
+        if ($existing_op_array instanceof OpArrayContext && $existing_op_array->getMemoNodeId() !== null) {
+            $op_array_context = $existing_op_array;
+        } else {
+            $op_array_context = new OpArrayContext(
+                $op_array_header_memory_location,
+                $op_array_body_memory_location,
+            );
+            $function_definition_context->add('op_array', $op_array_context);
+        }
 
         if ($func->op_array->cache_size > 0) {
             $runtime_cache_memory_location = RuntimeCacheMemoryLocation::fromZendOpArray(

@@ -135,6 +135,84 @@ class DumpFileMemoryReaderTest extends TestCase
     }
 
     #[Test]
+    public function testReadWorksEvenIfRegionIndexOrderIsNotSorted(): void
+    {
+        $regions = [
+            [
+                'address' => 0x7f0000002000,
+                'size' => 8,
+                'data' => 'qrstuvwx',
+            ],
+            [
+                'address' => 0x7f0000001000,
+                'size' => 8,
+                'data' => 'abcdefgh',
+            ],
+        ];
+
+        (new MemoryDumpWriter())->write(
+            $this->tmp_file,
+            1234,
+            'v84',
+            0x1000,
+            0x2000,
+            [],
+            $regions,
+        );
+
+        $fp = fopen($this->tmp_file, 'rb') ?: $this->fail('open failed');
+        fread($fp, 8); // magic
+        fread($fp, 4); // format version
+        $len = unpack('V', fread($fp, 4))[1];
+        fread($fp, $len);
+        fread($fp, 8 + 8 + 8 + 4 + 4);
+
+        $region_index = [];
+        foreach ($regions as $region) {
+            fread($fp, 8); // address
+            fread($fp, 8); // size
+            $region_index[] = [
+                'address' => $region['address'],
+                'size' => $region['size'],
+                'file_offset' => (int)ftell($fp),
+            ];
+            fread($fp, $region['size']);
+        }
+        fclose($fp);
+        $region_index = array_reverse($region_index);
+
+        $reader = new DumpFileMemoryReader(
+            $this->tmp_file,
+            $region_index,
+            new ProcessMemoryMap([]),
+            new MappedPathResolver([]),
+        );
+
+        $cdata = $reader->read(1234, 0x7f0000001000, 8);
+        $this->assertSame('abcdefgh', \FFI::string($cdata, 8));
+    }
+
+    #[Test]
+    public function testReadPreservesOriginalFileOrderForOverlappingRegions(): void
+    {
+        $reader = $this->makeReader([
+            [
+                'address' => 0x7f0000001000,
+                'size' => 32,
+                'data' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef',
+            ],
+            [
+                'address' => 0x7f0000001010,
+                'size' => 8,
+                'data' => 'qrstuvwx',
+            ],
+        ]);
+
+        $cdata = $reader->read(1234, 0x7f0000001010, 8);
+        $this->assertSame('QRSTUVWX', \FFI::string($cdata, 8));
+    }
+
+    #[Test]
     public function testReadWithAddressNotInDumpRaisesSpecificException(): void
     {
         $reader = $this->makeReader([

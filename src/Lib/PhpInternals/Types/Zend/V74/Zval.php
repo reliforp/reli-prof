@@ -22,7 +22,9 @@ final class Zval extends BaseZval implements CDataDereferencable
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'u1' => $this->u1 = new ZvalU1($this->casted_cdata->casted->u1),
+            'u1' => $this->u1 = new ZvalU1(
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->u1)
+            ),
             default => parent::__get($field_name),
         };
     }

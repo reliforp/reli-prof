@@ -32,12 +32,13 @@ final class ViewOptions
     public function __construct(
         public readonly bool $no_line = false,
         public readonly ?string $match_re = null,
+        public readonly bool $with_opcode = false,
     ) {
     }
 
     public function withNoLine(bool $no_line): self
     {
-        return new self($no_line, $this->match_re);
+        return new self($no_line, $this->match_re, $this->with_opcode);
     }
 
     /**
@@ -45,6 +46,11 @@ final class ViewOptions
      */
     public function withMatch(?string $match_re): self
     {
-        return new self($this->no_line, $match_re);
+        return new self($this->no_line, $match_re, $this->with_opcode);
+    }
+
+    public function withOpcode(bool $with_opcode): self
+    {
+        return new self($this->no_line, $this->match_re, $with_opcode);
     }
 }

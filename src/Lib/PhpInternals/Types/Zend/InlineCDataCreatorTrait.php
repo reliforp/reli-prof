@@ -13,9 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
-use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
-use Reli\Lib\Process\Pointer\Dereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
 
@@ -39,10 +37,7 @@ trait InlineCDataCreatorTrait
         $resolved_class = $this->pointed_type_resolver->resolve($target_class);
         assert(is_a($resolved_class, CDataDereferencable::class, true));
         return $resolved_class::fromCastedCData(
-            new CastedCData(
-                $field_cdata,
-                $field_cdata,
-            ),
+            $this->casted_cdata->createSubView($field_cdata),
             new Pointer(
                 $resolved_class,
                 $this->pointer->address

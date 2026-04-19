@@ -224,7 +224,7 @@ class ResolveMapPtrTest extends BaseTestCase
             ) {
             }
 
-            public function deref(Pointer $pointer): mixed
+            public function deref(/* Pointer */ $pointer): mixed
             {
                 $this->test->assertSame(
                     $this->expected_address,

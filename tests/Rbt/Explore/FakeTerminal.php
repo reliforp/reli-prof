@@ -112,6 +112,21 @@ final class FakeTerminal implements TerminalInterface
     }
 
     #[\Override]
+    public function pollKeyTimeout(int $timeoutMs): ?string
+    {
+        if ($this->keys === []) {
+            return null;
+        }
+        return $this->readKey();
+    }
+
+    #[\Override]
+    public function getInputStream()
+    {
+        return null;
+    }
+
+    #[\Override]
     public function write(string $s): void
     {
         $this->buffer .= $s;

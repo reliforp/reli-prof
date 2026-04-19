@@ -116,6 +116,16 @@ final class TextReportFormatter implements ReportFormatterInterface
                         . implode('; ', $finding->next_checks);
                 }
 
+                if ($finding->evidence_node_ids !== []) {
+                    $nodeHints = array_map(
+                        fn(int $id) => "#$id",
+                        array_slice($finding->evidence_node_ids, 0, 5),
+                    );
+                    $lines[] = '    Explore: inspector:rmem:explore --node='
+                        . $finding->evidence_node_ids[0]
+                        . '  (' . implode(', ', $nodeHints) . ')';
+                }
+
                 $lines[] = '';
             }
         }
@@ -191,8 +201,8 @@ final class TextReportFormatter implements ReportFormatterInterface
         if ($top_arrays !== []) {
             $lines[] = '=== Top Arrays ===';
             $lines[] = '';
-            $lines[] = sprintf('  %3s  %12s %12s %8s  %s', '#', 'Retained', 'Table', 'Elems', 'Path');
-            $lines[] = '  ' . str_repeat('-', 80);
+            $lines[] = sprintf('  %3s  %12s %12s %8s  %8s  %s', '#', 'Retained', 'Table', 'Elems', 'Node', 'Path');
+            $lines[] = '  ' . str_repeat('-', 90);
 
             $array_rank = 0;
             foreach ($top_arrays as $finding) {
@@ -206,12 +216,16 @@ final class TextReportFormatter implements ReportFormatterInterface
                 /** @var string $path */
                 $path = $facts['owner_path'] ?? '';
                 $tag = $finding->kind === 'sparse_array' ? ' [sparse]' : '';
+                $nodeHint = $finding->evidence_node_ids !== []
+                    ? '#' . $finding->evidence_node_ids[0]
+                    : '';
                 $lines[] = sprintf(
-                    '  %3d  %12s %12s %8s  %s%s',
+                    '  %3d  %12s %12s %8s  %8s  %s%s',
                     ++$array_rank,
                     SizeFormatter::format($retained),
                     SizeFormatter::format($table),
                     number_format($elements),
+                    $nodeHint,
                     $path ?: '(root)',
                     $tag,
                 );
@@ -223,8 +237,8 @@ final class TextReportFormatter implements ReportFormatterInterface
         if ($top_strings !== []) {
             $lines[] = '=== Top Strings ===';
             $lines[] = '';
-            $lines[] = sprintf('  %3s  %12s  %-30s  %s', '#', 'Size', 'Path', 'Preview');
-            $lines[] = '  ' . str_repeat('-', 90);
+            $lines[] = sprintf('  %3s  %12s  %8s  %-30s  %s', '#', 'Size', 'Node', 'Path', 'Preview');
+            $lines[] = '  ' . str_repeat('-', 100);
 
             $string_rank = 0;
             foreach ($top_strings as $finding) {
@@ -241,10 +255,14 @@ final class TextReportFormatter implements ReportFormatterInterface
                 $display_preview = strlen($preview) > 40
                     ? substr($preview, 0, 37) . '...'
                     : $preview;
+                $nodeHint = $finding->evidence_node_ids !== []
+                    ? '#' . $finding->evidence_node_ids[0]
+                    : '';
                 $lines[] = sprintf(
-                    '  %3d  %12s  %-30s  %s',
+                    '  %3d  %12s  %8s  %-30s  %s',
                     ++$string_rank,
                     SizeFormatter::format($size),
+                    $nodeHint,
                     $display_path ?: '(root)',
                     $display_preview ?: '(binary)',
                 );
@@ -301,6 +319,20 @@ final class TextReportFormatter implements ReportFormatterInterface
             foreach ($other_info as $finding) {
                 $lines[] = "  [{$finding->kind}] {$finding->summary}";
             }
+            $lines[] = '';
+        }
+
+        // Explore hint when any finding has evidence node IDs
+        $hasNodeIds = false;
+        foreach ($result->findings as $f) {
+            if ($f->evidence_node_ids !== []) {
+                $hasNodeIds = true;
+                break;
+            }
+        }
+        if ($hasNodeIds) {
+            $lines[] = 'Tip: Use "inspector:rmem:explore <file.rmem> --node=N" to inspect'
+                . ' nodes referenced above (#N).';
             $lines[] = '';
         }
 

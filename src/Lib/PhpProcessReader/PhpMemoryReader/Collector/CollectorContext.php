@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector;
 
+use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
@@ -32,26 +33,18 @@ final class CollectorContext
     /** Tracks the function context matching a memory limit error location */
     public ?UserFunctionDefinitionContext $memory_limit_error_function_context = null;
 
-    /**
-     * $memo is retained for source compatibility but unused —
-     * the emit-state memo now lives on the Context objects as
-     * a private slot reachable through ReferenceContext::getMemoNodeId()
-     * / setMemoNodeId(). See ContextAnalyzer's class docblock.
-     *
-     * @param \WeakMap<ReferenceContext, int> $memo
-     */
     public function __construct(
         public Dereferencer $dereferencer,
         public ZendTypeReader $zend_type_reader,
         public ContextTreeSink $sink,
         public ContextAnalyzer $analyzer,
-        public \WeakMap $memo,
         public MemoryLocations $memory_locations,
         public ContextPools $context_pools,
         public int $map_ptr_base,
         public ?MemoryLimitErrorDetails $memory_limit_error_details,
         public ?MemoryLocations $fiber_vm_stack_memory_locations = null,
         public ?MemoryLocations $chunk_memory_locations = null,
+        public ?FastPathReader $fast_path = null,
     ) {
     }
 

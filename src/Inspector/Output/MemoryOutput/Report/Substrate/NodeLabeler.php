@@ -28,8 +28,10 @@ final class NodeLabeler
     private bool $loaded = false;
 
     public function __construct(
-        private \PDO $db,
+        private ?\PDO $db,
         private int $run_id,
+        /** @var array<int, string>|null Pre-loaded frame labels (binary path) */
+        private ?array $preloaded_frame_labels = null,
     ) {
     }
 
@@ -60,14 +62,17 @@ final class NodeLabeler
         }
         $this->loaded = true;
 
-        // Single index range scan over (run_id, key) for both keys we
-        // care about, then group by node_id in PHP. The previous
-        // version did a self-LEFT-JOIN of context_node_attributes,
-        // which without a (run_id, key) index degenerated into a full
-        // attribute table scan and showed up at ~5% of total report
-        // runtime on big captures. ReportGenerator::ensureReportIndexes
-        // installs the matching `(run_id, key, node_id)` index lazily
-        // so this query is a clean index seek on every modern run.
+        // Binary path: use pre-loaded frame labels
+        if ($this->preloaded_frame_labels !== null) {
+            $this->frame_labels = $this->preloaded_frame_labels;
+            return;
+        }
+
+        // SQL path
+        if ($this->db === null) {
+            return;
+        }
+
         $rows = $this->db->query("
             SELECT node_id, \"key\", value
             FROM context_node_attributes

@@ -433,11 +433,22 @@ Design choices:
   (`'object_properties'`, `'array_elements'`, etc.) appear millions of
   times — the dict collapses them to one entry plus a uint32 id per
   row. Saves both bytes and per-row marshalling cost.
-- **CSR is not pre-built in the file**. The substrate loader continues
-  to build CSR offsets and per-direction views in memory at load time
-  (the same logic `loadEdgesFfi` already runs today). Keeping the
-  serialised format raw avoids freezing CSR layout choices into the
-  on-disk schema and matches the substrate loader's existing API.
+- **CSR is not pre-built in the file (current state)**. The substrate
+  loader builds CSR offsets and per-direction views in memory at load
+  time. The original rationale was to avoid freezing CSR layout
+  choices into the on-disk schema.
+
+  **Update (2026-04-15):** This decision should be revisited.
+  In practice, GraphSubstrate construction from raw edge rows is a
+  major bottleneck for report generation — 60M edges × ~48 bytes
+  per PHP array entry = multi-GB RSS, and construction time of
+  minutes. Since CSR's memory layout is `int32[]` (identical on disk
+  and in memory), pre-building CSR sections in the rmem file would
+  allow mmap/fread → FFI::cast with zero deserialization cost.
+  The layout choices are simple and stable (row_ptr + col_idx +
+  optional parallel arrays for link_name_id and strength).
+  See the "Future: Index Sections" and "Future: On-Disk CSR" sections
+  below for the proposed design.
 - **Section TOC** for forward compatibility — adding a new section
   later does not require bumping the format version, as long as old
   readers tolerate unknown section names.
@@ -592,6 +603,158 @@ branch can land without being held up.
 
 This document captures the current understanding so the next session
 can pick up without re-running the analysis.
+
+## Future: Index and CSR Sections
+
+The current rmem format is sequential-write + bulk-read. All sections
+are packed rows without indexes. This is fine for the current
+analyze → report pipeline but poor for interactive tools
+(`rmem:query`, `rmem:explore`) and limits report optimization.
+
+The goal is to evolve rmem into a **substrate-oriented format**:
+the file stores enough precomputed graph state that report can load
+the substrate directly from typed sections, without re-scanning raw
+row data. This is the "primary representation" approach — the CSR
+and index sections are not just optional accelerators, they become
+the intended way for report and query tools to consume the file.
+
+Raw node/edge/location sections remain in the file for backward
+compatibility and for tools that need row-level access (e.g. ad-hoc
+debugging, format migration), but report does not scan them when
+CSR sections are present.
+
+### Index sections
+
+**Row-pointer indexes** for node_id-based lookups:
+
+```
+SECTION_NODE_LOC_ROWPTR:  uint64[node_count + 1]
+SECTION_NODE_EDGE_ROWPTR: uint64[node_count + 1]
+```
+
+Row-pointer style (`[node_count + 1]`) rather than direct byte
+offsets so that zero-location and zero-edge nodes are naturally
+represented. uint64 to handle sections exceeding 4 GiB.
+
+Requires locations and edges to be **sorted by node_id**. The
+current sink writes in DFS emit order, which is nearly sorted but
+not globally sorted — each batch is sorted internally but batches
+may interleave. Building a globally sorted section requires an
+**external merge during finalize**, not just an in-memory sort at
+`flush()` time. The sink already writes to temp files per batch,
+so the finalize step can merge-sort those temp files. Cost is
+I/O-bound, expected to be modest relative to analyze wall time,
+but must be measured rather than assumed negligible.
+
+**Address index** for memory-address lookups:
+
+```
+SECTION_ADDR_INDEX:
+  (uint64 address, uint32 node_id)[location_count]
+  // sorted by address
+```
+
+Query semantics for `--address` should be **exact match** as the
+primary operation (find the location row whose address equals the
+query). Containing-location lookup (find the location that spans
+the query address) is a separate operation that requires a backward
+scan bounded by max location size, similar to
+`MemoryLocations::getContainingMemoryLocation`. Both can be served
+from the same sorted index with different scan strategies.
+
+### On-disk CSR
+
+The **primary substrate representation** for report. When these
+sections are present, report loads them directly via FFI::cast
+with zero construction cost.
+
+```
+SECTION_TREE_CSR_ROWPTR:    uint64[node_count + 1]
+SECTION_TREE_CSR_COLIDX:    int32[tree_edge_count]
+SECTION_TREE_CSR_LINKNAMES: int32[tree_edge_count]   // string_dict id
+SECTION_TREE_CSR_STRENGTH:  uint8[tree_edge_count]
+SECTION_TREE_PARENTS:       int32[node_count]         // -1 for roots
+SECTION_NODE_SIZES:         int64[node_count]
+SECTION_NODE_TYPES:         int32[node_count]         // string_dict id
+SECTION_NODE_CLASSES:       int32[node_count]         // string_dict id
+
+SECTION_NONTREE_CSR_ROWPTR: uint64[node_count + 1]
+SECTION_NONTREE_CSR_COLIDX: int32[nontree_edge_count]
+```
+
+Row pointers are uint64 (byte offsets into col_idx data) for
+consistency with the index sections, even though int32 col_idx
+values would not overflow uint32 row pointers at current scale.
+This avoids a format-version bump if node counts grow.
+
+### Loading
+
+```php
+$buf = $reader->getSectionData('tree_csr_rowptr');
+$row_ptr = FFI::cast("uint64_t[{$node_count_plus_1}]", $buf);
+// $row_ptr is immediately usable as CSR — zero construction cost
+```
+
+### Memory impact
+
+| Data | PHP array (current) | FFI CSR (proposed) |
+|------|--------------------|--------------------|
+| 5 adjacency lists × 60M edges | ~7 GB | ~1.4 GB |
+| Per-node arrays (6 × 30M) | ~5 GB | ~0.7 GB |
+| **Total** | **~12+ GB** | **~2 GB** |
+| Peak RSS (observed) | 20 GB | ~3 GB (est.) |
+
+Estimates. Actual numbers depend on the workload and must be
+measured once the implementation exists.
+
+### Construction at analyze time
+
+1. BinaryContextTreeSink writes edge pairs to temp files during
+   emit (already happens).
+2. At finalize: **external merge sort** of temp files by parent_id.
+   DFS emit order is nearly sorted, so the merge is expected to
+   have low fan-out, but this is I/O-bound and should be measured.
+3. Build row_ptr + col_idx arrays from sorted edges in one pass.
+4. Write as rmem sections.
+
+For per-node arrays (sizes, types, classes): these are populated
+during the same emit loop and can be written directly since
+node_id is assigned sequentially.
+
+### Pass-specific loading
+
+Not all passes need all graphs:
+
+| Pass | Needs |
+|------|-------|
+| ChokePoint, DrillDown | tree CSR + node_sizes |
+| CycleCluster | tree CSR + nontree CSR |
+| TopStrings, TopArrays | locations section only |
+| CallStack | tree_parents + tree_link_names |
+| CompanionDetection | locations section only |
+| RootBlame | tree CSR + subtree_sizes |
+
+Lazy loading: construct `FfiCsrGraphSubstrate` with section
+references, load each section on first access. Passes that don't
+touch nontree edges never load SECTION_NONTREE_CSR.
+
+### Backward compatibility
+
+If CSR sections are absent (old rmem files or files produced
+before this feature), fall back to the current full-edge-scan
+construction. The section TOC makes this trivial:
+`$reader->hasSection('tree_csr_rowptr')`.
+
+### Relationship to raw sections
+
+When CSR sections are present, SECTION_EDGES becomes redundant
+for report. It is retained in the file for:
+- backward compatibility with older readers
+- ad-hoc debugging and format inspection tools
+- future tools that need per-edge attribute access
+
+New rmem writers should produce both raw and CSR sections until
+the ecosystem has fully migrated to CSR-based loading.
 
 ## See also
 

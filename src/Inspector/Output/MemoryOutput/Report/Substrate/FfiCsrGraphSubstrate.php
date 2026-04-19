@@ -13,6 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheReader;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheWriter;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Lib\FFI\FFIHelper;
 
 /**
@@ -27,7 +32,20 @@ use Reli\Lib\FFI\FFIHelper;
  * - nodeToIndex: direct-indexed FFI int32 array if node_ids are compact
  * - node_classes: class dictionary + FFI int16 per-node IDs (~300 MB → ~6 MB)
  *
- * @psalm-suppress InaccessibleMethod, InvalidCast, PossiblyNullOperand, InvalidOperand, MissingConstructor
+ * @psalm-suppress InaccessibleMethod
+ * @psalm-suppress InvalidCast
+ * @psalm-suppress PossiblyNullOperand
+ * @psalm-suppress InvalidOperand
+ * @psalm-suppress MissingConstructor
+ * @psalm-suppress PossiblyNullPropertyFetch
+ * @psalm-suppress UndefinedPropertyFetch
+ * @psalm-suppress InvalidPropertyFetch
+ * @psalm-suppress PossiblyInvalidArrayAccess
+ * @psalm-suppress MixedArrayOffset
+ * @psalm-suppress PossiblyNullArgument
+ * @psalm-suppress PossiblyUndefinedVariable
+ * @psalm-suppress MixedArrayTypeCoercion
+ * @psalm-suppress MixedOperand
  */
 final class FfiCsrGraphSubstrate extends GraphSubstrate
 {
@@ -111,6 +129,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
 
+    // FFI canonical mapping (replaces parent PHP arrays for SCC + pass queries).
+    // canonIdxFfi[csrIdx] = canonical csrIdx (self for unique nodes).
+    // origOffsets + origData form a CSR: originals of canon c are
+    // origData[origOffsets[c]..origOffsets[c+1]].
+    private ?\FFI\CData $canonIdxFfi = null;
+    private ?\FFI\CData $origOffsets = null;
+    private ?\FFI\CData $origData = null;
+
     /**
      * Rows per chunked fetchAll inside the loader paths. Plumbed in
      * from GraphSubstrate::createFromDb so the user can size it for
@@ -136,9 +162,828 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate->loadEdgesFfi($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
         $substrate->buildSccAdjacency();
+        $substrate->buildCanonicalFfi();
         $substrate->computeSubtreeSizesFfi();
         $substrate->computeSccFfi();
         return $substrate;
+    }
+
+    /**
+     * Load the substrate directly from a .rmem binary file.
+     *
+     * When the file is mmap'd, uses FFI::cast to access rows as
+     * packed C structs (NodeRow/EdgeRow/LocationRow) for zero-copy
+     * reads. Falls back to unpack() on non-mmap readers.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion
+     */
+    #[\Override]
+    public static function loadFromBinary(BinaryReader $reader, bool $useCache = true, bool $rebuildCache = false, bool $skipScc = false): static
+    {
+        $substrate = new self();
+        $dict = $reader->getStringDict();
+
+        $nodeRowCount = $reader->getSectionElementCount(Format::SECTION_NODES);
+
+        // Try mmap + struct cast path
+        $nodeRows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
+
+        // ---- Phase 1: Build node ID mapping from the nodes section ----
+        /** @var array<int, true> $all_node_ids */
+        $all_node_ids = [];
+        if ($nodeRows !== null) {
+            for ($i = 0; $i < $nodeRowCount; $i++) {
+                $all_node_ids[(int)$nodeRows[$i]->node_id] = true;
+            }
+        } else {
+            $nodeData = $reader->getSectionData(Format::SECTION_NODES);
+            $offset = 0;
+            for ($i = 0; $i < $nodeRowCount; $i++) {
+                $node_id = unpack('V', $nodeData, $offset)[1];
+                $all_node_ids[(int)$node_id] = true;
+                $offset += Format::NODE_ROW_SIZE;
+            }
+        }
+        // Include -1 sentinel for the synthetic root parent.
+        $all_node_ids[-1] = true;
+
+        $substrate->nodeCount = count($all_node_ids);
+        $nc = $substrate->nodeCount;
+        $substrate->indexToNodeFfi = FFIHelper::new("int32_t[{$nc}]");
+
+        $idx = 0;
+        $minNodeId = PHP_INT_MAX;
+        $maxNodeId = PHP_INT_MIN;
+        foreach ($all_node_ids as $node_id => $_) {
+            $substrate->indexToNodeFfi[$idx] = $node_id;
+            if ($node_id < $minNodeId) {
+                $minNodeId = $node_id;
+            }
+            if ($node_id > $maxNodeId) {
+                $maxNodeId = $node_id;
+            }
+            $idx++;
+        }
+
+        // Decide nodeToIndex strategy
+        $range = $maxNodeId - $minNodeId + 1;
+        if ($range > 0 && $range < $nc * 4 && $range < 100_000_000) {
+            $substrate->directIndexOffset = -$minNodeId;
+            $directSize = $range;
+            $substrate->directIndexSize = $directSize;
+            $substrate->nodeToIndexDirect = FFIHelper::new("int32_t[{$directSize}]");
+            for ($i = 0; $i < $directSize; $i++) {
+                $substrate->nodeToIndexDirect[$i] = -1;
+            }
+            for ($i = 0; $i < $nc; $i++) {
+                $nid = (int)$substrate->indexToNodeFfi[$i];
+                $slot = $nid + $substrate->directIndexOffset;
+                $substrate->nodeToIndexDirect[$slot] = $i;
+            }
+        } else {
+            $substrate->nodeToIndexPhp = [];
+            for ($i = 0; $i < $nc; $i++) {
+                $substrate->nodeToIndexPhp[(int)$substrate->indexToNodeFfi[$i]] = $i;
+            }
+        }
+        unset($all_node_ids);
+
+        // Allocate per-node FFI arrays
+        $substrate->ffiNodeSizes = FFIHelper::new("int64_t[{$nc}]");
+        $substrate->ffiSubtreeSizes = FFIHelper::new("int64_t[{$nc}]");
+        $substrate->ffiNodeToScc = FFIHelper::new("int32_t[{$nc}]");
+        $substrate->nodeClassIds = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $substrate->ffiNodeToScc[$i] = -1;
+            $substrate->nodeClassIds[$i] = -1;
+        }
+
+        // ---- Phase 2: Load node types from nodes section ----
+        $substrate->nodeTypeIds = FFIHelper::new("int16_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $substrate->nodeTypeIds[$i] = -1;
+        }
+
+        // Localise for the inner loop
+        $directMap = $substrate->nodeToIndexDirect;
+        $directOffset = $substrate->directIndexOffset;
+        $directSize = $substrate->directIndexSize;
+        $phpMap = $substrate->nodeToIndexPhp;
+
+        for ($i = 0; $i < $nodeRowCount; $i++) {
+            if ($nodeRows !== null) {
+                $node_id = (int)$nodeRows[$i]->node_id;
+                $type_id = (int)$nodeRows[$i]->type_id;
+                $canonical_id = (int)$nodeRows[$i]->canonical_id;
+            } else {
+                $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $nodeData, $i * Format::NODE_ROW_SIZE);
+                $node_id = (int)$row['node_id'];
+                $type_id = (int)$row['type_id'];
+                $canonical_id = (int)$row['canonical_id'];
+            }
+
+            if ($directMap !== null) {
+                $slot = $node_id + $directOffset;
+                $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+            } else {
+                $csrIdx = $phpMap[$node_id] ?? -1;
+            }
+            if ($csrIdx < 0) {
+                continue;
+            }
+
+            $type = $dict->lookup($type_id);
+            if ($type !== null) {
+                if (!isset($substrate->nodeTypeDictReverse[$type])) {
+                    $substrate->nodeTypeDictReverse[$type] = count($substrate->nodeTypeDict);
+                    $substrate->nodeTypeDict[] = $type;
+                }
+                $substrate->nodeTypeIds[$csrIdx] = $substrate->nodeTypeDictReverse[$type];
+            }
+
+            if ($canonical_id !== 0 && $canonical_id !== $node_id) {
+                $substrate->canonical[$node_id] = $canonical_id;
+                $substrate->canonical[$canonical_id] = $canonical_id;
+            }
+        }
+        unset($nodeData, $nodeRows);
+
+        // ---- Phase 3: Load node sizes + classes + canonical address grouping ----
+        // If on-disk node_sizes and node_classes sections exist, use them
+        // for sizes and classes (skipping the expensive locations scan for
+        // those two purposes). Canonical address grouping still needs
+        // the locations section.
+        $sizesLoaded = false;
+        if ($reader->hasSection('node_sizes') && $reader->hasSection('node_classes')) {
+            $sizesData = $reader->getSectionData('node_sizes');
+            $classesData = $reader->getSectionData('node_classes');
+            $slotsCount = $reader->getSectionElementCount('node_sizes');
+
+            $ffiNodeSizes = $substrate->ffiNodeSizes;
+            $nodeClassIds = $substrate->nodeClassIds;
+            $substrate->nodeSizesSum = 0;
+
+            for ($i = 0; $i < min($slotsCount, $nc); $i++) {
+                // node_id == i (dense), map to CSR index
+                if ($directMap !== null) {
+                    $slot = $i + $directOffset;
+                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                } else {
+                    $csrIdx = $phpMap[$i] ?? -1;
+                }
+                if ($csrIdx < 0) {
+                    continue;
+                }
+
+                /** @var array{1: int} */
+                $size_u = unpack('P', $sizesData, $i * 8);
+                $size = (int)$size_u[1];
+                $ffiNodeSizes[$csrIdx] = $size;
+                $substrate->nodeSizesSum += $size;
+
+                /** @var array{1: int} */
+                $cls_u = unpack('V', $classesData, $i * 4);
+                $cls_id = (int)$cls_u[1];
+                if ($cls_id !== Format::NULL_STRING_ID) {
+                    $className = $dict->lookup($cls_id);
+                    if ($className !== null) {
+                        if (!isset($substrate->classDictReverse[$className])) {
+                            $substrate->classDictReverse[$className] = count($substrate->classDict);
+                            $substrate->classDict[] = $className;
+                        }
+                        $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
+                    }
+                }
+            }
+            $sizesLoaded = true;
+        }
+
+        // Load canonical map from on-disk section if available.
+        $canonicalLoaded = false;
+        if ($sizesLoaded && $reader->hasSection('canonical_map')) {
+            $canonData = $reader->getSectionData('canonical_map');
+            $canonSlots = $reader->getSectionElementCount('canonical_map');
+            for ($i = 0; $i < min($canonSlots, $nc); $i++) {
+                /** @var array{1: int} */
+                $c = unpack('l', $canonData, $i * 4); // signed int32
+                $canon_id = $c[1];
+                if ($canon_id >= 0 && $canon_id !== $i) {
+                    $substrate->canonical[$i] = $canon_id;
+                    $substrate->canonical[$canon_id] = $canon_id;
+                }
+            }
+            if ($substrate->canonical !== []) {
+                foreach ($substrate->canonical as $node => $parent) {
+                    $canon = $substrate->findCanonical($node);
+                    $substrate->canonicalToOriginals[$canon][] = $node;
+                }
+                foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
+                    $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
+                }
+            }
+            $canonicalLoaded = true;
+        }
+
+        // If canonical was not loaded from cache, scan locations.
+        // Also needed if sizes/classes weren't loaded from on-disk sections.
+        /** @var array<int, list<int>> $addr_to_nodes address → [node_id, ...] for canonical */
+        $addr_to_nodes = [];
+        if (!$canonicalLoaded && $reader->hasSection(Format::SECTION_LOCATIONS)) {
+            $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+            $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+            $locData = $locRows === null ? $reader->getSectionData(Format::SECTION_LOCATIONS) : null;
+            $ffiNodeSizes = $substrate->ffiNodeSizes;
+            $nodeClassIds = $substrate->nodeClassIds;
+
+            if (!$sizesLoaded) {
+                $substrate->nodeSizesSum = 0;
+            }
+            for ($i = 0; $i < $locCount; $i++) {
+                if ($locRows !== null) {
+                    $node_id = (int)$locRows[$i]->node_id;
+                    $address = (int)$locRows[$i]->address;
+                    if (!$sizesLoaded) {
+                        $class_id = (int)$locRows[$i]->class_id;
+                        $size = (int)$locRows[$i]->size;
+                    }
+                } else {
+                    $off = $i * Format::LOCATION_ROW_SIZE;
+                    $node_id = unpack('V', $locData, $off)[1];
+                    $address = unpack('P', $locData, $off + 12)[1];
+                    if (!$sizesLoaded) {
+                        $class_id = unpack('V', $locData, $off + 8)[1];
+                        $size = unpack('P', $locData, $off + 20)[1];
+                    }
+                }
+
+                if (!$sizesLoaded) {
+                    if ($directMap !== null) {
+                        $slot = $node_id + $directOffset;
+                        $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                    } else {
+                        $csrIdx = $phpMap[$node_id] ?? -1;
+                    }
+                    if ($csrIdx >= 0) {
+                        /** @psalm-suppress PossiblyUndefinedVariable */
+                        $ffiNodeSizes[$csrIdx] = (int)$ffiNodeSizes[$csrIdx] + (int)$size;
+                        /** @psalm-suppress PossiblyUndefinedVariable */
+                        $substrate->nodeSizesSum += (int)$size;
+
+                        /** @psalm-suppress PossiblyUndefinedVariable */
+                        if ((int)$class_id !== Format::NULL_STRING_ID && (int)$nodeClassIds[$csrIdx] === -1) {
+                            /** @psalm-suppress PossiblyUndefinedVariable */
+                            $className = $dict->lookup((int)$class_id);
+                            if ($className !== null) {
+                                if (!isset($substrate->classDictReverse[$className])) {
+                                    $substrate->classDictReverse[$className] = count($substrate->classDict);
+                                    $substrate->classDict[] = $className;
+                                }
+                                $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
+                            }
+                        }
+                    }
+                }
+
+                // Canonical address grouping (was Phase 3.5)
+                if ($address !== 0) {
+                    $addr_to_nodes[$address][] = $node_id;
+                }
+            }
+            unset($locData, $locRows);
+        }
+
+        if (!$canonicalLoaded) {
+            // Canonical: group nodes by address, assign min(node_id) as canonical
+            foreach ($addr_to_nodes as $nodes) {
+                $unique_nodes = array_values(array_unique($nodes));
+                if (count($unique_nodes) <= 1) {
+                    continue;
+                }
+                $canon = min($unique_nodes);
+                foreach ($unique_nodes as $nid) {
+                    $substrate->canonical[$nid] = $canon;
+                    $substrate->canonical[$canon] = $canon;
+                }
+            }
+            unset($addr_to_nodes);
+
+            if ($substrate->canonical !== []) {
+                foreach ($substrate->canonical as $node => $parent) {
+                    $canon = $substrate->findCanonical($node);
+                    $substrate->canonicalToOriginals[$canon][] = $node;
+                }
+                foreach ($substrate->canonicalToOriginals as $canon => $nodes) {
+                    $substrate->canonicalToOriginals[$canon] = array_values(array_unique($nodes));
+                }
+            }
+        }
+
+        // ---- Phase 4: Load edges → build CSR ----
+        // If on-disk CSR sections exist, load them directly.
+        if ($reader->hasSection('tree_csr_rowptr')) {
+            $substrate->loadCsrFromSections($reader, $nc, $dict);
+            $substrate->linkDictReverse = []; // Free after edge loading (~80 MB)
+            $substrate->buildSccAdjacency();
+
+            if ($skipScc) {
+                // Explore mode: only need CSR + subtree sizes, skip SCC.
+                // Try loading subtree sizes from sidecar cache.
+                $rmemPath = $reader->getFilePath();
+                $cacheLoaded = false;
+                if ($useCache && $rmemPath !== '') {
+                    $cacheLoaded = $substrate->loadDerivedFromCache($rmemPath, $nc);
+                }
+                if (!$cacheLoaded) {
+                    $substrate->computeSubtreeSizesFfi();
+                }
+                return $substrate;
+            }
+
+            // Build FFI canonical mapping before cache check so it's
+            // available for pass APIs regardless of cache hit/miss.
+            $substrate->buildCanonicalFfi();
+
+            // ---- Phase 5: Derived data (subtree sizes + SCC) ----
+            // Try loading from sidecar cache first.
+            $rmemPath = $reader->getFilePath();
+            $cacheLoaded = false;
+            if ($useCache && !$rebuildCache && $rmemPath !== '') {
+                $cacheLoaded = $substrate->loadDerivedFromCache($rmemPath, $nc);
+            }
+
+            if (!$cacheLoaded) {
+                $substrate->computeSubtreeSizesFfi();
+                $substrate->computeSccFfi();
+
+                // Write sidecar cache (fail-open)
+                if ($useCache && $rmemPath !== '') {
+                    $substrate->writeDerivedCache($rmemPath, $nc);
+                }
+            }
+            return $substrate;
+        }
+
+        // Fallback: build CSR from raw edge rows.
+        $edgeCount = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $substrate->edge_count = $edgeCount;
+        $rootParentIdx = $substrate->nodeIdToIndex(-1);
+
+        $substrate->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+
+        if ($edgeCount === 0) {
+            $substrate->treeEdges = FFIHelper::new("int32_t[1]");
+            $substrate->strongTreeEdges = FFIHelper::new("int32_t[1]");
+            $substrate->allEdges = FFIHelper::new("int32_t[1]");
+            $substrate->strongAllEdges = FFIHelper::new("int32_t[1]");
+            $substrate->revEdges = FFIHelper::new("int32_t[1]");
+            $substrate->subtreeSizesComputed = false;
+            return $substrate;
+        }
+
+        // Staging buffers
+        $stageParentIdx = FFIHelper::new("int32_t[{$edgeCount}]");
+        $stageChildIdx = FFIHelper::new("int32_t[{$edgeCount}]");
+        $stageFlags = FFIHelper::new("int8_t[{$edgeCount}]");
+
+        $substrate->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
+        $substrate->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        for ($k = 0; $k < $nc; $k++) {
+            $substrate->treeLinkIds[$k] = -1;
+            $substrate->treeParentIdx[$k] = -1;
+        }
+
+        $treeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $allDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
+        $revDeg = FFIHelper::new("int32_t[{$nc}]");
+
+        $treeCount = 0;
+        $strongTreeCount = 0;
+        $allCount = 0;
+        $strongAllCount = 0;
+
+        $treeLinkIds = $substrate->treeLinkIds;
+        $treeParentIdx = $substrate->treeParentIdx;
+
+        $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+        $edgeData = $edgeRows === null ? $reader->getSectionData(Format::SECTION_EDGES) : null;
+        for ($i = 0; $i < $edgeCount; $i++) {
+            if ($edgeRows !== null) {
+                $raw_parent = (int)$edgeRows[$i]->parent_node_id;
+                $child = (int)$edgeRows[$i]->child_node_id;
+                $link_name_id = (int)$edgeRows[$i]->link_name_id;
+                $is_tree = (int)$edgeRows[$i]->is_tree;
+                $is_strong = (int)$edgeRows[$i]->strength === 0;
+            } else {
+                $row = unpack(
+                    'Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength',
+                    $edgeData,
+                    $i * Format::EDGE_ROW_SIZE,
+                );
+                $raw_parent = (int)$row['parent_node_id'];
+                $child = (int)$row['child_node_id'];
+                $link_name_id = (int)$row['link_name_id'];
+                $is_tree = (int)$row['is_tree'];
+                $is_strong = (int)$row['strength'] === 0;
+            }
+            $parentIsRoot = $raw_parent === 0xFFFFFFFF;
+            $parent = $parentIsRoot ? -1 : $raw_parent;
+
+            if ($directMap !== null) {
+                $slot = $parent + $directOffset;
+                $pi = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                $slot = $child + $directOffset;
+                $ci = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+            } else {
+                $pi = $phpMap[$parent] ?? -1;
+                $ci = $phpMap[$child] ?? -1;
+            }
+
+            $stageParentIdx[$i] = $pi;
+            $stageChildIdx[$i] = $ci;
+            $stageFlags[$i] = $is_tree | ($is_strong ? 2 : 0);
+
+            if ($is_tree) {
+                $treeDeg[$pi] = $treeDeg[$pi] + 1;
+                $treeCount++;
+                if ($is_strong) {
+                    $strongTreeDeg[$pi] = $strongTreeDeg[$pi] + 1;
+                    $strongTreeCount++;
+                }
+                if ($parentIsRoot) {
+                    $substrate->roots[] = $child;
+                }
+                $link_name = $dict->lookup($link_name_id);
+                if ($link_name !== null) {
+                    if (!isset($substrate->linkDictReverse[$link_name])) {
+                        $substrate->linkDictReverse[$link_name] = count($substrate->linkDict);
+                        $substrate->linkDict[] = $link_name;
+                    }
+                    $treeLinkIds[$ci] = $substrate->linkDictReverse[$link_name];
+                }
+                $treeParentIdx[$ci] = $pi;
+            }
+            if (!$parentIsRoot) {
+                $allDeg[$pi] = $allDeg[$pi] + 1;
+                $allCount++;
+                if ($is_strong) {
+                    $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
+                    $strongAllCount++;
+                }
+            }
+            $revDeg[$ci] = $revDeg[$ci] + 1;
+        }
+        unset($edgeData, $edgeRows);
+
+        // Build offsets via prefix sum
+        $substrate->treeOffsets[0] = 0;
+        $substrate->strongTreeOffsets[0] = 0;
+        $substrate->allOffsets[0] = 0;
+        $substrate->strongAllOffsets[0] = 0;
+        $substrate->revOffsets[0] = 0;
+        for ($k = 0; $k < $nc; $k++) {
+            $substrate->treeOffsets[$k + 1] = $substrate->treeOffsets[$k] + $treeDeg[$k];
+            $substrate->strongTreeOffsets[$k + 1] = $substrate->strongTreeOffsets[$k] + $strongTreeDeg[$k];
+            $substrate->allOffsets[$k + 1] = $substrate->allOffsets[$k] + $allDeg[$k];
+            $substrate->strongAllOffsets[$k + 1] = $substrate->strongAllOffsets[$k] + $strongAllDeg[$k];
+            $substrate->revOffsets[$k + 1] = $substrate->revOffsets[$k] + $revDeg[$k];
+        }
+        unset($treeDeg, $strongTreeDeg, $allDeg, $strongAllDeg, $revDeg);
+
+        $substrate->treeEdges = FFIHelper::new("int32_t[" . max($treeCount, 1) . "]");
+        $substrate->strongTreeEdges = FFIHelper::new("int32_t[" . max($strongTreeCount, 1) . "]");
+        $substrate->allEdges = FFIHelper::new("int32_t[" . max($allCount, 1) . "]");
+        $substrate->strongAllEdges = FFIHelper::new("int32_t[" . max($strongAllCount, 1) . "]");
+        $substrate->revEdges = FFIHelper::new("int32_t[{$edgeCount}]");
+
+        $treeP = FFIHelper::new("int32_t[{$nc}]");
+        $streeP = FFIHelper::new("int32_t[{$nc}]");
+        $allP = FFIHelper::new("int32_t[{$nc}]");
+        $sallP = FFIHelper::new("int32_t[{$nc}]");
+        $revP = FFIHelper::new("int32_t[{$nc}]");
+        for ($k = 0; $k < $nc; $k++) {
+            $treeP[$k] = $substrate->treeOffsets[$k];
+            $streeP[$k] = $substrate->strongTreeOffsets[$k];
+            $allP[$k] = $substrate->allOffsets[$k];
+            $sallP[$k] = $substrate->strongAllOffsets[$k];
+            $revP[$k] = $substrate->revOffsets[$k];
+        }
+
+        // Second pass: walk staged edges into CSR
+        for ($k = 0; $k < $edgeCount; $k++) {
+            $pi = (int)$stageParentIdx[$k];
+            $ci = (int)$stageChildIdx[$k];
+            $flags = (int)$stageFlags[$k];
+            $is_tree = ($flags & 1) !== 0;
+            $is_strong = ($flags & 2) !== 0;
+
+            if ($is_tree) {
+                $p = (int)$treeP[$pi];
+                $substrate->treeEdges[$p] = $ci;
+                $treeP[$pi] = $p + 1;
+                if ($is_strong) {
+                    $p = (int)$streeP[$pi];
+                    $substrate->strongTreeEdges[$p] = $ci;
+                    $streeP[$pi] = $p + 1;
+                }
+            }
+            if ($pi !== $rootParentIdx) {
+                $p = (int)$allP[$pi];
+                $substrate->allEdges[$p] = $ci;
+                $allP[$pi] = $p + 1;
+                if ($is_strong) {
+                    $p = (int)$sallP[$pi];
+                    $substrate->strongAllEdges[$p] = $ci;
+                    $sallP[$pi] = $p + 1;
+                }
+            }
+            $p = (int)$revP[$ci];
+            $substrate->revEdges[$p] = $pi;
+            $revP[$ci] = $p + 1;
+        }
+        unset($treeP, $streeP, $allP, $sallP, $revP);
+        unset($stageParentIdx, $stageChildIdx, $stageFlags);
+
+        // ---- Phase 5: compute derived structures ----
+        $substrate->linkDictReverse = []; // Free after edge loading (~80 MB)
+        $substrate->buildSccAdjacency();
+        $substrate->buildCanonicalFfi();
+        $substrate->computeSubtreeSizesFfi();
+        $substrate->computeSccFfi();
+        return $substrate;
+    }
+
+    /**
+     * Load pre-built CSR sections from the rmem file.
+     *
+     * Reads tree and nontree CSR row_ptr + col_idx, then derives:
+     * - strong tree/all CSR (filtering by strength byte)
+     * - reverse CSR (inverting the all-edges graph)
+     * - treeLinkIds, treeParentIdx, roots
+     *
+     * @psalm-suppress MixedAssignment, PossiblyInvalidArrayAccess, MixedArrayAccess
+     */
+    private function loadCsrFromSections(
+        BinaryReader $reader,
+        int $nc,
+        \Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict $dict,
+    ): void {
+        // Read tree CSR
+        $treeRowPtrData = $reader->getSectionData('tree_csr_rowptr');
+        $treeColIdxData = $reader->getSectionData('tree_csr_colidx');
+        $treeLinkData = $reader->getSectionData('tcsr_links');
+        $treeStrengthData = $reader->getSectionData('tcsr_strength');
+        $treeParentsData = $reader->getSectionData('tree_parents');
+
+        $treeEdgeCount = $reader->getSectionElementCount('tree_csr_colidx');
+        $this->edge_count = $treeEdgeCount; // will be updated after nontree
+
+        // Allocate and populate tree CSR from raw bytes
+        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        \FFI::memcpy($this->treeOffsets, $treeRowPtrData, ($nc + 1) * 4);
+
+        $this->treeEdges = FFIHelper::new("int32_t[" . max(1, $treeEdgeCount) . "]");
+        if ($treeEdgeCount > 0) {
+            \FFI::memcpy($this->treeEdges, $treeColIdxData, $treeEdgeCount * 4);
+        }
+
+        // Tree link names
+        $this->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $this->treeLinkIds[$i] = -1;
+        }
+        // Populate from the CSR linknames array: for each parent, walk
+        // its children and set treeLinkIds[child] = link_name_dict_id
+        for ($p = 0; $p < $nc; $p++) {
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            for ($j = $start; $j < $end; $j++) {
+                $child = (int)$this->treeEdges[$j];
+                /** @var array{1: int} */
+                $lid_raw = unpack('V', $treeLinkData, $j * 4);
+                $link_name_id = $lid_raw[1];
+                $link_name = $dict->lookup($link_name_id);
+                if ($link_name !== null) {
+                    if (!isset($this->linkDictReverse[$link_name])) {
+                        $this->linkDictReverse[$link_name] = count($this->linkDict);
+                        $this->linkDict[] = $link_name;
+                    }
+                    $this->treeLinkIds[$child] = $this->linkDictReverse[$link_name];
+                }
+            }
+        }
+
+        // Tree parents
+        $this->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        \FFI::memcpy($this->treeParentIdx, $treeParentsData, $nc * 4);
+
+        // Roots: children of the sentinel node (last index)
+        $sentinelIdx = $nc - 1;
+        $rstart = (int)$this->treeOffsets[$sentinelIdx];
+        $rend = (int)$this->treeOffsets[$sentinelIdx + 1];
+        for ($j = $rstart; $j < $rend; $j++) {
+            $child_node_id = (int)$this->indexToNodeFfi[(int)$this->treeEdges[$j]];
+            $this->roots[] = $child_node_id;
+        }
+
+        // Strong tree CSR: filter tree edges by strength == 0
+        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongTreeCount = 0;
+        for ($p = 0; $p < $nc; $p++) {
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            for ($j = $start; $j < $end; $j++) {
+                if (ord($treeStrengthData[$j]) === 0) {
+                    $strongTreeDeg[$p] = (int)$strongTreeDeg[$p] + 1;
+                    $strongTreeCount++;
+                }
+            }
+        }
+        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongTreeOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $this->strongTreeOffsets[$i + 1] = (int)$this->strongTreeOffsets[$i] + (int)$strongTreeDeg[$i];
+        }
+        $this->strongTreeEdges = FFIHelper::new("int32_t[" . max(1, $strongTreeCount) . "]");
+        $stPos = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $stPos[$i] = (int)$this->strongTreeOffsets[$i];
+        }
+        for ($p = 0; $p < $nc; $p++) {
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            for ($j = $start; $j < $end; $j++) {
+                if (ord($treeStrengthData[$j]) === 0) {
+                    $pos = (int)$stPos[$p];
+                    $this->strongTreeEdges[$pos] = (int)$this->treeEdges[$j];
+                    $stPos[$p] = $pos + 1;
+                }
+            }
+        }
+        unset($strongTreeDeg, $stPos);
+
+        // Read nontree CSR
+        $nontreeEdgeCount = 0;
+        if ($reader->hasSection('ntcsr_rowptr')) {
+            $ntRowPtrData = $reader->getSectionData('ntcsr_rowptr');
+            $ntColIdxData = $reader->getSectionData('ntcsr_colidx');
+            $nontreeEdgeCount = $reader->getSectionElementCount('ntcsr_colidx');
+        }
+
+        $this->edge_count = $treeEdgeCount + $nontreeEdgeCount;
+
+        // All-edges CSR = tree + nontree (excluding root-parent edges)
+        // Strong all-edges = strong tree + strong nontree (nontree are strong by default)
+        $allDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
+        $revDeg = FFIHelper::new("int32_t[{$nc}]");
+
+        // Count: tree edges (excluding root parent)
+        $rootIdx = $nc - 1; // sentinel
+        for ($p = 0; $p < $nc; $p++) {
+            if ($p === $rootIdx) {
+                continue;
+            }
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            $deg = $end - $start;
+            $allDeg[$p] = (int)$allDeg[$p] + $deg;
+            for ($j = $start; $j < $end; $j++) {
+                if (ord($treeStrengthData[$j]) === 0) {
+                    $strongAllDeg[$p] = (int)$strongAllDeg[$p] + 1;
+                }
+                $ci = (int)$this->treeEdges[$j];
+                $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+            }
+        }
+        // Also count root tree edges for reverse
+        {
+            $start = (int)$this->treeOffsets[$rootIdx];
+            $end = (int)$this->treeOffsets[$rootIdx + 1];
+        for ($j = $start; $j < $end; $j++) {
+            $ci = (int)$this->treeEdges[$j];
+            $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+        }
+        }
+
+        // Count: nontree edges
+        $allCount = 0;
+        $strongAllCount = 0;
+        if ($nontreeEdgeCount > 0) {
+            $ntOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+            \FFI::memcpy($ntOffsets, $ntRowPtrData, ($nc + 1) * 4);
+            $ntEdges = FFIHelper::new("int32_t[" . max(1, $nontreeEdgeCount) . "]");
+            \FFI::memcpy($ntEdges, $ntColIdxData, $nontreeEdgeCount * 4);
+
+            for ($p = 0; $p < $nc; $p++) {
+                $start = (int)$ntOffsets[$p];
+                $end = (int)$ntOffsets[$p + 1];
+                $deg = $end - $start;
+                $allDeg[$p] = (int)$allDeg[$p] + $deg;
+                $strongAllDeg[$p] = (int)$strongAllDeg[$p] + $deg; // nontree are strong
+                for ($j = $start; $j < $end; $j++) {
+                    $ci = (int)$ntEdges[$j];
+                    $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+                }
+            }
+        }
+
+        // Build all-edges CSR
+        $totalAll = 0;
+        $totalStrongAll = 0;
+        $totalRev = 0;
+        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->allOffsets[0] = 0;
+        $this->strongAllOffsets[0] = 0;
+        $this->revOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $this->allOffsets[$i + 1] = (int)$this->allOffsets[$i] + (int)$allDeg[$i];
+            $this->strongAllOffsets[$i + 1] = (int)$this->strongAllOffsets[$i] + (int)$strongAllDeg[$i];
+            $this->revOffsets[$i + 1] = (int)$this->revOffsets[$i] + (int)$revDeg[$i];
+        }
+        $totalAll = (int)$this->allOffsets[$nc];
+        $totalStrongAll = (int)$this->strongAllOffsets[$nc];
+        $totalRev = (int)$this->revOffsets[$nc];
+
+        $this->allEdges = FFIHelper::new("int32_t[" . max(1, $totalAll) . "]");
+        $this->strongAllEdges = FFIHelper::new("int32_t[" . max(1, $totalStrongAll) . "]");
+        $this->revEdges = FFIHelper::new("int32_t[" . max(1, $totalRev) . "]");
+
+        $allP = FFIHelper::new("int32_t[{$nc}]");
+        $sallP = FFIHelper::new("int32_t[{$nc}]");
+        $revP = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $allP[$i] = (int)$this->allOffsets[$i];
+            $sallP[$i] = (int)$this->strongAllOffsets[$i];
+            $revP[$i] = (int)$this->revOffsets[$i];
+        }
+
+        // Fill: tree edges (excluding root)
+        for ($p = 0; $p < $nc; $p++) {
+            if ($p === $rootIdx) {
+                // Still fill reverse for root's children
+                $start = (int)$this->treeOffsets[$p];
+                $end = (int)$this->treeOffsets[$p + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $ci = (int)$this->treeEdges[$j];
+                    $rp = (int)$revP[$ci];
+                    $this->revEdges[$rp] = $p;
+                    $revP[$ci] = $rp + 1;
+                }
+                continue;
+            }
+            $start = (int)$this->treeOffsets[$p];
+            $end = (int)$this->treeOffsets[$p + 1];
+            for ($j = $start; $j < $end; $j++) {
+                $ci = (int)$this->treeEdges[$j];
+                $ap = (int)$allP[$p];
+                $this->allEdges[$ap] = $ci;
+                $allP[$p] = $ap + 1;
+
+                if (ord($treeStrengthData[$j]) === 0) {
+                    $sp = (int)$sallP[$p];
+                    $this->strongAllEdges[$sp] = $ci;
+                    $sallP[$p] = $sp + 1;
+                }
+
+                $rp = (int)$revP[$ci];
+                $this->revEdges[$rp] = $p;
+                $revP[$ci] = $rp + 1;
+            }
+        }
+
+        // Fill: nontree edges
+        if ($nontreeEdgeCount > 0 && isset($ntOffsets) && isset($ntEdges)) {
+            for ($p = 0; $p < $nc; $p++) {
+                $start = (int)$ntOffsets[$p];
+                $end = (int)$ntOffsets[$p + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $ci = (int)$ntEdges[$j];
+                    $ap = (int)$allP[$p];
+                    $this->allEdges[$ap] = $ci;
+                    $allP[$p] = $ap + 1;
+
+                    $sp = (int)$sallP[$p];
+                    $this->strongAllEdges[$sp] = $ci;
+                    $sallP[$p] = $sp + 1;
+
+                    $rp = (int)$revP[$ci];
+                    $this->revEdges[$rp] = $p;
+                    $revP[$ci] = $rp + 1;
+                }
+            }
+        }
+
+        unset($allDeg, $strongAllDeg, $revDeg, $allP, $sallP, $revP);
+
+        $this->subtreeSizesComputed = false;
     }
 
     /** @return list<int> */
@@ -196,6 +1041,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     }
 
     #[\Override]
+    public function getNodeCount(): int
+    {
+        return $this->nodeCount;
+    }
+
+    #[\Override]
     public function getNodeSize(int $nodeId): int
     {
         $idx = $this->nodeIdToIndex($nodeId);
@@ -213,6 +1064,57 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             return 0;
         }
         return (int)$this->ffiSubtreeSizes[$idx];
+    }
+
+    #[\Override]
+    public function isCanonicalOrUnique(int $nodeId): bool
+    {
+        if ($this->canonIdxFfi === null) {
+            return parent::isCanonicalOrUnique($nodeId);
+        }
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return true;
+        }
+        return (int)$this->canonIdxFfi[$idx] === $idx;
+    }
+
+    #[\Override]
+    public function getCanonical(int $nodeId): int
+    {
+        if ($this->canonIdxFfi === null) {
+            return parent::getCanonical($nodeId);
+        }
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return $nodeId;
+        }
+        $canonIdx = (int)$this->canonIdxFfi[$idx];
+        return $this->indexToNodeId($canonIdx);
+    }
+
+    /** @return list<int> */
+    #[\Override]
+    public function getCanonicalGroup(int $nodeId): array
+    {
+        if ($this->canonIdxFfi === null || $this->origOffsets === null) {
+            return parent::getCanonicalGroup($nodeId);
+        }
+        $idx = $this->nodeIdToIndex($nodeId);
+        if ($idx < 0) {
+            return [$nodeId];
+        }
+        $canonIdx = (int)$this->canonIdxFfi[$idx];
+        $oStart = (int)$this->origOffsets[$canonIdx];
+        $oEnd = (int)$this->origOffsets[$canonIdx + 1];
+        if ($oEnd <= $oStart) {
+            return [$nodeId];
+        }
+        $group = [];
+        for ($i = $oStart; $i < $oEnd; $i++) {
+            $group[] = $this->indexToNodeId((int)$this->origData[$i]);
+        }
+        return $group;
     }
 
     #[\Override]
@@ -296,8 +1198,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($this->treeLinkIds === null) {
             return;
         }
-        $link_id = $this->linkDictReverse[$link_name] ?? null;
-        if ($link_id === null) {
+        // Find link_id via reverse dict if available, else linear scan of forward dict.
+        $link_id = $this->linkDictReverse[$link_name] ?? array_search($link_name, $this->linkDict, true);
+        if ($link_id === false || $link_id === null) {
             return;
         }
         $n = $this->nodeCount;
@@ -1007,39 +1910,315 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
      *
      * @psalm-suppress UnsupportedReferenceUsage, MixedArgument
      */
+    /**
+     * Build FFI canonical index from the parent PHP arrays.
+     *
+     * canonIdxFfi[v] = canonical csrIdx of v (identity when unique).
+     * origOffsets + origData form a CSR of originals per canonical.
+     * Frees the parent PHP arrays afterward.
+     *
+     * Called before derived cache check so the FFI canonical mapping
+     * is always available for pass-level APIs, regardless of cache hit.
+     */
+    private function buildCanonicalFfi(): void
+    {
+        if ($this->canonical === []) {
+            return;
+        }
+        $nc = $this->nodeCount;
+        $indexToNodeFfi = $this->indexToNodeFfi;
+
+        $this->canonIdxFfi = FFIHelper::new("int32_t[{$nc}]");
+        $this->origOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $canonIdxFfi = $this->canonIdxFfi;
+        $origOffsets = $this->origOffsets;
+
+        // Pass 1: compute canonIdxFfi and count originals per canonical
+        $origCount = FFIHelper::new("int32_t[{$nc}]");
+        for ($v = 0; $v < $nc; $v++) {
+            $nid = (int)$indexToNodeFfi[$v];
+            if ($nid === -1) {
+                $canonIdxFfi[$v] = $v;
+                continue;
+            }
+            $canon = $this->findCanonical($nid);
+            if ($canon !== $nid) {
+                $canonIdxFfi[$v] = $this->nodeIdToIndex($canon);
+            } else {
+                $canonIdxFfi[$v] = $v;
+            }
+            $c = (int)$canonIdxFfi[$v];
+            $origCount[$c] = (int)$origCount[$c] + 1;
+        }
+
+        // Pass 2: build origOffsets (prefix sum)
+        $origOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $origOffsets[$i + 1] = (int)$origOffsets[$i] + (int)$origCount[$i];
+        }
+        $totalOrig = (int)$origOffsets[$nc];
+        $origData = FFIHelper::new("int32_t[" . max(1, $totalOrig) . "]");
+
+        // Pass 3: fill origData
+        $origPos = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $origPos[$i] = (int)$origOffsets[$i];
+        }
+        for ($v = 0; $v < $nc; $v++) {
+            $nid = (int)$indexToNodeFfi[$v];
+            if ($nid === -1) {
+                continue;
+            }
+            $c = (int)$canonIdxFfi[$v];
+            $p = (int)$origPos[$c];
+            $origData[$p] = $v;
+            $origPos[$c] = $p + 1;
+        }
+        unset($origCount, $origPos);
+        $this->origData = $origData;
+
+        // Free parent PHP arrays — FFI canonical replaces them.
+        $this->canonical = [];
+        $this->canonicalToOriginals = [];
+    }
+
     private function computeSccFfi(): void
     {
         $nc = $this->nodeCount;
-        $has_canonical = $this->canonical !== [];
+        $has_canonical = $this->canonIdxFfi !== null;
 
-        // Localise hot FFI handles so the inner loop reads them as
-        // local variables. PHP property access has measurable overhead
-        // per call; the SCC pass touches these millions of times.
         $strongAllOffsets = $this->strongAllOffsets;
         $strongAllEdges = $this->strongAllEdges;
         $indexToNodeFfi = $this->indexToNodeFfi;
 
-        // If canonical mapping exists, build index-level canonical map:
-        // csrIdx → canonical csrIdx. This avoids repeated node_id lookups.
-        /** @var array<int, int> $canonIdx  csrIdx → canonical csrIdx */
-        $canonIdx = [];
-        /** @var array<int, list<int>> $canonical_original_indices canonical csrIdx => original csrIdx list */
-        $canonical_original_indices = [];
-        if ($has_canonical) {
-            for ($v = 0; $v < $nc; $v++) {
-                $nid = (int)$indexToNodeFfi[$v];
-                if ($nid === -1) {
-                    continue;
-                }
-                $canon = $this->findCanonical($nid);
-                if ($canon !== $nid) {
-                    $canonIdx[$v] = $this->nodeIdToIndex($canon);
-                }
-                $canonical_original_indices[$canonIdx[$v] ?? $v][] = $v;
-            }
-        }
+        $canonIdxFfi = $this->canonIdxFfi;
+        $origOffsets = $this->origOffsets;
+        $origData = $this->origData;
+
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
+
+        // ---- Degree trimming: two-phase peeling ----
+        //
+        // Phase A: in-degree peeling (forward strongAll only, no reverse).
+        // Phase B: active-only reverse CSR + out-degree peeling.
+        //   After Phase A, only ~0.2% of nodes remain active. The
+        //   active-only reverse CSR is tiny (proportional to active
+        //   edges) instead of the full 60M-edge reverse.
+
+        $active = FFIHelper::new("int8_t[{$nc}]");
+        $in_deg = FFIHelper::new("int32_t[{$nc}]");
+
+        // Phase A: compute in-degree and initial active set
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$indexToNodeFfi[$v] === -1) {
+                $active[$v] = 0;
+                continue;
+            }
+            $cv = $has_canonical ? (int)$canonIdxFfi[$v] : $v;
+            if ($cv !== $v) {
+                $active[$v] = 0;
+                continue;
+            }
+            $active[$v] = 1;
+
+            $seen = [];
+            if ($has_canonical) {
+                $oStart = (int)$origOffsets[$v];
+                $oEnd = (int)$origOffsets[$v + 1];
+                for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                    $origIdx = (int)$origData[$oi];
+                    $start = (int)$strongAllOffsets[$origIdx];
+                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$strongAllEdges[$j];
+                        $cw = (int)$canonIdxFfi[$w];
+                        if ($cw !== $v && !isset($seen[$cw])) {
+                            $seen[$cw] = true;
+                            $in_deg[$cw] = (int)$in_deg[$cw] + 1;
+                        }
+                    }
+                }
+            } else {
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    if ($w !== $v && !isset($seen[$w])) {
+                        $seen[$w] = true;
+                        $in_deg[$w] = (int)$in_deg[$w] + 1;
+                    }
+                }
+            }
+        }
+
+        // Phase A: in-degree queue peeling
+        $queue = [];
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] !== 0 && (int)$in_deg[$v] === 0) {
+                $queue[] = $v;
+            }
+        }
+        while ($queue !== []) {
+            $v = array_pop($queue);
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $active[$v] = 0;
+            $seen = [];
+            if ($has_canonical) {
+                $oStart = (int)$origOffsets[$v];
+                $oEnd = (int)$origOffsets[$v + 1];
+                for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                    $origIdx = (int)$origData[$oi];
+                    $start = (int)$strongAllOffsets[$origIdx];
+                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$strongAllEdges[$j];
+                        $cw = (int)$canonIdxFfi[$w];
+                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                            $seen[$cw] = true;
+                            $in_deg[$cw] = (int)$in_deg[$cw] - 1;
+                            if ((int)$in_deg[$cw] === 0) {
+                                $queue[] = $cw;
+                            }
+                        }
+                    }
+                }
+            } else {
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                        $seen[$w] = true;
+                        $in_deg[$w] = (int)$in_deg[$w] - 1;
+                        if ((int)$in_deg[$w] === 0) {
+                            $queue[] = $w;
+                        }
+                    }
+                }
+            }
+        }
+        unset($in_deg);
+
+        // Phase B: active-only reverse CSR + out-degree peeling
+        $out_deg = FFIHelper::new("int32_t[{$nc}]");
+        $arevDeg = FFIHelper::new("int32_t[{$nc}]");
+        $active_edge_count = 0;
+
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $seen = [];
+            if ($has_canonical) {
+                $oStart = (int)$origOffsets[$v];
+                $oEnd = (int)$origOffsets[$v + 1];
+                for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                    $origIdx = (int)$origData[$oi];
+                    $start = (int)$strongAllOffsets[$origIdx];
+                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$strongAllEdges[$j];
+                        $cw = (int)$canonIdxFfi[$w];
+                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                            $seen[$cw] = true;
+                            $arevDeg[$cw] = (int)$arevDeg[$cw] + 1;
+                            $active_edge_count++;
+                        }
+                    }
+                }
+            } else {
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                        $seen[$w] = true;
+                        $arevDeg[$w] = (int)$arevDeg[$w] + 1;
+                        $active_edge_count++;
+                    }
+                }
+            }
+            $out_deg[$v] = count($seen);
+        }
+
+        $arevOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $arevOffsets[0] = 0;
+        for ($i = 0; $i < $nc; $i++) {
+            $arevOffsets[$i + 1] = (int)$arevOffsets[$i] + (int)$arevDeg[$i];
+        }
+        $arevEdges = FFIHelper::new("int32_t[" . max(1, $active_edge_count) . "]");
+        $arevPos = FFIHelper::new("int32_t[{$nc}]");
+        for ($i = 0; $i < $nc; $i++) {
+            $arevPos[$i] = (int)$arevOffsets[$i];
+        }
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $seen = [];
+            if ($has_canonical) {
+                $oStart = (int)$origOffsets[$v];
+                $oEnd = (int)$origOffsets[$v + 1];
+                for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                    $origIdx = (int)$origData[$oi];
+                    $start = (int)$strongAllOffsets[$origIdx];
+                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    for ($j = $start; $j < $end; $j++) {
+                        $w = (int)$strongAllEdges[$j];
+                        $cw = (int)$canonIdxFfi[$w];
+                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                            $seen[$cw] = true;
+                            $p = (int)$arevPos[$cw];
+                            $arevEdges[$p] = $v;
+                            $arevPos[$cw] = $p + 1;
+                        }
+                    }
+                }
+            } else {
+                $start = (int)$strongAllOffsets[$v];
+                $end = (int)$strongAllOffsets[$v + 1];
+                for ($j = $start; $j < $end; $j++) {
+                    $w = (int)$strongAllEdges[$j];
+                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                        $seen[$w] = true;
+                        $p = (int)$arevPos[$w];
+                        $arevEdges[$p] = $v;
+                        $arevPos[$w] = $p + 1;
+                    }
+                }
+            }
+        }
+        unset($arevDeg, $arevPos);
+
+        // Out-degree queue peeling
+        $queue = [];
+        for ($v = 0; $v < $nc; $v++) {
+            if ((int)$active[$v] !== 0 && (int)$out_deg[$v] === 0) {
+                $queue[] = $v;
+            }
+        }
+        while ($queue !== []) {
+            $v = array_pop($queue);
+            if ((int)$active[$v] === 0) {
+                continue;
+            }
+            $active[$v] = 0;
+            $start = (int)$arevOffsets[$v];
+            $end = (int)$arevOffsets[$v + 1];
+            for ($j = $start; $j < $end; $j++) {
+                $cw = (int)$arevEdges[$j];
+                if ((int)$active[$cw] !== 0) {
+                    $out_deg[$cw] = (int)$out_deg[$cw] - 1;
+                    if ((int)$out_deg[$cw] === 0) {
+                        $queue[] = $cw;
+                    }
+                }
+            }
+        }
+        unset($out_deg, $arevOffsets, $arevEdges);
 
         // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
         // tarjan_on_stack uses 0/1 because int8 is plenty.
@@ -1057,11 +2236,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $sccs = [];
 
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$indexToNodeFfi[$v] === -1) {
+            if ((int)$active[$v] === 0) {
                 continue;
             }
-            // Use canonical index if available
-            $cv = $canonIdx[$v] ?? $v;
+            $cv = $has_canonical ? (int)$canonIdxFfi[$v] : $v;
             if ((int)$tarjan_index[$cv] !== -1) {
                 continue;
             }
@@ -1080,13 +2258,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     if (!isset($canonical_neighbors[$node])) {
                         $neighbors = [];
                         $seen = [];
-                        foreach ($canonical_original_indices[$node] ?? [$node] as $oi) {
-                            $start = (int)$strongAllOffsets[$oi];
-                            $end = (int)$strongAllOffsets[$oi + 1];
+                        $oStart = (int)$origOffsets[$node];
+                        $oEnd = (int)$origOffsets[$node + 1];
+                        for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                            $origIdx = (int)$origData[$oi];
+                            $start = (int)$strongAllOffsets[$origIdx];
+                            $end = (int)$strongAllOffsets[$origIdx + 1];
                             for ($j = $start; $j < $end; $j++) {
                                 $w = (int)$strongAllEdges[$j];
-                                $cw = $canonIdx[$w] ?? $w;
-                                if ($cw !== $node && !isset($seen[$cw])) {
+                                $cw = (int)$canonIdxFfi[$w];
+                                if ($cw !== $node && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
                                     $seen[$cw] = true;
                                     $neighbors[] = $cw;
                                 }
@@ -1102,7 +2283,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $end = (int)$strongAllOffsets[$node + 1];
                     for ($j = $start; $j < $end; $j++) {
                         $w = (int)$strongAllEdges[$j];
-                        if ($w !== $node && !isset($seen[$w])) {
+                        if ($w !== $node && (int)$active[$w] !== 0 && !isset($seen[$w])) {
                             $seen[$w] = true;
                             $neighbors[] = $w;
                         }
@@ -1125,8 +2306,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $found_unvisited = true;
                         break;
                     } elseif ((int)$tarjan_on_stack[$w] !== 0) {
-                        // Inlined min() — the builtin call adds
-                        // measurable overhead in this hot loop.
                         $cur = (int)$tarjan_lowlink[$node];
                         if ($w_index < $cur) {
                             $tarjan_lowlink[$node] = $w_index;
@@ -1166,8 +2345,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             foreach ($sccs as &$scc) {
                 $expanded = [];
                 foreach ($scc as $canonical_idx) {
-                    foreach ($canonical_original_indices[$canonical_idx] ?? [$canonical_idx] as $original_idx) {
-                        $expanded[] = $original_idx;
+                    $oStart = (int)$origOffsets[$canonical_idx];
+                    $oEnd = (int)$origOffsets[$canonical_idx + 1];
+                    for ($oi = $oStart; $oi < $oEnd; $oi++) {
+                        $expanded[] = (int)$origData[$oi];
                     }
                 }
                 $scc = $expanded;
@@ -1176,6 +2357,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
 
         $this->buildSccProfilesFfi($sccs);
+
+        // strongAll CSR is only needed for SCC computation.
+        // Free it to save ~480 MB on 60M-edge graphs.
+        unset($this->strongAllOffsets, $this->strongAllEdges);
+        $this->strongAllOffsets = FFIHelper::new("int32_t[1]");
+        $this->strongAllEdges = FFIHelper::new("int32_t[1]");
     }
 
     /**
@@ -1253,6 +2440,104 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     ? 'high'
                     : ($ext_in <= 10 ? 'medium' : 'low'),
             ];
+        }
+    }
+
+    // ---- Derived cache (sidecar) ----
+
+    /**
+     * Try loading subtree sizes, SCC node map, and SCC profiles from
+     * the .rmem.derived sidecar cache.
+     *
+     * Returns true if all sections were loaded successfully.
+     */
+    private function loadDerivedFromCache(string $rmemPath, int $nc): bool
+    {
+        $cache = DerivedCacheReader::open($rmemPath);
+        if ($cache === null) {
+            return false;
+        }
+
+        // subtree_by_idx: int64[nc]
+        if (
+            !$cache->hasSection(DerivedCacheFormat::SECTION_SUBTREE_SIZES)
+            || $cache->getSectionElementCount(DerivedCacheFormat::SECTION_SUBTREE_SIZES) !== $nc
+        ) {
+            return false;
+        }
+        $subtreeBuf = $cache->loadInt64Section(DerivedCacheFormat::SECTION_SUBTREE_SIZES);
+        if ($subtreeBuf === null) {
+            return false;
+        }
+
+        // scc_by_idx: int32[nc]
+        if (
+            !$cache->hasSection(DerivedCacheFormat::SECTION_SCC_NODE_MAP)
+            || $cache->getSectionElementCount(DerivedCacheFormat::SECTION_SCC_NODE_MAP) !== $nc
+        ) {
+            return false;
+        }
+        $sccBuf = $cache->loadInt32Section(DerivedCacheFormat::SECTION_SCC_NODE_MAP);
+        if ($sccBuf === null) {
+            return false;
+        }
+
+        // scc_profiles: JSON
+        $profilesJson = $cache->getSectionData(DerivedCacheFormat::SECTION_SCC_PROFILES);
+        if ($profilesJson === null) {
+            return false;
+        }
+        $profiles = json_decode($profilesJson, true);
+        if (!is_array($profiles)) {
+            return false;
+        }
+
+        // All sections valid — apply them
+        $this->ffiSubtreeSizes = $subtreeBuf;
+        $this->subtreeSizesComputed = true;
+        $this->ffiNodeToScc = $sccBuf;
+        $this->scc_profiles = $profiles;
+
+        return true;
+    }
+
+    /**
+     * Write subtree sizes, SCC node map, and SCC profiles to
+     * the .rmem.derived sidecar cache.
+     *
+     * Fail-open: errors are silently ignored.
+     */
+    private function writeDerivedCache(string $rmemPath, int $nc): void
+    {
+        $writer = DerivedCacheWriter::create($rmemPath);
+        if ($writer === null) {
+            return;
+        }
+
+        $writer->writeInt64Section(
+            DerivedCacheFormat::SECTION_SUBTREE_SIZES,
+            $this->ffiSubtreeSizes,
+            $nc,
+        );
+
+        $writer->writeInt32Section(
+            DerivedCacheFormat::SECTION_SCC_NODE_MAP,
+            $this->ffiNodeToScc,
+            $nc,
+        );
+
+        $profilesJson = json_encode($this->scc_profiles, JSON_UNESCAPED_UNICODE);
+        if ($profilesJson !== false) {
+            $writer->writeRawSection(
+                DerivedCacheFormat::SECTION_SCC_PROFILES,
+                $profilesJson,
+                count($this->scc_profiles),
+            );
+        }
+
+        $writer->writeFingerprint($rmemPath);
+        if (!$writer->finish($rmemPath)) {
+            fwrite(STDERR, "WARNING: derived cache write failed for {$rmemPath}\n");
         }
     }
 }

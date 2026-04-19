@@ -589,8 +589,9 @@ final class ExploreTui
         };
         $line2 = sprintf('mode: %s   history: %d back', $mode_label, $hist);
         $line3_left = sprintf(
-            'no-line: %s   match: %s   filter: %s',
+            'no-line: %s   opcode: %s   match: %s   filter: %s',
             $this->opts->no_line ? 'on' : 'off',
+            $this->opts->with_opcode ? 'on' : 'off',
             $this->opts->match_re ?? '(none)',
             $state->view_filter ?? '(none)',
         );
@@ -1091,6 +1092,7 @@ final class ExploreTui
             '  /            filter visible rows (PCRE)',
             '  m            global sample match (PCRE)',
             '  n            toggle no-line grouping',
+            '  c            toggle opcode display',
             '  o            toggle overview sidebar',
             '  F            toggle horizontal mini-flame strip',
             '  P            sandwich panes view (caller / callee 1-step drilldown)',
@@ -1220,7 +1222,7 @@ final class ExploreTui
         // both the raw sample count and the percentage of focus, so
         // the user can read absolute weight in addition to share.
         $cursor_label = $cursor_bar !== null
-            ? Aggregator::labelFor($this->model, $cursor_bar['key_id'], $no_line)
+            ? Aggregator::labelFor($this->model, $cursor_bar['key_id'], $no_line, $this->opts->with_opcode)
             : '';
         $cursor_stats = $cursor_bar !== null
             ? sprintf(
@@ -1289,7 +1291,7 @@ final class ExploreTui
             }
             $w = $bar['w'];
             if ($w >= 4) {
-                $label = Aggregator::labelFor($this->model, $bar['key_id'], $no_line);
+                $label = Aggregator::labelFor($this->model, $bar['key_id'], $no_line, $this->opts->with_opcode);
                 if ($this->flame_label_right_align) {
                     // Right-align: keep "function:line" (drop the file
                     // path; the line number is short and useful), then
@@ -1534,7 +1536,7 @@ final class ExploreTui
             // duplicate history entry.
             return;
         }
-        $label = Aggregator::labelFor($this->model, $kid, $this->opts->no_line);
+        $label = Aggregator::labelFor($this->model, $kid, $this->opts->no_line, $this->opts->with_opcode);
         $this->pushSandwichFocus($kid, $label, $state->sandwich_view);
     }
 
@@ -2015,7 +2017,7 @@ final class ExploreTui
 
             $ratio = (float)$node['count'] / (float)$denom;
             $bar = self::brailleHBar($ratio, 6);
-            $label = Aggregator::labelFor($this->model, $kid, $no_line);
+            $label = Aggregator::labelFor($this->model, $kid, $no_line, $this->opts->with_opcode);
 
             $head = sprintf(
                 '%s%s%s%s %5.1f%% ',
@@ -2085,7 +2087,7 @@ final class ExploreTui
         if ($kid === $state->focus_id) {
             return;
         }
-        $label = Aggregator::labelFor($this->model, $kid, $this->opts->no_line);
+        $label = Aggregator::labelFor($this->model, $kid, $this->opts->no_line, $this->opts->with_opcode);
         $this->pushSandwichFocus($kid, $label, $state->sandwich_view);
     }
 
@@ -2198,7 +2200,7 @@ final class ExploreTui
         arsort($counts);
         $rows = [];
         foreach ($counts as $key_id => $count) {
-            $label = Aggregator::labelFor($this->model, $key_id, $no_line);
+            $label = Aggregator::labelFor($this->model, $key_id, $no_line, $this->opts->with_opcode);
             $rows[] = [$count, $key_id, $label];
         }
         return [
@@ -2718,6 +2720,7 @@ final class ExploreTui
                     $this->model,
                     $bar['key_id'],
                     $this->opts->no_line,
+                    $this->opts->with_opcode,
                 );
                 return ['key_id' => $bar['key_id'], 'label' => $label];
 
@@ -2741,7 +2744,7 @@ final class ExploreTui
                 if ($kid < 0) {
                     return null;
                 }
-                $label = Aggregator::labelFor($this->model, $kid, $this->opts->no_line);
+                $label = Aggregator::labelFor($this->model, $kid, $this->opts->no_line, $this->opts->with_opcode);
                 return ['key_id' => $kid, 'label' => $label];
         }
         return null;
@@ -2972,6 +2975,13 @@ final class ExploreTui
                 $this->invalidate(include_overview: true);
                 $this->resetScrolls(include_overview: true);
                 $this->status = 'no-line: ' . ($this->opts->no_line ? 'on' : 'off');
+                return;
+
+            case Keymap::ACTION_WITH_OPCODE:
+                $this->opts = $this->opts->withOpcode(!$this->opts->with_opcode);
+                $this->invalidate(include_overview: true);
+                $this->resetScrolls(include_overview: true);
+                $this->status = 'opcode: ' . ($this->opts->with_opcode ? 'on' : 'off');
                 return;
 
             case Keymap::ACTION_TOGGLE_OVERVIEW:
@@ -3227,7 +3237,7 @@ final class ExploreTui
         if ($state->focus_id === $key_id) {
             return; // already focused on this frame
         }
-        $label = Aggregator::labelFor($this->model, $key_id, $this->opts->no_line);
+        $label = Aggregator::labelFor($this->model, $key_id, $this->opts->no_line, $this->opts->with_opcode);
         $this->pushSandwichFocus($key_id, $label, $state->sandwich_view);
 
         // When panes or overview was active, switch to the Focus

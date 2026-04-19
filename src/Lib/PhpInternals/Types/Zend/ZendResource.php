@@ -46,7 +46,7 @@ final class ZendResource implements CDataDereferencable
     {
         return match ($field_name) {
             'gc' => $this->gc = new ZendRefcountedH(
-                $this->casted_cdata->casted->gc
+                $this->casted_cdata->createSubView($this->casted_cdata->casted->gc)
             ),
             'type' => $this->type = $this->casted_cdata->casted->type,
             'ptr' => $this->ptr = $this->casted_cdata->casted->ptr,

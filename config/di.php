@@ -21,6 +21,7 @@ use Reli\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoop;
 use Reli\Inspector\Daemon\Reader\Worker\PhpReaderTraceLoopInterface;
 use Reli\Inspector\Output\TraceFormatter\Templated\TemplatePathResolver;
 use Reli\Inspector\Output\TraceFormatter\Templated\TemplatePathResolverInterface;
+use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\VariableReaderInterface;
 use Reli\Lib\Amphp\ContextCreator;
@@ -79,7 +80,8 @@ return [
     ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
     Config::class => fn () => AppDirectory::loadConfig(__DIR__ . '/config.php'),
     TemplatePathResolverInterface::class => autowire(TemplatePathResolver::class),
-    VariableReaderInterface::class => autowire(VariableReader::class),
+    VariableReaderInterface::class => autowire(VariableReader::class)
+        ->constructorParameter('heap_stats_reader', autowire(HeapStatsReader::class)),
     StateCollector::class => function (Container $container) {
         $collectors = [];
         $collectors[] = $container->make(ProcessStateCollector::class);

@@ -60,9 +60,9 @@ final class SandwichBuilder
         $matched = 0;
 
         $no_line = $opts->no_line;
-        $no_line_map = $model->no_line_map;
+        $with_opcode = $opts->with_opcode;
         $match_re = $opts->match_re;
-        $keys = $no_line ? $model->frame_keys_no_line : $model->frame_keys;
+        $keys = $model->keysFor($no_line, $with_opcode);
 
         foreach ($model->samples as $stack) {
             $n = count($stack);
@@ -75,7 +75,7 @@ final class SandwichBuilder
                 $hit = false;
                 $seen = [];
                 foreach ($stack as $fid) {
-                    $kid = $no_line ? $no_line_map[$fid] : $fid;
+                    $kid = self::project($model, $fid, $no_line, $with_opcode);
                     if (isset($seen[$kid])) {
                         continue;
                     }
@@ -93,7 +93,7 @@ final class SandwichBuilder
             // Locate the leafward-most occurrence of the focus frame.
             $pos = -1;
             for ($i = 0; $i < $n; $i++) {
-                $kid = $no_line ? $no_line_map[$stack[$i]] : $stack[$i];
+                $kid = self::project($model, $stack[$i], $no_line, $with_opcode);
                 if ($kid === $focus_id) {
                     $pos = $i;
                     break;
@@ -108,7 +108,7 @@ final class SandwichBuilder
             // Walk toward the root: callers tree.
             $cur = &$callers;
             for ($j = $pos + 1; $j < $n; $j++) {
-                $kid = $no_line ? $no_line_map[$stack[$j]] : $stack[$j];
+                $kid = self::project($model, $stack[$j], $no_line, $with_opcode);
                 if (!isset($cur[$kid])) {
                     $cur[$kid] = ['count' => 0, 'children' => []];
                 }
@@ -120,7 +120,7 @@ final class SandwichBuilder
             // Walk toward the leaf: callees tree.
             $cur = &$callees;
             for ($j = $pos - 1; $j >= 0; $j--) {
-                $kid = $no_line ? $no_line_map[$stack[$j]] : $stack[$j];
+                $kid = self::project($model, $stack[$j], $no_line, $with_opcode);
                 if (!isset($cur[$kid])) {
                     $cur[$kid] = ['count' => 0, 'children' => []];
                 }
@@ -135,5 +135,15 @@ final class SandwichBuilder
             'callers' => $callers,
             'callees' => $callees,
         ];
+    }
+
+    private static function project(TraceModel $model, int $frame_id, bool $no_line, bool $with_opcode): int
+    {
+        if ($with_opcode) {
+            return $no_line
+                ? $model->no_line_opcode_map[$frame_id]
+                : $model->opcode_map[$frame_id];
+        }
+        return $no_line ? $model->no_line_map[$frame_id] : $frame_id;
     }
 }

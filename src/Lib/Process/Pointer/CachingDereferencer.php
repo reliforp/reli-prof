@@ -40,7 +40,7 @@ final class CachingDereferencer implements Dereferencer
 
     public function __construct(
         private Dereferencer $inner,
-        private int $max_entries = 4096,
+        private int $max_entries = 16384,
     ) {
     }
 
@@ -50,7 +50,7 @@ final class CachingDereferencer implements Dereferencer
      * @return T
      */
     #[\Override]
-    public function deref(Pointer $pointer): mixed
+    public function deref(/* Pointer */ $pointer): mixed
     {
         $type = $pointer->type;
         $addr = $pointer->address;
@@ -68,27 +68,14 @@ final class CachingDereferencer implements Dereferencer
     }
 
     /**
-     * Drop roughly the oldest quarter of cached entries. PHP arrays
-     * preserve insertion order, so `array_slice($entries, $drop,
-     * preserve_keys: true)` keeps the most recently inserted 75% per
-     * type — a rough LRU approximation that's good enough for the
-     * dereffer's temporal locality without needing a real LRU list.
+     * Full cache clear. CastedCData::createSubView ensures FFI
+     * subviews hold an independent copy of the underlying buffer,
+     * so evicting cached objects no longer risks dangling pointers.
      */
     private function evictQuarter(): void
     {
-        $evicted = 0;
-        foreach ($this->cache as $t => $entries) {
-            $n = count($entries);
-            if ($n === 0) {
-                continue;
-            }
-            $drop = (int)($n / 4);
-            if ($drop > 0) {
-                $this->cache[$t] = array_slice($entries, $drop, preserve_keys: true);
-                $evicted += $drop;
-            }
-        }
-        $this->count -= $evicted;
+        $this->cache = [];
+        $this->count = 0;
     }
 
     public function clearCache(): void
