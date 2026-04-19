@@ -2791,19 +2791,30 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         }
 
         // Node is a reference — search global_variables for the real tree.
-        // The object may be wrapped in a PhpReferenceContext ('reference' key)
-        // or directly assigned depending on whether $var =& exists.
+        // When $var =& exists, the value is wrapped in a PhpReferenceContext
+        // with a 'referenced' key pointing to the actual object.
         $globals = $contexts['global_variables']['array_elements'] ?? [];
         foreach ($globals as $entry) {
-            $val = $entry['value'] ?? $entry ?? null;
-            if (is_array($val)) {
-                if (isset($val['object_properties'])) {
-                    return $val;
-                }
-                // Check inside reference wrapper
-                if (isset($val['reference']['object_properties'])) {
-                    return $val['reference'];
-                }
+            $val = $entry['value'] ?? null;
+            if (!is_array($val)) {
+                continue;
+            }
+            // Direct object
+            if (isset($val['object_properties'])) {
+                return $val;
+            }
+            // PHP reference wrapper: value -> referenced -> object
+            $ref = $val['referenced'] ?? null;
+            if (is_array($ref) && isset($ref['object_properties'])) {
+                return $ref;
+            }
+        }
+
+        // Check objects_store as fallback
+        $os = $contexts['objects_store'] ?? [];
+        foreach ($os as $k => $entry) {
+            if (is_array($entry) && isset($entry['object_properties'])) {
+                return $entry;
             }
         }
 
