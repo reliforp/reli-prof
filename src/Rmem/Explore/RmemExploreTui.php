@@ -258,6 +258,9 @@ final class RmemExploreTui
             'ui.navigate_sandwich' => $this->handleUiNavigateSandwich($request),
             'ui.navigate_roots' => $this->handleUiNavigateRoots(),
             'ui.navigate_back' => $this->handleUiNavigateBack(),
+            'ui.navigate_top_retained' => $this->handleUiNavigateView('top_retained'),
+            'ui.navigate_class_ranking' => $this->handleUiNavigateView('class_ranking'),
+            'ui.navigate_type_ranking' => $this->handleUiNavigateView('type_ranking'),
             'ui.get_current_focus' => $this->handleUiGetCurrentFocus(),
             'ui.get_current_selection' => $this->handleUiGetCurrentSelection(),
             default => ['ok' => false, 'error' => "Unknown ui action: {$action}"],
@@ -303,6 +306,18 @@ final class RmemExploreTui
         $this->topRow = 0;
         $this->uiRevision++;
         return ['ok' => true, 'data' => ['mode' => 'list', 'view' => 'roots']];
+    }
+
+    private function handleUiNavigateView(string $view): array
+    {
+        match ($view) {
+            'top_retained' => $this->switchToTopRetained(),
+            'class_ranking' => $this->switchToClassRanking(),
+            'type_ranking' => $this->switchToTypeRanking(),
+            default => null,
+        };
+        $this->uiRevision++;
+        return ['ok' => true, 'data' => ['mode' => 'list', 'view' => $view]];
     }
 
     private function handleUiNavigateBack(): array
