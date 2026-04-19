@@ -331,6 +331,9 @@ class MemoryDumpCommandTest extends BaseTestCase
         $container = $this->createContainer();
         [, $pid, ] = $this->startTargetProcess($docker_image_name);
 
+        // Save maps before dump (for debug if analyze fails)
+        $saved_maps = @file_get_contents("/proc/{$pid}/maps") ?: '';
+
         // Dump with --include-binary so analyze can resolve all addresses
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $container->make(MemoryDumpCommand::class);
@@ -341,7 +344,8 @@ class MemoryDumpCommandTest extends BaseTestCase
             '--include-binary' => true,
         ]);
         $input->setInteractive(false);
-        $result = $dump_command->run($input, new BufferedOutput());
+        $dump_output = new BufferedOutput();
+        $result = $dump_command->run($input, $dump_output);
         $this->assertSame(0, $result);
 
         // Analyze (the command writes JSON to real stdout, so capture it)
@@ -360,8 +364,75 @@ class MemoryDumpCommandTest extends BaseTestCase
                 $analyze_input,
                 $analyze_output,
             );
-        } finally {
+        } catch (\Throwable $e) {
             ob_end_clean();
+            // Debug: dump regions for Alpine investigation
+            $debug = "Dump output: " . $dump_output->fetch() . "\n";
+            $debug .= "Analyze error: " . $e->getMessage() . "\n";
+            // Show maps around the failing address range
+            if ($saved_maps !== '') {
+                $debug .= "Target /proc/maps (rw-p only):\n";
+                foreach (explode("\n", $saved_maps) as $line) {
+                    if (str_contains($line, 'rw-p')) {
+                        $debug .= "  {$line}\n";
+                    }
+                }
+            }
+            // Parse the dump file to show region addresses
+            try {
+                $dump_fp = fopen($output_path, 'rb');
+                if ($dump_fp !== false) {
+                    // Skip magic (8) + version (4)
+                    fseek($dump_fp, 8 + 4);
+                    // Skip php_version string
+                    $len = unpack('V', fread($dump_fp, 4))[1];
+                    fseek($dump_fp, $len, SEEK_CUR);
+                    // Skip pid (8) + eg_address (8) + cg_address (8)
+                    $addrs = unpack('Ppid/Peg/Pcg', fread($dump_fp, 24));
+                    $debug .= sprintf("EG=0x%x CG=0x%x\n", $addrs['eg'], $addrs['cg']);
+                    // memory_map_count (4) + region_count (4)
+                    $counts = unpack('Vmmap_count/Vregion_count', fread($dump_fp, 8));
+                    // Skip memory map entries
+                    for ($i = 0; $i < $counts['mmap_count']; $i++) {
+                        // 3 strings (begin, end, file_offset) + 4 bytes attrs + 1 string (device_id) + 8 bytes (inode) + 1 string (name)
+                        for ($s = 0; $s < 3; $s++) {
+                            $sl = unpack('V', fread($dump_fp, 4))[1];
+                            fseek($dump_fp, $sl, SEEK_CUR);
+                        }
+                        fseek($dump_fp, 4, SEEK_CUR); // attrs
+                        $sl = unpack('V', fread($dump_fp, 4))[1];
+                        fseek($dump_fp, $sl, SEEK_CUR); // device_id
+                        fseek($dump_fp, 8, SEEK_CUR); // inode
+                        $sl = unpack('V', fread($dump_fp, 4))[1];
+                        fseek($dump_fp, $sl, SEEK_CUR); // name
+                    }
+                    // Read memory map entries from the dump
+                    // Read regions
+                    $debug .= "Dump regions ({$counts['region_count']}):\n";
+                    for ($i = 0; $i < $counts['region_count']; $i++) {
+                        $rh = fread($dump_fp, 16);
+                        if ($rh === false || strlen($rh) < 16) {
+                            break;
+                        }
+                        $r = unpack('Paddress/Psize', $rh);
+                        $debug .= sprintf(
+                            "  0x%x - 0x%x (size=%d)\n",
+                            $r['address'],
+                            $r['address'] + $r['size'],
+                            $r['size'],
+                        );
+                        fseek($dump_fp, (int)$r['size'], SEEK_CUR);
+                    }
+                    fclose($dump_fp);
+                }
+            } catch (\Throwable $re) {
+                $debug .= "Could not parse dump: " . $re->getMessage() . "\n";
+            }
+            $this->fail($debug . "\n" . $e->getTraceAsString());
+        } finally {
+            if (ob_get_level() > 0) {
+                ob_end_clean();
+            }
         }
         $this->assertSame(0, $analyze_result);
     }

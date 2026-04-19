@@ -38,6 +38,9 @@ class TargetPhpVmProvider
         'v83_zts',
         'v84_zts',
         'v85_zts',
+        // Alpine (musl libc) variants
+        'v84_alpine',
+        'v84_alpine_zts',
     ];
 
     private static function isZts(string $target): bool
@@ -45,9 +48,16 @@ class TargetPhpVmProvider
         return str_ends_with($target, '_zts');
     }
 
+    private static function isAlpine(string $target): bool
+    {
+        return str_contains($target, '_alpine');
+    }
+
     private static function phpVersionFromTarget(string $target): string
     {
-        return self::isZts($target) ? substr($target, 0, -4) : $target;
+        // Strip suffixes: _alpine_zts, _alpine, _zts
+        $base = preg_replace('/_alpine(_zts)?$|_zts$/', '', $target);
+        return $base !== null ? $base : $target;
     }
 
     private static function getFilteredVersions(array $versions): array
@@ -91,7 +101,17 @@ class TargetPhpVmProvider
     public static function dockerImageNameFromTarget(string $target): string
     {
         $phpVersion = self::phpVersionFromTarget($target);
-        $suffix = self::isZts($target) ? '-zts' : '-cli';
+        $isAlpine = self::isAlpine($target);
+        $isZts = self::isZts($target);
+        if ($isAlpine && $isZts) {
+            $suffix = '-zts-alpine';
+        } elseif ($isAlpine) {
+            $suffix = '-cli-alpine';
+        } elseif ($isZts) {
+            $suffix = '-zts';
+        } else {
+            $suffix = '-cli';
+        }
         return match ($phpVersion) {
             ZendTypeReader::V70 => 'php:7.0' . $suffix,
             ZendTypeReader::V71 => 'php:7.1' . $suffix,

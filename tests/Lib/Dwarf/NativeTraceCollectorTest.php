@@ -77,6 +77,9 @@ class NativeTraceCollectorTest extends BaseTestCase
         if ($php_version === 'skip') {
             $this->markTestSkipped('no target version');
         }
+        if (str_contains($docker_image_name, 'alpine')) {
+            $this->markTestSkipped('musl has only 4 FDE entries and uses -fomit-frame-pointer — DWARF and FP unwinding both fail');
+        }
 
         $memory_reader = new MemoryReader();
         $target_script =

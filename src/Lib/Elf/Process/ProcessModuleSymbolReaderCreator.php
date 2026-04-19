@@ -19,6 +19,7 @@ use Reli\Lib\Elf\SymbolResolver\Elf64CachedSymbolResolver;
 use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
 use Reli\Lib\Elf\Tls\Aarch64LinuxThreadPointerRetriever;
 use Reli\Lib\Elf\Tls\LibThreadDbTlsFinder;
+use Reli\Lib\Elf\Tls\MuslTlsFinder;
 use Reli\Lib\Elf\Tls\ThreadPointerRetrieverInterface;
 use Reli\Lib\Elf\Tls\TlsFinderException;
 use Reli\Lib\Elf\Tls\X64LinuxThreadPointerRetriever;
@@ -104,8 +105,25 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                     $root_link_map_address,
                 );
                 $tls_block_address = $tls_finder->findTlsBlock($pid, $link_map?->this_address);
-            } catch (TlsFinderException) {
-            } catch (\Reli\Lib\Process\MemoryReader\MemoryReaderException) {
+            } catch (TlsFinderException | \Reli\Lib\Process\MemoryReader\MemoryReaderException) {
+                // glibc path failed — try musl fallback
+                // musl has no libthread_db.so; detect via /lib/ld-musl-* in maps
+                $is_musl = $process_memory_map->findByNameRegex('ld-musl') !== [];
+                if ($is_musl) {
+                    try {
+                        $thread_pointer_retriever ??= match (Architecture::detect()) {
+                            Architecture::X86_64 => X64LinuxThreadPointerRetriever::createDefault(),
+                            Architecture::AARCH64 => Aarch64LinuxThreadPointerRetriever::createDefault(),
+                        };
+                        $musl_tls_finder = new MuslTlsFinder(
+                            $thread_pointer_retriever,
+                            $this->memory_reader,
+                            $this->integer_reader,
+                        );
+                        $tls_block_address = $musl_tls_finder->findTlsBlock($pid, null);
+                    } catch (TlsFinderException | \Reli\Lib\Process\MemoryReader\MemoryReaderException) {
+                    }
+                }
             }
         }
 
