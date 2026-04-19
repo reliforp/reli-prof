@@ -335,17 +335,14 @@ class MemoryDumpCommandTest extends BaseTestCase
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $container->make(MemoryDumpCommand::class);
 
-        $dump_args = [
+        $input = new ArrayInput([
             '--pid' => (string)$pid,
             '--output' => $output_path,
             '--include-binary' => true,
-        ];
-        if (str_contains($docker_image_name, 'alpine')) {
-            $dump_args['--include-heap'] = true;
-        }
-        $input = new ArrayInput($dump_args);
+        ]);
         $input->setInteractive(false);
-        $result = $dump_command->run($input, new BufferedOutput());
+        $dump_output = new BufferedOutput();
+        $result = $dump_command->run($input, $dump_output);
         $this->assertSame(0, $result);
 
         // Analyze (the command writes JSON to real stdout, so capture it)
@@ -364,8 +361,34 @@ class MemoryDumpCommandTest extends BaseTestCase
                 $analyze_input,
                 $analyze_output,
             );
-        } finally {
+        } catch (\Throwable $e) {
             ob_end_clean();
+            // Debug: dump regions for Alpine investigation
+            $debug = "Dump output: " . $dump_output->fetch() . "\n";
+            $debug .= "Analyze error: " . $e->getMessage() . "\n";
+            // Load the dump and show its region index
+            try {
+                $reader = new \Reli\Inspector\MemoryDump\DumpFileMemoryReader($output_path);
+                $ri = new \ReflectionProperty($reader, 'region_index');
+                /** @var list<array{address: int, size: int, file_offset: int}> $regions */
+                $regions = $ri->getValue($reader);
+                $debug .= "Dump region_index (" . count($regions) . " regions):\n";
+                foreach ($regions as $r) {
+                    $debug .= sprintf(
+                        "  0x%x - 0x%x (size=%d)\n",
+                        $r['address'],
+                        $r['address'] + $r['size'],
+                        $r['size'],
+                    );
+                }
+            } catch (\Throwable $re) {
+                $debug .= "Could not read dump regions: " . $re->getMessage() . "\n";
+            }
+            $this->fail($debug . "\n" . $e->getTraceAsString());
+        } finally {
+            if (ob_get_level() > 0) {
+                ob_end_clean();
+            }
         }
         $this->assertSame(0, $analyze_result);
     }
@@ -389,14 +412,10 @@ class MemoryDumpCommandTest extends BaseTestCase
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $container->make(MemoryDumpCommand::class);
 
-        $dump_args = [
+        $input = new ArrayInput([
             '--pid' => (string)$pid,
             '--output' => $output_path,
-        ];
-        if (str_contains($docker_image_name, 'alpine')) {
-            $dump_args['--include-heap'] = true;
-        }
-        $input = new ArrayInput($dump_args);
+        ]);
         $input->setInteractive(false);
         $result = $dump_command->run($input, new BufferedOutput());
         $this->assertSame(0, $result);

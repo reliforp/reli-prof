@@ -154,15 +154,11 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
         // Step 1: Dump memory
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $container->make(MemoryDumpCommand::class);
-        $dump_args = [
+        $dump_input = new ArrayInput([
             '--pid' => (string)$pid,
             '--output' => $dump_path,
             '--include-binary' => true,
-        ];
-        if (str_contains($docker_image_name, 'alpine')) {
-            $dump_args['--include-heap'] = true;
-        }
-        $dump_input = new ArrayInput($dump_args);
+        ]);
         $dump_input->setInteractive(false);
         $dump_result = $dump_command->run($dump_input, new BufferedOutput());
         $this->assertSame(0, $dump_result);
@@ -230,15 +226,11 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
         // Step 1: Dump
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $container->make(MemoryDumpCommand::class);
-        $dump_args = [
+        $dump_input = new ArrayInput([
             '--pid' => (string)$pid,
             '--output' => $dump_path,
             '--include-binary' => true,
-        ];
-        if (str_contains($docker_image_name, 'alpine')) {
-            $dump_args['--include-heap'] = true;
-        }
-        $dump_input = new ArrayInput($dump_args);
+        ]);
         $dump_input->setInteractive(false);
         $dump_result = $dump_command->run($dump_input, new BufferedOutput());
         $this->assertSame(0, $dump_result);
@@ -338,15 +330,11 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
 
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $dump_container->make(MemoryDumpCommand::class);
-        $dump_args = [
+        $dump_input = new ArrayInput([
             '--pid' => (string)$pid,
             '--output' => $dump_path,
             '--include-binary' => true,
-        ];
-        if (str_contains($docker_image_name, 'alpine')) {
-            $dump_args['--include-heap'] = true;
-        }
-        $dump_input = new ArrayInput($dump_args);
+        ]);
         $dump_input->setInteractive(false);
         $this->assertSame(0, $dump_command->run($dump_input, new BufferedOutput()));
 

@@ -77,9 +77,7 @@ class NativeTraceCollectorTest extends BaseTestCase
         if ($php_version === 'skip') {
             $this->markTestSkipped('no target version');
         }
-        if (str_contains($docker_image_name, 'alpine')) {
-            $this->markTestSkipped('Native trace symbol resolution not yet supported on Alpine (musl libc)');
-        }
+        $isAlpine = str_contains($docker_image_name, 'alpine');
 
         $memory_reader = new MemoryReader();
         $target_script =
@@ -144,6 +142,31 @@ class NativeTraceCollectorTest extends BaseTestCase
                     $native_trace->frames,
                 )
             );
+            if ($isAlpine && $symbol_names === []) {
+                // Debug output for Alpine investigation
+                $debug = "Alpine native trace debug:\n";
+                $debug .= "Frame count: " . count($native_trace->frames) . "\n";
+                foreach ($native_trace->frames as $i => $frame) {
+                    $debug .= sprintf(
+                        "  #%d: addr=0x%x symbol=%s binary=%s\n",
+                        $i,
+                        $frame->address,
+                        $frame->symbolName ?: '(null)',
+                        $frame->binaryName ?? '(null)',
+                    );
+                }
+                $maps = @file_get_contents("/proc/{$pid}/maps");
+                if ($maps !== false) {
+                    // Show maps for the address range of the frames
+                    $debug .= "Target /proc/{$pid}/maps (rw/rx segments):\n";
+                    foreach (explode("\n", $maps) as $line) {
+                        if (preg_match('/r-xp|r--p.*\.so|php/', $line)) {
+                            $debug .= "  {$line}\n";
+                        }
+                    }
+                }
+                $this->markTestSkipped("Symbol resolution failed on Alpine — debug info:\n{$debug}");
+            }
             $this->assertNotEmpty(
                 $symbol_names,
                 'At least one frame should have a symbol name'
