@@ -183,7 +183,10 @@ final class RmemExploreCommand extends Command
                     fclose($uiRequestPipe[0]); // parent reads from [0]
                     fclose($uiResponsePipe[1]); // parent writes to [1]
                     $this->runQueryChild(
-                        $model, $file, $serverId, $socketPath,
+                        $model,
+                        $file,
+                        $serverId,
+                        $socketPath,
                         $uiRequestPipe[1],  // child writes requests
                         $uiResponsePipe[0], // child reads responses
                     );

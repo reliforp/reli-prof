@@ -1221,7 +1221,8 @@ final class RmemExploreTui
                 'node_id' => -1,
                 'retained' => $r['total_shallow'],
                 'shallow' => $r['avg_shallow'],
-                'label' => sprintf('%s (%s instances, avg %s)',
+                'label' => sprintf(
+                    '%s (%s instances, avg %s)',
                     $r['class'],
                     number_format($r['count']),
                     SizeFormatter::format($r['avg_shallow']),
@@ -1248,7 +1249,8 @@ final class RmemExploreTui
                 'node_id' => -1,
                 'retained' => $r['total_shallow'],
                 'shallow' => 0,
-                'label' => sprintf('%s (%s nodes)',
+                'label' => sprintf(
+                    '%s (%s nodes)',
                     $r['type'],
                     number_format($r['count']),
                 ),
