@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Log;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reli\BaseTestCase;
 use Reli\Lib\Log\StateCollector\StateCollector;
 use Psr\Log\LoggerInterface;
@@ -40,9 +41,7 @@ class LogTest extends BaseTestCase
         }
     }
 
-    /**
-     * @dataProvider logLevelsProvider
-     */
+    #[DataProvider('logLevelsProvider')]
     public function testInfo(string $log_level, string $method): void
     {
         $logger = \Mockery::mock(LoggerInterface::class);

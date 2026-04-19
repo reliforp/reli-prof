@@ -15,6 +15,7 @@ namespace Reli\Lib\Elf\Tls;
 
 use FFI\CData;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reli\BaseTestCase;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
@@ -83,9 +84,9 @@ class LibThreadDbTlsFinderTest extends BaseTestCase
     }
 
     /**
-     * @dataProvider casesDebugSymbolsFoundOrNot
      * @throws TlsFinderException
      */
+    #[DataProvider('casesDebugSymbolsFoundOrNot')]
     public function testThrowTlsFinderExceptionIfDebugSymbolsNotFound(
         ?CData $_thread_db_pthread_dtvp,
         ?CData $_thread_db_dtv_dtv,

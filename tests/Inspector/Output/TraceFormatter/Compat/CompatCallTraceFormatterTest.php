@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\TraceFormatter\Compat;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reli\BaseTestCase;
 use Reli\Lib\PhpInternals\Opcodes\OpcodeV80;
 use Reli\Lib\PhpInternals\Types\Zend\Opline;
@@ -21,7 +22,7 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 class CompatCallTraceFormatterTest extends BaseTestCase
 {
-    /** @dataProvider dataProvider */
+    #[DataProvider('dataProvider')]
     public function testFormat(string $expects, CallTrace $call_trace): void
     {
         $formatter = CompatCallTraceFormatter::getInstance();

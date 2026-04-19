@@ -16,6 +16,8 @@ namespace Reli\Inspector\MemoryDump;
 use DI\ContainerBuilder;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
@@ -39,11 +41,9 @@ use Reli\Lib\Process\MemoryReader\MemoryReader;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\TargetPhpVmProvider;
 
-/**
- * @runTestsInSeparateProcesses
- * @preserveGlobalState disabled
- */
 #[Group('target-version')]
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
 {
     private const OPCACHE_INI = '-dopcache.enable_cli=1'
