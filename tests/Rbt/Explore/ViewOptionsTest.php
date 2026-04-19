@@ -57,4 +57,27 @@ class ViewOptionsTest extends BaseTestCase
         $this->assertNull($cleared->match_re);
         $this->assertFalse($cleared->no_line);
     }
+
+    public function testDefaultWithOpcodeIsFalse(): void
+    {
+        $opts = new ViewOptions();
+        $this->assertFalse($opts->with_opcode);
+    }
+
+    public function testWithOpcodeFlipsFlagAndPreservesOtherFields(): void
+    {
+        $opts = new ViewOptions(no_line: true, match_re: '#pat#', with_opcode: false);
+        $next = $opts->withOpcode(true);
+
+        $this->assertNotSame($opts, $next);
+        $this->assertTrue($next->with_opcode);
+        $this->assertTrue($next->no_line);
+        $this->assertSame('#pat#', $next->match_re);
+
+        // Round-trip back.
+        $back = $next->withOpcode(false);
+        $this->assertFalse($back->with_opcode);
+        $this->assertTrue($back->no_line);
+        $this->assertSame('#pat#', $back->match_re);
+    }
 }

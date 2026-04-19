@@ -162,6 +162,61 @@ class TraceModelTest extends BaseTestCase
         $this->assertContains('foo /other/path/Foo.php:1', $model->frame_keys);
     }
 
+    public function testKeysForReturnsCorrectVariant(): void
+    {
+        $model = new TraceModel(
+            frame_keys: ['foo /a.php:1'],
+            frame_keys_no_line: ['foo'],
+            no_line_map: [0],
+            samples: [[0]],
+            sampling_period_us: 10000,
+            source_path: '/dev/null',
+            frame_keys_opcode: ['foo /a.php:1 [ASSIGN]'],
+            frame_keys_no_line_opcode: ['foo [ASSIGN]'],
+            opcode_map: [0],
+            no_line_opcode_map: [0],
+        );
+
+        $this->assertSame(['foo /a.php:1'], $model->keysFor(false, false));
+        $this->assertSame(['foo'], $model->keysFor(true, false));
+        $this->assertSame(['foo /a.php:1 [ASSIGN]'], $model->keysFor(false, true));
+        $this->assertSame(['foo [ASSIGN]'], $model->keysFor(true, true));
+    }
+
+    public function testLoadInternsOpcodeFrames(): void
+    {
+        // Opcode interning happens per unique with-line key. To test distinct
+        // opcodes we need different file:line combinations.
+        $this->writeRbt([
+            $this->traceWithOpcode([
+                ['foo', '/a.php', 1, 'ASSIGN'],
+                ['main', '/m.php', 5, null],
+            ]),
+            $this->traceWithOpcode([
+                ['foo', '/a.php', 2, 'RETURN'],
+                ['main', '/m.php', 5, null],
+            ]),
+        ]);
+
+        $model = TraceModel::load($this->tmp);
+
+        // With-line frames: "foo /a.php:1", "foo /a.php:2", "main /m.php:5".
+        $this->assertCount(3, $model->frame_keys);
+
+        // Opcode-qualified with-line: each gets its opcode suffix.
+        $this->assertContains('foo /a.php:1 [ASSIGN]', $model->frame_keys_opcode);
+        $this->assertContains('foo /a.php:2 [RETURN]', $model->frame_keys_opcode);
+        // "main /m.php:5" has no opcode, so it appears without suffix.
+        $this->assertContains('main /m.php:5', $model->frame_keys_opcode);
+
+        // No-line opcode: "foo [ASSIGN]" and "foo [RETURN]" are distinct groups.
+        $this->assertContains('foo [ASSIGN]', $model->frame_keys_no_line_opcode);
+        $this->assertContains('foo [RETURN]', $model->frame_keys_no_line_opcode);
+
+        // The no-line (non-opcode) view still groups them as one "foo".
+        $this->assertCount(2, $model->frame_keys_no_line); // foo, main
+    }
+
     public function testLoadMissingFileThrows(): void
     {
         $this->expectException(\RuntimeException::class);
@@ -184,6 +239,18 @@ class TraceModelTest extends BaseTestCase
         $writer->writeSegmentEnd();
         unset($writer);
         fclose($stream);
+    }
+
+    /**
+     * @param list<array{string, string, int, string|null}> $frames [function, file, line, opcode]
+     */
+    private function traceWithOpcode(array $frames): ParsedCallTrace
+    {
+        $parsed = [];
+        foreach ($frames as [$function, $file, $line, $opcode]) {
+            $parsed[] = new ParsedCallFrame($function, $file, $line, opcode_name: $opcode);
+        }
+        return new ParsedCallTrace(...$parsed);
     }
 
     /**

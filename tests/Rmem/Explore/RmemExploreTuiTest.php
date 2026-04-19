@@ -350,4 +350,278 @@ class RmemExploreTuiTest extends TestCase
         $this->assertStringContainsString('Memory Snapshot Explorer', $out);
         $this->assertStringContainsString('Navigation:', $out);
     }
+
+    // ---------- 11. Global search ----------
+
+    public function testGlobalSearch(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // 'F' opens global search prompt, type "TestClass", Enter to submit
+        $term->script('F', 'T', 'e', 's', 't', 'C', 'l', 'a', 's', 's', "\r", 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        $this->assertStringContainsString('Search:', $out);
+        $this->assertStringContainsString('TestClass', $out);
+    }
+
+    // ---------- 12. Address jump (node ID with # prefix) ----------
+
+    public function testAddressJump(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // 'a' opens address prompt, type "#1" (node ID 1), Enter to jump
+        $term->script('a', '#', '1', "\r", 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        // Should enter sandwich on node 1 (TestClass)
+        $this->assertStringContainsString('sandwich', $out);
+        $this->assertStringContainsString('TestClass', $out);
+    }
+
+    // ---------- 13. Go to definition ----------
+
+    public function testGoToDefinition(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // 'g' triggers goToDefinition on the selected node
+        // With our fixture there's no function/class def to jump to,
+        // so it should be a no-op (stays in list mode)
+        $term->script('g', 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        // Should still be in list mode (no definition found for fixture nodes)
+        $this->assertStringContainsString('Roots', $out);
+        $this->assertStringContainsString('TestClass', $out);
+    }
+
+    // ---------- 14. Toggle sort ----------
+
+    public function testToggleSort(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Enter sandwich first, then 'r' toggles sort mode
+        $term->script("\r", 'r', 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        // Should still be in sandwich (sort just changes child ordering)
+        $this->assertStringContainsString('sandwich', $out);
+        $this->assertStringContainsString('TestClass', $out);
+    }
+
+    // ---------- 15. Toggle all edges ----------
+
+    public function testToggleAllEdges(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Enter sandwich, then 'n' toggles all edges (tree-only vs all)
+        $term->script("\r", 'n', 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        $this->assertStringContainsString('sandwich', $out);
+        $this->assertStringContainsString('TestClass', $out);
+    }
+
+    // ---------- 16. Bookmark toggle ----------
+
+    public function testBookmarkToggle(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // 'm' bookmarks the currently selected node, then "'" shows bookmarks
+        $term->script('m', "'", 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        $this->assertStringContainsString('Bookmarks', $out);
+        $this->assertStringContainsString('TestClass', $out);
+    }
+
+    // ---------- 17. Subtree info ----------
+
+    public function testSubtreeInfo(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Enter sandwich on root, then 'i' shows subtree info
+        $term->script("\r", 'i', 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        $this->assertStringContainsString('Subtree:', $out);
+        // Should show type/class breakdown
+        $this->assertStringContainsString('[type]', $out);
+    }
+
+    // ---------- 18. Cycles view ----------
+
+    public function testCyclesView(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        // The model was created with skipScc: true, so SCC data is unavailable
+        $tui = $this->makeTui(term: $term);
+
+        // 'x' opens cycles view
+        $term->script('x', 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        // With skipScc: true, SCC is not available
+        $this->assertStringContainsString('Cycles', $out);
+        $this->assertTrue(
+            str_contains($out, 'not available') || str_contains($out, 'no cycles'),
+            'Expected cycles view to show unavailable or empty message',
+        );
+    }
+
+    // ---------- 19. Nodes by class from ranking ----------
+
+    public function testNodesByClassFromRanking(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // 'c' to class ranking, then Enter on first class to drill into instances
+        $term->script('c', "\r", 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        // Should show "Class:" label for the drilled-down instance list
+        $this->assertStringContainsString('Class:', $out);
+    }
+
+    // ---------- 20. Nodes by type from ranking ----------
+
+    public function testNodesByTypeFromRanking(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // 'y' to type ranking, then Enter on first type to drill into instances
+        $term->script('y', "\r", 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        // Should show "Type:" label for the drilled-down instance list
+        $this->assertStringContainsString('Type:', $out);
+    }
+
+    // ---------- 21. UI navigate sandwich (via reflection) ----------
+
+    public function testUiNavigateSandwich(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Use reflection to call the private handler directly
+        $result = $this->inv($tui, 'handleUiNavigateSandwich', ['node_id' => 1]);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(1, $result['data']['node_id']);
+        $this->assertSame('sandwich', $result['data']['mode']);
+        $this->assertStringContainsString('TestClass', $result['data']['label']);
+    }
+
+    // ---------- 22. UI get current focus ----------
+
+    public function testUiGetCurrentFocus(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Before running, initialize rows via reflection by calling run setup
+        // Actually, need to init the model state. Let's run briefly then check.
+        // Use reflection to get focus in list mode
+        $result = $this->inv($tui, 'handleUiGetCurrentFocus');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('list', $result['data']['mode']);
+
+        // Now navigate to sandwich and check again
+        $this->inv($tui, 'handleUiNavigateSandwich', ['node_id' => 2]);
+        $result = $this->inv($tui, 'handleUiGetCurrentFocus');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('sandwich', $result['data']['mode']);
+        $this->assertSame(2, $result['data']['node_id']);
+    }
+
+    // ---------- 23. UI get current selection ----------
+
+    public function testUiGetCurrentSelection(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $model = $this->createModel();
+        $tui = $this->makeTui(model: $model, term: $term);
+
+        // Before run(), rows are empty, so selection returns null data
+        $result = $this->inv($tui, 'handleUiGetCurrentSelection');
+        $this->assertTrue($result['ok']);
+        $this->assertNull($result['data']);
+
+        // After navigating to top retained, rows are populated
+        $this->inv($tui, 'switchToTopRetained');
+        $result = $this->inv($tui, 'handleUiGetCurrentSelection');
+        $this->assertTrue($result['ok']);
+        $this->assertNotNull($result['data']);
+        $this->assertArrayHasKey('node_id', $result['data']);
+        $this->assertArrayHasKey('label', $result['data']);
+        $this->assertSame(0, $result['data']['index']);
+    }
+
+    // ---------- 24. Sandwich pane switch ----------
+
+    public function testSandwichPaneSwitch(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Enter sandwich, then Tab to switch pane, then quit
+        $term->script("\r", "\t", 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        $this->assertStringContainsString('sandwich', $out);
+        // After Tab in sandwich, parents pane should become active
+        // The output should contain "Parents" header section
+        $this->assertStringContainsString('Parents', $out);
+    }
+
+    // ---------- 25. Multiple back steps ----------
+
+    public function testMultipleBackSteps(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Enter sandwich on root (node 1), then Enter on child (node 2),
+        // building sandwich history. Then Backspace twice to return to list.
+        // From root sandwich, children pane has node 2 and node 3.
+        // Enter on first child -> sandwich on node 2.
+        // Backspace -> back to sandwich on node 1 (from history).
+        // Backspace -> back to list mode.
+        $term->script("\r", "\r", "\x7f", "\x7f", 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        // Should be back in list mode showing roots
+        $this->assertStringContainsString('[list', $out);
+        $this->assertStringContainsString('Roots', $out);
+    }
 }

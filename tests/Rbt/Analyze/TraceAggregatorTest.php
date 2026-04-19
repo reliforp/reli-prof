@@ -196,6 +196,34 @@ class TraceAggregatorTest extends BaseTestCase
         $this->assertSame([], $result->tail);
     }
 
+    public function testWithOpcodeAppendsOpcodeToKey(): void
+    {
+        $samples = [
+            $this->makeSample([
+                ['fn' => 'foo', 'file' => '/a.php', 'line' => 1, 'opcode' => 'ASSIGN'],
+                ['fn' => 'bar', 'file' => '/b.php', 'line' => 2, 'opcode' => null],
+            ]),
+        ];
+        $result = (new TraceAggregator(no_line: false, with_opcode: true))->aggregate($samples);
+
+        $this->assertArrayHasKey('foo /a.php:1 [ASSIGN]', $result->self_counts);
+        $this->assertArrayHasKey('bar /b.php:2', $result->total_counts);
+        $this->assertArrayNotHasKey('foo /a.php:1', $result->self_counts);
+    }
+
+    public function testWithOpcodeNoLineAppendsOpcodeToFunctionName(): void
+    {
+        $samples = [
+            $this->makeSample([
+                ['fn' => 'foo', 'file' => '/a.php', 'line' => 1, 'opcode' => 'RETURN'],
+            ]),
+        ];
+        $result = (new TraceAggregator(no_line: true, with_opcode: true))->aggregate($samples);
+
+        $this->assertArrayHasKey('foo [RETURN]', $result->self_counts);
+        $this->assertArrayNotHasKey('foo', $result->self_counts);
+    }
+
     public function testEmptySampleStreamReturnsZeros(): void
     {
         $result = (new TraceAggregator())->aggregate([]);
@@ -209,7 +237,7 @@ class TraceAggregatorTest extends BaseTestCase
     }
 
     /**
-     * @param list<string|array{fn:string, file:string, line:int}> $frames
+     * @param list<string|array{fn:string, file:string, line:int, opcode?:string|null}> $frames
      */
     private function makeSample(array $frames): BinaryTraceSample
     {
@@ -226,6 +254,7 @@ class TraceAggregatorTest extends BaseTestCase
                     function_name: $f['fn'],
                     file_name: $f['file'],
                     lineno: $f['line'],
+                    opcode_name: $f['opcode'] ?? null,
                 );
             }
         }
