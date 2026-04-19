@@ -58,8 +58,41 @@ b) The specific page containing `function_table` is within a
    than an anonymous region — and the dump logic skips named
    library segments that aren't the PHP binary itself.
 
-Need to add debug output to CI to compare the failing address
-against the actual dump regions.
+### Root cause identified
+
+CI debug output (PR #610) shows the failing address is inside a
+**shared library's rw-p segment**:
+
+```
+failing address: 0x7efccbb07f90
+maps entry:      7efccbb07000-7efccbb08000 rw-p 0003a000 ... /usr/lib/libcares.so.2.19.5
+dump regions:    ← this VMA is NOT captured
+```
+
+`function_table` is allocated via `pemalloc(persistent=true)` →
+musl `malloc` → musl places the allocation in a 4KB page at
+`0x7efccbb07000`. This page shows up in `/proc/<pid>/maps` as
+part of `libcares.so`'s writable segment (file_offset=0x3a000,
+which is the `.bss`/`.data` area of the shared library).
+
+**Why the MemoryDumper misses it:** The anonymous mmap filter
+(`findByNameRegex('^$')`) only matches VMAs with empty names.
+Library rw-p segments like `/usr/lib/libcares.so.2.19.0` have a
+non-empty name. On glibc, persistent allocations land in `[heap]`
+(captured) or anonymous mmap (captured). On musl, `malloc` may
+reuse pages adjacent to (or within) library BSS regions, which
+appear as named VMAs in maps.
+
+**Fix options:**
+
+1. **Capture all rw-p VMAs** when `include_heap=true` — simplest,
+   but increases dump size by including every library's BSS
+2. **Capture rw-p VMAs that are anonymous** (inode=0, even if named
+   by `PR_SET_VMA_ANON_NAME` or kernel heuristic) — more targeted
+3. **Probe EG pointer targets** after initial dump: deref
+   `eg->function_table`, `eg->class_table`, etc., check if their
+   addresses are covered, and add the containing VMA if not —
+   most precise but requires a second pass
 
 ### 2. NativeTraceCollectorTest (1 test)
 
