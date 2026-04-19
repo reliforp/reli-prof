@@ -35,6 +35,9 @@ It's implemented by using following techniques:
 
 If you have a bit of extra CPU resource, the overhead of this software would be negligible.
 
+## Alpine / musl libc support
+Reli works on Alpine Linux (musl libc). Sampling profiler, memory dump, memory analysis, and memory report all work on both regular and ZTS builds. Native C-level stack traces are not supported on musl due to its minimal `.eh_frame` (only 4 FDE entries vs glibc's ~3,700). See [Alpine internals](docs/internals/alpine-investigation.md) for technical details.
+
 ## Native (C-level) stack trace support
 Reli can collect native C-level stack traces from the PHP interpreter alongside PHP traces. This lets you see what C functions the interpreter is executing inside each PHP function call, which is useful for diagnosing performance issues in PHP internals, extensions, or the interpreter itself.
 

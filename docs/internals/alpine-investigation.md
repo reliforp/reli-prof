@@ -1,8 +1,10 @@
-# Alpine (musl libc) Investigation Notes
+# Alpine (musl libc) Support
 
 ## Status
 
-Work in progress. PR #610.
+Supported since PR #610. Memory profiling (trace, dump, analyze,
+report, explore) works on Alpine. Native C-level stack traces are
+not supported due to musl's minimal `.eh_frame`.
 
 ## Test results
 
