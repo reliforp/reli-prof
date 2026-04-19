@@ -190,18 +190,22 @@ final class MemoryDumper
             }
         }
 
-        // Anonymous writable mmap regions. In include_heap mode, these
-        // are captured for full coverage; in minimum mode they are
+        // Writable mmap regions. In include_heap mode, these are
+        // captured for full coverage; in minimum mode they are
         // skipped because the ZendMM chunk / huge entries above
-        // already cover the PHP-owned portion, and the remainder is
-        // glibc malloc arenas and extension-private state that the
-        // analyser does not walk.
+        // already cover the PHP-owned portion.
+        //
+        // Both anonymous (inode=0, empty name) and file-backed
+        // (library .data/.bss segments) rw-p regions are included.
+        // musl libc's dynamic linker donates unused page tails of
+        // library writable segments to malloc (ldso/dynlink.c
+        // reclaim_gaps), so persistent allocations like
+        // EG(function_table) can land inside a library-named VMA.
         if ($include_heap) {
-            $anon_areas = $memory_map->findByNameRegex('^$');
-            foreach ($anon_areas as $area) {
+            $all_areas = $memory_map->findByNameRegex('.*');
+            foreach ($all_areas as $area) {
                 if (
-                    $area->inode_num === 0
-                    && $area->attribute->read
+                    $area->attribute->read
                     && $area->attribute->write
                     && !$area->attribute->execute
                 ) {
