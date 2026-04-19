@@ -31,7 +31,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/reli-test:/tmp/reli-test
       - ./build:/app/build
-    container_name: reli-test
+    container_name: reli-test-with-coverage
     command: ["vendor/bin/phpunit" , "--colors=always", "--testdox", "--coverage-clover", "build/logs/clover.xml"]
   reli-test-parallel:
     image: reli-dev
@@ -66,5 +66,5 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/reli-test:/tmp/reli-test
       - ./build:/app/build
-    container_name: reli-test
+    container_name: reli-test-for-ci
     command: ["vendor/bin/phpunit" , "--coverage-clover", "build/logs/clover.xml"]
