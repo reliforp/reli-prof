@@ -19,7 +19,7 @@ jobs:
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.2
+          php-version: 8.3
           extensions: ffi, dom, mbstring
           coverage: pcov
 
@@ -49,7 +49,11 @@ jobs:
       - name: Run unit tests
         run: |
           mkdir -p build/logs
-          vendor/bin/phpunit --exclude-group target-version,frankenphp,mod_php --coverage-clover build/logs/clover.xml
+          vendor/bin/phpunit \
+            --exclude-group target-version \
+            --exclude-group frankenphp \
+            --exclude-group mod_php \
+            --coverage-clover build/logs/clover.xml
 
       - name: Send to coveralls
         uses: coverallsapp/github-action@v2
@@ -279,6 +283,14 @@ jobs:
           mkdir -p build/logs
           docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version --coverage-clover build/logs/clover.xml
 
+      - name: Upload test trace log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reli-test-trace-${{ matrix.targets }}
+          path: /tmp/reli-test/reli-test-trace.log
+          if-no-files-found: ignore
+
       - name: Fix coverage paths from Docker container
         run: sed -i 's|/app/|${{ github.workspace }}/|g' build/logs/clover.xml
 
@@ -388,7 +400,7 @@ jobs:
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.2
+          php-version: 8.3
           extensions: ffi, dom, mbstring
           coverage: pcov
 
@@ -409,7 +421,11 @@ jobs:
       - name: Run unit tests
         run: |
           mkdir -p build/logs
-          vendor/bin/phpunit --exclude-group target-version,frankenphp,mod_php --coverage-clover build/logs/clover.xml
+          vendor/bin/phpunit \
+            --exclude-group target-version \
+            --exclude-group frankenphp \
+            --exclude-group mod_php \
+            --coverage-clover build/logs/clover.xml
 
       - name: Send to coveralls
         uses: coverallsapp/github-action@v2

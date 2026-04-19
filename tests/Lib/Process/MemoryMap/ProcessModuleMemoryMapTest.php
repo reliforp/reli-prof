@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Process\MemoryMap;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reli\BaseTestCase;
 
 class ProcessModuleMemoryMapTest extends BaseTestCase
@@ -31,9 +32,7 @@ class ProcessModuleMemoryMapTest extends BaseTestCase
         $this->assertSame(0x10000000, $process_module_memoru_map->getBaseAddress());
     }
 
-    /**
-     * @dataProvider addressAndOffsetProvider
-     */
+    #[DataProvider('addressAndOffsetProvider')]
     public function testGetMemoryAddressFromOffset(int $expected, int $offset)
     {
         $process_module_memoru_map = new ProcessModuleMemoryMap([

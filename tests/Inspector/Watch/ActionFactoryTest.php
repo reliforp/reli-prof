@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch;
 
 use Mockery;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\Output\TraceOutput\TraceOutput;
 use Reli\Inspector\Settings\WatchSettings\WatchSettings;
@@ -23,10 +25,8 @@ use Reli\Inspector\Watch\Action\LogAction;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
-/**
- * @runTestsInSeparateProcesses
- * @preserveGlobalState disabled
- */
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class ActionFactoryTest extends BaseTestCase
 {
     private function makeSettings(array $overrides = []): WatchSettings

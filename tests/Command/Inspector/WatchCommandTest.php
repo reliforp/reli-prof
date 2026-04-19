@@ -13,12 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 
-/**
- * @runTestsInSeparateProcesses
- * @preserveGlobalState disabled
- */
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class WatchCommandTest extends TestCase
 {
     private static function makeCommand(): WatchCommand

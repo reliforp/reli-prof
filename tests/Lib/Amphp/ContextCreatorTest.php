@@ -13,14 +13,14 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Amphp;
 
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Reli\BaseTestCase;
 
 class ContextCreatorTest extends BaseTestCase
 {
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function testCreate(): void
     {
         $creator = new ContextCreator('di_config');

@@ -13,15 +13,15 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Loop\LoopMiddleware;
 
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use ReflectionClass;
 use Reli\BaseTestCase;
 
 class KeyboardCancelLoopTest extends BaseTestCase
 {
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function testReturnFalseIfCancelKeyPressed(): void
     {
         $reflection = new ReflectionClass(KeyboardCancelMiddleware::class);

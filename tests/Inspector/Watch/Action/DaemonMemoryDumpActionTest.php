@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch\Action;
 
 use Mockery;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
 use Reli\Inspector\MemoryDump\MemoryDumper;
 use Reli\Inspector\MemoryDump\MemoryDumpResult;
@@ -24,10 +26,8 @@ use Reli\Inspector\Watch\WatchContext;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 
-/**
- * @runTestsInSeparateProcesses
- * @preserveGlobalState disabled
- */
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class DaemonMemoryDumpActionTest extends BaseTestCase
 {
     public function testName(): void
