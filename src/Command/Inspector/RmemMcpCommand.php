@@ -73,7 +73,9 @@ final class RmemMcpCommand extends Command
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $rmemPath */
         $rmemPath = $input->getOption('rmem');
+        /** @var string|null $socketPath */
         $socketPath = $input->getOption('socket');
         $this->controlEnabled = (bool) $input->getOption('control');
 
@@ -148,7 +150,7 @@ final class RmemMcpCommand extends Command
         }
 
         if ($this->socket !== null) {
-            $payload = json_encode($request, JSON_UNESCAPED_UNICODE) . "\n";
+            $payload = (string)json_encode($request, JSON_UNESCAPED_UNICODE) . "\n";
             $written = @fwrite($this->socket, $payload);
             if ($written === false || $written === 0) {
                 // Reconnect attempt
@@ -160,6 +162,7 @@ final class RmemMcpCommand extends Command
                 return ['ok' => false, 'error' => 'Socket read failed'];
             }
             $resp = json_decode(trim($line), true);
+            /** @var array<string, mixed> */
             return is_array($resp) ? $resp : ['ok' => false, 'error' => 'Invalid response'];
         }
 
@@ -175,11 +178,13 @@ final class RmemMcpCommand extends Command
             if ($line === '') {
                 continue;
             }
-            $request = json_decode($line, true);
-            if (!is_array($request)) {
+            $decoded = json_decode($line, true);
+            if (!is_array($decoded)) {
                 $this->sendResponse($this->makeError(null, -32700, 'Parse error'));
                 continue;
             }
+            /** @var array<string, mixed> $request */
+            $request = $decoded;
 
             $id = $request['id'] ?? null;
             $method = (string)($request['method'] ?? '');
@@ -230,6 +235,7 @@ final class RmemMcpCommand extends Command
      */
     private function handleToolsCall(mixed $id, array $request): array
     {
+        /** @var array<string, mixed> $params */
         $params = $request['params'] ?? [];
         $toolName = (string)($params['name'] ?? '');
         /** @var array<string, mixed> $args */
@@ -249,15 +255,16 @@ final class RmemMcpCommand extends Command
         }
 
         // Build backend request
+        /** @var array<string, mixed> $backendRequest */
         $backendRequest = ['action' => $action];
         foreach ($args as $key => $value) {
-            $backendRequest[$key] = $value;
+            $backendRequest[(string)$key] = $value;
         }
 
         $result = $this->queryBackend($backendRequest);
 
         // Format as text for MCP
-        $text = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        $text = (string)json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         $isError = !($result['ok'] ?? false);
 
         return $this->makeToolResult($id, $text, $isError);
@@ -266,7 +273,7 @@ final class RmemMcpCommand extends Command
     /** @param array<string, mixed> $response */
     private function sendResponse(array $response): void
     {
-        $json = json_encode($response, JSON_UNESCAPED_UNICODE);
+        $json = (string)json_encode($response, JSON_UNESCAPED_UNICODE);
         fwrite(STDOUT, $json . "\n");
         fflush(STDOUT);
     }

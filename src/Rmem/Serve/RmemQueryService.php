@@ -41,7 +41,7 @@ final class RmemQueryService
      */
     public function handle(array $request): array
     {
-        $action = $request['action'] ?? '';
+        $action = (string)($request['action'] ?? '');
 
         try {
             return match ($action) {
@@ -317,8 +317,8 @@ final class RmemQueryService
             }
         }
 
-        usort($typeGroups, fn ($a, $b) => $b['total'] <=> $a['total']);
-        usort($classGroups, fn ($a, $b) => $b['total'] <=> $a['total']);
+        usort($typeGroups, fn (array $a, array $b): int => (int)$b['total'] <=> (int)$a['total']);
+        usort($classGroups, fn (array $a, array $b): int => (int)$b['total'] <=> (int)$a['total']);
 
         return [
             'ok' => true,
@@ -326,8 +326,8 @@ final class RmemQueryService
                 'total_retained' => $totalRetained,
                 'node_count' => count($visited),
                 'scanned_count' => $scanned,
-                'type_breakdown' => array_values($typeGroups),
-                'class_breakdown' => array_values($classGroups),
+                'type_breakdown' => $typeGroups,
+                'class_breakdown' => $classGroups,
                 'truncated' => $truncated,
             ],
         ];
@@ -405,7 +405,7 @@ final class RmemQueryService
         if ($profiles === null) {
             return ['ok' => false, 'error_code' => 'not_ready', 'error' => 'SCC data not available'];
         }
-        usort($profiles, fn ($a, $b) => $b['total_size'] <=> $a['total_size']);
+        usort($profiles, fn (array $a, array $b): int => (int)$b['total_size'] <=> (int)$a['total_size']);
         $data = [];
         foreach (array_slice($profiles, 0, $limit) as $p) {
             $data[] = [

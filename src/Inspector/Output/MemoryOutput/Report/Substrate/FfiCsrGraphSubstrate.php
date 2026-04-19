@@ -865,10 +865,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         {
             $start = (int)$this->treeOffsets[$rootIdx];
             $end = (int)$this->treeOffsets[$rootIdx + 1];
-            for ($j = $start; $j < $end; $j++) {
-                $ci = (int)$this->treeEdges[$j];
-                $revDeg[$ci] = (int)$revDeg[$ci] + 1;
-            }
+        for ($j = $start; $j < $end; $j++) {
+            $ci = (int)$this->treeEdges[$j];
+            $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+        }
         }
 
         // Count: nontree edges

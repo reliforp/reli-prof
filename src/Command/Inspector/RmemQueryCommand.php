@@ -245,11 +245,13 @@ final class RmemQueryCommand extends Command
         }
 
         // Check node/edge/location counts vs section sizes
-        foreach ([
+        foreach (
+            [
             [Format::SECTION_NODES, Format::NODE_ROW_SIZE, 'nodes'],
             [Format::SECTION_EDGES, Format::EDGE_ROW_SIZE, 'edges'],
             [Format::SECTION_LOCATIONS, Format::LOCATION_ROW_SIZE, 'locations'],
-        ] as [$section, $rowSize, $label]) {
+            ] as [$section, $rowSize, $label]
+        ) {
             if (!$reader->hasSection($section)) {
                 continue;
             }
@@ -588,24 +590,25 @@ final class RmemQueryCommand extends Command
         $addrOpt = $input->getOption('address');
         $showChildren = (bool) $input->getOption('children');
 
+        /** @var list<string> $requests */
         $requests = [];
 
         if ($addrOpt !== null) {
-            $requests[] = json_encode(['action' => 'query.find_by_address', 'address' => $addrOpt]);
+            $requests[] = (string)json_encode(['action' => 'query.find_by_address', 'address' => $addrOpt]);
         }
 
         if ($nodeOpt !== null) {
             $nodeId = (int) $nodeOpt;
-            $requests[] = json_encode(['action' => 'query.node_detail', 'node_id' => $nodeId]);
-            $requests[] = json_encode(['action' => 'query.path_to_root', 'node_id' => $nodeId]);
+            $requests[] = (string)json_encode(['action' => 'query.node_detail', 'node_id' => $nodeId]);
+            $requests[] = (string)json_encode(['action' => 'query.path_to_root', 'node_id' => $nodeId]);
             if ($showChildren) {
-                $requests[] = json_encode(['action' => 'query.children', 'node_id' => $nodeId]);
+                $requests[] = (string)json_encode(['action' => 'query.children', 'node_id' => $nodeId]);
             }
         }
 
         if ($requests === []) {
             // Default: hello
-            $requests[] = json_encode(['action' => 'server.hello']);
+            $requests[] = (string)json_encode(['action' => 'server.hello']);
         }
 
         foreach ($requests as $req) {
@@ -615,7 +618,7 @@ final class RmemQueryCommand extends Command
                 break;
             }
             $decoded = json_decode($response, true);
-            $output->writeln(json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            $output->writeln((string)json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
             $output->writeln('');
         }
 

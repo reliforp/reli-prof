@@ -75,10 +75,9 @@ final class RmemServeCommand extends Command
             return 1;
         }
 
-        $socketPath = $input->getOption('socket');
-        if ($socketPath === null) {
-            $socketPath = $this->defaultSocketPath();
-        }
+        /** @var string|null $socketOpt */
+        $socketOpt = $input->getOption('socket');
+        $socketPath = is_string($socketOpt) ? $socketOpt : $this->defaultSocketPath();
         $timeout = (int)$input->getOption('timeout');
 
         $output->writeln("<info>loading {$file} ...</info>");
@@ -178,19 +177,22 @@ final class RmemServeCommand extends Command
                     continue;
                 }
 
-                $request = json_decode($line, true);
-                if (!is_array($request)) {
+                $decoded = json_decode($line, true);
+                if (!is_array($decoded)) {
                     $response = ['ok' => false, 'error' => 'Invalid JSON'];
-                } elseif (($request['action'] ?? '') === 'server.shutdown') {
-                    $response = ['ok' => true, 'data' => 'shutting down'];
-                    fwrite($client, json_encode($response) . "\n");
-                    $running = false;
-                    break;
                 } else {
+                    /** @var array<string, mixed> $request */
+                    $request = $decoded;
+                    if ((string)($request['action'] ?? '') === 'server.shutdown') {
+                        $response = ['ok' => true, 'data' => 'shutting down'];
+                        fwrite($client, (string)json_encode($response) . "\n");
+                        $running = false;
+                        break;
+                    }
                     $response = $service->handle($request);
                 }
 
-                fwrite($client, json_encode($response, JSON_UNESCAPED_UNICODE) . "\n");
+                fwrite($client, (string)json_encode($response, JSON_UNESCAPED_UNICODE) . "\n");
                 $lastActivity = time();
             }
 

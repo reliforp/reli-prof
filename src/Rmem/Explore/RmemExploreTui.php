@@ -232,11 +232,13 @@ final class RmemExploreTui
             return;
         }
 
-        $request = json_decode(trim($line), true);
-        if (!is_array($request)) {
+        $decoded = json_decode(trim($line), true);
+        if (!is_array($decoded)) {
             $this->sendUiResponse(['ok' => false, 'error' => 'Invalid JSON']);
             return;
         }
+        /** @var array<string, mixed> $request */
+        $request = $decoded;
 
         $action = (string)($request['action'] ?? '');
 
@@ -276,7 +278,7 @@ final class RmemExploreTui
         if ($this->uiResponseWrite === null) {
             return;
         }
-        $payload = json_encode($response, JSON_UNESCAPED_UNICODE) . "\n";
+        $payload = (string)json_encode($response, JSON_UNESCAPED_UNICODE) . "\n";
         @fwrite($this->uiResponseWrite, $payload);
         @fflush($this->uiResponseWrite);
     }

@@ -22,10 +22,8 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
-
 use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
 use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;
-
 
 use function DI\autowire;
 

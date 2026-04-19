@@ -92,6 +92,7 @@ final class RmemModel
     /**
      * Load address, string_value, refcount, and class per node from locations section.
      * @return array{array<int, int>, array<int, string>, array<int, int>, array<int, string>}
+     * @psalm-suppress InaccessibleMethod, PossiblyNullPropertyFetch, UndefinedPropertyFetch
      */
     private static function loadLocationInfo(BinaryReader $reader): array
     {
@@ -165,15 +166,21 @@ final class RmemModel
             if ($offset + 12 > strlen($data)) {
                 break;
             }
-            $nid = unpack('V', $data, $offset)[1];
-            $keyId = unpack('V', $data, $offset + 4)[1];
-            $valId = unpack('V', $data, $offset + 8)[1];
+            /** @var array{1: int} $nidArr */
+            $nidArr = unpack('V', $data, $offset);
+            /** @var array{1: int} $keyIdArr */
+            $keyIdArr = unpack('V', $data, $offset + 4);
+            /** @var array{1: int} $valIdArr */
+            $valIdArr = unpack('V', $data, $offset + 8);
+            $nid = $nidArr[1];
+            $keyId = $keyIdArr[1];
+            $valId = $valIdArr[1];
             $offset += 12;
 
-            $key = $dict->lookup((int)$keyId);
-            $val = $dict->lookup((int)$valId);
+            $key = $dict->lookup($keyId);
+            $val = $dict->lookup($valId);
             if ($key !== null && $val !== null && $key !== 'function_name' && $key !== 'lineno') {
-                $attrs[(int)$nid][$key] = $val;
+                $attrs[$nid][$key] = $val;
             }
         }
         return $attrs;
@@ -219,6 +226,7 @@ final class RmemModel
     {
         // Min-heap of size $limit: keep the top-k largest retained.
         // O(N log k) vs O(N log N) for full sort. Memory: O(k) not O(N).
+        /** @var \SplMinHeap<array{int, int}> $heap */
         $heap = new \SplMinHeap();
         foreach ($this->substrate->iterateSubtreeSizes() as $nodeId => $retained) {
             if ($retained <= 0) {
@@ -226,16 +234,22 @@ final class RmemModel
             }
             if ($heap->count() < $limit) {
                 $heap->insert([$retained, $nodeId]);
-            } elseif ($retained > $heap->top()[0]) {
-                $heap->extract();
-                $heap->insert([$retained, $nodeId]);
+            } else {
+                /** @var array{int, int} $top */
+                $top = $heap->top();
+                if ($retained > $top[0]) {
+                    $heap->extract();
+                    $heap->insert([$retained, $nodeId]);
+                }
             }
         }
 
         // Extract in descending order
         $entries = [];
         while (!$heap->isEmpty()) {
-            [$retained, $nodeId] = $heap->extract();
+            /** @var array{int, int} $item */
+            $item = $heap->extract();
+            [$retained, $nodeId] = $item;
             $entries[] = [
                 'node_id' => $nodeId,
                 'retained' => $retained,
@@ -279,12 +293,14 @@ final class RmemModel
         if ($sort === 'link') {
             usort($entries, function (array $a, array $b): int {
                 // Numeric link names (frame numbers, array keys) sort numerically
-                $aNum = is_numeric($a['link_name']);
-                $bNum = is_numeric($b['link_name']);
+                $aLink = (string)($a['link_name'] ?? '');
+                $bLink = (string)($b['link_name'] ?? '');
+                $aNum = is_numeric($aLink);
+                $bNum = is_numeric($bLink);
                 if ($aNum && $bNum) {
-                    return (int)$a['link_name'] <=> (int)$b['link_name'];
+                    return (int)$aLink <=> (int)$bLink;
                 }
-                return strnatcasecmp($a['link_name'], $b['link_name']);
+                return strnatcasecmp($aLink, $bLink);
             });
         } else {
             usort($entries, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
@@ -691,8 +707,12 @@ final class RmemModel
         if ($json === null) {
             return null;
         }
-        $profiles = json_decode($json, true);
-        return is_array($profiles) ? $profiles : null;
+        $decoded = json_decode($json, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+        /** @var list<array{id: int, nodes: list<int>, node_count: int, total_size: int, signature: string}> */
+        return $decoded;
     }
 
     /**
@@ -858,7 +878,7 @@ final class RmemModel
 
     /**
      * Get detailed info for a node (for focus bar / detail view).
-     * @return array{type: string, class: ?string, shallow: int, retained: int, address: ?int, string_value: ?string, attributes: array<string, string>}
+     * @return array{type: string, class: ?string, shallow: int, retained: int, address: ?int, string_value: ?string, refcount: ?int, attributes: array<string, string>}
      */
     public function nodeDetail(int $nodeId): array
     {

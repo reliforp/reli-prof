@@ -136,6 +136,7 @@ final class RmemExploreCommand extends Command
         }
 
         // --serve: fork a query server child before starting TUI
+        /** @var string|false|null $serveOpt */
         $serveOpt = $input->getOption('serve');
         $serveControl = (bool) $input->getOption('serve-control');
         $queryChildPid = null;
@@ -320,22 +321,24 @@ final class RmemExploreCommand extends Command
                 if ($line === '') {
                     continue;
                 }
-                $request = json_decode($line, true);
-                if (!is_array($request)) {
+                $decoded = json_decode($line, true);
+                if (!is_array($decoded)) {
                     $response = ['ok' => false, 'error' => 'Invalid JSON'];
                 } else {
+                    /** @var array<string, mixed> $request */
+                    $request = $decoded;
                     $action = (string)($request['action'] ?? '');
                     if (str_starts_with($action, 'ui.')) {
                         $response = $this->forwardUiRequest($request, $uiRequestWrite, $uiResponseRead);
                     } else {
                         $response = $service->handle($request);
                         // Annotate hello with ui capabilities
-                        if ($action === 'server.hello' && isset($response['data'])) {
+                        if ($action === 'server.hello' && is_array($response['data'] ?? null)) {
                             $response['data']['serve_control'] = $uiRequestWrite !== null;
                         }
                     }
                 }
-                fwrite($client, json_encode($response, JSON_UNESCAPED_UNICODE) . "\n");
+                fwrite($client, (string)json_encode($response, JSON_UNESCAPED_UNICODE) . "\n");
             }
             fclose($client);
         }
@@ -360,7 +363,7 @@ final class RmemExploreCommand extends Command
             return ['ok' => false, 'error' => 'ui.* actions require --serve-control'];
         }
 
-        $payload = json_encode($request, JSON_UNESCAPED_UNICODE) . "\n";
+        $payload = (string)json_encode($request, JSON_UNESCAPED_UNICODE) . "\n";
         $written = @fwrite($uiRequestWrite, $payload);
         if ($written === false || $written === 0) {
             return ['ok' => false, 'error' => 'Failed to forward ui request to parent'];
@@ -381,8 +384,12 @@ final class RmemExploreCommand extends Command
             return ['ok' => false, 'error' => 'Failed to read ui response from parent'];
         }
 
-        $response = json_decode(trim($line), true);
-        return is_array($response) ? $response : ['ok' => false, 'error' => 'Invalid response from parent'];
+        $decoded = json_decode(trim($line), true);
+        if (!is_array($decoded)) {
+            return ['ok' => false, 'error' => 'Invalid response from parent'];
+        }
+        /** @var array<string, mixed> */
+        return $decoded;
     }
 
     private function runSccBuilder(string $rmemPath): never
