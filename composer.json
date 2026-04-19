@@ -29,7 +29,7 @@
     "hassankhan/config": "3.2.0",
     "sj-i/php-cast": "1.0.0",
     "monolog/monolog": "3.10.0",
-    "webmozart/assert": "1.12.1"
+    "webmozart/assert": "2.3.0"
   },
   "require-dev": {
     "ext-posix": "*",
