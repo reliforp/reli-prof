@@ -242,7 +242,28 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         // regardless of which branch owns the tree structure.
         $thisNode = $contexts_analyzed['call_frames']['1']['this'];
         $objectTree = $this->findObjectTree($thisNode, $contexts_analyzed);
-        $this->assertNotNull($objectTree, 'Object tree for $this not found');
+        if ($objectTree === null) {
+            // Debug: dump $this node keys and global_variables structure
+            $debug = "thisNode keys: " . implode(',', array_keys($thisNode)) . "\n";
+            $gv = $contexts_analyzed['global_variables'] ?? null;
+            if (is_array($gv)) {
+                $debug .= "global_variables keys: " . implode(',', array_keys($gv)) . "\n";
+                $elems = $gv['array_elements'] ?? [];
+                if (is_array($elems)) {
+                    foreach ($elems as $k => $v) {
+                        $vKeys = is_array($v) ? implode(',', array_keys($v)) : gettype($v);
+                        $valKeys = is_array($v['value'] ?? null) ? implode(',', array_keys($v['value'])) : 'n/a';
+                        $debug .= "  [{$k}] keys={$vKeys} value_keys={$valKeys}\n";
+                    }
+                }
+            }
+            // Also check objects_store
+            $os = $contexts_analyzed['objects_store'] ?? null;
+            if (is_array($os)) {
+                $debug .= "objects_store keys: " . implode(',', array_keys($os)) . "\n";
+            }
+            $this->assertNotNull($objectTree, "Object tree for \$this not found.\n{$debug}");
+        }
         $this->assertSame(
             42,
             $objectTree['dynamic_properties']['array_elements']['dynamic_property']['value']['value']
