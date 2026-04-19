@@ -163,15 +163,39 @@ frame has a resolved symbol name.
 - Dynamic linker is `/lib/ld-musl-x86_64.so.1` (musl is both libc
   and dynamic linker in one binary)
 
-Possible causes:
-- Library path resolution via `/proc/<pid>/root/<path>` may fail
-  for musl's combined ld/libc at `/lib/ld-musl-x86_64.so.1`
-- PIE base address calculation from maps may differ
-- The unwinder collects frames but address → binary → symbol
-  resolution fails for all binaries
+### Root cause identified
 
-Need debug output showing: collected frame addresses, maps lookup
-results, and which binary each frame resolves to.
+**musl's `.eh_frame` contains only 4 FDE entries** (vs glibc's
+3,713). musl does not emit DWARF Call Frame Information for most
+functions — this is a deliberate size optimization.
+
+When the target process is stopped inside musl code
+(`usleep` → `nanosleep` → syscall), reli's DWARF unwinder
+cannot find an FDE for the current instruction pointer. The
+unwinder fails to unwind and returns a single frame with
+`addr=0x0`.
+
+Verification:
+```
+$ readelf --debug-dump=frames /lib/ld-musl-x86_64.so.1 | grep -c FDE
+4
+$ readelf --debug-dump=frames /lib/x86_64-linux-gnu/libc.so.6 | grep -c FDE
+3713
+```
+
+The 4 FDE entries in musl cover only `_start` / `__libc_start_main`
+and a few internal functions. `nanosleep` (0x6983f), `usleep`
+(0x6b447), and the vast majority of musl functions have no CFI.
+
+**Fix options:**
+1. Fall back to frame-pointer-based unwinding when `.eh_frame`
+   lookup fails — musl preserves frame pointers at default
+   optimization levels
+2. Detect musl (via `/lib/ld-musl-*` in maps) and skip native
+   trace collection
+3. Use `/proc/<pid>/syscall` to get the syscall return address,
+   then start unwinding from the caller frame which is in PHP
+   code (covered by PHP's `.eh_frame`)
 
 ## Alpine-specific characteristics
 
