@@ -380,7 +380,7 @@ Each node has a **type** that describes what PHP internal structure it represent
 
 - **retained >> shallow**: The node is a "choke point" — a small object (e.g., 56-byte array header) retaining a large subtree. Releasing or shrinking this one object frees everything below it.
 - **Same class appearing thousands of times in `rmem_class_ranking`**: Classic N+1 allocation — the application creates too many instances. Check if they can be streamed, pooled, or reduced.
-- **`ArrayPossibleOverheadContext` is large**: PHP arrays over-allocate capacity in powers of 2. An array with 1025 elements allocates space for 2048. Consider pre-sizing or using `SplFixedArray`.
+- **`ArrayPossibleOverheadContext` is large**: PHP arrays over-allocate capacity in powers of 2 (an array with 1025 elements allocates space for 2048). Additionally, arrays never shrink — if elements are `unset`, the capacity stays at the high-water mark. Look for arrays that grew large temporarily and were partially cleared.
 - **Nodes reachable only from `objects_store`**: These objects have no strong reference from the call stack or global scope. They may be waiting for PHP's cycle collector, or they may be leaked (held alive by a reference cycle).
 - **Large SCC with framework class names** (e.g., Container ↔ Service): Usually a DI container's structural cost — intentional and harmless. Focus on SCCs with application classes.
 - **`PhpReferenceContext` in the path**: PHP references (`&$var`) create an extra indirection node. If you see `PhpReferenceContext → ObjectContext`, it means the variable is a reference to the object, not a direct pointer.
