@@ -100,7 +100,7 @@ class GraphSubstrate
     /** @var array<int, list<int>> canonical_parent => [canonical_child, ...] for SCC */
     protected array $scc_adjacency = [];
 
-    private const FFI_CSR_THRESHOLD = 2_000_000;
+    private const int FFI_CSR_THRESHOLD = 2_000_000;
 
     /** @psalm-suppress UnsafeInstantiation */
     public static function loadFromDb(\PDO $db, int $run_id): static

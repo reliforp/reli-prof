@@ -20,7 +20,7 @@ final class TargetProcessSettingsException extends InspectorSettingsException
     public const TARGET_NOT_SPECIFIED = 1;
     public const PID_IS_NOT_INTEGER = 2;
 
-    protected const ERRORS = [
+    protected const array ERRORS = [
         self::TARGET_NOT_SPECIFIED => 'either pid or command must be specified',
         self::PID_IS_NOT_INTEGER => 'pid is not integer',
     ];

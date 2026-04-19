@@ -1,5 +1,5 @@
 # Reli
-![Minimum PHP version: 8.1.0](https://img.shields.io/badge/php-8.1.0%2B-blue.svg)
+![Minimum PHP version: 8.5.0](https://img.shields.io/badge/php-8.5.0%2B-blue.svg)
 [![Packagist](https://img.shields.io/packagist/v/reliforp/reli-prof.svg)](https://packagist.org/packages/reliforp/reli-prof)
 [![Github Actions](https://github.com/reliforp/reli-prof/workflows/build/badge.svg)](https://github.com/reliforp/reli-prof/actions)
 [![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/reliforp/reli-prof/badges/quality-score.png?b=0.11.x)](https://scrutinizer-ci.com/g/reliforp/reli-prof/?branch=0.11.x)
@@ -80,14 +80,15 @@ Much of what can be done with phpspy will be done with reli in the future.
 ## Requirements
 ### Supported PHP versions
 #### Execution
-- PHP 8.1+ (NTS / ZTS)
+- PHP 8.5+ (NTS / ZTS)
 - 64bit Linux x86_64
 - 64bit Linux AArch64 (experimental)
 - FFI extension must be enabled.
 - PCNTL extension must be enabled.
 
-#### Development
-- PHP 8.3+ is required to run the test suite (PHPUnit 12 requirement). The runtime target (Execution) is still PHP 8.1+.
+> The recommended way to run reli-prof is via the provided Docker image,
+> which ships a compatible PHP build with FFI enabled. Bare-metal installs
+> on older PHP versions are not supported.
 
 #### Target
 - PHP 7.0+ (NTS / ZTS)

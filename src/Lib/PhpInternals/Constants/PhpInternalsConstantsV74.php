@@ -15,6 +15,6 @@ namespace Reli\Lib\PhpInternals\Constants;
 
 final class PhpInternalsConstantsV74 extends VersionAwareConstants
 {
-    public const ZEND_ACC_CLOSURE = (1 << 20);
-    public const ZEND_ACC_HAS_RETURN_TYPE = (1 << 13);
+    public const int ZEND_ACC_CLOSURE = (1 << 20);
+    public const int ZEND_ACC_HAS_RETURN_TYPE = (1 << 13);
 }

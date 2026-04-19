@@ -24,7 +24,7 @@ final class TargetPhpSettingsException extends InspectorSettingsException
     public const LIBPTHREAD_PATH_IS_NOT_STRING = 7;
     public const TARGET_PHP_VERSION_INVALID = 8;
 
-    protected const ERRORS = [
+    protected const array ERRORS = [
         self::PHP_REGEX_IS_NOT_STRING => 'php-regex must be a string',
         self::LIBPTHREAD_REGEX_IS_NOT_STRING => 'libpthread-regex must be a string',
         self::ZTS_GLOBALS_REGEX_IS_NOT_STRING => 'zts-globals-regex must be a string',

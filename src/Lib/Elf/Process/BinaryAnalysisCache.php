@@ -81,6 +81,7 @@ final class BinaryAnalysisCache
             return null;
         }
         try {
+            /** @psalm-suppress UndefinedFunction */
             $data = igbinary_unserialize($content);
         } catch (\Throwable) {
             return null;
@@ -113,7 +114,10 @@ final class BinaryAnalysisCache
         return $data;
     }
 
-    /** @param array<array-key, mixed> $data */
+    /**
+     * @param array<array-key, mixed> $data
+     * @psalm-suppress UndefinedFunction,MixedAssignment,MixedArgument
+     */
     private function saveIgbinary(BinaryFingerprint $fingerprint, string $namespace, array $data): void
     {
         $path = $this->getBasePath($fingerprint, $namespace) . '.igbinary';
