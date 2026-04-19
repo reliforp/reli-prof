@@ -22,7 +22,7 @@
     "ext-filter": "*",
     "ext-json": "*",
     "ext-pcntl": "*",
-    "symfony/console": "6.4.36",
+    "symfony/console": "^8.0",
     "php-di/php-di": "7.1.1",
     "amphp/parallel": "2.3.3",
     "amphp/amp": "3.1.1",
@@ -39,7 +39,7 @@
     "jetbrains/phpstorm-stubs": "2025.3",
     "php-coveralls/php-coveralls": "2.9.1",
     "psalm/phar": "^6.0",
-    "brianium/paratest": "^7.4.5"
+    "brianium/paratest": "^7.20"
   },
   "autoload": {
     "files": ["src/Lib/Defer/defer.php"],

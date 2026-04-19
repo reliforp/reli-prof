@@ -50,7 +50,7 @@ $command_enumerator = new CommandEnumerator(new GlobIterator(__DIR__. '/src/Comm
 foreach ($command_enumerator as $command_class) {
     /** @var Command $command */
     $command = $container->make($command_class);
-    $application->add($command);
+    $application->addCommand($command);
 }
 
 $application->run();
