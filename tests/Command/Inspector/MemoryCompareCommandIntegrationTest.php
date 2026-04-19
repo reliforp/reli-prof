@@ -107,11 +107,18 @@ class MemoryCompareCommandIntegrationTest extends BaseTestCase
         // Dump
         /** @var MemoryDumpCommand $dump_cmd */
         $dump_cmd = $container->make(MemoryDumpCommand::class);
-        $dump_input = new ArrayInput([
+        $dump_args = [
             '--pid' => (string)$pid,
             '--output' => $dump_path,
             '--include-binary' => true,
-        ]);
+        ];
+        // Alpine (musl libc) has no [heap] region — persistent
+        // allocations live in anonymous mmap pages that require
+        // --include-heap to capture.
+        if (str_contains($docker_image_name, 'alpine')) {
+            $dump_args['--include-heap'] = true;
+        }
+        $dump_input = new ArrayInput($dump_args);
         $dump_input->setInteractive(false);
         $this->assertSame(0, $dump_cmd->run($dump_input, new BufferedOutput()));
 

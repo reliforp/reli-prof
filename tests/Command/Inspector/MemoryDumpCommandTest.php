@@ -335,11 +335,15 @@ class MemoryDumpCommandTest extends BaseTestCase
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $container->make(MemoryDumpCommand::class);
 
-        $input = new ArrayInput([
+        $dump_args = [
             '--pid' => (string)$pid,
             '--output' => $output_path,
             '--include-binary' => true,
-        ]);
+        ];
+        if (str_contains($docker_image_name, 'alpine')) {
+            $dump_args['--include-heap'] = true;
+        }
+        $input = new ArrayInput($dump_args);
         $input->setInteractive(false);
         $result = $dump_command->run($input, new BufferedOutput());
         $this->assertSame(0, $result);
@@ -385,10 +389,14 @@ class MemoryDumpCommandTest extends BaseTestCase
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $container->make(MemoryDumpCommand::class);
 
-        $input = new ArrayInput([
+        $dump_args = [
             '--pid' => (string)$pid,
             '--output' => $output_path,
-        ]);
+        ];
+        if (str_contains($docker_image_name, 'alpine')) {
+            $dump_args['--include-heap'] = true;
+        }
+        $input = new ArrayInput($dump_args);
         $input->setInteractive(false);
         $result = $dump_command->run($input, new BufferedOutput());
         $this->assertSame(0, $result);
