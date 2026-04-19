@@ -39,6 +39,7 @@ class MemoryCompareCommandIntegrationTest extends BaseTestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->children = [];
         $this->memory_limit_backup = ini_get('memory_limit');
         ini_set('memory_limit', '1G');
@@ -90,11 +91,13 @@ class MemoryCompareCommandIntegrationTest extends BaseTestCase
         string $docker_image_name,
         string $script,
     ): string {
+        $this->snapshotTrace('begin', $docker_image_name);
         $container = $this->createContainer();
         $dump_path = $this->createTmpFile();
         $db_path = $this->createTmpFile('.db');
 
         $pipes = [];
+        $this->snapshotTrace('runScriptViaContainer', $docker_image_name);
         [$child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
             $docker_image_name,
             $script,
@@ -103,6 +106,7 @@ class MemoryCompareCommandIntegrationTest extends BaseTestCase
         $this->children[] = $child;
         $ready = fgets($pipes[1]);
         $this->assertSame("ready\n", $ready);
+        $this->snapshotTrace('target_ready pid=' . $pid, $docker_image_name);
 
         // Dump
         /** @var MemoryDumpCommand $dump_cmd */
@@ -113,7 +117,9 @@ class MemoryCompareCommandIntegrationTest extends BaseTestCase
             '--include-binary' => true,
         ]);
         $dump_input->setInteractive(false);
+        $this->snapshotTrace('dump_start', $docker_image_name);
         $this->assertSame(0, $dump_cmd->run($dump_input, new BufferedOutput()));
+        $this->snapshotTrace('dump_done', $docker_image_name);
 
         // Kill the target process — we have the dump already
         $child_status = proc_get_status($child);
@@ -130,14 +136,32 @@ class MemoryCompareCommandIntegrationTest extends BaseTestCase
             '--output' => $db_path,
         ]);
         $analyze_input->setInteractive(false);
+        $this->snapshotTrace('analyze_start', $docker_image_name);
         ob_start();
         try {
             $this->assertSame(0, $analyze_cmd->run($analyze_input, new BufferedOutput()));
         } finally {
             ob_end_clean();
         }
+        $this->snapshotTrace('analyze_done', $docker_image_name);
 
         return $db_path;
+    }
+
+    private function snapshotTrace(string $phase, string $image): void
+    {
+        @file_put_contents(
+            '/tmp/reli-test/reli-test-trace.log',
+            sprintf(
+                "[%s] pid=%d SNAPSHOT %s image=%s test=%s\n",
+                date('c'),
+                getmypid(),
+                $phase,
+                $image,
+                method_exists($this, 'name') ? (string)$this->name() : static::class,
+            ),
+            FILE_APPEND,
+        );
     }
 
     public static function provideFromV72(): \Generator

@@ -283,6 +283,14 @@ jobs:
           mkdir -p build/logs
           docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version --coverage-clover build/logs/clover.xml
 
+      - name: Upload test trace log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reli-test-trace-${{ matrix.targets }}
+          path: /tmp/reli-test/reli-test-trace.log
+          if-no-files-found: ignore
+
       - name: Fix coverage paths from Docker container
         run: sed -i 's|/app/|${{ github.workspace }}/|g' build/logs/clover.xml
 
