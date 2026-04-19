@@ -86,12 +86,48 @@ appear as named VMAs in maps.
 ### Verification
 
 libcares.so's `.data` starts at file offset `0x3a000` (32 bytes),
-`.bss` at `0x3a020` (88 bytes). The failing address `0x...f90`
-corresponds to file offset `0x3af90` — well past the end of both
-sections (`0x3a078`). The 4KB page `0x3a000-0x3afff` is mapped as
-a single VMA named `libcares.so`, but the space after `0x3a078` is
-unused by libcares. musl's malloc reuses this unused tail of
-library writable pages as slab memory for small allocations.
+`.bss` at `0x3a020` (88 bytes, ends at `0x3a078`). The failing
+address `0x...f90` corresponds to file offset `0x3af90` — well
+past the end of both sections. The 4KB page `0x3a000-0x3afff` is
+mapped as a single VMA named `libcares.so`, but the space after
+`0x3a078` is unused by libcares.
+
+### Root cause confirmed in musl source
+
+musl's dynamic linker (`ldso/dynlink.c:597-623`) explicitly
+reclaims the unused tails of shared library writable pages:
+
+```c
+/* A huge hack: to make up for the wastefulness of shared libraries
+ * needing at least a page of dirty memory even if they have no global
+ * data, we reclaim the gaps at the beginning and end of writable maps
+ * and "donate" them to the heap. */
+
+static void reclaim(struct dso *dso, size_t start, size_t end)
+{
+    // ...
+    __malloc_donate(base, base+(end-start));
+}
+
+static void reclaim_gaps(struct dso *dso)
+{
+    // For each PT_LOAD RW segment:
+    // 1. Donate gap from page start to segment start
+    // 2. Donate gap from segment end (bss) to page end
+}
+```
+
+`__malloc_donate` (`src/malloc/mallocng/donate.c`) adds these
+donated regions as free slots in mallocng's size-class freelists.
+Subsequent `malloc()` calls can return addresses within these
+donated regions — which map to library-named VMAs in
+`/proc/pid/maps`.
+
+For libcares.so: `.data` + `.bss` occupies 120 bytes of a 4KB
+page. The remaining 3976 bytes (`0x3a078-0x3afff`) are donated
+to malloc. PHP's `pemalloc(persistent=true)` for `function_table`
+allocates a `zend_array` (56 bytes) from this donated pool,
+landing at offset `0x3af90` within the page.
 
 glibc does not do this — it uses `[heap]` (brk) or separate
 anonymous mmap pages for malloc, so library VMAs never contain
