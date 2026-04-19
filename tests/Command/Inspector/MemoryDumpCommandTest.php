@@ -331,6 +331,9 @@ class MemoryDumpCommandTest extends BaseTestCase
         $container = $this->createContainer();
         [, $pid, ] = $this->startTargetProcess($docker_image_name);
 
+        // Save maps before dump (for debug if analyze fails)
+        $saved_maps = @file_get_contents("/proc/{$pid}/maps") ?: '';
+
         // Dump with --include-binary so analyze can resolve all addresses
         /** @var MemoryDumpCommand $dump_command */
         $dump_command = $container->make(MemoryDumpCommand::class);
@@ -366,6 +369,15 @@ class MemoryDumpCommandTest extends BaseTestCase
             // Debug: dump regions for Alpine investigation
             $debug = "Dump output: " . $dump_output->fetch() . "\n";
             $debug .= "Analyze error: " . $e->getMessage() . "\n";
+            // Show maps around the failing address range
+            if ($saved_maps !== '') {
+                $debug .= "Target /proc/maps (rw-p only):\n";
+                foreach (explode("\n", $saved_maps) as $line) {
+                    if (str_contains($line, 'rw-p')) {
+                        $debug .= "  {$line}\n";
+                    }
+                }
+            }
             // Parse the dump file to show region addresses
             try {
                 $dump_fp = fopen($output_path, 'rb');
@@ -394,6 +406,7 @@ class MemoryDumpCommandTest extends BaseTestCase
                         $sl = unpack('V', fread($dump_fp, 4))[1];
                         fseek($dump_fp, $sl, SEEK_CUR); // name
                     }
+                    // Read memory map entries from the dump
                     // Read regions
                     $debug .= "Dump regions ({$counts['region_count']}):\n";
                     for ($i = 0; $i < $counts['region_count']; $i++) {
