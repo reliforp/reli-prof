@@ -30,6 +30,9 @@ class WatchCommandIntegrationTest extends BaseTestCase
     /** @var resource|null */
     private $child = null;
 
+    /** @var list<string> */
+    private array $tmp_files = [];
+
     protected function tearDown(): void
     {
         if (!is_null($this->child)) {
@@ -40,6 +43,21 @@ class WatchCommandIntegrationTest extends BaseTestCase
                 }
             }
         }
+        foreach ($this->tmp_files as $tmp_file) {
+            if (file_exists($tmp_file)) {
+                unlink($tmp_file);
+            }
+        }
+    }
+
+    private function makeTmpLogFile(): string
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'reli-watch-log-');
+        if ($tmp === false) {
+            throw new \RuntimeException('tempnam failed');
+        }
+        $this->tmp_files[] = $tmp;
+        return $tmp;
     }
 
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
@@ -86,6 +104,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
             '--memory-usage' => '1M',
             '--oneshot' => '2',
             '--action' => ['log'],
+            '--log-file' => $this->makeTmpLogFile(),
             '--poll-interval' => '200',
             '--cooldown' => '0',
             '--php-version' => $php_version,
@@ -151,6 +170,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
             '--watch-function' => 'usleep',
             '--oneshot' => '1',
             '--action' => ['log'],
+            '--log-file' => $this->makeTmpLogFile(),
             '--poll-interval' => '200',
             '--cooldown' => '0',
             '--php-version' => $php_version,
