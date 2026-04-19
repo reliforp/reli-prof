@@ -157,6 +157,10 @@ final class PhpSymbolReaderCreator
             return $libc_reader;
         }
 
+        // musl libc: ld-musl-*.so.1 is both libc and dynamic linker.
+        // It has no _thread_db_* symbols, but we still return the reader
+        // so the caller can resolve link_map and the TLS finder can fall
+        // back to MuslTlsFinder.
         return $libpthread_symbol_reader;
     }
 
