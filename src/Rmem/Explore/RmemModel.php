@@ -695,6 +695,80 @@ final class RmemModel
         return is_array($profiles) ? $profiles : null;
     }
 
+    /**
+     * Global search across frame labels, class names, and string values.
+     * Returns matching node_ids with context about what matched.
+     *
+     * @return list<array{node_id: int, retained: int, shallow: int, label: string, match_field: string}>
+     */
+    public function globalSearch(string $pattern, int $limit = 100): array
+    {
+        $this->ensureLocationInfoLoaded();
+        $lower = strtolower($pattern);
+        $results = [];
+        $seen = [];
+
+        // Search frame labels (function_name:lineno)
+        foreach ($this->frameLabels as $nodeId => $label) {
+            if (str_contains(strtolower($label), $lower)) {
+                $seen[$nodeId] = true;
+                $results[] = [
+                    'node_id' => $nodeId,
+                    'retained' => $this->substrate->getSubtreeSize($nodeId),
+                    'shallow' => $this->substrate->getNodeSize($nodeId),
+                    'label' => $this->nodeLabel($nodeId),
+                    'match_field' => 'frame',
+                ];
+                if (count($results) >= $limit) {
+                    return $results;
+                }
+            }
+        }
+
+        // Search class names
+        foreach ($this->nodeClasses as $nodeId => $className) {
+            if (isset($seen[$nodeId])) {
+                continue;
+            }
+            if (str_contains(strtolower($className), $lower)) {
+                $seen[$nodeId] = true;
+                $results[] = [
+                    'node_id' => $nodeId,
+                    'retained' => $this->substrate->getSubtreeSize($nodeId),
+                    'shallow' => $this->substrate->getNodeSize($nodeId),
+                    'label' => $this->nodeLabel($nodeId),
+                    'match_field' => 'class',
+                ];
+                if (count($results) >= $limit) {
+                    return $results;
+                }
+            }
+        }
+
+        // Search string values
+        foreach ($this->nodeStringValues as $nodeId => $strVal) {
+            if (isset($seen[$nodeId])) {
+                continue;
+            }
+            if (str_contains(strtolower($strVal), $lower)) {
+                $seen[$nodeId] = true;
+                $results[] = [
+                    'node_id' => $nodeId,
+                    'retained' => $this->substrate->getSubtreeSize($nodeId),
+                    'shallow' => $this->substrate->getNodeSize($nodeId),
+                    'label' => $this->nodeLabel($nodeId),
+                    'match_field' => 'string_value',
+                ];
+                if (count($results) >= $limit) {
+                    return $results;
+                }
+            }
+        }
+
+        usort($results, fn (array $a, array $b) => $b['retained'] <=> $a['retained']);
+        return $results;
+    }
+
     public function getFrameLabel(int $nodeId): ?string
     {
         return $this->frameLabels[$nodeId] ?? null;

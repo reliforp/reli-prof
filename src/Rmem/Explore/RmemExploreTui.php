@@ -63,6 +63,8 @@ final class RmemExploreTui
     private bool $filterPrompt = false;
     private bool $addrPrompt = false;
     private string $addrInput = '';
+    private bool $searchPrompt = false;
+    private string $searchInput = '';
     /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
     private array $unfilteredRows = [];
     private bool $allEdges = true;
@@ -169,6 +171,10 @@ final class RmemExploreTui
         }
         if ($this->addrPrompt) {
             $this->handleAddrInput($key);
+            return;
+        }
+        if ($this->searchPrompt) {
+            $this->handleSearchInput($key);
             return;
         }
 
@@ -743,6 +749,41 @@ final class RmemExploreTui
         }
     }
 
+    private function startGlobalSearch(): void
+    {
+        $this->searchPrompt = true;
+        $this->searchInput = '';
+    }
+
+    private function handleSearchInput(string $key): void
+    {
+        if ($key === "\n" || $key === "\r") {
+            $this->searchPrompt = false;
+            $pattern = trim($this->searchInput);
+            if ($pattern === '') {
+                return;
+            }
+            $results = $this->model->globalSearch($pattern);
+            $this->sandwich = false;
+            $this->clearFilter();
+            $this->focusStack = [];
+            $this->focusLabel = "Search: \"{$pattern}\" (" . count($results) . " results)";
+            $this->listMode = 'normal';
+            $this->rows = $results;
+            $this->selected = 0;
+            $this->topRow = 0;
+        } elseif ($key === "\e" || $key === "\x03") {
+            $this->searchPrompt = false;
+        } elseif ($key === "\x7f" || $key === "\x08") {
+            $this->searchInput = substr($this->searchInput, 0, -1);
+        } else {
+            $c = ord($key);
+            if ($c >= 32 && $c < 127) {
+                $this->searchInput .= $key;
+            }
+        }
+    }
+
     private function startFilter(): void
     {
         $this->filterPrompt = true;
@@ -833,6 +874,7 @@ final class RmemExploreTui
             'r' => $this->toggleSort(),
             'g' => $this->goToDefinition(),
             'a' => $this->startAddressJump(),
+            'F' => $this->startGlobalSearch(),
             'm' => $this->toggleBookmark(),
             "'" => $this->switchToBookmarks(),
             'i' => $this->showSubtreeInfo(),
@@ -1063,6 +1105,9 @@ final class RmemExploreTui
         if ($this->addrPrompt) {
             $lastIdx = count($lines) - 1;
             $lines[$lastIdx] = "\e[1m@\e[0m" . $this->addrInput . "\e[5m▌\e[0m  (0x... addr, #N node ID)";
+        } elseif ($this->searchPrompt) {
+            $lastIdx = count($lines) - 1;
+            $lines[$lastIdx] = "\e[1mF\e[0m" . $this->searchInput . "\e[5m▌\e[0m  (search labels, classes, strings)";
         } elseif ($this->filterPrompt) {
             $lastIdx = count($lines) - 1;
             $lines[$lastIdx] = "\e[1m/\e[0m" . $this->filterInput . "\e[5m▌\e[0m";
@@ -1114,6 +1159,7 @@ final class RmemExploreTui
 
         // Node detail
         $lines[] = "\e[1m Node detail:\e[0m";
+        $wrap("node_id: #{$nodeId}");
         $wrap("type: {$detail['type']}");
         if ($detail['class'] !== null) {
             $wrap("class: {$detail['class']}");
@@ -1360,7 +1406,7 @@ final class RmemExploreTui
     {
         $hints = $this->sandwich
             ? " ↑↓:sel Tab:pane Enter:focus Bksp:back g:def r:sort n:edges m:mark ':marks o:side s:top t:roots ?:help q:quit"
-            : " ↑↓:sel Enter:drill Bksp:back /:filt r:sort c:class y:type a:addr g:def m:mark ':marks o:side s:top t:roots q:quit";
+            : " ↑↓:sel Enter:drill Bksp:back /:filt F:search r:sort c:class y:type a:addr g:def m:mark ':marks o:side s:top t:roots q:quit";
         $pad = max(0, $cols - strlen($hints));
         return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
     }
@@ -1385,6 +1431,7 @@ final class RmemExploreTui
             '    c               Class ranking',
             '    y               Type ranking',
             '    /               Filter current list (Enter to apply)',
+            '    F               Global search (labels, classes, strings)',
             '    a               Jump to address (0x...) or node (#N)',
             '    g               Go to definition (func/class table)',
             '    i               Subtree info (type/class breakdown)',

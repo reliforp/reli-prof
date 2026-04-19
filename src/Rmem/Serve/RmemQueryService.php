@@ -63,6 +63,7 @@ final class RmemQueryService
                 'query.find_function_def' => $this->findFunctionDef($request),
                 'query.find_class_def' => $this->findClassDef($request),
                 'query.subtree_stats' => $this->subtreeStats($request),
+                'query.search' => $this->search($request),
                 'query.scc_for_node' => $this->sccForNode($request),
                 'query.scc_ranking' => $this->sccRanking($request),
 
@@ -330,6 +331,18 @@ final class RmemQueryService
                 'truncated' => $truncated,
             ],
         ];
+    }
+
+    /** @param array<string, mixed> $req */
+    private function search(array $req): array
+    {
+        $pattern = (string)($req['pattern'] ?? '');
+        $limit = (int)($req['limit'] ?? self::DEFAULT_LIMIT);
+        if ($pattern === '') {
+            return ['ok' => false, 'error' => 'Missing "pattern" parameter'];
+        }
+        $results = $this->model->globalSearch($pattern, $limit);
+        return $this->paginatedResponse($results, $limit);
     }
 
     /** @param array<string, mixed> $req */
