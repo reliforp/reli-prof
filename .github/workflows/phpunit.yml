@@ -227,6 +227,9 @@ jobs:
           - name: "PHP 8.5 ZTS"
             targets: "v85_zts"
             php_minor: "8.5"
+          - name: "PHP 8.4 Alpine"
+            targets: "v84_alpine"
+            php_minor: "8.4"
     steps:
       - uses: actions/checkout@v6
 
