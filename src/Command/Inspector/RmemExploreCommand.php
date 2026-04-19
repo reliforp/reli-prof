@@ -72,6 +72,12 @@ final class RmemExploreCommand extends Command
                 'fork a query server child on the given Unix socket path (or auto-generated)',
                 false, // false = not passed, null = passed without value
             )
+            ->addOption(
+                'serve-control',
+                null,
+                InputOption::VALUE_NONE,
+                'enable ui.* actions in serve protocol (allows clients to navigate TUI)',
+            )
         ;
     }
 
@@ -131,8 +137,13 @@ final class RmemExploreCommand extends Command
 
         // --serve: fork a query server child before starting TUI
         $serveOpt = $input->getOption('serve');
+        $serveControl = (bool) $input->getOption('serve-control');
         $queryChildPid = null;
         $socketPath = null;
+        /** @var resource|null $uiRequestRead pipe for child→parent ui.* requests */
+        $uiRequestRead = null;
+        /** @var resource|null $uiResponseWrite pipe for parent→child ui.* responses */
+        $uiResponseWrite = null;
         if ($serveOpt !== false) {
             // Prewarm before fork
             $model->ensureLocationInfoLoaded();
@@ -148,6 +159,18 @@ final class RmemExploreCommand extends Command
                 mkdir($socketDir, 0700, true);
             }
 
+            // Create IPC pipes for ui.* actions (child→parent request, parent→child response)
+            $uiRequestPipe = null;
+            $uiResponsePipe = null;
+            if ($serveControl) {
+                $uiRequestPipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+                $uiResponsePipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+                if ($uiRequestPipe === false || $uiResponsePipe === false) {
+                    $output->writeln('<error>Failed to create IPC pipes</error>');
+                    return 1;
+                }
+            }
+
             $serverId = bin2hex(random_bytes(6));
             $queryChildPid = pcntl_fork();
             if ($queryChildPid === -1) {
@@ -155,11 +178,28 @@ final class RmemExploreCommand extends Command
                 return 1;
             }
             if ($queryChildPid === 0) {
-                // Child: run query server (never returns)
-                $this->runQueryChild($model, $file, $serverId, $socketPath);
+                // Child: close parent ends of pipes
+                if ($uiRequestPipe !== null && $uiResponsePipe !== null) {
+                    fclose($uiRequestPipe[0]); // parent reads from [0]
+                    fclose($uiResponsePipe[1]); // parent writes to [1]
+                    $this->runQueryChild(
+                        $model, $file, $serverId, $socketPath,
+                        $uiRequestPipe[1],  // child writes requests
+                        $uiResponsePipe[0], // child reads responses
+                    );
+                } else {
+                    $this->runQueryChild($model, $file, $serverId, $socketPath);
+                }
                 exit(0);
             }
-            // Parent continues to TUI
+            // Parent: close child ends of pipes
+            if ($uiRequestPipe !== null && $uiResponsePipe !== null) {
+                fclose($uiRequestPipe[1]); // child writes to [1]
+                fclose($uiResponsePipe[0]); // child reads from [0]
+                $uiRequestRead = $uiRequestPipe[0];
+                $uiResponseWrite = $uiResponsePipe[1];
+                stream_set_blocking($uiRequestRead, false);
+            }
             $output->writeln("<info>query server forked (pid={$queryChildPid}, socket={$socketPath})</info>");
         }
 
@@ -191,6 +231,9 @@ final class RmemExploreCommand extends Command
         if ($sccBuilderPid !== null && $sccBuilderPid > 0) {
             $tui->setSccBuilderPid($sccBuilderPid);
         }
+        if ($uiRequestRead !== null && $uiResponseWrite !== null) {
+            $tui->setUiPipes($uiRequestRead, $uiResponseWrite);
+        }
 
         try {
             $tui->run();
@@ -204,6 +247,12 @@ final class RmemExploreCommand extends Command
                 posix_kill($sccBuilderPid, SIGTERM);
                 pcntl_waitpid($sccBuilderPid, $status, WNOHANG);
             }
+            if ($uiRequestRead !== null) {
+                @fclose($uiRequestRead);
+            }
+            if ($uiResponseWrite !== null) {
+                @fclose($uiResponseWrite);
+            }
             if ($socketPath !== null) {
                 @unlink($socketPath);
                 @unlink($socketPath . '.pid');
@@ -213,11 +262,17 @@ final class RmemExploreCommand extends Command
         return 0;
     }
 
+    /**
+     * @param resource|null $uiRequestWrite  pipe to send ui.* requests to parent
+     * @param resource|null $uiResponseRead  pipe to receive ui.* responses from parent
+     */
     private function runQueryChild(
         RmemModel $model,
         string $rmemPath,
         string $serverId,
         string $socketPath,
+        mixed $uiRequestWrite = null,
+        mixed $uiResponseRead = null,
     ): never {
         $service = new RmemQueryService($model, $rmemPath, $serverId);
 
@@ -266,7 +321,16 @@ final class RmemExploreCommand extends Command
                 if (!is_array($request)) {
                     $response = ['ok' => false, 'error' => 'Invalid JSON'];
                 } else {
-                    $response = $service->handle($request);
+                    $action = (string)($request['action'] ?? '');
+                    if (str_starts_with($action, 'ui.')) {
+                        $response = $this->forwardUiRequest($request, $uiRequestWrite, $uiResponseRead);
+                    } else {
+                        $response = $service->handle($request);
+                        // Annotate hello with ui capabilities
+                        if ($action === 'server.hello' && isset($response['data'])) {
+                            $response['data']['serve_control'] = $uiRequestWrite !== null;
+                        }
+                    }
                 }
                 fwrite($client, json_encode($response, JSON_UNESCAPED_UNICODE) . "\n");
             }
@@ -277,6 +341,45 @@ final class RmemExploreCommand extends Command
         @unlink($socketPath);
         @unlink($socketPath . '.pid');
         exit(0);
+    }
+
+    /**
+     * Forward a ui.* request to the parent TUI via pipe and wait for response.
+     *
+     * @param array<string, mixed> $request
+     * @param resource|null $uiRequestWrite
+     * @param resource|null $uiResponseRead
+     * @return array<string, mixed>
+     */
+    private function forwardUiRequest(array $request, mixed $uiRequestWrite, mixed $uiResponseRead): array
+    {
+        if ($uiRequestWrite === null || $uiResponseRead === null) {
+            return ['ok' => false, 'error' => 'ui.* actions require --serve-control'];
+        }
+
+        $payload = json_encode($request, JSON_UNESCAPED_UNICODE) . "\n";
+        $written = @fwrite($uiRequestWrite, $payload);
+        if ($written === false || $written === 0) {
+            return ['ok' => false, 'error' => 'Failed to forward ui request to parent'];
+        }
+        fflush($uiRequestWrite);
+
+        // Wait for response with 5s timeout
+        $read = [$uiResponseRead];
+        $write = null;
+        $except = null;
+        $changed = @stream_select($read, $write, $except, 5);
+        if ($changed === false || $changed === 0) {
+            return ['ok' => false, 'error' => 'Timeout waiting for ui response from parent'];
+        }
+
+        $line = fgets($uiResponseRead);
+        if ($line === false || $line === '') {
+            return ['ok' => false, 'error' => 'Failed to read ui response from parent'];
+        }
+
+        $response = json_decode(trim($line), true);
+        return is_array($response) ? $response : ['ok' => false, 'error' => 'Invalid response from parent'];
     }
 
     private function runSccBuilder(string $rmemPath): never

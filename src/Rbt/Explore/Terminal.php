@@ -219,6 +219,12 @@ final class Terminal implements TerminalInterface
     }
 
     #[\Override]
+    public function getInputStream()
+    {
+        return $this->tty_in;
+    }
+
+    #[\Override]
     public function write(string $s): void
     {
         if ($this->tty_out === null) {

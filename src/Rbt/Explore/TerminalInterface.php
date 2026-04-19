@@ -68,6 +68,15 @@ interface TerminalInterface
      */
     public function pollKeyTimeout(int $timeoutMs): ?string;
 
+    /**
+     * Return the raw input stream resource (e.g. /dev/tty fd) so callers
+     * can include it in their own stream_select alongside other streams.
+     * Returns null if the terminal is not in raw mode.
+     *
+     * @return resource|null
+     */
+    public function getInputStream();
+
     public function write(string $s): void;
 
     public function clear(): void;

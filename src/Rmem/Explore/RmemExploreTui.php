@@ -82,6 +82,11 @@ final class RmemExploreTui
     private ?int $sccBuilderPid = null;
     /** @var array<int, string> node_id => label */
     private array $bookmarks = [];
+    /** @var resource|null pipe read-end for incoming ui.* requests from query child */
+    private mixed $uiRequestRead = null;
+    /** @var resource|null pipe write-end for sending ui.* responses to query child */
+    private mixed $uiResponseWrite = null;
+    private int $uiRevision = 0;
 
     public function __construct(
         private RmemModel $model,
@@ -102,6 +107,16 @@ final class RmemExploreTui
         $this->sccBuilderPid = $pid;
     }
 
+    /**
+     * @param resource $requestRead  pipe read-end (child→parent ui.* requests)
+     * @param resource $responseWrite pipe write-end (parent→child ui.* responses)
+     */
+    public function setUiPipes(mixed $requestRead, mixed $responseWrite): void
+    {
+        $this->uiRequestRead = $requestRead;
+        $this->uiResponseWrite = $responseWrite;
+    }
+
     public function run(): void
     {
         $this->running = true;
@@ -113,13 +128,19 @@ final class RmemExploreTui
         }
 
         $useTimeout = $this->socketPath !== null || $this->sccBuilderPid !== null;
+        $hasUiPipe = $this->uiRequestRead !== null;
 
         $this->term->enter();
         try {
             while ($this->running) {
                 $this->render();
 
-                if ($useTimeout) {
+                if ($hasUiPipe) {
+                    // Combined stream_select on tty + ui pipe
+                    $key = $this->pollKeyOrUiPipe();
+                    $this->spinnerFrame = ($this->spinnerFrame + 1) % 10;
+                    $this->checkChildStatus();
+                } elseif ($useTimeout) {
                     $key = $this->term->pollKeyTimeout(100);
                     $this->spinnerFrame = ($this->spinnerFrame + 1) % 10;
                     $this->checkChildStatus();
@@ -135,6 +156,45 @@ final class RmemExploreTui
         } finally {
             $this->term->leave();
         }
+    }
+
+    /**
+     * Wait for either a key on tty or a ui.* request on the pipe.
+     * Handles any pending ui requests and returns the key (or null on timeout).
+     */
+    private function pollKeyOrUiPipe(): ?string
+    {
+        $streams = [];
+        $ttyIn = $this->term->getInputStream();
+        if ($ttyIn !== null) {
+            $streams[] = $ttyIn;
+        }
+        if ($this->uiRequestRead !== null) {
+            $streams[] = $this->uiRequestRead;
+        }
+        if ($streams === []) {
+            return null;
+        }
+
+        $read = $streams;
+        $write = null;
+        $except = null;
+        $changed = @stream_select($read, $write, $except, 0, 100_000); // 100ms
+        if ($changed === false || $changed === 0) {
+            return null;
+        }
+
+        // Process ui pipe if readable
+        if ($this->uiRequestRead !== null && in_array($this->uiRequestRead, $read, true)) {
+            $this->processUiRequest();
+        }
+
+        // Process tty if readable
+        if ($ttyIn !== null && in_array($ttyIn, $read, true)) {
+            return $this->term->readKey();
+        }
+
+        return null;
     }
 
     private function checkChildStatus(): void
@@ -154,6 +214,152 @@ final class RmemExploreTui
                 $this->sccBuilderPid = null;
             }
         }
+    }
+
+    /**
+     * Read and handle a single ui.* request from the pipe.
+     */
+    private function processUiRequest(): void
+    {
+        if ($this->uiRequestRead === null || $this->uiResponseWrite === null) {
+            return;
+        }
+
+        $line = fgets($this->uiRequestRead);
+        if ($line === false || $line === '') {
+            // Pipe closed — child exited
+            $this->uiRequestRead = null;
+            return;
+        }
+
+        $request = json_decode(trim($line), true);
+        if (!is_array($request)) {
+            $this->sendUiResponse(['ok' => false, 'error' => 'Invalid JSON']);
+            return;
+        }
+
+        $action = (string)($request['action'] ?? '');
+
+        // Optimistic revision check
+        if (isset($request['if_revision'])) {
+            $expected = (int)$request['if_revision'];
+            if ($expected !== $this->uiRevision) {
+                $this->sendUiResponse([
+                    'ok' => false,
+                    'error' => 'Stale revision',
+                    'error_code' => 'stale_revision',
+                    'ui_revision' => $this->uiRevision,
+                ]);
+                return;
+            }
+        }
+
+        $response = match ($action) {
+            'ui.navigate_sandwich' => $this->handleUiNavigateSandwich($request),
+            'ui.navigate_roots' => $this->handleUiNavigateRoots(),
+            'ui.navigate_back' => $this->handleUiNavigateBack(),
+            'ui.get_current_focus' => $this->handleUiGetCurrentFocus(),
+            'ui.get_current_selection' => $this->handleUiGetCurrentSelection(),
+            default => ['ok' => false, 'error' => "Unknown ui action: {$action}"],
+        };
+
+        $response['ui_revision'] = $this->uiRevision;
+        $this->sendUiResponse($response);
+    }
+
+    /** @param array<string, mixed> $response */
+    private function sendUiResponse(array $response): void
+    {
+        if ($this->uiResponseWrite === null) {
+            return;
+        }
+        $payload = json_encode($response, JSON_UNESCAPED_UNICODE) . "\n";
+        @fwrite($this->uiResponseWrite, $payload);
+        @fflush($this->uiResponseWrite);
+    }
+
+    /** @param array<string, mixed> $req */
+    private function handleUiNavigateSandwich(array $req): array
+    {
+        $nodeId = (int)($req['node_id'] ?? -1);
+        if ($nodeId < 0) {
+            return ['ok' => false, 'error' => 'Missing or invalid node_id'];
+        }
+        $label = $this->model->nodeLabel($nodeId);
+        $this->enterSandwich($nodeId, $label);
+        $this->uiRevision++;
+        return ['ok' => true, 'data' => ['node_id' => $nodeId, 'label' => $label, 'mode' => 'sandwich']];
+    }
+
+    private function handleUiNavigateRoots(): array
+    {
+        $this->sandwich = false;
+        $this->clearFilter();
+        $this->focusStack = [];
+        $this->focusLabel = 'Root branches';
+        $this->listMode = 'normal';
+        $this->rows = $this->model->getRootChildren();
+        $this->selected = 0;
+        $this->topRow = 0;
+        $this->uiRevision++;
+        return ['ok' => true, 'data' => ['mode' => 'list', 'view' => 'roots']];
+    }
+
+    private function handleUiNavigateBack(): array
+    {
+        $canGoBack = $this->sandwich
+            || $this->focusStack !== []
+            || $this->listMode === 'class_instances'
+            || $this->listMode === 'type_instances'
+            || $this->listMode === 'scc_members';
+        if (!$canGoBack) {
+            return ['ok' => false, 'error' => 'Already at root, cannot go back'];
+        }
+        $this->back();
+        $this->uiRevision++;
+        return ['ok' => true, 'data' => ['mode' => $this->sandwich ? 'sandwich' : 'list']];
+    }
+
+    private function handleUiGetCurrentFocus(): array
+    {
+        if ($this->sandwich) {
+            return [
+                'ok' => true,
+                'data' => [
+                    'mode' => 'sandwich',
+                    'node_id' => $this->sandwichNodeId,
+                    'label' => $this->model->nodeLabel($this->sandwichNodeId),
+                ],
+            ];
+        }
+        return [
+            'ok' => true,
+            'data' => [
+                'mode' => 'list',
+                'view' => $this->listMode,
+                'label' => $this->focusLabel,
+            ],
+        ];
+    }
+
+    private function handleUiGetCurrentSelection(): array
+    {
+        if ($this->rows === [] || !isset($this->rows[$this->selected])) {
+            return ['ok' => true, 'data' => null, 'message' => 'No selection'];
+        }
+        $row = $this->rows[$this->selected];
+        return [
+            'ok' => true,
+            'data' => [
+                'node_id' => $row['node_id'],
+                'label' => $row['label'] ?? '',
+                'retained' => $row['retained'] ?? 0,
+                'shallow' => $row['shallow'] ?? 0,
+                'index' => $this->selected,
+                'total_rows' => count($this->rows),
+                'mode' => $this->sandwich ? 'sandwich' : 'list',
+            ],
+        ];
     }
 
     private function dispatch(string $key): void
@@ -326,6 +532,7 @@ final class RmemExploreTui
         }
         $this->sandwich = true;
         $this->sandwichNodeId = $nodeId;
+        $this->uiRevision++;
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
         $this->childRows = $this->model->getChildren($nodeId, $this->allEdges, $this->sortMode);
@@ -341,6 +548,7 @@ final class RmemExploreTui
 
     private function back(): void
     {
+        $this->uiRevision++;
         if ($this->sandwich && $this->sandwichHistory !== []) {
             // History back within sandwich
             $prev = array_pop($this->sandwichHistory);
