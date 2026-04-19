@@ -2,7 +2,8 @@
 
 ## Status
 
-Design proposal. Not yet implemented.
+Phase 1 (query-only fork + background SCC builder) and Phase 2
+(ui.* IPC) are implemented. MCP server adapter is also implemented.
 
 ## Problem
 
@@ -46,10 +47,10 @@ for CI / AI-only use cases.
 │  Substrate shared via CoW (FFI + PHP arrays)     │
 └──────────────────────────────────────────────────┘
         ↕ Unix domain socket
-┌──────────────┐  ┌──────────────┐
-│  rmem:query   │  │ AI assistant │
-│  --server=... │  │ (Bash tool)  │
-└──────────────┘  └──────────────┘
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  rmem:query   │  │ AI assistant │  │  rmem:mcp    │
+│  --server=... │  │ (Bash tool)  │  │ (MCP stdio)  │
+└──────────────┘  └──────────────┘  └──────────────┘
 ```
 
 ## Protocol
@@ -113,8 +114,9 @@ limits and work budgets enforced, payloads stay small enough
 {"action": "query.find_function_def", "name": "App\\Services\\Foo::bar"}
 {"action": "query.find_class_def", "name": "App\\Models\\User"}
 {"action": "query.subtree_stats", "node_id": 123, "max_nodes": 100000, "max_depth": 50}
-{"action": "query.filter", "node_id": 123, "pattern": "password", "limit": 100}
+{"action": "query.search", "pattern": "password", "limit": 100}
 {"action": "query.scc_ranking", "limit": 50}
+{"action": "query.scc_for_node", "node_id": 123}
 ```
 
 ### Response format
@@ -154,9 +156,9 @@ Returns file identity, protocol version, and derived data readiness:
     "rmem_size": 1234567890,
     "node_count": 34000000,
     "edge_count": 60000000,
+    "serve_control": true,
     "derived": {
       "generation": "mtime:size:hash",
-      "scc_status": "computing",
       "scc_ready": false
     }
   }
@@ -211,7 +213,7 @@ memory pressure in the query child:
 | class_ranking, type_ranking | prewarm/cached, O(1) to serve |
 | nodes_by_class, nodes_by_type | full scan, use `scanned_count` + `has_more` |
 | subtree_stats | `max_nodes` + `max_depth` bound traversal |
-| filter | scan only current children list, not global |
+| search | global scan with pattern matching |
 
 For `nodes_by_class` with 34M nodes, an `exact_total=false` option
 avoids full-scan counting: return `scanned_count` and `has_more`
@@ -255,7 +257,7 @@ Budget strategies per action:
 | nodes_by_class | getNodesByClass (full scan + sort) | budgeted scan, scanned_count/has_more |
 | class/type_ranking | getClassRanking (cached) | serve from cache; if uncached, return not_ready |
 | subtree_stats | (new) | bounded DFS with max_nodes/max_depth |
-| filter | applyFilter (current list) | scope to current children, never global |
+| search | (global scan) | pattern match across all nodes, budgeted |
 
 ### Substrate public API for derived reload
 
@@ -436,7 +438,7 @@ All list-returning actions enforce default limits:
 | top_retained | 50 | yes |
 | nodes_by_class, nodes_by_type | 100 | yes |
 | subtree_stats | max_nodes=100000, max_depth=50 | yes |
-| filter | 100 | yes |
+| search | 100 | yes |
 
 Responses include `total_count` (or `scanned_count` + `has_more`)
 and `truncated: true` when results are clipped.
@@ -555,11 +557,9 @@ communicate results via pipe or shared memory. This makes the
 design robust against builder crashes — the worst case is no SCC
 data, which is the same as the current skipScc mode.
 
-## UI navigation (phase 2)
+## UI navigation (phase 2) — Implemented
 
 ### Design
-
-Phase 1 is query-only. The child never mutates TUI state.
 
 Phase 2 adds `ui.*` actions behind `--serve-control` opt-in:
 
@@ -567,6 +567,9 @@ Phase 2 adds `ui.*` actions behind `--serve-control` opt-in:
 {"action": "ui.navigate_sandwich", "node_id": 12345}
 {"action": "ui.navigate_roots"}
 {"action": "ui.navigate_back"}
+{"action": "ui.navigate_top_retained"}
+{"action": "ui.navigate_class_ranking"}
+{"action": "ui.navigate_type_ranking"}
 {"action": "ui.get_current_focus"}
 {"action": "ui.get_current_selection"}
 ```
@@ -617,12 +620,12 @@ stdin management is awkward.
 
 ### MCP (Model Context Protocol) server
 
-Vendor-specific. Socket server is more universal — MCP adapter can
-wrap it later.
+Vendor-specific. Socket server is more universal — MCP adapter wraps
+it (see `inspector:rmem:mcp` below).
 
 ## Implementation order
 
-### Phase 1: query-only fork + async parent
+### Phase 1: query-only fork + async parent — Implemented
 
 1. Async TUI event loop: replace blocking `pollKey()` with
    `stream_select` over tty fd
@@ -639,7 +642,7 @@ wrap it later.
 9. Standalone `rmem:serve` — headless wrapper around RmemQueryService
 10. PSS / Private_Dirty measurement to validate CoW assumptions
 
-### Phase 1.5: background SCC builder
+### Phase 1.5: background SCC builder — Implemented
 
 11. SCC builder: fork child, compute, write sidecar, exit
 12. Query child self-reload: check sidecar generation between requests
@@ -649,12 +652,22 @@ wrap it later.
 15. `query.scc_ranking` action
 16. Parent-driven query child restart as optional upgrade
 
-### Phase 2: UI navigation
+### Phase 2: UI navigation — Implemented
 
 17. `ui.*` IPC: pipe between query child and parent
-18. `ui.navigate_sandwich`, `ui.get_current_focus`, etc.
+18. `ui.navigate_sandwich`, `ui.navigate_roots`, `ui.navigate_back`,
+    `ui.navigate_top_retained`, `ui.navigate_class_ranking`,
+    `ui.navigate_type_ranking`, `ui.get_current_focus`,
+    `ui.get_current_selection`
 19. `ui_revision` for stale navigation rejection
 20. `--serve-control` opt-in for `ui.*` actions
+
+### MCP adapter — Implemented
+
+21. `inspector:rmem:mcp` — stdio JSON-RPC server implementing the
+    Model Context Protocol. Connects to the query server via
+    `--rmem` (direct file load) or `--socket` (existing serve
+    instance). Pass `--control` to enable `ui.*` tools.
 
 ### Future
 

@@ -18,6 +18,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
 - [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md)
 - [Automatic memory analysis report](docs/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
+- [Interactive memory exploration](docs/rmem-explore-and-serve.md): browse `.rmem` memory snapshots with `rmem:explore` (TUI with sandwich view, class/type rankings, cycle visualization, global search), run `rmem:serve` as a persistent query server, or connect AI assistants via `rmem:mcp` (MCP protocol)
 - [Analyzing `.rbt` traces in the terminal](docs/rbt-analyze-and-explore.md): pipe a binary trace into `rbt:analyze` for one-shot text reports (hot frames, callers/callees of a regex, live tail), or open `rbt:explore` for an interactive sandwich/flame/tree TUI
 - [Condition-based monitoring](docs/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
 - [Variable inspection](docs/peek-var-command.md): read PHP variable values from a running process without modifying it
