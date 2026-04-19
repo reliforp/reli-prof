@@ -187,15 +187,33 @@ The 4 FDE entries in musl cover only `_start` / `__libc_start_main`
 and a few internal functions. `nanosleep` (0x6983f), `usleep`
 (0x6b447), and the vast majority of musl functions have no CFI.
 
+### Register state confirms the problem
+
+CI debug output from `PTRACE_GETREGS`:
+```
+RIP=0x7fc53f315dbb   ← inside musl (ld-musl-x86_64.so.1 r-xp range)
+RSP=0x7ffeaded00d8   ← valid stack address
+RBP=0x23             ← NOT a frame pointer — musl uses -fomit-frame-pointer
+```
+
+- DWARF unwind fails: no FDE covers RIP in musl
+- Frame-pointer fallback fails: RBP=0x23 is a data value, not an address
+- Result: unwinder cannot advance past the first frame
+
 **Fix options:**
-1. Fall back to frame-pointer-based unwinding when `.eh_frame`
-   lookup fails — musl preserves frame pointers at default
-   optimization levels
-2. Detect musl (via `/lib/ld-musl-*` in maps) and skip native
-   trace collection
-3. Use `/proc/<pid>/syscall` to get the syscall return address,
-   then start unwinding from the caller frame which is in PHP
-   code (covered by PHP's `.eh_frame`)
+1. ~~Fall back to frame-pointer-based unwinding~~ — musl uses
+   `-fomit-frame-pointer`, RBP is used as a general-purpose
+   register (observed RBP=0x23)
+2. **Detect musl** (via `/lib/ld-musl-*` in maps) and skip
+   native trace for musl frames, starting unwinding from the
+   first non-musl frame on the stack
+3. **Use `/proc/<pid>/syscall`** to get the userspace return
+   address from the syscall, then start DWARF unwinding from
+   that address (which will be in PHP code, covered by PHP's
+   14,972 FDE entries)
+4. **RSP-based stack scanning** — scan the stack for values
+   that look like return addresses (fall within r-xp ranges),
+   heuristic but works without CFI
 
 ## Alpine-specific characteristics
 
