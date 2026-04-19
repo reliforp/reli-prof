@@ -43,7 +43,7 @@ class CallerStateCollectorTest extends BaseTestCase
             new class ($this) implements LoggerInterface {
                 use TestLoggerTrait;
 
-                public function log($level, $message, array $context = [])
+                public function log($level, string|\Stringable $message, array $context = []): void
                 {
                     $this->test_case->assertSame(__FILE__, $context['context']['file']);
                     $this->test_case->assertSame(56, $context['context']['line']);
