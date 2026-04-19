@@ -40,6 +40,7 @@ class TargetPhpVmProvider
         'v85_zts',
         // Alpine (musl libc) variants
         'v84_alpine',
+        'v84_alpine_zts',
     ];
 
     private static function isZts(string $target): bool
@@ -49,18 +50,14 @@ class TargetPhpVmProvider
 
     private static function isAlpine(string $target): bool
     {
-        return str_ends_with($target, '_alpine');
+        return str_contains($target, '_alpine');
     }
 
     private static function phpVersionFromTarget(string $target): string
     {
-        if (self::isZts($target)) {
-            return substr($target, 0, -4);
-        }
-        if (self::isAlpine($target)) {
-            return substr($target, 0, -7);
-        }
-        return $target;
+        // Strip suffixes: _alpine_zts, _alpine, _zts
+        $base = preg_replace('/_alpine(_zts)?$|_zts$/', '', $target);
+        return $base !== null ? $base : $target;
     }
 
     private static function getFilteredVersions(array $versions): array
@@ -104,9 +101,13 @@ class TargetPhpVmProvider
     public static function dockerImageNameFromTarget(string $target): string
     {
         $phpVersion = self::phpVersionFromTarget($target);
-        if (self::isAlpine($target)) {
+        $isAlpine = self::isAlpine($target);
+        $isZts = self::isZts($target);
+        if ($isAlpine && $isZts) {
+            $suffix = '-zts-alpine';
+        } elseif ($isAlpine) {
             $suffix = '-cli-alpine';
-        } elseif (self::isZts($target)) {
+        } elseif ($isZts) {
             $suffix = '-zts';
         } else {
             $suffix = '-cli';
