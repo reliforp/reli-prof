@@ -306,14 +306,24 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ['#count']
         );
         // After root reordering, static variable value may live under
-        // class_table (processed before call_frames). Check both paths.
+        // class_table (processed before call_frames). The value may be
+        // wrapped in a 'referenced' PhpReferenceContext since static vars
+        // are internally implemented as references in PHP.
         $staticValViaFrame = $contexts_analyzed
             ['call_frames']['2']['local_variables']['test_static_variable']
             ['referenced']['value'] ?? null;
-        $staticValViaClass = $contexts_analyzed
+        $staticElemViaClass = $contexts_analyzed
             ['class_table']['a']['methods']['wait']['op_array']
-            ['static_variables']['array_elements']['test_static_variable']
-            ['value']['value'] ?? null;
+            ['static_variables']['array_elements']['test_static_variable'] ?? null;
+        $staticValViaClass = null;
+        if (is_array($staticElemViaClass)) {
+            // Direct: value → value
+            $staticValViaClass = $staticElemViaClass['value']['value'] ?? null;
+            // Reference wrapped: value → referenced → value
+            if ($staticValViaClass === null) {
+                $staticValViaClass = $staticElemViaClass['value']['referenced']['value'] ?? null;
+            }
+        }
         $this->assertSame(
             0xdeadbeef,
             $staticValViaFrame ?? $staticValViaClass,
