@@ -69,6 +69,7 @@ final class ZendTypeReader
                 PHP_MINOR_VERSION,
             ]
         );
+        /** @psalm-suppress ReservedWord */
         Assert::true(self::isSupported($version_string));
         /** @var value-of<self::ALL_SUPPORTED_VERSIONS> */
         return $version_string;

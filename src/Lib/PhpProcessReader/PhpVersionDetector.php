@@ -117,6 +117,7 @@ class PhpVersionDetector
         if (is_null($version)) {
             /** @var value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $version */
             $version = 'v' . PHP_MAJOR_VERSION . PHP_MINOR_VERSION;
+            /** @psalm-suppress ReservedWord */
             Assert::true(ZendTypeReader::isSupported($version));
         }
 
