@@ -18,9 +18,15 @@ use function exec;
 final class EchoBackCanceller
 {
     private ?string $stty_settings;
+    private bool $enabled;
 
     public function __construct()
     {
+        $this->enabled = \defined('STDIN') && \function_exists('posix_isatty') && \posix_isatty(\STDIN);
+        if (!$this->enabled) {
+            $this->stty_settings = null;
+            return;
+        }
         /** @psalm-suppress ForbiddenCode */
         $result = shell_exec('stty -g');
         $this->stty_settings = $result !== false ? $result : null;
@@ -29,6 +35,9 @@ final class EchoBackCanceller
 
     public function __destruct()
     {
+        if (!$this->enabled) {
+            return;
+        }
         if (isset($this->stty_settings)) {
             exec('stty ' . $this->stty_settings);
         } else {

@@ -86,6 +86,9 @@ Much of what can be done with phpspy will be done with reli in the future.
 - FFI extension must be enabled.
 - PCNTL extension must be enabled.
 
+#### Development
+- PHP 8.3+ is required to run the test suite (PHPUnit 12 requirement). The runtime target (Execution) is still PHP 8.1+.
+
 #### Target
 - PHP 7.0+ (NTS / ZTS)
 - 64bit Linux x86_64

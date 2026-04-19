@@ -54,7 +54,10 @@ final class CpuUsageReader
     private static function detectClkTck(): int
     {
         if (\function_exists('posix_sysconf') && \defined('POSIX_SC_CLK_TCK')) {
-            /** @var int $val */
+            /**
+             * @var int $val
+             * @psalm-suppress MixedArgument
+             */
             $val = \posix_sysconf(\POSIX_SC_CLK_TCK);
             if ($val > 0) {
                 return $val;
