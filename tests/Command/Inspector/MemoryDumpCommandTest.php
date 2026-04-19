@@ -366,23 +366,54 @@ class MemoryDumpCommandTest extends BaseTestCase
             // Debug: dump regions for Alpine investigation
             $debug = "Dump output: " . $dump_output->fetch() . "\n";
             $debug .= "Analyze error: " . $e->getMessage() . "\n";
-            // Load the dump and show its region index
+            // Parse the dump file to show region addresses
             try {
-                $reader = new \Reli\Inspector\MemoryDump\DumpFileMemoryReader($output_path);
-                $ri = new \ReflectionProperty($reader, 'region_index');
-                /** @var list<array{address: int, size: int, file_offset: int}> $regions */
-                $regions = $ri->getValue($reader);
-                $debug .= "Dump region_index (" . count($regions) . " regions):\n";
-                foreach ($regions as $r) {
-                    $debug .= sprintf(
-                        "  0x%x - 0x%x (size=%d)\n",
-                        $r['address'],
-                        $r['address'] + $r['size'],
-                        $r['size'],
-                    );
+                $dump_fp = fopen($output_path, 'rb');
+                if ($dump_fp !== false) {
+                    // Skip magic (8) + version (4)
+                    fseek($dump_fp, 8 + 4);
+                    // Skip php_version string
+                    $len = unpack('V', fread($dump_fp, 4))[1];
+                    fseek($dump_fp, $len, SEEK_CUR);
+                    // Skip pid (8) + eg_address (8) + cg_address (8)
+                    $addrs = unpack('Ppid/Peg/Pcg', fread($dump_fp, 24));
+                    $debug .= sprintf("EG=0x%x CG=0x%x\n", $addrs['eg'], $addrs['cg']);
+                    // memory_map_count (4) + region_count (4)
+                    $counts = unpack('Vmmap_count/Vregion_count', fread($dump_fp, 8));
+                    // Skip memory map entries
+                    for ($i = 0; $i < $counts['mmap_count']; $i++) {
+                        // 3 strings (begin, end, file_offset) + 4 bytes attrs + 1 string (device_id) + 8 bytes (inode) + 1 string (name)
+                        for ($s = 0; $s < 3; $s++) {
+                            $sl = unpack('V', fread($dump_fp, 4))[1];
+                            fseek($dump_fp, $sl, SEEK_CUR);
+                        }
+                        fseek($dump_fp, 4, SEEK_CUR); // attrs
+                        $sl = unpack('V', fread($dump_fp, 4))[1];
+                        fseek($dump_fp, $sl, SEEK_CUR); // device_id
+                        fseek($dump_fp, 8, SEEK_CUR); // inode
+                        $sl = unpack('V', fread($dump_fp, 4))[1];
+                        fseek($dump_fp, $sl, SEEK_CUR); // name
+                    }
+                    // Read regions
+                    $debug .= "Dump regions ({$counts['region_count']}):\n";
+                    for ($i = 0; $i < $counts['region_count']; $i++) {
+                        $rh = fread($dump_fp, 16);
+                        if ($rh === false || strlen($rh) < 16) {
+                            break;
+                        }
+                        $r = unpack('Paddress/Psize', $rh);
+                        $debug .= sprintf(
+                            "  0x%x - 0x%x (size=%d)\n",
+                            $r['address'],
+                            $r['address'] + $r['size'],
+                            $r['size'],
+                        );
+                        fseek($dump_fp, (int)$r['size'], SEEK_CUR);
+                    }
+                    fclose($dump_fp);
                 }
             } catch (\Throwable $re) {
-                $debug .= "Could not read dump regions: " . $re->getMessage() . "\n";
+                $debug .= "Could not parse dump: " . $re->getMessage() . "\n";
             }
             $this->fail($debug . "\n" . $e->getTraceAsString());
         } finally {
