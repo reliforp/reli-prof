@@ -15,10 +15,10 @@ namespace Reli\Lib\PhpInternals\Constants;
 
 final class PhpInternalsConstantsV70 extends VersionAwareConstants
 {
-    public const ZEND_ACC_CLOSURE = 0x100000;
-    public const ZEND_ACC_HAS_RETURN_TYPE = 0x40000000;
+    public const int ZEND_ACC_CLOSURE = 0x100000;
+    public const int ZEND_ACC_HAS_RETURN_TYPE = 0x40000000;
 
-    public const ZEND_CALL_CODE = (1 << 24);
+    public const int ZEND_CALL_CODE = (1 << 24);
 
-    public const ZEND_CALL_TOP = (1 << 25);
+    public const int ZEND_CALL_TOP = (1 << 25);
 }

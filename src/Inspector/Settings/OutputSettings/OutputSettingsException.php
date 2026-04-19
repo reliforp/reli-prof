@@ -20,7 +20,7 @@ final class OutputSettingsException extends InspectorSettingsException
     public const OUTPUT_IS_NOT_STRING = 1;
     public const TEMPLATE_NOT_SPECIFIED = 2;
 
-    protected const ERRORS = [
+    protected const array ERRORS = [
         self::OUTPUT_IS_NOT_STRING => 'output must be a string',
         self::TEMPLATE_NOT_SPECIFIED => 'template is not specified',
     ];

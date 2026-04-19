@@ -19,10 +19,10 @@ use Throwable;
 /** @psalm-consistent-constructor */
 abstract class InspectorSettingsException extends \Exception
 {
-    public const ERROR_NONE = 0;
+    public const int ERROR_NONE = 0;
 
     /** @var array<int, string> */
-    protected const ERRORS = [
+    protected const array ERRORS = [
         self::ERROR_NONE => '',
     ];
 

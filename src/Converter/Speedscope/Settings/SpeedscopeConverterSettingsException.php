@@ -19,7 +19,7 @@ final class SpeedscopeConverterSettingsException extends InspectorSettingsExcept
 {
     public const UNSUPPORTED_UTF8_ERROR_HANDLING = 1;
 
-    protected const ERRORS = [
+    protected const array ERRORS = [
         self::UNSUPPORTED_UTF8_ERROR_HANDLING => 'unsupported utf8 error handling type is specified',
     ];
 }

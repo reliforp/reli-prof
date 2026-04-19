@@ -21,7 +21,7 @@ final class PhpSpySettingsException extends InspectorSettingsException
     public const BUFFER_SIZE_IS_NOT_INTEGER = 2;
     public const RATE_HZ_IS_NOT_INTEGER = 3;
 
-    protected const ERRORS = [
+    protected const array ERRORS = [
         self::SLEEP_NS_IS_NOT_INTEGER => 'sleep-ns is not integer',
         self::BUFFER_SIZE_IS_NOT_INTEGER => 'buffer-size is not integer',
         self::RATE_HZ_IS_NOT_INTEGER => 'rate-hz is not integer',

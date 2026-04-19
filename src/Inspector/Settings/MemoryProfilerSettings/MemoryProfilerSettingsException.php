@@ -20,7 +20,7 @@ final class MemoryProfilerSettingsException extends InspectorSettingsException
     public const MEMORY_LIMIT_ERROR_MAX_DEPTH_IS_NOT_POSITIVE_INTEGER = 1;
     public const MEMORY_LIMIT_ERROR_LINE_IS_NOT_INTEGER = 2;
 
-    protected const ERRORS = [
+    protected const array ERRORS = [
         self::MEMORY_LIMIT_ERROR_MAX_DEPTH_IS_NOT_POSITIVE_INTEGER
             => 'memory_limit_error_max_depth is not positive integer',
         self::MEMORY_LIMIT_ERROR_LINE_IS_NOT_INTEGER

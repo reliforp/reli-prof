@@ -19,7 +19,7 @@ jobs:
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.3
+          php-version: 8.5
           extensions: ffi, dom, mbstring
           coverage: pcov
 
@@ -400,7 +400,7 @@ jobs:
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.3
+          php-version: 8.5
           extensions: ffi, dom, mbstring
           coverage: pcov
 

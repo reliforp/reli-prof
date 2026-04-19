@@ -45,7 +45,7 @@ use Reli\Lib\Process\Pointer\Pointer;
 /** @psalm-consistent-constructor */
 class ZendArray implements CDataDereferencable
 {
-    public const BUCKET_SIZE_IN_BYTES = 32;
+    public const int BUCKET_SIZE_IN_BYTES = 32;
 
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendRefcountedH $gc;

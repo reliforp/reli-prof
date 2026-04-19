@@ -21,7 +21,7 @@ final class TraceLoopSettingsException extends InspectorSettingsException
     public const MAX_RETRY_IS_NOT_INTEGER = 2;
     public const STOP_PROCESS_IS_NOT_BOOLEAN = 3;
 
-    protected const ERRORS = [
+    protected const array ERRORS = [
         self::SLEEP_NS_IS_NOT_INTEGER => 'sleep-ns is not integer',
         self::MAX_RETRY_IS_NOT_INTEGER => 'max-retries is not integer',
         self::STOP_PROCESS_IS_NOT_BOOLEAN => 'stop-process is not boolean',
