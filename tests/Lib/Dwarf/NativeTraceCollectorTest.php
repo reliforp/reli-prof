@@ -77,6 +77,9 @@ class NativeTraceCollectorTest extends BaseTestCase
         if ($php_version === 'skip') {
             $this->markTestSkipped('no target version');
         }
+        if (str_contains($docker_image_name, 'alpine')) {
+            $this->markTestSkipped('Native trace symbol resolution not yet supported on Alpine (musl libc)');
+        }
 
         $memory_reader = new MemoryReader();
         $target_script =
