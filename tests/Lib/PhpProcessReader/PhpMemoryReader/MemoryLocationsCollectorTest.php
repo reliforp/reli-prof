@@ -235,27 +235,29 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             'ResourceContext',
             $contexts_analyzed['call_frames']['0']['local_variables']['$args_to_internal_function[0]']['#type']
         );
-        $this->assertSame(
-            1,
-            $contexts_analyzed
-            ['call_frames']
-            ['1']
-            ['this']
-            ['object_properties']
-            ['#count']
-        );
-        $this->assertSame(
-            42,
-            $contexts_analyzed
-            ['call_frames']
-            ['1']
-            ['this']
-            ['dynamic_properties']
-            ['array_elements']
-            ['dynamic_property']
-            ['value']
-            ['value']
-        );
+        // After root reordering (definitions first, call_frames later),
+        // $this in the closure frame may be a reference to the object
+        // that was already tree-assigned under global_variables.
+        // Check object_properties via whichever branch owns the tree.
+        $thisNode = $contexts_analyzed['call_frames']['1']['this'];
+        if (isset($thisNode['object_properties'])) {
+            $this->assertSame(1, $thisNode['object_properties']['#count']);
+            $this->assertSame(
+                42,
+                $thisNode['dynamic_properties']['array_elements']['dynamic_property']['value']['value']
+            );
+        } else {
+            // $this is a reference — the object tree lives under global_variables
+            $this->assertArrayHasKey('#reference_node_id', $thisNode);
+            $objViaGlobals = $contexts_analyzed['global_variables']
+                ['array_elements']['object']['value'] ?? null;
+            $this->assertNotNull($objViaGlobals);
+            $this->assertSame(1, $objViaGlobals['object_properties']['#count']);
+            $this->assertSame(
+                42,
+                $objViaGlobals['dynamic_properties']['array_elements']['dynamic_property']['value']['value']
+            );
+        }
         $this->assertSame(
             123,
             $contexts_analyzed
@@ -283,21 +285,21 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             'A::wait',
             $contexts_analyzed['call_frames']['2']['function_name']
         );
+        // After root reordering, local_variables['object'] in the main
+        // frame may be a reference (global_variables processed first).
+        // The key assertion: local_variables['object'] and symbol_table
+        // ref_object point to the same node.
+        $objectInLocals = $contexts_analyzed
+            ['call_frames']['3']['local_variables']['object'];
+        $refObjectInSymtab = $contexts_analyzed
+            ['call_frames']['3']['symbol_table']['array_elements']['ref_object']['value'];
+        $objectNodeId = $objectInLocals['#node_id']
+            ?? $objectInLocals['#reference_node_id']
+            ?? null;
+        $this->assertNotNull($objectNodeId);
         $this->assertSame(
-            $contexts_analyzed
-                ['call_frames']
-                ['3']
-                ['local_variables']
-                ['object']
-                ['#node_id'],
-            $contexts_analyzed
-                ['call_frames']
-                ['3']
-                ['symbol_table']
-                ['array_elements']
-                ['ref_object']
-                ['value']
-                ['#reference_node_id']
+            $objectNodeId,
+            $refObjectInSymtab['#reference_node_id']
         );
         $this->assertSame(
             '/** class doc_comment */',
