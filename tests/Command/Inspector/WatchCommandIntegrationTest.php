@@ -96,7 +96,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
         /** @var WatchCommand $command */
         $command = $container->get(WatchCommand::class);
         $app = new Application();
-        $app->add($command);
+        $app->addCommand($command);
 
         $tester = new CommandTester($command);
         $tester->execute([
@@ -162,7 +162,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
         /** @var WatchCommand $command */
         $command = $container->get(WatchCommand::class);
         $app = new Application();
-        $app->add($command);
+        $app->addCommand($command);
 
         $tester = new CommandTester($command);
         $tester->execute([
@@ -253,7 +253,7 @@ class WatchCommandIntegrationTest extends BaseTestCase
         /** @var WatchCommand $command */
         $command = $container->get(WatchCommand::class);
         $app = new Application();
-        $app->add($command);
+        $app->addCommand($command);
 
         $tester = new CommandTester($command);
         // No triggers specified — should fail before PID resolution

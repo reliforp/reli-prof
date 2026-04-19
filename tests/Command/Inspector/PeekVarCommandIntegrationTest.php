@@ -80,7 +80,7 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
 
         $command = $this->createCommand();
         $app = new Application();
-        $app->add($command);
+        $app->addCommand($command);
 
         $tester = new CommandTester($command);
         $tester->execute([
@@ -149,7 +149,7 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
 
         $command = $this->createCommand();
         $app = new Application();
-        $app->add($command);
+        $app->addCommand($command);
 
         $tester = new CommandTester($command);
         $tester->execute([
@@ -190,7 +190,7 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
 
         $command = $this->createCommand();
         $app = new Application();
-        $app->add($command);
+        $app->addCommand($command);
 
         $tester = new CommandTester($command);
         $tester->execute([
@@ -212,7 +212,7 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
     {
         $command = $this->createCommand();
         $app = new Application();
-        $app->add($command);
+        $app->addCommand($command);
 
         $tester = new CommandTester($command);
         $tester->execute([
@@ -230,7 +230,7 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
     {
         $command = $this->createCommand();
         $app = new Application();
-        $app->add($command);
+        $app->addCommand($command);
 
         $tester = new CommandTester($command);
         $tester->execute([
