@@ -142,10 +142,12 @@ class NativeTraceCollectorTest extends BaseTestCase
                     $native_trace->frames,
                 )
             );
-            if ($isAlpine && $symbol_names === []) {
-                // Debug output for Alpine investigation
+            if ($isAlpine) {
+                // Debug output for Alpine investigation — always dump
+                // frame info regardless of pass/fail
                 $debug = "Alpine native trace debug:\n";
                 $debug .= "Frame count: " . count($native_trace->frames) . "\n";
+                $debug .= "Resolved symbols: " . count($symbol_names) . "\n";
                 foreach ($native_trace->frames as $i => $frame) {
                     $debug .= sprintf(
                         "  #%d: addr=0x%x symbol=%s binary=%s\n",
@@ -157,15 +159,15 @@ class NativeTraceCollectorTest extends BaseTestCase
                 }
                 $maps = @file_get_contents("/proc/{$pid}/maps");
                 if ($maps !== false) {
-                    // Show maps for the address range of the frames
-                    $debug .= "Target /proc/{$pid}/maps (rw/rx segments):\n";
+                    $debug .= "Target /proc/{$pid}/maps (r-xp segments):\n";
                     foreach (explode("\n", $maps) as $line) {
-                        if (preg_match('/r-xp|r--p.*\.so|php/', $line)) {
+                        if (str_contains($line, 'r-xp')) {
                             $debug .= "  {$line}\n";
                         }
                     }
                 }
-                $this->markTestSkipped("Symbol resolution failed on Alpine — debug info:\n{$debug}");
+                // Force output via fail so it shows in CI logs
+                $this->fail("Alpine native trace investigation:\n{$debug}");
             }
             $this->assertNotEmpty(
                 $symbol_names,
