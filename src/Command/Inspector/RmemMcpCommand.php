@@ -385,7 +385,7 @@ Each node has a **type** that describes what PHP internal structure it represent
 - **Large SCC with framework class names** (e.g., Container ↔ Service): Usually a DI container's structural cost — intentional and harmless. Focus on SCCs with application classes.
 - **`PhpReferenceContext` in the path**: PHP references (`&$var`) create an extra indirection node. If you see `PhpReferenceContext → ObjectContext`, it means the variable is a reference to the object, not a direct pointer.
 - **`static_variables` under a method's `OpArrayContext`**: These are `static $var` declarations inside a function. They persist across calls and can accumulate data.
-- **`FfiAllocationContext` nodes**: Native memory allocated by PHP FFI. Not managed by PHP's GC — must be explicitly freed or goes away when the CData object is destroyed.
+- **`FfiAllocationContext` nodes**: Native memory allocated by PHP FFI (`FFI::new`). The native buffer is freed when its parent `FFI\CData` object (shown as the parent `ObjectContext`) is garbage-collected, so its lifetime follows normal PHP GC rules. However, the native buffer itself lives outside ZendMM and does not count toward `memory_get_usage()`.
 INSTRUCTIONS;
     }
 
