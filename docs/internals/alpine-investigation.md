@@ -83,6 +83,20 @@ non-empty name. On glibc, persistent allocations land in `[heap]`
 reuse pages adjacent to (or within) library BSS regions, which
 appear as named VMAs in maps.
 
+### Verification
+
+libcares.so's `.data` starts at file offset `0x3a000` (32 bytes),
+`.bss` at `0x3a020` (88 bytes). The failing address `0x...f90`
+corresponds to file offset `0x3af90` — well past the end of both
+sections (`0x3a078`). The 4KB page `0x3a000-0x3afff` is mapped as
+a single VMA named `libcares.so`, but the space after `0x3a078` is
+unused by libcares. musl's malloc reuses this unused tail of
+library writable pages as slab memory for small allocations.
+
+glibc does not do this — it uses `[heap]` (brk) or separate
+anonymous mmap pages for malloc, so library VMAs never contain
+unrelated allocations.
+
 **Fix options:**
 
 1. **Capture all rw-p VMAs** when `include_heap=true` — simplest,
