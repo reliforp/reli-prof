@@ -163,6 +163,8 @@ final class NonTreeEdgePass implements PassInterface
                 (int)$row['target_count'],
                 $source_class,
                 $target_class,
+                (int)$row['sample_parent_node_id'],
+                (int)$row['sample_child_node_id'],
             );
             if ($finding !== null) {
                 $findings[] = $finding;
@@ -178,6 +180,8 @@ final class NonTreeEdgePass implements PassInterface
         int $target_count,
         string $source_class,
         string $target_class,
+        int $sample_parent_node_id = -1,
+        int $sample_child_node_id = -1,
     ): ?Finding {
         if (ctype_digit($link_name)) {
             return null;
@@ -207,6 +211,7 @@ final class NonTreeEdgePass implements PassInterface
                     'ref_count' => $ref_count,
                     'target_count' => $target_count,
                 ],
+                evidence_node_ids: $sample_child_node_id >= 0 ? [$sample_child_node_id] : [],
             );
         }
 
@@ -229,6 +234,7 @@ final class NonTreeEdgePass implements PassInterface
                     'target_count' => $target_count,
                     'avg_refs_per_target' => $avg_refs,
                 ],
+                evidence_node_ids: $sample_child_node_id >= 0 ? [$sample_child_node_id] : [],
                 hypothesis: 'Multiple references to shared objects — may indicate cycle back-references',
                 next_checks: [
                     'Check if these are intentional shared references or cycle artifacts',

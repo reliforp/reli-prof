@@ -124,6 +124,7 @@ final class CycleClusterPass implements PassInterface
                         'Check if back-reference can use WeakReference',
                     ],
                     impact_bytes: $retained * $count,
+                    evidence_node_ids: array_slice($example['nodes'], 0, 2),
                 );
                 continue;
             }
@@ -154,6 +155,7 @@ final class CycleClusterPass implements PassInterface
                         . ' (workers/tests) reduces this',
                     ],
                     impact_bytes: $g['total'],
+                    evidence_node_ids: array_slice($example['nodes'], 0, 5),
                 );
                 continue;
             }

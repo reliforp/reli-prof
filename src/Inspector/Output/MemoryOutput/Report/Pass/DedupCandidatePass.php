@@ -148,6 +148,7 @@ final class DedupCandidatePass implements PassInterface
                 ],
                 hypothesis: $hypothesis,
                 impact_bytes: $total,
+                evidence_node_ids: $sample_child_node_ids ?? [$sample_child_node_id],
             );
         }
 

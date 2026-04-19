@@ -144,6 +144,7 @@ final class DrillDownPass implements PassInterface
                 hypothesis: $hypothesis,
                 next_checks: $next_checks,
                 impact_bytes: $total_size,
+                evidence_node_ids: $path_node_ids,
                 representative_paths: $leaf_path_str !== null
                     ? [$path_str, $leaf_path_str]
                     : [$path_str],
