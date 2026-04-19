@@ -305,36 +305,87 @@ final class RmemMcpCommand extends Command
     private function getInstructions(): string
     {
         return <<<'INSTRUCTIONS'
-reli-prof is a PHP memory profiler. This MCP server provides tools to analyze .rmem memory snapshots — binary dumps of a PHP process's heap at a point in time.
+reli-prof is a PHP memory profiler. This MCP server provides tools to analyze .rmem memory snapshots.
 
-## Key concepts
+## What is an .rmem snapshot?
 
-- **node**: A memory entity — could be an object, array, string, call frame, closure, class definition, etc.
-- **node_id**: Unique integer identifying a node in the snapshot. Use this to drill into specific nodes.
-- **shallow size**: Bytes the node itself occupies (its struct/header, not counting children).
-- **retained size**: Total bytes that would be freed if this node were garbage-collected — includes the entire subtree reachable only through this node. This is the key metric for finding memory bottlenecks.
-- **tree edge**: Ownership edge in the dominator tree. Parent "retains" child — if parent is freed, child is freed.
-- **link_name**: The name of the reference (property name, array key, variable name, etc).
-- **SCC**: Strongly Connected Component — a group of nodes in a reference cycle. Relevant for detecting memory leaks.
-- **sandwich view**: Shows a node's parents (who retains it) and children (what it retains) simultaneously — the most useful view for investigation.
+PHP's Zend Engine manages per-request memory through ZendMM (Zend Memory Manager), a pool allocator that tracks all PHP values — objects, arrays, strings, closures, call frames, class definitions, and more. An .rmem snapshot is a graph representation of this memory pool captured at a specific point in time.
+
+reli builds the graph by reading a running (or dumped) PHP process's memory and following pointers from several root entry points: the call stack (executing frames and their local variables), the class table (loaded class definitions), the function table, the global variable table (symbol_table), interned strings, and the object store. Each pointer target becomes a node, and the pointer itself becomes an edge. The result is a dominator tree where every allocated value is reachable from at least one root.
+
+## Node types (reli's context model)
+
+Each node has a **type** that describes what PHP internal structure it represents. These are reli's own names, not PHP's C struct names, but they map 1:1:
+
+| Node type | PHP internal | What it is |
+|-----------|-------------|------------|
+| `ObjectContext` | `zend_object` | A PHP object instance. The `class` field shows its class name. |
+| `ObjectPropertiesContext` | properties table | The property slots of an object (declared + dynamic). |
+| `ArrayHeaderContext` | `zend_array` | A PHP array's header (hash table metadata). |
+| `ArrayElementsContext` | `Bucket[]` / packed data | The array's element storage (key-value pairs). |
+| `ArrayElementContext` | single `Bucket` | One element in an array. `link_name` is the key. |
+| `ArrayPossibleOverheadContext` | unused slots | Allocated but unused array capacity (power-of-2 rounding). |
+| `StringContext` | `zend_string` | A PHP string. `string_value` shows its content. |
+| `CallFramesContext` | — | Container for all call stack frames. |
+| (frame entry) | `zend_execute_data` | One call frame. `label` shows `ClassName::method:line`. |
+| `CallFrameVariableTableContext` | CV/VAR slots | Local variables and temporaries of a frame. |
+| `PhpReferenceContext` | `zend_reference` | A PHP reference (`&$var`). Points to the referenced value. |
+| `ClosureContext` | `zend_closure` | A PHP closure / anonymous function. |
+| `ResourceContext` | `zend_resource` | A PHP resource (file handle, stream, etc.). |
+| `ClassDefinitionContext` | — | A loaded class in the class table. |
+| `ClassEntryContext` | `zend_class_entry` | The class entry struct (methods, properties info, etc.). |
+| `DefinedFunctionsContext` | — | A function in the function table. |
+| `OpArrayContext` | `zend_op_array` | Compiled opcodes for a function/method. |
+| `FfiAllocationContext` | native buffer | Memory allocated via PHP FFI (`FFI::new`). |
+| `ObjectsStoreContext` | object store | The global object store (all live objects by handle). |
+| `ScalarValueContext` | — | A scalar value (int, float, bool, null). Label shows the value. |
+
+## Root branches
+
+`rmem_roots` returns the top-level entry points into the graph:
+
+| Root | What it contains |
+|------|-----------------|
+| `call_frames` | The call stack — each frame holds local variables, `$this`, arguments. Usually the largest branch. |
+| `class_table` | All loaded class definitions — properties info, methods, static variables, constants. |
+| `function_table` | All loaded function definitions — op_arrays, static variables. |
+| `global_variables` | The `$GLOBALS` symbol table — global-scope variables. |
+| `interned_strings` | PHP's interned string table — class names, property names, string literals. |
+| `global_constants` | `define()`'d constants. |
+| `objects_store` | The object store — every object is registered here. Nodes reachable ONLY via objects_store (not from call_frames or other roots) may be GC candidates. |
+| `included_files` | List of included/required files. |
+
+## Key metrics
+
+- **shallow size**: Bytes the node's own struct occupies in ZendMM (e.g., 56 bytes for a `zend_array` header, the string length for a `zend_string`). Does NOT include children.
+- **retained size**: Total bytes in the node's dominator subtree — everything that would be freed if this node were garbage-collected. This is the key metric for finding memory bottlenecks.
+- **link_name**: The name of the edge — a property name (`$name`), array key (`0`, `key`), variable name (`$var`), or structural role (`object_properties`, `array_elements`, `static_variables`).
+- **refcount**: PHP's reference count for the value. High refcount means the value is shared across multiple parents. refcount=0 can mean the value is immutable (interned strings) or managed by a different mechanism.
+- **SCC**: Strongly Connected Component — a set of nodes forming a reference cycle. PHP's cycle collector handles these, but large SCCs may indicate design issues or memory leaks.
 
 ## Investigation flow
 
-1. **Start with `rmem_roots`** — see top-level branches (call_frames, class_table, etc). The largest branch is usually where to dig.
-2. **Drill down with `rmem_children`** — follow the largest retained subtree.
-3. **Use `rmem_sandwich`** when you find a suspicious node — see who retains it (parents) and what it retains (children) in one call.
-4. **`rmem_class_ranking`** — which PHP classes use the most memory? Good for spotting N+1 allocation patterns.
-5. **`rmem_type_ranking`** — memory by node type (array, string, object, etc).
-6. **`rmem_top_retained`** — largest retained-size nodes across the entire snapshot.
+1. **`rmem_roots`** — find which root branch holds the most retained memory. `call_frames` is usually largest (it holds all local variables of the running code).
+2. **`rmem_children`** — drill into the heaviest subtree. Follow the largest retained child at each level.
+3. **`rmem_sandwich`** — inspect a node in context: who retains it (parents) and what it retains (children). The best single tool for understanding a node.
+4. **`rmem_class_ranking`** — which PHP classes consume the most memory? Large counts with small avg size = N+1 allocation. Small counts with huge avg size = fat objects.
+5. **`rmem_type_ranking`** — memory by node type. Large `ArrayElementsContext` = array-heavy app. Large `StringContext` = string-heavy.
+6. **`rmem_top_retained`** — the biggest retained-size nodes across the snapshot. The top few usually account for most of the heap.
 7. **`rmem_search`** — find nodes by class name, function name, or string value.
-8. **`rmem_scc_ranking`** — check for reference cycles. Large SCCs may indicate memory leaks.
-9. **`rmem_path_to_root`** — trace the ownership chain from any node back to a root branch.
+8. **`rmem_scc_ranking`** — check for reference cycles. Large SCCs that are reachable only from `objects_store` are strong leak candidates.
+9. **`rmem_path_to_root`** — trace the ownership chain from any node back to a root. Shows WHY a value is alive.
+10. **`rmem_subtree_stats`** — type/class breakdown of a subtree without listing every node. Good for understanding what a large container holds.
 
-## Tips
+## Interpretation patterns
 
-- retained >> shallow means the node is a "choke point" — small object holding a large subtree.
-- Objects with high refcount (shown in rmem_node_detail) are shared across multiple parents.
-- Array overhead (capacity vs used slots) shows up in rmem_subtree_stats type_breakdown as ArrayPossibleOverheadContext.
+- **retained >> shallow**: The node is a "choke point" — a small object (e.g., 56-byte array header) retaining a large subtree. Releasing or shrinking this one object frees everything below it.
+- **Same class appearing thousands of times in `rmem_class_ranking`**: Classic N+1 allocation — the application creates too many instances. Check if they can be streamed, pooled, or reduced.
+- **`ArrayPossibleOverheadContext` is large**: PHP arrays over-allocate capacity in powers of 2 (an array with 1025 elements allocates space for 2048). Additionally, arrays never shrink — if elements are `unset`, the capacity stays at the high-water mark. Look for arrays that grew large temporarily and were partially cleared.
+- **Nodes reachable only from `objects_store`**: Suspicious but not conclusive. The object store does NOT increment refcount, so compare the node's `refcount` (via `rmem_node_detail`) against the references reli found. If all refcount is accounted for by cycle members (other objects_store-only nodes pointing to each other), the object is alive solely due to a reference cycle — a candidate for PHP's cycle collector. If refcount is higher than the references reli can see, either an untracked structure holds a reference (C extension internals, etc.) or there is a refcount leak bug in the runtime/extension.
+- **Large SCC with framework class names** (e.g., Container ↔ Service): Usually a DI container's structural cost — intentional and harmless. Focus on SCCs with application classes.
+- **`PhpReferenceContext` in the path**: PHP references (`&$var`) create an extra indirection node. If you see `PhpReferenceContext → ObjectContext`, it means the variable is a reference to the object, not a direct pointer.
+- **`static_variables` under a method's `OpArrayContext`**: These are `static $var` declarations inside a function. They persist across calls and can accumulate data.
+- **`FfiAllocationContext` nodes**: Memory allocated by PHP FFI (`FFI::new`). By default (`persistent=false`), the buffer is allocated via `emalloc` (ZendMM) and counts toward `memory_get_usage()`. With `persistent=true`, it uses `malloc` outside ZendMM. Either way, the buffer is freed when its parent `FFI\CData` object (the parent `ObjectContext`) is garbage-collected.
 INSTRUCTIONS;
     }
 
