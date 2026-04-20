@@ -22,7 +22,7 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Trace many processes at once (e.g. a php-fpm pool) | `inspector:daemon -P <regex>` | [README § Daemon mode](../README.md#daemon-mode) |
 | Live `top`-style aggregation | `inspector:top -P <regex>` | [README § top-like mode](../README.md#top-like-mode) |
 | Include C-level frames | add `--with-native-trace` | [README § Collect native stack traces](../README.md#collect-native-c-level-stack-traces) |
-| See the executing opcode at each sample | add `--template=phpspy_with_opcode` | [README § opcodes](../README.md#show-currently-executing-opcodes-at-traces) |
+| See the opcode in phpspy text output (`.rbt` records it unconditionally) | `--template=phpspy_with_opcode` | [README § opcodes](../README.md#show-currently-executing-opcodes-at-traces) |
 | Use phpspy as the fast C backend, with reli-driven ZTS support | `phpspy:trace`, `phpspy:daemon` | [README § Hybrid phpspy mode](../README.md#hybrid-phpspy-mode) |
 | Attach a PHP variable to every sample | `inspector:trace --trace-var=…` | [trace-var-command.md](trace-var-command.md) |
 
@@ -32,6 +32,7 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 |---|---|---|
 | Browse interactively in the terminal **(recommended)** | `rbt:explore trace.rbt` | [rbt-analyze-and-explore.md](rbt-analyze-and-explore.md) |
 | One-shot text report (hot frames, callers/callees, live tail) | `rbt:analyze trace.rbt` | [rbt-analyze-and-explore.md](rbt-analyze-and-explore.md) |
+| Show the opcode at each frame | `rbt:analyze --with-opcode`, or press `c` in `rbt:explore` | [rbt-analyze-and-explore.md](rbt-analyze-and-explore.md) |
 | Convert to speedscope / pprof / flamegraph / callgrind / folded | `converter:<format>` | [binary-trace-format.md](binary-trace-format.md) |
 | Decode `.rbt` back to phpspy text | `converter:phpspy` | [binary-trace-format.md](binary-trace-format.md) |
 | Recover a corrupted or truncated `.rbt` file | `rbt:recover` | [binary-trace-format.md](binary-trace-format.md) |
