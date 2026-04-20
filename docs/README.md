@@ -37,7 +37,7 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Decode `.rbt` back to phpspy text | `converter:phpspy` | [binary-trace-format.md](binary-trace-format.md) |
 | Recover a corrupted or truncated `.rbt` file | `rbt:recover` | [binary-trace-format.md](binary-trace-format.md) |
 
-## Capture memory graphs
+## Capture memory graphs (where memory is used)
 
 A memory graph is reli's PHP heap reconstruction — values (objects, arrays, strings, call frames) as nodes, references as edges. Analysing a live process stops the target until the heap walk finishes; dumping the raw memory does not. **In production, dump now and analyse later.**
 
