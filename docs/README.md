@@ -36,36 +36,27 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Decode `.rbt` back to phpspy text | `converter:phpspy` | [binary-trace-format.md](binary-trace-format.md) |
 | Recover a corrupted or truncated `.rbt` file | `rbt:recover` | [binary-trace-format.md](binary-trace-format.md) |
 
-## Produce a memory graph
+## Capture memory graphs
 
-reli reads a running PHP process's memory and reconstructs it as a **memory graph** — values (objects, arrays, strings, call frames...) as nodes, references between them as edges. The graph is stored as SQLite (the default; every analyser below reads this), JSON (for `jq`-based ad-hoc inspection), or an inline findings report.
-
-The pipeline has two stages:
-
-1. **Dump** — copy the target's raw memory. Fast; the target is only stopped for as long as the copy takes.
-2. **Build** — walk those bytes as PHP internals to reconstruct the graph. When done against a live target, the target stays stopped for the whole walk.
-
-`inspector:memory:dump` does pure dump (writes a portable `.relimem` file). `inspector:memory`, `inspector:memory:analyze`, and `inspector:coredump` do the build — they run the same heap walk against three memory sources (a live process, a `.relimem` file, or an ELF core file).
-
-**In production, dump now and build later.** `inspector:memory:dump` finishes in a fraction of the time a full `inspector:memory` run would, so the target stays responsive. `inspector:memory` fuses both stages into one command at the cost of a longer stop — convenient for ad-hoc local inspection or small heaps.
+A memory graph is reli's PHP heap reconstruction — values (objects, arrays, strings, call frames) as nodes, references as edges. Analysing a live process stops the target until the heap walk finishes; dumping the raw memory does not. **In production, dump now and analyse later.**
 
 | I want to... | Use | More |
 |---|---|---|
-| Dump now (short stop), build the graph offline **(recommended)** | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
-| Build from a live process in one step (longer stop) | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
-| Build from a core file (crashed / post-mortem) | `inspector:coredump` | [coredump.md](coredump.md) |
+| Dump now (short stop), analyse offline **(recommended)** | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
+| One-shot live capture (longer stop, one command) | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
+| From a core file (crashed / post-mortem) | `inspector:coredump` | [coredump.md](coredump.md) |
 
-Tip: pass `-f json` to any build command for `jq`-friendly output, or `-f report` to go straight to a prioritised findings report.
+Tip: pass `-f json` or `-f report` to any of the above for alternative output.
 
-## Analyse a memory graph
+## Analyse memory graphs
 
 | I want to... | Use | More |
 |---|---|---|
 | Browse interactively in a TUI **(recommended)** | `inspector:rmem:explore snap.db` | [rmem-explore-and-serve.md](rmem-explore-and-serve.md) |
 | Get a prioritised findings report | `inspector:memory:report snap.db` (or capture with `-f report`) | [memory-report.md](memory-report.md) |
-| Compare two snapshots (regression / leak tracking) | `inspector:memory:compare before.db after.db` | [memory-report.md](memory-report.md) |
-| Query a snapshot's SQL directly | `inspector:rmem:serve` or open the SQLite file | [rmem-explore-and-serve.md](rmem-explore-and-serve.md), [memory-profiler-database.md](memory-profiler-database.md) |
-| Let an AI assistant explore a snapshot | `inspector:rmem:mcp` | [rmem-explore-and-serve.md](rmem-explore-and-serve.md) |
+| Compare two graphs (regression / leak tracking) | `inspector:memory:compare before.db after.db` | [memory-report.md](memory-report.md) |
+| Query a graph's SQL directly | `inspector:rmem:serve` or open the SQLite file | [rmem-explore-and-serve.md](rmem-explore-and-serve.md), [memory-profiler-database.md](memory-profiler-database.md) |
+| Let an AI assistant explore a graph | `inspector:rmem:mcp` | [rmem-explore-and-serve.md](rmem-explore-and-serve.md) |
 
 ## Monitor production
 
