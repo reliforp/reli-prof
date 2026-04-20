@@ -38,14 +38,17 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 
 ## Produce memory snapshots
 
-A snapshot is the analysable form of a PHP heap (SQLite by default, optionally JSON or an inline findings report). Production has two stages: **capture** raw memory, then **build** the heap graph from it. `inspector:memory:dump` is pure capture — it writes a portable `.relimem` file without analysing. `inspector:memory`, `inspector:memory:analyze`, and `inspector:coredump` all do the build; they do the same heap walk and differ only in where memory is read from — a live process, a `.relimem` dump, or an ELF core file.
+A snapshot is the analysable form of a PHP heap — SQLite by default, optionally JSON or an inline findings report. Production has two stages: **capture** raw memory, then **build** the heap graph from it. `inspector:memory:dump` is pure capture — a quick raw-memory copy that writes a portable `.relimem` file. `inspector:memory`, `inspector:memory:analyze`, and `inspector:coredump` all do the build; they run the same heap walk against three heap sources (a live process, a `.relimem` dump, or an ELF core file).
+
+Because the build stops the target for as long as the heap walk takes, **dump now and build later is the kindest choice in production** — `inspector:memory:dump` finishes in a fraction of the time a full analysis would. `inspector:memory` fuses both stages into one command at the cost of a longer stop; use it for ad-hoc local inspection or small heaps.
 
 | I want to... | Use | More |
 |---|---|---|
-| Capture + build from a live process (one step) **(recommended)** | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
-| Capture now (portable `.relimem`), build later | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
+| Capture now (short stop), build the snapshot later **(recommended)** | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
+| Capture + build in one step (longer stop, one command) | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
 | Build from a core file (crashed / post-mortem) | `inspector:coredump` | [coredump.md](coredump.md) |
-| JSON output for `jq`-based ad-hoc inspection | `inspector:memory -p <pid> -f json` | [memory-profiler.md](memory-profiler.md) |
+
+Tip: pass `-f json` to any build command for `jq`-friendly output, or `-f report` to go straight to a prioritised findings report.
 
 ## Analyse memory snapshots
 
