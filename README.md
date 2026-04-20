@@ -11,74 +11,13 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 New here? [docs/getting-started.md](docs/getting-started.md) walks from install to your first trace. Looking for a specific task? The [documentation index](docs/README.md) maps "I want to X" to the right command and doc.
 
 ## What can I use this for?
-- Detecting and visualizing bottlenecks in PHP scripts
-  - It provides not only at the function level of profiling but also at line level or opcode level resolution, and even native C-level stack traces from the interpreter itself
-- Profiling without accumulated overhead even when a lot of fast functions called as this is a sampling profiler (see the links below, tideways, xhprof, and the profiler of xdebug, many profilers have this overhead)
-  - [Profiling Overhead and PHP 7](https://tideways.com/profiler/blog/profiling-overhead-and-php-7)
-  - [nikic/sample_prof](https://github.com/nikic/sample_prof)
-- Investigating the cause of a bug or performance failure
-  - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
-- [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.12.x/docs/memory/memory-profiler.md)
-- [Automatic memory analysis report](docs/memory/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
-- [Interactive memory exploration](docs/memory/rmem-explore-and-serve.md): browse `.rmem` memory snapshots with `rmem:explore` (TUI with sandwich view, class/type rankings, cycle visualization, global search), run `rmem:serve` as a persistent query server, or connect AI assistants via `rmem:mcp` (MCP protocol)
-- [Analyzing `.rbt` traces in the terminal](docs/tracing/rbt-analyze-and-explore.md): pipe a binary trace into `rbt:analyze` for one-shot text reports (hot frames, callers/callees of a regex, live tail), or open `rbt:explore` for an interactive sandwich/flame/tree TUI
-- [Condition-based monitoring](docs/monitoring/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
-- [Variable inspection](docs/inspection/peek-var-command.md): read PHP variable values from a running process without modifying it
-- [Per-sample variable peek in traces](docs/inspection/trace-var-command.md): attach PHP variable values (request URI, user id, SQL query, ...) to each trace sample so you can join runtime state to hot stacks
-- [Sidecar daemon](docs/monitoring/sidecar.md): run a daemon that accepts on-demand memory dump requests from PHP processes via Unix socket — no FFI needed in the application, ideal for memory_limit crash analysis and CI regression detection
-- [Post-mortem analysis from a core dump](docs/memory/coredump.md): run the same memory analyzer against an ELF core file (from `gcore`, `systemd-coredump`, kernel `core_pattern`, ...) when the process has already died or when live attachment isn't possible
 
-## How it works
-It's implemented by using following techniques:
+- **Where time is spent** — sampling profiler for PHP call stacks, with optional C-level frames and per-opcode detail. Capture to the compact `.rbt` binary format, browse in the `rbt:explore` TUI, or convert to speedscope / pprof / flamegraph / callgrind / folded.
+- **Where memory is used** — reconstruct the target's PHP heap into a queryable graph (`.rmem`). Open it interactively with `rmem:explore`, get a prioritised findings report with `memory:report`, or compare two snapshots with `memory:compare` to track regressions.
+- **What values flow through** — read PHP variable values from a running process without modifying it (`inspector:peek-var`), or attach variable values to every trace sample (`inspector:trace --trace-var`) so you can join runtime state to hot stacks.
+- **When something goes wrong** — trigger captures on runtime conditions. `inspector:watch` takes a memory dump or trace when memory thresholds, function calls, or variable conditions are met. `inspector:sidecar` accepts on-demand dump requests from the app over a Unix socket — ideal for `memory_limit` crash analysis.
 
-- Parsing ELF binary of the interpreter
-- Reading memory map from /proc/\<pid\>/maps
-- Reading memory of outer process by using ptrace(2) and process_vm_readv(2) via FFI
-- Analyzing internal data structure in the PHP VM (aka Zend Engine)
-
-If you have a bit of extra CPU resource, the overhead of this software would be negligible.
-
-## Alpine / musl libc support
-Reli works on Alpine Linux (musl libc). Sampling profiler, memory dump, memory analysis, and memory report all work on both regular and ZTS builds. Native C-level stack traces are not supported on musl due to its minimal `.eh_frame` (only 4 FDE entries vs glibc's ~3,700). See [Alpine internals](docs/internals/alpine-investigation.md) for technical details.
-
-## Native (C-level) stack trace support
-Reli can collect native C-level stack traces from the PHP interpreter alongside PHP traces. This lets you see what C functions the interpreter is executing inside each PHP function call, which is useful for diagnosing performance issues in PHP internals, extensions, or the interpreter itself.
-
-- Works with stripped binaries (uses exported symbols from `.dynsym`)
-- Loads separate debug symbol packages (`-dbgsym` / `-debuginfo`) for full symbol coverage
-- Resolves JIT-compiled function names when the target process has `opcache.jit_debug` enabled
-
-## Differences to phpspy, when to use reli
-Reli is heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy).
-
-The main difference between the two is that reli is written in almost pure PHP while phpspy is written in C.
-In profiling, there are cases you want to customize how and what information to get.
-If customizability for PHP developers matters, you can use this software at the cost of performance. (Although, we hope the cost is not too big.)
-
-Additionally, reli can find VM state from ZTS interpreters. For example, in the daemon mode, traces of threads started via [ext-parallel](https://github.com/krakjoe/parallel) are automatically retrieved. Currently this cannot be done with phpspy only.
-Reli also provides functionality to only get the address of EG from targets, so you can use actual profiling with phpspy if you want, even when the target is ZTS.
-
-Furthermore, reli provides a **hybrid phpspy mode** (`phpspy:trace`, `phpspy:daemon`) that combines reli's ZTS-aware EG resolution with phpspy's fast C-based tracing. Reli resolves the EG address (including for ZTS targets where phpspy alone cannot), then launches phpspy as the actual tracer with the resolved address. This gives you phpspy's speed with reli's ZTS support. See [Hybrid phpspy mode](#hybrid-phpspy-mode) for details.
-
-Other features of reli that phpspy does not currently have include:
-
-- Output more accurate line numbers
-- Customize output format with PHP templates
-- Get running opcodes of the PHP-VM
-- Automatic retrieval of the target PHP version from stripped PHP binaries
-- Output traces in speedscope, pprof, folded stacks, callgrind, or [compact binary (`.rbt`)](docs/tracing/binary-trace-format.md) format
-- Deeply analyzing memory usage of the target process
-- Collecting native (C-level) stack traces alongside PHP traces via DWARF `.eh_frame` unwinding
-- Resolving JIT-compiled function names via perf map and GDB JIT interface
-
-There is no particular reason why these features cannot be implemented on the phpspy side, so it may be possible to do them on phpspy in the future.
-
-On the other hand, there are a few things that phpspy can do but reli cannot yet.
-
-- Run more faster with lower overhead.
-- etc.
-
-Much of what can be done with phpspy will be done with reli in the future.
+For the full catalogue of tasks and commands, see the [documentation index](docs/README.md).
 
 ## Requirements
 ### Supported PHP versions
@@ -104,8 +43,10 @@ Much of what can be done with phpspy will be done with reli in the future.
 
 On targeting ZTS, reli finds EG from the TLS. Stripped binaries are supported (TLS segments are scanned via brute force). On glibc 2.34+, where libpthread is merged into libc, reli automatically falls back to libc.so, so no extra options are needed in most cases.
 
-### AArch64 (ARM64) support
-AArch64 Linux support is experimental. It enables profiling on ARM-based servers (e.g., AWS Graviton) and Apple Silicon Macs running Linux VMs or Docker containers. Both NTS and ZTS targets are supported. See [docs/internals/aarch64-support.md](docs/internals/aarch64-support.md) for technical details.
+### Platform notes
+
+- **AArch64 (ARM64)** — experimental. Enables profiling on ARM-based servers (AWS Graviton) and Apple Silicon Macs running Linux VMs or Docker containers. Both NTS and ZTS targets supported. See [docs/internals/aarch64-support.md](docs/internals/aarch64-support.md).
+- **Alpine / musl libc** — sampling profiler and the memory pipeline (dump / analyse / report) all work on both NTS and ZTS. Native C-level stack traces are not supported on musl due to its minimal `.eh_frame` (~4 FDE entries vs glibc's ~3,700). See [docs/internals/alpine-investigation.md](docs/internals/alpine-investigation.md).
 
 ## Installation
 ### From Docker
@@ -422,87 +363,16 @@ You can pass extra phpspy flags via `--phpspy-args`:
 $ sudo php ./reli phpspy:trace -p <pid> --phpspy-args="-c -1"
 ```
 
-### Show currently executing opcodes at traces
-If a user wants to profile a really CPU-bound application, then he or she wouldn't only want to know what line is slow, but what opcode is.
-
-- **When capturing to `.rbt`**, the opcode is always recorded. Reveal it during analysis with `./reli rbt:analyze --with-opcode trace.rbt`, or press `c` inside `rbt:explore` to toggle the opcode column.
-- **For phpspy text output**, add `--template=phpspy_with_opcode` to `inspector:trace` or `inspector:daemon`:
-
-```bash
-$ sudo php ./reli i:trace --template=phpspy_with_opcode -p <pid of the target process or thread>
-```
-
-The output would be like the following.
-
-```
-0 <VM>::ZEND_ASSIGN <VM>:-1
-1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:33:ZEND_ASSIGN
-2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL
-3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
-
-0 <VM>::ZEND_ASSIGN <VM>:-1
-1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:30:ZEND_ASSIGN
-2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL
-3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
-```
-
-The currently executing opcode becomes the first frame of the callstack.
-So visualizations of the trace like flamegraph can show the usage of opcodes.
-
-For informational purposes, executing opcodes are also added to each end of the call frames. Except for the first frame, opcodes for function calls such as ZEND_DO_FCALL should appear there.
-
-If JIT is enabled at the target process, this information may be slightly inaccurate. To see JIT-compiled function names in traces, use `--with-native-trace` and set `opcache.jit_debug=0x10` on the target process.
-
 ### Use in a docker container and target a process on host
 ```bash
 $ docker pull reliforp/reli-prof
 $ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof i:trace -p <pid of the target process or thread>
 ```
 
-### Collect native (C-level) stack traces
-```bash
-$ sudo php ./reli i:trace --with-native-trace -p <pid>
-0 libc.so.6::clock_nanosleep+0x5a [native]:0
-1 libc.so.6::__nanosleep+0x17 [native]:0
-2 libc.so.6::usleep+0x4c [native]:0
-3 php8.4::zif_usleep+0x42 [native]:0
-4 usleep <internal>:-1
-5 <main> /app/test.php:15
-6 php8.4::execute_ex+0x4dfa [native]:0
-7 php8.4::zend_execute+0x141 [native]:0
-8 php8.4::zend_execute_script+0x56 [native]:0
-9 php8.4::php_execute_script_ex+0x278 [native]:0
-10 libc.so.6::__libc_start_main+0x8b [native]:0
-11 php8.4::_start+0x25 [native]:0
-```
+### Advanced capture: opcodes, native traces, JIT
+`inspector:trace` / `inspector:daemon` can also attach the executing Zend VM opcode, C-level native stack frames (`--with-native-trace`, with optional `--native-trace-anytime`), and JIT-compiled function names to every sample. These combine with any output format and with `--trace-var`.
 
-Native frames are labeled with `[native]:0` and show `module::symbol+offset`. PHP frames are placed on the callee side of `execute_ex`, reflecting that all PHP execution happens inside the VM's opcode dispatcher.
-
-`--with-native-trace` works with every output format. Capture to `.rbt` and drop into `rbt:explore` for interactive analysis of merged native+PHP traces, or convert to a flamegraph:
-```bash
-$ sudo php ./reli i:trace --with-native-trace -p <pid> -F rbt -o trace.rbt
-$ ./reli rbt:explore trace.rbt
-# ...or:
-$ ./reli converter:flamegraph <trace.rbt >flame_native.svg
-```
-
-### Collect native traces during interpreter initialization / shutdown
-```bash
-$ sudo php ./reli i:trace --native-trace-anytime -p <pid>
-```
-When `--native-trace-anytime` is used, native C-level traces are collected even when no PHP code is executing (e.g. during module initialization or shutdown). This is useful for investigating interpreter startup performance or extension loading behavior.
-
-### JIT-compiled code in native traces
-When the target PHP process has JIT enabled with `opcache.jit_debug=0x10`, JIT-compiled function names are resolved via `/tmp/perf-<pid>.map`:
-```bash
-$ php -d opcache.jit_debug=0x10 script.php &
-$ sudo php ./reli i:trace --with-native-trace -p $!
-0 [jit]::TRACE-2$fibonacci$4+0x141 [native]:0
-1 php8.4::zend_execute+0x141 [native]:0
-2 <main> /app/test.php:14
-```
-
-For DWARF-based unwinding through JIT frames, use `opcache.jit_debug=0x100` (GDB JIT interface).
+See [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md) for the full walkthrough — opcode reveal in `.rbt` vs. phpspy text, DWARF unwinding, the `opcache.jit_debug` settings, Alpine/musl caveat.
 
 ### Convert traces to other formats
 `converter:*` reads both `.rbt` and phpspy text (auto-detected) and writes flamegraph SVG, speedscope, pprof, callgrind, folded stacks, or `.rbt`:
@@ -596,21 +466,18 @@ $ php ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-t
 The comparison report shows summary deltas, type breakdown deltas, per-class memory changes (added/removed/changed), and findings diff (new/resolved/changed issues). Use `--threshold 5` to filter changes smaller than 5%. See [docs/memory/memory-report.md](docs/memory/memory-report.md) for details.
 
 ## Binary analysis cache
-Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.
 
-Cache files are stored under `~/.cache/reli/binary-analysis/` (following the XDG Base Directory specification), keyed by binary fingerprint (device ID + inode + ELF header content). In container environments, Docker's overlayfs can assign the same device ID and inode to different binaries across different images (e.g. `php:8.3` and `php:8.3-zts`), so the ELF header content is included to ensure different binaries always produce different cache keys.
+reli caches expensive binary-analysis results (ELF symbol resolution, ZTS TLS offsets, PHP version detection, …) under `~/.cache/reli/binary-analysis/`. This turns a ~8-second cold start for a ZTS target into ~5 ms on subsequent runs against the same binary.
 
-### Clear the cache
 ```bash
+# Clear the cache
 ./reli cache:clear
+
+# Bypass the cache for a single run
+./reli inspector:trace --no-cache -p <pid>
 ```
 
-### Disable the cache
-All inspector commands accept `--no-cache` to bypass the cache for a single run:
-```bash
-./reli inspector:trace --no-cache -p <pid>
-./reli inspector:daemon --no-cache -P "^php-fpm"
-```
+For what exactly is cached, how keys are computed, and the Docker-overlayfs edge case that shaped the keying scheme, see [docs/internals/binary-analysis-cache.md](docs/internals/binary-analysis-cache.md).
 
 ## Troubleshooting
 ### I get an error message "php module not found" and can't get a trace!
@@ -621,6 +488,40 @@ The `-S` option will give you better results. Using this option stops the execut
 
 ### I can't get traces on Amazon Linux 2.
 First, try `cat /proc/<pid>/maps` to check the memory map of the target PHP process. If the first module does not indicate the location of the PHP binary and looks like an anonymous region, try to specify `--php-regex="^$"` as an option.
+
+## How it works
+
+Under the hood, reli:
+
+- Parses the ELF binary of the PHP interpreter.
+- Reads the target's memory map from `/proc/<pid>/maps`.
+- Reads memory of the outer process through `ptrace(2)` and `process_vm_readv(2)` via FFI.
+- Analyses the internal data structures of the PHP VM (aka Zend Engine).
+
+If you have a bit of extra CPU resource to spare on the profiling host, the overhead of this software is negligible.
+
+## Differences to phpspy, when to use reli
+
+Reli started out heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy); several things have since diverged.
+
+The main structural difference is that reli is written in almost pure PHP while phpspy is written in C. If you want to customise *what* and *how* information is captured, doing it in PHP is easier — at some performance cost. (Though we aim to keep that cost modest.)
+
+Reli can also find VM state from ZTS interpreters: daemon-mode traces of threads started via [ext-parallel](https://github.com/krakjoe/parallel) are captured automatically, which phpspy alone cannot do. `inspector:eg` exposes just the EG address so that you can feed it to phpspy manually for ZTS targets, and the [hybrid phpspy mode](#hybrid-phpspy-mode) (`phpspy:trace` / `phpspy:daemon`) combines reli's ZTS-aware EG resolution with phpspy's fast C-based tracing.
+
+Other capabilities reli currently has that phpspy doesn't:
+
+- More accurate line numbers.
+- Output format customisation via PHP templates.
+- Running-opcode output for each sample.
+- Automatic PHP-version detection from stripped binaries.
+- Compact binary trace format (`.rbt`) plus speedscope / pprof / folded / callgrind / flamegraph converters (see [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md)).
+- Deep memory-graph analysis of the target process.
+- Merged native (C-level) stack traces via DWARF `.eh_frame` unwinding.
+- JIT-compiled function-name resolution via perf map / GDB JIT interface.
+
+Nothing above is technically unreachable from phpspy — these may land there one day.
+
+On the other hand, phpspy still wins on raw sampling throughput and overhead. Much of what phpspy uniquely does will be covered by reli eventually.
 
 ## Goals
 We would like to achieve the following 5 goals through this project.
