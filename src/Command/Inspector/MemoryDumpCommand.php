@@ -51,7 +51,7 @@ final class MemoryDumpCommand extends Command
     {
         $this->setName('inspector:memory:dump')
             ->setDescription(
-                '[experimental] dump memory pool from a PHP process'
+                'dump memory pool from a PHP process'
                     . ' for offline analysis'
             )
         ;

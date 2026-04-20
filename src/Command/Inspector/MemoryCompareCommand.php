@@ -35,7 +35,7 @@ final class MemoryCompareCommand extends Command
     public function configure(): void
     {
         $this->setName('inspector:memory:compare')
-            ->setDescription('[experimental] compare two memory snapshot SQLite databases')
+            ->setDescription('compare two memory snapshot SQLite databases')
         ;
         $this->addArgument(
             'baseline',

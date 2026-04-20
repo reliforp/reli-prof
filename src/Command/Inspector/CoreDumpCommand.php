@@ -49,7 +49,7 @@ final class CoreDumpCommand extends Command
     public function configure(): void
     {
         $this->setName('inspector:coredump')
-            ->setDescription('[experimental] get memory usage from an outer process')
+            ->setDescription('get memory usage from a core dump file')
         ;
         $this->memory_profiler_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
