@@ -14,9 +14,11 @@ changes to the target. Two broad capabilities:
   with C-level frames and executing-opcode detail. Output to a
   compact binary format (`.rbt`) or phpspy-compatible text.
 - **Where memory is used**: reconstruct the PHP heap into a queryable
-  graph (SQLite / JSON / findings report). Browse it interactively
-  with `rmem:explore`, get a prioritised report with `memory:report`,
-  or compare two snapshots to track regressions.
+  graph. The default (and fastest) on-disk format is `.rmem` — every
+  analyser reads it natively. Browse it interactively with
+  `rmem:explore`, get a prioritised report with `memory:report`, or
+  compare two snapshots to track regressions. SQLite and JSON outputs
+  are also supported for interop.
 
 For the full catalogue of tasks-and-commands, see the
 [documentation index](README.md).

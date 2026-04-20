@@ -4,18 +4,26 @@ The memory profiler can automatically analyze a snapshot and produce a prioritiz
 
 ## Quick Start
 
-### From a SQLite snapshot (recommended)
+### From a captured snapshot (recommended)
 
-First capture a snapshot to SQLite, then generate the report:
+Capture a snapshot once, then run the report against it as many times
+as you like. `.rmem` is the fastest format and what every analyser
+reads natively; `-f sqlite3` is also supported if you want to query
+the same file with SQL tools.
 
 ```bash
+# .rmem (recommended)
+sudo ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+./reli inspector:memory:report snapshot.rmem
+
+# SQLite (works identically here; useful if you also want SQL access)
 sudo ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
 ./reli inspector:memory:report snapshot.db
 ```
 
 ### Inline with live capture
 
-Generate the report directly from a live process (captures to a temp SQLite file internally):
+Generate the report directly from a live process (captures internally):
 
 ```bash
 sudo ./reli inspector:memory -p <pid> -f report

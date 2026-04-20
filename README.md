@@ -537,22 +537,25 @@ The recommended flow is **dump now, analyse later**: `inspector:memory:dump` onl
 # 1. Dump the target's memory to a portable file (short stop on the target)
 $ sudo php ./reli inspector:memory:dump -p <pid> -o snapshot.relimem
 
-# 2. Build the analysable memory graph (offline; can be on a different host)
-$ php ./reli inspector:memory:analyze snapshot.relimem -f sqlite3 -o snapshot.db
+# 2. Build the analysable memory graph offline — .rmem is the fastest
+#    format and what every analyser below reads natively
+$ php ./reli inspector:memory:analyze snapshot.relimem -f binary -o snapshot.rmem
 
 # 3a. Browse it interactively
-$ php ./reli inspector:rmem:explore snapshot.db
+$ php ./reli inspector:rmem:explore snapshot.rmem
 
 # 3b. Or get a prioritised findings report
-$ php ./reli inspector:memory:report snapshot.db
+$ php ./reli inspector:memory:report snapshot.rmem
 ```
 
 For ad-hoc / local use where the longer stop doesn't matter, the one-shot `inspector:memory` command captures and analyses in a single call:
 
 ```bash
-$ sudo php ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
-$ php ./reli inspector:rmem:explore snapshot.db
+$ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+$ php ./reli inspector:rmem:explore snapshot.rmem
 ```
+
+`-f sqlite3` and `-f json` are also accepted — see the format tip in [docs/README.md § Capture memory graphs](docs/README.md#capture-memory-graphs-where-memory-is-used).
 
 Only NTS targets are supported for now.
 
@@ -560,11 +563,11 @@ See [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for capture options
 
 ### Automatic analysis report
 
-Instead of manually querying with `jq`, you can generate an automatic analysis report. First save to SQLite, then run the report:
+Instead of manually querying with `jq`, generate an automatic analysis report. Save as `.rmem` first, then run the report (also works with `-f sqlite3 -o snapshot.db`):
 
 ```bash
-$ sudo php ./reli i:m -p <pid> -f sqlite3 -o snapshot.db
-$ php ./reli inspector:memory:report snapshot.db
+$ sudo php ./reli i:m -p <pid> -f binary -o snapshot.rmem
+$ php ./reli inspector:memory:report snapshot.rmem
 ```
 
 Or generate the report directly:
@@ -580,12 +583,12 @@ The report identifies dominant classes, circular references, choke points, dedup
 Compare memory snapshots to find regressions, verify fixes, or track leaks over time:
 
 ```bash
-$ sudo php ./reli i:m -p <pid> -f sqlite3 -o before.db
+$ sudo php ./reli i:m -p <pid> -f binary -o before.rmem
 # ... deploy code change, trigger workload, etc.
-$ sudo php ./reli i:m -p <pid> -f sqlite3 -o after.db
-$ php ./reli inspector:memory:compare before.db after.db
+$ sudo php ./reli i:m -p <pid> -f binary -o after.rmem
+$ php ./reli inspector:memory:compare before.rmem after.rmem
 
-# Or compare run IDs within the same database
+# SQLite snapshots are also supported (and let you compare run IDs within one DB)
 $ php ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
 ```
 

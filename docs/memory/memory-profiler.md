@@ -20,7 +20,7 @@ The canonical invocation:
 reli inspector:memory -p <pid_of_target_process>
 ```
 
-By default this writes the analysed snapshot as JSON on stdout. The same command also accepts `-f sqlite3` / `-f binary` / `-f report` / `-f mysql` / `-f postgresql` — see [memory-profiler-database.md](memory-profiler-database.md) for the relational schema and [memory-report.md](memory-report.md) for the findings report. Everything below concerns the default `-f json` output.
+By default this writes the analysed snapshot as JSON on stdout — that's what the rest of this document covers. The same command also accepts other output formats, and for any analysis-tool-driven workflow **`-f binary` (the `.rmem` format) is the fastest and is what every analyser (`rmem:explore`, `rmem:serve`, `rmem:mcp`, `memory:report`, `memory:compare`) reads natively**. Other accepted formats: `-f sqlite3` (for SQL tooling — see [memory-profiler-database.md](memory-profiler-database.md)), `-f report` (direct findings report — see [memory-report.md](memory-report.md)), `-f mysql` / `-f postgresql` (stream into a remote database).
 
 You can use this mode to analyze the memory usage of the target process — for finding memory bottlenecks or memory leaks. For example, you can see statistics such as whether strings, arrays or objects are particularly dominant in a script's memory usage, or contextual information such as where certain local variables in a given call frame are referenced from elsewhere, and the actual values held by certain memory areas.
 
