@@ -8,6 +8,8 @@
 
 Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler. 
 
+Looking for a specific task? Jump to the [documentation index](docs/README.md) — it maps "I want to X" to the right command and doc.
+
 ## What can I use this for?
 - Detecting and visualizing bottlenecks in PHP scripts
   - It provides not only at the function level of profiling but also at line level or opcode level resolution, and even native C-level stack traces from the interpreter itself
@@ -129,264 +131,83 @@ composer install
 ```
 
 ## Usage
+
+For a task-oriented map of every command, see [docs/README.md](docs/README.md).
+Every subsection below shows a canonical invocation plus the most commonly used flags.
+Run `./reli <command> --help` for the complete option list — the CLI help is the source of truth.
+
 ### Get call traces
+Sample a running process, or spawn one and sample it:
+
 ```bash
-./reli inspector:trace --help
-Description:
-  periodically get call trace from an outer process or thread
+# Attach to a running process
+sudo php ./reli inspector:trace -p <pid>
 
-Usage:
-  inspector:trace [options] [--] [<cmd> [<args>...]]
+# Spawn and trace a new process
+./reli inspector:trace -- php script.php
 
-Arguments:
-  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                       command line arguments for cmd
-
-Options:
-  -p, --pid=PID                                process id
-  -O, --child-stdout=CHILD-STDOUT              write child process stdout to the specified path
-  -E, --child-stderr=CHILD-STDERR              write child process stderr to the specified path
-  -d, --depth[=DEPTH]                          max depth
-      --with-native-trace                      collect native (C-level) stack traces alongside PHP traces
-      --native-trace-anytime                   collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
-  -s, --sleep-ns[=SLEEP-NS]                    nanoseconds between traces (default: 1000 * 1000 * 10)
-  -r, --max-retries[=MAX-RETRIES]              max retries on contiguous errors of read (default: 10)
-  -S, --stop-process[=STOP-PROCESS]            stop the target process while reading its trace (default: off)
-      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
-      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
-      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -t, --template[=TEMPLATE]                    template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
-  -o, --output=OUTPUT                          path to write output from this tool (default: stdout)
-      --no-cache                               disable the binary analysis cache
-  -h, --help                                   Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                  Do not output any message
-  -V, --version                                Display this application version
-      --ansi|--no-ansi                         Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                         Do not ask any interactive question
-  -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+# Capture to compact binary format (recommended for later analysis)
+sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
 ```
+
+Key options: `-d/--depth`, `-s/--sleep-ns`, `-S/--stop-process`, `-t/--template=phpspy|phpspy_with_opcode|json_lines`, `-F/--output-format=rbt|rbt-bundled`, `-o/--output`, `--with-native-trace`, `--trace-var`.
 
 ### Daemon mode
+Concurrently trace every process whose command line matches a regex (e.g. an FPM pool):
+
 ```bash
-./reli inspector:daemon --help
-Description:
-  concurrently get call traces from processes whose command-lines match a given regex
-
-Usage:
-  inspector:daemon [options]
-
-Options:
-  -P, --target-regex=TARGET-REGEX              regex to find target processes which have matching command-line (required)
-  -T, --threads[=THREADS]                      number of workers (default: 8)
-  -d, --depth[=DEPTH]                          max depth
-      --with-native-trace                      collect native (C-level) stack traces alongside PHP traces
-      --native-trace-anytime                   collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
-  -s, --sleep-ns[=SLEEP-NS]                    nanoseconds between traces (default: 1000 * 1000 * 10)
-  -r, --max-retries[=MAX-RETRIES]              max retries on contiguous errors of read (default: 10)
-  -S, --stop-process[=STOP-PROCESS]            stop the target process while reading its trace (default: off)
-      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
-      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
-      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -t, --template[=TEMPLATE]                    template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
-  -o, --output=OUTPUT                          path to write output from this tool (default: stdout)
-      --no-cache                               disable the binary analysis cache
-  -h, --help                                   Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                  Do not output any message
-  -V, --version                                Display this application version
-      --ansi|--no-ansi                         Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                         Do not ask any interactive question
-  -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+sudo php ./reli inspector:daemon -P "^php-fpm" -F rbt -o /path/to/output_dir/
 ```
+
+Key options: `-P/--target-regex` (required), `-T/--threads`, `-d/--depth`, `-s/--sleep-ns`, `-F/--output-format`, `-o/--output`, `--with-native-trace`, `--trace-var`.
 
 ### top-like mode
+Real-time aggregated view across matching processes, in the spirit of UNIX `top`:
+
 ```bash
-./reli inspector:top --help
-Description:
-  show an aggregated view of traces in real time in a form similar to the UNIX top command.
-
-Usage:
-  inspector:top [options]
-
-Options:
-  -P, --target-regex=TARGET-REGEX              regex to find target processes which have matching command-line (required)
-  -T, --threads[=THREADS]                      number of workers (default: 8)
-  -d, --depth[=DEPTH]                          max depth
-      --with-native-trace                      collect native (C-level) stack traces alongside PHP traces
-      --native-trace-anytime                   collect native traces even when PHP trace is unavailable (e.g. during init, shutdown)
-  -s, --sleep-ns[=SLEEP-NS]                    nanoseconds between traces (default: 1000 * 1000 * 10)
-  -r, --max-retries[=MAX-RETRIES]              max retries on contiguous errors of read (default: 10)
-  -S, --stop-process[=STOP-PROCESS]            stop the target process while reading its trace (default: off)
-      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
-      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
-      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
-      --no-cache                               disable the binary analysis cache
-  -h, --help                                   Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                  Do not output any message
-  -V, --version                                Display this application version
-      --ansi|--no-ansi                         Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                         Do not ask any interactive question
-  -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+sudo php ./reli inspector:top -P "^php-fpm"
 ```
 
+Key options: `-P/--target-regex` (required), `-T/--threads`, `-d/--depth`, `-s/--sleep-ns`, `--with-native-trace`.
+
 ### Get the address of EG
+Useful for feeding phpspy manually, or for advanced integrations:
+
 ```bash
-./reli inspector:eg --help
-Description:
-  get EG address from an outer process or thread
-
-Usage:
-  inspector:eg_address [options] [--] [<cmd> [<args>...]]
-
-Arguments:
-  cmd                                        command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                       command line arguments for cmd
-
-Options:
-  -p, --pid=PID                                process id
-  -O, --child-stdout=CHILD-STDOUT              write child process stdout to the specified path
-  -E, --child-stderr=CHILD-STDERR              write child process stderr to the specified path
-      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
-      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
-      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
-      --no-cache                               disable the binary analysis cache
-  -h, --help                                   Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                  Do not output any message
-  -V, --version                                Display this application version
-      --ansi|--no-ansi                         Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                         Do not ask any interactive question
-  -v|vv|vvv, --verbose                         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+$ sudo php ./reli inspector:eg -p <pid>
+0x555ae7825d80
 ```
 
 ### Hybrid phpspy mode
-Reli can use [phpspy](https://github.com/adsr/phpspy) as the tracing backend while handling EG address resolution (including ZTS). This combines phpspy's fast C-based tracing with reli's ZTS support.
+Reli can use [phpspy](https://github.com/adsr/phpspy) as the fast C-based tracing backend while letting reli resolve the EG address (including for ZTS targets, which phpspy alone cannot handle).
 
-#### Install phpspy
 ```bash
-./reli phpspy:install --help
-Description:
-  install or check phpspy binary
+# Install phpspy (builds from source, installs to ~/.reli/bin/phpspy by default)
+./reli phpspy:install
 
-Usage:
-  phpspy:install [options]
+# Single-process tracing
+sudo php ./reli phpspy:trace -p <pid>
 
-Options:
-      --check                      only check if phpspy is installed, do not install
-      --install-path=INSTALL-PATH  install location (default: ~/.reli/bin/phpspy)
-      --phpspy-path=PHPSPY-PATH    path to an existing phpspy binary to check
-  -h, --help                       Display help for the given command. When no command is given display help for the list command
+# Multi-process daemon
+sudo php ./reli phpspy:daemon -P "^php-fpm"
 ```
 
-#### Single process tracing with phpspy
-```bash
-./reli phpspy:trace --help
-Description:
-  get call traces using phpspy as the tracer backend (reli resolves EG address for ZTS support, then delegates tracing to phpspy)
-
-Usage:
-  phpspy:trace [options] [--] [<cmd> [<args>...]]
-
-Arguments:
-  cmd                                          command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                         command line arguments for cmd
-
-Options:
-  -p, --pid=PID                                process id
-  -O, --child-stdout=CHILD-STDOUT              write child process stdout to the specified path
-  -E, --child-stderr=CHILD-STDERR              write child process stderr to the specified path
-  -d, --depth[=DEPTH]                          max depth
-      --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
-      --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
-      --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
-      --phpspy-path=PHPSPY-PATH                path to the phpspy binary
-  -s, --sleep-ns[=SLEEP-NS]                    phpspy sleep between samples in nanoseconds (default: 10101010)
-  -b, --buffer-size[=BUFFER-SIZE]              phpspy buffer size (default: 4096)
-  -H, --rate-hz[=RATE-HZ]                      phpspy sampling rate in Hz (default: 99)
-      --phpspy-args=PHPSPY-ARGS                extra arguments to pass to phpspy
-      --no-cache                               disable the binary analysis cache
-  -o, --output=OUTPUT                          output file path (default: stdout)
-```
-
-#### Multi-process daemon mode with phpspy
-```bash
-./reli phpspy:daemon --help
-Description:
-  concurrently get call traces from multiple processes using phpspy as the tracer backend (reli resolves EG addresses for ZTS support, then delegates tracing to phpspy)
-
-Usage:
-  phpspy:daemon [options]
-
-Options:
-  -P, --target-regex=TARGET-REGEX              regex to find target processes which have matching command-line (required)
-  -T, --threads[=THREADS]                      number of workers (default: 8)
-  -d, --depth[=DEPTH]                          max depth
-      --phpspy-path=PHPSPY-PATH                path to the phpspy binary
-  -s, --sleep-ns[=SLEEP-NS]                    phpspy sleep between samples in nanoseconds (default: 10101010)
-  -b, --buffer-size[=BUFFER-SIZE]              phpspy buffer size (default: 4096)
-  -H, --rate-hz[=RATE-HZ]                      phpspy sampling rate in Hz (default: 99)
-      --phpspy-args=PHPSPY-ARGS                extra arguments to pass to phpspy
-      --no-cache                               disable the binary analysis cache
-  -o, --output=OUTPUT                          output file path (default: stdout)
-```
+Key `phpspy:trace` / `phpspy:daemon` options: `-s/--sleep-ns`, `-b/--buffer-size`, `-H/--rate-hz`, `--phpspy-args` (passthrough to phpspy), `--phpspy-path`, `-o/--output`.
 
 ## Dump the memory usage of the target process
+Run the memory analyser against a live PHP process. The output feeds the rest of the memory pipeline (`memory:report`, `rmem:explore`, `memory:compare`).
+
 ```bash
-./reli inspector:memory --help
-Description:
-  get memory usage from an outer process
+# Save to SQLite (recommended for large heaps; feeds rmem:explore and memory:report)
+sudo php ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
 
-Usage:
-  inspector:memory [options] [--] [<cmd> [<args>...]]
-
-Arguments:
-  cmd                                                                command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                                               command line arguments for cmd
-
-Options:
-      --stop-process|--no-stop-process                               stop the process while inspecting (default: on)
-      --pretty-print|--no-pretty-print                               pretty print the result (default: off)
-  -f, --output-format=OUTPUT-FORMAT                                  output format (json, sqlite3, mysql, postgresql) [default: "json"]
-  -o, --output=OUTPUT                                                output file path (required for sqlite3 format)
-      --db-host=DB-HOST                                              database host (for mysql/postgresql) [default: "127.0.0.1"]
-      --db-port=DB-PORT                                              database port (for mysql/postgresql)
-      --db-name=DB-NAME                                              database name (for mysql/postgresql)
-      --db-user=DB-USER                                              database user (for mysql/postgresql)
-      --db-password=DB-PASSWORD                                      database password (for mysql/postgresql)
-      --memory-usage-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
-      --memory-usage-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
-      --memory-usage-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
-  -p, --pid=PID                                                      process id
-  -O, --child-stdout=CHILD-STDOUT                                    write child process stdout to the specified path
-  -E, --child-stderr=CHILD-STDERR                                    write child process stderr to the specified path
-      --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
-      --zts-globals-regex[=ZTS-GLOBALS-REGEX]                        regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
-      --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
-      --no-cache                                                     disable the binary analysis cache
-  -h, --help                                                         Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                                        Do not output any message
-  -V, --version                                                      Display this application version
-      --ansi|--no-ansi                                               Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                                               Do not ask any interactive question
-  -v|vv|vvv, --verbose                                               Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
-
+# Original JSON + jq workflow
+sudo php ./reli inspector:memory -p <pid> -f json >snapshot.json
 ```
+
+Key options: `-f/--output-format=json|sqlite3|binary|mysql|postgresql|report|report-json`, `-o/--output`, `--stop-process/--no-stop-process`, `--pretty-print`, `--db-host`/`--db-port`/`--db-name`/`--db-user`/`--db-password`, `--memory-usage-error-file`/`--memory-usage-error-line`.
+
+See [docs/memory-profiler.md](docs/memory-profiler.md) for the full memory pipeline, [docs/memory-dump.md](docs/memory-dump.md) for the offline `inspector:memory:dump` flow, and [docs/coredump.md](docs/coredump.md) for post-mortem analysis from a core file.
 
 ## Watch: Condition-Based Process Monitoring
 
