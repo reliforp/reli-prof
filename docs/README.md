@@ -36,14 +36,16 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Decode `.rbt` back to phpspy text | `converter:phpspy` | [binary-trace-format.md](binary-trace-format.md) |
 | Recover a corrupted or truncated `.rbt` file | `rbt:recover` | [binary-trace-format.md](binary-trace-format.md) |
 
-## Capture memory snapshots
+## Produce memory snapshots
+
+A snapshot is the analysable form of a PHP heap (SQLite by default, optionally JSON or an inline findings report). Production has two stages: **capture** raw memory, then **build** the heap graph from it. `inspector:memory:dump` is pure capture — it writes a portable `.relimem` file without analysing. `inspector:memory`, `inspector:memory:analyze`, and `inspector:coredump` all do the build; they do the same heap walk and differ only in where memory is read from — a live process, a `.relimem` dump, or an ELF core file.
 
 | I want to... | Use | More |
 |---|---|---|
-| Snapshot a live process to SQLite **(recommended)** | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
-| Capture once, analyse later / on another machine | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
-| Capture from a crashed process (core file) | `inspector:coredump` | [coredump.md](coredump.md) |
-| Capture as JSON (for `jq`-based ad-hoc inspection) | `inspector:memory -p <pid> -f json` | [memory-profiler.md](memory-profiler.md) |
+| Capture + build from a live process (one step) **(recommended)** | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
+| Capture now (portable `.relimem`), build later | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
+| Build from a core file (crashed / post-mortem) | `inspector:coredump` | [coredump.md](coredump.md) |
+| JSON output for `jq`-based ad-hoc inspection | `inspector:memory -p <pid> -f json` | [memory-profiler.md](memory-profiler.md) |
 
 ## Analyse memory snapshots
 
