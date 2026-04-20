@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Elf\Process;
 
 use FFI;
+use Reli\Lib\FFI\FFIHelper;
 use Mockery;
 use Reli\BaseTestCase;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
@@ -64,7 +65,7 @@ class ProcessModuleSymbolReaderTest extends BaseTestCase
             ->getBaseAddress()
             ->andReturns(new UInt64(0, 0))
         ;
-        $return = FFI::new('unsigned char[8]');
+        $return = FFIHelper::new('unsigned char[8]');
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
         $memory_reader->expects()->read(1, 0x10001000, 8)->andReturns($return);
 

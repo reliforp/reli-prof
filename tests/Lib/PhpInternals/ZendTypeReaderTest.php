@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals;
 
 use FFI;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\BaseTestCase;
 
 class ZendTypeReaderTest extends BaseTestCase
@@ -22,7 +23,7 @@ class ZendTypeReaderTest extends BaseTestCase
     {
         $reader = new ZendTypeReader(ZendTypeReader::V74);
         $string_size = $reader->sizeOf('zend_string');
-        $data = FFI::new("char[{$string_size}]");
+        $data = FFIHelper::new("char[{$string_size}]");
         FFI::memset($data, 0, $string_size);
         /** @var CastedCData<FFI\PhpInternals\zend_string> $string */
         $string = $reader->readAs('zend_string', $data);

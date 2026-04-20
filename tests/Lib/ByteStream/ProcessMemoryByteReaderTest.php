@@ -16,6 +16,7 @@ namespace Reli\Lib\ByteStream;
 use Reli\BaseTestCase;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\FFI\FFIHelper;
 
 class ProcessMemoryByteReaderTest extends BaseTestCase
 {
@@ -35,7 +36,7 @@ class ProcessMemoryByteReaderTest extends BaseTestCase
 
     public function testOffsetGet()
     {
-        $buffer = \FFI::new('unsigned char[8192]');
+        $buffer = FFIHelper::new('unsigned char[8192]');
         $buffer[0] = 0xde;
         $buffer[1] = 0xad;
         $buffer[2] = 0xbe;
@@ -71,7 +72,7 @@ class ProcessMemoryByteReaderTest extends BaseTestCase
 
     public function testOffsetGetFirstPageNotAlignedToBufferSize()
     {
-        $buffer = \FFI::new('unsigned char[8192]');
+        $buffer = FFIHelper::new('unsigned char[8192]');
         $buffer[0] = 0xde;
         $buffer[1] = 0xad;
         $buffer[2] = 0xbe;
@@ -95,7 +96,7 @@ class ProcessMemoryByteReaderTest extends BaseTestCase
 
     public function testCreateSliceAsString()
     {
-        $buffer = \FFI::new('unsigned char[8192]');
+        $buffer = FFIHelper::new('unsigned char[8192]');
         $buffer[0] = 0xde;
         $buffer[1] = 0xad;
         $buffer[2] = 0xbe;

@@ -32,6 +32,9 @@ use Reli\Lib\Process\ProcessSpecifier;
 
 class PhpVersionDetectorTest extends BaseTestCase
 {
+    /** @var resource|false */
+    private $child;
+
     public function testDetectVersion()
     {
         $memory_reader = new MemoryReader();

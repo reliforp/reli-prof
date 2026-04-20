@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 use Reli\BaseTestCase;
+use Reli\Lib\FFI\FFIHelper;
 
 class DwarfExpressionTest extends BaseTestCase
 {
@@ -356,7 +357,7 @@ class DwarfExpressionTest extends BaseTestCase
             \Reli\Lib\Process\MemoryReader\MemoryReaderInterface::class
         );
         // DW_OP_constu(0x2000) DW_OP_deref → read 8 bytes from 0x2000
-        $eight_bytes = \FFI::new('unsigned char[8]');
+        $eight_bytes = FFIHelper::new('unsigned char[8]');
         // Little-endian 0x42
         $eight_bytes[0] = 0x42;
         for ($i = 1; $i < 8; $i++) {
@@ -387,7 +388,7 @@ class DwarfExpressionTest extends BaseTestCase
         $memory_reader = \Mockery::mock(
             \Reli\Lib\Process\MemoryReader\MemoryReaderInterface::class
         );
-        $four_bytes = \FFI::new('unsigned char[4]');
+        $four_bytes = FFIHelper::new('unsigned char[4]');
         $four_bytes[0] = 0x78;
         $four_bytes[1] = 0x56;
         $four_bytes[2] = 0x34;

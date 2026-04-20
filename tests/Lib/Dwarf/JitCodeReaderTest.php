@@ -16,6 +16,7 @@ namespace Reli\Lib\Dwarf;
 use Mockery;
 use Reli\BaseTestCase;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\FFI\FFIHelper;
 
 class JitCodeReaderTest extends BaseTestCase
 {
@@ -34,7 +35,7 @@ class JitCodeReaderTest extends BaseTestCase
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
 
         // Simulate: jit_descriptor.first_entry = 0 (no JIT code registered)
-        $zero_bytes = \FFI::new('unsigned char[8]');
+        $zero_bytes = FFIHelper::new('unsigned char[8]');
         for ($i = 0; $i < 8; $i++) {
             $zero_bytes[$i] = 0;
         }
@@ -53,7 +54,7 @@ class JitCodeReaderTest extends BaseTestCase
     public function testFindFdeEmptyReturnsNull(): void
     {
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
-        $zero = \FFI::new('unsigned char[8]');
+        $zero = FFIHelper::new('unsigned char[8]');
         for ($i = 0; $i < 8; $i++) {
             $zero[$i] = 0;
         }
@@ -70,7 +71,7 @@ class JitCodeReaderTest extends BaseTestCase
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
 
         // First read gets first_entry pointer (non-zero)
-        $ptr_bytes = \FFI::new('unsigned char[8]');
+        $ptr_bytes = FFIHelper::new('unsigned char[8]');
         $ptr_bytes[0] = 0x00;
         $ptr_bytes[1] = 0x10;
         for ($i = 2; $i < 8; $i++) {
@@ -106,7 +107,7 @@ class JitCodeReaderTest extends BaseTestCase
         $zero = $this->makePointerBytes(0);
 
         // Non-ELF data (not starting with 0x7f ELF)
-        $garbage = \FFI::new('unsigned char[64]');
+        $garbage = FFIHelper::new('unsigned char[64]');
         for ($i = 0; $i < 64; $i++) {
             $garbage[$i] = 0xAA;
         }
@@ -151,7 +152,7 @@ class JitCodeReaderTest extends BaseTestCase
      */
     private function makePointerBytes(int $value): \FFI\CData
     {
-        $bytes = \FFI::new('unsigned char[8]');
+        $bytes = FFIHelper::new('unsigned char[8]');
         for ($i = 0; $i < 8; $i++) {
             $bytes[$i] = ($value >> ($i * 8)) & 0xff;
         }

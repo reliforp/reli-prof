@@ -175,7 +175,7 @@ final class BinaryTraceRoundTripTest extends BaseTestCase
         $writer->flushPendingRun();
         $pos_after_one_sample = ftell($stream);
 
-        $sample_only_size = $pos_after_second - $pos_after_first;
+        $sample_only_size = $pos_after_one_sample - $pos_after_defs;
         $this->assertLessThanOrEqual(5, $sample_only_size, 'Repeated sample should be 2-5 bytes');
 
         fclose($stream);

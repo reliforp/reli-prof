@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Process\MemoryReader;
 
 use FFI;
+use Reli\Lib\FFI\FFIHelper;
 
 /**
  * @internal test helper
@@ -35,7 +36,7 @@ class MockMemoryReader implements MemoryReaderInterface
         $this->readCount++;
         $key = $remote_address . ':' . $size;
         $bytes = $this->data[$key] ?? str_repeat("\0", $size);
-        $buf = FFI::new("char[$size]");
+        $buf = FFIHelper::new("char[$size]");
         assert($buf !== null);
         FFI::memcpy($buf, $bytes, $size);
         /** @var \FFI\CArray<int> */

@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Process\MemoryReader;
 
 use FFI;
+use Reli\Lib\FFI\FFIHelper;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -35,7 +36,7 @@ class RecordingMemoryReaderTest extends TestCase
             {
                 $key = $remote_address . ':' . $size;
                 $bytes = $this->data[$key] ?? str_repeat("\0", $size);
-                $buf = FFI::new("char[$size]");
+                $buf = FFIHelper::new("char[$size]");
                 assert($buf !== null);
                 FFI::memcpy($buf, $bytes, $size);
                 /** @var \FFI\CArray<int> */

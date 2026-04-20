@@ -32,6 +32,9 @@ use Reli\Lib\Process\ProcessSpecifier;
 
 class PhpGlobalsFinderTest extends BaseTestCase
 {
+    /** @var resource|false */
+    private $child;
+
     public function testFindModuleRegistry()
     {
         $memory_reader = new MemoryReader();
