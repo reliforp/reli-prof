@@ -14,7 +14,7 @@ do all of their work locally — no SQL, no temp files, no network.
 
 If you want a longer-form story about *why* these exist as a pair
 (speedscope-style flamegraphs vs. agent-friendly text), see
-[binary-intermediate-format.md](internals/binary-intermediate-format.md).
+[binary-intermediate-format.md](../internals/binary-intermediate-format.md).
 
 ---
 
@@ -202,16 +202,16 @@ After that you're in a sandwich-style explorer modelled loosely on
 
 ### Screenshots
 #### Panes view
-![panes view](./images/rbt-explore-panes.png)
+![panes view](../images/rbt-explore-panes.png)
 
 #### Flame view
-![flame view](./images/rbt-explore-flame.png)
+![flame view](../images/rbt-explore-flame.png)
 
 #### Callers tree view
-![callers tree view](./images/rbt-explore-callers-tree.png)
+![callers tree view](../images/rbt-explore-callers-tree.png)
 
 #### Callees tree view
-![callees tree view](./images/rbt-explore-callees-tree.png)
+![callees tree view](../images/rbt-explore-callees-tree.png)
 
 ### Layout at a glance
 
@@ -366,5 +366,5 @@ name out of the explorer and paste it into an `--callers=` query.
 
 - [binary-trace-format.md](binary-trace-format.md) — capture options,
   format spec, gzip / segment behaviour, recovery
-- [internals/binary-intermediate-format.md](internals/binary-intermediate-format.md)
+- [internals/binary-intermediate-format.md](../internals/binary-intermediate-format.md)
   — design notes on why the analyze/explore split exists

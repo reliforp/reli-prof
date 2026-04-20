@@ -93,7 +93,7 @@ reli inspector:watch -p <pid> --trace-depth-limit=200
 
 Fires when a PHP variable meets a condition. Multiple `--watch-var` flags can be specified.
 
-> **Tip:** To simply read a variable's current value without trigger conditions, use [`inspector:peek-var`](peek-var-command.md).
+> **Tip:** To simply read a variable's current value without trigger conditions, use [`inspector:peek-var`](../inspection/peek-var-command.md).
 
 **Syntax:** `scope::identifier:operator:value`
 
@@ -109,7 +109,7 @@ Fires when a PHP variable meets a condition. Multiple `--watch-var` flags can be
 
 For `local::` and `func_static::`, the function name is **required**. Use `<main>` for the top-level script scope.
 
-The `memory::` scope exposes `memory_get_usage()` / `memory_get_peak_usage()` equivalents as integers (bytes). Available names: `memory_get_usage`, `memory_get_peak_usage`, `memory_get_usage_real`, `memory_get_peak_usage_real`. See [docs/peek-var-command.md](peek-var-command.md#memory-scope) for details.
+The `memory::` scope exposes `memory_get_usage()` / `memory_get_peak_usage()` equivalents as integers (bytes). Available names: `memory_get_usage`, `memory_get_peak_usage`, `memory_get_usage_real`, `memory_get_peak_usage_real`. See [docs/inspection/peek-var-command.md](../inspection/peek-var-command.md#memory-scope) for details.
 
 #### Operators
 

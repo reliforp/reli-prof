@@ -6,7 +6,7 @@
 and produces structured findings. Not a dump of tables and numbers,
 but a prioritized list of actionable conclusions derived from the data.
 
-For user-facing documentation, see [memory-report.md](../memory-report.md).
+For user-facing documentation, see [memory-report.md](../memory/memory-report.md).
 
 ## Two Layers
 
