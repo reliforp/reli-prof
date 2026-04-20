@@ -1,4 +1,14 @@
 # Introduction
+
+> [!NOTE]
+> This document is the deep-dive for the **JSON + `jq` workflow**. If you're new to reli's memory profiling, most users should start with:
+>
+> - [memory-dump.md](memory-dump.md) — dump a target's memory efficiently (short stop time; `inspector:memory:dump`)
+> - [memory-report.md](memory-report.md) — automated findings report (`inspector:memory:report`, `inspector:memory:compare`)
+> - [rmem-explore-and-serve.md](rmem-explore-and-serve.md) — interactive TUI over a snapshot (`inspector:rmem:explore`)
+>
+> Come back here when you want to hand-query the JSON with `jq`, understand the on-disk structure, or integrate with other tooling.
+
 Reli has a memory profiling mode, and it can be used with the command like below
 
 ```bash
@@ -6,8 +16,6 @@ reli inspector:memory -p <pid_of_target_process>
 ```
 
 You can use this mode to analyze the memory usage of the target process, for finding out memory bottlenecks or memory leaks.
-
-> **Tip**: For automatic analysis of memory snapshots (dominant classes, cycles, choke points, etc.), see [memory-report.md](memory-report.md). For saving snapshots to a database for SQL querying, see [memory-profiler-database.md](memory-profiler-database.md).
 
 For example, you can see statistics such as whether strings, arrays or objects are particularly dominant in a script's memory usage, or contextual information such as where certain local variables in a given call frame are referenced from elsewhere, and the actual values held by certain memory areas.
 
