@@ -58,7 +58,7 @@ Tip: pass `-f json` or `-f report` to any of the above for alternative output.
 | Query a graph's SQL directly | `inspector:rmem:serve` or open the SQLite file | [rmem-explore-and-serve.md](rmem-explore-and-serve.md), [memory-profiler-database.md](memory-profiler-database.md) |
 | Let an AI assistant explore a graph | `inspector:rmem:mcp` | [rmem-explore-and-serve.md](rmem-explore-and-serve.md) |
 
-## Monitor production
+## Monitor VMs
 
 | I want to... | Use | More |
 |---|---|---|
