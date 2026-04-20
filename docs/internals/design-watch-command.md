@@ -1,6 +1,6 @@
 # Design Notes: `inspector:watch` Command
 
-> **This is a historical design document.** For current usage, see [docs/watch-command.md](watch-command.md). For implementation details, see [docs/internals/](internals/).
+> **This is a historical design document.** For current usage, see [docs/watch-command.md](../watch-command.md). For implementation details, see [docs/internals/](./).
 
 ## Original Design Goals
 
@@ -64,8 +64,8 @@ Bottleneck was `chunk_finder->findAddress()` scanning `/proc/pid/maps` every pol
 
 ## References
 
-- User documentation: [docs/watch-command.md](watch-command.md)
-- FFI CData lifetime: [docs/internals/ffi-cdata-lifetime.md](internals/ffi-cdata-lifetime.md)
-- Architecture: [docs/internals/watch-command-architecture.md](internals/watch-command-architecture.md)
-- Variable reading: [docs/internals/php-variable-reading.md](internals/php-variable-reading.md)
-- Container deployment: [docs/watch-command.md#container-deployment](watch-command.md#container-deployment)
+- User documentation: [docs/watch-command.md](../watch-command.md)
+- FFI CData lifetime: [docs/internals/ffi-cdata-lifetime.md](ffi-cdata-lifetime.md)
+- Architecture: [docs/internals/watch-command-architecture.md](watch-command-architecture.md)
+- Variable reading: [docs/internals/php-variable-reading.md](php-variable-reading.md)
+- Container deployment: [docs/watch-command.md#container-deployment](../watch-command.md#container-deployment)

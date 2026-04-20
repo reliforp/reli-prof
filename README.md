@@ -102,7 +102,7 @@ Much of what can be done with phpspy will be done with reli in the future.
 On targeting ZTS, reli finds EG from the TLS. Stripped binaries are supported (TLS segments are scanned via brute force). On glibc 2.34+, where libpthread is merged into libc, reli automatically falls back to libc.so, so no extra options are needed in most cases.
 
 ### AArch64 (ARM64) support
-AArch64 Linux support is experimental. It enables profiling on ARM-based servers (e.g., AWS Graviton) and Apple Silicon Macs running Linux VMs or Docker containers. Both NTS and ZTS targets are supported. See [docs/aarch64-support.md](docs/aarch64-support.md) for technical details.
+AArch64 Linux support is experimental. It enables profiling on ARM-based servers (e.g., AWS Graviton) and Apple Silicon Macs running Linux VMs or Docker containers. Both NTS and ZTS targets are supported. See [docs/internals/aarch64-support.md](docs/internals/aarch64-support.md) for technical details.
 
 ## Installation
 ### From Docker
