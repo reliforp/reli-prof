@@ -24,6 +24,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
 - [Variable inspection](docs/peek-var-command.md): read PHP variable values from a running process without modifying it
 - [Per-sample variable peek in traces](docs/trace-var-command.md): attach PHP variable values (request URI, user id, SQL query, ...) to each trace sample so you can join runtime state to hot stacks
 - [Sidecar daemon](docs/sidecar.md): run a daemon that accepts on-demand memory dump requests from PHP processes via Unix socket — no FFI needed in the application, ideal for memory_limit crash analysis and CI regression detection
+- [Post-mortem analysis from a core dump](docs/coredump.md): run the same memory analyzer against an ELF core file (from `gcore`, `systemd-coredump`, kernel `core_pattern`, ...) when the process has already died or when live attachment isn't possible
 
 ## How it works
 It's implemented by using following techniques:
@@ -387,7 +388,7 @@ Options:
 
 ```
 
-## [Experimental] Watch: Condition-Based Process Monitoring
+## Watch: Condition-Based Process Monitoring
 
 `inspector:watch` monitors PHP processes and triggers profiling actions when configurable conditions are met. It only takes action when triggers fire, making it suitable for low-overhead production monitoring.
 
@@ -419,7 +420,7 @@ Rate limiting: `--cooldown` (with exponential backoff), `--max-triggers-per-hour
 
 See [docs/watch-command.md](docs/watch-command.md) for full documentation.
 
-## [Experimental] Peek Variable: One-Shot Variable Inspection
+## Peek Variable: One-Shot Variable Inspection
 
 `inspector:peek-var` reads PHP variable values from a running process — no triggers or actions, just the current value.
 
@@ -438,7 +439,7 @@ Supported scopes: `global::$var`, `local::func()$var`, `static::Class::$prop`, `
 
 See [docs/peek-var-command.md](docs/peek-var-command.md) for full documentation.
 
-## [Experimental] Trace Var Peek: Per-Sample Variable Inspection in Traces
+## Trace Var Peek: Per-Sample Variable Inspection in Traces
 
 `inspector:trace --trace-var` attaches PHP variable values to every trace sample, so you can correlate runtime state (request URI, user id, SQL query, ...) with the hot stacks that produced it — no separate tool, no log join.
 
