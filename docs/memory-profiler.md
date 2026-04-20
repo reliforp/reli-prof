@@ -67,7 +67,7 @@ Options:
   -p, --pid=PID                                                      process id
       --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[01]) of the target (default: auto)
+      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
       --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -h, --help                                                         Display help for the given command. When no command is given display help for the list command

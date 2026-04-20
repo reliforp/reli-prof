@@ -4,9 +4,17 @@ on:
   push:
     branches:
       - '[0-9]+.[0-9]+.x'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
     branches:
       - '*'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
 
 jobs:
 
