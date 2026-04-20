@@ -26,7 +26,7 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Use phpspy as the fast C backend, with reli-driven ZTS support | `phpspy:trace`, `phpspy:daemon` | [README § Hybrid phpspy mode](../README.md#hybrid-phpspy-mode) |
 | Attach a PHP variable to every sample | `inspector:trace --trace-var=…` | [trace-var-command.md](trace-var-command.md) |
 
-## Analyse call traces (where time is spent)
+## Analyse call traces
 
 | I want to... | Use | More |
 |---|---|---|
