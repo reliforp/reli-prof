@@ -46,7 +46,7 @@ $ php ./reli inspector:rmem:explore snapshot.db
 ```
 
 The output of `inspector:coredump` uses the same
-[`MemoryProfilerSettings`](../src/Inspector/Settings/MemoryProfilerSettings/MemoryProfilerSettingsFromConsoleInput.php)
+[`MemoryProfilerSettings`](../../src/Inspector/Settings/MemoryProfilerSettings/MemoryProfilerSettingsFromConsoleInput.php)
 as `inspector:memory`, so every output format (`json`, `sqlite3`,
 `binary`, `mysql`, `postgresql`, `report`, `report-json`) and every
 downstream tool (`memory:report`, `memory:compare`, `rmem:explore`,
@@ -159,5 +159,5 @@ See `man 5 core` for the full bitmask.
   automated analysis report from the output.
 - [`inspector:rmem:explore`](rmem-explore-and-serve.md) — interactive
   TUI over the SQLite output.
-- [`gcore` comparison](internals/memory-dump-vs-gcore.md) — internals
+- [`gcore` comparison](../internals/memory-dump-vs-gcore.md) — internals
   note on trade-offs between reli's native dump and ELF core files.

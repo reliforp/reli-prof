@@ -5,7 +5,7 @@ sample as they are captured, so you can join "what the stack was doing" to
 "what the runtime state was" without running a separate tool. Values are
 read from the target process with the same techniques as
 [`inspector:peek-var`](peek-var-command.md) and
-[`inspector:watch --watch-var`](watch-command.md),
+[`inspector:watch --watch-var`](../monitoring/watch-command.md),
 then emitted next to each sample in the trace output.
 
 ## Quick Start
@@ -134,7 +134,7 @@ directly following each sample event. Keys and values are interned via
 `STRING_DEF` per segment, so repeated values (e.g. the same SQL query
 across many samples) cost only one pair of varints per sample after the
 first. Full format details are in
-[docs/binary-trace-format.md](binary-trace-format.md#sample_annotation-0x0b).
+[docs/tracing/binary-trace-format.md](../tracing/binary-trace-format.md#sample_annotation-0x0b).
 
 All downstream converters that already read `.rbt`
 (`reli converter:phpspy`, `reli converter:speedscope`,

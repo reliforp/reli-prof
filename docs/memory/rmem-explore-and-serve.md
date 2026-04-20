@@ -122,7 +122,7 @@ echo '{"action":"query.sandwich","node_id":12345}' | socat - UNIX-CONNECT:/path/
 ### Protocol
 
 Newline-delimited JSON over Unix socket. See
-[rmem-serve-design.md](internals/rmem-serve-design.md) for the full
+[rmem-serve-design.md](../internals/rmem-serve-design.md) for the full
 protocol specification.
 
 Key actions:

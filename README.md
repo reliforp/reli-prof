@@ -18,15 +18,15 @@ Looking for a specific task? Jump to the [documentation index](docs/README.md) �
   - [nikic/sample_prof](https://github.com/nikic/sample_prof)
 - Investigating the cause of a bug or performance failure
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
-- [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.12.x/docs/memory-profiler.md)
-- [Automatic memory analysis report](docs/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
-- [Interactive memory exploration](docs/rmem-explore-and-serve.md): browse `.rmem` memory snapshots with `rmem:explore` (TUI with sandwich view, class/type rankings, cycle visualization, global search), run `rmem:serve` as a persistent query server, or connect AI assistants via `rmem:mcp` (MCP protocol)
-- [Analyzing `.rbt` traces in the terminal](docs/rbt-analyze-and-explore.md): pipe a binary trace into `rbt:analyze` for one-shot text reports (hot frames, callers/callees of a regex, live tail), or open `rbt:explore` for an interactive sandwich/flame/tree TUI
-- [Condition-based monitoring](docs/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
-- [Variable inspection](docs/peek-var-command.md): read PHP variable values from a running process without modifying it
-- [Per-sample variable peek in traces](docs/trace-var-command.md): attach PHP variable values (request URI, user id, SQL query, ...) to each trace sample so you can join runtime state to hot stacks
-- [Sidecar daemon](docs/sidecar.md): run a daemon that accepts on-demand memory dump requests from PHP processes via Unix socket — no FFI needed in the application, ideal for memory_limit crash analysis and CI regression detection
-- [Post-mortem analysis from a core dump](docs/coredump.md): run the same memory analyzer against an ELF core file (from `gcore`, `systemd-coredump`, kernel `core_pattern`, ...) when the process has already died or when live attachment isn't possible
+- [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.12.x/docs/memory/memory-profiler.md)
+- [Automatic memory analysis report](docs/memory/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
+- [Interactive memory exploration](docs/memory/rmem-explore-and-serve.md): browse `.rmem` memory snapshots with `rmem:explore` (TUI with sandwich view, class/type rankings, cycle visualization, global search), run `rmem:serve` as a persistent query server, or connect AI assistants via `rmem:mcp` (MCP protocol)
+- [Analyzing `.rbt` traces in the terminal](docs/tracing/rbt-analyze-and-explore.md): pipe a binary trace into `rbt:analyze` for one-shot text reports (hot frames, callers/callees of a regex, live tail), or open `rbt:explore` for an interactive sandwich/flame/tree TUI
+- [Condition-based monitoring](docs/monitoring/watch-command.md): automatically trigger memory dumps, trace captures, or alerts when memory thresholds, function calls, or variable conditions are met
+- [Variable inspection](docs/inspection/peek-var-command.md): read PHP variable values from a running process without modifying it
+- [Per-sample variable peek in traces](docs/inspection/trace-var-command.md): attach PHP variable values (request URI, user id, SQL query, ...) to each trace sample so you can join runtime state to hot stacks
+- [Sidecar daemon](docs/monitoring/sidecar.md): run a daemon that accepts on-demand memory dump requests from PHP processes via Unix socket — no FFI needed in the application, ideal for memory_limit crash analysis and CI regression detection
+- [Post-mortem analysis from a core dump](docs/memory/coredump.md): run the same memory analyzer against an ELF core file (from `gcore`, `systemd-coredump`, kernel `core_pattern`, ...) when the process has already died or when live attachment isn't possible
 
 ## How it works
 It's implemented by using following techniques:
@@ -66,7 +66,7 @@ Other features of reli that phpspy does not currently have include:
 - Customize output format with PHP templates
 - Get running opcodes of the PHP-VM
 - Automatic retrieval of the target PHP version from stripped PHP binaries
-- Output traces in speedscope, pprof, folded stacks, callgrind, or [compact binary (`.rbt`)](docs/binary-trace-format.md) format
+- Output traces in speedscope, pprof, folded stacks, callgrind, or [compact binary (`.rbt`)](docs/tracing/binary-trace-format.md) format
 - Deeply analyzing memory usage of the target process
 - Collecting native (C-level) stack traces alongside PHP traces via DWARF `.eh_frame` unwinding
 - Resolving JIT-compiled function names via perf map and GDB JIT interface
@@ -207,7 +207,7 @@ sudo php ./reli inspector:memory -p <pid> -f json >snapshot.json
 
 Key options: `-f/--output-format=json|sqlite3|binary|mysql|postgresql|report|report-json`, `-o/--output`, `--stop-process/--no-stop-process`, `--pretty-print`, `--db-host`/`--db-port`/`--db-name`/`--db-user`/`--db-password`, `--memory-usage-error-file`/`--memory-usage-error-line`.
 
-See [docs/memory-profiler.md](docs/memory-profiler.md) for the full memory pipeline, [docs/memory-dump.md](docs/memory-dump.md) for the offline `inspector:memory:dump` flow, and [docs/coredump.md](docs/coredump.md) for post-mortem analysis from a core file.
+See [docs/memory/memory-profiler.md](docs/memory/memory-profiler.md) for the full memory pipeline, [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for the offline `inspector:memory:dump` flow, and [docs/memory/coredump.md](docs/memory/coredump.md) for post-mortem analysis from a core file.
 
 ## Watch: Condition-Based Process Monitoring
 
@@ -239,7 +239,7 @@ Available actions: `memory-dump` (default), `trace`, `log`, `exec`.
 
 Rate limiting: `--cooldown` (with exponential backoff), `--max-triggers-per-hour`, `--max-dump-size`.
 
-See [docs/watch-command.md](docs/watch-command.md) for full documentation.
+See [docs/monitoring/watch-command.md](docs/monitoring/watch-command.md) for full documentation.
 
 ## Peek Variable: One-Shot Variable Inspection
 
@@ -258,7 +258,7 @@ See [docs/watch-command.md](docs/watch-command.md) for full documentation.
 
 Supported scopes: `global::$var`, `local::func()$var`, `static::Class::$prop`, `func_static::func()$var`, `memory::memory_get_usage`.
 
-See [docs/peek-var-command.md](docs/peek-var-command.md) for full documentation.
+See [docs/inspection/peek-var-command.md](docs/inspection/peek-var-command.md) for full documentation.
 
 ## Trace Var Peek: Per-Sample Variable Inspection in Traces
 
@@ -298,7 +298,7 @@ Sample phpspy output:
 
 The same expression grammar as `inspector:peek-var --var` is supported, including nested access (`[key]`, `->prop`). Works with `inspector:daemon` in all three output modes (per-worker `rbt`, `rbt-bundled`, and template text), and with `--with-native-trace` for merged native+PHP traces.
 
-See [docs/trace-var-command.md](docs/trace-var-command.md) for full documentation — including rate-limit options (`--trace-var-every`, `--trace-var-on-function`), RLE implications in rbt, and daemon mode behaviour.
+See [docs/inspection/trace-var-command.md](docs/inspection/trace-var-command.md) for full documentation — including rate-limit options (`--trace-var-every`, `--trace-var-on-function`), RLE implications in rbt, and daemon mode behaviour.
 
 ## Examples
 ### Trace a script
@@ -363,7 +363,7 @@ $ ./reli rbt:explore trace.rbt
 $ ./reli rbt:analyze trace.rbt
 ```
 
-See [docs/rbt-analyze-and-explore.md](docs/rbt-analyze-and-explore.md) for the TUI / analyser tour and [docs/binary-trace-format.md](docs/binary-trace-format.md) for the format specification.
+See [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md) for the TUI / analyser tour and [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md) for the format specification.
 
 ### Daemon mode
 ```bash
@@ -524,7 +524,7 @@ $ ./reli rbt:recover <corrupted.rbt >recovered.rbt
 
 ![flame](https://user-images.githubusercontent.com/6488121/153741551-3f0fc730-c748-4908-b8ac-7c3f46a5bdbc.svg)
 
-See [docs/binary-trace-format.md](docs/binary-trace-format.md) for the `.rbt` specification and [#101](https://github.com/reliforp/reli-prof/pull/101) for the original speedscope integration.
+See [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md) for the `.rbt` specification and [#101](https://github.com/reliforp/reli-prof/pull/101) for the original speedscope integration.
 
 ### Dump and analyse memory
 
@@ -556,7 +556,7 @@ $ php ./reli inspector:rmem:explore snapshot.db
 
 Only NTS targets are supported for now.
 
-See [docs/memory-dump.md](docs/memory-dump.md) for capture options (`--exclude-heap`, `--include-binary`, …), [docs/rmem-explore-and-serve.md](docs/rmem-explore-and-serve.md) for the TUI, [docs/memory-report.md](docs/memory-report.md) for reports and comparisons, [docs/coredump.md](docs/coredump.md) for post-mortem analysis from a core file, and [docs/memory-profiler.md](docs/memory-profiler.md) for the JSON + `jq` deep-dive (the original workflow — still supported, just no longer the first recommendation).
+See [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for capture options (`--exclude-heap`, `--include-binary`, …), [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md) for the TUI, [docs/memory/memory-report.md](docs/memory/memory-report.md) for reports and comparisons, [docs/memory/coredump.md](docs/memory/coredump.md) for post-mortem analysis from a core file, and [docs/memory/memory-profiler.md](docs/memory/memory-profiler.md) for the JSON + `jq` deep-dive (the original workflow — still supported, just no longer the first recommendation).
 
 ### Automatic analysis report
 
@@ -573,7 +573,7 @@ Or generate the report directly:
 $ sudo php ./reli i:m -p <pid> -f report
 ```
 
-The report identifies dominant classes, circular references, choke points, deduplication candidates, and more — with severity, hypothesis, and next steps for each finding. See [docs/memory-report.md](docs/memory-report.md) for details.
+The report identifies dominant classes, circular references, choke points, deduplication candidates, and more — with severity, hypothesis, and next steps for each finding. See [docs/memory/memory-report.md](docs/memory/memory-report.md) for details.
 
 ### Comparing two snapshots
 
@@ -589,7 +589,7 @@ $ php ./reli inspector:memory:compare before.db after.db
 $ php ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
 ```
 
-The comparison report shows summary deltas, type breakdown deltas, per-class memory changes (added/removed/changed), and findings diff (new/resolved/changed issues). Use `--threshold 5` to filter changes smaller than 5%. See [docs/memory-report.md](docs/memory-report.md) for details.
+The comparison report shows summary deltas, type breakdown deltas, per-class memory changes (added/removed/changed), and findings diff (new/resolved/changed issues). Use `--threshold 5` to filter changes smaller than 5%. See [docs/memory/memory-report.md](docs/memory/memory-report.md) for details.
 
 ## Binary analysis cache
 Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.

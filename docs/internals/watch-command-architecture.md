@@ -8,7 +8,7 @@ and daemon (`--target-regex`).
 
 `inspector:peek-var` reads variable values directly using `VariableReader`
 without the trigger/action/cooldown machinery — see
-[peek-var-command.md](../peek-var-command.md).
+[peek-var-command.md](../inspection/peek-var-command.md).
 
 ## Data Flow
 

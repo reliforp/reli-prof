@@ -103,5 +103,5 @@ php ./reli inspector:memory:analyze snapshot.relimem \
 - [memory-profiler.md](memory-profiler.md) — online analysis (`inspector:memory`)
 - [memory-profiler-database.md](memory-profiler-database.md) — SQL querying of analysis results
 - [memory-report.md](memory-report.md) — automated analysis reports
-- [watch-command.md](watch-command.md) — condition-triggered dumps
-- [sidecar.md](sidecar.md) — daemon mode for on-demand dumps
+- [watch-command.md](../monitoring/watch-command.md) — condition-triggered dumps
+- [sidecar.md](../monitoring/sidecar.md) — daemon mode for on-demand dumps
