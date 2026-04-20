@@ -11,7 +11,9 @@ this file links out to a dedicated doc or a section of the top-level
 - How it works (architecture overview) — [README § How it works](../README.md#how-it-works)
 - Supported PHP versions and platforms — [README § Requirements](../README.md#requirements)
 
-## Profile CPU
+## Capture call traces
+
+Reli samples the call stack on a timer, so each trace reflects what the VM is doing over wall-clock time — including I/O, lock waits, and sleeps, not just on-CPU work.
 
 | I want to... | Use | More |
 |---|---|---|
@@ -24,7 +26,7 @@ this file links out to a dedicated doc or a section of the top-level
 | Use phpspy as the fast C backend, with reli-driven ZTS support | `phpspy:trace`, `phpspy:daemon` | [README § Hybrid phpspy mode](../README.md#hybrid-phpspy-mode) |
 | Attach a PHP variable to every sample | `inspector:trace --trace-var=…` | [trace-var-command.md](trace-var-command.md) |
 
-## Analyse CPU traces
+## Analyse call traces
 
 | I want to... | Use | More |
 |---|---|---|
@@ -34,18 +36,24 @@ this file links out to a dedicated doc or a section of the top-level
 | Decode `.rbt` back to phpspy text | `converter:phpspy` | [binary-trace-format.md](binary-trace-format.md) |
 | Recover a corrupted or truncated `.rbt` file | `rbt:recover` | [binary-trace-format.md](binary-trace-format.md) |
 
-## Profile memory / find leaks
+## Capture memory snapshots
 
 | I want to... | Use | More |
 |---|---|---|
-| Live snapshot → interactive explorer **(recommended)** | `inspector:memory -f sqlite3 -o snap.db` then `inspector:rmem:explore snap.db` | [rmem-explore-and-serve.md](rmem-explore-and-serve.md) |
-| Prioritised findings report | `inspector:memory:report snap.db` (or `inspector:memory -f report`) | [memory-report.md](memory-report.md) |
+| Snapshot a live process to SQLite **(recommended)** | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
 | Capture once, analyse later / on another machine | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
+| Capture from a crashed process (core file) | `inspector:coredump` | [coredump.md](coredump.md) |
+| Capture as JSON (for `jq`-based ad-hoc inspection) | `inspector:memory -p <pid> -f json` | [memory-profiler.md](memory-profiler.md) |
+
+## Analyse memory snapshots
+
+| I want to... | Use | More |
+|---|---|---|
+| Browse interactively in a TUI **(recommended)** | `inspector:rmem:explore snap.db` | [rmem-explore-and-serve.md](rmem-explore-and-serve.md) |
+| Get a prioritised findings report | `inspector:memory:report snap.db` (or capture with `-f report`) | [memory-report.md](memory-report.md) |
 | Compare two snapshots (regression / leak tracking) | `inspector:memory:compare before.db after.db` | [memory-report.md](memory-report.md) |
-| Analyse a crashed process from its core file | `inspector:coredump` | [coredump.md](coredump.md) |
 | Query a snapshot's SQL directly | `inspector:rmem:serve` or open the SQLite file | [rmem-explore-and-serve.md](rmem-explore-and-serve.md), [memory-profiler-database.md](memory-profiler-database.md) |
 | Let an AI assistant explore a snapshot | `inspector:rmem:mcp` | [rmem-explore-and-serve.md](rmem-explore-and-serve.md) |
-| Use the original JSON + `jq` workflow | `inspector:memory -f json` | [memory-profiler.md](memory-profiler.md) |
 
 ## Monitor production
 
