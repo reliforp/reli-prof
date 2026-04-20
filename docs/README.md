@@ -7,7 +7,7 @@ this file links out to a dedicated doc or a section of the top-level
 
 ## Getting started
 
-- Install and first run — [README § Installation](../README.md#installation)
+- **New here?** [getting-started.md](getting-started.md) walks you from install to your first trace in 5 minutes.
 - How it works (architecture overview) — [README § How it works](../README.md#how-it-works)
 - Supported PHP versions and platforms — [README § Requirements](../README.md#requirements)
 

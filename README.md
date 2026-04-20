@@ -8,7 +8,7 @@
 
 Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler. 
 
-Looking for a specific task? Jump to the [documentation index](docs/README.md) — it maps "I want to X" to the right command and doc.
+New here? [docs/getting-started.md](docs/getting-started.md) walks from install to your first trace. Looking for a specific task? The [documentation index](docs/README.md) maps "I want to X" to the right command and doc.
 
 ## What can I use this for?
 - Detecting and visualizing bottlenecks in PHP scripts
