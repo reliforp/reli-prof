@@ -11,9 +11,9 @@ this file links out to a dedicated doc or a section of the top-level
 - How it works (architecture overview) — [README § How it works](../README.md#how-it-works)
 - Supported PHP versions and platforms — [README § Requirements](../README.md#requirements)
 
-## Capture call traces
+## Capture call traces (where time is spent)
 
-Reli samples the call stack on a timer, so each trace reflects what the VM is doing over wall-clock time — including I/O, lock waits, and sleeps, not just on-CPU work.
+Reli samples the call stack on a timer, so each trace reflects what the VM is doing over wall-clock time — including I/O, lock waits, and sleeps, not just on-CPU work. Aggregated across many samples, this shows where your code spends its time.
 
 | I want to... | Use | More |
 |---|---|---|
@@ -26,7 +26,7 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Use phpspy as the fast C backend, with reli-driven ZTS support | `phpspy:trace`, `phpspy:daemon` | [README § Hybrid phpspy mode](../README.md#hybrid-phpspy-mode) |
 | Attach a PHP variable to every sample | `inspector:trace --trace-var=…` | [trace-var-command.md](trace-var-command.md) |
 
-## Analyse call traces
+## Analyse call traces (where time is spent)
 
 | I want to... | Use | More |
 |---|---|---|
