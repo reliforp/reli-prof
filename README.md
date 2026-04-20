@@ -2,8 +2,8 @@
 ![Minimum PHP version: 8.5.0](https://img.shields.io/badge/php-8.5.0%2B-blue.svg)
 [![Packagist](https://img.shields.io/packagist/v/reliforp/reli-prof.svg)](https://packagist.org/packages/reliforp/reli-prof)
 [![Github Actions](https://github.com/reliforp/reli-prof/workflows/build/badge.svg)](https://github.com/reliforp/reli-prof/actions)
-[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/reliforp/reli-prof/badges/quality-score.png?b=0.11.x)](https://scrutinizer-ci.com/g/reliforp/reli-prof/?branch=0.11.x)
-[![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.11.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.11.x)
+[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/reliforp/reli-prof/badges/quality-score.png?b=0.12.x)](https://scrutinizer-ci.com/g/reliforp/reli-prof/?branch=0.12.x)
+[![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.12.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.12.x)
 ![Psalm coverage](https://shepherd.dev/github/reliforp/reli-prof/coverage.svg?)
 
 Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler. 
@@ -16,7 +16,7 @@ Reli is a sampling profiler (or a VM state inspector) written in PHP. It can rea
   - [nikic/sample_prof](https://github.com/nikic/sample_prof)
 - Investigating the cause of a bug or performance failure
   - Even if a PHP script is in an unexplained unresponsive state, you can use this to find out what it is doing internally.
-- [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md)
+- [Finding memory bottlenecks or memory leaks](https://github.com/reliforp/reli-prof/blob/0.12.x/docs/memory-profiler.md)
 - [Automatic memory analysis report](docs/memory-report.md): generate prioritized findings from a memory snapshot — dominant classes, cycles, choke points, blame allocation, and more
 - [Interactive memory exploration](docs/rmem-explore-and-serve.md): browse `.rmem` memory snapshots with `rmem:explore` (TUI with sandwich view, class/type rankings, cycle visualization, global search), run `rmem:serve` as a persistent query server, or connect AI assistants via `rmem:mcp` (MCP protocol)
 - [Analyzing `.rbt` traces in the terminal](docs/rbt-analyze-and-explore.md): pipe a binary trace into `rbt:analyze` for one-shot text reports (hot frames, callers/callees of a regex, live tail), or open `rbt:explore` for an interactive sandwich/flame/tree TUI
@@ -847,7 +847,7 @@ $ cat 2183131.memory_dump.json | jq 'path(..|objects|select(."#reference_node_id
 
 The refcount of the object recorded in the memory location is 6 in this example. Calling methods via `$obj->call()` adds refcount by 1, but `$this->call()` doesn't add refcount. References from objects_store don't add refcount too. So all 6 references are analyzed here.
 
-See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.11.x/docs/memory-profiler.md) for more info.
+See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.12.x/docs/memory-profiler.md) for more info.
 
 ### Automatic analysis report
 
