@@ -349,11 +349,38 @@ $ sudo php ./reli i:trace -p 2182685
 ```
 The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
 
+### Capture to a binary trace (`.rbt`)
+For anything beyond a quick eyeball, capture straight to reli's compact binary format and analyse it offline with the `rbt:*` tools. `.rbt` compresses ~370× vs phpspy text (measured: 70 MB phpspy → 180 KB `.rbt`) via string interning, stack dedup, and run-length encoding.
+
+```bash
+# Capture a single process
+$ sudo php ./reli i:trace -p <pid> -F rbt -o trace.rbt
+
+# Browse it interactively in the terminal
+$ ./reli rbt:explore trace.rbt
+
+# Or get a one-shot text report (hot frames, callers / callees, live tail)
+$ ./reli rbt:analyze trace.rbt
+```
+
+See [docs/rbt-analyze-and-explore.md](docs/rbt-analyze-and-explore.md) for the TUI / analyser tour and [docs/binary-trace-format.md](docs/binary-trace-format.md) for the format specification.
+
 ### Daemon mode
 ```bash
+# Live view
 $ sudo php ./reli i:daemon -P "^/usr/sbin/httpd"
-``` 
+
+# Per-worker .rbt files (zero IPC overhead)
+$ sudo php ./reli i:daemon -P "^php-fpm" -F rbt -o ./traces/
+```
 The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
+
+### top-like mode
+UNIX-`top`-style live aggregated view across matching processes:
+
+```bash
+$ sudo php ./reli i:top -P "^php-fpm"
+```
 
 ### Get the address of EG
 ```bash
@@ -395,7 +422,10 @@ $ sudo php ./reli phpspy:trace -p <pid> --phpspy-args="-c -1"
 ```
 
 ### Show currently executing opcodes at traces
-If a user wants to profile a really CPU-bound application, then he or she wouldn't only want to know what line is slow, but what opcode is. In such cases, use `--template=phpspy_with_opcode` with `inspector:trace` or `inspector:daemon`.
+If a user wants to profile a really CPU-bound application, then he or she wouldn't only want to know what line is slow, but what opcode is.
+
+- **When capturing to `.rbt`**, the opcode is always recorded. Reveal it during analysis with `./reli rbt:analyze --with-opcode trace.rbt`, or press `c` inside `rbt:explore` to toggle the opcode column.
+- **For phpspy text output**, add `--template=phpspy_with_opcode` to `inspector:trace` or `inspector:daemon`:
 
 ```bash
 $ sudo php ./reli i:trace --template=phpspy_with_opcode -p <pid of the target process or thread>
@@ -428,17 +458,6 @@ $ docker pull reliforp/reli-prof
 $ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof i:trace -p <pid of the target process or thread>
 ```
 
-### Generate flamegraphs from traces
-```bash
-$ ./reli i:trace -o traces -- php ./vendor/bin/psalm.phar --no-cache
-$ ./reli c:flamegraph <traces >flame.svg
-$ google-chrome flame.svg
-```
-
-The generated flamegraph below visualizes traces from the execution of the psalm command.
-
-![flame](https://user-images.githubusercontent.com/6488121/153741551-3f0fc730-c748-4908-b8ac-7c3f46a5bdbc.svg)
-
 ### Collect native (C-level) stack traces
 ```bash
 $ sudo php ./reli i:trace --with-native-trace -p <pid>
@@ -458,10 +477,12 @@ $ sudo php ./reli i:trace --with-native-trace -p <pid>
 
 Native frames are labeled with `[native]:0` and show `module::symbol+offset`. PHP frames are placed on the callee side of `execute_ex`, reflecting that all PHP execution happens inside the VM's opcode dispatcher.
 
-The output is phpspy-compatible, so it can be directly converted to flamegraphs or speedscope profiles:
+`--with-native-trace` works with every output format. Capture to `.rbt` and drop into `rbt:explore` for interactive analysis of merged native+PHP traces, or convert to a flamegraph:
 ```bash
-$ ./reli i:trace --with-native-trace -o traces -p <pid>
-$ ./reli c:flamegraph <traces >flame_native.svg
+$ sudo php ./reli i:trace --with-native-trace -p <pid> -F rbt -o trace.rbt
+$ ./reli rbt:explore trace.rbt
+# ...or:
+$ ./reli converter:flamegraph <trace.rbt >flame_native.svg
 ```
 
 ### Collect native traces during interpreter initialization / shutdown
@@ -482,196 +503,60 @@ $ sudo php ./reli i:trace --with-native-trace -p $!
 
 For DWARF-based unwinding through JIT frames, use `opcache.jit_debug=0x100` (GDB JIT interface).
 
-### Generate the [speedscope](https://github.com/jlfwong/speedscope) format from phpspy compatible traces
-```bash
-$ sudo php ./reli i:trace -p <pid of the target process or thread> >traces
-$ ./reli c:speedscope <traces >profile.speedscope.json
-$ speedscope profile.speedscope.json
-```
-
-See [#101](https://github.com/reliforp/reli-prof/pull/101).
-
-### Generate the callgrind format output from phpspy compatible traces and visualize it with kcachegrind
-```bash
-$ ./reli c:callgrind <traces >callgrind.out
-$ kcachegrind callgrind.out
-  ```
-
-### Binary trace format (`.rbt`)
-
-Reli includes a compact binary trace format that achieves **~370x compression** vs phpspy text (measured: 70 MB phpspy → 180 KB rbt). It uses string interning, stack deduplication, and run-length encoding.
+### Convert traces to other formats
+`converter:*` reads both `.rbt` and phpspy text (auto-detected) and writes flamegraph SVG, speedscope, pprof, callgrind, folded stacks, or `.rbt`:
 
 ```bash
-# Capture directly to rbt (single process)
-$ sudo php ./reli i:trace -p <pid> -F rbt -o trace.rbt
-
-# Capture with daemon (per-worker files, zero IPC overhead)
-$ sudo php ./reli i:daemon -F rbt -o /path/to/output_dir/
-
-# Convert between formats (auto-detects rbt or phpspy input)
+# From .rbt (preferred — smaller, lossless, no re-parse cost)
+$ ./reli converter:flamegraph <trace.rbt >flame.svg
+$ ./reli converter:speedscope <trace.rbt >profile.speedscope.json
 $ ./reli converter:pprof <trace.rbt >profile.pb.gz
-$ ./reli converter:speedscope <trace.rbt >profile.json
-$ ./reli converter:folded <trace.rbt | flamegraph.pl >flame.svg
-$ ./reli converter:phpspy <trace.rbt     # decode to text
+$ ./reli converter:callgrind <trace.rbt >callgrind.out && kcachegrind callgrind.out
+$ ./reli converter:folded <trace.rbt | ./tools/flamegraph/flamegraph.pl >flame.svg
+$ ./reli converter:phpspy <trace.rbt     # decode to phpspy text
 
-# Also works with phpspy text input
-$ ./reli converter:pprof <traces >profile.pb.gz
+# Same commands work on phpspy text input too
+$ ./reli converter:speedscope <traces >profile.speedscope.json
 
-# Recover corrupted/truncated files
+# Recover a corrupted / truncated .rbt
 $ ./reli rbt:recover <corrupted.rbt >recovered.rbt
 ```
 
-See [docs/binary-trace-format.md](docs/binary-trace-format.md) for the full specification.
+![flame](https://user-images.githubusercontent.com/6488121/153741551-3f0fc730-c748-4908-b8ac-7c3f46a5bdbc.svg)
 
-### Dump the memory usage of the target process
+See [docs/binary-trace-format.md](docs/binary-trace-format.md) for the `.rbt` specification and [#101](https://github.com/reliforp/reli-prof/pull/101) for the original speedscope integration.
+
+### Dump and analyse memory
 
 > [!CAUTION]
-> **Don't upload the output of this command to the internet, because it can contain sensitive information of the target script!!!**
+> **Don't upload the output of this command to the internet — it can contain sensitive information of the target script!**
+
+The recommended flow is **dump now, analyse later**: `inspector:memory:dump` only stops the target long enough to copy its memory pages, and the heap walk runs offline afterwards (possibly on a different machine).
 
 ```bash
-$ sudo php ./reli i:memory -p 2183131 >2183131.memory_dump.json
-$ cat 2183131.memory_dump.json | jq .summary
+# 1. Dump the target's memory to a portable file (short stop on the target)
+$ sudo php ./reli inspector:memory:dump -p <pid> -o snapshot.relimem
+
+# 2. Build the analysable memory graph (offline; can be on a different host)
+$ php ./reli inspector:memory:analyze snapshot.relimem -f sqlite3 -o snapshot.db
+
+# 3a. Browse it interactively
+$ php ./reli inspector:rmem:explore snapshot.db
+
+# 3b. Or get a prioritised findings report
+$ php ./reli inspector:memory:report snapshot.db
+```
+
+For ad-hoc / local use where the longer stop doesn't matter, the one-shot `inspector:memory` command captures and analyses in a single call:
+
+```bash
+$ sudo php ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
+$ php ./reli inspector:rmem:explore snapshot.db
 ```
 
 Only NTS targets are supported for now.
 
-The output would be like the following.
-
-```bash
-[
-  {
-    "zend_mm_heap_total": 10485760,
-    "zend_mm_heap_usage": 7642504,
-    "zend_mm_chunk_total": 10485760,
-    "zend_mm_chunk_usage": 7642504,
-    "zend_mm_huge_total": 0,
-    "zend_mm_huge_usage": 0,
-    "vm_stack_total": 262144,
-    "vm_stack_usage": 8224,
-    "compiler_arena_total": 917504,
-    "compiler_arena_usage": 815480,
-    "possible_allocation_overhead_total": 549645,
-    "possible_array_overhead_total": 378768,
-    "memory_get_usage": 8263440,
-    "memory_get_real_usage": 12582912,
-    "cached_chunks_size": 2097152,
-    "heap_memory_analyzed_percentage": 92.48574443573136,
-    "php_version": "v82"
-  }
-]
-
-```
-
-And you can get the call trace from the dump.
-
-```bash
-$ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|.function_name'
-"time_nanosleep"
-"Reli\\Lib\\Loop\\LoopMiddleware\\NanoSleepMiddleware::invoke"
-"Reli\\Lib\\Loop\\LoopMiddleware\\KeyboardCancelMiddleware::invoke"
-"Reli\\Lib\\Loop\\LoopMiddleware\\RetryOnExceptionMiddleware::invoke"
-"Reli\\Lib\\Loop\\Loop::invoke"
-"Reli\\Command\\Inspector\\GetTraceCommand::execute"
-"Symfony\\Component\\Console\\Command\\Command::run"
-"Symfony\\Component\\Console\\Application::doRunCommand"
-"Symfony\\Component\\Console\\Application::doRun"
-"Symfony\\Component\\Console\\Application::run"
-""
-```
-
-You can also see the contents of the local variables of a specific call frame.
-
-```bash
-$ cat 2183131.memory_dump.json | jq '.context.call_frames[]|objects|select(.function_name=="time_nanosleep")'
-{
-  "#node_id": 1,
-  "#type": "CallFrameContext",
-  "function_name": "time_nanosleep",
-  "local_variables": {
-    "#node_id": 2,
-    "#type": "CallFrameVariableTableContext",
-    "$args_to_internal_function[0]": {
-      "#node_id": 3,
-      "#type": "ScalarValueContext",
-      "value": 0
-    },
-    "$args_to_internal_function[1]": {
-      "#node_id": 4,
-      "#type": "ScalarValueContext",
-      "value": 9743095
-    }
-  }
-}
-```
-
-If a context is referencing another location in the dump file, it can also be extracted with `jq`.
-
-```bash
-$ cat 2183131.memory_dump.json | jq '.context.call_frames["7"].local_variables'
-{
-  "#node_id": 1433,
-  "#type": "CallFrameVariableTableContext",
-  "command": {
-    "#reference_node_id": 368
-  },
-  "input": {
-    "#reference_node_id": 1395
-  },
-  "output": {
-    "#reference_node_id": 54
-  },
-  "helper": {
-    "#reference_node_id": 591
-  },
-  "commandSignals": {
-    "#reference_node_id": 69
-  }
-}
-
-$ cat 2183131.memory_dump.json | jq '..|objects|select(."#node_id"==368)|.' | head -n 20
-{
-  "#node_id": 368,
-  "#type": "ObjectContext",
-  "#locations": [
-    {
-      "address": 139988652434432,
-      "size": 472,
-      "refcount": 6,
-      "type_info": 3221409800,
-      "class_name": "Reli\\Command\\Inspector\\GetTraceCommand"
-    }
-  ],
-  "object_handlers": {
-    "#reference_node_id": 7
-  },
-  "object_properties": {
-    "#node_id": 369,
-    "#type": "ObjectPropertiesContext",
-    "php_globals_finder": {
-      "#node_id": 370,
-      "#type": "ObjectContext",
-      "#locations": [
-        {
-```
-
-You can also extract all references to a specific object.
-
-```bash
-$ cat 2183131.memory_dump.json | jq 'path(..|objects|select(."#reference_node_id"==368 or ."#node_id"==368))|join(".")'
-"context.call_frames.1.this.chain.callable.closure.this_ptr"
-"context.call_frames.1.this.chain.callable.closure.this_ptr.application.commands.array_elements.inspector:trace.value"
-"context.call_frames.1.this.chain.callable.closure.this_ptr.application.runningCommand"
-"context.call_frames.5.this"
-"context.call_frames.6.this"
-"context.call_frames.7.local_variables.command"
-"context.call_frames.8.local_variables.command"
-"context.objects_store.285"
-
-```
-
-The refcount of the object recorded in the memory location is 6 in this example. Calling methods via `$obj->call()` adds refcount by 1, but `$this->call()` doesn't add refcount. References from objects_store don't add refcount too. So all 6 references are analyzed here.
-
-See [./docs/memory-profiler.md](https://github.com/reliforp/reli-prof/blob/0.12.x/docs/memory-profiler.md) for more info.
+See [docs/memory-dump.md](docs/memory-dump.md) for capture options (`--exclude-heap`, `--include-binary`, …), [docs/rmem-explore-and-serve.md](docs/rmem-explore-and-serve.md) for the TUI, [docs/memory-report.md](docs/memory-report.md) for reports and comparisons, [docs/coredump.md](docs/coredump.md) for post-mortem analysis from a core file, and [docs/memory-profiler.md](docs/memory-profiler.md) for the JSON + `jq` deep-dive (the original workflow — still supported, just no longer the first recommendation).
 
 ### Automatic analysis report
 
