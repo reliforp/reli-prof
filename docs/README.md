@@ -36,21 +36,28 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Decode `.rbt` back to phpspy text | `converter:phpspy` | [binary-trace-format.md](binary-trace-format.md) |
 | Recover a corrupted or truncated `.rbt` file | `rbt:recover` | [binary-trace-format.md](binary-trace-format.md) |
 
-## Produce memory snapshots
+## Produce a memory graph
 
-A snapshot is the analysable form of a PHP heap — SQLite by default, optionally JSON or an inline findings report. Production has two stages: **capture** raw memory, then **build** the heap graph from it. `inspector:memory:dump` is pure capture — a quick raw-memory copy that writes a portable `.relimem` file. `inspector:memory`, `inspector:memory:analyze`, and `inspector:coredump` all do the build; they run the same heap walk against three heap sources (a live process, a `.relimem` dump, or an ELF core file).
+reli reads a running PHP process's memory and reconstructs it as a **memory graph** — values (objects, arrays, strings, call frames...) as nodes, references between them as edges. The graph is stored as SQLite (the default; every analyser below reads this), JSON (for `jq`-based ad-hoc inspection), or an inline findings report.
 
-Because the build stops the target for as long as the heap walk takes, **dump now and build later is the kindest choice in production** — `inspector:memory:dump` finishes in a fraction of the time a full analysis would. `inspector:memory` fuses both stages into one command at the cost of a longer stop; use it for ad-hoc local inspection or small heaps.
+The pipeline has two stages:
+
+1. **Dump** — copy the target's raw memory. Fast; the target is only stopped for as long as the copy takes.
+2. **Build** — walk those bytes as PHP internals to reconstruct the graph. When done against a live target, the target stays stopped for the whole walk.
+
+`inspector:memory:dump` does pure dump (writes a portable `.relimem` file). `inspector:memory`, `inspector:memory:analyze`, and `inspector:coredump` do the build — they run the same heap walk against three memory sources (a live process, a `.relimem` file, or an ELF core file).
+
+**In production, dump now and build later.** `inspector:memory:dump` finishes in a fraction of the time a full `inspector:memory` run would, so the target stays responsive. `inspector:memory` fuses both stages into one command at the cost of a longer stop — convenient for ad-hoc local inspection or small heaps.
 
 | I want to... | Use | More |
 |---|---|---|
-| Capture now (short stop), build the snapshot later **(recommended)** | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
-| Capture + build in one step (longer stop, one command) | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
+| Dump now (short stop), build the graph offline **(recommended)** | `inspector:memory:dump` → `inspector:memory:analyze` | [memory-dump.md](memory-dump.md) |
+| Build from a live process in one step (longer stop) | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory-profiler.md](memory-profiler.md) |
 | Build from a core file (crashed / post-mortem) | `inspector:coredump` | [coredump.md](coredump.md) |
 
 Tip: pass `-f json` to any build command for `jq`-friendly output, or `-f report` to go straight to a prioritised findings report.
 
-## Analyse memory snapshots
+## Analyse a memory graph
 
 | I want to... | Use | More |
 |---|---|---|
