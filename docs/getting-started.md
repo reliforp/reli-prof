@@ -8,17 +8,29 @@ to the [documentation index](README.md) or the [README](../README.md).
 
 reli is a sampling profiler (and VM state inspector) that reads a
 running PHP process from the outside — no extension to load, no code
-changes to the target. Two broad capabilities:
+changes to the target. Four broad capabilities:
 
-- **Where time is spent**: periodic call-stack samples, optionally
-  with C-level frames and executing-opcode detail. Output to a
-  compact binary format (`.rbt`) or phpspy-compatible text.
-- **Where memory is used**: reconstruct the PHP heap into a queryable
-  graph. The default (and fastest) on-disk format is `.rmem` — every
-  analyser reads it natively. Browse it interactively with
+- **Where time is spent** — periodic call-stack samples, optionally
+  with C-level frames and executing-opcode detail. Output to the
+  compact `.rbt` binary format (or phpspy-compatible text) and
+  browse with `rbt:explore` / `rbt:analyze`.
+- **Where memory is used** — reconstruct the PHP heap into a
+  queryable graph. `.rmem` is the fastest on-disk format and is what
+  every analyser reads natively: browse interactively with
   `rmem:explore`, get a prioritised report with `memory:report`, or
-  compare two snapshots to track regressions. SQLite and JSON outputs
-  are also supported for interop.
+  compare two snapshots with `memory:compare`. SQLite and JSON
+  outputs are also supported for interop.
+- **What values flow through** — read PHP variable values from a
+  running process with `inspector:peek-var`, or attach variable
+  values to every trace sample with `inspector:trace --trace-var`
+  so that runtime state sits next to the hot stacks that produced
+  it.
+- **When something goes wrong** — react to runtime conditions.
+  `inspector:watch` triggers a memory dump / trace when memory
+  thresholds, function calls, or variable conditions are met.
+  `inspector:sidecar` accepts on-demand dump requests from the
+  application over a Unix socket — ideal for `memory_limit` crash
+  analysis.
 
 For the full catalogue of tasks-and-commands, see the
 [documentation index](README.md).
