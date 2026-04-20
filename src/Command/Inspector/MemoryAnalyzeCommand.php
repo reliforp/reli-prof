@@ -38,7 +38,7 @@ final class MemoryAnalyzeCommand extends Command
     public function configure(): void
     {
         $this->setName('inspector:memory:analyze')
-            ->setDescription('[experimental] analyze a memory dump file created by inspector:memory:dump')
+            ->setDescription('analyze a memory dump file created by inspector:memory:dump')
         ;
         $this->memory_profiler_settings_from_console_input->setOptions($this);
         $this->addArgument(

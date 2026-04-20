@@ -32,7 +32,7 @@ final class MemoryReportCommand extends Command
     public function configure(): void
     {
         $this->setName('inspector:memory:report')
-            ->setDescription('[experimental] generate analysis report from a memory snapshot SQLite database')
+            ->setDescription('generate analysis report from a memory snapshot SQLite database')
         ;
         $this->addArgument(
             'db-file',

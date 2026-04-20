@@ -49,7 +49,7 @@ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=h
 ```bash
 ./reli inspector:memory --help
 Description:
-  [experimental] get memory usage from an outer process
+  get memory usage from an outer process
 
 Usage:
   inspector:memory [options] [--] [<cmd> [<args>...]]
@@ -83,9 +83,6 @@ Options:
 # Usage
 > [!CAUTION]
 > **Don't upload the output of this command to the internet, because it can contain sensitive information of the target script!!!**
-
-> [!WARNING]  
-> This feature is in an experimental stage and may be less stable than others. The contents of the output may change in the near future.
 
 This tool can be used like this.
 
