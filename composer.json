@@ -39,7 +39,7 @@
     "jetbrains/phpstorm-stubs": "2025.3",
     "php-coveralls/php-coveralls": "2.9.1",
     "psalm/phar": "^6.0",
-    "brianium/paratest": "^7.20"
+    "brianium/paratest": "^7.22"
   },
   "autoload": {
     "files": ["src/Lib/Defer/defer.php"],
