@@ -21,8 +21,9 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Capture to a compact binary file for later analysis **(recommended)** | `inspector:trace -p <pid> -F rbt -o trace.rbt` | [tracing/binary-trace-format.md](tracing/binary-trace-format.md) |
 | Trace many processes at once (e.g. a php-fpm pool) | `inspector:daemon -P <regex>` | [README § Daemon mode](../README.md#daemon-mode) |
 | Live `top`-style aggregation | `inspector:top -P <regex>` | [README § top-like mode](../README.md#top-like-mode) |
-| Include C-level frames | add `--with-native-trace` | [README § Collect native stack traces](../README.md#collect-native-c-level-stack-traces) |
-| See the opcode in phpspy text output (`.rbt` records it unconditionally) | `--template=phpspy_with_opcode` | [README § opcodes](../README.md#show-currently-executing-opcodes-at-traces) |
+| Include C-level frames | add `--with-native-trace` | [tracing/advanced-capture.md](tracing/advanced-capture.md) |
+| See the opcode in phpspy text output (`.rbt` records it unconditionally) | `--template=phpspy_with_opcode` | [tracing/advanced-capture.md](tracing/advanced-capture.md) |
+| Resolve JIT-compiled function names in native traces | `opcache.jit_debug=0x10` + `--with-native-trace` | [tracing/advanced-capture.md](tracing/advanced-capture.md) |
 | Use phpspy as the fast C backend, with reli-driven ZTS support | `phpspy:trace`, `phpspy:daemon` | [README § Hybrid phpspy mode](../README.md#hybrid-phpspy-mode) |
 | Attach a PHP variable to every sample | `inspector:trace --trace-var=…` | [inspection/trace-var-command.md](inspection/trace-var-command.md) |
 

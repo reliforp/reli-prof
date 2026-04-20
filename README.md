@@ -363,93 +363,16 @@ You can pass extra phpspy flags via `--phpspy-args`:
 $ sudo php ./reli phpspy:trace -p <pid> --phpspy-args="-c -1"
 ```
 
-### Show currently executing opcodes at traces
-If a user wants to profile a really CPU-bound application, then he or she wouldn't only want to know what line is slow, but what opcode is.
-
-- **When capturing to `.rbt`**, the opcode is always recorded. Reveal it during analysis with `./reli rbt:analyze --with-opcode trace.rbt`, or press `c` inside `rbt:explore` to toggle the opcode column.
-- **For phpspy text output**, add `--template=phpspy_with_opcode` to `inspector:trace` or `inspector:daemon`:
-
-```bash
-$ sudo php ./reli i:trace --template=phpspy_with_opcode -p <pid of the target process or thread>
-```
-
-The output would be like the following.
-
-```
-0 <VM>::ZEND_ASSIGN <VM>:-1
-1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:33:ZEND_ASSIGN
-2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL
-3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
-
-0 <VM>::ZEND_ASSIGN <VM>:-1
-1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:30:ZEND_ASSIGN
-2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL
-3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
-```
-
-The currently executing opcode becomes the first frame of the callstack.
-So visualizations of the trace like flamegraph can show the usage of opcodes.
-
-For informational purposes, executing opcodes are also added to each end of the call frames. Except for the first frame, opcodes for function calls such as ZEND_DO_FCALL should appear there.
-
-If JIT is enabled at the target process, this information may be slightly inaccurate. To see JIT-compiled function names in traces, use `--with-native-trace` and set `opcache.jit_debug=0x10` on the target process.
-
 ### Use in a docker container and target a process on host
 ```bash
 $ docker pull reliforp/reli-prof
 $ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof i:trace -p <pid of the target process or thread>
 ```
 
-### Collect native (C-level) stack traces
-```bash
-$ sudo php ./reli i:trace --with-native-trace -p <pid>
-0 libc.so.6::clock_nanosleep+0x5a [native]:0
-1 libc.so.6::__nanosleep+0x17 [native]:0
-2 libc.so.6::usleep+0x4c [native]:0
-3 php8.4::zif_usleep+0x42 [native]:0
-4 usleep <internal>:-1
-5 <main> /app/test.php:15
-6 php8.4::execute_ex+0x4dfa [native]:0
-7 php8.4::zend_execute+0x141 [native]:0
-8 php8.4::zend_execute_script+0x56 [native]:0
-9 php8.4::php_execute_script_ex+0x278 [native]:0
-10 libc.so.6::__libc_start_main+0x8b [native]:0
-11 php8.4::_start+0x25 [native]:0
-```
+### Advanced capture: opcodes, native traces, JIT
+`inspector:trace` / `inspector:daemon` can also attach the executing Zend VM opcode, C-level native stack frames (`--with-native-trace`, with optional `--native-trace-anytime`), and JIT-compiled function names to every sample. These combine with any output format and with `--trace-var`.
 
-Native frames are labeled with `[native]:0` and show `module::symbol+offset`. PHP frames are placed on the callee side of `execute_ex`, reflecting that all PHP execution happens inside the VM's opcode dispatcher.
-
-`--with-native-trace` works with every output format. Capture to `.rbt` and drop into `rbt:explore` for interactive analysis of merged native+PHP traces, or convert to a flamegraph:
-```bash
-$ sudo php ./reli i:trace --with-native-trace -p <pid> -F rbt -o trace.rbt
-$ ./reli rbt:explore trace.rbt
-# ...or:
-$ ./reli converter:flamegraph <trace.rbt >flame_native.svg
-```
-
-Symbol resolution specifics:
-
-- **Stripped binaries** are supported — reli uses exported symbols from `.dynsym`.
-- **Separate debug symbol packages** (`-dbgsym` / `-debuginfo`) are loaded when available for full symbol coverage.
-- **JIT-compiled function names** resolve via `/tmp/perf-<pid>.map` when the target process has `opcache.jit_debug=0x10` (see the JIT-compiled code subsection below).
-
-### Collect native traces during interpreter initialization / shutdown
-```bash
-$ sudo php ./reli i:trace --native-trace-anytime -p <pid>
-```
-When `--native-trace-anytime` is used, native C-level traces are collected even when no PHP code is executing (e.g. during module initialization or shutdown). This is useful for investigating interpreter startup performance or extension loading behavior.
-
-### JIT-compiled code in native traces
-When the target PHP process has JIT enabled with `opcache.jit_debug=0x10`, JIT-compiled function names are resolved via `/tmp/perf-<pid>.map`:
-```bash
-$ php -d opcache.jit_debug=0x10 script.php &
-$ sudo php ./reli i:trace --with-native-trace -p $!
-0 [jit]::TRACE-2$fibonacci$4+0x141 [native]:0
-1 php8.4::zend_execute+0x141 [native]:0
-2 <main> /app/test.php:14
-```
-
-For DWARF-based unwinding through JIT frames, use `opcache.jit_debug=0x100` (GDB JIT interface).
+See [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md) for the full walkthrough — opcode reveal in `.rbt` vs. phpspy text, DWARF unwinding, the `opcache.jit_debug` settings, Alpine/musl caveat.
 
 ### Convert traces to other formats
 `converter:*` reads both `.rbt` and phpspy text (auto-detected) and writes flamegraph SVG, speedscope, pprof, callgrind, folded stacks, or `.rbt`:
@@ -543,21 +466,18 @@ $ php ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-t
 The comparison report shows summary deltas, type breakdown deltas, per-class memory changes (added/removed/changed), and findings diff (new/resolved/changed issues). Use `--threshold 5` to filter changes smaller than 5%. See [docs/memory/memory-report.md](docs/memory/memory-report.md) for details.
 
 ## Binary analysis cache
-Reli caches the results of expensive binary analysis operations (ELF symbol resolution, TLS brute force offsets, PHP version detection, etc.) to disk. This dramatically speeds up repeated profiling of the same PHP binary -- for example, ZTS target initialization drops from ~8 seconds to ~5 milliseconds on warm cache.
 
-Cache files are stored under `~/.cache/reli/binary-analysis/` (following the XDG Base Directory specification), keyed by binary fingerprint (device ID + inode + ELF header content). In container environments, Docker's overlayfs can assign the same device ID and inode to different binaries across different images (e.g. `php:8.3` and `php:8.3-zts`), so the ELF header content is included to ensure different binaries always produce different cache keys.
+reli caches expensive binary-analysis results (ELF symbol resolution, ZTS TLS offsets, PHP version detection, …) under `~/.cache/reli/binary-analysis/`. This turns a ~8-second cold start for a ZTS target into ~5 ms on subsequent runs against the same binary.
 
-### Clear the cache
 ```bash
+# Clear the cache
 ./reli cache:clear
+
+# Bypass the cache for a single run
+./reli inspector:trace --no-cache -p <pid>
 ```
 
-### Disable the cache
-All inspector commands accept `--no-cache` to bypass the cache for a single run:
-```bash
-./reli inspector:trace --no-cache -p <pid>
-./reli inspector:daemon --no-cache -P "^php-fpm"
-```
+For what exactly is cached, how keys are computed, and the Docker-overlayfs edge case that shaped the keying scheme, see [docs/internals/binary-analysis-cache.md](docs/internals/binary-analysis-cache.md).
 
 ## Troubleshooting
 ### I get an error message "php module not found" and can't get a trace!
