@@ -194,20 +194,21 @@ sudo php ./reli phpspy:daemon -P "^php-fpm"
 
 Key `phpspy:trace` / `phpspy:daemon` options: `-s/--sleep-ns`, `-b/--buffer-size`, `-H/--rate-hz`, `--phpspy-args` (passthrough to phpspy), `--phpspy-path`, `-o/--output`.
 
-## Dump the memory usage of the target process
-Run the memory analyser against a live PHP process. The output feeds the rest of the memory pipeline (`memory:report`, `rmem:explore`, `memory:compare`).
+## Capture a memory graph
+Reconstruct the target's PHP heap into an analysable graph. `.rmem` is the fastest format and is what every analyser (`rmem:explore`, `memory:report`, `memory:compare`, `rmem:serve`, `rmem:mcp`) reads natively.
 
 ```bash
-# Save to SQLite (recommended for large heaps; feeds rmem:explore and memory:report)
-sudo php ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
+# Recommended for ad-hoc / local use: live one-shot capture
+sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
 
-# Original JSON + jq workflow
-sudo php ./reli inspector:memory -p <pid> -f json >snapshot.json
+# Recommended in production: short-stop dump + offline graph build
+sudo php ./reli inspector:memory:dump -p <pid> -o dump.relimem
+php ./reli inspector:memory:analyze dump.relimem -f binary -o snapshot.rmem
 ```
 
-Key options: `-f/--output-format=json|sqlite3|binary|mysql|postgresql|report|report-json`, `-o/--output`, `--stop-process/--no-stop-process`, `--pretty-print`, `--db-host`/`--db-port`/`--db-name`/`--db-user`/`--db-password`, `--memory-usage-error-file`/`--memory-usage-error-line`.
+Key options: `-f/--output-format=binary|sqlite3|json|report|report-json|mysql|postgresql`, `-o/--output`, `--stop-process/--no-stop-process`, `--pretty-print`, `--db-host`/`--db-port`/`--db-name`/`--db-user`/`--db-password`, `--memory-usage-error-file`/`--memory-usage-error-line`.
 
-See [docs/memory/memory-profiler.md](docs/memory/memory-profiler.md) for the full memory pipeline, [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for the offline `inspector:memory:dump` flow, and [docs/memory/coredump.md](docs/memory/coredump.md) for post-mortem analysis from a core file.
+See [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for the dump-then-analyse flow, [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md) for the interactive TUI, [docs/memory/memory-report.md](docs/memory/memory-report.md) for automated reports and comparisons, [docs/memory/coredump.md](docs/memory/coredump.md) for post-mortem from a core file, and [docs/memory/memory-profiler.md](docs/memory/memory-profiler.md) for the JSON + `jq` deep-dive.
 
 ## Watch: Condition-Based Process Monitoring
 

@@ -1,8 +1,9 @@
 # Database Output for Memory Profiler
 
-The memory profiler supports outputting analysis results to a relational database instead of JSON. This is useful for analyzing large memory snapshots where the JSON output would be too large to handle with tools like `jq`, and enables powerful ad-hoc querying with SQL.
+> [!NOTE]
+> **`.rmem` (`-f binary`) is the primary storage format** — it's the fastest and is what `rmem:explore` / `rmem:serve` / `rmem:mcp` read natively. `memory:report` / `memory:compare` also prefer it. Reach for the SQL-database outputs documented on this page when you specifically need ad-hoc SQL querying, JOIN-based analysis against your own tables, or ingestion into an existing data-warehouse pipeline. (`memory:report` and `memory:compare` accept SQLite too, so you can use the database outputs alongside the normal analysers.)
 
-> **Tip**: SQLite snapshots can also be used with `inspector:memory:report` to generate automatic analysis reports. See [memory-report.md](memory-report.md).
+The memory profiler supports outputting analysis results to a relational database. This is useful for analyzing large memory snapshots without `jq`, and enables ad-hoc querying with SQL.
 
 Supported databases:
 - **SQLite** (`-f sqlite3`) — local file, no server needed
