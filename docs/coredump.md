@@ -146,9 +146,6 @@ See `man 5 core` for the full bitmask.
 - **Core must contain the relevant memory pages**. A dump taken with
   a restrictive `coredump_filter` may be missing pages the analyzer
   needs; it will report an error or produce a partial result.
-- **Status**: still marked `[experimental]`; output schema and CLI
-  are stable in practice but may evolve alongside the rest of the
-  memory pipeline.
 
 ## See also
 

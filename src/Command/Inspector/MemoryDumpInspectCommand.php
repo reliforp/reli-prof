@@ -32,7 +32,7 @@ final class MemoryDumpInspectCommand extends Command
     public function configure(): void
     {
         $this->setName('inspector:memory:dump:inspect')
-            ->setDescription('[experimental] inspect a memory dump file header, memory map, and regions')
+            ->setDescription('inspect a memory dump file header, memory map, and regions')
         ;
         $this->addArgument(
             'dump-file',

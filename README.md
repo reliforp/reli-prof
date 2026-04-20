@@ -343,11 +343,11 @@ Options:
   -o, --output=OUTPUT                          output file path (default: stdout)
 ```
 
-## [Experimental] Dump the memory usage of the target process
+## Dump the memory usage of the target process
 ```bash
 ./reli inspector:memory --help
 Description:
-  [experimental] get memory usage from an outer process
+  get memory usage from an outer process
 
 Usage:
   inspector:memory [options] [--] [<cmd> [<args>...]]
@@ -706,9 +706,6 @@ See [docs/binary-trace-format.md](docs/binary-trace-format.md) for the full spec
 
 > [!CAUTION]
 > **Don't upload the output of this command to the internet, because it can contain sensitive information of the target script!!!**
-
-> [!WARNING]  
-> This feature is in an experimental stage and may be less stable than others. The contents of the output may change in the near future.
 
 ```bash
 $ sudo php ./reli i:memory -p 2183131 >2183131.memory_dump.json
