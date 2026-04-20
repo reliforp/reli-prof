@@ -10,12 +10,17 @@ analysis. The dump file (`.relimem` format) can later be analyzed with
 # Dump a running PHP process
 sudo php ./reli inspector:memory:dump --pid=<pid> --output=snapshot.relimem
 
-# Analyze the dump
-php ./reli inspector:memory:analyze snapshot.relimem -f sqlite3 -o snapshot.sqlite
+# Analyze the dump (.rmem is the fastest format; every analyser reads it)
+php ./reli inspector:memory:analyze snapshot.relimem -f binary -o snapshot.rmem
 
-# Or generate a report directly
-php ./reli inspector:memory:report snapshot.sqlite
+# Browse or report on the graph
+php ./reli inspector:rmem:explore snapshot.rmem
+php ./reli inspector:memory:report snapshot.rmem
 ```
+
+`-f sqlite3` is also supported by `memory:analyze` / `memory:report` /
+`memory:compare` if you want to query with SQL tools, but `rmem:explore`,
+`rmem:serve`, and `rmem:mcp` read `.rmem` only.
 
 ## How it works
 
@@ -74,7 +79,11 @@ can still resolve class names and function signatures.
 ## Analyzing the dump
 
 ```bash
-# To SQLite (recommended for large dumps)
+# To .rmem (recommended — fastest, consumed by every analyser)
+php ./reli inspector:memory:analyze snapshot.relimem \
+    -f binary -o snapshot.rmem
+
+# To SQLite (for SQL tooling; memory:report / memory:compare accept either)
 php ./reli inspector:memory:analyze snapshot.relimem \
     -f sqlite3 -o snapshot.sqlite
 
@@ -84,7 +93,7 @@ php ./reli inspector:memory:analyze snapshot.relimem \
 
 # With dependency root for binary fallback (when --include-binary was not used)
 php ./reli inspector:memory:analyze snapshot.relimem \
-    -f sqlite3 -o snapshot.sqlite \
+    -f binary -o snapshot.rmem \
     -r /path/to/target/root
 ```
 

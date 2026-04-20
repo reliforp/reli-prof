@@ -9,19 +9,22 @@
 >
 > Come back here when you want to hand-query the JSON with `jq`, understand the on-disk structure, or integrate with other tooling.
 
-Reli has a memory profiling mode, and it can be used with the command like below
+This page documents `inspector:memory`'s default JSON output — the original memory-profiling entry point in reli — and the `jq`-based analysis style that grew up around it. `inspector:memory` itself still works exactly as described below; what has changed since its first iteration is the *recommended* way to use its output:
+
+- For interactive exploration and prioritised findings, reach for the SQLite-based pipeline ([memory-dump.md](memory-dump.md) → [rmem-explore-and-serve.md](rmem-explore-and-serve.md) / [memory-report.md](memory-report.md)). It stops the target for much less time and ships with purpose-built analysers.
+- Read *this* page when you need to hand-query snapshots with `jq`, understand the on-disk JSON structure, integrate with other tooling that expects JSON, or maintain pipelines that predate the SQLite format.
+
+The canonical invocation:
 
 ```bash
 reli inspector:memory -p <pid_of_target_process>
 ```
 
-You can use this mode to analyze the memory usage of the target process, for finding out memory bottlenecks or memory leaks.
+By default this writes the analysed snapshot as JSON on stdout — that's what the rest of this document covers. The same command also accepts other output formats, and for any analysis-tool-driven workflow **`-f binary` (the `.rmem` format) is the fastest and is what every analyser (`rmem:explore`, `rmem:serve`, `rmem:mcp`, `memory:report`, `memory:compare`) reads natively**. Other accepted formats: `-f sqlite3` (for SQL tooling — see [memory-profiler-database.md](memory-profiler-database.md)), `-f report` (direct findings report — see [memory-report.md](memory-report.md)), `-f mysql` / `-f postgresql` (stream into a remote database).
 
-For example, you can see statistics such as whether strings, arrays or objects are particularly dominant in a script's memory usage, or contextual information such as where certain local variables in a given call frame are referenced from elsewhere, and the actual values held by certain memory areas.
+You can use this mode to analyze the memory usage of the target process — for finding memory bottlenecks or memory leaks. For example, you can see statistics such as whether strings, arrays or objects are particularly dominant in a script's memory usage, or contextual information such as where certain local variables in a given call frame are referenced from elsewhere, and the actual values held by certain memory areas.
 
-The functionality of this mode is similar to [php-meminfo](https://github.com/BitOne/php-meminfo), but works in the [phpspy](https://github.com/adsr/phpspy)-ish way.
-
-It captures the memory contents of the target from outside the process, and analyzes it with the knowledge of the internal structures of the PHP VM, then dumps them all. So target programs don't need any modifications, don't need to load a specific extension for this.
+The functionality of this mode is similar to [php-meminfo](https://github.com/BitOne/php-meminfo), but works in the [phpspy](https://github.com/adsr/phpspy)-ish way: it captures the memory contents of the target from outside the process, analyses them with knowledge of the PHP VM's internal structures, then dumps the whole analysis. Target programs don't need any modifications and don't need to load a specific extension.
 
 # Requirements
 - FFI and PCNTL

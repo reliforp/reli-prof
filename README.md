@@ -8,7 +8,7 @@
 
 Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler. 
 
-Looking for a specific task? Jump to the [documentation index](docs/README.md) — it maps "I want to X" to the right command and doc.
+New here? [docs/getting-started.md](docs/getting-started.md) walks from install to your first trace. Looking for a specific task? The [documentation index](docs/README.md) maps "I want to X" to the right command and doc.
 
 ## What can I use this for?
 - Detecting and visualizing bottlenecks in PHP scripts
@@ -194,20 +194,21 @@ sudo php ./reli phpspy:daemon -P "^php-fpm"
 
 Key `phpspy:trace` / `phpspy:daemon` options: `-s/--sleep-ns`, `-b/--buffer-size`, `-H/--rate-hz`, `--phpspy-args` (passthrough to phpspy), `--phpspy-path`, `-o/--output`.
 
-## Dump the memory usage of the target process
-Run the memory analyser against a live PHP process. The output feeds the rest of the memory pipeline (`memory:report`, `rmem:explore`, `memory:compare`).
+## Capture a memory graph
+Reconstruct the target's PHP heap into an analysable graph. `.rmem` is the fastest format and is what every analyser (`rmem:explore`, `memory:report`, `memory:compare`, `rmem:serve`, `rmem:mcp`) reads natively.
 
 ```bash
-# Save to SQLite (recommended for large heaps; feeds rmem:explore and memory:report)
-sudo php ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
+# Recommended for ad-hoc / local use: live one-shot capture
+sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
 
-# Original JSON + jq workflow
-sudo php ./reli inspector:memory -p <pid> -f json >snapshot.json
+# Recommended in production: short-stop dump + offline graph build
+sudo php ./reli inspector:memory:dump -p <pid> -o dump.relimem
+php ./reli inspector:memory:analyze dump.relimem -f binary -o snapshot.rmem
 ```
 
-Key options: `-f/--output-format=json|sqlite3|binary|mysql|postgresql|report|report-json`, `-o/--output`, `--stop-process/--no-stop-process`, `--pretty-print`, `--db-host`/`--db-port`/`--db-name`/`--db-user`/`--db-password`, `--memory-usage-error-file`/`--memory-usage-error-line`.
+Key options: `-f/--output-format=binary|sqlite3|json|report|report-json|mysql|postgresql`, `-o/--output`, `--stop-process/--no-stop-process`, `--pretty-print`, `--db-host`/`--db-port`/`--db-name`/`--db-user`/`--db-password`, `--memory-usage-error-file`/`--memory-usage-error-line`.
 
-See [docs/memory/memory-profiler.md](docs/memory/memory-profiler.md) for the full memory pipeline, [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for the offline `inspector:memory:dump` flow, and [docs/memory/coredump.md](docs/memory/coredump.md) for post-mortem analysis from a core file.
+See [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for the dump-then-analyse flow, [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md) for the interactive TUI, [docs/memory/memory-report.md](docs/memory/memory-report.md) for automated reports and comparisons, [docs/memory/coredump.md](docs/memory/coredump.md) for post-mortem from a core file, and [docs/memory/memory-profiler.md](docs/memory/memory-profiler.md) for the JSON + `jq` deep-dive.
 
 ## Watch: Condition-Based Process Monitoring
 
@@ -537,22 +538,25 @@ The recommended flow is **dump now, analyse later**: `inspector:memory:dump` onl
 # 1. Dump the target's memory to a portable file (short stop on the target)
 $ sudo php ./reli inspector:memory:dump -p <pid> -o snapshot.relimem
 
-# 2. Build the analysable memory graph (offline; can be on a different host)
-$ php ./reli inspector:memory:analyze snapshot.relimem -f sqlite3 -o snapshot.db
+# 2. Build the analysable memory graph offline — .rmem is the fastest
+#    format and what every analyser below reads natively
+$ php ./reli inspector:memory:analyze snapshot.relimem -f binary -o snapshot.rmem
 
 # 3a. Browse it interactively
-$ php ./reli inspector:rmem:explore snapshot.db
+$ php ./reli inspector:rmem:explore snapshot.rmem
 
 # 3b. Or get a prioritised findings report
-$ php ./reli inspector:memory:report snapshot.db
+$ php ./reli inspector:memory:report snapshot.rmem
 ```
 
 For ad-hoc / local use where the longer stop doesn't matter, the one-shot `inspector:memory` command captures and analyses in a single call:
 
 ```bash
-$ sudo php ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
-$ php ./reli inspector:rmem:explore snapshot.db
+$ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+$ php ./reli inspector:rmem:explore snapshot.rmem
 ```
+
+`-f sqlite3` and `-f json` are also accepted — see the format tip in [docs/README.md § Capture memory graphs](docs/README.md#capture-memory-graphs-where-memory-is-used).
 
 Only NTS targets are supported for now.
 
@@ -560,11 +564,11 @@ See [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for capture options
 
 ### Automatic analysis report
 
-Instead of manually querying with `jq`, you can generate an automatic analysis report. First save to SQLite, then run the report:
+Instead of manually querying with `jq`, generate an automatic analysis report. Save as `.rmem` first, then run the report (also works with `-f sqlite3 -o snapshot.db`):
 
 ```bash
-$ sudo php ./reli i:m -p <pid> -f sqlite3 -o snapshot.db
-$ php ./reli inspector:memory:report snapshot.db
+$ sudo php ./reli i:m -p <pid> -f binary -o snapshot.rmem
+$ php ./reli inspector:memory:report snapshot.rmem
 ```
 
 Or generate the report directly:
@@ -580,12 +584,12 @@ The report identifies dominant classes, circular references, choke points, dedup
 Compare memory snapshots to find regressions, verify fixes, or track leaks over time:
 
 ```bash
-$ sudo php ./reli i:m -p <pid> -f sqlite3 -o before.db
+$ sudo php ./reli i:m -p <pid> -f binary -o before.rmem
 # ... deploy code change, trigger workload, etc.
-$ sudo php ./reli i:m -p <pid> -f sqlite3 -o after.db
-$ php ./reli inspector:memory:compare before.db after.db
+$ sudo php ./reli i:m -p <pid> -f binary -o after.rmem
+$ php ./reli inspector:memory:compare before.rmem after.rmem
 
-# Or compare run IDs within the same database
+# SQLite snapshots are also supported (and let you compare run IDs within one DB)
 $ php ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
 ```
 

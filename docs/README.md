@@ -7,7 +7,7 @@ this file links out to a dedicated doc or a section of the top-level
 
 ## Getting started
 
-- Install and first run — [README § Installation](../README.md#installation)
+- **New here?** [getting-started.md](getting-started.md) walks you from install to your first trace in 5 minutes.
 - How it works (architecture overview) — [README § How it works](../README.md#how-it-works)
 - Supported PHP versions and platforms — [README § Requirements](../README.md#requirements)
 
@@ -43,21 +43,22 @@ A memory graph is reli's PHP heap reconstruction — values (objects, arrays, st
 
 | I want to... | Use | More |
 |---|---|---|
-| Dump now (short stop), analyse offline **(recommended)** | `inspector:memory:dump` → `inspector:memory:analyze` | [memory/memory-dump.md](memory/memory-dump.md) |
-| One-shot live capture (longer stop, one command) | `inspector:memory -p <pid> -f sqlite3 -o snap.db` | [memory/memory-profiler.md](memory/memory-profiler.md) |
+| Dump now (short stop), analyse offline **(recommended)** | `inspector:memory:dump` → `inspector:memory:analyze -f binary -o snap.rmem` | [memory/memory-dump.md](memory/memory-dump.md) |
+| One-shot live capture (longer stop, one command) | `inspector:memory -p <pid> -f binary -o snap.rmem` | [memory/memory-profiler.md](memory/memory-profiler.md) |
 | From a core file (crashed / post-mortem) | `inspector:coredump` | [memory/coredump.md](memory/coredump.md) |
 
-Tip: pass `-f json` or `-f report` to any of the above for alternative output.
+Tip: **`-f binary` (`.rmem`) is the fastest format** and what the analysers below prefer. `-f sqlite3` is also accepted by `memory:report` / `memory:compare` (handy if you already have SQLite tooling), `-f json` gives `jq`-friendly output, and `-f report` prints a findings report directly.
 
 ## Analyse memory graphs
 
 | I want to... | Use | More |
 |---|---|---|
-| Browse interactively in a TUI **(recommended)** | `inspector:rmem:explore snap.db` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
-| Get a prioritised findings report | `inspector:memory:report snap.db` (or capture with `-f report`) | [memory/memory-report.md](memory/memory-report.md) |
-| Compare two graphs (regression / leak tracking) | `inspector:memory:compare before.db after.db` | [memory/memory-report.md](memory/memory-report.md) |
-| Query a graph's SQL directly | `inspector:rmem:serve` or open the SQLite file | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md), [memory/memory-profiler-database.md](memory/memory-profiler-database.md) |
+| Browse interactively in a TUI **(recommended)** | `inspector:rmem:explore snap.rmem` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
+| Get a prioritised findings report | `inspector:memory:report snap.rmem` (or capture with `-f report`) | [memory/memory-report.md](memory/memory-report.md) |
+| Compare two graphs (regression / leak tracking) | `inspector:memory:compare before.rmem after.rmem` | [memory/memory-report.md](memory/memory-report.md) |
+| Run a persistent query server (JSON-over-socket) | `inspector:rmem:serve snap.rmem` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
 | Let an AI assistant explore a graph | `inspector:rmem:mcp` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
+| Query via raw SQL (snapshot must be SQLite, `-f sqlite3`) | open the `.db` with `sqlite3` / `duckdb` / any SQL tool | [memory/memory-profiler-database.md](memory/memory-profiler-database.md) |
 
 ## Monitor VMs
 
