@@ -45,7 +45,7 @@ final class DiskUsageTracker
 
     public function recordFile(string $path): void
     {
-        $size = filesize($path);
+        $size = @filesize($path);
         if ($size !== false) {
             $this->total_bytes += $size;
         }

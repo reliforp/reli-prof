@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Elf\Process;
 
 use FFI;
+use Reli\Lib\FFI\FFIHelper;
 use Mockery;
 use Reli\BaseTestCase;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMapInterface;
@@ -35,7 +36,7 @@ class BinaryFingerprintCreatorTest extends BaseTestCase
     private function createCdata(string $bytes): FFI\CData
     {
         $len = strlen($bytes);
-        $cdata = FFI::new("unsigned char[{$len}]");
+        $cdata = FFIHelper::new("unsigned char[{$len}]");
         for ($i = 0; $i < $len; $i++) {
             $cdata[$i] = ord($bytes[$i]);
         }

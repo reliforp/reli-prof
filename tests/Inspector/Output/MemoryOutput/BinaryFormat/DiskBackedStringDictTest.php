@@ -184,11 +184,9 @@ class DiskBackedStringDictTest extends TestCase
     private function seekBackingFile(int $offset): void
     {
         $diskPos = new \ReflectionProperty(DiskBackedStringDict::class, 'diskPos');
-        $diskPos->setAccessible(true);
         $diskPos->setValue($this->dict, $offset);
 
         $diskFh = new \ReflectionProperty(DiskBackedStringDict::class, 'diskFh');
-        $diskFh->setAccessible(true);
         $fh = $diskFh->getValue($this->dict);
         fseek($fh, $offset);
     }

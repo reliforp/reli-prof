@@ -21,16 +21,17 @@ use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\System\Architecture;
+use Reli\Lib\FFI\FFIHelper;
 
 class LibThreadDbTlsFinderTest extends BaseTestCase
 {
     public function testFindTls()
     {
         $symbol_reader = Mockery::mock(ProcessSymbolReaderInterface::class);
-        $_thread_db_pthread_dtvp = \FFI::new('unsigned char[12]');
-        $_thread_db_dtv_dtv = \FFI::new('unsigned char[12]');
-        $_thread_db_dtv_t_pointer_val = \FFI::new('unsigned char[12]');
-        $_thread_db_link_map_l_tls_modid = \FFI::new('unsigned char[12]');
+        $_thread_db_pthread_dtvp = FFIHelper::new('unsigned char[12]');
+        $_thread_db_dtv_dtv = FFIHelper::new('unsigned char[12]');
+        $_thread_db_dtv_t_pointer_val = FFIHelper::new('unsigned char[12]');
+        $_thread_db_link_map_l_tls_modid = FFIHelper::new('unsigned char[12]');
         \FFI::memset($_thread_db_pthread_dtvp, 0, 12);
         \FFI::memset($_thread_db_dtv_dtv, 0, 12);
         \FFI::memset($_thread_db_dtv_t_pointer_val, 0, 12);
@@ -49,13 +50,13 @@ class LibThreadDbTlsFinderTest extends BaseTestCase
         $thread_pointer_retriever = Mockery::mock(ThreadPointerRetrieverInterface::class);
         $thread_pointer_retriever->expects()->getThreadPointer(1)->andReturns(0x10000);
 
-        $dtv_address = \FFI::new('unsigned char[8]');
+        $dtv_address = FFIHelper::new('unsigned char[8]');
         \FFI::memset($dtv_address, 0, 8);
         $dtv_address[2] = 2;
-        $tls_block_address = \FFI::new('unsigned char[8]');
+        $tls_block_address = FFIHelper::new('unsigned char[8]');
         \FFI::memset($tls_block_address, 0, 8);
         $tls_block_address[2] = 3;
-        $module_id = \FFI::new('unsigned char[4]');
+        $module_id = FFIHelper::new('unsigned char[4]');
         \FFI::memset($module_id, 0, 4);
         $module_id[0] = 1;
 
@@ -137,9 +138,9 @@ class LibThreadDbTlsFinderTest extends BaseTestCase
      */
     public static function casesDebugSymbolsFoundOrNot(): array
     {
-        $_thread_db_pthread_dtvp = \FFI::new('unsigned char[12]');
-        $_thread_db_dtv_dtv = \FFI::new('unsigned char[12]');
-        $_thread_db_dtv_t_pointer_val = \FFI::new('unsigned char[12]');
+        $_thread_db_pthread_dtvp = FFIHelper::new('unsigned char[12]');
+        $_thread_db_dtv_dtv = FFIHelper::new('unsigned char[12]');
+        $_thread_db_dtv_t_pointer_val = FFIHelper::new('unsigned char[12]');
         \FFI::memset($_thread_db_pthread_dtvp, 0, 12);
         \FFI::memset($_thread_db_dtv_dtv, 0, 12);
         \FFI::memset($_thread_db_dtv_t_pointer_val, 0, 12);

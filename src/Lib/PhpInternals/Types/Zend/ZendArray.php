@@ -128,7 +128,7 @@ class ZendArray implements CDataDereferencable
     public function findByKey(
         Dereferencer $dereferencer,
         string $key,
-        int $hash = null
+        ?int $hash = null
     ): ?Bucket {
         if ($this->arData === null) {
             return null;

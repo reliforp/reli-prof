@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\ByteStream;
 
 use FFI;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\BaseTestCase;
 
 class CDataByteReaderTest extends BaseTestCase
@@ -21,7 +22,7 @@ class CDataByteReaderTest extends BaseTestCase
     public function testRead()
     {
         /** @var \FFI\CArray<int> $cdata_array */
-        $cdata_array = FFI::new('unsigned char[3]');
+        $cdata_array = FFIHelper::new('unsigned char[3]');
         $cdata_array[0] = 1;
         $cdata_array[1] = 2;
         $cdata_array[2] = 3;
@@ -34,7 +35,7 @@ class CDataByteReaderTest extends BaseTestCase
     public function testWrite()
     {
         /** @var \FFI\CArray<int> $cdata_array */
-        $cdata_array = FFI::new('unsigned char[3]');
+        $cdata_array = FFIHelper::new('unsigned char[3]');
         $reader = new CDataByteReader($cdata_array);
         $this->expectException(\LogicException::class);
         $reader[0] = 0;
@@ -43,7 +44,7 @@ class CDataByteReaderTest extends BaseTestCase
     public function testOffsetExists()
     {
         /** @var \FFI\CArray<int> $cdata_array */
-        $cdata_array = FFI::new('unsigned char[3]');
+        $cdata_array = FFIHelper::new('unsigned char[3]');
         $cdata_array[0] = 1;
         $reader = new CDataByteReader($cdata_array);
         $this->assertTrue(isset($reader[0]));
@@ -53,7 +54,7 @@ class CDataByteReaderTest extends BaseTestCase
     public function testCreateSliceAsString()
     {
         /** @var \FFI\CArray<int> $cdata_array */
-        $cdata_array = FFI::new('unsigned char[4]');
+        $cdata_array = FFIHelper::new('unsigned char[4]');
         $cdata_array[0] = ord('a');
         $cdata_array[1] = ord('b');
         $cdata_array[2] = ord('c');

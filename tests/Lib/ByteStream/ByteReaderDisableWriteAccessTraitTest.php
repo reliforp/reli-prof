@@ -25,14 +25,14 @@ class ByteReaderDisableWriteAccessTraitTest extends BaseTestCase
         $instance = new class implements ArrayAccess {
             use ByteReaderDisableWriteAccessTrait;
 
-            public function offsetGet($offset)
+            public function offsetGet($offset): mixed
             {
                 return 0xDEADBEAF;
             }
 
-            public function offsetExists($offset)
+            public function offsetExists($offset): bool
             {
-                false;
+                return false;
             }
         };
         $instance[0] = 1;
@@ -44,14 +44,14 @@ class ByteReaderDisableWriteAccessTraitTest extends BaseTestCase
         $instance = new class implements ArrayAccess {
             use ByteReaderDisableWriteAccessTrait;
 
-            public function offsetGet($offset)
+            public function offsetGet($offset): mixed
             {
                 return 0xDEADBEAF;
             }
 
-            public function offsetExists($offset)
+            public function offsetExists($offset): bool
             {
-                false;
+                return false;
             }
         };
         unset($instance[0]);

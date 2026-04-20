@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch\Daemon\Worker;
 
 use FFI;
+use Reli\Lib\FFI\FFIHelper;
 use FFI\CData;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
@@ -36,7 +37,7 @@ final class IntermittentMemoryReader implements MemoryReaderInterface
             throw new MemoryReaderException('simulated intermittent failure');
         }
         // Return a zeroed buffer
-        $buf = FFI::new("uint8_t[$size]");
+        $buf = FFIHelper::new("uint8_t[$size]");
         assert($buf instanceof CData);
         return $buf;
     }

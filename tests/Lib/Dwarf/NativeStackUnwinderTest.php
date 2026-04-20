@@ -19,6 +19,7 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\FFI\FFIHelper;
 
 class NativeStackUnwinderTest extends BaseTestCase
 {
@@ -229,7 +230,7 @@ class NativeStackUnwinderTest extends BaseTestCase
 
         // The unwinder will try to read return address from CFA
         // Mock: return 0 (will stop unwinding)
-        $zero_bytes = \FFI::new('unsigned char[8]');
+        $zero_bytes = FFIHelper::new('unsigned char[8]');
         for ($i = 0; $i < 8; $i++) {
             $zero_bytes[$i] = 0;
         }
@@ -271,7 +272,7 @@ class NativeStackUnwinderTest extends BaseTestCase
         }
 
         $memory_reader = Mockery::mock(MemoryReaderInterface::class);
-        $zero_bytes = \FFI::new('unsigned char[8]');
+        $zero_bytes = FFIHelper::new('unsigned char[8]');
         for ($i = 0; $i < 8; $i++) {
             $zero_bytes[$i] = 0;
         }
@@ -325,7 +326,7 @@ class NativeStackUnwinderTest extends BaseTestCase
 
         // Simulate frame pointer chain:
         // [rbp] = saved_rbp, [rbp+8] = return_address
-        $saved_rbp_bytes = \FFI::new('unsigned char[8]');
+        $saved_rbp_bytes = FFIHelper::new('unsigned char[8]');
         // saved_rbp = 0x7fff0100 (higher than current rbp)
         $saved_rbp_bytes[0] = 0x00;
         $saved_rbp_bytes[1] = 0x01;
@@ -335,7 +336,7 @@ class NativeStackUnwinderTest extends BaseTestCase
             $saved_rbp_bytes[$i] = 0;
         }
 
-        $ret_addr_bytes = \FFI::new('unsigned char[8]');
+        $ret_addr_bytes = FFIHelper::new('unsigned char[8]');
         // return address = 0x400100
         $ret_addr_bytes[0] = 0x00;
         $ret_addr_bytes[1] = 0x01;
@@ -344,7 +345,7 @@ class NativeStackUnwinderTest extends BaseTestCase
             $ret_addr_bytes[$i] = 0;
         }
 
-        $zero_bytes = \FFI::new('unsigned char[8]');
+        $zero_bytes = FFIHelper::new('unsigned char[8]');
         for ($i = 0; $i < 8; $i++) {
             $zero_bytes[$i] = 0;
         }

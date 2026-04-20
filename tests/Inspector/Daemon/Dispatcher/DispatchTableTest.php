@@ -45,15 +45,13 @@ class DispatchTableTest extends BaseTestCase
         $worker_pool->expects()->getFreeWorker()->andReturns($worker2);
         $worker_pool->expects()->getFreeWorker()->andReturns($worker3);
         $worker_pool->expects()->getFreeWorker()->andReturns(null);
-        $gen = $dispatch_table->updateTargets(
+        $dispatch_table->updateTargets(
             new TargetProcessList(
                 new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80),
                 new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80),
                 new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
             )
         );
-        foreach ($gen as $item) {
-        }
         $attached_first = $attached;
         sort($attached);
         $this->assertSame([1, 2, 3], $attached);

@@ -17,12 +17,13 @@ use Reli\BaseTestCase;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawString;
 use Reli\Lib\Process\Pointer\Pointer;
+use Reli\Lib\FFI\FFIHelper;
 
 class ZendStringTest extends BaseTestCase
 {
     public function testValues(): void
     {
-        $string_addr = \FFI::addr($buf = \FFI::new('char[16]'));
+        $string_addr = \FFI::addr($buf = FFIHelper::new('char[16]'));
         $zend_string = new ZendString(
             new CastedCData(
                 new class () {
@@ -43,14 +44,14 @@ class ZendStringTest extends BaseTestCase
         $this->assertSame(123, $zend_string->h);
         $this->assertSame(234, $zend_string->len);
         $this->assertSame(
-            \FFI::cast('long', $string_addr)->cdata,
+            FFIHelper::cast('long', $string_addr)->cdata,
             $zend_string->val->address
         );
     }
 
     public function testGetValuePointer(): void
     {
-        $string_addr = \FFI::addr($buf = \FFI::new('char[16]'));
+        $string_addr = \FFI::addr($buf = FFIHelper::new('char[16]'));
         $zend_string = new ZendString(
             new CastedCData(
                 new class () {

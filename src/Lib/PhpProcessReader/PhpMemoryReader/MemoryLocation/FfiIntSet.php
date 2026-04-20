@@ -94,11 +94,16 @@ final class FfiIntSet
 
     private function hash(int $key): int
     {
-        // Mix bits for better distribution of sequential addresses
-        $key = (($key >> 16) ^ $key) * 0x45d9f3b;
-        $key = (($key >> 16) ^ $key) * 0x45d9f3b;
+        // Fold the high 32 bits into the low word so that the
+        // multiplications below stay within 64-bit int range.
+        // Without this PHP would silently promote the product to a
+        // float when the key has bits above 2^31 (any real pointer),
+        // which emits an E_WARNING on PHP 8.4+.
+        $key = (($key >> 32) ^ $key) & 0xFFFFFFFF;
+        $key = ((($key >> 16) ^ $key) * 0x45d9f3b) & 0xFFFFFFFF;
+        $key = ((($key >> 16) ^ $key) * 0x45d9f3b) & 0xFFFFFFFF;
         $key = ($key >> 16) ^ $key;
-        return $key & 0x7FFFFFFFFFFFFFFF; // ensure positive
+        return $key & 0x7FFFFFFF;
     }
 
     private function allocate(int $capacity): void

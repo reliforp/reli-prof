@@ -47,7 +47,7 @@ final class MemoryDumpInspectCommand extends Command
         /** @var string $dump_file */
         $dump_file = $input->getArgument('dump-file');
 
-        $fp = fopen($dump_file, 'rb');
+        $fp = @fopen($dump_file, 'rb');
         if ($fp === false) {
             throw new \RuntimeException("failed to open file: {$dump_file}");
         }

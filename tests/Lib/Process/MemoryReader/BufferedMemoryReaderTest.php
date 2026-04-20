@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Process\MemoryReader;
 
 use FFI;
+use Reli\Lib\FFI\FFIHelper;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -189,8 +190,10 @@ class BufferedMemoryReaderTest extends TestCase
         FFI::memcpy($region1, 'AAAABBBB', 8);
         FFI::memcpy($region2, 'CCCCDDDD', 8);
 
-        $addr1 = FFI::cast('long', FFI::addr($region1))->cdata;
-        $addr2 = FFI::cast('long', FFI::addr($region2))->cdata;
+        $region1_ptr = FFI::addr($region1);
+        $region2_ptr = FFI::addr($region2);
+        $addr1 = FFIHelper::cast('long', $region1_ptr)->cdata;
+        $addr2 = FFIHelper::cast('long', $region2_ptr)->cdata;
 
         // Scatter-gather: read both regions in one syscall
         $buffered->prefetchScatterGather($pid, [
@@ -230,7 +233,8 @@ class BufferedMemoryReaderTest extends TestCase
         $region = $ffi->new('unsigned char[4]');
         assert($region !== null);
         FFI::memcpy($region, 'NEW!', 4);
-        $addr = FFI::cast('long', FFI::addr($region))->cdata;
+        $region_ptr = FFI::addr($region);
+        $addr = FFIHelper::cast('long', $region_ptr)->cdata;
 
         $buffered->prefetchScatterGather($pid, [
             ['address' => $addr, 'size' => 4],
