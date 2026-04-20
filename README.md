@@ -86,9 +86,13 @@ Much of what can be done with phpspy will be done with reli in the future.
 - FFI extension must be enabled.
 - PCNTL extension must be enabled.
 
-> The recommended way to run reli-prof is via the provided Docker image,
-> which ships a compatible PHP build with FFI enabled. Bare-metal installs
-> on older PHP versions are not supported.
+> [!TIP]
+> The provided Docker image is often the easiest way to get started:
+> it ships a PHP 8.5 build with FFI/PCNTL already enabled, `--cap-add=SYS_PTRACE`
+> grants the capability reli needs without elevating the host shell, and
+> `--pid=host` lets you target PHP processes running in other containers or
+> on the host from a single command. Bare-metal installs on older PHP versions
+> are not supported.
 
 #### Target
 - PHP 7.0+ (NTS / ZTS)
@@ -101,6 +105,13 @@ On targeting ZTS, reli finds EG from the TLS. Stripped binaries are supported (T
 AArch64 Linux support is experimental. It enables profiling on ARM-based servers (e.g., AWS Graviton) and Apple Silicon Macs running Linux VMs or Docker containers. Both NTS and ZTS targets are supported. See [docs/aarch64-support.md](docs/aarch64-support.md) for technical details.
 
 ## Installation
+### From Docker
+```bash
+docker pull reliforp/reli-prof
+docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof
+```
+`--cap-add=SYS_PTRACE` grants reli the ptrace capability, and `--pid=host` makes PHP processes running on the host (or in other containers) visible as targets — no extra setup on the host side.
+
 ### From Composer
 ```bash
 composer create-project reliforp/reli-prof
@@ -114,12 +125,6 @@ git clone git@github.com:reliforp/reli-prof.git
 cd reli-prof
 composer install
 ./reli
-```
-
-### From Docker
-```bash
-docker pull reliforp/reli-prof
-docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof
 ```
 
 ## Usage
@@ -149,7 +154,7 @@ Options:
       --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
       --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
       --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -t, --template[=TEMPLATE]                    template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
@@ -184,7 +189,7 @@ Options:
       --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
       --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
       --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
   -t, --template[=TEMPLATE]                    template name (phpspy|phpspy_with_opcode|json_lines) (default: phpspy)
@@ -219,7 +224,7 @@ Options:
       --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
       --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
       --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
       --no-cache                               disable the binary analysis cache
@@ -251,7 +256,7 @@ Options:
       --php-regex[=PHP-REGEX]                  regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]    regex to find the libpthread.so loaded in the target process
       --zts-globals-regex[=ZTS-GLOBALS-REGEX]  regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-version[=PHP-VERSION]              php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
       --php-path[=PHP-PATH]                    path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]      path to the libpthread.so (only needed in tracing chrooted ZTS target)
       --no-cache                               disable the binary analysis cache
@@ -369,7 +374,7 @@ Options:
       --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
       --zts-globals-regex[=ZTS-GLOBALS-REGEX]                        regex to find the binary containing globals symbols for ZTS loaded in the target process
-      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[01234]) of the target (default: auto)
+      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
       --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
       --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
       --no-cache                                                     disable the binary analysis cache
