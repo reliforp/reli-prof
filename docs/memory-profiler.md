@@ -119,7 +119,7 @@ And the output is like below. The target process is [psalm](https://github.com/v
             "cached_chunks_size": 0,
             "heap_memory_analyzed_percentage": 98.36809784842008,
             "php_version": "v82",
-            "analyzer": "reli 0.9.0"
+            "analyzer": "reli 0.12.0"
         }
     ],
     "location_types_summary": {
