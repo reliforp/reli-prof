@@ -63,6 +63,35 @@ final class CallTraceReader
     private const HOT_BELOW_TOP_BYTES = 8192;
     private const HOT_ABOVE_TOP_BYTES = 16384;
 
+    /**
+     * Runtime override for HOT_BELOW_TOP_BYTES via env var RELI_HOT_BELOW_BYTES.
+     * Useful for benchmark sweeps without rebuilding; not a public contract.
+     */
+    private static ?int $hot_below_override = null;
+    private static ?int $hot_above_override = null;
+
+    private static function hotBelowTopBytes(): int
+    {
+        if (self::$hot_below_override === null) {
+            $v = getenv('RELI_HOT_BELOW_BYTES');
+            self::$hot_below_override = ($v !== false && ctype_digit($v) && (int)$v > 0)
+                ? (int)$v
+                : self::HOT_BELOW_TOP_BYTES;
+        }
+        return self::$hot_below_override;
+    }
+
+    private static function hotAboveTopBytes(): int
+    {
+        if (self::$hot_above_override === null) {
+            $v = getenv('RELI_HOT_ABOVE_BYTES');
+            self::$hot_above_override = ($v !== false && ctype_digit($v) && (int)$v > 0)
+                ? (int)$v
+                : self::HOT_ABOVE_TOP_BYTES;
+        }
+        return self::$hot_above_override;
+    }
+
     private ?ZendTypeReader $zend_type_reader = null;
     private bool $bulk_stack_copy_enabled = false;
 
@@ -308,8 +337,10 @@ final class CallTraceReader
         int $vm_stack_top,
         int $vm_stack_end,
     ): array {
-        $hot_start = max($vm_stack_address, $vm_stack_top - self::HOT_BELOW_TOP_BYTES);
-        $hot_end = min($vm_stack_end, $vm_stack_top + self::HOT_ABOVE_TOP_BYTES);
+        $below = self::hotBelowTopBytes();
+        $above = self::hotAboveTopBytes();
+        $hot_start = max($vm_stack_address, $vm_stack_top - $below);
+        $hot_end = min($vm_stack_end, $vm_stack_top + $above);
         if ($hot_end <= $hot_start) {
             return [];
         }
