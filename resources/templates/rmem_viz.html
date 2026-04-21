@@ -70,19 +70,19 @@
     <h1>rmem viz</h1>
     <span class="meta" id="meta"></span>
     <nav>
-      <button data-view="force" class="active">3D Force</button>
-      <button data-view="pack">Circle Pack</button>
+      <button data-view="pack" class="active">Circle Pack</button>
       <button data-view="tree">Treemap</button>
       <button data-view="sun">Sunburst</button>
+      <button data-view="force">3D Force</button>
       <select id="theme-select" title="theme"></select>
       <select id="palette-select" title="color palette"></select>
     </nav>
   </header>
   <main>
-    <div class="view active" id="force-view"></div>
-    <div class="view" id="pack-view"></div>
+    <div class="view active" id="pack-view"></div>
     <div class="view" id="tree-view"></div>
     <div class="view" id="sun-view"></div>
+    <div class="view" id="force-view"></div>
     <div id="detail">
       <h3>node</h3>
       <div id="detail-body"><div class="row"><span class="k">click a node...</span></div></div>
@@ -393,7 +393,7 @@
     }
   });
 
-  initForce(); views.force.inited = true;
+  initPack(); views.pack.inited = true;
 
   // ================== 3D Force Graph ==================
   function initForce() {
