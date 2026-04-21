@@ -98,7 +98,10 @@
     DATA.ref_edges.length.toLocaleString() + ' ref edges';
 
   // ---- color palette keyed by class (fallback: type) ----
-  const palette = d3.schemeTableau10.concat(d3.schemeSet3);
+  // Vivid categorical palette: Category10 + Accent + Set2 reads well on
+  // a dark background. For >28 distinct keys, fall back to a sinebow
+  // sweep so leaves never collapse onto the unknown grey.
+  const palette = d3.schemeCategory10.concat(d3.schemeAccent, d3.schemeSet2);
   const keyOf = n => n.class || n.type || '?';
   const classKeys = Array.from(new Set(DATA.nodes.map(keyOf)))
     .sort((a, b) => {
@@ -106,7 +109,10 @@
       const cb = DATA.nodes.filter(n => keyOf(n) === b).reduce((s, n) => s + n.retained, 0);
       return cb - ca;
     });
-  const colorFor = d3.scaleOrdinal().domain(classKeys).range(palette).unknown('#555');
+  const effectivePalette = classKeys.length > palette.length
+    ? classKeys.map((_, i) => d3.interpolateSinebow(i / Math.max(1, classKeys.length)))
+    : palette;
+  const colorFor = d3.scaleOrdinal().domain(classKeys).range(effectivePalette).unknown('#555');
 
   // legend (top 10 classes by retained)
   const legendEl = document.getElementById('legend');
@@ -256,6 +262,7 @@
   function initPack() {
     const el = document.getElementById('pack-view');
     const w = el.clientWidth, h = el.clientHeight;
+    el.style.background = 'radial-gradient(ellipse at center, #14182a 0%, #04060c 80%)';
     const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, w, h]);
     const g = svg.append('g');
 
@@ -267,9 +274,9 @@
     node.append('circle')
       .attr('r', d => d.r)
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass))
-      .attr('fill-opacity', d => d.children ? 0.18 : 0.78)
-      .attr('stroke', d => d.depth === 0 ? 'transparent' : 'rgba(0,0,0,0.35)')
-      .attr('stroke-width', 0.5)
+      .attr('fill-opacity', d => d.children ? 0.42 : 0.95)
+      .attr('stroke', d => d.depth === 0 ? 'transparent' : 'rgba(255,255,255,0.18)')
+      .attr('stroke-width', 0.6)
       .on('click', (_, d) => showDetail(d.data))
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     // Top few labels
