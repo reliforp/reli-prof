@@ -114,22 +114,39 @@ final class VizHtmlBuilder
         }
 
         // Downward BFS up to $depth (tree edges only).
+        // Downward expansion. The depth counter only ticks for edges
+        // that represent a *meaningful* hop; structural intermediaries
+        // (array_elements / object_properties / value / local_variables
+        // / symbol_table / …) are free, matching how PathFormatter
+        // collapses them. Without this, depth=1 from an Array lands on
+        // ArrayElementsContext but misses the individual ArrayElement
+        // leaves underneath, leaving scalar islands invisible.
         if ($depth > 0) {
-            $frontier = array_keys($selected);
-            for ($d = 0; $d < $depth; $d++) {
-                $next = [];
-                foreach ($frontier as $nid) {
-                    foreach ($substrate->getChildren($nid) as $childId) {
-                        if (!isset($selected[$childId])) {
-                            $selected[$childId] = true;
-                            $next[] = $childId;
-                            if (count($selected) >= self::MAX_NODES) {
-                                break 3;
-                            }
-                        }
+            /** @var list<array{0:int,1:int}> stack of [nodeId, meaningfulDepth] */
+            $stack = [];
+            foreach (array_keys($selected) as $nid) {
+                $stack[] = [$nid, 0];
+            }
+            while ($stack !== []) {
+                /** @var array{0:int,1:int} $top */
+                $top = array_pop($stack);
+                [$cur, $meaningfulD] = $top;
+                foreach ($substrate->getChildren($cur) as $childId) {
+                    if (isset($selected[$childId])) {
+                        continue;
+                    }
+                    $linkToChild = $substrate->getTreeLinkName($childId);
+                    $isStructural = self::isStructuralLink($linkToChild);
+                    $nextD = $isStructural ? $meaningfulD : $meaningfulD + 1;
+                    if ($nextD > $depth) {
+                        continue;
+                    }
+                    $selected[$childId] = true;
+                    $stack[] = [$childId, $nextD];
+                    if (count($selected) >= self::MAX_NODES) {
+                        break 2;
                     }
                 }
-                $frontier = $next;
             }
         }
 
@@ -195,6 +212,31 @@ final class VizHtmlBuilder
         }
 
         return [$nodes, $treeEdges, $refEdges];
+    }
+
+    /**
+     * Link names that represent PHP-internal wrappers (Bucket tables,
+     * property slots, generic value indirection, variable tables). The
+     * downward BFS treats these as "free hops" so depth=1 from an
+     * Array still reaches each ArrayElement, even though the chain is
+     * physically three edges long. Matches the STRUCTURAL list used by
+     * {@see PathFormatter}.
+     */
+    private const STRUCTURAL_LINKS = [
+        'array_elements',
+        'object_properties',
+        'value',
+        'local_variables',
+        'symbol_table',
+        'global_variables',
+        'dynamic_properties',
+        'included_files',
+        'object_handlers',
+    ];
+
+    private static function isStructuralLink(?string $link): bool
+    {
+        return $link !== null && in_array($link, self::STRUCTURAL_LINKS, true);
     }
 
     /**
