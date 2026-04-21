@@ -141,10 +141,14 @@ final class VizHtmlBuilder
                 // Cap per-parent fan-out: an ArrayElementsContext may
                 // have hundreds of thousands of ArrayElement children,
                 // which would both exhaust maxNodes for every other
-                // branch and drown the browser. Keep the top-K by
-                // retained (tie-broken deterministically by node_id).
+                // branch and drown the browser. Stratify the pick:
+                // half on top-retained (preserves objects / string
+                // subtrees) + half evenly sampled from the tail
+                // (preserves scalar-only siblings so the array still
+                // *looks* populated when the user drills in).
                 $children = $substrate->getChildren($cur);
-                if (count($children) > $maxChildrenPerNode) {
+                $childCount = count($children);
+                if ($childCount > $maxChildrenPerNode) {
                     usort(
                         $children,
                         static function (int $a, int $b) use ($substrate): int {
@@ -156,7 +160,18 @@ final class VizHtmlBuilder
                             return $a <=> $b;
                         },
                     );
-                    $children = array_slice($children, 0, $maxChildrenPerNode);
+                    $topHalf = intdiv($maxChildrenPerNode, 2);
+                    $picked = array_slice($children, 0, $topHalf);
+                    $remaining = array_slice($children, $topHalf);
+                    $sampleBudget = $maxChildrenPerNode - $topHalf;
+                    $remainingCount = count($remaining);
+                    if ($sampleBudget > 0 && $remainingCount > 0) {
+                        $step = max(1, (int)floor($remainingCount / $sampleBudget));
+                        for ($i = 0, $c = 0; $c < $sampleBudget && $i < $remainingCount; $i += $step, $c++) {
+                            $picked[] = $remaining[$i];
+                        }
+                    }
+                    $children = $picked;
                 }
                 foreach ($children as $childId) {
                     if (isset($selected[$childId])) {
