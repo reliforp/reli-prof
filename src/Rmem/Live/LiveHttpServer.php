@@ -90,34 +90,64 @@ final class LiveHttpServer
             if (function_exists('pcntl_signal_dispatch')) {
                 pcntl_signal_dispatch();
             }
-
-            $listener = $this->listener;
-            if ($listener === null) {
+            if ($this->listener === null) {
                 break;
             }
-            /** @var array<int|string, resource> $read */
-            $read = ['__listener' => $listener];
-            foreach ($this->clients as $id => $c) {
-                if ($c['mode'] === 'http') {
-                    $read[$id] = $c['socket'];
-                }
-            }
+            $read = $this->getReadStreams();
             $write = null;
             $except = null;
             $changed = @stream_select($read, $write, $except, 1);
             if ($changed === false || $changed === 0) {
                 continue;
             }
-
-            foreach ($read as $key => $sock) {
-                if ($key === '__listener') {
-                    $this->acceptNew();
-                    continue;
-                }
-                $this->readClient((int)$key);
-            }
+            $this->tickForReadable($read);
         }
 
+        $this->close();
+    }
+
+    /**
+     * Event-loop-friendly view of the streams this server wants to watch:
+     * the listening socket (keyed by '__listener') plus every connected
+     * HTTP client (keyed by integer id). SSE clients are write-only after
+     * upgrade so they are deliberately excluded.
+     *
+     * @return array<int|string, resource>
+     */
+    public function getReadStreams(): array
+    {
+        $streams = [];
+        if ($this->listener !== null) {
+            $streams['__listener'] = $this->listener;
+        }
+        foreach ($this->clients as $id => $c) {
+            if ($c['mode'] === 'http') {
+                $streams[$id] = $c['socket'];
+            }
+        }
+        return $streams;
+    }
+
+    /**
+     * Handle whichever of this server's streams stream_select reported as
+     * readable. Safe to call from an external event loop — pass the same
+     * keys that came back from getReadStreams().
+     *
+     * @param array<int|string, resource> $readable
+     */
+    public function tickForReadable(array $readable): void
+    {
+        foreach ($readable as $key => $_sock) {
+            if ($key === '__listener') {
+                $this->acceptNew();
+                continue;
+            }
+            $this->readClient((int)$key);
+        }
+    }
+
+    public function close(): void
+    {
         foreach ($this->clients as $id => $c) {
             @fclose($c['socket']);
             unset($this->clients[$id]);

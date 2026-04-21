@@ -117,6 +117,30 @@ final class RmemExploreTui
         $this->uiResponseWrite = $responseWrite;
     }
 
+    /** @var resource|null */
+    private mixed $focusEventPipe = null;
+
+    /**
+     * Write end of a pipe to a sidecar process (the --http-bridge child).
+     * Whenever the sandwich focus changes, a JSON line
+     * {"node_id": N} is emitted so the bridge can broadcast to browsers.
+     *
+     * @param resource $writeEnd
+     */
+    public function setFocusEventPipe(mixed $writeEnd): void
+    {
+        $this->focusEventPipe = $writeEnd;
+    }
+
+    private function emitFocusEvent(int $nodeId): void
+    {
+        if ($this->focusEventPipe === null) {
+            return;
+        }
+        $line = (string)json_encode(['node_id' => $nodeId], JSON_UNESCAPED_UNICODE) . "\n";
+        @fwrite($this->focusEventPipe, $line);
+    }
+
     public function run(): void
     {
         $this->running = true;
@@ -549,6 +573,7 @@ final class RmemExploreTui
         }
         $this->sandwich = true;
         $this->sandwichNodeId = $nodeId;
+        $this->emitFocusEvent($nodeId);
         $this->uiRevision++;
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
@@ -632,6 +657,7 @@ final class RmemExploreTui
     private function enterSandwichDirect(int $nodeId, string $label): void
     {
         $this->sandwichNodeId = $nodeId;
+        $this->emitFocusEvent($nodeId);
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
         $this->childRows = $this->model->getChildren($nodeId, $this->allEdges, $this->sortMode);

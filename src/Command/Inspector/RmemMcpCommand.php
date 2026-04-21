@@ -43,6 +43,7 @@ final class RmemMcpCommand extends Command
     /** @var resource|null */
     private mixed $socket = null;
     private bool $controlEnabled = false;
+    private ?string $bridgeUrl = null;
 
     #[\Override]
     public function configure(): void
@@ -67,6 +68,12 @@ final class RmemMcpCommand extends Command
                 InputOption::VALUE_NONE,
                 'enable ui.* tools for TUI navigation (requires --socket to a --serve-control explore)',
             )
+            ->addOption(
+                'bridge',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'base URL of an inspector:rmem:live / explore --http-bridge server; enables rmem_navigate to broadcast focus events to browsers',
+            )
         ;
     }
 
@@ -78,6 +85,11 @@ final class RmemMcpCommand extends Command
         /** @var string|null $socketPath */
         $socketPath = $input->getOption('socket');
         $this->controlEnabled = (bool) $input->getOption('control');
+        /** @var string|null $bridgeUrl */
+        $bridgeUrl = $input->getOption('bridge');
+        if (is_string($bridgeUrl) && $bridgeUrl !== '') {
+            $this->bridgeUrl = rtrim($bridgeUrl, '/');
+        }
 
         if ($rmemPath === null && $socketPath === null) {
             fwrite(STDERR, "Error: specify --rmem=FILE or --socket=PATH\n");
@@ -254,6 +266,17 @@ final class RmemMcpCommand extends Command
             return $this->makeToolResult($id, "Error: ui.* tools require --control mode with --socket", true);
         }
 
+        // bridge.* actions are HTTP, not backend query
+        if (str_starts_with($action, 'bridge.')) {
+            if ($this->bridgeUrl === null) {
+                return $this->makeToolResult($id, 'Error: bridge.* tools require --bridge URL', true);
+            }
+            $result = $this->callBridge($action, $args);
+            $text = (string)json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+            $ok = isset($result['ok']) && $result['ok'] === true;
+            return $this->makeToolResult($id, $text, !$ok);
+        }
+
         // Build backend request
         /** @var array<string, mixed> $backendRequest */
         $backendRequest = ['action' => $action];
@@ -268,6 +291,49 @@ final class RmemMcpCommand extends Command
         $isError = !($result['ok'] ?? false);
 
         return $this->makeToolResult($id, $text, $isError);
+    }
+
+    /**
+     * @param array<string, mixed> $args
+     * @return array<string, mixed>
+     */
+    private function callBridge(string $action, array $args): array
+    {
+        if ($this->bridgeUrl === null) {
+            return ['ok' => false, 'error' => 'bridge URL not configured'];
+        }
+        $endpoint = match ($action) {
+            'bridge.navigate' => '/api/navigate',
+            default => null,
+        };
+        if ($endpoint === null) {
+            return ['ok' => false, 'error' => "unknown bridge action: {$action}"];
+        }
+        $url = $this->bridgeUrl . $endpoint;
+        $body = (string)json_encode($args, JSON_UNESCAPED_UNICODE);
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-Type: application/json\r\n",
+                'content' => $body,
+                'ignore_errors' => true,
+                'timeout' => 3,
+            ],
+        ]);
+        $response = @file_get_contents($url, false, $ctx);
+        if ($response === false) {
+            return ['ok' => false, 'error' => "bridge request failed: {$url}"];
+        }
+        $status = 0;
+        /** @var list<string> $headers */
+        $headers = $http_response_header ?? [];
+        if ($headers !== [] && preg_match('#HTTP/\S+\s+(\d{3})#', $headers[0], $m)) {
+            $status = (int)$m[1];
+        }
+        if ($status >= 200 && $status < 300) {
+            return ['ok' => true, 'status' => $status];
+        }
+        return ['ok' => false, 'status' => $status, 'response' => $response];
     }
 
     /** @param array<string, mixed> $response */
@@ -398,6 +464,9 @@ INSTRUCTIONS;
         foreach ($this->getToolMapping() as $name => $spec) {
             if (str_starts_with($spec['action'], 'ui.') && !$this->controlEnabled) {
                 continue; // Hide ui tools when not in control mode
+            }
+            if (str_starts_with($spec['action'], 'bridge.') && $this->bridgeUrl === null) {
+                continue; // Hide bridge tools unless --bridge is set
             }
             $tools[] = [
                 'name' => $name,
@@ -671,6 +740,19 @@ INSTRUCTIONS;
                 'action' => 'ui.get_current_selection',
                 'description' => 'Get the node currently selected by the user\'s cursor in the TUI. Returns node_id, label, retained/shallow size, and position in the list.',
                 'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()],
+            ],
+
+            // === Bridge tool (--bridge only) ===
+            'rmem_broadcast_focus' => [
+                'action' => 'bridge.navigate',
+                'description' => 'Broadcast a focus_node event to every browser connected to the HTTP bridge. Use to highlight a node in all open viz tabs so the human user can see what you are investigating.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'node_id' => ['type' => 'integer', 'description' => 'Node ID to highlight across browsers'],
+                    ],
+                    'required' => ['node_id'],
+                ],
             ],
         ];
     }
