@@ -234,14 +234,21 @@ final class RmemVizCommand extends Command
             $linkName = $substrate->getTreeLinkName($nodeId);
             $parentLink = $treeParent !== null ? $substrate->getTreeLinkName($treeParent) : null;
             $label = $model->nodeLabel($nodeId);
-            // Promote link_name into the label for class/function definitions:
-            // RmemModel.nodeLabel returns a bare type ("ClassContext") for these
-            // because the class/function name lives on the parent edge.
+            // Promote the parent edge's link_name into the label for node
+            // types whose name/key lives on the edge rather than on the node
+            // itself — RmemModel::nodeLabel otherwise returns a bare type.
             if ($linkName !== null && $linkName !== '') {
+                $prefix = match ($parentLink) {
+                    'array_elements' => "[{$linkName}]",
+                    'object_properties' => "->{$linkName}",
+                    default => null,
+                };
                 if ($parentLink === 'class_table') {
                     $label = 'class ' . $linkName;
                 } elseif ($parentLink === 'function_table') {
                     $label = 'fn ' . $linkName;
+                } elseif ($prefix !== null) {
+                    $label = $prefix . ' ' . $label;
                 }
             }
             $nodes[] = [
