@@ -664,6 +664,35 @@
     // percent of effective area per nesting level.
     d3.pack().size([w - 4, h - 4]).padding(0.5)(root);
 
+    // Zoomable focus: clicking any circle (or the background) recentres
+    // on that node and animates children so relative sizes inside the
+    // focused subtree fill the frame. Double-click zooms back out.
+    // Classic d3 zoomable-pack pattern adapted for our interactions
+    // (click still runs showDetail / postNavigate). Right-click also
+    // pops back up one level.
+    const cx = w / 2, cy = h / 2;
+    let focus = root;
+    let zoomView = [cx, cy, root.r * 2];
+
+    function zoomTo(v) {
+      zoomView = v;
+      const k = w / v[2];
+      g.selectAll('g').attr('transform', d => 'translate(' + ((d.x - v[0]) * k) + ',' + ((d.y - v[1]) * k) + ')');
+      g.selectAll('circle').attr('r', d => d.r * k);
+      g.selectAll('text.d3-label').attr('opacity', d => d.r * k > 22 ? 1 : 0);
+    }
+    function zoomTarget(d) {
+      return [d.x, d.y, d.r * 2.1];
+    }
+    function zoomToNode(d) {
+      focus = d;
+      const target = zoomTarget(focus);
+      svg.transition().duration(600).tween('zoom', () => {
+        const i = d3.interpolateZoom(zoomView, target);
+        return t => zoomTo(i(t));
+      });
+    }
+
     const node = g.selectAll('g').data(root.descendants()).join('g')
       .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
     node.append('circle')
@@ -672,13 +701,31 @@
       .attr('fill-opacity', d => d.children ? 0.4 : 0.85)
       .style('stroke', d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)')
       .attr('stroke-width', 0.6)
-      .on('click', (_, d) => { showDetail(d.data); postNavigate(d.data.id); })
+      .style('cursor', d => d.depth > 0 ? 'pointer' : 'default')
+      .on('click', (event, d) => {
+        event.stopPropagation();
+        showDetail(d.data);
+        postNavigate(d.data.id);
+        if (d.children && focus !== d) {
+          zoomToNode(d);
+        }
+      })
+      .on('contextmenu', (event, d) => {
+        event.preventDefault();
+        if (focus.parent) {
+          zoomToNode(focus.parent);
+        }
+      })
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
+    // Background click zooms back to root
+    svg.on('click', () => { if (focus !== root) zoomToNode(root); });
     // Top few labels
     node.filter(d => d.r > 28 && d.depth > 0).append('text')
       .attr('class', 'd3-label')
       .attr('text-anchor', 'middle').attr('dy', '0.35em')
       .text(d => (keyOf(d.data) || '').slice(0, Math.max(2, Math.floor(d.r / 4))));
+
+    zoomTo(zoomView);
     views.pack.recolor = () => svg.selectAll('circle')
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(keyOf(d.data)));
     views.pack.retheme = (t) => { el.style.background = t.packGradient; };
