@@ -74,6 +74,11 @@
       <button data-view="tree">Treemap</button>
       <button data-view="sun">Sunburst</button>
       <button data-view="force">3D Force</button>
+      <label id="pack-zoom-toggle" title="enable click-to-zoom in Circle Pack"
+        style="margin-left:8px;color:var(--muted);font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;">
+        <input type="checkbox" id="pack-zoom-cb" style="accent-color:var(--accent);margin:0;">
+        <span>pack zoom</span>
+      </label>
       <select id="theme-select" title="theme"></select>
       <select id="group-select" title="color grouping"></select>
       <select id="palette-select" title="color palette"></select>
@@ -691,6 +696,24 @@
     let focus = root;
     let zoomView = [root.x, root.y, root.r * 2];
 
+    // Click-to-zoom is opt-in; default off so a click on a circle just
+    // shows its detail without moving the camera. The checkbox in the
+    // header flips zoomEnabled and persists via localStorage.
+    const ZOOM_STORAGE_KEY = 'rmem-viz-pack-zoom';
+    let zoomEnabled = localStorage.getItem(ZOOM_STORAGE_KEY) === '1';
+    const zoomCb = document.getElementById('pack-zoom-cb');
+    if (zoomCb) {
+      zoomCb.checked = zoomEnabled;
+      zoomCb.addEventListener('change', () => {
+        zoomEnabled = zoomCb.checked;
+        localStorage.setItem(ZOOM_STORAGE_KEY, zoomEnabled ? '1' : '0');
+        if (!zoomEnabled) {
+          focus = root;
+          zoomToNode(root);
+        }
+      });
+    }
+
     const node = g.selectAll('g').data(root.descendants()).join('g');
     node.append('circle')
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(keyOf(d.data)))
@@ -702,21 +725,21 @@
         event.stopPropagation();
         showDetail(d.data);
         postNavigate(d.data.id);
-        if (d.children && focus !== d) {
+        if (zoomEnabled && d.children && focus !== d) {
           zoomToNode(d);
         }
       })
       .on('contextmenu', (event, d) => {
         event.preventDefault();
-        if (focus.parent) zoomToNode(focus.parent);
+        if (zoomEnabled && focus.parent) zoomToNode(focus.parent);
       })
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     node.filter(d => d.depth > 0).append('text')
       .attr('class', 'd3-label')
       .attr('text-anchor', 'middle').attr('dy', '0.35em')
       .text(d => (keyOf(d.data) || '').slice(0, 18));
-    // Background click zooms back to root.
-    svg.on('click', () => { if (focus !== root) zoomToNode(root); });
+    // Background click zooms back to root (only when zoom is on).
+    svg.on('click', () => { if (zoomEnabled && focus !== root) zoomToNode(root); });
 
     // Fit to the shorter of width/height so the root circle never
     // overflows the vertical viewBox on landscape displays (and vice
