@@ -52,6 +52,15 @@ final class LiveHttpServer
     private $onHighlightSet = null;
 
     /**
+     * @var (callable(int): array<string, mixed>)|null
+     * Augments every outbound focus_node payload with extra fields.
+     * Used by rmem:live / the bridge child to attach the full ancestor
+     * node_id chain so browsers can fall back to the nearest visible
+     * ancestor when the focused node is outside their induced subgraph.
+     */
+    private $focusEnricher = null;
+
+    /**
      * @param callable(string): string|null $broadcastHook  Optional callback
      *        invoked with each broadcast payload (for tests / logging). null
      *        return is ignored.
@@ -101,6 +110,19 @@ final class LiveHttpServer
     public function setHighlightSetCallback(callable $cb): void
     {
         $this->onHighlightSet = $cb;
+    }
+
+    /**
+     * Install a callback that enriches outbound focus_node payloads.
+     * Return array is merged into {node_id: N}; conventional fields:
+     *   path_node_ids: list<int>  (root→leaf, inclusive)
+     *   label: string
+     *
+     * @param callable(int): array<string, mixed> $cb
+     */
+    public function setFocusEnricher(callable $cb): void
+    {
+        $this->focusEnricher = $cb;
     }
 
     public function run(): void
@@ -194,7 +216,12 @@ final class LiveHttpServer
      */
     public function broadcastFocusNode(int $nodeId): int
     {
-        return $this->broadcast('focus_node', ['node_id' => $nodeId]);
+        $payload = ['node_id' => $nodeId];
+        if ($this->focusEnricher !== null) {
+            $extra = ($this->focusEnricher)($nodeId);
+            $payload = array_merge($payload, $extra);
+        }
+        return $this->broadcast('focus_node', $payload);
     }
 
     /**

@@ -426,6 +426,22 @@ final class RmemExploreCommand extends Command
             $line = (string)json_encode(['node_id' => $nodeId], JSON_UNESCAPED_UNICODE) . "\n";
             @fwrite($navigatePipeWrite, $line);
         });
+        // Attach the full ancestor chain so browsers can map an out-of-
+        // subgraph focus onto the nearest visible ancestor.
+        $server->setFocusEnricher(static function (int $nodeId) use ($substrate, $model): array {
+            $path = [];
+            $cur = $nodeId;
+            $hops = 0;
+            while ($cur !== null && $hops < 64) {
+                $path[] = $cur;
+                $cur = $substrate->getTreeParentNodeId($cur);
+                $hops++;
+            }
+            return [
+                'path_node_ids' => array_reverse($path),
+                'label' => $model->nodeLabel($nodeId),
+            ];
+        });
 
         stream_set_blocking($focusPipeRead, false);
         $running = true;

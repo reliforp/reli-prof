@@ -493,7 +493,31 @@
     es.addEventListener('focus_node', e => {
       try {
         const data = JSON.parse(e.data);
-        if (typeof data.node_id === 'number') highlightNode(data.node_id);
+        if (typeof data.node_id !== 'number') return;
+        if (selectedSet.has(data.node_id)) {
+          highlightNode(data.node_id);
+          return;
+        }
+        // Focus target is outside the induced subgraph. Walk the
+        // server-provided ancestor chain (root→leaf) from the leaf
+        // end and highlight the first ancestor that IS in the view.
+        if (Array.isArray(data.path_node_ids)) {
+          for (let i = data.path_node_ids.length - 1; i >= 0; i--) {
+            const anc = data.path_node_ids[i];
+            if (selectedSet.has(anc)) {
+              highlightNode(anc);
+              showDetail({
+                id: data.node_id,
+                label: '(focus: ' + (data.label || ('node ' + data.node_id))
+                  + ' — shown via ancestor)',
+                type: '?', class: null, retained: null, shallow: null,
+                link_name: null, link_display: null, path: [],
+              });
+              return;
+            }
+          }
+        }
+        highlightNode(data.node_id); // still shows the out-of-subgraph notice
       } catch (_) { /* ignore */ }
     });
     es.addEventListener('highlight_set', e => {

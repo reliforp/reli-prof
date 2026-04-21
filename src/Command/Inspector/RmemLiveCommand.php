@@ -147,6 +147,22 @@ final class RmemLiveCommand extends Command
         );
 
         $server = new LiveHttpServer($html, $host, $port);
+        // Let browsers find a visible ancestor when we focus a node
+        // that's outside their induced subgraph.
+        $server->setFocusEnricher(static function (int $nodeId) use ($substrate, $model): array {
+            $path = [];
+            $cur = $nodeId;
+            $hops = 0;
+            while ($cur !== null && $hops < 64) {
+                $path[] = $cur;
+                $cur = $substrate->getTreeParentNodeId($cur);
+                $hops++;
+            }
+            return [
+                'path_node_ids' => array_reverse($path),
+                'label' => $model->nodeLabel($nodeId),
+            ];
+        });
         $addr = $server->bind();
         $output->writeln(sprintf(
             '<info>listening on %s — open http://%s:%d/ in a browser</info>',
