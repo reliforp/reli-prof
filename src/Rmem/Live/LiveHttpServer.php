@@ -352,10 +352,15 @@ final class LiveHttpServer
         $parsedPath = parse_url($req['path'], PHP_URL_PATH);
         $path = is_string($parsedPath) && $parsedPath !== '' ? $parsedPath : '/';
 
+        $acceptEncoding = $req['headers']['accept-encoding'] ?? '';
         if ($req['method'] === 'GET' && $path === '/') {
-            $this->sendResponse($id, 200, [
-                'Content-Type' => 'text/html; charset=utf-8',
-            ], $this->html);
+            $this->sendResponse(
+                $id,
+                200,
+                ['Content-Type' => 'text/html; charset=utf-8'],
+                $this->html,
+                $acceptEncoding,
+            );
             return;
         }
         if ($req['method'] === 'GET' && $path === '/api/events') {
@@ -427,10 +432,25 @@ final class LiveHttpServer
     /**
      * @param array<string, string> $headers
      */
-    private function sendResponse(int $id, int $status, array $headers, string $body): void
+    private function sendResponse(int $id, int $status, array $headers, string $body, string $acceptEncoding = ''): void
     {
         if (!isset($this->clients[$id])) {
             return;
+        }
+        // Transparently gzip when the client advertises support and the
+        // body is big enough to benefit (embedded viz HTML for a real
+        // snapshot easily runs 10s of MB; compression brings it down
+        // by ~10x). Fall back to identity if gzencode failed or the
+        // client does not want it.
+        $wantsGzip = $body !== ''
+            && strlen($body) > 1024
+            && stripos($acceptEncoding, 'gzip') !== false;
+        if ($wantsGzip) {
+            $compressed = @gzencode($body, 6);
+            if ($compressed !== false) {
+                $body = $compressed;
+                $headers['Content-Encoding'] = 'gzip';
+            }
         }
         $headers['Content-Length'] = (string)strlen($body);
         $headers['Connection'] = 'close';
