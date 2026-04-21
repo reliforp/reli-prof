@@ -411,8 +411,12 @@
     const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, w, h]);
     const g = svg.append('g');
 
-    const root = d3.hierarchy(hierarchyRoot).sum(d => d.value).sort((a, b) => b.value - a.value);
-    d3.pack().size([w - 4, h - 4]).padding(2)(root);
+    const root = d3.hierarchy(hierarchyRoot)
+      .sum(d => d.value)
+      .sort((a, b) => (b.data.retained || 0) - (a.data.retained || 0));
+    // padding(0.5) keeps separation visible without losing several
+    // percent of effective area per nesting level.
+    d3.pack().size([w - 4, h - 4]).padding(0.5)(root);
 
     const node = g.selectAll('g').data(root.descendants()).join('g')
       .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
@@ -440,8 +444,13 @@
     const w = el.clientWidth, h = el.clientHeight;
     const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, w, h]);
 
-    const root = d3.hierarchy(hierarchyRoot).sum(d => d.value).sort((a, b) => b.value - a.value);
-    d3.treemap().size([w, h]).paddingInner(1).round(true)(root);
+    const root = d3.hierarchy(hierarchyRoot)
+      .sum(d => d.value)
+      .sort((a, b) => (b.data.retained || 0) - (a.data.retained || 0));
+    // round(true) snaps cells to integer pixels and can swap adjacent
+    // small rects when their floored sizes tie; drop it so order is
+    // preserved at the cost of fractional-pixel edges.
+    d3.treemap().size([w, h]).paddingInner(1)(root);
 
     const leaf = svg.selectAll('g').data(root.leaves()).join('g')
       .attr('transform', d => 'translate(' + d.x0 + ',' + d.y0 + ')');
@@ -473,7 +482,9 @@
     const radius = Math.min(w, h) / 2 - 8;
     const svg = d3.select(el).append('svg').attr('viewBox', [-w/2, -h/2, w, h]);
 
-    const root = d3.hierarchy(hierarchyRoot).sum(d => d.value).sort((a, b) => b.value - a.value);
+    const root = d3.hierarchy(hierarchyRoot)
+      .sum(d => d.value)
+      .sort((a, b) => (b.data.retained || 0) - (a.data.retained || 0));
     d3.partition().size([2 * Math.PI, radius])(root);
     const arc = d3.arc()
       .startAngle(d => d.x0).endAngle(d => d.x1)
