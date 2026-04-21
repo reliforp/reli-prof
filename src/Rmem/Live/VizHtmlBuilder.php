@@ -139,7 +139,7 @@ final class VizHtmlBuilder
                         continue;
                     }
                     $linkToChild = $substrate->getTreeLinkName($childId);
-                    $isStructural = self::isStructuralLink($linkToChild);
+                    $isStructural = self::isStructuralHop($substrate, $childId, $linkToChild);
                     $nextD = $isStructural ? $meaningfulD : $meaningfulD + 1;
                     if ($nextD > $depth) {
                         continue;
@@ -237,9 +237,32 @@ final class VizHtmlBuilder
         'object_handlers',
     ];
 
+    /**
+     * Node TYPES whose inbound edge is really a PHP-implementation
+     * wrapper, even if the link name looks user-facing. Without this,
+     * an Object → property → Array[scalars] chain runs out of BFS
+     * depth at the ArrayHeaderContext (link = <prop_name>, counted as
+     * one hop) and misses the ArrayElement leaves inside the array.
+     * Treating ArrayHeaderContext as a free hop collapses that
+     * wrapper level exactly how PathFormatter would.
+     */
+    private const STRUCTURAL_NODE_TYPES = [
+        'ArrayHeaderContext',
+        'ArrayPossibleOverheadContext',
+    ];
+
     private static function isStructuralLink(?string $link): bool
     {
         return $link !== null && in_array($link, self::STRUCTURAL_LINKS, true);
+    }
+
+    private static function isStructuralHop(GraphSubstrate $substrate, int $childId, ?string $linkName): bool
+    {
+        if (self::isStructuralLink($linkName)) {
+            return true;
+        }
+        $type = $substrate->getNodeType($childId);
+        return $type !== null && in_array($type, self::STRUCTURAL_NODE_TYPES, true);
     }
 
     /**
