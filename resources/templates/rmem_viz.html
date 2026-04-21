@@ -138,9 +138,15 @@
     return {
       id: n.id,
       name: n.label,
+      label: n.label,
       klass: keyOf(n),
+      type: n.type,
+      class: n.class,
       retained: n.retained,
       shallow: n.shallow,
+      link_name: n.link_name,
+      link_display: n.link_display,
+      path: n.path,
       value: kids.length ? (n.shallow || 1) : (n.retained || n.shallow || 1),
       children: kids,
     };
