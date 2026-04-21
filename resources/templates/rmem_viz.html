@@ -560,10 +560,23 @@
     if (linkForce && typeof linkForce.distance === 'function') {
       linkForce.distance(l => radiusOf(l.source) + radiusOf(l.target) + 18);
     }
+    // zoomToFit's padding argument is in pixels — 60 was far too tight
+    // once node radii grew, so nodes kept clipping the camera. 180
+    // leaves a comfortable margin. We also pull the camera back 25%
+    // after the fit so it never lands inside a big sphere.
     G.onEngineStop(() => {
       if (G.__fitDone) return;
       G.__fitDone = true;
-      G.zoomToFit(600, 60);
+      G.zoomToFit(800, 180);
+      setTimeout(() => {
+        const cam = G.cameraPosition();
+        const out = 1.3;
+        G.cameraPosition(
+          { x: cam.x * out, y: cam.y * out, z: cam.z * out },
+          { x: 0, y: 0, z: 0 },
+          500,
+        );
+      }, 850);
     });
     G
       .onNodeClick(n => {
