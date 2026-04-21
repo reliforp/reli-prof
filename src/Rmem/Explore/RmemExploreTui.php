@@ -135,6 +135,15 @@ final class RmemExploreTui
      *  Enter. Toggled with 'F'. */
     private bool $followMode = false;
 
+    /** @var array<int,int> sidebar_line_index → node_id, populated
+     *  per render by buildSidebarLines so mouse clicks on a path-to-
+     *  root step can navigate to it. */
+    private array $sidebarPathMap = [];
+
+    /** Leftmost 1-based terminal column occupied by the sidebar at
+     *  the last render (0 if the sidebar is hidden). */
+    private int $sidebarStartCol = 0;
+
     /**
      * Write end of a pipe to a sidecar process (the --http-bridge child).
      * Whenever the sandwich focus changes, a JSON line
@@ -657,6 +666,20 @@ final class RmemExploreTui
             || $mouse->button === MouseEvent::SCROLL_DOWN;
         if (!$isScroll && $mouse->button !== MouseEvent::BUTTON_LEFT) {
             return;
+        }
+
+        // Path-to-root row in the sidebar: clicking a step jumps
+        // sandwich view to that ancestor. Tested before pane hit so
+        // scroll events still work inside the sidebar area.
+        if ($this->sidebarStartCol > 0 && $mouse->col >= $this->sidebarStartCol && !$isScroll) {
+            $sidebarIdx = $mouse->row - 2; // rendered at row = idx + 2
+            if (isset($this->sidebarPathMap[$sidebarIdx])) {
+                $nodeId = $this->sidebarPathMap[$sidebarIdx];
+                if ($nodeId >= 0) {
+                    $this->enterSandwich($nodeId, $this->model->nodeLabel($nodeId));
+                }
+                return;
+            }
         }
 
         [$hitPane, $hitIdx] = $this->hitTestMouseRow($mouse->row);
@@ -1596,6 +1619,9 @@ final class RmemExploreTui
         // Sidebar: render using cursor positioning instead of string concat.
         // This avoids ANSI visible-width miscalculation entirely.
         $sidebarBuf = '';
+        // Record the sidebar's left edge for the mouse hit-test; 0 means
+        // the sidebar is not currently visible.
+        $this->sidebarStartCol = ($sidebarW > 0 && $sidebarLines !== []) ? ($mainW + 1) : 0;
         if ($sidebarW > 0 && $sidebarLines !== []) {
             $sepCol = $mainW + 1;
             for ($i = 1; $i < count($lines); $i++) {
@@ -1648,6 +1674,7 @@ final class RmemExploreTui
     private function buildSidebarLines(int $nodeId, int $width, int $totalRows): array
     {
         $lines = [];
+        $this->sidebarPathMap = [];
         $detail = $this->model->nodeDetail($nodeId);
         $usable = $width - 2; // 1 space indent + 1 margin
 
@@ -1717,7 +1744,16 @@ final class RmemExploreTui
             $link = $step['link_name'];
             $label = $step['label'];
             $text = "{$indent}[{$link}] {$label}";
+            // Record the sidebar line indices this step will occupy so a
+            // mouse click on any of its wrapped rows can jump to it, and
+            // paint those rows underlined cyan to cue clickability.
+            $firstLineIdx = count($lines);
             $wrap($text);
+            $lastLineIdx = count($lines) - 1;
+            for ($li = $firstLineIdx; $li <= $lastLineIdx; $li++) {
+                $lines[$li] = "\e[4;36m" . $lines[$li] . "\e[24;39m";
+                $this->sidebarPathMap[$li] = $step['node_id'];
+            }
             if (count($lines) >= $totalRows - 3) {
                 $lines[] = ' ...';
                 break;
