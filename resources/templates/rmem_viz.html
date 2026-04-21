@@ -11,6 +11,8 @@
     --muted: #7a819a;
     --accent: #66d9ef;
     --border: #1a2033;
+    --leaf-stroke: rgba(255,255,255,0.18);
+    --panel-bg: rgba(13,18,32,0.92);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
@@ -42,7 +44,7 @@
   #force-view { background: radial-gradient(ellipse at center, #121830 0%, #04060c 80%); }
   #detail {
     position: absolute; right: 12px; top: 12px; width: 320px; max-height: 60%;
-    background: rgba(13,18,32,0.92); border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px;
     padding: 10px 12px; overflow: auto; pointer-events: auto; font-size: 12px;
     backdrop-filter: blur(6px);
   }
@@ -71,6 +73,7 @@
       <button data-view="pack">Circle Pack</button>
       <button data-view="tree">Treemap</button>
       <button data-view="sun">Sunburst</button>
+      <select id="theme-select" title="theme"></select>
       <select id="palette-select" title="color palette"></select>
     </nav>
   </header>
@@ -263,6 +266,78 @@
     });
   });
 
+  // ---- theme picker ----
+  // Each theme sets CSS variables (which propagate to chrome,
+  // panels, and SVG strokes via var(--leaf-stroke)) plus the two
+  // bits of styling that don't go through CSS: the 3D Force WebGL
+  // background and the Circle Pack radial gradient.
+  const THEMES = {
+    'Midnight': {
+      vars: {
+        '--bg': '#07090f', '--bg2': '#0d1220', '--fg': '#d8dce6',
+        '--muted': '#7a819a', '--accent': '#66d9ef', '--border': '#1a2033',
+        '--leaf-stroke': 'rgba(255,255,255,0.18)',
+        '--panel-bg': 'rgba(13,18,32,0.92)',
+      },
+      forceBg: '#05070e',
+      packGradient: 'radial-gradient(ellipse at center, #14182a 0%, #04060c 80%)',
+    },
+    'Pure Black': {
+      vars: {
+        '--bg': '#000000', '--bg2': '#0a0a0a', '--fg': '#e8e8e8',
+        '--muted': '#888888', '--accent': '#5ce4ff', '--border': '#1f1f1f',
+        '--leaf-stroke': 'rgba(255,255,255,0.22)',
+        '--panel-bg': 'rgba(10,10,10,0.92)',
+      },
+      forceBg: '#000000',
+      packGradient: 'radial-gradient(ellipse at center, #0a0a18 0%, #000000 80%)',
+    },
+    'Slate': {
+      vars: {
+        '--bg': '#1c1f2a', '--bg2': '#272b38', '--fg': '#e0e3eb',
+        '--muted': '#8a93a8', '--accent': '#7dd3fc', '--border': '#33384a',
+        '--leaf-stroke': 'rgba(255,255,255,0.15)',
+        '--panel-bg': 'rgba(34,38,50,0.92)',
+      },
+      forceBg: '#1a1d28',
+      packGradient: 'radial-gradient(ellipse at center, #2a2f42 0%, #16192a 80%)',
+    },
+    'Daylight': {
+      vars: {
+        '--bg': '#f5f5f7', '--bg2': '#ffffff', '--fg': '#1a1a1f',
+        '--muted': '#666666', '--accent': '#0066cc', '--border': '#d0d0d8',
+        '--leaf-stroke': 'rgba(0,0,0,0.18)',
+        '--panel-bg': 'rgba(255,255,255,0.94)',
+      },
+      forceBg: '#f5f5f7',
+      packGradient: 'radial-gradient(ellipse at center, #ffffff 0%, #e8eaf0 80%)',
+    },
+  };
+  const THEME_STORAGE_KEY = 'rmem-viz-theme';
+  let activeTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'Midnight';
+  if (!(activeTheme in THEMES)) activeTheme = 'Midnight';
+
+  function applyTheme(name) {
+    const t = THEMES[name] || THEMES['Midnight'];
+    for (const k of Object.keys(t.vars)) {
+      document.documentElement.style.setProperty(k, t.vars[k]);
+    }
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].retheme === 'function') views[k].retheme(t);
+    }
+  }
+  applyTheme(activeTheme);
+
+  const themeSelect = document.getElementById('theme-select');
+  themeSelect.innerHTML = Object.keys(THEMES)
+    .map(n => '<option value="' + n + '"' + (n === activeTheme ? ' selected' : '') + '>' + n + '</option>')
+    .join('');
+  themeSelect.addEventListener('change', () => {
+    activeTheme = themeSelect.value;
+    localStorage.setItem(THEME_STORAGE_KEY, activeTheme);
+    applyTheme(activeTheme);
+  });
+
   // ---- palette picker ----
   const paletteSelect = document.getElementById('palette-select');
   const allSchemes = Object.keys(DISCRETE_SCHEMES).concat(Object.keys(CONTINUOUS_SCHEMES));
@@ -321,13 +396,15 @@
     window.addEventListener('resize', () => G.width(el.clientWidth).height(el.clientHeight));
     G.width(el.clientWidth).height(el.clientHeight);
     views.force.recolor = () => G.nodeColor(n => colorFor(n.klass));
+    views.force.retheme = (t) => G.backgroundColor(t.forceBg);
+    G.backgroundColor(THEMES[activeTheme].forceBg);
   }
 
   // ================== Circle Packing ==================
   function initPack() {
     const el = document.getElementById('pack-view');
     const w = el.clientWidth, h = el.clientHeight;
-    el.style.background = 'radial-gradient(ellipse at center, #14182a 0%, #04060c 80%)';
+    el.style.background = THEMES[activeTheme].packGradient;
     const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, w, h]);
     const g = svg.append('g');
 
@@ -340,7 +417,7 @@
       .attr('r', d => d.r)
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass))
       .attr('fill-opacity', d => d.children ? 0.4 : 0.85)
-      .attr('stroke', d => d.depth === 0 ? 'transparent' : 'rgba(255,255,255,0.18)')
+      .style('stroke', d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)')
       .attr('stroke-width', 0.6)
       .on('click', (_, d) => showDetail(d.data))
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
@@ -351,6 +428,7 @@
       .text(d => (d.data.klass || '').slice(0, Math.max(2, Math.floor(d.r / 4))));
     views.pack.recolor = () => svg.selectAll('circle')
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass));
+    views.pack.retheme = (t) => { el.style.background = t.packGradient; };
   }
 
   // ================== Treemap ==================
@@ -369,7 +447,7 @@
       .attr('height', d => d.y1 - d.y0)
       .attr('fill', d => colorFor(d.data.klass))
       .attr('fill-opacity', 0.82)
-      .attr('stroke', 'rgba(0,0,0,0.4)').attr('stroke-width', 0.5)
+      .style('stroke', 'var(--leaf-stroke)').attr('stroke-width', 0.5)
       .on('click', (_, d) => showDetail(d.data))
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     leaf.append('text')
@@ -403,7 +481,7 @@
       .attr('d', arc)
       .attr('fill', d => colorFor(d.data.klass))
       .attr('fill-opacity', d => d.children ? 0.55 : 0.85)
-      .attr('stroke', 'rgba(0,0,0,0.35)').attr('stroke-width', 0.4)
+      .style('stroke', 'var(--leaf-stroke)').attr('stroke-width', 0.4)
       .on('click', (_, d) => showDetail(d.data))
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     views.sun.recolor = () => svg.selectAll('path')
