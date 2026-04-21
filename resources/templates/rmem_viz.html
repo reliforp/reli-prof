@@ -654,54 +654,23 @@
     const el = document.getElementById('pack-view');
     const w = el.clientWidth, h = el.clientHeight;
     el.style.background = THEMES[activeTheme].packGradient;
-    const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, w, h]);
+    // viewBox centred at origin so the zoom math matches Bostock's
+    // classic zoomable-pack (each node's transform is recomputed
+    // relative to the focus view v=[fx,fy,frameSize]).
+    const svg = d3.select(el).append('svg')
+      .attr('viewBox', [-w / 2, -h / 2, w, h].join(' '));
     const g = svg.append('g');
 
     const root = d3.hierarchy(hierarchyRoot)
       .sum(d => d.value)
       .sort((a, b) => (b.data.retained || 0) - (a.data.retained || 0));
-    // padding(0.5) keeps separation visible without losing several
-    // percent of effective area per nesting level.
     d3.pack().size([w - 4, h - 4]).padding(0.5)(root);
 
-    // Zoomable focus: clicking any circle (or the background) recentres
-    // on that node and animates children so relative sizes inside the
-    // focused subtree fill the frame. Double-click zooms back out.
-    // Classic d3 zoomable-pack pattern adapted for our interactions
-    // (click still runs showDetail / postNavigate). Right-click also
-    // pops back up one level.
     let focus = root;
     let zoomView = [root.x, root.y, root.r * 2];
 
-    function zoomTo(v) {
-      zoomView = v;
-      const k = w / v[2];
-      // The outer <g> handles the camera translation (shift viewBox
-      // centre onto v[0]/v[1]); per-node <g> stay at their layout
-      // coordinates. Then circles scale by k.
-      g.attr('transform',
-        'translate(' + (w / 2) + ',' + (h / 2) + ') ' +
-        'scale(' + k + ') ' +
-        'translate(' + (-v[0]) + ',' + (-v[1]) + ')');
-      g.selectAll('text.d3-label').attr('opacity', d => d.r * k > 22 ? 1 : 0)
-        .style('font-size', (10 / k) + 'px');
-    }
-    function zoomTarget(d) {
-      return [d.x, d.y, d.r * 2.1];
-    }
-    function zoomToNode(d) {
-      focus = d;
-      const target = zoomTarget(focus);
-      svg.transition().duration(600).tween('zoom', () => {
-        const i = d3.interpolateZoom(zoomView, target);
-        return t => zoomTo(i(t));
-      });
-    }
-
-    const node = g.selectAll('g').data(root.descendants()).join('g')
-      .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
+    const node = g.selectAll('g').data(root.descendants()).join('g');
     node.append('circle')
-      .attr('r', d => d.r)
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(keyOf(d.data)))
       .attr('fill-opacity', d => d.children ? 0.4 : 0.85)
       .style('stroke', d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)')
@@ -717,18 +686,38 @@
       })
       .on('contextmenu', (event, d) => {
         event.preventDefault();
-        if (focus.parent) {
-          zoomToNode(focus.parent);
-        }
+        if (focus.parent) zoomToNode(focus.parent);
       })
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
-    // Background click zooms back to root
-    svg.on('click', () => { if (focus !== root) zoomToNode(root); });
-    // Top few labels
-    node.filter(d => d.r > 28 && d.depth > 0).append('text')
+    node.filter(d => d.depth > 0).append('text')
       .attr('class', 'd3-label')
       .attr('text-anchor', 'middle').attr('dy', '0.35em')
-      .text(d => (keyOf(d.data) || '').slice(0, Math.max(2, Math.floor(d.r / 4))));
+      .text(d => (keyOf(d.data) || '').slice(0, 18));
+    // Background click zooms back to root.
+    svg.on('click', () => { if (focus !== root) zoomToNode(root); });
+
+    // Fit to the shorter of width/height so the root circle never
+    // overflows the vertical viewBox on landscape displays (and vice
+    // versa on portrait). The classic zoomable-pack example assumes
+    // a square viewport and uses k = width / v[2]; ours is whatever
+    // the pack-view div happens to be.
+    const viewFit = Math.min(w, h);
+    function zoomTo(v) {
+      zoomView = v;
+      const k = viewFit / v[2];
+      node.attr('transform',
+        d => 'translate(' + ((d.x - v[0]) * k) + ',' + ((d.y - v[1]) * k) + ')');
+      node.select('circle').attr('r', d => d.r * k);
+      node.select('text').attr('opacity', d => d.r * k > 22 ? 1 : 0);
+    }
+    function zoomToNode(d) {
+      focus = d;
+      const target = [d.x, d.y, d.r * 2.1];
+      svg.transition().duration(600).tween('zoom', () => {
+        const i = d3.interpolateZoom(zoomView, target);
+        return t => zoomTo(i(t));
+      });
+    }
 
     zoomTo(zoomView);
     views.pack.recolor = () => svg.selectAll('circle')
