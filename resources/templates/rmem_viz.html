@@ -187,8 +187,11 @@
   function buildTree(id) {
     const n = byId.get(id);
     const kids = (childrenMap.get(id) || []).map(buildTree);
-    // Avoid double-counting: if a node has kids, use its shallow
-    // size as its own leaf contribution so retained = own + sum(kids).
+    // value = retained minus the retained of children that survived
+    // the subgraph filter, so d3.sum() always reproduces the true
+    // retained size — even when most descendants were dropped.
+    const childrenRetained = kids.reduce((s, k) => s + (k.retained || 0), 0);
+    const ownContribution = Math.max(1, (n.retained || 0) - childrenRetained);
     return {
       id: n.id,
       name: n.label,
@@ -201,7 +204,7 @@
       link_name: n.link_name,
       link_display: n.link_display,
       path: n.path,
-      value: kids.length ? (n.shallow || 1) : (n.retained || n.shallow || 1),
+      value: ownContribution,
       children: kids,
     };
   }
