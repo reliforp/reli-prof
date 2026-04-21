@@ -97,6 +97,7 @@
 <script>
 (function () {
   const DATA = /*__RMEM_VIZ_DATA__*/null;
+  const LIVE = /*__RMEM_VIZ_LIVE__*/false;
   if (!DATA) {
     document.body.innerHTML = '<pre style="color:#f66;padding:20px">no data embedded</pre>';
     return;
@@ -297,7 +298,13 @@
       for (const k of Object.keys(views)) {
         views[k].el.classList.toggle('active', k === key);
       }
-      if (!views[key].inited) { views[key].init(); views[key].inited = true; }
+      if (!views[key].inited) {
+        views[key].init();
+        views[key].inited = true;
+        if (highlightedId !== null && typeof views[key].highlight === 'function') {
+          views[key].highlight(highlightedId);
+        }
+      }
     });
   });
 
@@ -395,6 +402,53 @@
 
   initPack(); views.pack.inited = true;
 
+  // ---- live mode: SSE subscription + click-to-broadcast ----
+  // Lookup so we can short-circuit highlight requests for nodes
+  // outside the current induced subgraph.
+  const selectedSet = new Set(DATA.nodes.map(n => n.id));
+  let highlightedId = null;
+
+  function highlightNode(nodeId) {
+    highlightedId = nodeId;
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].highlight === 'function') {
+        views[k].highlight(nodeId);
+      }
+    }
+    if (selectedSet.has(nodeId)) {
+      const n = DATA.nodes.find(x => x.id === nodeId);
+      if (n) showDetail(n);
+    } else {
+      showDetail({
+        id: nodeId,
+        label: '(node ' + nodeId + ' is outside the visible subgraph)',
+        type: '?', class: null, retained: null, shallow: null,
+        link_name: null, link_display: null, path: [],
+      });
+    }
+  }
+
+  function postNavigate(nodeId) {
+    if (!LIVE) return;
+    fetch((DATA.live && DATA.live.navigate_url) || '/api/navigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId }),
+    }).catch(() => {});
+  }
+
+  if (LIVE) {
+    const evtUrl = (DATA.live && DATA.live.events_url) || '/api/events';
+    const es = new EventSource(evtUrl);
+    es.addEventListener('focus_node', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (typeof data.node_id === 'number') highlightNode(data.node_id);
+      } catch (_) { /* ignore */ }
+    });
+    es.onerror = () => { /* browser auto-reconnects */ };
+  }
+
   // ================== 3D Force Graph ==================
   function initForce() {
     const nodes = DATA.nodes.map(n => ({
@@ -431,11 +485,22 @@
           n, 900
         );
         showDetail(n);
+        postNavigate(n.id);
       });
     window.addEventListener('resize', () => G.width(el.clientWidth).height(el.clientHeight));
     G.width(el.clientWidth).height(el.clientHeight);
     views.force.recolor = () => G.nodeColor(n => colorFor(n.klass));
     views.force.retheme = (t) => G.backgroundColor(t.forceBg);
+    views.force.highlight = (id) => {
+      const target = nodes.find(n => n.id === id);
+      if (!target) return;
+      const dist = 140;
+      const d = Math.hypot(target.x || 1, target.y || 1, target.z || 1) || 1;
+      G.cameraPosition(
+        { x: target.x * (1 + dist / d), y: target.y * (1 + dist / d), z: target.z * (1 + dist / d) },
+        target, 700
+      );
+    };
     G.backgroundColor(THEMES[activeTheme].forceBg);
   }
 
@@ -462,7 +527,7 @@
       .attr('fill-opacity', d => d.children ? 0.4 : 0.85)
       .style('stroke', d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)')
       .attr('stroke-width', 0.6)
-      .on('click', (_, d) => showDetail(d.data))
+      .on('click', (_, d) => { showDetail(d.data); postNavigate(d.data.id); })
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     // Top few labels
     node.filter(d => d.r > 28 && d.depth > 0).append('text')
@@ -472,6 +537,13 @@
     views.pack.recolor = () => svg.selectAll('circle')
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass));
     views.pack.retheme = (t) => { el.style.background = t.packGradient; };
+    views.pack.highlight = (id) => {
+      svg.selectAll('circle')
+        .style('stroke', d => d.data.id === id
+          ? 'var(--accent)'
+          : (d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)'))
+        .attr('stroke-width', d => d.data.id === id ? 2.5 : 0.6);
+    };
   }
 
   // ================== Treemap ==================
@@ -496,7 +568,7 @@
       .attr('fill', d => colorFor(d.data.klass))
       .attr('fill-opacity', 0.82)
       .style('stroke', 'var(--leaf-stroke)').attr('stroke-width', 0.5)
-      .on('click', (_, d) => showDetail(d.data))
+      .on('click', (_, d) => { showDetail(d.data); postNavigate(d.data.id); })
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     leaf.append('text')
       .attr('class', 'd3-label')
@@ -509,6 +581,11 @@
       });
     views.tree.recolor = () => svg.selectAll('rect')
       .attr('fill', d => colorFor(d.data.klass));
+    views.tree.highlight = (id) => {
+      svg.selectAll('rect')
+        .style('stroke', d => d.data.id === id ? 'var(--accent)' : 'var(--leaf-stroke)')
+        .attr('stroke-width', d => d.data.id === id ? 2.5 : 0.5);
+    };
   }
 
   // ================== Sunburst ==================
@@ -532,10 +609,15 @@
       .attr('fill', d => colorFor(d.data.klass))
       .attr('fill-opacity', d => d.children ? 0.55 : 0.85)
       .style('stroke', 'var(--leaf-stroke)').attr('stroke-width', 0.4)
-      .on('click', (_, d) => showDetail(d.data))
+      .on('click', (_, d) => { showDetail(d.data); postNavigate(d.data.id); })
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     views.sun.recolor = () => svg.selectAll('path')
       .attr('fill', d => colorFor(d.data.klass));
+    views.sun.highlight = (id) => {
+      svg.selectAll('path')
+        .style('stroke', d => d.data.id === id ? 'var(--accent)' : 'var(--leaf-stroke)')
+        .attr('stroke-width', d => d.data.id === id ? 2.5 : 0.4);
+    };
   }
 })();
 </script>
