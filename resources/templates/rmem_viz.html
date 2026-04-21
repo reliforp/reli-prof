@@ -580,7 +580,10 @@
     });
     G
       .onNodeClick(n => {
-        const dist = 120;
+        // Camera distance scales with the focused node's rendered
+        // radius — small leaves get framed up close, heavy subtrees
+        // back off enough to show the whole sphere.
+        const dist = Math.max(60, radiusOf(n) * 7);
         const d = Math.hypot(n.x || 1, n.y || 1, n.z || 1) || 1;
         G.cameraPosition(
           { x: n.x * (1 + dist / d), y: n.y * (1 + dist / d), z: n.z * (1 + dist / d) },
@@ -607,7 +610,7 @@
     views.force.highlight = (id) => {
       const target = nodes.find(n => n.id === id);
       if (!target) return;
-      const dist = 140;
+      const dist = Math.max(80, radiusOf(target) * 7);
       const d = Math.hypot(target.x || 1, target.y || 1, target.z || 1) || 1;
       G.cameraPosition(
         { x: target.x * (1 + dist / d), y: target.y * (1 + dist / d), z: target.z * (1 + dist / d) },
