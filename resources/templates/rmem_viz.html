@@ -507,17 +507,24 @@
 
   // ================== 3D Force Graph ==================
   function initForce() {
-    // 3d-force-graph derives radius = val^(1/3), so passing log(retained)
-    // compresses 4 orders of magnitude of retained into a 1.5x radius
-    // range (unreadable). sqrt(retained) gives a radius ∝ retained^(1/6)
-    // — the target size ratio becomes ~5x across the usual spread, big
-    // enough to read but not enough for one whale to eclipse the scene.
+    // 3d-force-graph derives radius = val^(1/3), which flattens any
+    // monotonic val we pass in. To get a *readable* size range we map
+    // retained onto a target radius range via d3.scaleSqrt (area
+    // proportional to retained), then cube it to cancel the built-in
+    // cube root. Result: actual node radius = radiusScale(retained),
+    // which now spans the full configured low → high on screen.
+    const maxRetainedForSizing = d3.max(DATA.nodes, n => n.retained) || 1;
+    const radiusScale = d3.scaleSqrt()
+      .domain([0, maxRetainedForSizing])
+      .range([0.7, 14]);
+    const valFor = retained => Math.pow(Math.max(0.5, radiusScale(retained || 0)), 3);
+
     const nodes = DATA.nodes.map(n => ({
       id: n.id, label: n.label, type: n.type,
       retained: n.retained, shallow: n.shallow, class: n.class,
       root_link: n.root_link,
       link_name: n.link_name, link_display: n.link_display, path: n.path,
-      val: Math.max(1, Math.sqrt(n.retained || 1)),
+      val: valFor(n.retained),
     }));
     const treeLinks = DATA.tree_edges.map(e => ({ source: e.source, target: e.target, kind: 'tree', link: e.link }));
     const refLinks = DATA.ref_edges.map(e => ({ source: e.source, target: e.target, kind: 'ref' }));
