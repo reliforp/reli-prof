@@ -82,7 +82,7 @@ final class VizHtmlBuilder
 
     /**
      * @return array{
-     *   0: list<array{id:int,label:string,type:string,class:?string,retained:int,shallow:int,tree_parent:?int,link_name:?string,link_display:string,path:list<string>}>,
+     *   0: list<array{id:int,label:string,type:string,class:?string,retained:int,shallow:int,tree_parent:?int,link_name:?string,link_display:string,path:list<string>,root_link:?string}>,
      *   1: list<array{source:int,target:int,link:string}>,
      *   2: list<array{source:int,target:int}>,
      * }

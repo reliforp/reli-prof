@@ -507,12 +507,17 @@
 
   // ================== 3D Force Graph ==================
   function initForce() {
+    // 3d-force-graph derives radius = val^(1/3), so passing log(retained)
+    // compresses 4 orders of magnitude of retained into a 1.5x radius
+    // range (unreadable). sqrt(retained) gives a radius ∝ retained^(1/6)
+    // — the target size ratio becomes ~5x across the usual spread, big
+    // enough to read but not enough for one whale to eclipse the scene.
     const nodes = DATA.nodes.map(n => ({
       id: n.id, label: n.label, type: n.type,
       retained: n.retained, shallow: n.shallow, class: n.class,
       root_link: n.root_link,
       link_name: n.link_name, link_display: n.link_display, path: n.path,
-      val: Math.max(1, Math.log2(n.retained + 2)),
+      val: Math.max(1, Math.sqrt(n.retained || 1)),
     }));
     const treeLinks = DATA.tree_edges.map(e => ({ source: e.source, target: e.target, kind: 'tree', link: e.link }));
     const refLinks = DATA.ref_edges.map(e => ({ source: e.source, target: e.target, kind: 'ref' }));
