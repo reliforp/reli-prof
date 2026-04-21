@@ -633,6 +633,12 @@
         );
       }, 850);
     });
+    // Belt-and-braces early fit: the engine cooldown can take several
+    // seconds on a large graph, and until zoomToFit runs the default
+    // camera may be staring into empty space. Re-fit shortly after
+    // init so switching to this tab lands on something visible even
+    // while physics is still settling.
+    setTimeout(() => G.zoomToFit(400, 180), 300);
     G
       .onNodeClick(n => {
         // Camera distance scales with the focused node's rendered
