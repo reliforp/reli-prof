@@ -15,6 +15,7 @@ namespace Reli\Rmem\Explore;
 
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 use Reli\Rbt\Explore\Keymap;
+use Reli\Rbt\Explore\MouseEvent;
 use Reli\Rbt\Explore\TerminalInterface;
 
 /**
@@ -470,6 +471,20 @@ final class RmemExploreTui
 
     private function dispatch(string $key): void
     {
+        // Route SGR mouse escape sequences to the mouse dispatcher before
+        // the keymap gets a chance to mis-handle them (and before the
+        // prompt input handlers swallow the "\e[" prefix). Prompts ignore
+        // the click; everything else treats a left-click on a list row
+        // as "move selection here", a double-click as Enter, and the
+        // scroll wheel as arrow up/down.
+        $mouse = MouseEvent::tryParse($key);
+        if ($mouse !== null) {
+            if (!$this->filterPrompt && !$this->addrPrompt && !$this->searchPrompt && !$this->showHelp) {
+                $this->handleMouseEvent($mouse);
+            }
+            return;
+        }
+
         $action = $this->keymap->resolve($key);
 
         if ($this->showHelp) {
@@ -562,6 +577,71 @@ final class RmemExploreTui
             } elseif ($this->childSelected >= $this->childTopRow + $halfH) {
                 $this->childTopRow = $this->childSelected - $halfH + 1;
             }
+        }
+    }
+
+    private const MOUSE_DOUBLE_CLICK_MS = 400;
+    private float $lastClickTime = 0.0;
+    private int $lastClickRow = -1;
+    private int $lastClickCol = -1;
+
+    /**
+     * Mouse handling: left-click on a list-body row moves the cursor
+     * to that row; double-click presses Enter (drill-down); scroll
+     * wheel nudges selection a few rows. Sandwich mode is intentionally
+     * minimal for now — scroll works across all panes, clicks just move
+     * the selection within the active pane.
+     */
+    private function handleMouseEvent(MouseEvent $mouse): void
+    {
+        if (!$mouse->press || $mouse->drag) {
+            return;
+        }
+
+        if ($mouse->button === MouseEvent::SCROLL_UP) {
+            $this->moveSelection(-3);
+            return;
+        }
+        if ($mouse->button === MouseEvent::SCROLL_DOWN) {
+            $this->moveSelection(3);
+            return;
+        }
+        if ($mouse->button !== MouseEvent::BUTTON_LEFT) {
+            return;
+        }
+
+        // Header is rendered on terminal row 1. List/sandwich body
+        // starts at terminal row 5 (after breadcrumb, column header,
+        // separator). All we attempt here is "pick the row the user
+        // clicked on" in list mode; pane hit-testing in sandwich would
+        // need far more layout plumbing than this ticket warrants.
+        if ($this->sandwich) {
+            return;
+        }
+        $bodyStart = 5; // 1-based terminal row of the first data line
+        $row = $mouse->row;
+        if ($row < $bodyStart) {
+            return;
+        }
+        $dataIdx = $this->topRow + ($row - $bodyStart);
+        $count = count($this->rows);
+        if ($dataIdx < 0 || $dataIdx >= $count) {
+            return;
+        }
+
+        $now = microtime(true);
+        $isDouble = ($now - $this->lastClickTime) < ((float)self::MOUSE_DOUBLE_CLICK_MS / 1000.0)
+            && $this->lastClickRow === $mouse->row
+            && $this->lastClickCol === $mouse->col
+            && $this->selected === $dataIdx;
+        $this->lastClickTime = $now;
+        $this->lastClickRow = $mouse->row;
+        $this->lastClickCol = $mouse->col;
+
+        $this->selected = $dataIdx;
+        if ($isDouble) {
+            $this->lastClickTime = 0.0; // consume, prevent triple-click repeat
+            $this->enter();
         }
     }
 
