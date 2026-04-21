@@ -86,6 +86,13 @@ final class RmemLiveCommand extends Command
                 'include non-tree reference edges in the force graph',
             )
             ->addOption(
+                'max-nodes',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'hard cap on total nodes in the extracted subgraph',
+                (string)VizHtmlBuilder::DEFAULT_MAX_NODES,
+            )
+            ->addOption(
                 'memory-limit',
                 null,
                 InputOption::VALUE_REQUIRED,
@@ -112,6 +119,7 @@ final class RmemLiveCommand extends Command
         $top = max(1, (int)$input->getOption('top'));
         $depth = max(0, (int)$input->getOption('depth'));
         $allEdges = (bool)$input->getOption('all-edges');
+        $maxNodes = max(1, (int)$input->getOption('max-nodes'));
         $host = (string)$input->getOption('host');
         $port = max(1, (int)$input->getOption('port'));
 
@@ -144,6 +152,7 @@ final class RmemLiveCommand extends Command
                     'navigate_url' => '/api/navigate',
                 ],
             ],
+            maxNodes: $maxNodes,
         );
 
         $server = new LiveHttpServer($html, $host, $port);

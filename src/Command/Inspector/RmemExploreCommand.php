@@ -111,6 +111,13 @@ final class RmemExploreCommand extends Command
                 InputOption::VALUE_NONE,
                 'include non-tree reference edges in the bridged viz',
             )
+            ->addOption(
+                'http-max-nodes',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'hard cap on total nodes in the bridged subgraph',
+                (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_NODES,
+            )
         ;
     }
 
@@ -275,6 +282,7 @@ final class RmemExploreCommand extends Command
             $httpTop = max(1, (int)$input->getOption('http-top'));
             $httpDepth = max(0, (int)$input->getOption('http-depth'));
             $httpAllEdges = (bool)$input->getOption('http-all-edges');
+            $httpMaxNodes = max(1, (int)$input->getOption('http-max-nodes'));
 
             $focusPipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
             $navigatePipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
@@ -301,6 +309,7 @@ final class RmemExploreCommand extends Command
                     $httpTop,
                     $httpDepth,
                     $httpAllEdges,
+                    $httpMaxNodes,
                     $focusPipe[0],
                     $navigatePipe[1],
                 );
@@ -395,6 +404,7 @@ final class RmemExploreCommand extends Command
         int $top,
         int $depth,
         bool $allEdges,
+        int $maxNodes,
         mixed $focusPipeRead,
         mixed $navigatePipeWrite,
     ): void {
@@ -412,6 +422,7 @@ final class RmemExploreCommand extends Command
                     'navigate_url' => '/api/navigate',
                 ],
             ],
+            maxNodes: $maxNodes,
         );
         $server = new \Reli\Rmem\Live\LiveHttpServer($html, $host, $port);
         try {

@@ -24,7 +24,7 @@ use Reli\Rmem\Explore\RmemModel;
  */
 final class VizHtmlBuilder
 {
-    public const MAX_NODES = 5000;
+    public const DEFAULT_MAX_NODES = 20000;
     private const PATH_DEPTH_LIMIT = 64;
 
     /**
@@ -40,6 +40,7 @@ final class VizHtmlBuilder
         bool $allEdges,
         bool $liveMode = false,
         array $extraPayload = [],
+        int $maxNodes = self::DEFAULT_MAX_NODES,
     ): string {
         [$nodes, $treeEdges, $refEdges] = self::buildSubgraph(
             $model,
@@ -47,6 +48,7 @@ final class VizHtmlBuilder
             $top,
             $depth,
             $allEdges,
+            $maxNodes,
         );
 
         $payload = array_merge([
@@ -93,6 +95,7 @@ final class VizHtmlBuilder
         int $top,
         int $depth,
         bool $allEdges,
+        int $maxNodes = self::DEFAULT_MAX_NODES,
     ): array {
         $selected = [];
         $seeds = $model->getTopRetained($top);
@@ -106,7 +109,7 @@ final class VizHtmlBuilder
             $cur = $substrate->getTreeParentNodeId($nodeId);
             while ($cur !== null && !isset($selected[$cur])) {
                 $selected[$cur] = true;
-                if (count($selected) >= self::MAX_NODES) {
+                if (count($selected) >= $maxNodes) {
                     break 2;
                 }
                 $cur = $substrate->getTreeParentNodeId($cur);
@@ -128,9 +131,9 @@ final class VizHtmlBuilder
                 $stack[] = [$nid, 0];
             }
             while ($stack !== []) {
-                /** @var array{0:int,1:int} $top */
-                $top = array_pop($stack);
-                [$cur, $meaningfulD] = $top;
+                /** @var array{0:int,1:int} $frame */
+                $frame = array_pop($stack);
+                [$cur, $meaningfulD] = $frame;
                 foreach ($substrate->getChildren($cur) as $childId) {
                     if (isset($selected[$childId])) {
                         continue;
@@ -143,7 +146,7 @@ final class VizHtmlBuilder
                     }
                     $selected[$childId] = true;
                     $stack[] = [$childId, $nextD];
-                    if (count($selected) >= self::MAX_NODES) {
+                    if (count($selected) >= $maxNodes) {
                         break 2;
                     }
                 }
