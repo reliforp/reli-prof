@@ -245,6 +245,28 @@
     // retained size — even when most descendants were dropped.
     const childrenRetained = kids.reduce((s, k) => s + (k.retained || 0), 0);
     const ownContribution = Math.max(1, (n.retained || 0) - childrenRetained);
+
+    // d3.pack sizes internal nodes by the enclosure of their children,
+    // ignoring the parent's own value. For containers where the
+    // retained lives on the container itself (Bucket[] table etc.)
+    // and the children are retained=0 scalars, that would collapse
+    // the container next to a leaf sibling with real retained.
+    // Redistribute the excess ownContribution onto those zero-retained
+    // children so the packed enclosure ends up proportional to the
+    // container's retained and the real children stay individually
+    // visible. Total d3.sum of the subtree is preserved.
+    let parentValue = ownContribution;
+    if (kids.length > 0) {
+      const zeroKids = kids.filter(k => !(k.retained > 0));
+      const kidsValueSum = kids.reduce((s, k) => s + (k.value || 0), 0);
+      if (zeroKids.length > 0 && ownContribution > kidsValueSum * 2) {
+        const toDistribute = ownContribution - 1;
+        const perZero = toDistribute / zeroKids.length;
+        for (const k of zeroKids) k.value = (k.value || 0) + perZero;
+        parentValue = 1;
+      }
+    }
+
     return {
       id: n.id,
       name: n.label,
@@ -257,7 +279,7 @@
       link_name: n.link_name,
       link_display: n.link_display,
       path: n.path,
-      value: ownContribution,
+      value: parentValue,
       children: kids,
     };
   }
