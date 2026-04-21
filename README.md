@@ -13,7 +13,7 @@ New here? [docs/getting-started.md](docs/getting-started.md) walks from install 
 ## What can I use this for?
 
 - **Where time is spent** — sampling profiler for PHP call stacks, with optional C-level frames and per-opcode detail. Capture to the compact `.rbt` binary format, browse in the `rbt:explore` TUI, or convert to speedscope / pprof / flamegraph / callgrind / folded.
-- **Where memory is used** — reconstruct the target's PHP heap into a queryable graph (`.rmem`). Open it interactively with `rmem:explore`, get a prioritised findings report with `memory:report`, or compare two snapshots with `memory:compare` to track regressions.
+- **Where memory is used** — reconstruct the target's PHP heap into a queryable graph (`.rmem`). Open it interactively with `rmem:explore` (TUI), `rmem:viz` (standalone HTML — Pack / Treemap / Sunburst / 3D Force) or `rmem:live` (HTTP/SSE so TUI / browsers / AI share one focus); get a prioritised findings report with `memory:report`, or compare two snapshots with `memory:compare` to track regressions.
 - **What values flow through** — read PHP variable values from a running process without modifying it (`inspector:peek-var`), or attach variable values to every trace sample (`inspector:trace --trace-var`) so you can join runtime state to hot stacks.
 - **When something goes wrong** — trigger captures on runtime conditions. `inspector:watch` takes a memory dump or trace when memory thresholds, function calls, or variable conditions are met. `inspector:sidecar` accepts on-demand dump requests from the app over a Unix socket — ideal for `memory_limit` crash analysis.
 
@@ -136,7 +136,7 @@ sudo php ./reli phpspy:daemon -P "^php-fpm"
 Key `phpspy:trace` / `phpspy:daemon` options: `-s/--sleep-ns`, `-b/--buffer-size`, `-H/--rate-hz`, `--phpspy-args` (passthrough to phpspy), `--phpspy-path`, `-o/--output`.
 
 ## Capture a memory graph
-Reconstruct the target's PHP heap into an analysable graph. `.rmem` is the fastest format and is what every analyser (`rmem:explore`, `memory:report`, `memory:compare`, `rmem:serve`, `rmem:mcp`) reads natively.
+Reconstruct the target's PHP heap into an analysable graph. `.rmem` is the fastest format and is what every analyser (`rmem:explore`, `memory:report`, `memory:compare`, `rmem:viz`, `rmem:live`, `rmem:serve`, `rmem:mcp`) reads natively.
 
 ```bash
 # Recommended for ad-hoc / local use: live one-shot capture
