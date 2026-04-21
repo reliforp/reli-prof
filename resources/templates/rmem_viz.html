@@ -169,7 +169,7 @@
       row('class', n.class || '-') +
       row('retained', fmt(n.retained) + ' B') +
       row('shallow', fmt(n.shallow) + ' B') +
-      row('link', n.link_name || '-') +
+      row('link', n.link_display || n.link_name || '-') +
       (pathStr
         ? '<div style="margin-top:6px;color:var(--muted);font-size:11px;word-break:break-all">'
           + escapeHtml(pathStr) + '</div>'

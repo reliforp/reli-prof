@@ -233,22 +233,18 @@ final class RmemVizCommand extends Command
             $treeParent = $substrate->getTreeParentNodeId($nodeId);
             $linkName = $substrate->getTreeLinkName($nodeId);
             $parentLink = $treeParent !== null ? $substrate->getTreeLinkName($treeParent) : null;
-            $label = $model->nodeLabel($nodeId);
+            $linkDisplay = $this->formatLink($linkName, $parentLink);
             // Promote the parent edge's link_name into the label for node
             // types whose name/key lives on the edge rather than on the node
             // itself — RmemModel::nodeLabel otherwise returns a bare type.
+            $label = $model->nodeLabel($nodeId);
             if ($linkName !== null && $linkName !== '') {
-                $prefix = match ($parentLink) {
-                    'array_elements' => "[{$linkName}]",
-                    'object_properties' => "->{$linkName}",
-                    default => null,
-                };
                 if ($parentLink === 'class_table') {
                     $label = 'class ' . $linkName;
                 } elseif ($parentLink === 'function_table') {
                     $label = 'fn ' . $linkName;
-                } elseif ($prefix !== null) {
-                    $label = $prefix . ' ' . $label;
+                } elseif ($parentLink === 'array_elements' || $parentLink === 'object_properties') {
+                    $label = $linkDisplay . ' ' . $label;
                 }
             }
             $nodes[] = [
@@ -260,6 +256,7 @@ final class RmemVizCommand extends Command
                 'shallow' => $substrate->getNodeSize($nodeId),
                 'tree_parent' => (isset($selected[$treeParent ?? -1])) ? $treeParent : null,
                 'link_name' => $linkName,
+                'link_display' => $linkDisplay,
                 'path' => $this->pathOf($substrate, $nodeId),
             ];
         }
@@ -298,6 +295,26 @@ final class RmemVizCommand extends Command
     }
 
     /**
+     * Render the edge name from parent → this node in a form that
+     * carries context: [key] for array elements, ->name for object
+     * properties, "class X" / "fn X" for class/function definitions.
+     * Falls back to the raw link_name.
+     */
+    private function formatLink(?string $linkName, ?string $parentLink): string
+    {
+        if ($linkName === null || $linkName === '') {
+            return '';
+        }
+        return match ($parentLink) {
+            'array_elements' => "[{$linkName}]",
+            'object_properties' => "->{$linkName}",
+            'class_table' => "class {$linkName}",
+            'function_table' => "fn {$linkName}",
+            default => $linkName,
+        };
+    }
+
+    /**
      * Walk tree parents collecting link_names; returns root-first list.
      * Bounded to avoid pathological depth or accidental cycles.
      *
@@ -309,11 +326,13 @@ final class RmemVizCommand extends Command
         $cur = $nodeId;
         $depth = 0;
         while ($cur !== null && $depth < 64) {
-            $name = $substrate->getTreeLinkName($cur);
-            if ($name !== null && $name !== '') {
-                $path[] = $name;
+            $parent = $substrate->getTreeParentNodeId($cur);
+            $parentLink = $parent !== null ? $substrate->getTreeLinkName($parent) : null;
+            $formatted = $this->formatLink($substrate->getTreeLinkName($cur), $parentLink);
+            if ($formatted !== '') {
+                $path[] = $formatted;
             }
-            $cur = $substrate->getTreeParentNodeId($cur);
+            $cur = $parent;
             $depth++;
         }
         return array_reverse($path);
