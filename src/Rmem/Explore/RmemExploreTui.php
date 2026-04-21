@@ -129,6 +129,12 @@ final class RmemExploreTui
     /** True while an externally-driven navigate is in progress. */
     private bool $suppressFocusEmit = false;
 
+    /** When on, every cursor move in the TUI also broadcasts a
+     *  focus event so the browser (and any other SSE subscriber)
+     *  follows the cursor live, without the user having to press
+     *  Enter. Toggled with 'F'. */
+    private bool $followMode = false;
+
     /**
      * Write end of a pipe to a sidecar process (the --http-bridge child).
      * Whenever the sandwich focus changes, a JSON line
@@ -166,6 +172,36 @@ final class RmemExploreTui
         }
         $line = (string)json_encode(['node_id' => $nodeId], JSON_UNESCAPED_UNICODE) . "\n";
         @fwrite($this->focusEventPipe, $line);
+    }
+
+    /**
+     * Emit a focus event for whichever node is currently under the
+     * cursor when follow-mode is on. Called after every selection
+     * change (arrow / page / home / end / mouse click / tab).
+     */
+    private function broadcastIfFollow(): void
+    {
+        if (!$this->followMode) {
+            return;
+        }
+        $nodeId = $this->currentCursorNodeId();
+        if ($nodeId !== null) {
+            $this->emitFocusEvent($nodeId);
+        }
+    }
+
+    private function currentCursorNodeId(): ?int
+    {
+        if ($this->sandwich) {
+            if ($this->activePane === 'parents') {
+                return $this->parentRows[$this->parentSelected]['node_id'] ?? null;
+            }
+            if ($this->activePane === 'children') {
+                return $this->childRows[$this->childSelected]['node_id'] ?? null;
+            }
+            return $this->sandwichNodeId;
+        }
+        return $this->rows[$this->selected]['node_id'] ?? null;
     }
 
     private function handleIncomingNavigate(int $nodeId): void
@@ -511,6 +547,18 @@ final class RmemExploreTui
             return;
         }
 
+        // Live-follow toggle: 'f' broadcasts every cursor move to
+        // browsers / MCP so they track the TUI cursor in real time,
+        // without the user having to Enter into each row. (Uppercase
+        // F is the global-search shortcut, handled in dispatchRaw.)
+        if ($key === 'f') {
+            $this->followMode = !$this->followMode;
+            if ($this->followMode) {
+                $this->broadcastIfFollow();
+            }
+            return;
+        }
+
         match ($action) {
             Keymap::ACTION_UP => $this->moveSelection(-1),
             Keymap::ACTION_DOWN => $this->moveSelection(1),
@@ -556,6 +604,7 @@ final class RmemExploreTui
         } elseif ($this->selected >= $this->topRow + $bodyH) {
             $this->topRow = $this->selected - $bodyH + 1;
         }
+        $this->broadcastIfFollow();
     }
 
     private function moveSandwichSelection(int $delta): void
@@ -584,6 +633,7 @@ final class RmemExploreTui
                 $this->childTopRow = $this->childSelected - $halfH + 1;
             }
         }
+        $this->broadcastIfFollow();
     }
 
     private const MOUSE_DOUBLE_CLICK_MS = 400;
@@ -639,6 +689,7 @@ final class RmemExploreTui
         } else {
             $this->selected = $hitIdx;
         }
+        $this->broadcastIfFollow();
 
         $now = microtime(true);
         $isDouble = ($now - $this->lastClickTime) < ((float)self::MOUSE_DOUBLE_CLICK_MS / 1000.0)
@@ -890,6 +941,7 @@ final class RmemExploreTui
         }
         $idx = array_search($this->activePane, $panes, true);
         $this->activePane = $panes[($idx + 1) % count($panes)];
+        $this->broadcastIfFollow();
     }
 
     private function toggleBookmark(): void
@@ -1864,10 +1916,13 @@ final class RmemExploreTui
     private function renderFooter(int $cols): string
     {
         $hints = $this->sandwich
-            ? " ↑↓:sel Tab:pane Enter:focus Bksp:back g:def r:sort n:edges m:mark ':marks o:side s:top t:roots ?:help q:quit"
-            : " ↑↓:sel Enter:drill Bksp:back /:filt F:search r:sort c:class y:type a:addr g:def m:mark ':marks o:side s:top t:roots q:quit";
-        $pad = max(0, $cols - strlen($hints));
-        return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
+            ? " ↑↓:sel Tab:pane Enter:focus Bksp:back g:def r:sort n:edges f:follow m:mark ':marks o:side s:top t:roots ?:help q:quit"
+            : " ↑↓:sel Enter:drill Bksp:back /:filt F:search r:sort c:class y:type a:addr g:def f:follow m:mark ':marks o:side s:top t:roots q:quit";
+        $followBadge = $this->followMode ? "\e[1;42;30m follow \e[0m " : '';
+        $bare = $hints;
+        $visibleLen = strlen($bare) + ($this->followMode ? 9 : 0); // badge rendered width
+        $pad = max(0, $cols - $visibleLen);
+        return $followBadge . "\e[2m" . $bare . str_repeat(' ', $pad) . "\e[0m";
     }
 
     /** @param list<string> &$lines */
