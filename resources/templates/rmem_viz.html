@@ -30,6 +30,12 @@
   }
   nav button:hover { color: var(--fg); border-color: var(--border); }
   nav button.active { color: var(--accent); border-color: var(--accent); background: rgba(102,217,239,0.08); }
+  nav select {
+    margin-left: 8px; background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 8px; font: inherit; cursor: pointer;
+  }
+  nav select:hover { color: var(--fg); border-color: var(--accent); }
   main { position: relative; overflow: hidden; }
   .view { position: absolute; inset: 0; display: none; }
   .view.active { display: block; }
@@ -65,6 +71,7 @@
       <button data-view="pack">Circle Pack</button>
       <button data-view="tree">Treemap</button>
       <button data-view="sun">Sunburst</button>
+      <select id="palette-select" title="color palette"></select>
     </nav>
   </header>
   <main>
@@ -98,10 +105,6 @@
     DATA.ref_edges.length.toLocaleString() + ' ref edges';
 
   // ---- color palette keyed by class (fallback: type) ----
-  // Tableau10 + Set2 keeps top classes from looking aggressive on a
-  // dark background; for >18 distinct keys, fall back to a sinebow
-  // sweep so leaves never collapse onto the unknown grey.
-  const palette = d3.schemeTableau10.concat(d3.schemeSet2);
   const keyOf = n => n.class || n.type || '?';
   const classKeys = Array.from(new Set(DATA.nodes.map(keyOf)))
     .sort((a, b) => {
@@ -109,18 +112,57 @@
       const cb = DATA.nodes.filter(n => keyOf(n) === b).reduce((s, n) => s + n.retained, 0);
       return cb - ca;
     });
-  const effectivePalette = classKeys.length > palette.length
-    ? classKeys.map((_, i) => d3.interpolateSinebow(i / Math.max(1, classKeys.length)))
-    : palette;
-  const colorFor = d3.scaleOrdinal().domain(classKeys).range(effectivePalette).unknown('#555');
+
+  // Discrete schemes map directly to ordinal slots; continuous
+  // interpolators get sampled across N classes. The Sinebow fallback
+  // catches the case where a discrete scheme has fewer slots than
+  // distinct classes, otherwise everything past the bank collapses to
+  // the unknown grey.
+  const DISCRETE_SCHEMES = {
+    'Category 10': d3.schemeCategory10,
+    'Tableau 10':  d3.schemeTableau10.concat(d3.schemeSet2),
+    'Accent':      d3.schemeAccent,
+    'Pastel (Set3)': d3.schemeSet3,
+    'Dark2':       d3.schemeDark2,
+  };
+  const CONTINUOUS_SCHEMES = {
+    'Sinebow':  d3.interpolateSinebow,
+    'Spectral': d3.interpolateSpectral,
+    'Turbo':    d3.interpolateTurbo,
+    'Viridis':  d3.interpolateViridis,
+    'Plasma':   d3.interpolatePlasma,
+  };
+  function buildColorFor(name) {
+    let range;
+    if (name in CONTINUOUS_SCHEMES) {
+      const interp = CONTINUOUS_SCHEMES[name];
+      const n = Math.max(1, classKeys.length);
+      range = classKeys.map((_, i) => interp(i / n));
+    } else {
+      const base = DISCRETE_SCHEMES[name] || DISCRETE_SCHEMES['Category 10'];
+      range = classKeys.length > base.length
+        ? classKeys.map((_, i) => d3.interpolateSinebow(i / Math.max(1, classKeys.length)))
+        : base;
+    }
+    return d3.scaleOrdinal().domain(classKeys).range(range).unknown('#555');
+  }
+  const PALETTE_STORAGE_KEY = 'rmem-viz-palette';
+  let activePalette = localStorage.getItem(PALETTE_STORAGE_KEY) || 'Category 10';
+  if (!(activePalette in DISCRETE_SCHEMES) && !(activePalette in CONTINUOUS_SCHEMES)) {
+    activePalette = 'Category 10';
+  }
+  let colorFor = buildColorFor(activePalette);
 
   // legend (top 10 classes by retained)
   const legendEl = document.getElementById('legend');
-  legendEl.innerHTML = '<div style="color:var(--muted);margin-bottom:4px">top classes (by retained)</div>' +
-    classKeys.slice(0, 10).map(k =>
-      '<div class="item"><span class="sw" style="background:' + colorFor(k) + '"></span>' +
-      '<span>' + (k.length > 36 ? k.slice(0, 33) + '...' : k) + '</span></div>'
-    ).join('');
+  function renderLegend() {
+    legendEl.innerHTML = '<div style="color:var(--muted);margin-bottom:4px">top classes (by retained)</div>' +
+      classKeys.slice(0, 10).map(k =>
+        '<div class="item"><span class="sw" style="background:' + colorFor(k) + '"></span>' +
+        '<span>' + (k.length > 36 ? k.slice(0, 33) + '...' : k) + '</span></div>'
+      ).join('');
+  }
+  renderLegend();
 
   // ---- build induced hierarchy for d3.hierarchy-based views ----
   // Some nodes have tree_parent=null (they are the induced forest roots).
@@ -197,11 +239,14 @@
   }
 
   // ---- tab switching ----
+  // recolor() is set by each init* function and is called when the
+  // user picks a new palette; it must update colors in-place without
+  // tearing down the view.
   const views = {
-    force: { el: document.getElementById('force-view'), init: initForce, inited: false },
-    pack:  { el: document.getElementById('pack-view'),  init: initPack,  inited: false },
-    tree:  { el: document.getElementById('tree-view'),  init: initTree,  inited: false },
-    sun:   { el: document.getElementById('sun-view'),   init: initSun,   inited: false },
+    force: { el: document.getElementById('force-view'), init: initForce, inited: false, recolor: null },
+    pack:  { el: document.getElementById('pack-view'),  init: initPack,  inited: false, recolor: null },
+    tree:  { el: document.getElementById('tree-view'),  init: initTree,  inited: false, recolor: null },
+    sun:   { el: document.getElementById('sun-view'),   init: initSun,   inited: false, recolor: null },
   };
   document.querySelectorAll('nav button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -213,6 +258,22 @@
       }
       if (!views[key].inited) { views[key].init(); views[key].inited = true; }
     });
+  });
+
+  // ---- palette picker ----
+  const paletteSelect = document.getElementById('palette-select');
+  const allSchemes = Object.keys(DISCRETE_SCHEMES).concat(Object.keys(CONTINUOUS_SCHEMES));
+  paletteSelect.innerHTML = allSchemes
+    .map(n => '<option value="' + n + '"' + (n === activePalette ? ' selected' : '') + '>' + n + '</option>')
+    .join('');
+  paletteSelect.addEventListener('change', () => {
+    activePalette = paletteSelect.value;
+    localStorage.setItem(PALETTE_STORAGE_KEY, activePalette);
+    colorFor = buildColorFor(activePalette);
+    renderLegend();
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].recolor === 'function') views[k].recolor();
+    }
   });
 
   initForce(); views.force.inited = true;
@@ -256,6 +317,7 @@
       });
     window.addEventListener('resize', () => G.width(el.clientWidth).height(el.clientHeight));
     G.width(el.clientWidth).height(el.clientHeight);
+    views.force.recolor = () => G.nodeColor(n => colorFor(n.klass));
   }
 
   // ================== Circle Packing ==================
@@ -284,6 +346,8 @@
       .attr('class', 'd3-label')
       .attr('text-anchor', 'middle').attr('dy', '0.35em')
       .text(d => (d.data.klass || '').slice(0, Math.max(2, Math.floor(d.r / 4))));
+    views.pack.recolor = () => svg.selectAll('circle')
+      .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass));
   }
 
   // ================== Treemap ==================
@@ -314,6 +378,8 @@
         const t = (d.data.klass || d.data.name);
         return t.slice(0, Math.max(2, Math.floor(cw / 6)));
       });
+    views.tree.recolor = () => svg.selectAll('rect')
+      .attr('fill', d => colorFor(d.data.klass));
   }
 
   // ================== Sunburst ==================
@@ -337,6 +403,8 @@
       .attr('stroke', 'rgba(0,0,0,0.35)').attr('stroke-width', 0.4)
       .on('click', (_, d) => showDetail(d.data))
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
+    views.sun.recolor = () => svg.selectAll('path')
+      .attr('fill', d => colorFor(d.data.klass));
   }
 })();
 </script>
