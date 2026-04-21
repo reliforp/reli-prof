@@ -567,11 +567,14 @@
     // Note the min floor: scalar array elements carry a ~16 byte
     // retained (just the zval), and a linear sqrt mapping to 0.7 makes
     // them invisibly small next to a multi-MB subtree. Pin the floor
-    // at 2 scene units so every node stays readable.
+    // at 2 scene units so every node stays readable. Top end at 60
+    // so the largest retained nodes stand out dramatically — the
+    // collide force and link distance scale with the rendered radius
+    // so the scene stays proportioned.
     const maxRetainedForSizing = d3.max(DATA.nodes, n => n.retained) || 1;
     const radiusScale = d3.scaleSqrt()
       .domain([0, maxRetainedForSizing])
-      .range([2, 14]);
+      .range([2, 60]);
     const valFor = retained => Math.pow(Math.max(0.5, radiusScale(retained || 0)), 3);
 
     const nodes = DATA.nodes.map(n => ({

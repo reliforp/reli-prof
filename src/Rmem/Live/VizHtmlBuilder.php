@@ -24,7 +24,7 @@ use Reli\Rmem\Explore\RmemModel;
  */
 final class VizHtmlBuilder
 {
-    public const DEFAULT_MAX_NODES = 20000;
+    public const DEFAULT_MAX_NODES = 1000;
     public const DEFAULT_MAX_CHILDREN_PER_NODE = 100;
     private const PATH_DEPTH_LIMIT = 64;
 
