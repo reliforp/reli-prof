@@ -98,10 +98,10 @@
     DATA.ref_edges.length.toLocaleString() + ' ref edges';
 
   // ---- color palette keyed by class (fallback: type) ----
-  // Vivid categorical palette: Category10 + Accent + Set2 reads well on
-  // a dark background. For >28 distinct keys, fall back to a sinebow
+  // Tableau10 + Set2 keeps top classes from looking aggressive on a
+  // dark background; for >18 distinct keys, fall back to a sinebow
   // sweep so leaves never collapse onto the unknown grey.
-  const palette = d3.schemeCategory10.concat(d3.schemeAccent, d3.schemeSet2);
+  const palette = d3.schemeTableau10.concat(d3.schemeSet2);
   const keyOf = n => n.class || n.type || '?';
   const classKeys = Array.from(new Set(DATA.nodes.map(keyOf)))
     .sort((a, b) => {
@@ -274,7 +274,7 @@
     node.append('circle')
       .attr('r', d => d.r)
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass))
-      .attr('fill-opacity', d => d.children ? 0.42 : 0.95)
+      .attr('fill-opacity', d => d.children ? 0.4 : 0.85)
       .attr('stroke', d => d.depth === 0 ? 'transparent' : 'rgba(255,255,255,0.18)')
       .attr('stroke-width', 0.6)
       .on('click', (_, d) => showDetail(d.data))
