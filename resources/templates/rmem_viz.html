@@ -121,19 +121,50 @@
   // catches the case where a discrete scheme has fewer slots than
   // distinct classes, otherwise everything past the bank collapses to
   // the unknown grey.
+  // Grouping is purely UI ordering (optgroup labels). The lookup
+  // tables themselves are flat name → scheme/interpolator maps.
+  const PALETTE_GROUPS = [
+    { label: 'Categorical', items: [
+      'Category 10', 'Tableau 10', 'Set1', 'Set2', 'Set3 (pastel)',
+      'Paired', 'Accent', 'Dark2',
+    ]},
+    { label: 'Cyclic / multi-hue', items: [
+      'Sinebow', 'Rainbow', 'Spectral', 'Turbo',
+    ]},
+    { label: 'Sequential', items: [
+      'Viridis', 'Plasma', 'Inferno', 'Magma',
+      'Cubehelix', 'Warm', 'Cool',
+    ]},
+    { label: 'Diverging', items: [
+      'RdYlBu', 'RdYlGn', 'BrBG', 'PuOr',
+    ]},
+  ];
   const DISCRETE_SCHEMES = {
-    'Category 10': d3.schemeCategory10,
-    'Tableau 10':  d3.schemeTableau10.concat(d3.schemeSet2),
-    'Accent':      d3.schemeAccent,
-    'Pastel (Set3)': d3.schemeSet3,
-    'Dark2':       d3.schemeDark2,
+    'Category 10':   d3.schemeCategory10,
+    'Tableau 10':    d3.schemeTableau10,
+    'Set1':          d3.schemeSet1,
+    'Set2':          d3.schemeSet2,
+    'Set3 (pastel)': d3.schemeSet3,
+    'Paired':        d3.schemePaired,
+    'Accent':        d3.schemeAccent,
+    'Dark2':         d3.schemeDark2,
   };
   const CONTINUOUS_SCHEMES = {
-    'Sinebow':  d3.interpolateSinebow,
-    'Spectral': d3.interpolateSpectral,
-    'Turbo':    d3.interpolateTurbo,
-    'Viridis':  d3.interpolateViridis,
-    'Plasma':   d3.interpolatePlasma,
+    'Sinebow':   d3.interpolateSinebow,
+    'Rainbow':   d3.interpolateRainbow,
+    'Spectral':  d3.interpolateSpectral,
+    'Turbo':     d3.interpolateTurbo,
+    'Viridis':   d3.interpolateViridis,
+    'Plasma':    d3.interpolatePlasma,
+    'Inferno':   d3.interpolateInferno,
+    'Magma':     d3.interpolateMagma,
+    'Cubehelix': d3.interpolateCubehelixDefault,
+    'Warm':      d3.interpolateWarm,
+    'Cool':      d3.interpolateCool,
+    'RdYlBu':    d3.interpolateRdYlBu,
+    'RdYlGn':    d3.interpolateRdYlGn,
+    'BrBG':      d3.interpolateBrBG,
+    'PuOr':      d3.interpolatePuOr,
   };
   function buildColorFor(name) {
     const n = Math.max(1, classKeys.length);
@@ -343,10 +374,14 @@
 
   // ---- palette picker ----
   const paletteSelect = document.getElementById('palette-select');
-  const allSchemes = Object.keys(DISCRETE_SCHEMES).concat(Object.keys(CONTINUOUS_SCHEMES));
-  paletteSelect.innerHTML = allSchemes
-    .map(n => '<option value="' + n + '"' + (n === activePalette ? ' selected' : '') + '>' + n + '</option>')
-    .join('');
+  paletteSelect.innerHTML = PALETTE_GROUPS.map(g =>
+    '<optgroup label="' + g.label + '">' +
+    g.items
+      .filter(n => (n in DISCRETE_SCHEMES) || (n in CONTINUOUS_SCHEMES))
+      .map(n => '<option value="' + n + '"' + (n === activePalette ? ' selected' : '') + '>' + n + '</option>')
+      .join('') +
+    '</optgroup>'
+  ).join('');
   paletteSelect.addEventListener('change', () => {
     activePalette = paletteSelect.value;
     localStorage.setItem(PALETTE_STORAGE_KEY, activePalette);
