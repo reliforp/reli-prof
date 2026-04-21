@@ -586,63 +586,118 @@ final class RmemExploreTui
     private int $lastClickCol = -1;
 
     /**
-     * Mouse handling: left-click on a list-body row moves the cursor
-     * to that row; double-click presses Enter (drill-down); scroll
-     * wheel nudges selection a few rows. Sandwich mode is intentionally
-     * minimal for now — scroll works across all panes, clicks just move
-     * the selection within the active pane.
+     * Mouse handling: left-click on a data row moves the cursor there;
+     * double-click presses Enter (drill down); scroll wheel nudges the
+     * selection of the pane under the cursor. Sandwich layout is read
+     * out of the terminal rows returned by the current viewport so the
+     * pane hit-test stays in sync with renderSandwich().
      */
     private function handleMouseEvent(MouseEvent $mouse): void
     {
         if (!$mouse->press || $mouse->drag) {
             return;
         }
-
-        if ($mouse->button === MouseEvent::SCROLL_UP) {
-            $this->moveSelection(-3);
-            return;
-        }
-        if ($mouse->button === MouseEvent::SCROLL_DOWN) {
-            $this->moveSelection(3);
-            return;
-        }
-        if ($mouse->button !== MouseEvent::BUTTON_LEFT) {
+        $isScroll = $mouse->button === MouseEvent::SCROLL_UP
+            || $mouse->button === MouseEvent::SCROLL_DOWN;
+        if (!$isScroll && $mouse->button !== MouseEvent::BUTTON_LEFT) {
             return;
         }
 
-        // Header is rendered on terminal row 1. List/sandwich body
-        // starts at terminal row 5 (after breadcrumb, column header,
-        // separator). All we attempt here is "pick the row the user
-        // clicked on" in list mode; pane hit-testing in sandwich would
-        // need far more layout plumbing than this ticket warrants.
-        if ($this->sandwich) {
+        [$hitPane, $hitIdx] = $this->hitTestMouseRow($mouse->row);
+
+        if ($isScroll) {
+            $delta = $mouse->button === MouseEvent::SCROLL_UP ? -3 : 3;
+            // If the pointer is over a specific pane, scroll that pane
+            // by temporarily focusing it so moveSelection acts on the
+            // right collection. Otherwise fall back to active pane.
+            $prevPane = $this->activePane;
+            if ($hitPane !== null) {
+                $this->activePane = $hitPane;
+            }
+            $this->moveSelection($delta);
+            $this->activePane = $prevPane;
             return;
         }
-        $bodyStart = 5; // 1-based terminal row of the first data line
-        $row = $mouse->row;
-        if ($row < $bodyStart) {
+
+        // Left click outside any data area — ignore.
+        if ($hitPane === null || $hitIdx === null) {
             return;
         }
-        $dataIdx = $this->topRow + ($row - $bodyStart);
-        $count = count($this->rows);
-        if ($dataIdx < 0 || $dataIdx >= $count) {
-            return;
+
+        // Move the clicked pane's cursor and make it active.
+        $this->activePane = $hitPane;
+        if ($hitPane === 'parents') {
+            $this->parentSelected = $hitIdx;
+        } elseif ($hitPane === 'children') {
+            $this->childSelected = $hitIdx;
+        } else {
+            $this->selected = $hitIdx;
         }
 
         $now = microtime(true);
         $isDouble = ($now - $this->lastClickTime) < ((float)self::MOUSE_DOUBLE_CLICK_MS / 1000.0)
             && $this->lastClickRow === $mouse->row
-            && $this->lastClickCol === $mouse->col
-            && $this->selected === $dataIdx;
+            && $this->lastClickCol === $mouse->col;
         $this->lastClickTime = $now;
         $this->lastClickRow = $mouse->row;
         $this->lastClickCol = $mouse->col;
-
-        $this->selected = $dataIdx;
         if ($isDouble) {
             $this->lastClickTime = 0.0; // consume, prevent triple-click repeat
             $this->enter();
         }
+    }
+
+    /**
+     * Map a 1-based terminal row onto (pane, dataIndex). Returns
+     * [null, null] when the row is outside every pane's data area.
+     *
+     * @return array{0:?string,1:?int}
+     */
+    private function hitTestMouseRow(int $row): array
+    {
+        [, $totalRows] = $this->term->size();
+
+        if (!$this->sandwich) {
+            // List layout: header (1) + breadcrumb (2) + column header (3)
+            // + separator (4), data rows start on 5.
+            $bodyStart = 5;
+            if ($row < $bodyStart) {
+                return [null, null];
+            }
+            $idx = $this->topRow + ($row - $bodyStart);
+            if ($idx < 0 || $idx >= count($this->rows)) {
+                return [null, null];
+            }
+            return ['list', $idx];
+        }
+
+        // Sandwich layout, mirroring renderSandwich():
+        //   row 1         header
+        //   row 2         "▸ Parents (N)" label
+        //   rows 3..h+2   parent rows (h = halfH)
+        //   row  h+3      focus bar
+        //   row  h+4      "▸ Children (N)" label
+        //   rows h+5..Y   children rows
+        $bodyH = $totalRows - 4;
+        $halfH = (int)($bodyH / 2);
+        $parentsStart = 3;
+        $parentsEnd = $halfH + 2;
+        $childrenStart = $halfH + 5;
+        if ($row >= $parentsStart && $row <= $parentsEnd) {
+            $idx = $this->parentTopRow + ($row - $parentsStart);
+            if ($idx < 0 || $idx >= count($this->parentRows)) {
+                return [null, null];
+            }
+            return ['parents', $idx];
+        }
+        if ($row >= $childrenStart) {
+            $idx = $this->childTopRow + ($row - $childrenStart);
+            if ($idx < 0 || $idx >= count($this->childRows)) {
+                return [null, null];
+            }
+            return ['children', $idx];
+        }
+        return [null, null];
     }
 
     private function enter(): void
