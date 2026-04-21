@@ -129,14 +129,21 @@ final class VizHtmlBuilder
         // ArrayElementsContext but misses the individual ArrayElement
         // leaves underneath, leaving scalar islands invisible.
         if ($depth > 0) {
-            /** @var list<array{0:int,1:int}> stack of [nodeId, meaningfulDepth] */
-            $stack = [];
+            // FIFO queue: DFS (array_pop) would let a single deep seed
+            // at the tail starve every other seed before maxNodes runs
+            // out. BFS spreads the budget evenly, so each seed gets a
+            // chance to expand its immediate children before the frontier
+            // goes deeper.
+            /** @var list<array{0:int,1:int}> queue of [nodeId, meaningfulDepth] */
+            $queue = [];
             foreach (array_keys($selected) as $nid) {
-                $stack[] = [$nid, 0];
+                $queue[] = [$nid, 0];
             }
-            while ($stack !== []) {
+            $head = 0;
+            while ($head < count($queue)) {
                 /** @var array{0:int,1:int} $frame */
-                $frame = array_pop($stack);
+                $frame = $queue[$head];
+                $head++;
                 [$cur, $meaningfulD] = $frame;
                 // Cap per-parent fan-out: an ArrayElementsContext may
                 // have hundreds of thousands of ArrayElement children,
@@ -184,7 +191,7 @@ final class VizHtmlBuilder
                         continue;
                     }
                     $selected[$childId] = true;
-                    $stack[] = [$childId, $nextD];
+                    $queue[] = [$childId, $nextD];
                     if (count($selected) >= $maxNodes) {
                         break 2;
                     }
