@@ -545,7 +545,27 @@
       .linkDirectionalParticleSpeed(0.008)
       .linkDirectionalParticleWidth(1.2)
       .linkCurvature(l => l.kind === 'ref' ? 0.25 : 0)
-      .cooldownTime(8000)
+      .cooldownTime(8000);
+    // The physics engine otherwise knows nothing about node radii, so
+    // bigger nodes just visually overlap and the camera fit pulls in
+    // closer than usual. Add a collide force sized to each node's own
+    // radius (with a small padding) and lengthen links enough that the
+    // scene stays proportioned when users dial the size range up.
+    const nodeRel = G.nodeRelSize();
+    const radiusOf = n => Math.cbrt(n.val) * nodeRel;
+    if (G.d3Force('collide') === undefined || G.d3Force('collide') === null) {
+      G.d3Force('collide', d3.forceCollide().radius(n => radiusOf(n) + 1.5).iterations(2));
+    }
+    const linkForce = G.d3Force('link');
+    if (linkForce && typeof linkForce.distance === 'function') {
+      linkForce.distance(l => radiusOf(l.source) + radiusOf(l.target) + 18);
+    }
+    G.onEngineStop(() => {
+      if (G.__fitDone) return;
+      G.__fitDone = true;
+      G.zoomToFit(600, 60);
+    });
+    G
       .onNodeClick(n => {
         const dist = 120;
         const d = Math.hypot(n.x || 1, n.y || 1, n.z || 1) || 1;
