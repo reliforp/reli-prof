@@ -93,6 +93,13 @@ final class RmemLiveCommand extends Command
                 (string)VizHtmlBuilder::DEFAULT_MAX_NODES,
             )
             ->addOption(
+                'max-children',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'per-parent cap on BFS child expansion (top-K by retained)',
+                (string)VizHtmlBuilder::DEFAULT_MAX_CHILDREN_PER_NODE,
+            )
+            ->addOption(
                 'memory-limit',
                 null,
                 InputOption::VALUE_REQUIRED,
@@ -120,6 +127,7 @@ final class RmemLiveCommand extends Command
         $depth = max(0, (int)$input->getOption('depth'));
         $allEdges = (bool)$input->getOption('all-edges');
         $maxNodes = max(1, (int)$input->getOption('max-nodes'));
+        $maxChildren = max(1, (int)$input->getOption('max-children'));
         $host = (string)$input->getOption('host');
         $port = max(1, (int)$input->getOption('port'));
 
@@ -153,6 +161,7 @@ final class RmemLiveCommand extends Command
                 ],
             ],
             maxNodes: $maxNodes,
+            maxChildrenPerNode: $maxChildren,
         );
 
         $server = new LiveHttpServer($html, $host, $port);

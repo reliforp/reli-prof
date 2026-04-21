@@ -25,6 +25,7 @@ use Reli\Rmem\Explore\RmemModel;
 final class VizHtmlBuilder
 {
     public const DEFAULT_MAX_NODES = 20000;
+    public const DEFAULT_MAX_CHILDREN_PER_NODE = 100;
     private const PATH_DEPTH_LIMIT = 64;
 
     /**
@@ -41,6 +42,7 @@ final class VizHtmlBuilder
         bool $liveMode = false,
         array $extraPayload = [],
         int $maxNodes = self::DEFAULT_MAX_NODES,
+        int $maxChildrenPerNode = self::DEFAULT_MAX_CHILDREN_PER_NODE,
     ): string {
         [$nodes, $treeEdges, $refEdges] = self::buildSubgraph(
             $model,
@@ -49,6 +51,7 @@ final class VizHtmlBuilder
             $depth,
             $allEdges,
             $maxNodes,
+            $maxChildrenPerNode,
         );
 
         $payload = array_merge([
@@ -96,6 +99,7 @@ final class VizHtmlBuilder
         int $depth,
         bool $allEdges,
         int $maxNodes = self::DEFAULT_MAX_NODES,
+        int $maxChildrenPerNode = self::DEFAULT_MAX_CHILDREN_PER_NODE,
     ): array {
         $selected = [];
         $seeds = $model->getTopRetained($top);
@@ -134,7 +138,27 @@ final class VizHtmlBuilder
                 /** @var array{0:int,1:int} $frame */
                 $frame = array_pop($stack);
                 [$cur, $meaningfulD] = $frame;
-                foreach ($substrate->getChildren($cur) as $childId) {
+                // Cap per-parent fan-out: an ArrayElementsContext may
+                // have hundreds of thousands of ArrayElement children,
+                // which would both exhaust maxNodes for every other
+                // branch and drown the browser. Keep the top-K by
+                // retained (tie-broken deterministically by node_id).
+                $children = $substrate->getChildren($cur);
+                if (count($children) > $maxChildrenPerNode) {
+                    usort(
+                        $children,
+                        static function (int $a, int $b) use ($substrate): int {
+                            $sa = $substrate->getSubtreeSize($a);
+                            $sb = $substrate->getSubtreeSize($b);
+                            if ($sa !== $sb) {
+                                return $sb <=> $sa;
+                            }
+                            return $a <=> $b;
+                        },
+                    );
+                    $children = array_slice($children, 0, $maxChildrenPerNode);
+                }
+                foreach ($children as $childId) {
                     if (isset($selected[$childId])) {
                         continue;
                     }

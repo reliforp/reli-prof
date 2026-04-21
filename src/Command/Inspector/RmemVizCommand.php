@@ -76,6 +76,13 @@ final class RmemVizCommand extends Command
                 (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_NODES,
             )
             ->addOption(
+                'max-children',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'per-parent cap on BFS child expansion (top-K by retained); prevents a huge array from drowning the budget',
+                (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_CHILDREN_PER_NODE,
+            )
+            ->addOption(
                 'memory-limit',
                 null,
                 InputOption::VALUE_REQUIRED,
@@ -103,6 +110,7 @@ final class RmemVizCommand extends Command
         $depth = max(0, (int)$input->getOption('depth'));
         $allEdges = (bool)$input->getOption('all-edges');
         $maxNodes = max(1, (int)$input->getOption('max-nodes'));
+        $maxChildren = max(1, (int)$input->getOption('max-children'));
 
         /** @var string|null $outPath */
         $outPath = $input->getOption('output');
@@ -134,6 +142,7 @@ final class RmemVizCommand extends Command
             $allEdges,
             liveMode: false,
             maxNodes: $maxNodes,
+            maxChildrenPerNode: $maxChildren,
         );
 
         $outDir = dirname($outPath);

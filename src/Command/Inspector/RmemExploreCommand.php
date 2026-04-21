@@ -118,6 +118,13 @@ final class RmemExploreCommand extends Command
                 'hard cap on total nodes in the bridged subgraph',
                 (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_NODES,
             )
+            ->addOption(
+                'http-max-children',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'per-parent cap on BFS child expansion for the bridged subgraph',
+                (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_CHILDREN_PER_NODE,
+            )
         ;
     }
 
@@ -283,6 +290,7 @@ final class RmemExploreCommand extends Command
             $httpDepth = max(0, (int)$input->getOption('http-depth'));
             $httpAllEdges = (bool)$input->getOption('http-all-edges');
             $httpMaxNodes = max(1, (int)$input->getOption('http-max-nodes'));
+            $httpMaxChildren = max(1, (int)$input->getOption('http-max-children'));
 
             $focusPipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
             $navigatePipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
@@ -310,6 +318,7 @@ final class RmemExploreCommand extends Command
                     $httpDepth,
                     $httpAllEdges,
                     $httpMaxNodes,
+                    $httpMaxChildren,
                     $focusPipe[0],
                     $navigatePipe[1],
                 );
@@ -405,6 +414,7 @@ final class RmemExploreCommand extends Command
         int $depth,
         bool $allEdges,
         int $maxNodes,
+        int $maxChildrenPerNode,
         mixed $focusPipeRead,
         mixed $navigatePipeWrite,
     ): void {
@@ -423,6 +433,7 @@ final class RmemExploreCommand extends Command
                 ],
             ],
             maxNodes: $maxNodes,
+            maxChildrenPerNode: $maxChildrenPerNode,
         );
         $server = new \Reli\Rmem\Live\LiveHttpServer($html, $host, $port);
         try {
