@@ -160,6 +160,9 @@
   function showDetail(n) {
     if (!n) { detailBody.innerHTML = '<div class="row"><span class="k">click a node...</span></div>'; return; }
     const fmt = v => (v == null ? '-' : v.toLocaleString());
+    const pathStr = (n.path && n.path.length)
+      ? n.path.join(' › ')
+      : null;
     detailBody.innerHTML =
       row('id', fmt(n.id)) +
       row('type', n.type || '?') +
@@ -167,6 +170,10 @@
       row('retained', fmt(n.retained) + ' B') +
       row('shallow', fmt(n.shallow) + ' B') +
       row('link', n.link_name || '-') +
+      (pathStr
+        ? '<div style="margin-top:6px;color:var(--muted);font-size:11px;word-break:break-all">'
+          + escapeHtml(pathStr) + '</div>'
+        : '') +
       '<div style="margin-top:8px;color:var(--muted);word-break:break-all">' +
       escapeHtml(n.label) + '</div>';
   }

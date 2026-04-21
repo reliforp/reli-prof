@@ -231,15 +231,29 @@ final class RmemVizCommand extends Command
         $nodes = [];
         foreach (array_keys($selected) as $nodeId) {
             $treeParent = $substrate->getTreeParentNodeId($nodeId);
+            $linkName = $substrate->getTreeLinkName($nodeId);
+            $parentLink = $treeParent !== null ? $substrate->getTreeLinkName($treeParent) : null;
+            $label = $model->nodeLabel($nodeId);
+            // Promote link_name into the label for class/function definitions:
+            // RmemModel.nodeLabel returns a bare type ("ClassContext") for these
+            // because the class/function name lives on the parent edge.
+            if ($linkName !== null && $linkName !== '') {
+                if ($parentLink === 'class_table') {
+                    $label = 'class ' . $linkName;
+                } elseif ($parentLink === 'function_table') {
+                    $label = 'fn ' . $linkName;
+                }
+            }
             $nodes[] = [
                 'id' => $nodeId,
-                'label' => $model->nodeLabel($nodeId),
+                'label' => $label,
                 'type' => $substrate->getNodeType($nodeId) ?? '?',
                 'class' => $model->resolveClassPublic($nodeId),
                 'retained' => $substrate->getSubtreeSize($nodeId),
                 'shallow' => $substrate->getNodeSize($nodeId),
                 'tree_parent' => (isset($selected[$treeParent ?? -1])) ? $treeParent : null,
-                'link_name' => $substrate->getTreeLinkName($nodeId),
+                'link_name' => $linkName,
+                'path' => $this->pathOf($substrate, $nodeId),
             ];
         }
 
@@ -274,6 +288,28 @@ final class RmemVizCommand extends Command
         }
 
         return [$nodes, $treeEdges, $refEdges];
+    }
+
+    /**
+     * Walk tree parents collecting link_names; returns root-first list.
+     * Bounded to avoid pathological depth or accidental cycles.
+     *
+     * @return list<string>
+     */
+    private function pathOf(GraphSubstrate $substrate, int $nodeId): array
+    {
+        $path = [];
+        $cur = $nodeId;
+        $depth = 0;
+        while ($cur !== null && $depth < 64) {
+            $name = $substrate->getTreeLinkName($cur);
+            if ($name !== null && $name !== '') {
+                $path[] = $name;
+            }
+            $cur = $substrate->getTreeParentNodeId($cur);
+            $depth++;
+        }
+        return array_reverse($path);
     }
 
     private function loadTemplate(): string
