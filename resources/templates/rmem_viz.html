@@ -75,6 +75,7 @@
       <button data-view="sun">Sunburst</button>
       <button data-view="force">3D Force</button>
       <select id="theme-select" title="theme"></select>
+      <select id="group-select" title="color grouping"></select>
       <select id="palette-select" title="color palette"></select>
     </nav>
   </header>
@@ -109,14 +110,33 @@
     ' nodes  ·  ' + DATA.tree_edges.length.toLocaleString() + ' tree + ' +
     DATA.ref_edges.length.toLocaleString() + ' ref edges';
 
-  // ---- color palette keyed by class (fallback: type) ----
-  const keyOf = n => n.class || n.type || '?';
-  const classKeys = Array.from(new Set(DATA.nodes.map(keyOf)))
-    .sort((a, b) => {
-      const ca = DATA.nodes.filter(n => keyOf(n) === a).reduce((s, n) => s + n.retained, 0);
-      const cb = DATA.nodes.filter(n => keyOf(n) === b).reduce((s, n) => s + n.retained, 0);
-      return cb - ca;
-    });
+  // ---- color palette keyed by the selected grouping ----
+  // Grouping picks WHICH attribute colors cluster on: class name
+  // (default), forest-root link (call_frames / class_table / etc), or
+  // node type. Color island visibility in 3D Force is especially
+  // sensitive to this — physics clusters by attraction, not hierarchy.
+  const GROUPERS = {
+    'by class': n => n.class || n.type || '?',
+    'by forest root': n => n.root_link || '?',
+    'by type': n => n.type || '?',
+  };
+  const GROUP_STORAGE_KEY = 'rmem-viz-group';
+  let activeGroup = localStorage.getItem(GROUP_STORAGE_KEY) || 'by class';
+  if (!(activeGroup in GROUPERS)) activeGroup = 'by class';
+  let keyOf = GROUPERS[activeGroup];
+
+  // classKeys is the full set of groups, sorted by retained desc;
+  // recomputed whenever the active grouping changes.
+  let classKeys = [];
+  function recomputeClassKeys() {
+    classKeys = Array.from(new Set(DATA.nodes.map(keyOf)))
+      .sort((a, b) => {
+        const ca = DATA.nodes.filter(n => keyOf(n) === a).reduce((s, n) => s + n.retained, 0);
+        const cb = DATA.nodes.filter(n => keyOf(n) === b).reduce((s, n) => s + n.retained, 0);
+        return cb - ca;
+      });
+  }
+  recomputeClassKeys();
 
   // Discrete schemes map directly to ordinal slots; continuous
   // interpolators get sampled across N classes. The Sinebow fallback
@@ -195,7 +215,7 @@
   // legend (top 10 classes by retained)
   const legendEl = document.getElementById('legend');
   function renderLegend() {
-    legendEl.innerHTML = '<div style="color:var(--muted);margin-bottom:4px">top classes (by retained)</div>' +
+    legendEl.innerHTML = '<div style="color:var(--muted);margin-bottom:4px">top ' + activeGroup + '</div>' +
       classKeys.slice(0, 10).map(k =>
         '<div class="item"><span class="sw" style="background:' + colorFor(k) + '"></span>' +
         '<span>' + (k.length > 36 ? k.slice(0, 33) + '...' : k) + '</span></div>'
@@ -229,9 +249,9 @@
       id: n.id,
       name: n.label,
       label: n.label,
-      klass: keyOf(n),
       type: n.type,
       class: n.class,
+      root_link: n.root_link,
       retained: n.retained,
       shallow: n.shallow,
       link_name: n.link_name,
@@ -383,6 +403,23 @@
     applyTheme(activeTheme);
   });
 
+  // ---- group-by picker ----
+  const groupSelect = document.getElementById('group-select');
+  groupSelect.innerHTML = Object.keys(GROUPERS)
+    .map(n => '<option value="' + n + '"' + (n === activeGroup ? ' selected' : '') + '>' + n + '</option>')
+    .join('');
+  groupSelect.addEventListener('change', () => {
+    activeGroup = groupSelect.value;
+    localStorage.setItem(GROUP_STORAGE_KEY, activeGroup);
+    keyOf = GROUPERS[activeGroup];
+    recomputeClassKeys();
+    colorFor = buildColorFor(activePalette);
+    renderLegend();
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].recolor === 'function') views[k].recolor();
+    }
+  });
+
   // ---- palette picker ----
   const paletteSelect = document.getElementById('palette-select');
   paletteSelect.innerHTML = PALETTE_GROUPS.map(g =>
@@ -471,8 +508,9 @@
   // ================== 3D Force Graph ==================
   function initForce() {
     const nodes = DATA.nodes.map(n => ({
-      id: n.id, label: n.label, type: n.type, klass: keyOf(n),
+      id: n.id, label: n.label, type: n.type,
       retained: n.retained, shallow: n.shallow, class: n.class,
+      root_link: n.root_link,
       link_name: n.link_name, link_display: n.link_display, path: n.path,
       val: Math.max(1, Math.log2(n.retained + 2)),
     }));
@@ -486,7 +524,7 @@
       .backgroundColor('#05070e')
       .nodeLabel(n => escapeHtml(n.label))
       .nodeVal(n => n.val)
-      .nodeColor(n => colorFor(n.klass))
+      .nodeColor(n => colorFor(keyOf(n)))
       .nodeOpacity(0.92)
       .nodeResolution(12)
       .linkColor(l => l.kind === 'ref' ? 'rgba(255,120,120,0.35)' : 'rgba(140,180,255,0.28)')
@@ -510,11 +548,11 @@
     G.width(el.clientWidth).height(el.clientHeight);
     const forceApplyColor = () => G.nodeColor(n => {
       if (highlightedSet.size === 0 || highlightedSet.has(n.id)) {
-        return colorFor(n.klass);
+        return colorFor(keyOf(n));
       }
-      const c = d3.color(colorFor(n.klass));
+      const c = d3.color(colorFor(keyOf(n)));
       if (c === null) {
-        return colorFor(n.klass);
+        return colorFor(keyOf(n));
       }
       c.opacity = 0.22;
       return c.formatRgb();
@@ -554,7 +592,7 @@
       .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
     node.append('circle')
       .attr('r', d => d.r)
-      .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass))
+      .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(keyOf(d.data)))
       .attr('fill-opacity', d => d.children ? 0.4 : 0.85)
       .style('stroke', d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)')
       .attr('stroke-width', 0.6)
@@ -564,9 +602,9 @@
     node.filter(d => d.r > 28 && d.depth > 0).append('text')
       .attr('class', 'd3-label')
       .attr('text-anchor', 'middle').attr('dy', '0.35em')
-      .text(d => (d.data.klass || '').slice(0, Math.max(2, Math.floor(d.r / 4))));
+      .text(d => (keyOf(d.data) || '').slice(0, Math.max(2, Math.floor(d.r / 4))));
     views.pack.recolor = () => svg.selectAll('circle')
-      .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass));
+      .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(keyOf(d.data)));
     views.pack.retheme = (t) => { el.style.background = t.packGradient; };
     const packBaseStroke = d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)';
     views.pack.highlight = (id) => {
@@ -606,7 +644,7 @@
     leaf.append('rect')
       .attr('width', d => d.x1 - d.x0)
       .attr('height', d => d.y1 - d.y0)
-      .attr('fill', d => colorFor(d.data.klass))
+      .attr('fill', d => colorFor(keyOf(d.data)))
       .attr('fill-opacity', 0.82)
       .style('stroke', 'var(--leaf-stroke)').attr('stroke-width', 0.5)
       .on('click', (_, d) => { showDetail(d.data); postNavigate(d.data.id); })
@@ -617,11 +655,11 @@
       .text(d => {
         const cw = d.x1 - d.x0, ch = d.y1 - d.y0;
         if (cw < 40 || ch < 14) return '';
-        const t = (d.data.klass || d.data.name);
+        const t = (keyOf(d.data) || d.data.name);
         return t.slice(0, Math.max(2, Math.floor(cw / 6)));
       });
     views.tree.recolor = () => svg.selectAll('rect')
-      .attr('fill', d => colorFor(d.data.klass));
+      .attr('fill', d => colorFor(keyOf(d.data)));
     const treeRestyle = (focusId, set) => {
       svg.selectAll('rect')
         .style('stroke', d => d.data.id === focusId
@@ -652,13 +690,13 @@
 
     svg.selectAll('path').data(root.descendants().filter(d => d.depth > 0)).join('path')
       .attr('d', arc)
-      .attr('fill', d => colorFor(d.data.klass))
+      .attr('fill', d => colorFor(keyOf(d.data)))
       .attr('fill-opacity', d => d.children ? 0.55 : 0.85)
       .style('stroke', 'var(--leaf-stroke)').attr('stroke-width', 0.4)
       .on('click', (_, d) => { showDetail(d.data); postNavigate(d.data.id); })
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     views.sun.recolor = () => svg.selectAll('path')
-      .attr('fill', d => colorFor(d.data.klass));
+      .attr('fill', d => colorFor(keyOf(d.data)));
     const sunRestyle = (focusId, set) => {
       svg.selectAll('path')
         .style('stroke', d => d.data.id === focusId

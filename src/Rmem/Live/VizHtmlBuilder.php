@@ -160,6 +160,7 @@ final class VizHtmlBuilder
                 'link_name' => $linkName,
                 'link_display' => $linkDisplay,
                 'path' => self::pathOf($substrate, $model, $nodeId),
+                'root_link' => self::rootLinkOf($substrate, $nodeId),
             ];
         }
 
@@ -194,6 +195,35 @@ final class VizHtmlBuilder
         }
 
         return [$nodes, $treeEdges, $refEdges];
+    }
+
+    /**
+     * Top-most ancestor's link_name (e.g. "call_frames", "class_table",
+     * "objects_store", "function_table", "interned_strings"). Used as a
+     * grouping key so the 3D Force view can visually cluster each forest
+     * branch — otherwise heavy subtrees dominate the physics and small
+     * islands fade out. Walks until the parent is null or the parent's
+     * own link is "root_entry" (the synthetic top).
+     */
+    public static function rootLinkOf(GraphSubstrate $substrate, int $nodeId): ?string
+    {
+        $cur = $nodeId;
+        $last = $substrate->getTreeLinkName($cur);
+        $depth = 0;
+        while ($depth < self::PATH_DEPTH_LIMIT) {
+            $parent = $substrate->getTreeParentNodeId($cur);
+            if ($parent === null) {
+                break;
+            }
+            $parentLink = $substrate->getTreeLinkName($parent);
+            if ($parentLink === null || $parentLink === '' || $parentLink === 'root_entry') {
+                break;
+            }
+            $cur = $parent;
+            $last = $substrate->getTreeLinkName($cur);
+            $depth++;
+        }
+        return $last;
     }
 
     public static function formatLink(
