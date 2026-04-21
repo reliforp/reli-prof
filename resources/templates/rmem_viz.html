@@ -284,6 +284,7 @@
       link_name: n.link_name,
       link_display: n.link_display,
       path: n.path,
+      path_steps: n.path_steps,
       value: parentValue,
       children: kids,
     };
@@ -306,6 +307,28 @@
     const pathStr = (n.path && n.path.length)
       ? n.path.join(' › ')
       : null;
+    let pathStepsHtml = '';
+    if (Array.isArray(n.path_steps) && n.path_steps.length) {
+      const chips = n.path_steps.map((s, i) => {
+        const clickable = typeof s.node_id === 'number' && s.node_id >= 0;
+        const sep = i === 0 ? '' : '<span style="color:var(--muted);margin:0 2px">›</span>';
+        const inner = escapeHtml(String(s.label || ''));
+        return sep + (clickable
+          ? '<a href="#" data-nid="' + s.node_id + '" class="path-step" '
+            + 'style="color:var(--accent);text-decoration:none;cursor:pointer">'
+            + inner + '</a>'
+          : '<span style="color:var(--muted)">' + inner + '</span>');
+      }).join('');
+      pathStepsHtml =
+        '<div style="margin-top:6px;font-size:11px;line-height:1.5;word-break:break-all">'
+        + chips + '</div>';
+    } else if (pathStr !== null) {
+      // Fallback (e.g. a manually constructed detail for out-of-subgraph
+      // focus) — plain-text path, no clickable chips.
+      pathStepsHtml =
+        '<div style="margin-top:6px;color:var(--muted);font-size:11px;word-break:break-all">'
+        + escapeHtml(pathStr) + '</div>';
+    }
     detailBody.innerHTML =
       row('id', fmt(n.id)) +
       row('type', n.type || '?') +
@@ -313,12 +336,19 @@
       row('retained', fmt(n.retained) + ' B') +
       row('shallow', fmt(n.shallow) + ' B') +
       row('link', n.link_display || n.link_name || '-') +
-      (pathStr
-        ? '<div style="margin-top:6px;color:var(--muted);font-size:11px;word-break:break-all">'
-          + escapeHtml(pathStr) + '</div>'
-        : '') +
+      pathStepsHtml +
       '<div style="margin-top:8px;color:var(--muted);word-break:break-all">' +
       escapeHtml(n.label) + '</div>';
+    // Wire path-step chips to navigate.
+    detailBody.querySelectorAll('a.path-step').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.preventDefault();
+        const nid = Number(el.getAttribute('data-nid'));
+        if (!Number.isFinite(nid)) return;
+        highlightNode(nid);
+        postNavigate(nid);
+      });
+    });
   }
   function row(k, v) {
     return '<div class="row"><span class="k">' + k + '</span><span class="v">' + escapeHtml(String(v)) + '</span></div>';
@@ -581,7 +611,7 @@
       id: n.id, label: n.label, type: n.type,
       retained: n.retained, shallow: n.shallow, class: n.class,
       root_link: n.root_link,
-      link_name: n.link_name, link_display: n.link_display, path: n.path,
+      link_name: n.link_name, link_display: n.link_display, path: n.path, path_steps: n.path_steps,
       val: valFor(n.retained),
     }));
     const treeLinks = DATA.tree_edges.map(e => ({ source: e.source, target: e.target, kind: 'tree', link: e.link }));

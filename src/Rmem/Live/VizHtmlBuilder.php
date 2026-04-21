@@ -87,7 +87,7 @@ final class VizHtmlBuilder
 
     /**
      * @return array{
-     *   0: list<array{id:int,label:string,type:string,class:?string,retained:int,shallow:int,tree_parent:?int,link_name:?string,link_display:string,path:list<string>,root_link:?string}>,
+     *   0: list<array{id:int,label:string,type:string,class:?string,retained:int,shallow:int,tree_parent:?int,link_name:?string,link_display:string,path:list<string>,path_steps:list<array{node_id:int,label:string}>,root_link:?string}>,
      *   1: list<array{source:int,target:int,link:string}>,
      *   2: list<array{source:int,target:int}>,
      * }
@@ -226,6 +226,7 @@ final class VizHtmlBuilder
                 'link_name' => $linkName,
                 'link_display' => $linkDisplay,
                 'path' => self::pathOf($substrate, $model, $nodeId),
+                'path_steps' => self::pathStepsOf($substrate, $model, $nodeId),
                 'root_link' => self::rootLinkOf($substrate, $nodeId),
             ];
         }
@@ -380,6 +381,40 @@ final class VizHtmlBuilder
      *
      * @return list<string>
      */
+    /**
+     * Ancestor chain as a list of clickable steps, root-first. Each
+     * step is the incoming edge's context-aware label (same renderer
+     * as formatLink) plus the node_id of that ancestor so the UI can
+     * navigate straight to it.
+     *
+     * @return list<array{node_id:int,label:string}>
+     */
+    public static function pathStepsOf(GraphSubstrate $substrate, RmemModel $model, int $nodeId): array
+    {
+        $steps = [];
+        $cur = $nodeId;
+        $depth = 0;
+        while ($cur !== null && $depth < self::PATH_DEPTH_LIMIT) {
+            $parent = $substrate->getTreeParentNodeId($cur);
+            $parentLink = $parent !== null ? $substrate->getTreeLinkName($parent) : null;
+            $raw = $substrate->getTreeLinkName($cur);
+            if ($parentLink === 'call_frames' && $raw !== null && $raw !== '') {
+                $frameLabel = $model->getFrameLabel($cur);
+                if ($frameLabel !== null && $frameLabel !== '') {
+                    $raw = $frameLabel;
+                }
+            }
+            $formatted = self::formatLink($raw, $parentLink);
+            if ($formatted !== '') {
+                $steps[] = ['node_id' => $cur, 'label' => $formatted];
+            }
+            $cur = $parent;
+            $depth++;
+        }
+        return array_reverse($steps);
+    }
+
+    /** @return list<string> */
     public static function pathOf(GraphSubstrate $substrate, RmemModel $model, int $nodeId): array
     {
         $names = [];
