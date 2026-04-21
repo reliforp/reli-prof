@@ -37,8 +37,16 @@ use Reli\Lib\Process\ProcessSpecifier;
 
 final class CallTraceReader
 {
+    /** Offset of zend_vm_stack->prev within the segment header. */
+    private const ZEND_VM_STACK_PREV_OFFSET = 16;
+    /** Offset of zend_vm_stack->top within the segment header. */
+    private const ZEND_VM_STACK_TOP_OFFSET = 0;
+
     private ?ZendTypeReader $zend_type_reader = null;
     private bool $bulk_stack_copy_enabled = false;
+
+    /** Base address of the VM stack segment last prefetched, for chain walk lazy-load. */
+    private int $current_vm_stack_base = 0;
 
     public function __construct(
         private MemoryReaderInterface $memory_reader,
@@ -245,11 +253,67 @@ final class CallTraceReader
             return null;
         }
 
+        // Record the current segment base so the chain walk can lazily follow
+        // `zend_vm_stack->prev` into older segments on buffer miss.
+        $this->current_vm_stack_base = $vm_stack_address;
+
         return new Pointer(
             ZendExecuteData::class,
             $ced_address,
             $zend_type_reader->sizeOf('zend_execute_data'),
         );
+    }
+
+    /**
+     * Lazily bulk-read a previous VM stack segment into an additional buffer
+     * slot so the chain walk can continue following `prev_execute_data`
+     * pointers that cross segment boundaries (common with Fibers, whose
+     * initial segment is only 4KB).
+     *
+     * Returns the prev-of-prev segment base address for further chaining,
+     * or null on failure / end-of-chain.
+     */
+    private function loadPrevSegment(
+        int $pid,
+        int $seg_base_address,
+        Dereferencer $dereferencer,
+    ): ?int {
+        if (!$this->memory_reader instanceof BufferedMemoryReader) {
+            return null;
+        }
+
+        // Read prev segment's header fields via inner reader (small one-offs).
+        // zend_vm_stack layout: { zval *top; zval *end; zend_vm_stack prev; }
+        try {
+            $top_pointer = new Pointer(
+                RawInt64::class,
+                $seg_base_address + self::ZEND_VM_STACK_TOP_OFFSET,
+                8,
+            );
+            $seg_top = $dereferencer->deref($top_pointer)->value;
+            $prev_pointer = new Pointer(
+                RawInt64::class,
+                $seg_base_address + self::ZEND_VM_STACK_PREV_OFFSET,
+                8,
+            );
+            $prev_of_prev = $dereferencer->deref($prev_pointer)->value;
+        } catch (MemoryReaderException) {
+            return null;
+        }
+
+        if ($seg_top <= $seg_base_address) {
+            return null;
+        }
+        $data_size = $seg_top - $seg_base_address;
+        if ($data_size > $this->memory_reader->getMaxPrefetchSize()) {
+            return null;
+        }
+
+        if (!$this->memory_reader->prefetchAdditional($pid, $seg_base_address, $data_size)) {
+            return null;
+        }
+
+        return $prev_of_prev !== 0 ? $prev_of_prev : null;
     }
 
     /**
@@ -323,10 +387,32 @@ final class CallTraceReader
 
         $frame_addresses[] = $addr;
 
+        // Lazy prev-segment fetch state: when a `prev_execute_data` pointer
+        // crosses into an older VM stack segment (common with Fibers, whose
+        // initial segment is only 4KB), we issue a one-shot bulk readv for
+        // the prev segment's used range so subsequent chain-walk reads hit
+        // the buffer instead of falling through to per-field reads.
+        $next_seg_base = null;  // base address of the next segment to load lazily; null = unknown / chain end
+        if ($buffered !== null && $this->current_vm_stack_base !== 0) {
+            $next_seg_base = $buffered->readRawInt64(
+                $pid,
+                $this->current_vm_stack_base + self::ZEND_VM_STACK_PREV_OFFSET,
+            );
+            if ($next_seg_base === 0) {
+                $next_seg_base = null;
+            }
+        }
+
         for ($i = 0; $i < $depth; $i++) {
+            /** @var int|null $prev_addr */
             $prev_addr = $buffered?->readRawInt64($pid, $addr + $prev_offset);
+            if ($prev_addr === null && $buffered !== null && $next_seg_base !== null) {
+                // Buffer miss. Try lazy prev-segment fetch before falling back.
+                $next_seg_base = $this->loadPrevSegment($pid, $next_seg_base, $dereferencer);
+                $prev_addr = $buffered->readRawInt64($pid, $addr + $prev_offset);
+            }
             if ($prev_addr === null) {
-                // Buffer miss — fall back to FieldReader for remaining frames
+                // Fall back to FieldReader for remaining frames
                 try {
                     $pointer = new Pointer(ZendExecuteData::class, $addr, $ed_size);
                     $ed = $dereferencer->deref($pointer);
