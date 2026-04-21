@@ -441,9 +441,33 @@ final class LiveHttpServer
             $head .= "{$k}: {$v}\r\n";
         }
         $head .= "\r\n";
-        @fwrite($this->clients[$id]['socket'], $head . $body);
-        @fclose($this->clients[$id]['socket']);
+        $socket = $this->clients[$id]['socket'];
+        // Switch to blocking for the write — one fwrite on a non-blocking
+        // socket only flushes what fits in the kernel send buffer (~64 KB
+        // on Linux), so bodies of several MB would be silently truncated
+        // even though Content-Length said otherwise and the browser
+        // would hang waiting for the rest.
+        stream_set_blocking($socket, true);
+        $this->writeAll($socket, $head);
+        if ($body !== '') {
+            $this->writeAll($socket, $body);
+        }
+        @fclose($socket);
         unset($this->clients[$id]);
+    }
+
+    /** @param resource $socket */
+    private function writeAll(mixed $socket, string $data): void
+    {
+        $total = strlen($data);
+        $written = 0;
+        while ($written < $total) {
+            $n = @fwrite($socket, substr($data, $written));
+            if ($n === false || $n === 0) {
+                return; // peer closed or error; caller will fclose
+            }
+            $written += $n;
+        }
     }
 
     private function sendStatus(int $id, int $status, string $message): void
