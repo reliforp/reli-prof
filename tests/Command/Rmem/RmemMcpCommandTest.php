@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Inspector;
+namespace Reli\Command\Rmem;
 
 use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput;
@@ -83,7 +83,7 @@ class RmemMcpCommandTest extends TestCase
     private function withMcpProcess(callable $callback, array $extraArgs = []): void
     {
         $cmd = array_merge(
-            [PHP_BINARY, $this->project_root . '/reli', 'inspector:rmem:mcp', '--rmem=' . $this->rmem_path],
+            [PHP_BINARY, $this->project_root . '/reli', 'rmem:mcp', '--rmem=' . $this->rmem_path],
             $extraArgs,
         );
         $descriptors = [

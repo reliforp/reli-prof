@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Inspector;
+namespace Reli\Command\Rmem;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
@@ -34,7 +34,7 @@ final class RmemExploreCommand extends Command
     #[\Override]
     public function configure(): void
     {
-        $this->setName('inspector:rmem:explore')
+        $this->setName('rmem:explore')
             ->setDescription('Interactive TUI explorer for .rmem memory snapshots')
             ->addArgument(
                 'file',

@@ -413,7 +413,7 @@ $ sudo php ./reli inspector:memory:dump -p <pid> -o snapshot.relimem
 $ php ./reli inspector:memory:analyze snapshot.relimem -f binary -o snapshot.rmem
 
 # 3a. Browse it interactively
-$ php ./reli inspector:rmem:explore snapshot.rmem
+$ php ./reli rmem:explore snapshot.rmem
 
 # 3b. Or get a prioritised findings report
 $ php ./reli inspector:memory:report snapshot.rmem
@@ -423,7 +423,7 @@ For ad-hoc / local use where the longer stop doesn't matter, the one-shot `inspe
 
 ```bash
 $ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
-$ php ./reli inspector:rmem:explore snapshot.rmem
+$ php ./reli rmem:explore snapshot.rmem
 ```
 
 `-f sqlite3` and `-f json` are also accepted — see the format tip in [docs/README.md § Capture memory graphs](docs/README.md#capture-memory-graphs-where-memory-is-used).

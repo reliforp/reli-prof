@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Inspector;
+namespace Reli\Command\Rmem;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
@@ -48,7 +48,7 @@ final class RmemMcpCommand extends Command
     #[\Override]
     public function configure(): void
     {
-        $this->setName('inspector:rmem:mcp')
+        $this->setName('rmem:mcp')
             ->setDescription('MCP server for AI-assisted memory analysis of .rmem snapshots')
             ->addOption(
                 'rmem',
@@ -72,7 +72,7 @@ final class RmemMcpCommand extends Command
                 'bridge',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'base URL of an inspector:rmem:live / explore --http-bridge server; enables rmem_navigate to broadcast focus events to browsers',
+                'base URL of an rmem:live / explore --http-bridge server; enables rmem_navigate to broadcast focus events to browsers',
             )
         ;
     }

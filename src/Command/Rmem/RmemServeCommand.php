@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Inspector;
+namespace Reli\Command\Rmem;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
@@ -31,7 +31,7 @@ final class RmemServeCommand extends Command
     #[\Override]
     public function configure(): void
     {
-        $this->setName('inspector:rmem:serve')
+        $this->setName('rmem:serve')
             ->setDescription('Start a persistent query server for a .rmem file')
             ->addArgument(
                 'file',

@@ -20,7 +20,7 @@ interactively:
 Interactive terminal UI for browsing a memory snapshot.
 
 ```bash
-php reli inspector:rmem:explore output.rmem
+php reli rmem:explore output.rmem
 ```
 
 ### Views
@@ -57,19 +57,19 @@ php reli inspector:rmem:explore output.rmem
 
 ```bash
 # Start focused on a specific node (from report findings)
-php reli inspector:rmem:explore output.rmem --node=12345
+php reli rmem:explore output.rmem --node=12345
 
 # Start focused on a memory address
-php reli inspector:rmem:explore output.rmem --address=0x7f1234567890
+php reli rmem:explore output.rmem --address=0x7f1234567890
 
 # Set memory limit
-php reli inspector:rmem:explore output.rmem --memory-limit=4G
+php reli rmem:explore output.rmem --memory-limit=4G
 
 # Fork a query server for AI assistant access
-php reli inspector:rmem:explore output.rmem --serve
+php reli rmem:explore output.rmem --serve
 
 # Enable TUI control via the query server
-php reli inspector:rmem:explore output.rmem --serve --serve-control
+php reli rmem:explore output.rmem --serve --serve-control
 ```
 
 ### Report integration
@@ -83,11 +83,11 @@ finding in explore:
 
   [HIGH] 31.7 MB impacted
     bottleneck_path: call_frames → collectAll → $sink (31.7 MB)
-    Explore: inspector:rmem:explore --node=113629  (#113629, #113604)
+    Explore: rmem:explore --node=113629  (#113629, #113604)
 ```
 
 ```bash
-php reli inspector:rmem:explore output.rmem --node=113629
+php reli rmem:explore output.rmem --node=113629
 ```
 
 ## rmem:serve
@@ -96,21 +96,21 @@ Persistent headless query server. Loads the `.rmem` file once and
 serves queries over a Unix domain socket.
 
 ```bash
-php reli inspector:rmem:serve output.rmem
+php reli rmem:serve output.rmem
 # serving on /run/user/1000/reli/rmem-serve/a1b2c3d4.sock
 
 # With custom socket path
-php reli inspector:rmem:serve output.rmem --socket=/tmp/my-rmem.sock
+php reli rmem:serve output.rmem --socket=/tmp/my-rmem.sock
 
 # Auto-shutdown after 30 minutes of inactivity
-php reli inspector:rmem:serve output.rmem --timeout=1800
+php reli rmem:serve output.rmem --timeout=1800
 ```
 
 ### Querying
 
 ```bash
 # Using rmem:query CLI
-php reli inspector:rmem:query --server=sock:/run/user/.../a1b2c3d4.sock
+php reli rmem:query --server=sock:/run/user/.../a1b2c3d4.sock
 
 # Using socat
 echo '{"action":"query.roots"}' | socat - UNIX-CONNECT:/run/user/.../a1b2c3d4.sock
@@ -154,13 +154,13 @@ use the tools automatically.
 
 ```bash
 # Headless mode: loads .rmem in-process
-php reli inspector:rmem:mcp --rmem=output.rmem
+php reli rmem:mcp --rmem=output.rmem
 
 # Connect to existing server
-php reli inspector:rmem:mcp --socket=/path/to/sock
+php reli rmem:mcp --socket=/path/to/sock
 
 # With TUI control (requires explore --serve --serve-control)
-php reli inspector:rmem:mcp --socket=/path/to/sock --control
+php reli rmem:mcp --socket=/path/to/sock --control
 ```
 
 ### Claude Code integration
@@ -172,7 +172,7 @@ Add to `.mcp.json` in the project root:
   "mcpServers": {
     "reli-rmem": {
       "command": "php",
-      "args": ["/path/to/reli", "inspector:rmem:mcp", "--rmem=output.rmem"]
+      "args": ["/path/to/reli", "rmem:mcp", "--rmem=output.rmem"]
     }
   }
 }
@@ -186,7 +186,7 @@ For co-pilot mode (AI + human sharing TUI):
     "reli-rmem": {
       "command": "php",
       "args": [
-        "/path/to/reli", "inspector:rmem:mcp",
+        "/path/to/reli", "rmem:mcp",
         "--socket=/run/user/1000/reli/rmem-serve/xxx.sock",
         "--control"
       ]

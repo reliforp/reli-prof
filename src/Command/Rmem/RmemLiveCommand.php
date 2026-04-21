@@ -11,11 +11,12 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Inspector;
+namespace Reli\Command\Rmem;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Rmem\Explore\RmemModel;
+use Reli\Rmem\Live\LiveHttpServer;
 use Reli\Rmem\Live\VizHtmlBuilder;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -24,29 +25,45 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Emit a standalone HTML page that visualizes a .rmem snapshot in
- * multiple ways (3D force graph, circle packing, treemap, sunburst).
+ * Serve the rmem viz over HTTP with a live SSE event channel so multiple
+ * browsers (and, eventually, the explore TUI / MCP agents) can share a
+ * single focused-node cursor.
+ *
+ * Endpoints exposed by the embedded HTTP server:
+ *   GET  /                viz HTML pre-baked with the chosen subgraph
+ *   GET  /api/events      SSE stream of focus_node events
+ *   POST /api/navigate    JSON {"node_id": int} → broadcast focus_node
  */
-final class RmemVizCommand extends Command
+final class RmemLiveCommand extends Command
 {
     private const DEFAULT_TOP = 500;
     private const DEFAULT_DEPTH = 1;
+    private const DEFAULT_PORT = 8080;
+    private const DEFAULT_HOST = '127.0.0.1';
 
     #[\Override]
     public function configure(): void
     {
-        $this->setName('inspector:rmem:viz')
-            ->setDescription('Emit a standalone HTML visualization of a .rmem snapshot')
+        $this->setName('rmem:live')
+            ->setDescription('Serve the rmem viz over HTTP with a live SSE event channel')
             ->addArgument(
                 'file',
                 InputArgument::REQUIRED,
                 'path to a .rmem file',
             )
             ->addOption(
-                'output',
-                'o',
+                'host',
+                null,
                 InputOption::VALUE_REQUIRED,
-                'output HTML path (default: <file>.viz.html)',
+                'bind host',
+                self::DEFAULT_HOST,
+            )
+            ->addOption(
+                'port',
+                'p',
+                InputOption::VALUE_REQUIRED,
+                'TCP port',
+                (string)self::DEFAULT_PORT,
             )
             ->addOption(
                 'top',
@@ -73,14 +90,14 @@ final class RmemVizCommand extends Command
                 null,
                 InputOption::VALUE_REQUIRED,
                 'hard cap on total nodes in the extracted subgraph',
-                (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_NODES,
+                (string)VizHtmlBuilder::DEFAULT_MAX_NODES,
             )
             ->addOption(
                 'max-children',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'per-parent cap on BFS child expansion (top-K by retained); prevents a huge array from drowning the budget',
-                (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_CHILDREN_PER_NODE,
+                'per-parent cap on BFS child expansion (top-K by retained)',
+                (string)VizHtmlBuilder::DEFAULT_MAX_CHILDREN_PER_NODE,
             )
             ->addOption(
                 'memory-limit',
@@ -111,12 +128,8 @@ final class RmemVizCommand extends Command
         $allEdges = (bool)$input->getOption('all-edges');
         $maxNodes = max(1, (int)$input->getOption('max-nodes'));
         $maxChildren = max(1, (int)$input->getOption('max-children'));
-
-        /** @var string|null $outPath */
-        $outPath = $input->getOption('output');
-        if ($outPath === null || $outPath === '') {
-            $outPath = $file . '.viz.html';
-        }
+        $host = (string)$input->getOption('host');
+        $port = max(1, (int)$input->getOption('port'));
 
         $output->writeln("<info>loading {$file} ...</info>");
         $reader = BinaryReader::open($file);
@@ -140,19 +153,47 @@ final class RmemVizCommand extends Command
             $top,
             $depth,
             $allEdges,
-            liveMode: false,
+            liveMode: true,
+            extraPayload: [
+                'live' => [
+                    'events_url' => '/api/events',
+                    'navigate_url' => '/api/navigate',
+                ],
+            ],
             maxNodes: $maxNodes,
             maxChildrenPerNode: $maxChildren,
         );
 
-        $outDir = dirname($outPath);
-        if (!is_dir($outDir)) {
-            mkdir($outDir, 0700, true);
-        }
-        file_put_contents($outPath, $html);
+        $server = new LiveHttpServer($html, $host, $port);
+        // Let browsers find a visible ancestor when we focus a node
+        // that's outside their induced subgraph.
+        $server->setFocusEnricher(static function (int $nodeId) use ($substrate, $model): array {
+            $path = [];
+            $cur = $nodeId;
+            $hops = 0;
+            while ($cur !== null && $hops < 64) {
+                $path[] = $cur;
+                $cur = $substrate->getTreeParentNodeId($cur);
+                $hops++;
+            }
+            return [
+                'path_node_ids' => array_reverse($path),
+                'label' => $model->nodeLabel($nodeId),
+            ];
+        });
+        $addr = $server->bind();
+        $output->writeln(sprintf(
+            '<info>listening on %s — open http://%s:%d/ in a browser</info>',
+            $addr,
+            $host,
+            $port,
+        ));
+        $output->writeln('<info>POST {"node_id": N} to /api/navigate to broadcast a focus event</info>');
+        $output->writeln('<info>Ctrl+C to stop</info>');
 
-        $output->writeln("<info>wrote {$outPath}</info>");
-        $output->writeln("<info>open it in a browser to explore</info>");
+        $server->run();
+
+        $output->writeln('<info>server stopped</info>');
         return 0;
     }
 }
