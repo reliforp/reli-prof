@@ -151,8 +151,18 @@ final class RmemVizCommand extends Command
         ];
 
         $template = $this->loadTemplate();
-        $json = (string)json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $html = str_replace('/*__RMEM_VIZ_DATA__*/null', $json, $template);
+        $json = json_encode(
+            $payload,
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE,
+        );
+        if ($json === false) {
+            throw new \RuntimeException('json_encode failed: ' . json_last_error_msg());
+        }
+        $placeholder = '/*__RMEM_VIZ_DATA__*/null';
+        if (!str_contains($template, $placeholder)) {
+            throw new \RuntimeException('viz template is missing the data placeholder');
+        }
+        $html = str_replace($placeholder, $json, $template);
 
         $outDir = dirname($outPath);
         if (!is_dir($outDir)) {
