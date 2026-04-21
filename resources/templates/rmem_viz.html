@@ -670,16 +670,21 @@
     // Classic d3 zoomable-pack pattern adapted for our interactions
     // (click still runs showDetail / postNavigate). Right-click also
     // pops back up one level.
-    const cx = w / 2, cy = h / 2;
     let focus = root;
-    let zoomView = [cx, cy, root.r * 2];
+    let zoomView = [root.x, root.y, root.r * 2];
 
     function zoomTo(v) {
       zoomView = v;
       const k = w / v[2];
-      g.selectAll('g').attr('transform', d => 'translate(' + ((d.x - v[0]) * k) + ',' + ((d.y - v[1]) * k) + ')');
-      g.selectAll('circle').attr('r', d => d.r * k);
-      g.selectAll('text.d3-label').attr('opacity', d => d.r * k > 22 ? 1 : 0);
+      // The outer <g> handles the camera translation (shift viewBox
+      // centre onto v[0]/v[1]); per-node <g> stay at their layout
+      // coordinates. Then circles scale by k.
+      g.attr('transform',
+        'translate(' + (w / 2) + ',' + (h / 2) + ') ' +
+        'scale(' + k + ') ' +
+        'translate(' + (-v[0]) + ',' + (-v[1]) + ')');
+      g.selectAll('text.d3-label').attr('opacity', d => d.r * k > 22 ? 1 : 0)
+        .style('font-size', (10 / k) + 'px');
     }
     function zoomTarget(d) {
       return [d.x, d.y, d.r * 2.1];
