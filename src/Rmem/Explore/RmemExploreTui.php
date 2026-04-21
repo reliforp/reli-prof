@@ -158,6 +158,12 @@ final class RmemExploreTui
         if ($this->focusEventPipe === null || $this->suppressFocusEmit) {
             return;
         }
+        // Sentinel (id < 0) is a synthetic "(roots)" anchor — no real
+        // node on the other end, so there is nothing for the browser
+        // or MCP clients to highlight.
+        if ($nodeId < 0) {
+            return;
+        }
         $line = (string)json_encode(['node_id' => $nodeId], JSON_UNESCAPED_UNICODE) . "\n";
         @fwrite($this->focusEventPipe, $line);
     }

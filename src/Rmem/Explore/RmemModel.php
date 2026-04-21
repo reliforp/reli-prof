@@ -190,7 +190,7 @@ final class RmemModel
      * Get root-level branches (call_frames, class_table, objects_store, etc.)
      * sorted by retained size descending.
      *
-     * @return list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>
+     * @return list<array{node_id: int, retained: int, shallow: int, label: string, link_name: string}>
      */
     public function getRootChildren(): array
     {
@@ -268,6 +268,15 @@ final class RmemModel
      */
     public function getChildren(int $nodeId, bool $allEdges = false, string $sort = 'retained'): array
     {
+        // Sentinel: children are the forest roots. Tree edges are
+        // stored with the roots pointing BACK to the sentinel via
+        // tree_parents[root] = -1, not as children[-1] entries, so the
+        // generic substrate lookup would return nothing. Serve the
+        // root list directly so Enter on the synthetic "(roots)"
+        // parent surfaces every top-level branch.
+        if ($nodeId < 0) {
+            return $this->getRootChildren();
+        }
         $children = $allEdges
             ? $this->substrate->getAllChildren($nodeId)
             : $this->substrate->getChildren($nodeId);
@@ -844,6 +853,12 @@ final class RmemModel
 
     public function nodeLabel(int $nodeId): string
     {
+        // Sentinel: synthetic parent-of-all-roots. Show a friendly name
+        // so the sandwich view's parents pane does not confront the user
+        // with "node#-1" when they walk off the top of the tree.
+        if ($nodeId < 0) {
+            return '(roots)';
+        }
         // Frame label (function:line) if available
         if (isset($this->frameLabels[$nodeId])) {
             $label = $this->frameLabels[$nodeId];
