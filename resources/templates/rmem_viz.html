@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rmem viz</title>
+<style>
+  :root {
+    --bg: #07090f;
+    --bg2: #0d1220;
+    --fg: #d8dce6;
+    --muted: #7a819a;
+    --accent: #66d9ef;
+    --border: #1a2033;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  #app { display: grid; grid-template-rows: 44px 1fr; height: 100vh; }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 16px; border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+  header .meta { color: var(--muted); font-size: 11px; }
+  nav { margin-left: auto; display: flex; gap: 4px; }
+  nav button {
+    background: transparent; color: var(--muted); border: 1px solid transparent;
+    padding: 6px 12px; border-radius: 4px; cursor: pointer; font: inherit;
+  }
+  nav button:hover { color: var(--fg); border-color: var(--border); }
+  nav button.active { color: var(--accent); border-color: var(--accent); background: rgba(102,217,239,0.08); }
+  main { position: relative; overflow: hidden; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.active { display: block; }
+  #force-view { background: radial-gradient(ellipse at center, #121830 0%, #04060c 80%); }
+  #detail {
+    position: absolute; right: 12px; top: 12px; width: 320px; max-height: 60%;
+    background: rgba(13,18,32,0.92); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; overflow: auto; pointer-events: auto; font-size: 12px;
+    backdrop-filter: blur(6px);
+  }
+  #detail h3 { margin: 0 0 6px 0; font-size: 12px; color: var(--accent); }
+  #detail .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  #detail .k { color: var(--muted); }
+  #detail .v { color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #legend {
+    position: absolute; left: 12px; bottom: 12px; background: rgba(13,18,32,0.92);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; max-width: 260px;
+    font-size: 11px;
+  }
+  #legend .item { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+  #legend .sw { width: 10px; height: 10px; border-radius: 2px; }
+  svg { width: 100%; height: 100%; display: block; }
+  .d3-label { fill: var(--fg); font-size: 10px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>rmem viz</h1>
+    <span class="meta" id="meta"></span>
+    <nav>
+      <button data-view="force" class="active">3D Force</button>
+      <button data-view="pack">Circle Pack</button>
+      <button data-view="tree">Treemap</button>
+      <button data-view="sun">Sunburst</button>
+    </nav>
+  </header>
+  <main>
+    <div class="view active" id="force-view"></div>
+    <div class="view" id="pack-view"></div>
+    <div class="view" id="tree-view"></div>
+    <div class="view" id="sun-view"></div>
+    <div id="detail">
+      <h3>node</h3>
+      <div id="detail-body"><div class="row"><span class="k">click a node...</span></div></div>
+    </div>
+    <div id="legend"></div>
+  </main>
+</div>
+
+<script src="https://unpkg.com/d3@7"></script>
+<script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
+<script src="https://unpkg.com/3d-force-graph@1.73.0/dist/3d-force-graph.min.js"></script>
+<script>
+(function () {
+  const DATA = /*__RMEM_VIZ_DATA__*/null;
+  if (!DATA) {
+    document.body.innerHTML = '<pre style="color:#f66;padding:20px">no data embedded</pre>';
+    return;
+  }
+
+  document.getElementById('meta').textContent =
+    DATA.source + '   ' +
+    DATA.nodes.length.toLocaleString() + ' / ' + DATA.node_count_total.toLocaleString() +
+    ' nodes  ·  ' + DATA.tree_edges.length.toLocaleString() + ' tree + ' +
+    DATA.ref_edges.length.toLocaleString() + ' ref edges';
+
+  // ---- color palette keyed by class (fallback: type) ----
+  const palette = d3.schemeTableau10.concat(d3.schemeSet3);
+  const keyOf = n => n.class || n.type || '?';
+  const classKeys = Array.from(new Set(DATA.nodes.map(keyOf)))
+    .sort((a, b) => {
+      const ca = DATA.nodes.filter(n => keyOf(n) === a).reduce((s, n) => s + n.retained, 0);
+      const cb = DATA.nodes.filter(n => keyOf(n) === b).reduce((s, n) => s + n.retained, 0);
+      return cb - ca;
+    });
+  const colorFor = d3.scaleOrdinal().domain(classKeys).range(palette).unknown('#555');
+
+  // legend (top 10 classes by retained)
+  const legendEl = document.getElementById('legend');
+  legendEl.innerHTML = '<div style="color:var(--muted);margin-bottom:4px">top classes (by retained)</div>' +
+    classKeys.slice(0, 10).map(k =>
+      '<div class="item"><span class="sw" style="background:' + colorFor(k) + '"></span>' +
+      '<span>' + (k.length > 36 ? k.slice(0, 33) + '...' : k) + '</span></div>'
+    ).join('');
+
+  // ---- build induced hierarchy for d3.hierarchy-based views ----
+  // Some nodes have tree_parent=null (they are the induced forest roots).
+  // We wrap them under a synthetic "root" so d3 gets a single tree.
+  const byId = new Map(DATA.nodes.map(n => [n.id, n]));
+  const childrenMap = new Map();
+  const forestRoots = [];
+  for (const n of DATA.nodes) {
+    if (n.tree_parent == null || !byId.has(n.tree_parent)) {
+      forestRoots.push(n.id);
+    } else {
+      if (!childrenMap.has(n.tree_parent)) childrenMap.set(n.tree_parent, []);
+      childrenMap.get(n.tree_parent).push(n.id);
+    }
+  }
+  function buildTree(id) {
+    const n = byId.get(id);
+    const kids = (childrenMap.get(id) || []).map(buildTree);
+    // Avoid double-counting: if a node has kids, use its shallow
+    // size as its own leaf contribution so retained = own + sum(kids).
+    return {
+      id: n.id,
+      name: n.label,
+      klass: keyOf(n),
+      retained: n.retained,
+      shallow: n.shallow,
+      value: kids.length ? (n.shallow || 1) : (n.retained || n.shallow || 1),
+      children: kids,
+    };
+  }
+  const hierarchyRoot = {
+    id: -1,
+    name: DATA.source,
+    klass: null,
+    retained: DATA.nodes.reduce((s, n) => s + (n.tree_parent == null ? n.retained : 0), 0),
+    shallow: 0,
+    value: 0,
+    children: forestRoots.map(buildTree),
+  };
+
+  // ---- detail panel ----
+  const detailBody = document.getElementById('detail-body');
+  function showDetail(n) {
+    if (!n) { detailBody.innerHTML = '<div class="row"><span class="k">click a node...</span></div>'; return; }
+    const fmt = v => (v == null ? '-' : v.toLocaleString());
+    detailBody.innerHTML =
+      row('id', fmt(n.id)) +
+      row('type', n.type || '?') +
+      row('class', n.class || '-') +
+      row('retained', fmt(n.retained) + ' B') +
+      row('shallow', fmt(n.shallow) + ' B') +
+      row('link', n.link_name || '-') +
+      '<div style="margin-top:8px;color:var(--muted);word-break:break-all">' +
+      escapeHtml(n.label) + '</div>';
+  }
+  function row(k, v) {
+    return '<div class="row"><span class="k">' + k + '</span><span class="v">' + escapeHtml(String(v)) + '</span></div>';
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ---- tab switching ----
+  const views = {
+    force: { el: document.getElementById('force-view'), init: initForce, inited: false },
+    pack:  { el: document.getElementById('pack-view'),  init: initPack,  inited: false },
+    tree:  { el: document.getElementById('tree-view'),  init: initTree,  inited: false },
+    sun:   { el: document.getElementById('sun-view'),   init: initSun,   inited: false },
+  };
+  document.querySelectorAll('nav button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const key = btn.dataset.view;
+      for (const k of Object.keys(views)) {
+        views[k].el.classList.toggle('active', k === key);
+      }
+      if (!views[key].inited) { views[key].init(); views[key].inited = true; }
+    });
+  });
+
+  initForce(); views.force.inited = true;
+
+  // ================== 3D Force Graph ==================
+  function initForce() {
+    const nodes = DATA.nodes.map(n => ({
+      id: n.id, label: n.label, type: n.type, klass: keyOf(n),
+      retained: n.retained, shallow: n.shallow, class: n.class, link_name: n.link_name,
+      val: Math.max(1, Math.log2(n.retained + 2)),
+    }));
+    const treeLinks = DATA.tree_edges.map(e => ({ source: e.source, target: e.target, kind: 'tree', link: e.link }));
+    const refLinks = DATA.ref_edges.map(e => ({ source: e.source, target: e.target, kind: 'ref' }));
+    const links = treeLinks.concat(refLinks);
+
+    const el = document.getElementById('force-view');
+    const G = ForceGraph3D()(el)
+      .graphData({ nodes, links })
+      .backgroundColor('#05070e')
+      .nodeLabel(n => escapeHtml(n.label))
+      .nodeVal(n => n.val)
+      .nodeColor(n => colorFor(n.klass))
+      .nodeOpacity(0.92)
+      .nodeResolution(12)
+      .linkColor(l => l.kind === 'ref' ? 'rgba(255,120,120,0.35)' : 'rgba(140,180,255,0.28)')
+      .linkWidth(l => l.kind === 'ref' ? 0.4 : 0.6)
+      .linkDirectionalParticles(l => l.kind === 'ref' ? 2 : 0)
+      .linkDirectionalParticleSpeed(0.008)
+      .linkDirectionalParticleWidth(1.2)
+      .linkCurvature(l => l.kind === 'ref' ? 0.25 : 0)
+      .cooldownTime(8000)
+      .onNodeClick(n => {
+        const dist = 120;
+        const d = Math.hypot(n.x || 1, n.y || 1, n.z || 1) || 1;
+        G.cameraPosition(
+          { x: n.x * (1 + dist / d), y: n.y * (1 + dist / d), z: n.z * (1 + dist / d) },
+          n, 900
+        );
+        showDetail(n);
+      });
+    window.addEventListener('resize', () => G.width(el.clientWidth).height(el.clientHeight));
+    G.width(el.clientWidth).height(el.clientHeight);
+  }
+
+  // ================== Circle Packing ==================
+  function initPack() {
+    const el = document.getElementById('pack-view');
+    const w = el.clientWidth, h = el.clientHeight;
+    const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, w, h]);
+    const g = svg.append('g');
+
+    const root = d3.hierarchy(hierarchyRoot).sum(d => d.value).sort((a, b) => b.value - a.value);
+    d3.pack().size([w - 4, h - 4]).padding(2)(root);
+
+    const node = g.selectAll('g').data(root.descendants()).join('g')
+      .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
+    node.append('circle')
+      .attr('r', d => d.r)
+      .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass))
+      .attr('fill-opacity', d => d.children ? 0.18 : 0.78)
+      .attr('stroke', d => d.depth === 0 ? 'transparent' : 'rgba(0,0,0,0.35)')
+      .attr('stroke-width', 0.5)
+      .on('click', (_, d) => showDetail(d.data))
+      .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
+    // Top few labels
+    node.filter(d => d.r > 28 && d.depth > 0).append('text')
+      .attr('class', 'd3-label')
+      .attr('text-anchor', 'middle').attr('dy', '0.35em')
+      .text(d => (d.data.klass || '').slice(0, Math.max(2, Math.floor(d.r / 4))));
+  }
+
+  // ================== Treemap ==================
+  function initTree() {
+    const el = document.getElementById('tree-view');
+    const w = el.clientWidth, h = el.clientHeight;
+    const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, w, h]);
+
+    const root = d3.hierarchy(hierarchyRoot).sum(d => d.value).sort((a, b) => b.value - a.value);
+    d3.treemap().size([w, h]).paddingInner(1).round(true)(root);
+
+    const leaf = svg.selectAll('g').data(root.leaves()).join('g')
+      .attr('transform', d => 'translate(' + d.x0 + ',' + d.y0 + ')');
+    leaf.append('rect')
+      .attr('width', d => d.x1 - d.x0)
+      .attr('height', d => d.y1 - d.y0)
+      .attr('fill', d => colorFor(d.data.klass))
+      .attr('fill-opacity', 0.82)
+      .attr('stroke', 'rgba(0,0,0,0.4)').attr('stroke-width', 0.5)
+      .on('click', (_, d) => showDetail(d.data))
+      .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
+    leaf.append('text')
+      .attr('class', 'd3-label')
+      .attr('x', 3).attr('y', 11)
+      .text(d => {
+        const cw = d.x1 - d.x0, ch = d.y1 - d.y0;
+        if (cw < 40 || ch < 14) return '';
+        const t = (d.data.klass || d.data.name);
+        return t.slice(0, Math.max(2, Math.floor(cw / 6)));
+      });
+  }
+
+  // ================== Sunburst ==================
+  function initSun() {
+    const el = document.getElementById('sun-view');
+    const w = el.clientWidth, h = el.clientHeight;
+    const radius = Math.min(w, h) / 2 - 8;
+    const svg = d3.select(el).append('svg').attr('viewBox', [-w/2, -h/2, w, h]);
+
+    const root = d3.hierarchy(hierarchyRoot).sum(d => d.value).sort((a, b) => b.value - a.value);
+    d3.partition().size([2 * Math.PI, radius])(root);
+    const arc = d3.arc()
+      .startAngle(d => d.x0).endAngle(d => d.x1)
+      .innerRadius(d => d.y0).outerRadius(d => d.y1 - 1)
+      .padAngle(0.002).padRadius(radius / 2);
+
+    svg.selectAll('path').data(root.descendants().filter(d => d.depth > 0)).join('path')
+      .attr('d', arc)
+      .attr('fill', d => colorFor(d.data.klass))
+      .attr('fill-opacity', d => d.children ? 0.55 : 0.85)
+      .attr('stroke', 'rgba(0,0,0,0.35)').attr('stroke-width', 0.4)
+      .on('click', (_, d) => showDetail(d.data))
+      .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
+  }
+})();
+</script>
+</body>
+</html>
