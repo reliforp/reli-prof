@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Rmem\Live;
 
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 use Reli\Rmem\Explore\RmemModel;
 
 /**
@@ -137,7 +138,7 @@ final class VizHtmlBuilder
             $treeParent = $substrate->getTreeParentNodeId($nodeId);
             $linkName = $substrate->getTreeLinkName($nodeId);
             $parentLink = $treeParent !== null ? $substrate->getTreeLinkName($treeParent) : null;
-            $linkDisplay = self::formatLink($linkName, $parentLink);
+            $linkDisplay = self::formatLink($linkName, $parentLink, $nodeId, $model);
             $label = $model->nodeLabel($nodeId);
             if ($linkName !== null && $linkName !== '') {
                 if ($parentLink === 'class_table') {
@@ -158,7 +159,7 @@ final class VizHtmlBuilder
                 'tree_parent' => (isset($selected[$treeParent ?? -1])) ? $treeParent : null,
                 'link_name' => $linkName,
                 'link_display' => $linkDisplay,
-                'path' => self::pathOf($substrate, $nodeId),
+                'path' => self::pathOf($substrate, $model, $nodeId),
             ];
         }
 
@@ -195,10 +196,23 @@ final class VizHtmlBuilder
         return [$nodes, $treeEdges, $refEdges];
     }
 
-    public static function formatLink(?string $linkName, ?string $parentLink): string
-    {
+    public static function formatLink(
+        ?string $linkName,
+        ?string $parentLink,
+        ?int $nodeId = null,
+        ?RmemModel $model = null,
+    ): string {
         if ($linkName === null || $linkName === '') {
             return '';
+        }
+        // Frame entries under call_frames come in as raw indices ("0",
+        // "1", ...); the useful label is ClassName::method:line which the
+        // model already computed and stashed in frameLabels.
+        if ($parentLink === 'call_frames' && $nodeId !== null && $model !== null) {
+            $frameLabel = $model->getFrameLabel($nodeId);
+            if ($frameLabel !== null && $frameLabel !== '') {
+                return $frameLabel;
+            }
         }
         return match ($parentLink) {
             'array_elements' => "[{$linkName}]",
@@ -210,27 +224,47 @@ final class VizHtmlBuilder
     }
 
     /**
-     * Walk tree parents collecting context-formatted link names; returns
-     * root-first list. Bounded depth guards against pathological chains.
+     * Walk tree parents back to the root, substitute frame labels for
+     * raw call-frame indices, then render the whole chain with
+     * PathFormatter::toPhpSyntax() — the same collapser
+     * inspector:memory:report uses — so the detail panel shows paths
+     * like `<main>:28::$messages[0]->structure->raw` instead of the
+     * raw "root_entry › call_frames › 0 › …" chain.
+     *
+     * Returns a single-segment list so the existing JS (which joins
+     * with ' › ') still renders one pretty line.
      *
      * @return list<string>
      */
-    public static function pathOf(GraphSubstrate $substrate, int $nodeId): array
+    public static function pathOf(GraphSubstrate $substrate, RmemModel $model, int $nodeId): array
     {
-        $path = [];
+        $names = [];
+        $types = [];
         $cur = $nodeId;
         $depth = 0;
         while ($cur !== null && $depth < self::PATH_DEPTH_LIMIT) {
-            $parent = $substrate->getTreeParentNodeId($cur);
-            $parentLink = $parent !== null ? $substrate->getTreeLinkName($parent) : null;
-            $formatted = self::formatLink($substrate->getTreeLinkName($cur), $parentLink);
-            if ($formatted !== '') {
-                $path[] = $formatted;
+            $rawName = $substrate->getTreeLinkName($cur);
+            if ($rawName !== null && $rawName !== '') {
+                $parent = $substrate->getTreeParentNodeId($cur);
+                $parentLink = $parent !== null ? $substrate->getTreeLinkName($parent) : null;
+                if ($parentLink === 'call_frames') {
+                    $frameLabel = $model->getFrameLabel($cur);
+                    if ($frameLabel !== null && $frameLabel !== '') {
+                        $rawName = $frameLabel;
+                    }
+                }
+                $names[] = $rawName;
+                $types[] = $substrate->getNodeType($cur) ?? '';
             }
-            $cur = $parent;
+            $cur = $substrate->getTreeParentNodeId($cur);
             $depth++;
         }
-        return array_reverse($path);
+        $names = array_reverse($names);
+        $types = array_reverse($types);
+        if ($names === []) {
+            return [];
+        }
+        return [PathFormatter::toPhpSyntax($names, $types)];
     }
 
     private static function loadTemplate(): string
