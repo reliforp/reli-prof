@@ -120,6 +120,14 @@ final class RmemExploreTui
     /** @var resource|null */
     private mixed $focusEventPipe = null;
 
+    /** @var resource|null */
+    private mixed $navigateEventPipe = null;
+
+    private string $navigateBuf = '';
+
+    /** True while an externally-driven navigate is in progress. */
+    private bool $suppressFocusEmit = false;
+
     /**
      * Write end of a pipe to a sidecar process (the --http-bridge child).
      * Whenever the sandwich focus changes, a JSON line
@@ -132,13 +140,41 @@ final class RmemExploreTui
         $this->focusEventPipe = $writeEnd;
     }
 
+    /**
+     * Read end of a pipe from the bridge child. The bridge writes
+     * {"node_id": N}\n whenever a browser / AI hits /api/navigate so
+     * the TUI can jump to the same node.
+     *
+     * @param resource $readEnd
+     */
+    public function setNavigateEventPipe(mixed $readEnd): void
+    {
+        $this->navigateEventPipe = $readEnd;
+    }
+
     private function emitFocusEvent(int $nodeId): void
     {
-        if ($this->focusEventPipe === null) {
+        if ($this->focusEventPipe === null || $this->suppressFocusEmit) {
             return;
         }
         $line = (string)json_encode(['node_id' => $nodeId], JSON_UNESCAPED_UNICODE) . "\n";
         @fwrite($this->focusEventPipe, $line);
+    }
+
+    private function handleIncomingNavigate(int $nodeId): void
+    {
+        if ($nodeId < 0) {
+            return;
+        }
+        // Suppress the outbound focus emit so we don't echo right back
+        // to the bridge (which would re-broadcast the same id in a loop).
+        $this->suppressFocusEmit = true;
+        try {
+            $label = $this->model->nodeLabel($nodeId);
+            $this->enterSandwich($nodeId, $label);
+        } finally {
+            $this->suppressFocusEmit = false;
+        }
     }
 
     public function run(): void
@@ -152,7 +188,7 @@ final class RmemExploreTui
         }
 
         $useTimeout = $this->socketPath !== null || $this->sccBuilderPid !== null;
-        $hasUiPipe = $this->uiRequestRead !== null;
+        $hasUiPipe = $this->uiRequestRead !== null || $this->navigateEventPipe !== null;
 
         $this->term->enter();
         try {
@@ -196,6 +232,9 @@ final class RmemExploreTui
         if ($this->uiRequestRead !== null) {
             $streams[] = $this->uiRequestRead;
         }
+        if ($this->navigateEventPipe !== null) {
+            $streams[] = $this->navigateEventPipe;
+        }
         if ($streams === []) {
             return null;
         }
@@ -213,12 +252,38 @@ final class RmemExploreTui
             $this->processUiRequest();
         }
 
+        // Drain any pending navigate events from the bridge child
+        if ($this->navigateEventPipe !== null && in_array($this->navigateEventPipe, $read, true)) {
+            $this->drainNavigatePipe();
+        }
+
         // Process tty if readable
         if ($ttyIn !== null && in_array($ttyIn, $read, true)) {
             return $this->term->readKey();
         }
 
         return null;
+    }
+
+    private function drainNavigatePipe(): void
+    {
+        if ($this->navigateEventPipe === null) {
+            return;
+        }
+        $chunk = @fread($this->navigateEventPipe, 4096);
+        if ($chunk === false || $chunk === '') {
+            return;
+        }
+        $this->navigateBuf .= $chunk;
+        while (($nl = strpos($this->navigateBuf, "\n")) !== false) {
+            $line = substr($this->navigateBuf, 0, $nl);
+            $this->navigateBuf = substr($this->navigateBuf, $nl + 1);
+            /** @var mixed $decoded */
+            $decoded = json_decode($line, true);
+            if (is_array($decoded) && isset($decoded['node_id']) && is_int($decoded['node_id'])) {
+                $this->handleIncomingNavigate($decoded['node_id']);
+            }
+        }
     }
 
     private function checkChildStatus(): void

@@ -304,6 +304,7 @@ final class RmemMcpCommand extends Command
         }
         $endpoint = match ($action) {
             'bridge.navigate' => '/api/navigate',
+            'bridge.highlight_set' => '/api/highlight_set',
             default => null,
         };
         if ($endpoint === null) {
@@ -745,13 +746,28 @@ INSTRUCTIONS;
             // === Bridge tool (--bridge only) ===
             'rmem_broadcast_focus' => [
                 'action' => 'bridge.navigate',
-                'description' => 'Broadcast a focus_node event to every browser connected to the HTTP bridge. Use to highlight a node in all open viz tabs so the human user can see what you are investigating.',
+                'description' => 'Broadcast a focus_node event to every browser connected to the HTTP bridge. Use to highlight a node in all open viz tabs so the human user can see what you are investigating. If the bridge is attached to an explore TUI (--http-bridge), the TUI will also jump to the node.',
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => [
-                        'node_id' => ['type' => 'integer', 'description' => 'Node ID to highlight across browsers'],
+                        'node_id' => ['type' => 'integer', 'description' => 'Node ID to highlight across browsers (and TUI when attached)'],
                     ],
                     'required' => ['node_id'],
+                ],
+            ],
+            'rmem_highlight_set' => [
+                'action' => 'bridge.highlight_set',
+                'description' => 'Highlight a SET of nodes simultaneously across every connected browser (e.g. the members of an SCC, a suspicious subtree, or the path from a root to a leak). Non-members are dimmed in the 3D force view and rings in Pack / Treemap / Sunburst. Passing an empty array clears the set.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'node_ids' => [
+                            'type' => 'array',
+                            'items' => ['type' => 'integer'],
+                            'description' => 'Node IDs to highlight together. Empty array clears.',
+                        ],
+                    ],
+                    'required' => ['node_ids'],
                 ],
             ],
         ];

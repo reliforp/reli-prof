@@ -45,6 +45,12 @@ final class LiveHttpServer
 
     private bool $running = true;
 
+    /** @var (callable(int): void)|null fired on every POST /api/navigate */
+    private $onNavigate = null;
+
+    /** @var (callable(list<int>): void)|null fired on every POST /api/highlight_set */
+    private $onHighlightSet = null;
+
     /**
      * @param callable(string): string|null $broadcastHook  Optional callback
      *        invoked with each broadcast payload (for tests / logging). null
@@ -73,6 +79,28 @@ final class LiveHttpServer
     public function stop(): void
     {
         $this->running = false;
+    }
+
+    /**
+     * Install a callback invoked for every successful POST /api/navigate
+     * (after the focus_node SSE has been broadcast). Used by the explore
+     * bridge child to forward browser / AI navigation back to the TUI.
+     *
+     * @param callable(int): void $cb
+     */
+    public function setNavigateCallback(callable $cb): void
+    {
+        $this->onNavigate = $cb;
+    }
+
+    /**
+     * Install a callback invoked for every successful POST /api/highlight_set.
+     *
+     * @param callable(list<int>): void $cb
+     */
+    public function setHighlightSetCallback(callable $cb): void
+    {
+        $this->onHighlightSet = $cb;
     }
 
     public function run(): void
@@ -315,6 +343,31 @@ final class LiveHttpServer
                 return;
             }
             $this->broadcastFocusNode($decoded['node_id']);
+            if ($this->onNavigate !== null) {
+                ($this->onNavigate)($decoded['node_id']);
+            }
+            $this->sendStatus($id, 204, '');
+            return;
+        }
+        if ($req['method'] === 'POST' && $path === '/api/highlight_set') {
+            /** @var mixed $decoded */
+            $decoded = json_decode($req['body'], true);
+            if (!is_array($decoded) || !isset($decoded['node_ids']) || !is_array($decoded['node_ids'])) {
+                $this->sendStatus($id, 400, 'expected JSON {"node_ids": [int, ...]}');
+                return;
+            }
+            /** @var list<int> $ids */
+            $ids = [];
+            /** @var mixed $entry */
+            foreach ($decoded['node_ids'] as $entry) {
+                if (is_int($entry)) {
+                    $ids[] = $entry;
+                }
+            }
+            $this->broadcast('highlight_set', ['node_ids' => $ids]);
+            if ($this->onHighlightSet !== null) {
+                ($this->onHighlightSet)($ids);
+            }
             $this->sendStatus($id, 204, '');
             return;
         }

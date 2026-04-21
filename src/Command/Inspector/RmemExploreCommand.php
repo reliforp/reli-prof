@@ -261,10 +261,12 @@ final class RmemExploreCommand extends Command
         }
 
         // --http-bridge: fork an HTTP/SSE sidecar so browsers can track
-        // this TUI's focus. TUI → bridge is one-way over a pipe carrying
-        // {"node_id": N}\n on every sandwich focus change.
+        // this TUI's focus. TUI ↔ bridge is bidirectional:
+        //   focusPipe   TUI  → bridge   ({"node_id": N}\n on sandwich change)
+        //   navPipe     bridge → TUI    ({"node_id": N}\n on POST /api/navigate)
         $bridgeChildPid = null;
         $focusPipeWrite = null;
+        $navigatePipeRead = null;
         /** @var string|null $httpBridgePort */
         $httpBridgePort = $input->getOption('http-bridge');
         if ($httpBridgePort !== null && $httpBridgePort !== '' && extension_loaded('pcntl')) {
@@ -275,8 +277,9 @@ final class RmemExploreCommand extends Command
             $httpAllEdges = (bool)$input->getOption('http-all-edges');
 
             $focusPipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
-            if ($focusPipe === false) {
-                $output->writeln('<error>Failed to create focus-event pipe</error>');
+            $navigatePipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+            if ($focusPipe === false || $navigatePipe === false) {
+                $output->writeln('<error>Failed to create bridge pipes</error>');
                 return 1;
             }
 
@@ -286,8 +289,9 @@ final class RmemExploreCommand extends Command
                 return 1;
             }
             if ($bridgeChildPid === 0) {
-                // Child: only keep read end of the focus pipe.
+                // Child: read focus (TUI → child), write navigate (child → TUI).
                 fclose($focusPipe[1]);
+                fclose($navigatePipe[0]);
                 $this->runHttpBridgeChild(
                     $model,
                     $substrate,
@@ -298,12 +302,16 @@ final class RmemExploreCommand extends Command
                     $httpDepth,
                     $httpAllEdges,
                     $focusPipe[0],
+                    $navigatePipe[1],
                 );
                 exit(0);
             }
-            // Parent: keep only the write end.
+            // Parent: write focus, read navigate.
             fclose($focusPipe[0]);
+            fclose($navigatePipe[1]);
             $focusPipeWrite = $focusPipe[1];
+            $navigatePipeRead = $navigatePipe[0];
+            stream_set_blocking($navigatePipeRead, false);
             $output->writeln(sprintf(
                 '<info>http bridge forked (pid=%d, http://%s:%d)</info>',
                 $bridgeChildPid,
@@ -325,6 +333,9 @@ final class RmemExploreCommand extends Command
         }
         if ($focusPipeWrite !== null) {
             $tui->setFocusEventPipe($focusPipeWrite);
+        }
+        if ($navigatePipeRead !== null) {
+            $tui->setNavigateEventPipe($navigatePipeRead);
         }
 
         try {
@@ -352,6 +363,9 @@ final class RmemExploreCommand extends Command
             if ($focusPipeWrite !== null) {
                 @fclose($focusPipeWrite);
             }
+            if ($navigatePipeRead !== null) {
+                @fclose($navigatePipeRead);
+            }
             if ($socketPath !== null) {
                 @unlink($socketPath);
                 @unlink($socketPath . '.pid');
@@ -365,9 +379,12 @@ final class RmemExploreCommand extends Command
      * Runs in a forked child. Owns a LiveHttpServer and multiplexes
      * its streams with a read end of the focus-event pipe from the
      * parent TUI — a line on that pipe is broadcast as a focus_node
-     * SSE event to every subscribed browser.
+     * SSE event to every subscribed browser. Symmetrically, browser
+     * or MCP navigate requests are mirrored back to the TUI through
+     * $navigatePipeWrite so the terminal jumps to the same node.
      *
-     * @param resource $focusPipeRead  blocking-safe after stream_set_blocking false
+     * @param resource $focusPipeRead     parent → child (TUI focus changes)
+     * @param resource $navigatePipeWrite child → parent (browser/MCP navigation)
      */
     private function runHttpBridgeChild(
         RmemModel $model,
@@ -379,6 +396,7 @@ final class RmemExploreCommand extends Command
         int $depth,
         bool $allEdges,
         mixed $focusPipeRead,
+        mixed $navigatePipeWrite,
     ): void {
         $html = \Reli\Rmem\Live\VizHtmlBuilder::build(
             $model,
@@ -402,6 +420,12 @@ final class RmemExploreCommand extends Command
             fwrite(STDERR, "http bridge: {$e->getMessage()}\n");
             return;
         }
+
+        // Forward browser / MCP navigate requests back to the parent TUI.
+        $server->setNavigateCallback(function (int $nodeId) use ($navigatePipeWrite): void {
+            $line = (string)json_encode(['node_id' => $nodeId], JSON_UNESCAPED_UNICODE) . "\n";
+            @fwrite($navigatePipeWrite, $line);
+        });
 
         stream_set_blocking($focusPipeRead, false);
         $running = true;

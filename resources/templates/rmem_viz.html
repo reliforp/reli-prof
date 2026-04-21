@@ -304,6 +304,9 @@
         if (highlightedId !== null && typeof views[key].highlight === 'function') {
           views[key].highlight(highlightedId);
         }
+        if (highlightedSet.size > 0 && typeof views[key].highlightSet === 'function') {
+          views[key].highlightSet(highlightedSet);
+        }
       }
     });
   });
@@ -407,6 +410,7 @@
   // outside the current induced subgraph.
   const selectedSet = new Set(DATA.nodes.map(n => n.id));
   let highlightedId = null;
+  let highlightedSet = new Set();
 
   function highlightNode(nodeId) {
     highlightedId = nodeId;
@@ -428,6 +432,15 @@
     }
   }
 
+  function highlightSet(nodeIds) {
+    highlightedSet = new Set(nodeIds);
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].highlightSet === 'function') {
+        views[k].highlightSet(highlightedSet);
+      }
+    }
+  }
+
   function postNavigate(nodeId) {
     if (!LIVE) return;
     fetch((DATA.live && DATA.live.navigate_url) || '/api/navigate', {
@@ -444,6 +457,12 @@
       try {
         const data = JSON.parse(e.data);
         if (typeof data.node_id === 'number') highlightNode(data.node_id);
+      } catch (_) { /* ignore */ }
+    });
+    es.addEventListener('highlight_set', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (Array.isArray(data.node_ids)) highlightSet(data.node_ids);
       } catch (_) { /* ignore */ }
     });
     es.onerror = () => { /* browser auto-reconnects */ };
@@ -489,7 +508,18 @@
       });
     window.addEventListener('resize', () => G.width(el.clientWidth).height(el.clientHeight));
     G.width(el.clientWidth).height(el.clientHeight);
-    views.force.recolor = () => G.nodeColor(n => colorFor(n.klass));
+    const forceApplyColor = () => G.nodeColor(n => {
+      if (highlightedSet.size === 0 || highlightedSet.has(n.id)) {
+        return colorFor(n.klass);
+      }
+      const c = d3.color(colorFor(n.klass));
+      if (c === null) {
+        return colorFor(n.klass);
+      }
+      c.opacity = 0.22;
+      return c.formatRgb();
+    });
+    views.force.recolor = forceApplyColor;
     views.force.retheme = (t) => G.backgroundColor(t.forceBg);
     views.force.highlight = (id) => {
       const target = nodes.find(n => n.id === id);
@@ -501,6 +531,7 @@
         target, 700
       );
     };
+    views.force.highlightSet = (_set) => forceApplyColor();
     G.backgroundColor(THEMES[activeTheme].forceBg);
   }
 
@@ -537,12 +568,22 @@
     views.pack.recolor = () => svg.selectAll('circle')
       .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(d.data.klass));
     views.pack.retheme = (t) => { el.style.background = t.packGradient; };
+    const packBaseStroke = d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)';
     views.pack.highlight = (id) => {
       svg.selectAll('circle')
         .style('stroke', d => d.data.id === id
           ? 'var(--accent)'
-          : (d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)'))
-        .attr('stroke-width', d => d.data.id === id ? 2.5 : 0.6);
+          : (highlightedSet.has(d.data.id) ? 'var(--accent)' : packBaseStroke(d)))
+        .attr('stroke-width', d => d.data.id === id ? 2.5 : (highlightedSet.has(d.data.id) ? 1.8 : 0.6))
+        .attr('stroke-dasharray', d => (d.data.id !== id && highlightedSet.has(d.data.id)) ? '3,2' : null);
+    };
+    views.pack.highlightSet = (set) => {
+      svg.selectAll('circle')
+        .style('stroke', d => d.data.id === highlightedId
+          ? 'var(--accent)'
+          : (set.has(d.data.id) ? 'var(--accent)' : packBaseStroke(d)))
+        .attr('stroke-width', d => d.data.id === highlightedId ? 2.5 : (set.has(d.data.id) ? 1.8 : 0.6))
+        .attr('stroke-dasharray', d => (d.data.id !== highlightedId && set.has(d.data.id)) ? '3,2' : null);
     };
   }
 
@@ -581,11 +622,16 @@
       });
     views.tree.recolor = () => svg.selectAll('rect')
       .attr('fill', d => colorFor(d.data.klass));
-    views.tree.highlight = (id) => {
+    const treeRestyle = (focusId, set) => {
       svg.selectAll('rect')
-        .style('stroke', d => d.data.id === id ? 'var(--accent)' : 'var(--leaf-stroke)')
-        .attr('stroke-width', d => d.data.id === id ? 2.5 : 0.5);
+        .style('stroke', d => d.data.id === focusId
+          ? 'var(--accent)'
+          : (set.has(d.data.id) ? 'var(--accent)' : 'var(--leaf-stroke)'))
+        .attr('stroke-width', d => d.data.id === focusId ? 2.5 : (set.has(d.data.id) ? 1.8 : 0.5))
+        .attr('stroke-dasharray', d => (d.data.id !== focusId && set.has(d.data.id)) ? '3,2' : null);
     };
+    views.tree.highlight = (id) => treeRestyle(id, highlightedSet);
+    views.tree.highlightSet = (set) => treeRestyle(highlightedId, set);
   }
 
   // ================== Sunburst ==================
@@ -613,11 +659,16 @@
       .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
     views.sun.recolor = () => svg.selectAll('path')
       .attr('fill', d => colorFor(d.data.klass));
-    views.sun.highlight = (id) => {
+    const sunRestyle = (focusId, set) => {
       svg.selectAll('path')
-        .style('stroke', d => d.data.id === id ? 'var(--accent)' : 'var(--leaf-stroke)')
-        .attr('stroke-width', d => d.data.id === id ? 2.5 : 0.4);
+        .style('stroke', d => d.data.id === focusId
+          ? 'var(--accent)'
+          : (set.has(d.data.id) ? 'var(--accent)' : 'var(--leaf-stroke)'))
+        .attr('stroke-width', d => d.data.id === focusId ? 2.5 : (set.has(d.data.id) ? 1.8 : 0.4))
+        .attr('stroke-dasharray', d => (d.data.id !== focusId && set.has(d.data.id)) ? '3,2' : null);
     };
+    views.sun.highlight = (id) => sunRestyle(id, highlightedSet);
+    views.sun.highlightSet = (set) => sunRestyle(highlightedId, set);
   }
 })();
 </script>
