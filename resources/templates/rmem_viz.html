@@ -215,7 +215,8 @@
   function initForce() {
     const nodes = DATA.nodes.map(n => ({
       id: n.id, label: n.label, type: n.type, klass: keyOf(n),
-      retained: n.retained, shallow: n.shallow, class: n.class, link_name: n.link_name,
+      retained: n.retained, shallow: n.shallow, class: n.class,
+      link_name: n.link_name, link_display: n.link_display, path: n.path,
       val: Math.max(1, Math.log2(n.retained + 2)),
     }));
     const treeLinks = DATA.tree_edges.map(e => ({ source: e.source, target: e.target, kind: 'tree', link: e.link }));
