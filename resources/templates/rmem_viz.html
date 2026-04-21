@@ -133,15 +133,18 @@
     'Plasma':   d3.interpolatePlasma,
   };
   function buildColorFor(name) {
+    const n = Math.max(1, classKeys.length);
     let range;
     if (name in CONTINUOUS_SCHEMES) {
       const interp = CONTINUOUS_SCHEMES[name];
-      const n = Math.max(1, classKeys.length);
       range = classKeys.map((_, i) => interp(i / n));
     } else {
       const base = DISCRETE_SCHEMES[name] || DISCRETE_SCHEMES['Category 10'];
+      // When there are more classes than slots, ramp through the
+      // palette's own colors rather than falling back to Sinebow —
+      // otherwise every discrete scheme collapses to the same view.
       range = classKeys.length > base.length
-        ? classKeys.map((_, i) => d3.interpolateSinebow(i / Math.max(1, classKeys.length)))
+        ? d3.quantize(d3.interpolateRgbBasis(base), n)
         : base;
     }
     return d3.scaleOrdinal().domain(classKeys).range(range).unknown('#555');
