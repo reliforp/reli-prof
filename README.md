@@ -87,29 +87,6 @@ Under the hood, reli:
 
 If you have a bit of extra CPU resource to spare on the profiling host, the overhead of this software is negligible.
 
-## Differences to phpspy, when to use reli
-
-Reli started out heavily inspired by [adsr/phpspy](https://github.com/adsr/phpspy); several things have since diverged.
-
-The main structural difference is that reli is written in almost pure PHP while phpspy is written in C. If you want to customise *what* and *how* information is captured, doing it in PHP is easier — at some performance cost. (Though we aim to keep that cost modest.)
-
-Reli can also find VM state from ZTS interpreters: daemon-mode traces of threads started via [ext-parallel](https://github.com/krakjoe/parallel) are captured automatically, which phpspy alone cannot do. `inspector:eg` exposes just the EG address so that you can feed it to phpspy manually for ZTS targets, and the [hybrid phpspy mode](docs/tracing/phpspy-hybrid.md) (`phpspy:trace` / `phpspy:daemon`) combines reli's ZTS-aware EG resolution with phpspy's fast C-based tracing.
-
-Other capabilities reli currently has that phpspy doesn't:
-
-- More accurate line numbers.
-- Output format customisation via PHP templates.
-- Running-opcode output for each sample.
-- Automatic PHP-version detection from stripped binaries.
-- Compact binary trace format (`.rbt`) plus speedscope / pprof / folded / callgrind / flamegraph converters (see [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md)).
-- Deep memory-graph analysis of the target process.
-- Merged native (C-level) stack traces via DWARF `.eh_frame` unwinding.
-- JIT-compiled function-name resolution via perf map / GDB JIT interface.
-
-Nothing above is technically unreachable from phpspy — these may land there one day.
-
-On the other hand, phpspy still wins on raw sampling throughput and overhead. Much of what phpspy uniquely does will be covered by reli eventually.
-
 ## Goals
 We would like to achieve the following 5 goals through this project.
 
@@ -146,5 +123,4 @@ So we applied a randomly chosen string manipulation function to the original nam
 Thus, the name of this tool is "Reli for PH*" now. And you can also call it just "Reli".
 
 ## See also
-- [adsr/phpspy](https://github.com/adsr/phpspy)
-    - Reli is heavily inspired by phpspy.
+- [adsr/phpspy](https://github.com/adsr/phpspy) — Reli is heavily inspired by phpspy. For how the two differ and when to reach for which, see [docs/comparison.md](docs/comparison.md).

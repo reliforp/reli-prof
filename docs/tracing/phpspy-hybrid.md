@@ -79,4 +79,4 @@ Common `phpspy:trace` / `phpspy:daemon` flags include
 ## See also
 
 - [adsr/phpspy](https://github.com/adsr/phpspy) — upstream project
-- [README § Differences to phpspy](../../README.md#differences-to-phpspy-when-to-use-reli) — when to reach for reli vs. phpspy directly
+- [docs/comparison.md](../comparison.md) — when to reach for reli vs. phpspy directly
