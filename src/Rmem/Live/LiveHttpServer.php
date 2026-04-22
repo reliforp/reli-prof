@@ -61,9 +61,8 @@ final class LiveHttpServer
     private $focusEnricher = null;
 
     /**
-     * @param callable(string): string|null $broadcastHook  Optional callback
-     *        invoked with each broadcast payload (for tests / logging). null
-     *        return is ignored.
+     * @param (callable(string): void)|null $broadcastHook Optional callback
+     *        invoked with each broadcast payload (for tests / logging).
      */
     public function __construct(
         private readonly string $html,
@@ -110,6 +109,17 @@ final class LiveHttpServer
     public function setHighlightSetCallback(callable $cb): void
     {
         $this->onHighlightSet = $cb;
+    }
+
+    /**
+     * Install / replace the broadcast observer (for logging / tests).
+     * Receives the full raw SSE payload just before it is fanned out.
+     *
+     * @param callable(string): void $cb
+     */
+    public function setBroadcastHook(callable $cb): void
+    {
+        $this->broadcastHook = $cb;
     }
 
     /**
