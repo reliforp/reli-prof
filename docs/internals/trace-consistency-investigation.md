@@ -240,6 +240,13 @@ Key observations:
 
 ### Configuration Considerations
 
+> **Status (post-#628)**: `--bulk-stack-copy` is **on by default**, with a
+> 1 MB cap that comfortably covers any single 256 KB VM stack segment plus a
+> few lazily-fetched prev segments. Opt out via `--no-bulk-stack-copy` or
+> `--bulk-stack-copy=0`. The original concerns below drove the initial design
+> and are retained as context; see "Update: post-merge improvements" further
+> down for how each concern was addressed.
+
 The bulk copy approach should be opt-in or configurable, because:
 
 - **Large VM stacks**: deeply recursive code, heavily nested generators, or
@@ -381,3 +388,91 @@ per trace.
 - **Further optimization**: would require either a C extension for the core
   readCallTrace loop, or a C extension wrapping the FFI syscall layer
   (process_vm_readv, ptrace) to eliminate per-call FFI overhead
+
+## Update: post-merge improvements (#628)
+
+After the initial rollout, several structural refinements were merged on top
+of the opt-in bulk-stack-copy path. The headline behavior change is that
+`--bulk-stack-copy` is now **on by default**; the rest is about making the
+same scatter-gather readv cover more cases and do so with a smaller
+consistency window.
+
+### Changes summary
+
+- **Default on, cap 1 MB**. `GetTraceSettings::BULK_STACK_COPY_DEFAULT_MAX_SIZE`
+  raised to 1 MB (was 64 KB), enabled unless `--no-bulk-stack-copy` (or
+  `--bulk-stack-copy=0`) is passed. 1 MB comfortably covers any single
+  256 KB `zend_vm_stack` segment plus a few lazily-fetched prev segments.
+- **Pool-based `BufferedMemoryReader`**. Replaced the two fixed slots with a
+  single pool buffer (`max_prefetch_size` bytes) sliced bump-pointer style
+  across up to 4 scatter-gather regions. No per-sample FFI allocation; memory
+  profile is flat regardless of workload. `readRawInt64` linear-scans the N
+  slots, which remains cheap at N = 4.
+- **Lazy prev-segment fetch**. When `prev_execute_data` crosses a segment
+  boundary (common with Fibers, whose initial VM stack is only 4 KB), the
+  chain walker reads the prev segment's header (`top`, `prev`) and issues a
+  second scatter-gather readv for its used range, appending into a free
+  pool slot. Works recursively for deeper chains at one extra readv per
+  crossed segment.
+- **Top-first iov ordering**. Linux's `process_vm_readv` reads iovs in order
+  and low → high within each iov. VM stack grows upward, so a single
+  `[base, top]` iov reads the hot top frames LAST — at roughly the entire
+  read duration after CED was captured. Target mutation in that window was
+  the main source of broken-trace drops without `-S`. The stack region is now
+  split into a hot chunk (`[top − 8 KB, top + 16 KB margin]`) placed first
+  and a cold chunk (`[base, top − 8 KB]`) second, collapsing the CED-vs-hot
+  time gap from ~full read duration (4–15 µs) to ~one-chunk read time
+  (~500 ns).
+
+### Architecture (current)
+
+```
+Step 1: Read EG(vm_stack), EG(vm_stack_top), EG(vm_stack_end) individually.
+Step 2: Scatter-gather process_vm_readv in ONE syscall:
+          iov[0] = EG(current_execute_data)           — 8 bytes
+          iov[1] = hot chunk near vm_stack_top         — up to ~24 KB
+          iov[2] = cold chunk from vm_stack to iov[1]  — remainder
+Step 3: Walk execute_data chain from local buffer (readRawInt64 + unpack).
+        On buffer miss at a prev_execute_data boundary, fetch the prev
+        VM stack segment (header, then used range) and continue.
+Step 4: Resolve function names from TraceCache (heap reads cached).
+```
+
+### Measured impact
+
+Target: phpstan (`--debug`, single-process) analyzing doctrine/orm src,
+~47 s wall, mean depth 30. 99 Hz sampling, 3+ runs each, median reported.
+
+| config                         |  tr/s | prof CPU | tgt wall Δ | comment |
+|--------------------------------|------:|---------:|-----------:|---------|
+| `-S` baseline (before top-first) |  91.6 |   10.6 % |    +13.4 % | from initial rollout |
+| `--no-bulk-stack-copy`, no `-S`  |   1.7 |    1.1 % |     −0.6 % | per-field fallback, drops 98 % of samples |
+| `-S` (current, top-first)      |  92.3 |   ~10 %  |    +13 %   | within noise of initial rollout |
+| no `-S` (current, top-first)   | ≈3.0  |    ~2 %  |     ≈0 %   | ~1.7× more captured than base-first iov |
+
+- **No regression on `-S`** (the hot-region time gap doesn't matter when the
+  target is paused for the whole read).
+- **~1.7× more usable samples without `-S`** on the same wall time, thanks
+  to top-first ordering. Absolute no-`-S` rate is still below phpspy's
+  (~29 tr/s for the same target), but the gap is narrower.
+- **Multi-segment Fibers**: a 306-frame fiber target that spans two segments
+  (4 KB initial + 256 KB extension) is now traced correctly with
+  `--bulk-stack-copy=16K`, picking up a 4–5× throughput improvement vs the
+  fallback path because both segments get bulk reads instead of per-frame
+  fallback.
+
+### Remaining knobs
+
+Two compile-time constants in `CallTraceReader` control the iov split:
+
+```php
+private const HOT_BELOW_TOP_BYTES = 8192;   // ~65 frames below vm_stack_top
+private const HOT_ABOVE_TOP_BYTES = 16384;  // margin for frames pushed mid-read
+```
+
+A sweep across 4 KB / 8 KB / 16 KB for `HOT_BELOW_TOP_BYTES` on phpstan
+produced within-config variance that dominated any real difference, so 8 KB
+was kept as the default. On a less noisy host a larger value might pay off;
+if there is a reason to revisit, add the env-var override back (was
+prototyped on this branch and reverted in #628 to avoid leaking bench
+scaffolding into public API).
