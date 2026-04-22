@@ -49,6 +49,9 @@ Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rb
 Render the heap as a standalone HTML file — Circle Pack, Treemap, Sunburst, 3D Force — or serve it live with a shared focus bus that `rmem:explore` (TUI), browsers, and an MCP client all follow in sync.
 
 ```bash
+# Capture a snapshot first (one-shot; or use memory:dump + memory:analyze in production — see docs/memory/memory-dump.md)
+$ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+
 # Standalone HTML
 $ php ./reli rmem:viz snapshot.rmem
 # wrote snapshot.rmem.viz.html
