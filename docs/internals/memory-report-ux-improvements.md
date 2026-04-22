@@ -387,11 +387,23 @@ libxml2-scale gaps do.
 
 ---
 
-## The `impact_bytes` semantics problem
+## The `impact_bytes` semantics tradeoff
 
-Findings are sorted by `impact_bytes` descending throughout the report.
-That only works if `impact_bytes` means the same thing across findings.
-Today, it doesn't.
+Findings are sorted by `impact_bytes` descending throughout the report,
+which assumes the field means the same thing across findings. Today it
+doesn't — but the mixing is best read as a *pragmatic compromise*, not
+pure sloppiness. The field has to do two jobs at once:
+
+- give the reader a single "sort by importance" axis, and
+- carry whatever size estimate the pass naturally computes.
+
+Those two jobs pull in different directions. Making `impact_bytes` strict
+(e.g., always-saving) gives clean semantics but loses the "everything in
+one ranked list" affordance — a pass that only knows informational sizes
+(dominant_class, property_scaling) would drop off the top of the list
+even when its observation is the most important context for the reader.
+Making it pragmatic (the current state) keeps the unified sort but
+produces the fictional numbers described above.
 
 ### Current meanings, finding-by-finding
 
@@ -426,7 +438,27 @@ Sorting a list of mixed (1)/(2)/(3) by "impact_bytes desc" effectively
 ranks *fictions first*, *informational next*, *actual actions last* —
 exactly backwards.
 
-### Fix: split the field
+### Candidate resolutions
+
+Three ways to resolve the tradeoff, ordered from least to most
+structural change:
+
+#### (A) Unify on `current_bytes`, keep the single sort axis
+
+Fix `impact_bytes` to always mean *"how much memory currently fits this
+pattern"*. Always ≤ heap total. The saving estimate, when the pass has
+one, moves to a separate `saving_estimate_bytes` field shown in the
+body of the finding but not used for ranking.
+
+- Preserves the "everything in one ranked list" affordance.
+- Eliminates the fictional-numbers problem (dedup_candidate etc.
+  stop overshooting heap).
+- Loses the "lever with the biggest saving floats to the top" sort,
+  which was implicit in the actionable subset of the existing mix.
+
+Minimum code churn; JSON schema only gains a field.
+
+#### (B) Split the field, give up the unified sort
 
 Rename `impact_bytes` into two narrowed fields and define them strictly:
 
@@ -437,7 +469,9 @@ Rename `impact_bytes` into two narrowed fields and define them strictly:
   Carries the actionable quantity.
 
 Sort on `potential_saving_bytes` when present, falling back to
-`current_bytes`. That gets actionable findings to the top naturally.
+`current_bytes`. That gets actionable findings to the top naturally —
+at the cost of burying informational orientation ("your heap is 96%
+LogRecord") below action items that may be much smaller.
 
 Per-kind mapping:
 
@@ -463,20 +497,35 @@ Two consequences:
   "Saves up to X (of Y currently in this pattern)" which reads as an
   actual answer rather than an opaque number.
 
-### Alternative: drop `impact_bytes` from non-actionable findings
+#### (C) Add a composite `rank_score`, keep raw bytes untouched
 
-Cheaper variant if we don't want to grow the schema: keep
-`impact_bytes` only on actionable findings (meaning 1 in the table
-above). Informational findings carry counts or sizes as plain `facts`
-entries, no `impact_bytes`. Sort the Findings section by the actionable
-field; render informational ones as footnotes or grouped under each
-actionable finding they support.
+Keep `impact_bytes` as a raw size on every finding (whichever quantity
+the pass naturally produces), but stop sorting by it. Add an explicit
+`rank_score` derived from multiple factors:
 
-This solves the "sorting nonsense" problem without adding a new field,
-but does change the schema for downstream consumers (breaking for any
-JSON consumer that reads `impact_bytes` on `dominant_class`).
+    rank_score = f(
+        bytes,               # current or saving, whichever the pass emits
+        severity,            # High / Medium / Low / Info
+        confidence,          # High / Medium / Low
+        actionability,       # "lever" vs "observation"
+        heap_fraction,       # bytes / heap_total — normalises magnitude
+    )
 
-Either fix assumes JSON consumers will need a migration notice.
+Report sorts on `rank_score`. Raw bytes remain visible for the reader
+but don't pretend to be an importance measure. This is the most honest
+about the fact that "importance" is a multi-factor judgement, at the
+cost of tuning weights and justifying the formula.
+
+### Recommendation
+
+(A) is the smallest change that removes the "greater than heap" bug
+without giving up the single-axis ranking. It's a strict improvement
+over today, doesn't break MCP/JSON consumers (only adds a field), and
+leaves (B) and (C) open as future refinements if the sort ends up
+feeling wrong in practice.
+
+Either (B) or (C) is a bigger schema migration; park them until we see
+that (A) alone isn't enough.
 
 ---
 
