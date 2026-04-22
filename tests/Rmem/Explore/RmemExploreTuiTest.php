@@ -743,8 +743,10 @@ class RmemExploreTuiTest extends TestCase
         // must drill into sandwich mode. Releases (m→) are parsed and
         // ignored by handleMouseEvent (not press events).
         $term->script(
-            "\e[<0;20;5M", "\e[<0;20;5m",
-            "\e[<0;20;5M", "\e[<0;20;5m",
+            "\e[<0;20;5M",
+            "\e[<0;20;5m",
+            "\e[<0;20;5M",
+            "\e[<0;20;5m",
             'q',
         );
         $tui->run();
