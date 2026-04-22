@@ -138,9 +138,9 @@ Given its functionality, you might naturally think that the name stands for "Rev
 Initially, the name of this tool was just "php-profiler".
 Due to a licensing problem ([#175](https://github.com/reliforp/reli-prof/issues/175)), this simple good name had to be changed.
 
-So we applied a randomly chosen string manipulation function to the original name. `strrev('php-profiler')` results to `'reliforp-php'`, and it can be read as "reli for p(php)".
+So we applied a randomly chosen string manipulation function to the original name. `strrev('php-profiler')` results in `'reliforp-php'`, and it can be read as "reli for p(php)".
 
-Thus, the name of this tool is "Reli for PH*" now. And you can also call it just "Reli".
+Thus, the name of this tool is "Reli for PH*" now. And you can also just call it "Reli".
 
 ## See also
 - [adsr/phpspy](https://github.com/adsr/phpspy) — Reli is heavily inspired by phpspy. For how the two differ and when to reach for which, see [docs/comparison.md](docs/comparison.md).
