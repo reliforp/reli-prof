@@ -251,7 +251,8 @@ final class CallTraceReader
         foreach ($stack_regions as $r) {
             $total_stack_size += $r['size'];
         }
-        if ($total_stack_size <= 0
+        if (
+            $total_stack_size <= 0
             || $total_stack_size > $this->memory_reader->getMaxPrefetchSize()
         ) {
             return null;
