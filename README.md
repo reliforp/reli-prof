@@ -44,7 +44,7 @@ For the full catalogue of tasks and commands, see the [documentation index](docs
 ### Platform notes
 
 - **AArch64 (ARM64)** — experimental.
-- **Alpine / musl libc** — sampling profiler and the memory pipeline (dump / analyse / report) all work on both NTS and ZTS. Native C-level stack traces are not supported on musl due to its minimal `.eh_frame` (~4 FDE entries vs glibc's ~3,700). See [docs/internals/alpine-investigation.md](docs/internals/alpine-investigation.md).
+- **Alpine / musl libc** — `--with-native-trace` not supported.
 
 ## Installation
 ### From Docker
