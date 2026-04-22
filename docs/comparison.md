@@ -2,8 +2,9 @@
 
 Where reli overlaps with other PHP profilers / VM inspectors, and
 when you should reach for which. Currently only covers
-[adsr/phpspy](https://github.com/adsr/phpspy) — reli's closest cousin
-— but this is the intended home for any future comparison.
+[adsr/phpspy](https://github.com/adsr/phpspy) — the project reli
+was heavily inspired by — but this is the intended home for any
+future comparison.
 
 ## phpspy
 
