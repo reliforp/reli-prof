@@ -74,7 +74,7 @@ Full reference (output formats, thresholds, JSON mode): [docs/memory/memory-repo
 
 ## Troubleshooting
 
-Common hitches (non-standard `php` binary name, `-S` for accuracy, Amazon Linux 2 memory maps): [docs/troubleshooting.md](docs/troubleshooting.md).
+Common hitches (non-standard `php` binary name, `-S` for accuracy, Amazon Linux 2 memory maps, stale analysis cache): [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## How it works
 

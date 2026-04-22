@@ -11,3 +11,14 @@ The `-S` option will give you better results. Using this option stops the execut
 ## I can't get traces on Amazon Linux 2.
 
 First, try `cat /proc/<pid>/maps` to check the memory map of the target PHP process. If the first module does not indicate the location of the PHP binary and looks like an anonymous region, try to specify `--php-regex="^$"` as an option.
+
+## Something seems stale after a PHP upgrade or container rebuild.
+
+reli caches expensive binary-analysis results (ELF symbol resolution, ZTS TLS offsets, PHP version detection) under `~/.cache/reli/binary-analysis/`. If you suspect a stale entry is being served — after upgrading the target PHP, rebuilding a container image, or any other "shouldn't that have worked?" moment — drop or bypass the cache:
+
+```bash
+./reli cache:clear                              # drop everything
+./reli inspector:trace --no-cache -p <pid>      # bypass for one invocation
+```
+
+For what is cached and how keys are computed, see [internals/binary-analysis-cache.md](internals/binary-analysis-cache.md).
