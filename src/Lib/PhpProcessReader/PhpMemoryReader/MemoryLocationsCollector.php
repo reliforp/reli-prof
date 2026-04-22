@@ -161,7 +161,12 @@ final class MemoryLocationsCollector
         $memory_get_usage_real_size = $zend_mm_main_chunk->heap_slot->real_size;
         $memory_get_peak_usage = $zend_mm_main_chunk->heap_slot->peak;
         $memory_limit = $zend_mm_main_chunk->heap_slot->limit;
-        $cached_chunks_size = $zend_mm_main_chunk->heap_slot->cached_chunks_count * ZendMmChunk::SIZE;
+        $chunks_count = $zend_mm_main_chunk->heap_slot->chunks_count;
+        $peak_chunks_count = $zend_mm_main_chunk->heap_slot->peak_chunks_count;
+        $cached_chunks_count = $zend_mm_main_chunk->heap_slot->cached_chunks_count;
+        $cached_chunks_size = $cached_chunks_count * ZendMmChunk::SIZE;
+        $last_chunks_delete_boundary = $zend_mm_main_chunk->heap_slot->last_chunks_delete_boundary;
+        $last_chunks_delete_count = $zend_mm_main_chunk->heap_slot->last_chunks_delete_count;
 
         // Warn if chunk walk was incomplete (corrupt next pointer or
         // chunks outside dump region).
@@ -343,6 +348,11 @@ final class MemoryLocationsCollector
             $memory_get_usage_real_size,
             $memory_get_peak_usage,
             $memory_limit,
+            $chunks_count,
+            $peak_chunks_count,
+            $cached_chunks_count,
+            $last_chunks_delete_boundary,
+            $last_chunks_delete_count,
         );
     }
 

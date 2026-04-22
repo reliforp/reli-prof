@@ -28,6 +28,11 @@ final class CollectedMemories
         public int $memory_get_usage_real_size,
         public int $memory_get_peak_usage,
         public int $memory_limit,
+        public int $chunks_count = 0,
+        public int $peak_chunks_count = 0,
+        public int $cached_chunks_count = 0,
+        public int $last_chunks_delete_boundary = 0,
+        public int $last_chunks_delete_count = 0,
     ) {
     }
 }

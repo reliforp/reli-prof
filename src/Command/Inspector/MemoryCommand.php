@@ -169,6 +169,11 @@ final class MemoryCommand extends Command
                     'memory_get_usage' => $collected_memories->memory_get_usage_size,
                     'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
                     'cached_chunks_size' => $collected_memories->cached_chunks_size,
+                    'chunks_count' => $collected_memories->chunks_count,
+                    'peak_chunks_count' => $collected_memories->peak_chunks_count,
+                    'cached_chunks_count' => $collected_memories->cached_chunks_count,
+                    'last_chunks_delete_boundary' => $collected_memories->last_chunks_delete_boundary,
+                    'last_chunks_delete_count' => $collected_memories->last_chunks_delete_count,
                 ]
                 + [
                     'heap_memory_analyzed_percentage' =>
