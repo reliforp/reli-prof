@@ -40,10 +40,9 @@ final class RawString implements CDataDereferencable
     public function __get(string $field_name): string
     {
         return match ($field_name) {
-            'value' => $this->value = substr(
-                \FFI::string($this->cdata->casted),
-                0,
-                $this->len
+            'value' => $this->value = \FFI::string(
+                $this->cdata->casted,
+                $this->len,
             ),
         };
     }
