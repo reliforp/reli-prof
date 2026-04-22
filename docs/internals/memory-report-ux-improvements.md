@@ -82,17 +82,56 @@ preview (around `src/Inspector/Output/MemoryOutput/Report/Formatter/TextReportFo
 
     $preview = strtr($preview, ["\n" => '\\n', "\r" => '\\r', "\t" => '\\t']);
 
-### B4. Severity threshold ignores absolute magnitude
+### B4. Severity threshold is inconsistent across finding kinds
 
-`dominant_class` emits `[HIGH]` based on percentage of object memory only,
-not absolute bytes, so in tiny heaps the severity is wrong:
+Two symptoms of the same underlying issue: severity is assigned by
+each pass in isolation, using a rule tailored to that pass, so the
+scale isn't comparable across findings.
+
+#### B4a. `dominant_class` emits HIGH on ratio alone
+
+In tiny heaps the absolute number is meaningless but the finding
+still fires HIGH:
 
     [HIGH] 720 B impacted — laravel-collections run
     [HIGH] 10.94 KB impacted — phpunit run
 
-A finding that accounts for under ~1 MB should never be HIGH regardless
-of percentage. Gate HIGH on `impact_bytes >= HIGH_MIN_BYTES` in addition
-to ratio.
+A finding that accounts for under ~1 MB should never be HIGH
+regardless of percentage. Gate HIGH on `impact_bytes >= HIGH_MIN_BYTES`
+in addition to ratio.
+
+#### B4b. `cycle_cluster` emits LOW even when it dominates the heap
+
+In `rw2_spreadsheet-xlsx.report.txt` on a 59.26 MB heap:
+
+    [LOW] 53.90 MB impacted
+      cycle_cluster: 1 identical cycle (15 classes, 6.70 KB shallow,
+                                        53.90 MB retained)
+      Back-reference: cellXfSupervisor
+
+53.90 MB retained on a 59 MB heap is **91% of the heap** concentrated
+in one cycle — breaking the back-reference would (in principle) free
+almost everything. That's as HIGH as a finding gets. `cycle_cluster`'s
+current severity logic apparently uses shallow size (6.70 KB) or a
+flat "cycles are LOW" rule; either way it underreports.
+
+Severity should be driven by a consistent scale across finding kinds.
+Some options (ordered by scope):
+
+- **Per-kind fix**: adjust `cycle_cluster` to use `retained_bytes /
+  heap_total` for severity. Same for any other pass that under-weights.
+- **Global rule**: derive severity from a common formula (absolute
+  bytes floor + heap-fraction threshold), set in one place, applied
+  uniformly. Ties into the `impact_bytes` semantics fix above — once
+  every finding has a comparable `current_bytes` and
+  `potential_saving_bytes`, severity can be computed from them rather
+  than baked per-pass.
+
+This scenario (PhpSpreadsheet `cellXfSupervisor` style cycle, real
+bug discussed in PHPOffice/PhpSpreadsheet#4375) is exactly the case
+where the severity label drives whether a reader even notices the
+finding. Shipping it as LOW buries the most important signal in the
+whole report.
 
 ### B5. `cycle_cluster` treats WeakMap as a cycle (false positive)
 
