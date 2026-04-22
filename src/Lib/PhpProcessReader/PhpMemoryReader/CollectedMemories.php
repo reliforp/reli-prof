@@ -33,6 +33,8 @@ final class CollectedMemories
         public int $cached_chunks_count = 0,
         public int $last_chunks_delete_boundary = 0,
         public int $last_chunks_delete_count = 0,
+        public int $chunks_total_free_bytes = 0,
+        public int $chunks_mostly_empty_count = 0,
     ) {
     }
 }

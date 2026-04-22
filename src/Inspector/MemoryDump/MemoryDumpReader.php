@@ -276,6 +276,8 @@ final class MemoryDumpReader
                 'cached_chunks_count' => $collected_memories->cached_chunks_count,
                 'last_chunks_delete_boundary' => $collected_memories->last_chunks_delete_boundary,
                 'last_chunks_delete_count' => $collected_memories->last_chunks_delete_count,
+                'chunks_total_free_bytes' => $collected_memories->chunks_total_free_bytes,
+                'chunks_mostly_empty_count' => $collected_memories->chunks_mostly_empty_count,
             ]
             + ($rss_bytes !== null ? ['rss' => $rss_bytes] : [])
             + [
