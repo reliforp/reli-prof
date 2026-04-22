@@ -100,38 +100,57 @@ A finding that accounts for under ~1 MB should never be HIGH
 regardless of percentage. Gate HIGH on `impact_bytes >= HIGH_MIN_BYTES`
 in addition to ratio.
 
-#### B4b. `cycle_cluster` emits LOW even when it dominates the heap
+#### B4b. `cycle_cluster` severity needs a smarter signal than retained alone
 
-In `rw2_spreadsheet-xlsx.report.txt` on a 59.26 MB heap:
+An earlier draft of this section claimed that a 53.90 MB retained
+cycle on a 59 MB heap must be HIGH. That's too fast. In
+`rw2_spreadsheet-xlsx.report.txt`:
 
     [LOW] 53.90 MB impacted
       cycle_cluster: 1 identical cycle (15 classes, 6.70 KB shallow,
                                         53.90 MB retained)
       Back-reference: cellXfSupervisor
 
-53.90 MB retained on a 59 MB heap is **91% of the heap** concentrated
-in one cycle — breaking the back-reference would (in principle) free
-almost everything. That's as HIGH as a finding gets. `cycle_cluster`'s
-current severity logic apparently uses shallow size (6.70 KB) or a
-flat "cycles are LOW" rule; either way it underreports.
+"Cycle exists with large retained" doesn't mean "breaking the cycle
+frees that retained". PHP has a cycle GC, and in a live-process
+snapshot everything visible is still reachable. The actionable
+question is:
 
-Severity should be driven by a consistent scale across finding kinds.
-Some options (ordered by scope):
+    "If I broke the back-reference right now, would the subtree
+     actually be freed, or is it kept alive by some other tree-edge
+     from a live root?"
 
-- **Per-kind fix**: adjust `cycle_cluster` to use `retained_bytes /
-  heap_total` for severity. Same for any other pass that under-weights.
-- **Global rule**: derive severity from a common formula (absolute
-  bytes floor + heap-fraction threshold), set in one place, applied
-  uniformly. Ties into the `impact_bytes` semantics fix above — once
-  every finding has a comparable `current_bytes` and
-  `potential_saving_bytes`, severity can be computed from them rather
-  than baked per-pass.
+For the `cellXfSupervisor` cycle, the Style subtree is *also*
+reachable via `$spreadsheet->cellXfSupervisor` forward edges. Breaking
+the back-reference alone wouldn't free the 53.90 MB — the supervisor
+still owns everything via tree edges. In that light, LOW is not an
+obvious mis-assignment; it's plausibly the correct severity, and my
+earlier "clearly wrong" call was based on reading `retained` as if it
+were `saving`.
 
-This scenario (PhpSpreadsheet `cellXfSupervisor` style cycle, real
-bug discussed in PHPOffice/PhpSpreadsheet#4375) is exactly the case
-where the severity label drives whether a reader even notices the
-finding. Shipping it as LOW buries the most important signal in the
-whole report.
+The right signal would be something like:
+
+    free_if_cycle_broken =
+        retained(subtree)
+      − retained(subtree via non-cycle tree edges)
+
+- If > 0 and large relative to the heap → cycle is the last path;
+  breaking it actually releases the subtree. High severity.
+- If ≈ 0 → subtree is owned by live roots independently of the cycle;
+  breaking the back-reference changes nothing. Low / Info severity.
+- If partial → medium.
+
+The substrate already distinguishes tree and non-tree edges, so this
+is computable, though it likely needs a dedicated traversal per
+cycle-cluster finding. The current severity assignment may already be
+doing something along these lines — worth verifying before changing
+the heuristic.
+
+Separately: the finding's `impact_bytes` currently reports the
+subtree's `retained`, which misleads the reader into treating it as a
+saving estimate. Re-labelling to `current_retained_bytes` (it's not a
+lever, it's a size) plus adding `saving_if_broken_bytes` when the
+traversal is cheap enough would fix that side too.
 
 ### B5. `cycle_cluster` treats WeakMap as a cycle (false positive)
 
