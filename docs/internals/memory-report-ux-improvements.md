@@ -557,6 +557,85 @@ we see that the cheaper options aren't enough.
 
 ---
 
+## Stocked proposal: framework shape detection
+
+Observation from `rw2_eloquent-hydration.report.txt`: the memory shape
+of a Laravel Eloquent collection — `Model` base class with
+`$attributes` + `$relations` + `$original` + `$exists` + `$wasRecentlyCreated`
+— is a distinctive fingerprint. Once you see it, the identity of the
+framework is obvious from the report alone, but the current output
+describes it only in generic terms (N instances, K properties, L MB
+per-instance). The reader has to infer "this is Eloquent" before they
+can reach the correct advice (`LazyCollection`, `chunkById()`,
+`->setRelations([])`).
+
+A `shape_detection` pass could match common signatures and replace the
+one-size-fits-all `Next:` hints with framework-specific levers.
+
+Candidate signatures (all match by class name + required property set
++ rough scale):
+
+| Framework / library | Signature                                          | Lever                                                        |
+|---------------------|----------------------------------------------------|--------------------------------------------------------------|
+| Laravel Eloquent    | Model base + `$attributes`, `$relations`, `$original`, `$exists` | `LazyCollection`, `chunkById(N)`, `->setRelations([])` in loops |
+| Doctrine ORM        | `UnitOfWork` with populated `$identityMap` / `$entityStates`     | `$em->clear()` per batch; `iterate()` for hydrators           |
+| Symfony EventDispatcher | `EventDispatcher` + populated `$listeners` at large scale     | Lazy listener services, lazy event subscribers                |
+| Monolog + big buffer | `Monolog\Handler\TestHandler` / any handler with many records  | TestHandler is meant for in-process tests; use a StreamHandler / RotatingFileHandler |
+| Guzzle debug history | `GuzzleHttp\Middleware::history` container with many entries   | Remove `Middleware::history()` in production; rotate buffer   |
+| PhpSpreadsheet      | `Spreadsheet` with many `Cell` / `Style` objects                | `setReadDataOnly(true)`, cell caching backend, `SimpleCache`  |
+| Twig warm cache     | `Twig\Environment` + many `$loadedTemplates`                   | Usually expected — flag only if growth is unbounded           |
+| nesbot/Carbon       | Many `Carbon\Carbon` instances with pinned state               | `CarbonImmutable` or plain `DateTimeImmutable`                |
+
+### Shape matching is cheap
+
+Each shape is a predicate over the substrate:
+
+    (class_name matches pattern) AND
+    (object has all of {prop_a, prop_b, ...}) AND
+    (instance_count >= threshold) AND
+    (sum_of_retained >= bytes_floor)
+
+Running a dozen of these after the existing passes costs little and
+keeps the rest of the pipeline clean — failures are soft (no match,
+no finding). The result would usually fire exactly once per known
+framework present in the capture.
+
+### Output shape
+
+Replace or annotate the generic property_scaling / structural_duplicate
+findings for objects that matched a shape:
+
+    [HIGH] laravel_eloquent_hydration: 100,000 User + 300,000 Order models
+           currently retaining 310 MB
+      Shape signature: Illuminate-style Model (Attributes+Relations+Original)
+      Typical cause: `User::all()` / `->with(...)` on a table larger than
+                     memory budget, or accumulation inside a loop without
+                     `->setRelations([])` / chunking.
+      Levers:
+        - Switch the loop to `User::cursor()` or `User::lazy()` for
+          streaming
+        - Use `chunkById(1000)` if per-item processing needs to commit
+        - Call `$model->setRelations([])` per iteration to drop the
+          eager-loaded ownership chain
+        - If you only need a subset of columns, `->select()` them
+      Docs: https://laravel.com/docs/eloquent#chunking-results
+
+That's dramatically more useful than "300,000 instances, 137 MB in
+`$attributes`, consider lazy init".
+
+### Boundaries
+
+- Signatures live in a data table (or YAML), not hard-coded in the
+  pass — so adding a framework is a data change.
+- Shape detection is informational / actionable hints, not ground
+  truth — if the signature is wrong, the worst case is a wrong
+  hint, not a crash.
+- Keep the existing generic findings available (JSON always includes
+  them); the text formatter can demote the generic ones when a
+  matching shape fires.
+
+---
+
 ## Structural / presentation issues
 
 ### S1. Root-blame guidance is one-size-fits-all
