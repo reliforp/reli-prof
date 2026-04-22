@@ -40,11 +40,26 @@ final class RawString implements CDataDereferencable
     public function __get(string $field_name): string
     {
         return match ($field_name) {
-            'value' => $this->value = \FFI::string(
-                $this->cdata->casted,
-                $this->len,
-            ),
+            'value' => $this->value = $this->readBounded(),
         };
+    }
+
+    /**
+     * Read up to $len bytes, truncating early at the first NUL if any.
+     *
+     * Callers use RawString both for explicit-length zend_string::val blobs
+     * and for fixed-size char[] fields whose actual content is NUL-terminated
+     * somewhere within. A 1-arg FFI::string() honours the NUL but can walk
+     * past $len into unmapped memory when the terminator is missing
+     * (observed as intermittent SIGSEGV in integration tests); a 2-arg call
+     * bounds the read but keeps trailing garbage for the NUL-terminated use.
+     * Bound first, then strip at the first NUL to satisfy both.
+     */
+    private function readBounded(): string
+    {
+        $raw = \FFI::string($this->cdata->casted, $this->len);
+        $nul = strpos($raw, "\0");
+        return $nul === false ? $raw : substr($raw, 0, $nul);
     }
 
     #[\Override]
