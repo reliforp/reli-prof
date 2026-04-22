@@ -136,7 +136,7 @@ Given its functionality, you might naturally think that the name stands for "Rev
 "Reli" means nothing, though you are free to think of this tool as something reliable, religious, relishable, or whatever other reli-s you like.
 
 Initially, the name of this tool was just "php-profiler".
-Due to a licensing problem ([#175](https://github.com/reliforp/reli-prof/issues/175)), this simple good name had to be changed.
+Due to a licensing problem ([#175](https://github.com/reliforp/reli-prof/issues/175)), this perfectly good name had to be changed.
 
 So we applied a randomly chosen string manipulation function to the original name. `strrev('php-profiler')` results in `'reliforp-php'`, and it can be read as "reli for p(php)".
 
