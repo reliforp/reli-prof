@@ -49,7 +49,7 @@ The output of `inspector:coredump` uses the same
 [`MemoryProfilerSettings`](../../src/Inspector/Settings/MemoryProfilerSettings/MemoryProfilerSettingsFromConsoleInput.php)
 as `inspector:memory`, so every output format (`json`, `sqlite3`,
 `binary`, `mysql`, `postgresql`, `report`, `report-json`) and every
-downstream tool (`memory:report`, `memory:compare`, `rmem:explore`,
+downstream tool (`inspector:memory:report`, `inspector:memory:compare`, `rmem:explore`,
 `rmem:serve`) works the same way.
 
 ## Arguments and options

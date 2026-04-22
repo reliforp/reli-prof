@@ -4,7 +4,7 @@ Interactive tools for browsing `.rmem` memory snapshots.
 
 ## Overview
 
-After capturing a memory dump and running `memory:analyze` to produce
+After capturing a memory dump and running `inspector:memory:analyze` to produce
 a `.rmem` file, these commands let you explore the memory graph
 interactively:
 
@@ -130,7 +130,7 @@ browser / MCP `POST /api/navigate` back into the TUI.
 
 ### Report integration
 
-The `memory:report` text output includes node IDs (`#N`) in findings,
+The `inspector:memory:report` text output includes node IDs (`#N`) in findings,
 arrays, and strings tables. Use `--node=N` to jump directly to a
 finding in explore:
 

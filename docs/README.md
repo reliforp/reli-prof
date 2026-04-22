@@ -48,7 +48,7 @@ A memory graph is reli's PHP heap reconstruction — values (objects, arrays, st
 | One-shot live capture (longer stop, one command) | `inspector:memory -p <pid> -f binary -o snap.rmem` | [memory/memory-profiler.md](memory/memory-profiler.md) |
 | From a core file (crashed / post-mortem) | `inspector:coredump` | [memory/coredump.md](memory/coredump.md) |
 
-Tip: **`-f binary` (`.rmem`) is the fastest format** and what the analysers below prefer. `-f sqlite3` is also accepted by `memory:report` / `memory:compare` (handy if you already have SQLite tooling), `-f json` gives `jq`-friendly output, and `-f report` prints a findings report directly.
+Tip: **`-f binary` (`.rmem`) is the fastest format** and what the analysers below prefer. `-f sqlite3` is also accepted by `inspector:memory:report` / `inspector:memory:compare` (handy if you already have SQLite tooling), `-f json` gives `jq`-friendly output, and `-f report` prints a findings report directly.
 
 ## Analyse memory graphs
 

@@ -17,8 +17,8 @@ changes to the target. Four broad capabilities:
 - **Where memory is used** — reconstruct the PHP heap into a
   queryable graph. `.rmem` is the fastest on-disk format and is what
   every analyser reads natively: browse interactively with
-  `rmem:explore`, get a prioritised report with `memory:report`, or
-  compare two snapshots with `memory:compare`. SQLite and JSON
+  `rmem:explore`, get a prioritised report with `inspector:memory:report`, or
+  compare two snapshots with `inspector:memory:compare`. SQLite and JSON
   outputs are also supported for interop.
 - **What values flow through** — read PHP variable values from a
   running process with `inspector:peek-var`, or attach variable

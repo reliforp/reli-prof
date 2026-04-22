@@ -18,8 +18,8 @@ php ./reli rmem:explore snapshot.rmem
 php ./reli inspector:memory:report snapshot.rmem
 ```
 
-`-f sqlite3` is also supported by `memory:analyze` / `memory:report` /
-`memory:compare` if you want to query with SQL tools, but `rmem:explore`,
+`-f sqlite3` is also supported by `inspector:memory:analyze` / `inspector:memory:report` /
+`inspector:memory:compare` if you want to query with SQL tools, but `rmem:explore`,
 `rmem:serve`, and `rmem:mcp` read `.rmem` only.
 
 ## How it works
@@ -83,7 +83,7 @@ can still resolve class names and function signatures.
 php ./reli inspector:memory:analyze snapshot.relimem \
     -f binary -o snapshot.rmem
 
-# To SQLite (for SQL tooling; memory:report / memory:compare accept either)
+# To SQLite (for SQL tooling; inspector:memory:report / inspector:memory:compare accept either)
 php ./reli inspector:memory:analyze snapshot.relimem \
     -f sqlite3 -o snapshot.sqlite
 

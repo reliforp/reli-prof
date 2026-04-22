@@ -42,14 +42,14 @@ $ ./reli rbt:explore trace.rbt
 
 ![rbt:explore — sandwich + panes view](docs/images/rbt-explore-panes.png)
 
-Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md). Format spec and converters: [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md). Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md).
+Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md). `.rbt` format spec and `converter:*` outputs (flamegraph, speedscope, pprof, callgrind, folded, phpspy): [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md). Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md).
 
 ### Memory graph visualization — `rmem:viz` / `rmem:live`
 
 Render the heap as a standalone HTML file — Circle Pack, Treemap, Sunburst, 3D Force — or serve it live with a shared focus bus that `rmem:explore` (TUI), browsers, and an MCP client all follow in sync.
 
 ```bash
-# Capture a snapshot first (one-shot; or use memory:dump + memory:analyze in production — see docs/memory/memory-dump.md)
+# Capture a snapshot first (one-shot; or use inspector:memory:dump + inspector:memory:analyze in production — see docs/memory/memory-dump.md)
 $ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
 
 # Standalone HTML
@@ -72,7 +72,7 @@ $ php ./reli rmem:explore snapshot.rmem --http-bridge 8080
 
 Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md).
 
-### Automated memory findings — `memory:report`
+### Automated memory findings — `inspector:memory:report`
 
 Capture a snapshot and get a prioritised report back — dominant classes, cycles, choke points, deduplication candidates — each with severity, hypothesis, and next steps.
 
@@ -81,8 +81,8 @@ $ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
 $ php ./reli inspector:memory:report snapshot.rmem
 ```
 
-<!-- TODO(screenshot): memory:report terminal output (findings + tables) -->
-![memory:report — findings and tables (screenshot coming soon)](docs/images/memory-report-output.png)
+<!-- TODO(screenshot): inspector:memory:report terminal output (findings + tables) -->
+![inspector:memory:report — findings and tables (screenshot coming soon)](docs/images/memory-report-output.png)
 
 Compare two snapshots to track regressions or verify fixes:
 
