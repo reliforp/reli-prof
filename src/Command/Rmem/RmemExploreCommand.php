@@ -15,6 +15,7 @@ namespace Reli\Command\Rmem;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Lib\String\PathMap;
 use Reli\Rbt\Explore\Keymap;
 use Reli\Rbt\Explore\Terminal;
 use Reli\Rmem\Serve\RmemQueryService;
@@ -125,6 +126,16 @@ final class RmemExploreCommand extends Command
                 'per-parent cap on BFS child expansion for the bridged subgraph',
                 (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_CHILDREN_PER_NODE,
             )
+            ->addOption(
+                'path-map',
+                null,
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'rewrite file paths recorded in the snapshot for local navigation;'
+                . ' format is "from=to" where "from" is a prefix recorded in'
+                . ' the snapshot and "to" is the local replacement'
+                . ' (e.g. --path-map /var/www/html=/home/you/project).'
+                . ' May be specified multiple times; longest prefix wins',
+            )
         ;
     }
 
@@ -149,12 +160,21 @@ final class RmemExploreCommand extends Command
             ? Keymap::fromJsonFile($keymap_path)
             : Keymap::default();
 
+        /** @var list<string> $path_map_raw */
+        $path_map_raw = $input->getOption('path-map');
+        try {
+            $path_map = PathMap::parseOption($path_map_raw);
+        } catch (\InvalidArgumentException $e) {
+            $output->writeln('<error>' . $e->getMessage() . '</error>');
+            return 1;
+        }
+
         $output->writeln("<info>loading {$file} ...</info>");
         $reader = BinaryReader::open($file);
         $output->writeln('<info>building substrate ...</info>');
         $substrate = GraphSubstrate::createFromBinary($reader, skipScc: true);
         $output->writeln('<info>building model ...</info>');
-        $model = RmemModel::fromSubstrate($substrate, $reader);
+        $model = RmemModel::fromSubstrate($substrate, $reader, $path_map);
         $output->writeln(sprintf(
             '<info>loaded %s edges, starting TUI</info>',
             number_format($model->edgeCount),

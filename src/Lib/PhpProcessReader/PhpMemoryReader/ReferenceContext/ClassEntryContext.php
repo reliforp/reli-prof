@@ -21,6 +21,9 @@ final class ClassEntryContext implements ReferenceContext
 
     public function __construct(
         public ZendClassEntryMemoryLocation $memory_location,
+        public readonly ?string $filename = null,
+        public readonly ?int $line_start = null,
+        public readonly ?int $line_end = null,
     ) {
     }
 
@@ -28,5 +31,21 @@ final class ClassEntryContext implements ReferenceContext
     public function getLocations(): array
     {
         return [$this->memory_location];
+    }
+
+    #[\Override]
+    public function getContexts(): iterable
+    {
+        $attrs = [];
+        if ($this->filename !== null && $this->filename !== '') {
+            $attrs['filename'] = $this->filename;
+        }
+        if ($this->line_start !== null && $this->line_start > 0) {
+            $attrs['line_start'] = $this->line_start;
+        }
+        if ($this->line_end !== null && $this->line_end > 0) {
+            $attrs['line_end'] = $this->line_end;
+        }
+        return $attrs;
     }
 }

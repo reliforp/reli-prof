@@ -144,7 +144,30 @@ final class EmitClassTableJob implements CollectorJob
         $class_definition_context = new ClassDefinitionContext($class_entry->isInternal());
         $memory_location = ZendClassEntryMemoryLocation::fromZendClassEntry($class_entry);
         $ctx->memory_locations->add($memory_location);
-        $class_entry_context = new ClassEntryContext($memory_location);
+
+        $ce_filename = null;
+        $ce_line_start = null;
+        $ce_line_end = null;
+        if (!$class_entry->isInternal() && !is_null($class_entry->info->user->filename)) {
+            try {
+                $ce_filename = $ctx->dereferencer
+                    ->deref($class_entry->info->user->filename)
+                    ->toString($ctx->dereferencer);
+                $ce_line_start = $class_entry->info->user->line_start;
+                $ce_line_end = $class_entry->info->user->line_end;
+            } catch (\Throwable) {
+                // Filename read failures are non-fatal — the attribute
+                // is purely for navigation hints.
+                $ce_filename = null;
+            }
+        }
+
+        $class_entry_context = new ClassEntryContext(
+            $memory_location,
+            $ce_filename,
+            $ce_line_start,
+            $ce_line_end,
+        );
         $class_definition_context->add('class_entry', $class_entry_context);
 
         $class_name_context = CollectorHelpers::collectZendStringPointer(

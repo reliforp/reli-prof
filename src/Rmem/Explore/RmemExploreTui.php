@@ -1714,7 +1714,16 @@ final class RmemExploreTui
             $val = RmemModel::sanitizeForTerminal($detail['string_value']);
             $wrap("val: \"{$val}\"");
         }
+        if ($detail['source_location'] !== null) {
+            $wrap("source: {$detail['source_location']}");
+        }
         foreach ($detail['attributes'] as $key => $val) {
+            // filename / line_start / line_end / lineno are already
+            // rendered as a single "source:" line above; suppress the
+            // raw entries so the detail pane stays scannable.
+            if ($key === 'filename' || $key === 'line_start' || $key === 'line_end' || $key === 'lineno') {
+                continue;
+            }
             $wrap("{$key}: {$val}");
         }
 

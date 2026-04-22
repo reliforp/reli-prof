@@ -17,6 +17,7 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Lib\String\PathMap;
 
 /**
  * In-memory model for rmem:explore TUI.
@@ -52,24 +53,29 @@ final class RmemModel
 
     private ?BinaryReader $reader;
 
+    private PathMap $pathMap;
+
     private function __construct(
         private GraphSubstrate $substrate,
         array $frameLabels,
         BinaryReader $reader,
+        PathMap $pathMap,
     ) {
         $this->nodeCount = $substrate->getNodeCount();
         $this->edgeCount = $substrate->getEdgeCount();
         $this->roots = $substrate->getRoots();
         $this->frameLabels = $frameLabels;
         $this->reader = $reader;
+        $this->pathMap = $pathMap;
     }
 
     public static function fromSubstrate(
         GraphSubstrate $substrate,
         BinaryReader $reader,
+        ?PathMap $pathMap = null,
     ): self {
         $frameLabels = BinaryReportDataProvider::loadFrameLabels($reader);
-        return new self($substrate, $frameLabels, $reader);
+        return new self($substrate, $frameLabels, $reader, $pathMap ?? PathMap::empty());
     }
 
     /**
@@ -179,7 +185,10 @@ final class RmemModel
 
             $key = $dict->lookup($keyId);
             $val = $dict->lookup($valId);
-            if ($key !== null && $val !== null && $key !== 'function_name' && $key !== 'lineno') {
+            // function_name is already surfaced via frameLabels; skip to
+            // avoid duplicating it in the detail pane. lineno is kept so
+            // resolveSourceLocation() can pick it up for navigation.
+            if ($key !== null && $val !== null && $key !== 'function_name') {
                 $attrs[$nid][$key] = $val;
             }
         }
@@ -851,6 +860,70 @@ final class RmemModel
         return null;
     }
 
+    /**
+     * Resolve a source location for $nodeId, applying the configured
+     * path map. Returns null when no filename attribute is available.
+     *
+     * Direct hits: op_array / class_entry / call_frame nodes have
+     * `filename` (and usually `line_start`/`line_end` or `lineno`)
+     * emitted as attributes at dump time. Callers that want an
+     * "approximate" location for bare zvals/arrays should walk the
+     * graph upward themselves — this method deliberately stays local
+     * to the requested node.
+     *
+     * @return array{filename: string, line_start: ?int, line_end: ?int, line: ?int}|null
+     */
+    public function resolveSourceLocation(int $nodeId): ?array
+    {
+        $this->ensureLocationInfoLoaded();
+        $attrs = $this->nodeAttributes[$nodeId] ?? [];
+        $filename = null;
+        if (isset($attrs['filename']) && $attrs['filename'] !== '') {
+            $filename = $attrs['filename'];
+        }
+        if ($filename === null) {
+            // frameLabels hold function_name:lineno but not filename.
+            // Rely on the explicit 'filename' attribute the dumper emits
+            // for call_frame / op_array / class_entry nodes.
+            return null;
+        }
+        $line_start = isset($attrs['line_start']) ? (int)$attrs['line_start'] : null;
+        $line_end = isset($attrs['line_end']) ? (int)$attrs['line_end'] : null;
+        $line = null;
+        if (isset($attrs['lineno'])) {
+            $line = (int)$attrs['lineno'];
+        } elseif ($line_start !== null) {
+            $line = $line_start;
+        }
+        return [
+            'filename' => $this->pathMap->map($filename),
+            'line_start' => $line_start,
+            'line_end' => $line_end,
+            'line' => $line,
+        ];
+    }
+
+    /**
+     * Format resolveSourceLocation() output as "file:line" (line_start
+     * preferred, else lineno). Returns null when no location is known.
+     */
+    public function formatSourceLocation(int $nodeId): ?string
+    {
+        $loc = $this->resolveSourceLocation($nodeId);
+        if ($loc === null) {
+            return null;
+        }
+        $file = $loc['filename'];
+        $line = $loc['line'] ?? $loc['line_start'];
+        if ($line !== null && $line > 0) {
+            if ($loc['line_end'] !== null && $loc['line_end'] > $line) {
+                return "{$file}:{$line}-{$loc['line_end']}";
+            }
+            return "{$file}:{$line}";
+        }
+        return $file;
+    }
+
     public function nodeLabel(int $nodeId): string
     {
         // Sentinel: synthetic parent-of-all-roots. Show a friendly name
@@ -893,7 +966,18 @@ final class RmemModel
 
     /**
      * Get detailed info for a node (for focus bar / detail view).
-     * @return array{type: string, class: ?string, shallow: int, retained: int, address: ?int, string_value: ?string, refcount: ?int, attributes: array<string, string>}
+     *
+     * @return array{
+     *     type: string,
+     *     class: ?string,
+     *     shallow: int,
+     *     retained: int,
+     *     address: ?int,
+     *     string_value: ?string,
+     *     refcount: ?int,
+     *     attributes: array<string, string>,
+     *     source_location: ?string,
+     * }
      */
     public function nodeDetail(int $nodeId): array
     {
@@ -907,6 +991,7 @@ final class RmemModel
             'string_value' => $this->nodeStringValues[$nodeId] ?? null,
             'refcount' => $this->nodeRefcounts[$nodeId] ?? null,
             'attributes' => $this->nodeAttributes[$nodeId] ?? [],
+            'source_location' => $this->formatSourceLocation($nodeId),
         ];
     }
 
