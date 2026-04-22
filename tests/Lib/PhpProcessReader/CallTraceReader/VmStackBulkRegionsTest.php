@@ -13,10 +13,14 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\CallTraceReader;
 
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
+use Reli\BaseTestCase;
 
-class VmStackBulkRegionsTest extends TestCase
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
+class VmStackBulkRegionsTest extends BaseTestCase
 {
     #[Test]
     public function testShallowStackReturnsSingleRegionCoveringFromBaseToMargin(): void
