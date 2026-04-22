@@ -14,6 +14,23 @@ Use it for call-trace sampling (where time is spent), memory-graph analysis (whe
 
 A taste of what reli looks like in use. For the full walkthroughs, follow each showcase's link. For step-by-step first-use, see [docs/getting-started.md](docs/getting-started.md).
 
+### Sampling with a live hot-frames feed — `inspector:trace` + `watch rbt:analyze`
+
+Capture to `.rbt` in one terminal while running `rbt:analyze` through `watch(1)` in another for a live-refreshing "top of the hot frames" view — the data streams in as samples are taken.
+
+```bash
+# Terminal A — capture
+$ sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
+
+# Terminal B — live analysis, refreshed every second
+$ watch -n1 './reli rbt:analyze trace.rbt'
+```
+
+<!-- TODO(gif): split terminals — left: inspector:trace capturing, right: watch rbt:analyze with growing hot-frames table -->
+![inspector:trace + watch rbt:analyze — live hot-frames (GIF coming soon)](docs/images/rbt-analyze-watch.gif)
+
+Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md).
+
 ### Interactive trace browsing — `rbt:explore`
 
 Capture to `.rbt`, open the sandwich / flame / tree TUI.
