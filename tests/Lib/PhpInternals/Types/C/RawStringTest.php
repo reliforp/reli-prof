@@ -62,6 +62,30 @@ class RawStringTest extends TestCase
         $this->assertSame('abc', $raw_string->value);
     }
 
+    public function testValueStopsAtEmbeddedNul(): void
+    {
+        // RawString is used both for zend_string::val (explicit len, may or
+        // may not have a terminator within) and for fixed-size C buffers
+        // whose content is NUL-terminated somewhere before the end. The
+        // latter case must not leak trailing bytes after the terminator.
+        $cdata = \FFI::cdef()->new('char[8]');
+        $cdata[0] = 'a';
+        $cdata[1] = 'b';
+        $cdata[2] = 'c';
+        $cdata[3] = "\0";
+        $cdata[4] = 'X';
+        $cdata[5] = 'X';
+        $cdata[6] = 'X';
+        $cdata[7] = 'X';
+
+        $raw_string = RawString::fromCastedCData(
+            new CastedCData($cdata, $cdata),
+            new Pointer(RawString::class, 256, 8),
+        );
+
+        $this->assertSame('abc', $raw_string->value);
+    }
+
     public function testGetPointer(): void
     {
         $cdata = \FFI::cdef()->new('char[1]');

@@ -5,7 +5,7 @@
 >
 > - [memory-dump.md](memory-dump.md) — dump a target's memory efficiently (short stop time; `inspector:memory:dump`)
 > - [memory-report.md](memory-report.md) — automated findings report (`inspector:memory:report`, `inspector:memory:compare`)
-> - [rmem-explore-and-serve.md](rmem-explore-and-serve.md) — interactive TUI over a snapshot (`inspector:rmem:explore`)
+> - [rmem-explore-and-serve.md](rmem-explore-and-serve.md) — interactive TUI over a snapshot (`rmem:explore`)
 >
 > Come back here when you want to hand-query the JSON with `jq`, understand the on-disk structure, or integrate with other tooling.
 

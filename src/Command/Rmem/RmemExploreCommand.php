@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Command\Inspector;
+namespace Reli\Command\Rmem;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
@@ -34,7 +34,7 @@ final class RmemExploreCommand extends Command
     #[\Override]
     public function configure(): void
     {
-        $this->setName('inspector:rmem:explore')
+        $this->setName('rmem:explore')
             ->setDescription('Interactive TUI explorer for .rmem memory snapshots')
             ->addArgument(
                 'file',
@@ -77,6 +77,53 @@ final class RmemExploreCommand extends Command
                 null,
                 InputOption::VALUE_NONE,
                 'enable ui.* actions in serve protocol (allows clients to navigate TUI)',
+            )
+            ->addOption(
+                'http-bridge',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'fork an HTTP/SSE bridge on the given TCP port so browsers (and MCP) can share this TUI\'s focus',
+            )
+            ->addOption(
+                'http-host',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'bind host for --http-bridge (default 127.0.0.1)',
+                '127.0.0.1',
+            )
+            ->addOption(
+                'http-top',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'top-retained seed count for the bridged viz HTML (default 500)',
+                '500',
+            )
+            ->addOption(
+                'http-depth',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'downward expansion depth for the bridged viz HTML (default 1)',
+                '1',
+            )
+            ->addOption(
+                'http-all-edges',
+                null,
+                InputOption::VALUE_NONE,
+                'include non-tree reference edges in the bridged viz',
+            )
+            ->addOption(
+                'http-max-nodes',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'hard cap on total nodes in the bridged subgraph',
+                (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_NODES,
+            )
+            ->addOption(
+                'http-max-children',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'per-parent cap on BFS child expansion for the bridged subgraph',
+                (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_CHILDREN_PER_NODE,
             )
         ;
     }
@@ -227,6 +274,70 @@ final class RmemExploreCommand extends Command
             }
         }
 
+        // --http-bridge: fork an HTTP/SSE sidecar so browsers can track
+        // this TUI's focus. TUI ↔ bridge is bidirectional:
+        //   focusPipe   TUI  → bridge   ({"node_id": N}\n on sandwich change)
+        //   navPipe     bridge → TUI    ({"node_id": N}\n on POST /api/navigate)
+        $bridgeChildPid = null;
+        $focusPipeWrite = null;
+        $navigatePipeRead = null;
+        /** @var string|null $httpBridgePort */
+        $httpBridgePort = $input->getOption('http-bridge');
+        if ($httpBridgePort !== null && $httpBridgePort !== '' && extension_loaded('pcntl')) {
+            $port = max(1, (int)$httpBridgePort);
+            $host = (string)$input->getOption('http-host');
+            $httpTop = max(1, (int)$input->getOption('http-top'));
+            $httpDepth = max(0, (int)$input->getOption('http-depth'));
+            $httpAllEdges = (bool)$input->getOption('http-all-edges');
+            $httpMaxNodes = max(1, (int)$input->getOption('http-max-nodes'));
+            $httpMaxChildren = max(1, (int)$input->getOption('http-max-children'));
+
+            $focusPipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+            $navigatePipe = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+            if ($focusPipe === false || $navigatePipe === false) {
+                $output->writeln('<error>Failed to create bridge pipes</error>');
+                return 1;
+            }
+
+            $bridgeChildPid = pcntl_fork();
+            if ($bridgeChildPid === -1) {
+                $output->writeln('<error>Fork failed for http bridge</error>');
+                return 1;
+            }
+            if ($bridgeChildPid === 0) {
+                // Child: read focus (TUI → child), write navigate (child → TUI).
+                fclose($focusPipe[1]);
+                fclose($navigatePipe[0]);
+                $this->runHttpBridgeChild(
+                    $model,
+                    $substrate,
+                    $file,
+                    $host,
+                    $port,
+                    $httpTop,
+                    $httpDepth,
+                    $httpAllEdges,
+                    $httpMaxNodes,
+                    $httpMaxChildren,
+                    $focusPipe[0],
+                    $navigatePipe[1],
+                );
+                exit(0);
+            }
+            // Parent: write focus, read navigate.
+            fclose($focusPipe[0]);
+            fclose($navigatePipe[1]);
+            $focusPipeWrite = $focusPipe[1];
+            $navigatePipeRead = $navigatePipe[0];
+            stream_set_blocking($navigatePipeRead, false);
+            $output->writeln(sprintf(
+                '<info>http bridge forked (pid=%d, http://%s:%d)</info>',
+                $bridgeChildPid,
+                $host,
+                $port,
+            ));
+        }
+
         $term = new Terminal();
         $tui = new RmemExploreTui($model, $term, $keymap, $initialNodeId, $socketPath);
         if ($queryChildPid !== null) {
@@ -238,6 +349,12 @@ final class RmemExploreCommand extends Command
         if ($uiRequestRead !== null && $uiResponseWrite !== null) {
             $tui->setUiPipes($uiRequestRead, $uiResponseWrite);
         }
+        if ($focusPipeWrite !== null) {
+            $tui->setFocusEventPipe($focusPipeWrite);
+        }
+        if ($navigatePipeRead !== null) {
+            $tui->setNavigateEventPipe($navigatePipeRead);
+        }
 
         try {
             $tui->run();
@@ -246,6 +363,10 @@ final class RmemExploreCommand extends Command
             if ($queryChildPid !== null && $queryChildPid > 0) {
                 posix_kill($queryChildPid, SIGTERM);
                 pcntl_waitpid($queryChildPid, $status, WNOHANG);
+            }
+            if ($bridgeChildPid !== null && $bridgeChildPid > 0) {
+                posix_kill($bridgeChildPid, SIGTERM);
+                pcntl_waitpid($bridgeChildPid, $status, WNOHANG);
             }
             if ($sccBuilderPid !== null && $sccBuilderPid > 0) {
                 posix_kill($sccBuilderPid, SIGTERM);
@@ -257,6 +378,12 @@ final class RmemExploreCommand extends Command
             if ($uiResponseWrite !== null) {
                 @fclose($uiResponseWrite);
             }
+            if ($focusPipeWrite !== null) {
+                @fclose($focusPipeWrite);
+            }
+            if ($navigatePipeRead !== null) {
+                @fclose($navigatePipeRead);
+            }
             if ($socketPath !== null) {
                 @unlink($socketPath);
                 @unlink($socketPath . '.pid');
@@ -264,6 +391,119 @@ final class RmemExploreCommand extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * Runs in a forked child. Owns a LiveHttpServer and multiplexes
+     * its streams with a read end of the focus-event pipe from the
+     * parent TUI — a line on that pipe is broadcast as a focus_node
+     * SSE event to every subscribed browser. Symmetrically, browser
+     * or MCP navigate requests are mirrored back to the TUI through
+     * $navigatePipeWrite so the terminal jumps to the same node.
+     *
+     * @param resource $focusPipeRead     parent → child (TUI focus changes)
+     * @param resource $navigatePipeWrite child → parent (browser/MCP navigation)
+     */
+    private function runHttpBridgeChild(
+        RmemModel $model,
+        GraphSubstrate $substrate,
+        string $rmemPath,
+        string $host,
+        int $port,
+        int $top,
+        int $depth,
+        bool $allEdges,
+        int $maxNodes,
+        int $maxChildrenPerNode,
+        mixed $focusPipeRead,
+        mixed $navigatePipeWrite,
+    ): void {
+        $html = \Reli\Rmem\Live\VizHtmlBuilder::build(
+            $model,
+            $substrate,
+            $rmemPath,
+            $top,
+            $depth,
+            $allEdges,
+            liveMode: true,
+            extraPayload: [
+                'live' => [
+                    'events_url' => '/api/events',
+                    'navigate_url' => '/api/navigate',
+                ],
+            ],
+            maxNodes: $maxNodes,
+            maxChildrenPerNode: $maxChildrenPerNode,
+        );
+        $server = new \Reli\Rmem\Live\LiveHttpServer($html, $host, $port);
+        try {
+            $server->bind();
+        } catch (\Throwable $e) {
+            fwrite(STDERR, "http bridge: {$e->getMessage()}\n");
+            return;
+        }
+
+        // Forward browser / MCP navigate requests back to the parent TUI.
+        $server->setNavigateCallback(function (int $nodeId) use ($navigatePipeWrite): void {
+            $line = (string)json_encode(['node_id' => $nodeId], JSON_UNESCAPED_UNICODE) . "\n";
+            @fwrite($navigatePipeWrite, $line);
+        });
+        // Attach the full ancestor chain so browsers can map an out-of-
+        // subgraph focus onto the nearest visible ancestor.
+        $server->setFocusEnricher(static function (int $nodeId) use ($substrate, $model): array {
+            $path = [];
+            $cur = $nodeId;
+            $hops = 0;
+            while ($cur !== null && $hops < 64) {
+                $path[] = $cur;
+                $cur = $substrate->getTreeParentNodeId($cur);
+                $hops++;
+            }
+            return [
+                'path_node_ids' => array_reverse($path),
+                'label' => $model->nodeLabel($nodeId),
+            ];
+        });
+
+        stream_set_blocking($focusPipeRead, false);
+        $running = true;
+        pcntl_signal(SIGTERM, function () use (&$running) {
+            $running = false;
+        });
+
+        $focusBuf = '';
+        while ($running) {
+            pcntl_signal_dispatch();
+            $streams = $server->getReadStreams();
+            $streams['__focus'] = $focusPipeRead;
+            $read = $streams;
+            $write = null;
+            $except = null;
+            $changed = @stream_select($read, $write, $except, 1);
+            if ($changed === false || $changed === 0) {
+                continue;
+            }
+            if (isset($read['__focus'])) {
+                $chunk = @fread($focusPipeRead, 4096);
+                if ($chunk === false || ($chunk === '' && feof($focusPipeRead))) {
+                    $running = false;
+                    break;
+                }
+                $focusBuf .= $chunk;
+                while (($nl = strpos($focusBuf, "\n")) !== false) {
+                    $line = substr($focusBuf, 0, $nl);
+                    $focusBuf = substr($focusBuf, $nl + 1);
+                    /** @var mixed $decoded */
+                    $decoded = json_decode($line, true);
+                    if (is_array($decoded) && isset($decoded['node_id']) && is_int($decoded['node_id'])) {
+                        $server->broadcastFocusNode($decoded['node_id']);
+                    }
+                }
+                unset($read['__focus']);
+            }
+            $server->tickForReadable($read);
+        }
+        $server->close();
     }
 
     /**

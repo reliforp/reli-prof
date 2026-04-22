@@ -15,6 +15,7 @@ namespace Reli\Rmem\Explore;
 
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 use Reli\Rbt\Explore\Keymap;
+use Reli\Rbt\Explore\MouseEvent;
 use Reli\Rbt\Explore\TerminalInterface;
 
 /**
@@ -117,6 +118,117 @@ final class RmemExploreTui
         $this->uiResponseWrite = $responseWrite;
     }
 
+    /** @var resource|null */
+    private mixed $focusEventPipe = null;
+
+    /** @var resource|null */
+    private mixed $navigateEventPipe = null;
+
+    private string $navigateBuf = '';
+
+    /** True while an externally-driven navigate is in progress. */
+    private bool $suppressFocusEmit = false;
+
+    /** When on, every cursor move in the TUI also broadcasts a
+     *  focus event so the browser (and any other SSE subscriber)
+     *  follows the cursor live, without the user having to press
+     *  Enter. Toggled with 'F'. */
+    private bool $followMode = false;
+
+    /** @var array<int,int> sidebar_line_index → node_id, populated
+     *  per render by buildSidebarLines so mouse clicks on a path-to-
+     *  root step can navigate to it. */
+    private array $sidebarPathMap = [];
+
+    /** Leftmost 1-based terminal column occupied by the sidebar at
+     *  the last render (0 if the sidebar is hidden). */
+    private int $sidebarStartCol = 0;
+
+    /**
+     * Write end of a pipe to a sidecar process (the --http-bridge child).
+     * Whenever the sandwich focus changes, a JSON line
+     * {"node_id": N} is emitted so the bridge can broadcast to browsers.
+     *
+     * @param resource $writeEnd
+     */
+    public function setFocusEventPipe(mixed $writeEnd): void
+    {
+        $this->focusEventPipe = $writeEnd;
+    }
+
+    /**
+     * Read end of a pipe from the bridge child. The bridge writes
+     * {"node_id": N}\n whenever a browser / AI hits /api/navigate so
+     * the TUI can jump to the same node.
+     *
+     * @param resource $readEnd
+     */
+    public function setNavigateEventPipe(mixed $readEnd): void
+    {
+        $this->navigateEventPipe = $readEnd;
+    }
+
+    private function emitFocusEvent(int $nodeId): void
+    {
+        if ($this->focusEventPipe === null || $this->suppressFocusEmit) {
+            return;
+        }
+        // Sentinel (id < 0) is a synthetic "(roots)" anchor — no real
+        // node on the other end, so there is nothing for the browser
+        // or MCP clients to highlight.
+        if ($nodeId < 0) {
+            return;
+        }
+        $line = (string)json_encode(['node_id' => $nodeId], JSON_UNESCAPED_UNICODE) . "\n";
+        @fwrite($this->focusEventPipe, $line);
+    }
+
+    /**
+     * Emit a focus event for whichever node is currently under the
+     * cursor when follow-mode is on. Called after every selection
+     * change (arrow / page / home / end / mouse click / tab).
+     */
+    private function broadcastIfFollow(): void
+    {
+        if (!$this->followMode) {
+            return;
+        }
+        $nodeId = $this->currentCursorNodeId();
+        if ($nodeId !== null) {
+            $this->emitFocusEvent($nodeId);
+        }
+    }
+
+    private function currentCursorNodeId(): ?int
+    {
+        if ($this->sandwich) {
+            if ($this->activePane === 'parents') {
+                return $this->parentRows[$this->parentSelected]['node_id'] ?? null;
+            }
+            if ($this->activePane === 'children') {
+                return $this->childRows[$this->childSelected]['node_id'] ?? null;
+            }
+            return $this->sandwichNodeId;
+        }
+        return $this->rows[$this->selected]['node_id'] ?? null;
+    }
+
+    private function handleIncomingNavigate(int $nodeId): void
+    {
+        if ($nodeId < 0) {
+            return;
+        }
+        // Suppress the outbound focus emit so we don't echo right back
+        // to the bridge (which would re-broadcast the same id in a loop).
+        $this->suppressFocusEmit = true;
+        try {
+            $label = $this->model->nodeLabel($nodeId);
+            $this->enterSandwich($nodeId, $label);
+        } finally {
+            $this->suppressFocusEmit = false;
+        }
+    }
+
     public function run(): void
     {
         $this->running = true;
@@ -128,7 +240,7 @@ final class RmemExploreTui
         }
 
         $useTimeout = $this->socketPath !== null || $this->sccBuilderPid !== null;
-        $hasUiPipe = $this->uiRequestRead !== null;
+        $hasUiPipe = $this->uiRequestRead !== null || $this->navigateEventPipe !== null;
 
         $this->term->enter();
         try {
@@ -172,6 +284,9 @@ final class RmemExploreTui
         if ($this->uiRequestRead !== null) {
             $streams[] = $this->uiRequestRead;
         }
+        if ($this->navigateEventPipe !== null) {
+            $streams[] = $this->navigateEventPipe;
+        }
         if ($streams === []) {
             return null;
         }
@@ -189,12 +304,38 @@ final class RmemExploreTui
             $this->processUiRequest();
         }
 
+        // Drain any pending navigate events from the bridge child
+        if ($this->navigateEventPipe !== null && in_array($this->navigateEventPipe, $read, true)) {
+            $this->drainNavigatePipe();
+        }
+
         // Process tty if readable
         if ($ttyIn !== null && in_array($ttyIn, $read, true)) {
             return $this->term->readKey();
         }
 
         return null;
+    }
+
+    private function drainNavigatePipe(): void
+    {
+        if ($this->navigateEventPipe === null) {
+            return;
+        }
+        $chunk = @fread($this->navigateEventPipe, 4096);
+        if ($chunk === false || $chunk === '') {
+            return;
+        }
+        $this->navigateBuf .= $chunk;
+        while (($nl = strpos($this->navigateBuf, "\n")) !== false) {
+            $line = substr($this->navigateBuf, 0, $nl);
+            $this->navigateBuf = substr($this->navigateBuf, $nl + 1);
+            /** @var mixed $decoded */
+            $decoded = json_decode($line, true);
+            if (is_array($decoded) && isset($decoded['node_id']) && is_int($decoded['node_id'])) {
+                $this->handleIncomingNavigate($decoded['node_id']);
+            }
+        }
     }
 
     private function checkChildStatus(): void
@@ -381,6 +522,20 @@ final class RmemExploreTui
 
     private function dispatch(string $key): void
     {
+        // Route SGR mouse escape sequences to the mouse dispatcher before
+        // the keymap gets a chance to mis-handle them (and before the
+        // prompt input handlers swallow the "\e[" prefix). Prompts ignore
+        // the click; everything else treats a left-click on a list row
+        // as "move selection here", a double-click as Enter, and the
+        // scroll wheel as arrow up/down.
+        $mouse = MouseEvent::tryParse($key);
+        if ($mouse !== null) {
+            if (!$this->filterPrompt && !$this->addrPrompt && !$this->searchPrompt && !$this->showHelp) {
+                $this->handleMouseEvent($mouse);
+            }
+            return;
+        }
+
         $action = $this->keymap->resolve($key);
 
         if ($this->showHelp) {
@@ -398,6 +553,18 @@ final class RmemExploreTui
         }
         if ($this->searchPrompt) {
             $this->handleSearchInput($key);
+            return;
+        }
+
+        // Live-follow toggle: 'f' broadcasts every cursor move to
+        // browsers / MCP so they track the TUI cursor in real time,
+        // without the user having to Enter into each row. (Uppercase
+        // F is the global-search shortcut, handled in dispatchRaw.)
+        if ($key === 'f') {
+            $this->followMode = !$this->followMode;
+            if ($this->followMode) {
+                $this->broadcastIfFollow();
+            }
             return;
         }
 
@@ -446,6 +613,7 @@ final class RmemExploreTui
         } elseif ($this->selected >= $this->topRow + $bodyH) {
             $this->topRow = $this->selected - $bodyH + 1;
         }
+        $this->broadcastIfFollow();
     }
 
     private function moveSandwichSelection(int $delta): void
@@ -474,6 +642,142 @@ final class RmemExploreTui
                 $this->childTopRow = $this->childSelected - $halfH + 1;
             }
         }
+        $this->broadcastIfFollow();
+    }
+
+    private const MOUSE_DOUBLE_CLICK_MS = 400;
+    private float $lastClickTime = 0.0;
+    private int $lastClickRow = -1;
+    private int $lastClickCol = -1;
+
+    /**
+     * Mouse handling: left-click on a data row moves the cursor there;
+     * double-click presses Enter (drill down); scroll wheel nudges the
+     * selection of the pane under the cursor. Sandwich layout is read
+     * out of the terminal rows returned by the current viewport so the
+     * pane hit-test stays in sync with renderSandwich().
+     */
+    private function handleMouseEvent(MouseEvent $mouse): void
+    {
+        if (!$mouse->press || $mouse->drag) {
+            return;
+        }
+        $isScroll = $mouse->button === MouseEvent::SCROLL_UP
+            || $mouse->button === MouseEvent::SCROLL_DOWN;
+        if (!$isScroll && $mouse->button !== MouseEvent::BUTTON_LEFT) {
+            return;
+        }
+
+        // Path-to-root row in the sidebar: clicking a step jumps
+        // sandwich view to that ancestor. Tested before pane hit so
+        // scroll events still work inside the sidebar area.
+        if ($this->sidebarStartCol > 0 && $mouse->col >= $this->sidebarStartCol && !$isScroll) {
+            $sidebarIdx = $mouse->row - 2; // rendered at row = idx + 2
+            if (isset($this->sidebarPathMap[$sidebarIdx])) {
+                $nodeId = $this->sidebarPathMap[$sidebarIdx];
+                if ($nodeId >= 0) {
+                    $this->enterSandwich($nodeId, $this->model->nodeLabel($nodeId));
+                }
+                return;
+            }
+        }
+
+        [$hitPane, $hitIdx] = $this->hitTestMouseRow($mouse->row);
+
+        if ($isScroll) {
+            $delta = $mouse->button === MouseEvent::SCROLL_UP ? -3 : 3;
+            // If the pointer is over a specific pane, scroll that pane
+            // by temporarily focusing it so moveSelection acts on the
+            // right collection. Otherwise fall back to active pane.
+            $prevPane = $this->activePane;
+            if ($hitPane !== null) {
+                $this->activePane = $hitPane;
+            }
+            $this->moveSelection($delta);
+            $this->activePane = $prevPane;
+            return;
+        }
+
+        // Left click outside any data area — ignore.
+        if ($hitPane === null || $hitIdx === null) {
+            return;
+        }
+
+        // Move the clicked pane's cursor and make it active.
+        $this->activePane = $hitPane;
+        if ($hitPane === 'parents') {
+            $this->parentSelected = $hitIdx;
+        } elseif ($hitPane === 'children') {
+            $this->childSelected = $hitIdx;
+        } else {
+            $this->selected = $hitIdx;
+        }
+        $this->broadcastIfFollow();
+
+        $now = microtime(true);
+        $isDouble = ($now - $this->lastClickTime) < ((float)self::MOUSE_DOUBLE_CLICK_MS / 1000.0)
+            && $this->lastClickRow === $mouse->row
+            && $this->lastClickCol === $mouse->col;
+        $this->lastClickTime = $now;
+        $this->lastClickRow = $mouse->row;
+        $this->lastClickCol = $mouse->col;
+        if ($isDouble) {
+            $this->lastClickTime = 0.0; // consume, prevent triple-click repeat
+            $this->enter();
+        }
+    }
+
+    /**
+     * Map a 1-based terminal row onto (pane, dataIndex). Returns
+     * [null, null] when the row is outside every pane's data area.
+     *
+     * @return array{0:?string,1:?int}
+     */
+    private function hitTestMouseRow(int $row): array
+    {
+        [, $totalRows] = $this->term->size();
+
+        if (!$this->sandwich) {
+            // List layout: header (1) + breadcrumb (2) + column header (3)
+            // + separator (4), data rows start on 5.
+            $bodyStart = 5;
+            if ($row < $bodyStart) {
+                return [null, null];
+            }
+            $idx = $this->topRow + ($row - $bodyStart);
+            if ($idx < 0 || $idx >= count($this->rows)) {
+                return [null, null];
+            }
+            return ['list', $idx];
+        }
+
+        // Sandwich layout, mirroring renderSandwich():
+        //   row 1         header
+        //   row 2         "▸ Parents (N)" label
+        //   rows 3..h+2   parent rows (h = halfH)
+        //   row  h+3      focus bar
+        //   row  h+4      "▸ Children (N)" label
+        //   rows h+5..Y   children rows
+        $bodyH = $totalRows - 4;
+        $halfH = (int)($bodyH / 2);
+        $parentsStart = 3;
+        $parentsEnd = $halfH + 2;
+        $childrenStart = $halfH + 5;
+        if ($row >= $parentsStart && $row <= $parentsEnd) {
+            $idx = $this->parentTopRow + ($row - $parentsStart);
+            if ($idx < 0 || $idx >= count($this->parentRows)) {
+                return [null, null];
+            }
+            return ['parents', $idx];
+        }
+        if ($row >= $childrenStart) {
+            $idx = $this->childTopRow + ($row - $childrenStart);
+            if ($idx < 0 || $idx >= count($this->childRows)) {
+                return [null, null];
+            }
+            return ['children', $idx];
+        }
+        return [null, null];
     }
 
     private function enter(): void
@@ -549,6 +853,7 @@ final class RmemExploreTui
         }
         $this->sandwich = true;
         $this->sandwichNodeId = $nodeId;
+        $this->emitFocusEvent($nodeId);
         $this->uiRevision++;
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
@@ -632,6 +937,7 @@ final class RmemExploreTui
     private function enterSandwichDirect(int $nodeId, string $label): void
     {
         $this->sandwichNodeId = $nodeId;
+        $this->emitFocusEvent($nodeId);
         $this->sandwichLabel = $label;
         $this->parentRows = $this->model->getParents($nodeId);
         $this->childRows = $this->model->getChildren($nodeId, $this->allEdges, $this->sortMode);
@@ -658,6 +964,7 @@ final class RmemExploreTui
         }
         $idx = array_search($this->activePane, $panes, true);
         $this->activePane = $panes[($idx + 1) % count($panes)];
+        $this->broadcastIfFollow();
     }
 
     private function toggleBookmark(): void
@@ -1312,6 +1619,9 @@ final class RmemExploreTui
         // Sidebar: render using cursor positioning instead of string concat.
         // This avoids ANSI visible-width miscalculation entirely.
         $sidebarBuf = '';
+        // Record the sidebar's left edge for the mouse hit-test; 0 means
+        // the sidebar is not currently visible.
+        $this->sidebarStartCol = ($sidebarW > 0 && $sidebarLines !== []) ? ($mainW + 1) : 0;
         if ($sidebarW > 0 && $sidebarLines !== []) {
             $sepCol = $mainW + 1;
             for ($i = 1; $i < count($lines); $i++) {
@@ -1364,6 +1674,7 @@ final class RmemExploreTui
     private function buildSidebarLines(int $nodeId, int $width, int $totalRows): array
     {
         $lines = [];
+        $this->sidebarPathMap = [];
         $detail = $this->model->nodeDetail($nodeId);
         $usable = $width - 2; // 1 space indent + 1 margin
 
@@ -1433,7 +1744,16 @@ final class RmemExploreTui
             $link = $step['link_name'];
             $label = $step['label'];
             $text = "{$indent}[{$link}] {$label}";
+            // Record the sidebar line indices this step will occupy so a
+            // mouse click on any of its wrapped rows can jump to it, and
+            // paint those rows underlined cyan to cue clickability.
+            $firstLineIdx = count($lines);
             $wrap($text);
+            $lastLineIdx = count($lines) - 1;
+            for ($li = $firstLineIdx; $li <= $lastLineIdx; $li++) {
+                $lines[$li] = "\e[4;36m" . $lines[$li] . "\e[24;39m";
+                $this->sidebarPathMap[$li] = $step['node_id'];
+            }
             if (count($lines) >= $totalRows - 3) {
                 $lines[] = ' ...';
                 break;
@@ -1632,10 +1952,13 @@ final class RmemExploreTui
     private function renderFooter(int $cols): string
     {
         $hints = $this->sandwich
-            ? " ↑↓:sel Tab:pane Enter:focus Bksp:back g:def r:sort n:edges m:mark ':marks o:side s:top t:roots ?:help q:quit"
-            : " ↑↓:sel Enter:drill Bksp:back /:filt F:search r:sort c:class y:type a:addr g:def m:mark ':marks o:side s:top t:roots q:quit";
-        $pad = max(0, $cols - strlen($hints));
-        return "\e[2m" . $hints . str_repeat(' ', $pad) . "\e[0m";
+            ? " ↑↓:sel Tab:pane Enter:focus Bksp:back g:def r:sort n:edges f:follow m:mark ':marks o:side s:top t:roots ?:help q:quit"
+            : " ↑↓:sel Enter:drill Bksp:back /:filt F:search r:sort c:class y:type a:addr g:def f:follow m:mark ':marks o:side s:top t:roots q:quit";
+        $followBadge = $this->followMode ? "\e[1;42;30m follow \e[0m " : '';
+        $bare = $hints;
+        $visibleLen = strlen($bare) + ($this->followMode ? 9 : 0); // badge rendered width
+        $pad = max(0, $cols - $visibleLen);
+        return $followBadge . "\e[2m" . $bare . str_repeat(' ', $pad) . "\e[0m";
     }
 
     /** @param list<string> &$lines */

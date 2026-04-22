@@ -121,7 +121,7 @@ final class TextReportFormatter implements ReportFormatterInterface
                         fn(int $id) => "#$id",
                         array_slice($finding->evidence_node_ids, 0, 5),
                     );
-                    $lines[] = '    Explore: inspector:rmem:explore --node='
+                    $lines[] = '    Explore: rmem:explore --node='
                         . $finding->evidence_node_ids[0]
                         . '  (' . implode(', ', $nodeHints) . ')';
                 }
@@ -331,7 +331,7 @@ final class TextReportFormatter implements ReportFormatterInterface
             }
         }
         if ($hasNodeIds) {
-            $lines[] = 'Tip: Use "inspector:rmem:explore <file.rmem> --node=N" to inspect'
+            $lines[] = 'Tip: Use "rmem:explore <file.rmem> --node=N" to inspect'
                 . ' nodes referenced above (#N).';
             $lines[] = '';
         }

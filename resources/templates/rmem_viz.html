@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rmem viz</title>
+<style>
+  :root {
+    --bg: #07090f;
+    --bg2: #0d1220;
+    --fg: #d8dce6;
+    --muted: #7a819a;
+    --accent: #66d9ef;
+    --border: #1a2033;
+    --leaf-stroke: rgba(255,255,255,0.18);
+    --panel-bg: rgba(13,18,32,0.92);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  #app { display: grid; grid-template-rows: 44px 1fr; height: 100vh; }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 16px; border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  header h1 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+  header .meta { color: var(--muted); font-size: 11px; }
+  nav { margin-left: auto; display: flex; gap: 4px; }
+  nav button {
+    background: transparent; color: var(--muted); border: 1px solid transparent;
+    padding: 6px 12px; border-radius: 4px; cursor: pointer; font: inherit;
+  }
+  nav button:hover { color: var(--fg); border-color: var(--border); }
+  nav button.active { color: var(--accent); border-color: var(--accent); background: rgba(102,217,239,0.08); }
+  nav select {
+    margin-left: 8px; background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 8px; font: inherit; cursor: pointer;
+  }
+  nav select:hover { color: var(--fg); border-color: var(--accent); }
+  main { position: relative; overflow: hidden; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.active { display: block; }
+  #force-view { background: radial-gradient(ellipse at center, #121830 0%, #04060c 80%); }
+  #detail {
+    position: absolute; right: 12px; top: 12px; width: 320px; max-height: 60%;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; overflow: auto; pointer-events: auto; font-size: 12px;
+    backdrop-filter: blur(6px);
+  }
+  #detail h3 { margin: 0 0 6px 0; font-size: 12px; color: var(--accent); }
+  #detail .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  #detail .k { color: var(--muted); }
+  #detail .v { color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #legend {
+    position: absolute; left: 12px; bottom: 12px; background: var(--panel-bg);
+    color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; max-width: 260px;
+    font-size: 11px;
+  }
+  #legend .item { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+  #legend .sw { width: 10px; height: 10px; border-radius: 2px; }
+  svg { width: 100%; height: 100%; display: block; }
+  .d3-label { fill: var(--fg); font-size: 10px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>rmem viz</h1>
+    <span class="meta" id="meta"></span>
+    <nav>
+      <button data-view="pack" class="active">Circle Pack</button>
+      <button data-view="tree">Treemap</button>
+      <button data-view="sun">Sunburst</button>
+      <button data-view="force">3D Force</button>
+      <label id="pack-zoom-toggle" title="enable click-to-zoom in Circle Pack"
+        style="margin-left:8px;color:var(--muted);font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;">
+        <input type="checkbox" id="pack-zoom-cb" style="accent-color:var(--accent);margin:0;">
+        <span>pack zoom</span>
+      </label>
+      <select id="theme-select" title="theme"></select>
+      <select id="group-select" title="color grouping"></select>
+      <select id="palette-select" title="color palette"></select>
+    </nav>
+  </header>
+  <main>
+    <div class="view active" id="pack-view"></div>
+    <div class="view" id="tree-view"></div>
+    <div class="view" id="sun-view"></div>
+    <div class="view" id="force-view"></div>
+    <div id="detail">
+      <h3>node</h3>
+      <div id="detail-body"><div class="row"><span class="k">click a node...</span></div></div>
+    </div>
+    <div id="legend"></div>
+  </main>
+</div>
+
+<script src="https://unpkg.com/d3@7"></script>
+<script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
+<script src="https://unpkg.com/3d-force-graph@1.73.0/dist/3d-force-graph.min.js"></script>
+<script>
+(function () {
+  const DATA = /*__RMEM_VIZ_DATA__*/null;
+  const LIVE = /*__RMEM_VIZ_LIVE__*/false;
+  if (!DATA) {
+    document.body.innerHTML = '<pre style="color:#f66;padding:20px">no data embedded</pre>';
+    return;
+  }
+
+  document.getElementById('meta').textContent =
+    DATA.source + '   ' +
+    DATA.nodes.length.toLocaleString() + ' / ' + DATA.node_count_total.toLocaleString() +
+    ' nodes  ·  ' + DATA.tree_edges.length.toLocaleString() + ' tree + ' +
+    DATA.ref_edges.length.toLocaleString() + ' ref edges';
+
+  // ---- color palette keyed by the selected grouping ----
+  // Grouping picks WHICH attribute colors cluster on: class name
+  // (default), forest-root link (call_frames / class_table / etc), or
+  // node type. Color island visibility in 3D Force is especially
+  // sensitive to this — physics clusters by attraction, not hierarchy.
+  const GROUPERS = {
+    'by class': n => n.class || n.type || '?',
+    'by forest root': n => n.root_link || '?',
+    'by type': n => n.type || '?',
+  };
+  const GROUP_STORAGE_KEY = 'rmem-viz-group';
+  let activeGroup = localStorage.getItem(GROUP_STORAGE_KEY) || 'by class';
+  if (!(activeGroup in GROUPERS)) activeGroup = 'by class';
+  let keyOf = GROUPERS[activeGroup];
+
+  // classKeys is the full set of groups, sorted by retained desc;
+  // recomputed whenever the active grouping changes.
+  let classKeys = [];
+  function recomputeClassKeys() {
+    classKeys = Array.from(new Set(DATA.nodes.map(keyOf)))
+      .sort((a, b) => {
+        const ca = DATA.nodes.filter(n => keyOf(n) === a).reduce((s, n) => s + n.retained, 0);
+        const cb = DATA.nodes.filter(n => keyOf(n) === b).reduce((s, n) => s + n.retained, 0);
+        return cb - ca;
+      });
+  }
+  recomputeClassKeys();
+
+  // Discrete schemes map directly to ordinal slots; continuous
+  // interpolators get sampled across N classes. The Sinebow fallback
+  // catches the case where a discrete scheme has fewer slots than
+  // distinct classes, otherwise everything past the bank collapses to
+  // the unknown grey.
+  // Grouping is purely UI ordering (optgroup labels). The lookup
+  // tables themselves are flat name → scheme/interpolator maps.
+  const PALETTE_GROUPS = [
+    { label: 'Categorical', items: [
+      'Category 10', 'Tableau 10', 'Set1', 'Set2', 'Set3 (pastel)',
+      'Paired', 'Accent', 'Dark2',
+    ]},
+    { label: 'Cyclic / multi-hue', items: [
+      'Sinebow', 'Rainbow', 'Spectral', 'Turbo',
+    ]},
+    { label: 'Sequential', items: [
+      'Viridis', 'Plasma', 'Inferno', 'Magma',
+      'Cubehelix', 'Warm', 'Cool',
+    ]},
+    { label: 'Diverging', items: [
+      'RdYlBu', 'RdYlGn', 'BrBG', 'PuOr',
+    ]},
+  ];
+  const DISCRETE_SCHEMES = {
+    'Category 10':   d3.schemeCategory10,
+    'Tableau 10':    d3.schemeTableau10,
+    'Set1':          d3.schemeSet1,
+    'Set2':          d3.schemeSet2,
+    'Set3 (pastel)': d3.schemeSet3,
+    'Paired':        d3.schemePaired,
+    'Accent':        d3.schemeAccent,
+    'Dark2':         d3.schemeDark2,
+  };
+  const CONTINUOUS_SCHEMES = {
+    'Sinebow':   d3.interpolateSinebow,
+    'Rainbow':   d3.interpolateRainbow,
+    'Spectral':  d3.interpolateSpectral,
+    'Turbo':     d3.interpolateTurbo,
+    'Viridis':   d3.interpolateViridis,
+    'Plasma':    d3.interpolatePlasma,
+    'Inferno':   d3.interpolateInferno,
+    'Magma':     d3.interpolateMagma,
+    'Cubehelix': d3.interpolateCubehelixDefault,
+    'Warm':      d3.interpolateWarm,
+    'Cool':      d3.interpolateCool,
+    'RdYlBu':    d3.interpolateRdYlBu,
+    'RdYlGn':    d3.interpolateRdYlGn,
+    'BrBG':      d3.interpolateBrBG,
+    'PuOr':      d3.interpolatePuOr,
+  };
+  function buildColorFor(name) {
+    const n = Math.max(1, classKeys.length);
+    let range;
+    if (name in CONTINUOUS_SCHEMES) {
+      const interp = CONTINUOUS_SCHEMES[name];
+      range = classKeys.map((_, i) => interp(i / n));
+    } else {
+      const base = DISCRETE_SCHEMES[name] || DISCRETE_SCHEMES['Category 10'];
+      // When there are more classes than slots, ramp through the
+      // palette's own colors rather than falling back to Sinebow —
+      // otherwise every discrete scheme collapses to the same view.
+      range = classKeys.length > base.length
+        ? d3.quantize(d3.interpolateRgbBasis(base), n)
+        : base;
+    }
+    return d3.scaleOrdinal().domain(classKeys).range(range).unknown('#555');
+  }
+  const PALETTE_STORAGE_KEY = 'rmem-viz-palette';
+  let activePalette = localStorage.getItem(PALETTE_STORAGE_KEY) || 'Category 10';
+  if (!(activePalette in DISCRETE_SCHEMES) && !(activePalette in CONTINUOUS_SCHEMES)) {
+    activePalette = 'Category 10';
+  }
+  let colorFor = buildColorFor(activePalette);
+
+  // legend (top 10 classes by retained)
+  const legendEl = document.getElementById('legend');
+  function renderLegend() {
+    legendEl.innerHTML = '<div style="color:var(--muted);margin-bottom:4px">top ' + activeGroup + '</div>' +
+      classKeys.slice(0, 10).map(k =>
+        '<div class="item"><span class="sw" style="background:' + colorFor(k) + '"></span>' +
+        '<span>' + (k.length > 36 ? k.slice(0, 33) + '...' : k) + '</span></div>'
+      ).join('');
+  }
+  renderLegend();
+
+  // ---- build induced hierarchy for d3.hierarchy-based views ----
+  // Some nodes have tree_parent=null (they are the induced forest roots).
+  // We wrap them under a synthetic "root" so d3 gets a single tree.
+  const byId = new Map(DATA.nodes.map(n => [n.id, n]));
+  const childrenMap = new Map();
+  const forestRoots = [];
+  for (const n of DATA.nodes) {
+    if (n.tree_parent == null || !byId.has(n.tree_parent)) {
+      forestRoots.push(n.id);
+    } else {
+      if (!childrenMap.has(n.tree_parent)) childrenMap.set(n.tree_parent, []);
+      childrenMap.get(n.tree_parent).push(n.id);
+    }
+  }
+  function buildTree(id) {
+    const n = byId.get(id);
+    const kids = (childrenMap.get(id) || []).map(buildTree);
+    // value = retained minus the retained of children that survived
+    // the subgraph filter, so d3.sum() always reproduces the true
+    // retained size — even when most descendants were dropped.
+    const childrenRetained = kids.reduce((s, k) => s + (k.retained || 0), 0);
+    const ownContribution = Math.max(1, (n.retained || 0) - childrenRetained);
+
+    // d3.pack sizes internal nodes by the enclosure of their children,
+    // ignoring the parent's own value. For containers where the
+    // retained lives on the container itself (Bucket[] table etc.)
+    // and the children are retained=0 scalars, that would collapse
+    // the container next to a leaf sibling with real retained.
+    // Redistribute the excess ownContribution onto those zero-retained
+    // children so the packed enclosure ends up proportional to the
+    // container's retained and the real children stay individually
+    // visible. Total d3.sum of the subtree is preserved.
+    let parentValue = ownContribution;
+    if (kids.length > 0) {
+      const zeroKids = kids.filter(k => !(k.retained > 0));
+      const kidsValueSum = kids.reduce((s, k) => s + (k.value || 0), 0);
+      if (zeroKids.length > 0 && ownContribution > kidsValueSum * 2) {
+        const toDistribute = ownContribution - 1;
+        const perZero = toDistribute / zeroKids.length;
+        for (const k of zeroKids) k.value = (k.value || 0) + perZero;
+        parentValue = 1;
+      }
+    }
+
+    return {
+      id: n.id,
+      name: n.label,
+      label: n.label,
+      type: n.type,
+      class: n.class,
+      root_link: n.root_link,
+      retained: n.retained,
+      shallow: n.shallow,
+      link_name: n.link_name,
+      link_display: n.link_display,
+      path: n.path,
+      path_steps: n.path_steps,
+      value: parentValue,
+      children: kids,
+    };
+  }
+  const hierarchyRoot = {
+    id: -1,
+    name: DATA.source,
+    klass: null,
+    retained: DATA.nodes.reduce((s, n) => s + (n.tree_parent == null ? n.retained : 0), 0),
+    shallow: 0,
+    value: 0,
+    children: forestRoots.map(buildTree),
+  };
+
+  // ---- detail panel ----
+  const detailBody = document.getElementById('detail-body');
+  function showDetail(n) {
+    if (!n) { detailBody.innerHTML = '<div class="row"><span class="k">click a node...</span></div>'; return; }
+    const fmt = v => (v == null ? '-' : v.toLocaleString());
+    const pathStr = (n.path && n.path.length)
+      ? n.path.join(' › ')
+      : null;
+    let pathStepsHtml = '';
+    if (Array.isArray(n.path_steps) && n.path_steps.length) {
+      const chips = n.path_steps.map((s, i) => {
+        const clickable = typeof s.node_id === 'number' && s.node_id >= 0;
+        const sep = i === 0 ? '' : '<span style="color:var(--muted);margin:0 2px">›</span>';
+        const inner = escapeHtml(String(s.label || ''));
+        return sep + (clickable
+          ? '<a href="#" data-nid="' + s.node_id + '" class="path-step" '
+            + 'style="color:var(--accent);text-decoration:none;cursor:pointer">'
+            + inner + '</a>'
+          : '<span style="color:var(--muted)">' + inner + '</span>');
+      }).join('');
+      pathStepsHtml =
+        '<div style="margin-top:6px;font-size:11px;line-height:1.5;word-break:break-all">'
+        + chips + '</div>';
+    } else if (pathStr !== null) {
+      // Fallback (e.g. a manually constructed detail for out-of-subgraph
+      // focus) — plain-text path, no clickable chips.
+      pathStepsHtml =
+        '<div style="margin-top:6px;color:var(--muted);font-size:11px;word-break:break-all">'
+        + escapeHtml(pathStr) + '</div>';
+    }
+    detailBody.innerHTML =
+      row('id', fmt(n.id)) +
+      row('type', n.type || '?') +
+      row('class', n.class || '-') +
+      row('retained', fmt(n.retained) + ' B') +
+      row('shallow', fmt(n.shallow) + ' B') +
+      row('link', n.link_display || n.link_name || '-') +
+      pathStepsHtml +
+      '<div style="margin-top:8px;color:var(--muted);word-break:break-all">' +
+      escapeHtml(n.label) + '</div>';
+    // Wire path-step chips to navigate.
+    detailBody.querySelectorAll('a.path-step').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.preventDefault();
+        const nid = Number(el.getAttribute('data-nid'));
+        if (!Number.isFinite(nid)) return;
+        highlightNode(nid);
+        postNavigate(nid);
+      });
+    });
+  }
+  function row(k, v) {
+    return '<div class="row"><span class="k">' + k + '</span><span class="v">' + escapeHtml(String(v)) + '</span></div>';
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ---- tab switching ----
+  // recolor() is set by each init* function and is called when the
+  // user picks a new palette; it must update colors in-place without
+  // tearing down the view.
+  const views = {
+    force: { el: document.getElementById('force-view'), init: initForce, inited: false, recolor: null },
+    pack:  { el: document.getElementById('pack-view'),  init: initPack,  inited: false, recolor: null },
+    tree:  { el: document.getElementById('tree-view'),  init: initTree,  inited: false, recolor: null },
+    sun:   { el: document.getElementById('sun-view'),   init: initSun,   inited: false, recolor: null },
+  };
+  document.querySelectorAll('nav button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const key = btn.dataset.view;
+      for (const k of Object.keys(views)) {
+        views[k].el.classList.toggle('active', k === key);
+      }
+      if (!views[key].inited) {
+        views[key].init();
+        views[key].inited = true;
+        if (highlightedId !== null && typeof views[key].highlight === 'function') {
+          views[key].highlight(highlightedId);
+        }
+        if (highlightedSet.size > 0 && typeof views[key].highlightSet === 'function') {
+          views[key].highlightSet(highlightedSet);
+        }
+      }
+    });
+  });
+
+  // ---- theme picker ----
+  // Each theme sets CSS variables (which propagate to chrome,
+  // panels, and SVG strokes via var(--leaf-stroke)) plus the two
+  // bits of styling that don't go through CSS: the 3D Force WebGL
+  // background and the Circle Pack radial gradient.
+  const THEMES = {
+    'Midnight': {
+      vars: {
+        '--bg': '#07090f', '--bg2': '#0d1220', '--fg': '#d8dce6',
+        '--muted': '#7a819a', '--accent': '#66d9ef', '--border': '#1a2033',
+        '--leaf-stroke': 'rgba(255,255,255,0.18)',
+        '--panel-bg': 'rgba(13,18,32,0.92)',
+      },
+      forceBg: '#05070e',
+      packGradient: 'radial-gradient(ellipse at center, #14182a 0%, #04060c 80%)',
+    },
+    'Pure Black': {
+      vars: {
+        '--bg': '#000000', '--bg2': '#0a0a0a', '--fg': '#e8e8e8',
+        '--muted': '#888888', '--accent': '#5ce4ff', '--border': '#1f1f1f',
+        '--leaf-stroke': 'rgba(255,255,255,0.22)',
+        '--panel-bg': 'rgba(10,10,10,0.92)',
+      },
+      forceBg: '#000000',
+      packGradient: 'radial-gradient(ellipse at center, #0a0a18 0%, #000000 80%)',
+    },
+    'Slate': {
+      vars: {
+        '--bg': '#1c1f2a', '--bg2': '#272b38', '--fg': '#e0e3eb',
+        '--muted': '#8a93a8', '--accent': '#7dd3fc', '--border': '#33384a',
+        '--leaf-stroke': 'rgba(255,255,255,0.15)',
+        '--panel-bg': 'rgba(34,38,50,0.92)',
+      },
+      forceBg: '#1a1d28',
+      packGradient: 'radial-gradient(ellipse at center, #2a2f42 0%, #16192a 80%)',
+    },
+    'Daylight': {
+      vars: {
+        '--bg': '#f5f5f7', '--bg2': '#ffffff', '--fg': '#1a1a1f',
+        '--muted': '#666666', '--accent': '#0066cc', '--border': '#d0d0d8',
+        '--leaf-stroke': 'rgba(0,0,0,0.18)',
+        '--panel-bg': 'rgba(255,255,255,0.94)',
+      },
+      forceBg: '#f5f5f7',
+      packGradient: 'radial-gradient(ellipse at center, #ffffff 0%, #e8eaf0 80%)',
+    },
+  };
+  const THEME_STORAGE_KEY = 'rmem-viz-theme';
+  let activeTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'Midnight';
+  if (!(activeTheme in THEMES)) activeTheme = 'Midnight';
+
+  function applyTheme(name) {
+    const t = THEMES[name] || THEMES['Midnight'];
+    for (const k of Object.keys(t.vars)) {
+      document.documentElement.style.setProperty(k, t.vars[k]);
+    }
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].retheme === 'function') views[k].retheme(t);
+    }
+  }
+  applyTheme(activeTheme);
+
+  const themeSelect = document.getElementById('theme-select');
+  themeSelect.innerHTML = Object.keys(THEMES)
+    .map(n => '<option value="' + n + '"' + (n === activeTheme ? ' selected' : '') + '>' + n + '</option>')
+    .join('');
+  themeSelect.addEventListener('change', () => {
+    activeTheme = themeSelect.value;
+    localStorage.setItem(THEME_STORAGE_KEY, activeTheme);
+    applyTheme(activeTheme);
+  });
+
+  // ---- group-by picker ----
+  const groupSelect = document.getElementById('group-select');
+  groupSelect.innerHTML = Object.keys(GROUPERS)
+    .map(n => '<option value="' + n + '"' + (n === activeGroup ? ' selected' : '') + '>' + n + '</option>')
+    .join('');
+  groupSelect.addEventListener('change', () => {
+    activeGroup = groupSelect.value;
+    localStorage.setItem(GROUP_STORAGE_KEY, activeGroup);
+    keyOf = GROUPERS[activeGroup];
+    recomputeClassKeys();
+    colorFor = buildColorFor(activePalette);
+    renderLegend();
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].recolor === 'function') views[k].recolor();
+    }
+  });
+
+  // ---- palette picker ----
+  const paletteSelect = document.getElementById('palette-select');
+  paletteSelect.innerHTML = PALETTE_GROUPS.map(g =>
+    '<optgroup label="' + g.label + '">' +
+    g.items
+      .filter(n => (n in DISCRETE_SCHEMES) || (n in CONTINUOUS_SCHEMES))
+      .map(n => '<option value="' + n + '"' + (n === activePalette ? ' selected' : '') + '>' + n + '</option>')
+      .join('') +
+    '</optgroup>'
+  ).join('');
+  paletteSelect.addEventListener('change', () => {
+    activePalette = paletteSelect.value;
+    localStorage.setItem(PALETTE_STORAGE_KEY, activePalette);
+    colorFor = buildColorFor(activePalette);
+    renderLegend();
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].recolor === 'function') views[k].recolor();
+    }
+  });
+
+  initPack(); views.pack.inited = true;
+
+  // ---- live mode: SSE subscription + click-to-broadcast ----
+  // Lookup so we can short-circuit highlight requests for nodes
+  // outside the current induced subgraph.
+  const selectedSet = new Set(DATA.nodes.map(n => n.id));
+  let highlightedId = null;
+  let highlightedSet = new Set();
+
+  function highlightNode(nodeId) {
+    highlightedId = nodeId;
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].highlight === 'function') {
+        views[k].highlight(nodeId);
+      }
+    }
+    if (selectedSet.has(nodeId)) {
+      const n = DATA.nodes.find(x => x.id === nodeId);
+      if (n) showDetail(n);
+    } else {
+      showDetail({
+        id: nodeId,
+        label: '(node ' + nodeId + ' is outside the visible subgraph)',
+        type: '?', class: null, retained: null, shallow: null,
+        link_name: null, link_display: null, path: [],
+      });
+    }
+  }
+
+  function highlightSet(nodeIds) {
+    highlightedSet = new Set(nodeIds);
+    for (const k of Object.keys(views)) {
+      if (views[k].inited && typeof views[k].highlightSet === 'function') {
+        views[k].highlightSet(highlightedSet);
+      }
+    }
+  }
+
+  function postNavigate(nodeId) {
+    if (!LIVE) return;
+    fetch((DATA.live && DATA.live.navigate_url) || '/api/navigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId }),
+    }).catch(() => {});
+  }
+
+  if (LIVE) {
+    const evtUrl = (DATA.live && DATA.live.events_url) || '/api/events';
+    const es = new EventSource(evtUrl);
+    es.addEventListener('focus_node', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (typeof data.node_id !== 'number') return;
+        if (selectedSet.has(data.node_id)) {
+          highlightNode(data.node_id);
+          return;
+        }
+        // Focus target is outside the induced subgraph. Walk the
+        // server-provided ancestor chain (root→leaf) from the leaf
+        // end and highlight the first ancestor that IS in the view.
+        if (Array.isArray(data.path_node_ids)) {
+          for (let i = data.path_node_ids.length - 1; i >= 0; i--) {
+            const anc = data.path_node_ids[i];
+            if (selectedSet.has(anc)) {
+              highlightNode(anc);
+              showDetail({
+                id: data.node_id,
+                label: '(focus: ' + (data.label || ('node ' + data.node_id))
+                  + ' — shown via ancestor)',
+                type: '?', class: null, retained: null, shallow: null,
+                link_name: null, link_display: null, path: [],
+              });
+              return;
+            }
+          }
+        }
+        highlightNode(data.node_id); // still shows the out-of-subgraph notice
+      } catch (_) { /* ignore */ }
+    });
+    es.addEventListener('highlight_set', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (Array.isArray(data.node_ids)) highlightSet(data.node_ids);
+      } catch (_) { /* ignore */ }
+    });
+    es.onerror = () => { /* browser auto-reconnects */ };
+  }
+
+  // ================== 3D Force Graph ==================
+  function initForce() {
+    // 3d-force-graph derives radius = val^(1/3), which flattens any
+    // monotonic val we pass in. To get a *readable* size range we map
+    // retained onto a target radius range via d3.scaleSqrt (area
+    // proportional to retained), then cube it to cancel the built-in
+    // cube root. Result: actual node radius = radiusScale(retained),
+    // which now spans the full configured low → high on screen.
+    // Note the min floor: scalar array elements carry a ~16 byte
+    // retained (just the zval), and a linear sqrt mapping to 0.7 makes
+    // them invisibly small next to a multi-MB subtree. Pin the floor
+    // at 2 scene units so every node stays readable. Top end at 60
+    // so the largest retained nodes stand out dramatically — the
+    // collide force and link distance scale with the rendered radius
+    // so the scene stays proportioned.
+    const maxRetainedForSizing = d3.max(DATA.nodes, n => n.retained) || 1;
+    const radiusScale = d3.scaleSqrt()
+      .domain([0, maxRetainedForSizing])
+      .range([2, 60]);
+    const valFor = retained => Math.pow(Math.max(0.5, radiusScale(retained || 0)), 3);
+
+    const nodes = DATA.nodes.map(n => ({
+      id: n.id, label: n.label, type: n.type,
+      retained: n.retained, shallow: n.shallow, class: n.class,
+      root_link: n.root_link,
+      link_name: n.link_name, link_display: n.link_display, path: n.path, path_steps: n.path_steps,
+      val: valFor(n.retained),
+    }));
+    const treeLinks = DATA.tree_edges.map(e => ({ source: e.source, target: e.target, kind: 'tree', link: e.link }));
+    const refLinks = DATA.ref_edges.map(e => ({ source: e.source, target: e.target, kind: 'ref' }));
+    const links = treeLinks.concat(refLinks);
+
+    const el = document.getElementById('force-view');
+    const G = ForceGraph3D()(el)
+      .graphData({ nodes, links })
+      .backgroundColor('#05070e')
+      .nodeLabel(n => escapeHtml(n.label))
+      .nodeVal(n => n.val)
+      .nodeColor(n => colorFor(keyOf(n)))
+      .nodeOpacity(0.92)
+      .nodeResolution(12)
+      .linkColor(l => l.kind === 'ref' ? 'rgba(255,120,120,0.35)' : 'rgba(140,180,255,0.28)')
+      .linkWidth(l => l.kind === 'ref' ? 0.4 : 0.6)
+      .linkDirectionalParticles(l => l.kind === 'ref' ? 2 : 0)
+      .linkDirectionalParticleSpeed(0.008)
+      .linkDirectionalParticleWidth(1.2)
+      .linkCurvature(l => l.kind === 'ref' ? 0.25 : 0)
+      .cooldownTime(8000);
+    // The physics engine otherwise knows nothing about node radii, so
+    // bigger nodes just visually overlap and the camera fit pulls in
+    // closer than usual. Add a collide force sized to each node's own
+    // radius (with a small padding) and lengthen links enough that the
+    // scene stays proportioned when users dial the size range up.
+    const nodeRel = G.nodeRelSize();
+    const radiusOf = n => Math.cbrt(n.val) * nodeRel;
+    if (G.d3Force('collide') === undefined || G.d3Force('collide') === null) {
+      G.d3Force('collide', d3.forceCollide().radius(n => radiusOf(n) + 1.5).iterations(2));
+    }
+    const linkForce = G.d3Force('link');
+    if (linkForce && typeof linkForce.distance === 'function') {
+      linkForce.distance(l => radiusOf(l.source) + radiusOf(l.target) + 18);
+    }
+    // zoomToFit's padding argument is in pixels — 60 was far too tight
+    // once node radii grew, so nodes kept clipping the camera. 180
+    // leaves a comfortable margin. We also pull the camera back 25%
+    // after the fit so it never lands inside a big sphere.
+    G.onEngineStop(() => {
+      if (G.__fitDone) return;
+      G.__fitDone = true;
+      G.zoomToFit(800, 180);
+      setTimeout(() => {
+        const cam = G.cameraPosition();
+        const out = 1.3;
+        G.cameraPosition(
+          { x: cam.x * out, y: cam.y * out, z: cam.z * out },
+          { x: 0, y: 0, z: 0 },
+          500,
+        );
+      }, 850);
+    });
+    // Belt-and-braces early fit: the engine cooldown can take several
+    // seconds on a large graph, and until zoomToFit runs the default
+    // camera may be staring into empty space. Re-fit shortly after
+    // init so switching to this tab lands on something visible even
+    // while physics is still settling.
+    setTimeout(() => G.zoomToFit(400, 180), 300);
+    G
+      .onNodeClick(n => {
+        // Camera distance scales with the focused node's rendered
+        // radius — small leaves get framed up close, heavy subtrees
+        // back off enough to show the whole sphere.
+        const dist = Math.max(60, radiusOf(n) * 7);
+        const d = Math.hypot(n.x || 1, n.y || 1, n.z || 1) || 1;
+        G.cameraPosition(
+          { x: n.x * (1 + dist / d), y: n.y * (1 + dist / d), z: n.z * (1 + dist / d) },
+          n, 900
+        );
+        showDetail(n);
+        postNavigate(n.id);
+      });
+    window.addEventListener('resize', () => G.width(el.clientWidth).height(el.clientHeight));
+    G.width(el.clientWidth).height(el.clientHeight);
+    const forceApplyColor = () => G.nodeColor(n => {
+      if (highlightedSet.size === 0 || highlightedSet.has(n.id)) {
+        return colorFor(keyOf(n));
+      }
+      const c = d3.color(colorFor(keyOf(n)));
+      if (c === null) {
+        return colorFor(keyOf(n));
+      }
+      c.opacity = 0.22;
+      return c.formatRgb();
+    });
+    views.force.recolor = forceApplyColor;
+    views.force.retheme = (t) => G.backgroundColor(t.forceBg);
+    views.force.highlight = (id) => {
+      const target = nodes.find(n => n.id === id);
+      if (!target) return;
+      const dist = Math.max(80, radiusOf(target) * 7);
+      const d = Math.hypot(target.x || 1, target.y || 1, target.z || 1) || 1;
+      G.cameraPosition(
+        { x: target.x * (1 + dist / d), y: target.y * (1 + dist / d), z: target.z * (1 + dist / d) },
+        target, 700
+      );
+    };
+    views.force.highlightSet = (_set) => forceApplyColor();
+    G.backgroundColor(THEMES[activeTheme].forceBg);
+  }
+
+  // ================== Circle Packing ==================
+  function initPack() {
+    const el = document.getElementById('pack-view');
+    const w = el.clientWidth, h = el.clientHeight;
+    el.style.background = THEMES[activeTheme].packGradient;
+    // viewBox centred at origin so the zoom math matches Bostock's
+    // classic zoomable-pack (each node's transform is recomputed
+    // relative to the focus view v=[fx,fy,frameSize]).
+    const svg = d3.select(el).append('svg')
+      .attr('viewBox', [-w / 2, -h / 2, w, h].join(' '));
+    const g = svg.append('g');
+
+    const root = d3.hierarchy(hierarchyRoot)
+      .sum(d => d.value)
+      .sort((a, b) => (b.data.retained || 0) - (a.data.retained || 0));
+    d3.pack().size([w - 4, h - 4]).padding(0.5)(root);
+
+    let focus = root;
+    let zoomView = [root.x, root.y, root.r * 2];
+
+    // Click-to-zoom is opt-in; default off so a click on a circle just
+    // shows its detail without moving the camera. The checkbox in the
+    // header flips zoomEnabled and persists via localStorage.
+    const ZOOM_STORAGE_KEY = 'rmem-viz-pack-zoom';
+    let zoomEnabled = localStorage.getItem(ZOOM_STORAGE_KEY) === '1';
+    const zoomCb = document.getElementById('pack-zoom-cb');
+    if (zoomCb) {
+      zoomCb.checked = zoomEnabled;
+      zoomCb.addEventListener('change', () => {
+        zoomEnabled = zoomCb.checked;
+        localStorage.setItem(ZOOM_STORAGE_KEY, zoomEnabled ? '1' : '0');
+        if (!zoomEnabled) {
+          focus = root;
+          zoomToNode(root);
+        }
+      });
+    }
+
+    const node = g.selectAll('g').data(root.descendants()).join('g');
+    node.append('circle')
+      .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(keyOf(d.data)))
+      .attr('fill-opacity', d => d.children ? 0.4 : 0.85)
+      .style('stroke', d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)')
+      .attr('stroke-width', 0.6)
+      .style('cursor', d => d.depth > 0 ? 'pointer' : 'default')
+      .on('click', (event, d) => {
+        event.stopPropagation();
+        showDetail(d.data);
+        postNavigate(d.data.id);
+        if (zoomEnabled && d.children && focus !== d) {
+          zoomToNode(d);
+        }
+      })
+      .on('contextmenu', (event, d) => {
+        event.preventDefault();
+        if (zoomEnabled && focus.parent) zoomToNode(focus.parent);
+      })
+      .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
+    node.filter(d => d.depth > 0).append('text')
+      .attr('class', 'd3-label')
+      .attr('text-anchor', 'middle').attr('dy', '0.35em')
+      .text(d => (keyOf(d.data) || '').slice(0, 18));
+    // Background click zooms back to root (only when zoom is on).
+    svg.on('click', () => { if (zoomEnabled && focus !== root) zoomToNode(root); });
+
+    // Fit to the shorter of width/height so the root circle never
+    // overflows the vertical viewBox on landscape displays (and vice
+    // versa on portrait). The classic zoomable-pack example assumes
+    // a square viewport and uses k = width / v[2]; ours is whatever
+    // the pack-view div happens to be.
+    const viewFit = Math.min(w, h);
+    function zoomTo(v) {
+      zoomView = v;
+      const k = viewFit / v[2];
+      node.attr('transform',
+        d => 'translate(' + ((d.x - v[0]) * k) + ',' + ((d.y - v[1]) * k) + ')');
+      node.select('circle').attr('r', d => d.r * k);
+      node.select('text').attr('opacity', d => d.r * k > 22 ? 1 : 0);
+    }
+    function zoomToNode(d) {
+      focus = d;
+      const target = [d.x, d.y, d.r * 2.1];
+      svg.transition().duration(600).tween('zoom', () => {
+        const i = d3.interpolateZoom(zoomView, target);
+        return t => zoomTo(i(t));
+      });
+    }
+
+    zoomTo(zoomView);
+    views.pack.recolor = () => svg.selectAll('circle')
+      .attr('fill', d => d.depth === 0 ? 'transparent' : colorFor(keyOf(d.data)));
+    views.pack.retheme = (t) => { el.style.background = t.packGradient; };
+    const packBaseStroke = d => d.depth === 0 ? 'transparent' : 'var(--leaf-stroke)';
+    views.pack.highlight = (id) => {
+      svg.selectAll('circle')
+        .style('stroke', d => d.data.id === id
+          ? 'var(--accent)'
+          : (highlightedSet.has(d.data.id) ? 'var(--accent)' : packBaseStroke(d)))
+        .attr('stroke-width', d => d.data.id === id ? 2.5 : (highlightedSet.has(d.data.id) ? 1.8 : 0.6))
+        .attr('stroke-dasharray', d => (d.data.id !== id && highlightedSet.has(d.data.id)) ? '3,2' : null);
+    };
+    views.pack.highlightSet = (set) => {
+      svg.selectAll('circle')
+        .style('stroke', d => d.data.id === highlightedId
+          ? 'var(--accent)'
+          : (set.has(d.data.id) ? 'var(--accent)' : packBaseStroke(d)))
+        .attr('stroke-width', d => d.data.id === highlightedId ? 2.5 : (set.has(d.data.id) ? 1.8 : 0.6))
+        .attr('stroke-dasharray', d => (d.data.id !== highlightedId && set.has(d.data.id)) ? '3,2' : null);
+    };
+  }
+
+  // ================== Treemap ==================
+  function initTree() {
+    const el = document.getElementById('tree-view');
+    const w = el.clientWidth, h = el.clientHeight;
+    const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, w, h]);
+
+    const root = d3.hierarchy(hierarchyRoot)
+      .sum(d => d.value)
+      .sort((a, b) => (b.data.retained || 0) - (a.data.retained || 0));
+    // round(true) snaps cells to integer pixels and can swap adjacent
+    // small rects when their floored sizes tie; drop it so order is
+    // preserved at the cost of fractional-pixel edges.
+    d3.treemap().size([w, h]).paddingInner(1)(root);
+
+    const leaf = svg.selectAll('g').data(root.leaves()).join('g')
+      .attr('transform', d => 'translate(' + d.x0 + ',' + d.y0 + ')');
+    leaf.append('rect')
+      .attr('width', d => d.x1 - d.x0)
+      .attr('height', d => d.y1 - d.y0)
+      .attr('fill', d => colorFor(keyOf(d.data)))
+      .attr('fill-opacity', 0.82)
+      .style('stroke', 'var(--leaf-stroke)').attr('stroke-width', 0.5)
+      .on('click', (_, d) => { showDetail(d.data); postNavigate(d.data.id); })
+      .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
+    leaf.append('text')
+      .attr('class', 'd3-label')
+      .attr('x', 3).attr('y', 11)
+      .text(d => {
+        const cw = d.x1 - d.x0, ch = d.y1 - d.y0;
+        if (cw < 40 || ch < 14) return '';
+        const t = (keyOf(d.data) || d.data.name);
+        return t.slice(0, Math.max(2, Math.floor(cw / 6)));
+      });
+    views.tree.recolor = () => svg.selectAll('rect')
+      .attr('fill', d => colorFor(keyOf(d.data)));
+    const treeRestyle = (focusId, set) => {
+      svg.selectAll('rect')
+        .style('stroke', d => d.data.id === focusId
+          ? 'var(--accent)'
+          : (set.has(d.data.id) ? 'var(--accent)' : 'var(--leaf-stroke)'))
+        .attr('stroke-width', d => d.data.id === focusId ? 2.5 : (set.has(d.data.id) ? 1.8 : 0.5))
+        .attr('stroke-dasharray', d => (d.data.id !== focusId && set.has(d.data.id)) ? '3,2' : null);
+    };
+    views.tree.highlight = (id) => treeRestyle(id, highlightedSet);
+    views.tree.highlightSet = (set) => treeRestyle(highlightedId, set);
+  }
+
+  // ================== Sunburst ==================
+  function initSun() {
+    const el = document.getElementById('sun-view');
+    const w = el.clientWidth, h = el.clientHeight;
+    const radius = Math.min(w, h) / 2 - 8;
+    const svg = d3.select(el).append('svg').attr('viewBox', [-w/2, -h/2, w, h]);
+
+    const root = d3.hierarchy(hierarchyRoot)
+      .sum(d => d.value)
+      .sort((a, b) => (b.data.retained || 0) - (a.data.retained || 0));
+    d3.partition().size([2 * Math.PI, radius])(root);
+    const arc = d3.arc()
+      .startAngle(d => d.x0).endAngle(d => d.x1)
+      .innerRadius(d => d.y0).outerRadius(d => d.y1 - 1)
+      .padAngle(0.002).padRadius(radius / 2);
+
+    svg.selectAll('path').data(root.descendants().filter(d => d.depth > 0)).join('path')
+      .attr('d', arc)
+      .attr('fill', d => colorFor(keyOf(d.data)))
+      .attr('fill-opacity', d => d.children ? 0.55 : 0.85)
+      .style('stroke', 'var(--leaf-stroke)').attr('stroke-width', 0.4)
+      .on('click', (_, d) => { showDetail(d.data); postNavigate(d.data.id); })
+      .append('title').text(d => d.data.name + '\n' + d.data.retained.toLocaleString() + ' B');
+    views.sun.recolor = () => svg.selectAll('path')
+      .attr('fill', d => colorFor(keyOf(d.data)));
+    const sunRestyle = (focusId, set) => {
+      svg.selectAll('path')
+        .style('stroke', d => d.data.id === focusId
+          ? 'var(--accent)'
+          : (set.has(d.data.id) ? 'var(--accent)' : 'var(--leaf-stroke)'))
+        .attr('stroke-width', d => d.data.id === focusId ? 2.5 : (set.has(d.data.id) ? 1.8 : 0.4))
+        .attr('stroke-dasharray', d => (d.data.id !== focusId && set.has(d.data.id)) ? '3,2' : null);
+    };
+    views.sun.highlight = (id) => sunRestyle(id, highlightedSet);
+    views.sun.highlightSet = (set) => sunRestyle(highlightedId, set);
+  }
+})();
+</script>
+</body>
+</html>

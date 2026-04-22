@@ -54,11 +54,13 @@ Tip: **`-f binary` (`.rmem`) is the fastest format** and what the analysers belo
 
 | I want to... | Use | More |
 |---|---|---|
-| Browse interactively in a TUI **(recommended)** | `inspector:rmem:explore snap.rmem` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
+| Browse interactively in a TUI **(recommended)** | `rmem:explore snap.rmem` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
 | Get a prioritised findings report | `inspector:memory:report snap.rmem` (or capture with `-f report`) | [memory/memory-report.md](memory/memory-report.md) |
 | Compare two graphs (regression / leak tracking) | `inspector:memory:compare before.rmem after.rmem` | [memory/memory-report.md](memory/memory-report.md) |
-| Run a persistent query server (JSON-over-socket) | `inspector:rmem:serve snap.rmem` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
-| Let an AI assistant explore a graph | `inspector:rmem:mcp` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
+| Emit a self-contained HTML viz (Pack / Treemap / Sunburst / 3D Force) | `rmem:viz snap.rmem` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
+| Serve the viz over HTTP with a live focus bus (TUI ↔ browsers ↔ AI) | `rmem:live snap.rmem` (or `rmem:explore --http-bridge`) | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
+| Run a persistent query server (JSON-over-socket) | `rmem:serve snap.rmem` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
+| Let an AI assistant explore a graph | `rmem:mcp` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
 | Query via raw SQL (snapshot must be SQLite, `-f sqlite3`) | open the `.db` with `sqlite3` / `duckdb` / any SQL tool | [memory/memory-profiler-database.md](memory/memory-profiler-database.md) |
 
 ## Monitor VMs

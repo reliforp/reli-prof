@@ -624,4 +624,166 @@ class RmemExploreTuiTest extends TestCase
         $this->assertStringContainsString('[list', $out);
         $this->assertStringContainsString('Roots', $out);
     }
+
+    // =================================================================
+    // (roots) synthetic anchor
+    // =================================================================
+
+    public function testSentinelLabelIsRoots(): void
+    {
+        $tui = $this->makeTui();
+        $model = $this->createModel();
+        self::assertSame('(roots)', $model->nodeLabel(-1));
+        // Any negative id treated as sentinel.
+        self::assertSame('(roots)', $model->nodeLabel(-42));
+    }
+
+    public function testSentinelParentOfForestRootReturnsFriendlyLabel(): void
+    {
+        $model = $this->createModel();
+        $parents = $model->getParents(1); // node 1 is a forest root
+        self::assertNotEmpty($parents);
+        // Sentinel entry uses the "(roots)" label instead of "node#-1".
+        self::assertSame(-1, $parents[0]['node_id']);
+        self::assertSame('(roots)', $parents[0]['label']);
+    }
+
+    public function testSentinelChildrenAreForestRoots(): void
+    {
+        $model = $this->createModel();
+        $sentinelKids = $model->getChildren(-1);
+        self::assertNotEmpty($sentinelKids);
+        $ids = array_column($sentinelKids, 'node_id');
+        // Node 1 (the root object from setUp) must be among the
+        // sentinel's children so Enter on "(roots)" reaches every
+        // forest branch.
+        self::assertContains(1, $ids);
+    }
+
+    // =================================================================
+    // Follow mode
+    // =================================================================
+
+    public function testFollowModeTogglesAndEmitsFocus(): void
+    {
+        // Wire a real pipe so we can read what the TUI emits.
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+        self::assertNotFalse($pair);
+        [$readEnd, $writeEnd] = $pair;
+        stream_set_blocking($readEnd, false);
+
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+        $tui->setFocusEventPipe($writeEnd);
+
+        // Toggle follow (f), move selection once (↓), quit (q).
+        $term->script('f', "\e[B", 'q');
+        $tui->run();
+
+        $data = '';
+        while (($chunk = @fread($readEnd, 4096)) !== false && $chunk !== '') {
+            $data .= $chunk;
+        }
+        fclose($readEnd);
+        fclose($writeEnd);
+
+        self::assertNotSame('', $data, 'follow mode did not emit any focus event');
+        // Emitted payload is {"node_id": N}\n — just check for that shape.
+        self::assertMatchesRegularExpression('/\{"node_id":\d+\}/', $data);
+    }
+
+    public function testFollowModeSuppressesSentinelBroadcast(): void
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+        self::assertNotFalse($pair);
+        [$readEnd, $writeEnd] = $pair;
+        stream_set_blocking($readEnd, false);
+
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+        $tui->setFocusEventPipe($writeEnd);
+
+        // emitFocusEvent(-1) should be a no-op.
+        $this->inv($tui, 'emitFocusEvent', -1);
+        $data = '';
+        while (($chunk = @fread($readEnd, 4096)) !== false && $chunk !== '') {
+            $data .= $chunk;
+        }
+        fclose($readEnd);
+        fclose($writeEnd);
+        self::assertSame('', $data, 'sentinel focus leaked onto the pipe');
+    }
+
+    // =================================================================
+    // Mouse input
+    // =================================================================
+
+    public function testMouseLeftClickMovesSelectedRow(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Switch to top-retained so the list has > 1 rows, then
+        // SGR-click terminal row 6 → list data index
+        // = topRow + (row - 5) = 0 + 1 = 1.
+        $term->script('s', "\e[<0;20;6M", "\e[<0;20;6m", 'q');
+        $tui->run();
+
+        $r = new \ReflectionProperty($tui, 'selected');
+        $r->setAccessible(true);
+        self::assertSame(1, $r->getValue($tui));
+    }
+
+    public function testMouseDoubleClickEntersSandwich(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Two presses on the same row inside the double-click window
+        // must drill into sandwich mode. Releases (m→) are parsed and
+        // ignored by handleMouseEvent (not press events).
+        $term->script(
+            "\e[<0;20;5M",
+            "\e[<0;20;5m",
+            "\e[<0;20;5M",
+            "\e[<0;20;5m",
+            'q',
+        );
+        $tui->run();
+
+        $out = $term->plainOutput();
+        self::assertStringContainsString('sandwich', $out);
+    }
+
+    public function testMouseScrollWheelMovesSelection(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Switch to top-retained (multi-row) so a scroll-down can
+        // actually move the selection off 0.
+        // SGR scroll-down event (button 65 per MouseEvent::SCROLL_DOWN).
+        $term->script('s', "\e[<65;20;10M", 'q');
+        $tui->run();
+
+        $r = new \ReflectionProperty($tui, 'selected');
+        $r->setAccessible(true);
+        self::assertGreaterThan(0, $r->getValue($tui));
+    }
+
+    public function testMouseIgnoredDuringFilterPrompt(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+
+        // Open filter prompt with /, then "click" with the mouse. The
+        // click must not move selection — the prompt handler swallows
+        // everything until Esc.
+        $term->script('/', "\e[<0;20;8M", "\e[<0;20;8m", "\x1b", 'q');
+        $tui->run();
+
+        $r = new \ReflectionProperty($tui, 'selected');
+        $r->setAccessible(true);
+        self::assertSame(0, $r->getValue($tui));
+    }
 }

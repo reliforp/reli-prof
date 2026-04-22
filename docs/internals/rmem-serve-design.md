@@ -621,7 +621,7 @@ stdin management is awkward.
 ### MCP (Model Context Protocol) server
 
 Vendor-specific. Socket server is more universal — MCP adapter wraps
-it (see `inspector:rmem:mcp` below).
+it (see `rmem:mcp` below).
 
 ## Implementation order
 
@@ -664,7 +664,7 @@ it (see `inspector:rmem:mcp` below).
 
 ### MCP adapter — Implemented
 
-21. `inspector:rmem:mcp` — stdio JSON-RPC server implementing the
+21. `rmem:mcp` — stdio JSON-RPC server implementing the
     Model Context Protocol. Connects to the query server via
     `--rmem` (direct file load) or `--socket` (existing serve
     instance). Pass `--control` to enable `ui.*` tools.

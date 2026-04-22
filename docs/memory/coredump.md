@@ -42,7 +42,7 @@ $ php ./reli inspector:coredump /tmp/myapp.12345 --pid 12345 \
 
 # Feed the output into the normal analysis pipeline
 $ php ./reli inspector:memory:report snapshot.db
-$ php ./reli inspector:rmem:explore snapshot.db
+$ php ./reli rmem:explore snapshot.db
 ```
 
 The output of `inspector:coredump` uses the same
@@ -157,7 +157,7 @@ See `man 5 core` for the full bitmask.
   reli can attach.
 - [`inspector:memory:report`](memory-report.md) — generate an
   automated analysis report from the output.
-- [`inspector:rmem:explore`](rmem-explore-and-serve.md) — interactive
+- [`rmem:explore`](rmem-explore-and-serve.md) — interactive
   TUI over the SQLite output.
 - [`gcore` comparison](../internals/memory-dump-vs-gcore.md) — internals
   note on trade-offs between reli's native dump and ELF core files.

@@ -284,6 +284,14 @@ jobs:
       - name: Pull MySQL image for pdo_mysql tests
         run: docker pull mysql:8.0
 
+      - name: Enable core dumps
+        run: |
+          sudo mkdir -p /tmp/reli-test
+          sudo chmod 1777 /tmp/reli-test
+          sudo sysctl -w kernel.core_pattern='/tmp/reli-test/core.%e.%p.%t'
+          # Disable apport so it doesn't swallow cores.
+          sudo systemctl stop apport.service 2>/dev/null || true
+
       - name: Run target version tests
         env:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
@@ -297,6 +305,23 @@ jobs:
         with:
           name: reli-test-trace-${{ matrix.targets }}
           path: /tmp/reli-test/reli-test-trace.log
+          if-no-files-found: ignore
+
+      - name: Collect crash diagnostics on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/reli-crash
+          sudo cp /tmp/reli-test/core.* /tmp/reli-crash/ 2>/dev/null || true
+          sudo chmod -R a+r /tmp/reli-crash || true
+          sudo dmesg -T > /tmp/reli-crash/dmesg.log 2>/dev/null || true
+          ls -la /tmp/reli-crash/ || true
+
+      - name: Upload crash diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reli-crash-${{ matrix.targets }}
+          path: /tmp/reli-crash/
           if-no-files-found: ignore
 
       - name: Fix coverage paths from Docker container
@@ -556,6 +581,13 @@ jobs:
       - name: Pull MySQL image for pdo_mysql tests
         run: docker pull mysql:8.0
 
+      - name: Enable core dumps
+        run: |
+          sudo mkdir -p /tmp/reli-test
+          sudo chmod 1777 /tmp/reli-test
+          sudo sysctl -w kernel.core_pattern='/tmp/reli-test/core.%e.%p.%t'
+          sudo systemctl stop apport.service 2>/dev/null || true
+
       - name: Run target version tests
         env:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
@@ -569,6 +601,23 @@ jobs:
         with:
           name: reli-test-trace-${{ matrix.targets }}-arm64
           path: /tmp/reli-test/reli-test-trace.log
+          if-no-files-found: ignore
+
+      - name: Collect crash diagnostics on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/reli-crash
+          sudo cp /tmp/reli-test/core.* /tmp/reli-crash/ 2>/dev/null || true
+          sudo chmod -R a+r /tmp/reli-crash || true
+          sudo dmesg -T > /tmp/reli-crash/dmesg.log 2>/dev/null || true
+          ls -la /tmp/reli-crash/ || true
+
+      - name: Upload crash diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reli-crash-${{ matrix.targets }}-arm64
+          path: /tmp/reli-crash/
           if-no-files-found: ignore
 
       - name: Fix coverage paths from Docker container

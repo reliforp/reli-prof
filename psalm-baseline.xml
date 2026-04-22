@@ -10,7 +10,7 @@
       <code><![CDATA[$result['total_bytes'] / 1024.0]]></code>
     </InvalidOperand>
   </file>
-  <file src="src/Command/Inspector/RmemExploreCommand.php">
+  <file src="src/Command/Rmem/RmemExploreCommand.php">
     <MixedArrayAssignment>
       <code><![CDATA[$response['data']['serve_control']]]></code>
     </MixedArrayAssignment>
@@ -24,7 +24,7 @@
       <code><![CDATA[realpath($file)]]></code>
     </RiskyTruthyFalsyComparison>
   </file>
-  <file src="src/Command/Inspector/RmemMcpCommand.php">
+  <file src="src/Command/Rmem/RmemMcpCommand.php">
     <MixedAssignment>
       <code><![CDATA[$backendRequest[(string)$key]]]></code>
       <code><![CDATA[$id]]></code>
@@ -38,7 +38,7 @@
       <code><![CDATA[!($result['ok'] ?? false)]]></code>
     </RiskyTruthyFalsyComparison>
   </file>
-  <file src="src/Command/Inspector/RmemQueryCommand.php">
+  <file src="src/Command/Rmem/RmemQueryCommand.php">
     <MixedArgument>
       <code><![CDATA[$offset]]></code>
     </MixedArgument>
@@ -64,7 +64,7 @@
       <code><![CDATA[(int) $size[1]]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="src/Command/Inspector/RmemServeCommand.php">
+  <file src="src/Command/Rmem/RmemServeCommand.php">
     <MixedAssignment>
       <code><![CDATA[$decoded]]></code>
     </MixedAssignment>

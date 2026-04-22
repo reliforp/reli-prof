@@ -14,7 +14,7 @@ sudo php ./reli inspector:memory:dump --pid=<pid> --output=snapshot.relimem
 php ./reli inspector:memory:analyze snapshot.relimem -f binary -o snapshot.rmem
 
 # Browse or report on the graph
-php ./reli inspector:rmem:explore snapshot.rmem
+php ./reli rmem:explore snapshot.rmem
 php ./reli inspector:memory:report snapshot.rmem
 ```
 
