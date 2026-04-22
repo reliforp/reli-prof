@@ -59,10 +59,16 @@ A `[LOW] 722.27 MB impacted` finding on a heap whose total analysed size is
     }
 
 `retained` includes bytes in the shared subtree; multiplying by the number
-of owning copies counts those bytes N times. Short-term fix: clamp to
-`min($cnt * $retained, $heap_total_bytes)` and label the impact as
-"(overcounted via sharing)". Longer-term: compute the actual dedup saving
-as `$total - one_copy_retained` or via set-union over owned subtrees.
+of owning copies counts those bytes N times.
+
+This is part of a broader problem — see "The `impact_bytes` semantics
+problem" below for the general fix. The minimum patch to kill the
+"greater than total heap" embarrassment is:
+
+- Short-term: clamp to `min($cnt * $retained, $heap_total_bytes)` and
+  label the impact as "(overcounted via sharing)".
+- Medium-term: replace the value with a saving estimate (see section
+  below).
 
 ### B3. String previews with embedded newlines break the table
 
@@ -378,6 +384,99 @@ Scenarios captured so far:
 
 Thresholds chosen so glibc/mmap overhead (≤ 1.5×) never fires, and
 libxml2-scale gaps do.
+
+---
+
+## The `impact_bytes` semantics problem
+
+Findings are sorted by `impact_bytes` descending throughout the report.
+That only works if `impact_bytes` means the same thing across findings.
+Today, it doesn't.
+
+### Current meanings, finding-by-finding
+
+| Finding kind           | What `impact_bytes` is                        | Kind              |
+|------------------------|-----------------------------------------------|-------------------|
+| `choke_point`          | retained subtree that would free              | actionable        |
+| `structural_duplicate` | total - one_representative                    | actionable        |
+| `cycle_cluster`        | retained of the cycle                         | actionable        |
+| `bottleneck_path`      | retained at the **root** of the spine         | informational     |
+| `dominant_class`       | total class memory                            | informational     |
+| `property_scaling`     | sum of per-instance property memory           | informational     |
+| `companion_cluster`    | sum of companion class memory                 | informational     |
+| `empty_object`         | total object memory                           | informational     |
+| `dominant_type`        | total type memory                             | informational     |
+| `dedup_candidate`      | **cnt × retained** — double-counts sharing    | **fiction**       |
+| `dynamic_properties_overhead` | `avoidable` HashTable overhead         | actionable        |
+
+Three different things share one field name:
+
+1. *Actionable*: "if you fix this, you'd save up to this much."
+   Bounded above by the heap total. Good to sort on — sorting actually
+   means something.
+2. *Informational*: "how much memory fits this pattern."
+   Bounded above by the heap total. Sortable, but sorting-by-this mixes
+   "this is a lot of memory" (informational) with "you can save this
+   much" (actionable) into one list.
+3. *Fiction*: `cnt × retained` when retained includes shared subtree.
+   Unbounded — can exceed heap total (logger-stack: 722 MB impact on
+   11 MB heap). Not sortable in any meaningful sense.
+
+Sorting a list of mixed (1)/(2)/(3) by "impact_bytes desc" effectively
+ranks *fictions first*, *informational next*, *actual actions last* —
+exactly backwards.
+
+### Fix: split the field
+
+Rename `impact_bytes` into two narrowed fields and define them strictly:
+
+- `current_bytes` (optional): "how much memory currently fits this
+  pattern". Always ≤ heap total. Carries the informational quantity.
+- `potential_saving_bytes` (optional): "how much memory an action on
+  this finding could save, at best". Always ≤ `current_bytes`.
+  Carries the actionable quantity.
+
+Sort on `potential_saving_bytes` when present, falling back to
+`current_bytes`. That gets actionable findings to the top naturally.
+
+Per-kind mapping:
+
+| Finding kind           | `current_bytes`              | `potential_saving_bytes`    |
+|------------------------|------------------------------|-----------------------------|
+| `choke_point`          | retained subtree             | retained subtree            |
+| `structural_duplicate` | total instances              | total − one_representative  |
+| `cycle_cluster`        | retained cycle               | retained cycle              |
+| `dedup_candidate`      | total occurrences × shallow  | total − one_representative  |
+| `bottleneck_path`      | leaf retained                | —                           |
+| `dominant_class`       | total class memory           | —                           |
+| `property_scaling`     | sum of per-instance props    | —                           |
+| `companion_cluster`    | sum                          | —                           |
+| `empty_object`         | total object memory          | —                           |
+| `dominant_type`        | total type memory            | —                           |
+| `dynamic_properties_overhead` | structural bytes      | avoidable bytes             |
+
+Two consequences:
+
+- `dedup_candidate` stops producing fictional numbers — the
+  "722 MB impact on 11 MB heap" problem goes away definitionally.
+- The text formatter can display one line as
+  "Saves up to X (of Y currently in this pattern)" which reads as an
+  actual answer rather than an opaque number.
+
+### Alternative: drop `impact_bytes` from non-actionable findings
+
+Cheaper variant if we don't want to grow the schema: keep
+`impact_bytes` only on actionable findings (meaning 1 in the table
+above). Informational findings carry counts or sizes as plain `facts`
+entries, no `impact_bytes`. Sort the Findings section by the actionable
+field; render informational ones as footnotes or grouped under each
+actionable finding they support.
+
+This solves the "sorting nonsense" problem without adding a new field,
+but does change the schema for downstream consumers (breaking for any
+JSON consumer that reads `impact_bytes` on `dominant_class`).
+
+Either fix assumes JSON consumers will need a migration notice.
 
 ---
 
