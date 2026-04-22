@@ -6,18 +6,9 @@
 [![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.12.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.12.x)
 ![Psalm coverage](https://shepherd.dev/github/reliforp/reli-prof/coverage.svg?)
 
-Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler. 
+Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler.
 
-New here? [docs/getting-started.md](docs/getting-started.md) walks from install to your first trace. Looking for a specific task? The [documentation index](docs/README.md) maps "I want to X" to the right command and doc.
-
-## What can I use this for?
-
-- **Where time is spent** — sampling profiler for PHP call stacks, with optional C-level frames and per-opcode detail. Capture to the compact `.rbt` binary format, browse in the `rbt:explore` TUI, or convert to speedscope / pprof / flamegraph / callgrind / folded.
-- **Where memory is used** — reconstruct the target's PHP heap into a queryable graph (`.rmem`). Open it interactively with `rmem:explore` (TUI), `rmem:viz` (standalone HTML — Pack / Treemap / Sunburst / 3D Force) or `rmem:live` (HTTP/SSE so TUI / browsers / AI share one focus); get a prioritised findings report with `memory:report`, or compare two snapshots with `memory:compare` to track regressions.
-- **What values flow through** — read PHP variable values from a running process without modifying it (`inspector:peek-var`), or attach variable values to every trace sample (`inspector:trace --trace-var`) so you can join runtime state to hot stacks.
-- **When something goes wrong** — trigger captures on runtime conditions. `inspector:watch` takes a memory dump or trace when memory thresholds, function calls, or variable conditions are met. `inspector:sidecar` accepts on-demand dump requests from the app over a Unix socket — ideal for `memory_limit` crash analysis.
-
-For the full catalogue of tasks and commands, see the [documentation index](docs/README.md).
+Use it for call-trace sampling (where time is spent), memory-graph analysis (where memory is used), runtime variable inspection, and condition-triggered captures. For first-use, see [docs/getting-started.md](docs/getting-started.md); for the task map, the [documentation index](docs/README.md).
 
 ## Showcase
 
