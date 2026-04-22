@@ -438,6 +438,133 @@ class SummaryPassesTest extends BaseTestCase
         $this->assertSame([], $pass->analyze());
     }
 
+    public function testChunkCacheHeuristicPassStateFindingContainsAllFactsAndReplayQuery(): void
+    {
+        $pass = new ChunkCacheHeuristicPass([
+            [
+                'chunks_count' => 3,
+                'peak_chunks_count' => 5,
+                'cached_chunks_count' => 2,
+                'cached_chunks_size' => 4 * 1024 * 1024,
+                'last_chunks_delete_boundary' => 3,
+                'last_chunks_delete_count' => 1,
+            ],
+        ]);
+        $state = array_values(array_filter(
+            $pass->analyze(),
+            fn(Finding $f) => $f->kind === 'zendmm_chunk_heuristic_state',
+        ));
+        $this->assertCount(1, $state);
+        $facts = $state[0]->facts;
+        foreach (
+            [
+                'chunks_count',
+                'peak_chunks_count',
+                'cached_chunks_count',
+                'cached_chunks_size',
+                'last_chunks_delete_boundary',
+                'last_chunks_delete_count',
+            ] as $key
+        ) {
+            $this->assertArrayHasKey($key, $facts, "fact '{$key}' missing");
+        }
+        $this->assertStringContainsString('summary', $state[0]->replay_query);
+    }
+
+    public function testChunkCacheHeuristicPassFlagsImminentAtExactThreshold(): void
+    {
+        // The heuristic bumps cached_chunks_max when last_chunks_delete_count
+        // reaches 4, so a value of exactly 4 is still "just triggered" and
+        // should be flagged as well as 3 (one-short).
+        $pass = new ChunkCacheHeuristicPass([
+            [
+                'chunks_count' => 10,
+                'peak_chunks_count' => 10,
+                'cached_chunks_count' => 0,
+                'cached_chunks_size' => 0,
+                'last_chunks_delete_boundary' => 10,
+                'last_chunks_delete_count' => 4,
+            ],
+        ]);
+        $kinds = array_map(fn(Finding $f) => $f->kind, $pass->analyze());
+        $this->assertContains('zendmm_cache_expansion_imminent', $kinds);
+    }
+
+    public function testChunkCacheHeuristicPassDoesNotFlagImminentBelowThreshold(): void
+    {
+        $pass = new ChunkCacheHeuristicPass([
+            [
+                'chunks_count' => 10,
+                'peak_chunks_count' => 10,
+                'cached_chunks_count' => 0,
+                'cached_chunks_size' => 0,
+                'last_chunks_delete_boundary' => 10,
+                'last_chunks_delete_count' => 2,
+            ],
+        ]);
+        $kinds = array_map(fn(Finding $f) => $f->kind, $pass->analyze());
+        $this->assertNotContains('zendmm_cache_expansion_imminent', $kinds);
+    }
+
+    public function testChunkCacheHeuristicPassDoesNotFlagBloatWhenTotalTooSmall(): void
+    {
+        // total = chunks_count + cached_chunks_count = 3, below the minimum
+        // of 4; don't flag to avoid spurious findings on tiny heaps.
+        $pass = new ChunkCacheHeuristicPass([
+            [
+                'chunks_count' => 1,
+                'peak_chunks_count' => 3,
+                'cached_chunks_count' => 2,
+                'cached_chunks_size' => 2 * 2 * 1024 * 1024,
+                'last_chunks_delete_boundary' => 1,
+                'last_chunks_delete_count' => 0,
+            ],
+        ]);
+        $kinds = array_map(fn(Finding $f) => $f->kind, $pass->analyze());
+        $this->assertNotContains('zendmm_cache_bloat', $kinds);
+    }
+
+    public function testChunkCacheHeuristicPassDoesNotFlagBloatWhenCachedEqualsOne(): void
+    {
+        // cached = 1 should not trigger bloat even if it >= in-use — a
+        // single cached chunk is just the normal steady-state buffer.
+        $pass = new ChunkCacheHeuristicPass([
+            [
+                'chunks_count' => 1,
+                'peak_chunks_count' => 5,
+                'cached_chunks_count' => 1,
+                'cached_chunks_size' => 2 * 1024 * 1024,
+                'last_chunks_delete_boundary' => 1,
+                'last_chunks_delete_count' => 0,
+            ],
+        ]);
+        $kinds = array_map(fn(Finding $f) => $f->kind, $pass->analyze());
+        $this->assertNotContains('zendmm_cache_bloat', $kinds);
+    }
+
+    public function testChunkCacheHeuristicPassFlagsBloatAtBoundary(): void
+    {
+        // chunks_count + cached_chunks_count == 4 hits the minimum total,
+        // cached >= in-use, cached >= 2 — all three bloat conditions met.
+        $pass = new ChunkCacheHeuristicPass([
+            [
+                'chunks_count' => 2,
+                'peak_chunks_count' => 5,
+                'cached_chunks_count' => 2,
+                'cached_chunks_size' => 2 * 2 * 1024 * 1024,
+                'last_chunks_delete_boundary' => 2,
+                'last_chunks_delete_count' => 0,
+            ],
+        ]);
+        $bloat = array_values(array_filter(
+            $pass->analyze(),
+            fn(Finding $f) => $f->kind === 'zendmm_cache_bloat',
+        ));
+        $this->assertCount(1, $bloat);
+        $this->assertSame('medium', $bloat[0]->severity->value);
+        $this->assertSame(2 * 2 * 1024 * 1024, $bloat[0]->impact_bytes);
+    }
+
     // ---- ChunkFragmentationPass ----
 
     public function testChunkFragmentationPassEmitsStateFinding(): void
@@ -479,5 +606,129 @@ class SummaryPassesTest extends BaseTestCase
     {
         $pass = new ChunkFragmentationPass([[]]);
         $this->assertSame([], $pass->analyze());
+    }
+
+    public function testChunkFragmentationPassStateFindingContainsAllFactsAndReplayQuery(): void
+    {
+        $pass = new ChunkFragmentationPass([
+            [
+                'chunks_count' => 4,
+                'chunks_total_free_bytes' => 512 * 1024,
+                'chunks_mostly_empty_count' => 0,
+                'zend_mm_heap_usage' => 8 * 1024 * 1024,
+            ],
+        ]);
+        $state = array_values(array_filter(
+            $pass->analyze(),
+            fn(Finding $f) => $f->kind === 'zendmm_chunk_fragmentation_state',
+        ));
+        $this->assertCount(1, $state);
+        $facts = $state[0]->facts;
+        $this->assertSame(4, $facts['chunks_count']);
+        $this->assertSame(512 * 1024, $facts['chunks_total_free_bytes']);
+        $this->assertSame(0, $facts['chunks_mostly_empty_count']);
+        $this->assertStringContainsString('summary', $state[0]->replay_query);
+    }
+
+    public function testChunkFragmentationPassPinnedChunksWarningSeverityBelowFour(): void
+    {
+        $pass = new ChunkFragmentationPass([
+            [
+                'chunks_count' => 8,
+                'chunks_total_free_bytes' => 0,
+                'chunks_mostly_empty_count' => 3,
+                'zend_mm_heap_usage' => 16 * 1024 * 1024,
+            ],
+        ]);
+        $pinned = array_values(array_filter(
+            $pass->analyze(),
+            fn(Finding $f) => $f->kind === 'zendmm_chunks_pinned_by_fragmentation',
+        ));
+        $this->assertCount(1, $pinned);
+        $this->assertSame('warning', $pinned[0]->severity->value);
+        $this->assertSame(3 * 2 * 1024 * 1024, $pinned[0]->impact_bytes);
+    }
+
+    public function testChunkFragmentationPassPinnedChunksMediumSeverityAtFour(): void
+    {
+        $pass = new ChunkFragmentationPass([
+            [
+                'chunks_count' => 8,
+                'chunks_total_free_bytes' => 0,
+                'chunks_mostly_empty_count' => 4,
+                'zend_mm_heap_usage' => 16 * 1024 * 1024,
+            ],
+        ]);
+        $pinned = array_values(array_filter(
+            $pass->analyze(),
+            fn(Finding $f) => $f->kind === 'zendmm_chunks_pinned_by_fragmentation',
+        ));
+        $this->assertCount(1, $pinned);
+        $this->assertSame('medium', $pinned[0]->severity->value);
+        $this->assertSame(4 * 2 * 1024 * 1024, $pinned[0]->impact_bytes);
+    }
+
+    public function testChunkFragmentationPassPinnedChunksSingularGrammar(): void
+    {
+        $pass = new ChunkFragmentationPass([
+            [
+                'chunks_count' => 4,
+                'chunks_total_free_bytes' => 0,
+                'chunks_mostly_empty_count' => 1,
+                'zend_mm_heap_usage' => 16 * 1024 * 1024,
+            ],
+        ]);
+        $pinned = array_values(array_filter(
+            $pass->analyze(),
+            fn(Finding $f) => $f->kind === 'zendmm_chunks_pinned_by_fragmentation',
+        ));
+        $this->assertCount(1, $pinned);
+        $this->assertStringContainsString('1 in-use chunk is', $pinned[0]->summary);
+    }
+
+    public function testChunkFragmentationPassHeapFragmentationNotFlaggedWhenFreeBelowUsage(): void
+    {
+        $pass = new ChunkFragmentationPass([
+            [
+                'chunks_count' => 8,
+                'chunks_total_free_bytes' => 2 * 1024 * 1024,
+                'chunks_mostly_empty_count' => 0,
+                'zend_mm_heap_usage' => 16 * 1024 * 1024,
+            ],
+        ]);
+        $kinds = array_map(fn(Finding $f) => $f->kind, $pass->analyze());
+        $this->assertNotContains('zendmm_heap_fragmentation_high', $kinds);
+    }
+
+    public function testChunkFragmentationPassHeapFragmentationImpactBytes(): void
+    {
+        $pass = new ChunkFragmentationPass([
+            [
+                'chunks_count' => 20,
+                'chunks_total_free_bytes' => 30 * 1024 * 1024,
+                'chunks_mostly_empty_count' => 0,
+                'zend_mm_heap_usage' => 10 * 1024 * 1024,
+            ],
+        ]);
+        $high = array_values(array_filter(
+            $pass->analyze(),
+            fn(Finding $f) => $f->kind === 'zendmm_heap_fragmentation_high',
+        ));
+        $this->assertCount(1, $high);
+        $this->assertSame(30 * 1024 * 1024, $high[0]->impact_bytes);
+    }
+
+    public function testChunkFragmentationPassDegradesWhenFragmentationAggregatesMissing(): void
+    {
+        // Summary from an older Reli version: chunks_count present but not
+        // the new fragmentation aggregates. State finding still emits with
+        // zeros; no spurious pinned/high-fragmentation findings.
+        $pass = new ChunkFragmentationPass([
+            ['chunks_count' => 5, 'zend_mm_heap_usage' => 16 * 1024 * 1024],
+        ]);
+        $kinds = array_map(fn(Finding $f) => $f->kind, $pass->analyze());
+        $this->assertContains('zendmm_chunk_fragmentation_state', $kinds);
+        $this->assertNotContains('zendmm_chunks_pinned_by_fragmentation', $kinds);
+        $this->assertNotContains('zendmm_heap_fragmentation_high', $kinds);
     }
 }

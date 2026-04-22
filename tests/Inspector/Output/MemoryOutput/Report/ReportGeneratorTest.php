@@ -346,6 +346,96 @@ class ReportGeneratorTest extends BaseTestCase
         $this->assertTrue($graphPassRan, 'Graph-based passes should run with full_analysis=true');
     }
 
+    public function testChunkHeuristicStateFindingWiredIntoReport(): void
+    {
+        $this->buildMinimalDb([
+            [
+                'zend_mm_heap_total' => 10485760,
+                'zend_mm_heap_usage' => 8388608,
+                'chunks_count' => 3,
+                'peak_chunks_count' => 5,
+                'cached_chunks_count' => 1,
+                'cached_chunks_size' => 2 * 1024 * 1024,
+                'last_chunks_delete_boundary' => 3,
+                'last_chunks_delete_count' => 1,
+            ],
+        ]);
+        $result = $this->generateReport();
+
+        $state = $this->findByKind($result, 'zendmm_chunk_heuristic_state');
+        $this->assertCount(1, $state);
+        $this->assertSame('info', $state[0]->severity->value);
+    }
+
+    public function testChunkFragmentationStateFindingWiredIntoReport(): void
+    {
+        $this->buildMinimalDb([
+            [
+                'zend_mm_heap_total' => 10485760,
+                'zend_mm_heap_usage' => 8388608,
+                'chunks_count' => 4,
+                'chunks_total_free_bytes' => 512 * 1024,
+                'chunks_mostly_empty_count' => 0,
+            ],
+        ]);
+        $result = $this->generateReport();
+
+        $state = $this->findByKind($result, 'zendmm_chunk_fragmentation_state');
+        $this->assertCount(1, $state);
+        $this->assertSame('info', $state[0]->severity->value);
+    }
+
+    public function testChunkCacheBloatEmittedWhenConditionsMet(): void
+    {
+        $this->buildMinimalDb([
+            [
+                'zend_mm_heap_total' => 10485760,
+                'zend_mm_heap_usage' => 8388608,
+                'chunks_count' => 2,
+                'peak_chunks_count' => 10,
+                'cached_chunks_count' => 8,
+                'cached_chunks_size' => 16 * 1024 * 1024,
+                'last_chunks_delete_boundary' => 2,
+                'last_chunks_delete_count' => 0,
+            ],
+        ]);
+        $result = $this->generateReport();
+
+        $bloat = $this->findByKind($result, 'zendmm_cache_bloat');
+        $this->assertCount(1, $bloat);
+        $this->assertSame(16 * 1024 * 1024, $bloat[0]->impact_bytes);
+    }
+
+    public function testChunkPinnedByFragmentationEmittedWhenConditionsMet(): void
+    {
+        $this->buildMinimalDb([
+            [
+                'zend_mm_heap_total' => 10485760,
+                'zend_mm_heap_usage' => 8388608,
+                'chunks_count' => 6,
+                'chunks_total_free_bytes' => 10 * 1024 * 1024,
+                'chunks_mostly_empty_count' => 5,
+            ],
+        ]);
+        $result = $this->generateReport();
+
+        $pinned = $this->findByKind($result, 'zendmm_chunks_pinned_by_fragmentation');
+        $this->assertCount(1, $pinned);
+    }
+
+    public function testChunkPassesSkippedGracefullyWhenCountersMissing(): void
+    {
+        // Older-version summary without any chunk counters.
+        $this->buildMinimalDb([
+            ['zend_mm_heap_total' => 10485760, 'zend_mm_heap_usage' => 8388608],
+            ['heap_memory_analyzed_percentage' => 99.0],
+        ]);
+        $result = $this->generateReport();
+
+        $this->assertSame([], $this->findByKind($result, 'zendmm_chunk_heuristic_state'));
+        $this->assertSame([], $this->findByKind($result, 'zendmm_chunk_fragmentation_state'));
+    }
+
     // ---- Helpers ----
 
     private function generateReport(): ReportResult
