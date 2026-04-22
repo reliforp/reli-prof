@@ -89,8 +89,6 @@ sudo php ./reli inspector:trace -p <pid>
 sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
 ```
 
-Key options: `-d/--depth`, `-s/--sleep-ns`, `-S/--stop-process`, `-t/--template=phpspy|phpspy_with_opcode|json_lines`, `-F/--output-format=rbt|rbt-bundled`, `-o/--output`, `--with-native-trace`, `--trace-var`.
-
 ### Daemon mode
 Concurrently trace every process whose command line matches a regex (e.g. an FPM pool):
 
@@ -98,16 +96,12 @@ Concurrently trace every process whose command line matches a regex (e.g. an FPM
 sudo php ./reli inspector:daemon -P "^php-fpm" -F rbt -o /path/to/output_dir/
 ```
 
-Key options: `-P/--target-regex` (required), `-T/--threads`, `-d/--depth`, `-s/--sleep-ns`, `-F/--output-format`, `-o/--output`, `--with-native-trace`, `--trace-var`.
-
 ### top-like mode
 Real-time aggregated view across matching processes, in the spirit of UNIX `top`:
 
 ```bash
 sudo php ./reli inspector:top -P "^php-fpm"
 ```
-
-Key options: `-P/--target-regex` (required), `-T/--threads`, `-d/--depth`, `-s/--sleep-ns`, `--with-native-trace`.
 
 ### Get the address of EG
 Useful for feeding phpspy manually, or for advanced integrations:
@@ -131,7 +125,6 @@ sudo php ./reli phpspy:trace -p <pid>
 sudo php ./reli phpspy:daemon -P "^php-fpm"
 ```
 
-Key `phpspy:trace` / `phpspy:daemon` options: `-s/--sleep-ns`, `-b/--buffer-size`, `-H/--rate-hz`, `--phpspy-args` (passthrough to phpspy), `--phpspy-path`, `-o/--output`.
 
 ## Capture a memory graph
 Reconstruct the target's PHP heap into an analysable graph. `.rmem` is the fastest format and is what every analyser (`rmem:explore`, `memory:report`, `memory:compare`, `rmem:viz`, `rmem:live`, `rmem:serve`, `rmem:mcp`) reads natively.
@@ -148,7 +141,6 @@ sudo php ./reli inspector:memory:dump -p <pid> -o dump.relimem
 php ./reli inspector:memory:analyze dump.relimem -f binary -o snapshot.rmem
 ```
 
-Key options: `-f/--output-format=binary|sqlite3|json|report|report-json|mysql|postgresql`, `-o/--output`, `--stop-process/--no-stop-process`, `--pretty-print`, `--db-host`/`--db-port`/`--db-name`/`--db-user`/`--db-password`, `--memory-usage-error-file`/`--memory-usage-error-line`.
 
 See [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for the dump-then-analyse flow, [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md) for the interactive TUI, [docs/memory/memory-report.md](docs/memory/memory-report.md) for automated reports and comparisons, [docs/memory/coredump.md](docs/memory/coredump.md) for post-mortem from a core file, and [docs/memory/memory-profiler.md](docs/memory/memory-profiler.md) for the JSON + `jq` deep-dive.
 
