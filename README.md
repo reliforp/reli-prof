@@ -72,16 +72,6 @@ $ php ./reli inspector:memory:compare before.rmem after.rmem
 
 Full reference (output formats, thresholds, JSON mode): [docs/memory/memory-report.md](docs/memory/memory-report.md). Capture options (`--exclude-heap`, portable dumps, core-file analysis): [docs/memory/memory-dump.md](docs/memory/memory-dump.md), [docs/memory/coredump.md](docs/memory/coredump.md).
 
-### Flamegraph from a `.rbt`
-
-```bash
-$ ./reli converter:flamegraph <trace.rbt >flame.svg
-```
-
-![flame](https://user-images.githubusercontent.com/6488121/153741551-3f0fc730-c748-4908-b8ac-7c3f46a5bdbc.svg)
-
-Also available: `converter:speedscope`, `converter:pprof`, `converter:callgrind`, `converter:folded`, `converter:phpspy`, `rbt:recover`. See [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md).
-
 ## Troubleshooting
 ### I get an error message "php module not found" and can't get a trace!
 If your PHP binary uses a non-standard binary name that does not end with `/php`, use the `--php-regex` option to specify the name of the executable (or shared object) that contains the PHP interpreter.
