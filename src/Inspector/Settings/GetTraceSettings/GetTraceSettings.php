@@ -17,7 +17,7 @@ use Reli\Inspector\Watch\VariableSpec;
 
 final class GetTraceSettings
 {
-    public const BULK_STACK_COPY_DEFAULT_MAX_SIZE = 65536;
+    public const BULK_STACK_COPY_DEFAULT_MAX_SIZE = 1048576;
 
     /**
      * @param int|null $bulk_stack_copy_max_size null = disabled, int = max bytes to prefetch

@@ -37,6 +37,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
             'with-native-trace' => false,
             'native-trace-anytime' => false,
             'bulk-stack-copy' => null,
+            'no-bulk-stack-copy' => false,
             'trace-var' => [],
             'trace-var-every' => null,
             'trace-var-on-function' => null,
@@ -59,7 +60,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
 
         $this->assertSame(10, $settings->depth);
         $this->assertFalse($settings->with_native_trace);
-        $this->assertNull($settings->bulk_stack_copy_max_size);
+        $this->assertSame(GetTraceSettings::BULK_STACK_COPY_DEFAULT_MAX_SIZE, $settings->bulk_stack_copy_max_size);
         $this->assertSame([], $settings->var_specs);
         $this->assertSame(1, $settings->var_every);
         $this->assertNull($settings->var_on_function);
@@ -73,6 +74,25 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
 
         $this->assertSame(PHP_INT_MAX, $settings->depth);
         $this->assertFalse($settings->with_native_trace);
+        // bulk-stack-copy is default-on
+        $this->assertSame(GetTraceSettings::BULK_STACK_COPY_DEFAULT_MAX_SIZE, $settings->bulk_stack_copy_max_size);
+    }
+
+    public function testFromConsoleInputNoBulkStackCopyDisables(): void
+    {
+        $input = $this->buildInput(['no-bulk-stack-copy' => true]);
+
+        $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
+
+        $this->assertNull($settings->bulk_stack_copy_max_size);
+    }
+
+    public function testFromConsoleInputBulkStackCopyZeroDisables(): void
+    {
+        $input = $this->buildInput(['bulk-stack-copy' => '0']);
+
+        $settings = (new GetTraceSettingsFromConsoleInput())->createSettings($input);
+
         $this->assertNull($settings->bulk_stack_copy_max_size);
     }
 
@@ -91,7 +111,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
 
         $this->assertTrue($settings->with_native_trace);
         $this->assertFalse($settings->native_trace_anytime);
-        $this->assertNull($settings->bulk_stack_copy_max_size);
+        $this->assertSame(GetTraceSettings::BULK_STACK_COPY_DEFAULT_MAX_SIZE, $settings->bulk_stack_copy_max_size);
     }
 
     public function testFromConsoleInputNativeTraceAnytime(): void
@@ -102,7 +122,7 @@ class GetTraceSettingsFromConsoleInputTest extends BaseTestCase
 
         $this->assertTrue($settings->with_native_trace); // implied by anytime
         $this->assertTrue($settings->native_trace_anytime);
-        $this->assertNull($settings->bulk_stack_copy_max_size);
+        $this->assertSame(GetTraceSettings::BULK_STACK_COPY_DEFAULT_MAX_SIZE, $settings->bulk_stack_copy_max_size);
     }
 
     public function testFromConsoleInputBulkStackCopyFlag(): void

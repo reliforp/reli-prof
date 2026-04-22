@@ -218,6 +218,77 @@ class BufferedMemoryReaderTest extends TestCase
     }
 
     #[Test]
+    public function testPrefetchAdditionalAppendsWithoutClearingExistingSlots(): void
+    {
+        $mock = $this->createMockReader();
+        $buffered = new BufferedMemoryReader($mock);
+
+        $pid = getmypid();
+        $ffi = FFI::cdef('');
+        $region1 = $ffi->new('unsigned char[8]');
+        $region2 = $ffi->new('unsigned char[8]');
+        $region3 = $ffi->new('unsigned char[8]');
+        assert($region1 !== null && $region2 !== null && $region3 !== null);
+        FFI::memcpy($region1, 'AAAAAAAA', 8);
+        FFI::memcpy($region2, 'BBBBBBBB', 8);
+        FFI::memcpy($region3, 'CCCCCCCC', 8);
+
+        $ptr1 = FFI::addr($region1);
+        $ptr2 = FFI::addr($region2);
+        $ptr3 = FFI::addr($region3);
+        $addr1 = FFIHelper::cast('long', $ptr1)->cdata;
+        $addr2 = FFIHelper::cast('long', $ptr2)->cdata;
+        $addr3 = FFIHelper::cast('long', $ptr3)->cdata;
+
+        $buffered->prefetchScatterGather($pid, [
+            ['address' => $addr1, 'size' => 8],
+            ['address' => $addr2, 'size' => 8],
+        ]);
+
+        $ok = $buffered->prefetchAdditional($pid, $addr3, 8);
+        $this->assertTrue($ok);
+
+        // All three regions must still be readable
+        $this->assertSame('AAAAAAAA', FFI::string($buffered->read($pid, $addr1, 8), 8));
+        $this->assertSame('BBBBBBBB', FFI::string($buffered->read($pid, $addr2, 8), 8));
+        $this->assertSame('CCCCCCCC', FFI::string($buffered->read($pid, $addr3, 8), 8));
+
+        $this->assertSame(0, $mock->readCount);
+    }
+
+    #[Test]
+    public function testPrefetchAdditionalFailsWhenNoSlotIsFree(): void
+    {
+        $mock = $this->createMockReader();
+        $buffered = new BufferedMemoryReader($mock);
+
+        $pid = getmypid();
+        $ffi = FFI::cdef('');
+        $regions = [];
+        $addrs = [];
+        for ($i = 0; $i < BufferedMemoryReader::MAX_SCATTER_GATHER_REGIONS; $i++) {
+            $regions[$i] = $ffi->new('unsigned char[8]');
+            assert($regions[$i] !== null);
+            FFI::memcpy($regions[$i], str_repeat(chr(ord('A') + $i), 8), 8);
+            $ptr = FFI::addr($regions[$i]);
+            $addrs[$i] = FFIHelper::cast('long', $ptr)->cdata;
+        }
+        $sg_regions = [];
+        for ($i = 0; $i < BufferedMemoryReader::MAX_SCATTER_GATHER_REGIONS; $i++) {
+            $sg_regions[] = ['address' => $addrs[$i], 'size' => 8];
+        }
+        $buffered->prefetchScatterGather($pid, $sg_regions);
+
+        $extra = $ffi->new('unsigned char[8]');
+        assert($extra !== null);
+        $extra_ptr = FFI::addr($extra);
+        $extra_addr = FFIHelper::cast('long', $extra_ptr)->cdata;
+
+        $ok = $buffered->prefetchAdditional($pid, $extra_addr, 8);
+        $this->assertFalse($ok);
+    }
+
+    #[Test]
     public function testScatterGatherClearsOldBuffers(): void
     {
         $mock = $this->createMockReader();

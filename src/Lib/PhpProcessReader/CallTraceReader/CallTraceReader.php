@@ -37,8 +37,37 @@ use Reli\Lib\Process\ProcessSpecifier;
 
 final class CallTraceReader
 {
+    /** Offset of zend_vm_stack->prev within the segment header. */
+    private const ZEND_VM_STACK_PREV_OFFSET = 16;
+    /** Offset of zend_vm_stack->top within the segment header. */
+    private const ZEND_VM_STACK_TOP_OFFSET = 0;
+
+    /**
+     * Scatter-gather layout tuning for bulk VM stack prefetch.
+     *
+     * Linux's process_vm_readv reads iovs in order and within each iov low
+     * -> high. To minimize the time gap between capturing EG(current_execute_data)
+     * (read first, at t0) and snapshotting the frame it points to, the iov
+     * containing the live top frames is placed right after the CED iov so it
+     * is read next. The remainder (cold, nearly-immutable deeper frames) is
+     * read last.
+     *
+     * HOT_BELOW_TOP_BYTES: how many bytes below EG(vm_stack_top) to include
+     *   in the hot chunk. Must comfortably cover the active frames the chain
+     *   walker actually touches (~65 frames at ~128B/frame = 8KB).
+     *
+     * HOT_ABOVE_TOP_BYTES: margin above vm_stack_top included in the hot
+     *   chunk, to catch frames pushed between Step 1 (reading EG fields) and
+     *   Step 2 (the actual scatter-gather read).
+     */
+    private const HOT_BELOW_TOP_BYTES = 8192;
+    private const HOT_ABOVE_TOP_BYTES = 16384;
+
     private ?ZendTypeReader $zend_type_reader = null;
     private bool $bulk_stack_copy_enabled = false;
+
+    /** Base address of the VM stack segment last prefetched, for chain walk lazy-load. */
+    private int $current_vm_stack_base = 0;
 
     public function __construct(
         private MemoryReaderInterface $memory_reader,
@@ -213,28 +242,36 @@ final class CallTraceReader
             return null;
         }
 
-        // Prefetch up to vm_stack_top + 16KB margin, capped at vm_stack_end.
-        // The margin covers frames that may be pushed between Step 1 and Step 2.
-        $margin = 16384; // 16KB ≈ ~130 extra frames of headroom
-        $prefetch_end = min(
-            $vm_stack_top_raw->value + $margin,
+        $stack_regions = self::computeVmStackBulkRegions(
+            $vm_stack_address,
+            $vm_stack_top_raw->value,
             $vm_stack_end_raw->value,
         );
-        $stack_size = $prefetch_end - $vm_stack_address;
-        if ($stack_size <= 0 || $stack_size > $this->memory_reader->getMaxPrefetchSize()) {
+        $total_stack_size = 0;
+        foreach ($stack_regions as $r) {
+            $total_stack_size += $r['size'];
+        }
+        if (
+            $total_stack_size <= 0
+            || $total_stack_size > $this->memory_reader->getMaxPrefetchSize()
+        ) {
             return null;
         }
 
-        // Step 2: Scatter-gather read current_execute_data + VM stack in one syscall
+        // Step 2: Scatter-gather read current_execute_data + VM stack in one syscall.
+        // Order: CED first, then HOT chunk (frames near vm_stack_top, where the
+        // chain walker starts), then COLD chunk (deeper frames). See the class
+        // constants HOT_{BELOW,ABOVE}_TOP_BYTES for the layout rationale.
         [$ced_offset,] = $zend_type_reader->getOffsetAndSizeOfMember(
             'zend_executor_globals',
             'current_execute_data'
         );
 
-        $this->memory_reader->prefetchScatterGather($pid, [
-            ['address' => $eg_address + $ced_offset, 'size' => $ptr_size],
-            ['address' => $vm_stack_address, 'size' => $stack_size],
-        ]);
+        $regions = [['address' => $eg_address + $ced_offset, 'size' => $ptr_size]];
+        foreach ($stack_regions as $r) {
+            $regions[] = $r;
+        }
+        $this->memory_reader->prefetchScatterGather($pid, $regions);
 
         // Read current_execute_data from the scatter-gather buffer
         $ced_cdata = $this->memory_reader->read($pid, $eg_address + $ced_offset, $ptr_size);
@@ -245,11 +282,102 @@ final class CallTraceReader
             return null;
         }
 
+        // Record the current segment base so the chain walk can lazily follow
+        // `zend_vm_stack->prev` into older segments on buffer miss.
+        $this->current_vm_stack_base = $vm_stack_address;
+
         return new Pointer(
             ZendExecuteData::class,
             $ced_address,
             $zend_type_reader->sizeOf('zend_execute_data'),
         );
+    }
+
+    /**
+     * Build the VM-stack portion of the scatter-gather iov list, split so the
+     * kernel reads hot frames (near vm_stack_top) right after the CED iov and
+     * cold frames (near <main>) last.
+     *
+     * Returned regions are ordered for iov placement: hot chunk first, cold
+     * chunk second (when a split is needed). For shallow stacks where the hot
+     * window already reaches the segment base, a single region is returned.
+     *
+     * @return list<array{address: int, size: int}>
+     */
+    public static function computeVmStackBulkRegions(
+        int $vm_stack_address,
+        int $vm_stack_top,
+        int $vm_stack_end,
+    ): array {
+        $hot_start = max($vm_stack_address, $vm_stack_top - self::HOT_BELOW_TOP_BYTES);
+        $hot_end = min($vm_stack_end, $vm_stack_top + self::HOT_ABOVE_TOP_BYTES);
+        if ($hot_end <= $hot_start) {
+            return [];
+        }
+        $hot_size = $hot_end - $hot_start;
+
+        if ($hot_start <= $vm_stack_address) {
+            // Whole stack fits in the hot window.
+            return [['address' => $vm_stack_address, 'size' => $hot_size]];
+        }
+
+        $cold_size = $hot_start - $vm_stack_address;
+        return [
+            ['address' => $hot_start, 'size' => $hot_size],
+            ['address' => $vm_stack_address, 'size' => $cold_size],
+        ];
+    }
+
+    /**
+     * Lazily bulk-read a previous VM stack segment into an additional buffer
+     * slot so the chain walk can continue following `prev_execute_data`
+     * pointers that cross segment boundaries (common with Fibers, whose
+     * initial segment is only 4KB).
+     *
+     * Returns the prev-of-prev segment base address for further chaining,
+     * or null on failure / end-of-chain.
+     */
+    private function loadPrevSegment(
+        int $pid,
+        int $seg_base_address,
+        Dereferencer $dereferencer,
+    ): ?int {
+        if (!$this->memory_reader instanceof BufferedMemoryReader) {
+            return null;
+        }
+
+        // Read prev segment's header fields via inner reader (small one-offs).
+        // zend_vm_stack layout: { zval *top; zval *end; zend_vm_stack prev; }
+        try {
+            $top_pointer = new Pointer(
+                RawInt64::class,
+                $seg_base_address + self::ZEND_VM_STACK_TOP_OFFSET,
+                8,
+            );
+            $seg_top = $dereferencer->deref($top_pointer)->value;
+            $prev_pointer = new Pointer(
+                RawInt64::class,
+                $seg_base_address + self::ZEND_VM_STACK_PREV_OFFSET,
+                8,
+            );
+            $prev_of_prev = $dereferencer->deref($prev_pointer)->value;
+        } catch (MemoryReaderException) {
+            return null;
+        }
+
+        if ($seg_top <= $seg_base_address) {
+            return null;
+        }
+        $data_size = $seg_top - $seg_base_address;
+        if ($data_size > $this->memory_reader->getMaxPrefetchSize()) {
+            return null;
+        }
+
+        if (!$this->memory_reader->prefetchAdditional($pid, $seg_base_address, $data_size)) {
+            return null;
+        }
+
+        return $prev_of_prev !== 0 ? $prev_of_prev : null;
     }
 
     /**
@@ -323,10 +451,32 @@ final class CallTraceReader
 
         $frame_addresses[] = $addr;
 
+        // Lazy prev-segment fetch state: when a `prev_execute_data` pointer
+        // crosses into an older VM stack segment (common with Fibers, whose
+        // initial segment is only 4KB), we issue a one-shot bulk readv for
+        // the prev segment's used range so subsequent chain-walk reads hit
+        // the buffer instead of falling through to per-field reads.
+        $next_seg_base = null;  // base address of the next segment to load lazily; null = unknown / chain end
+        if ($buffered !== null && $this->current_vm_stack_base !== 0) {
+            $next_seg_base = $buffered->readRawInt64(
+                $pid,
+                $this->current_vm_stack_base + self::ZEND_VM_STACK_PREV_OFFSET,
+            );
+            if ($next_seg_base === 0) {
+                $next_seg_base = null;
+            }
+        }
+
         for ($i = 0; $i < $depth; $i++) {
+            /** @var int|null $prev_addr */
             $prev_addr = $buffered?->readRawInt64($pid, $addr + $prev_offset);
+            if ($prev_addr === null && $buffered !== null && $next_seg_base !== null) {
+                // Buffer miss. Try lazy prev-segment fetch before falling back.
+                $next_seg_base = $this->loadPrevSegment($pid, $next_seg_base, $dereferencer);
+                $prev_addr = $buffered->readRawInt64($pid, $addr + $prev_offset);
+            }
             if ($prev_addr === null) {
-                // Buffer miss — fall back to FieldReader for remaining frames
+                // Fall back to FieldReader for remaining frames
                 try {
                     $pointer = new Pointer(ZendExecuteData::class, $addr, $ed_size);
                     $ed = $dereferencer->deref($pointer);

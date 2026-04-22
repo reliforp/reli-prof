@@ -54,8 +54,14 @@ final class GetTraceSettingsFromConsoleInput
                 'bulk-stack-copy',
                 null,
                 InputOption::VALUE_OPTIONAL,
-                'bulk-copy VM stack per sample for consistency (default max: 64K). '
-                . 'Accepts optional max size in bytes (e.g. 65536, 16K, 256K)'
+                'bulk-copy VM stack per sample for consistency (default: on, max 1M). '
+                . 'Accepts optional max size in bytes (e.g. 65536, 16K, 256K, 1M)'
+            )
+            ->addOption(
+                'no-bulk-stack-copy',
+                null,
+                InputOption::VALUE_NONE,
+                'disable bulk-stack-copy (fall back to per-field reads)'
             )
             ->addOption(
                 'trace-var',
@@ -85,12 +91,15 @@ final class GetTraceSettingsFromConsoleInput
 
     private function parseBulkStackCopy(InputInterface $input): ?int
     {
+        if ((bool)$input->getOption('no-bulk-stack-copy')) {
+            return null;
+        }
+
         /** @var string|bool|int|float|list<string>|null $raw */
         $raw = $input->getOption('bulk-stack-copy');
         if ($raw === null) {
-            if (!$input->hasParameterOption(['--bulk-stack-copy'])) {
-                return null;
-            }
+            // Flag not passed at all, or passed without a value: use default.
+            // bulk-stack-copy is on by default — callers opt out via --no-bulk-stack-copy.
             return GetTraceSettings::BULK_STACK_COPY_DEFAULT_MAX_SIZE;
         }
         $value = NullableCast::toString($raw);
@@ -101,11 +110,13 @@ final class GetTraceSettingsFromConsoleInput
         if (preg_match('/^(\d+)\s*([kKmM])?$/', $value, $m)) {
             $num = (int)$m[1];
             $suffix = strtoupper($m[2] ?? '');
-            return match ($suffix) {
+            $size = match ($suffix) {
                 'K' => $num * 1024,
                 'M' => $num * 1024 * 1024,
                 default => $num,
             };
+            // Explicit 0 disables (alternative to --no-bulk-stack-copy).
+            return $size > 0 ? $size : null;
         }
         throw GetTraceSettingsException::create(GetTraceSettingsException::BULK_STACK_COPY_IS_NOT_VALID_SIZE);
     }
