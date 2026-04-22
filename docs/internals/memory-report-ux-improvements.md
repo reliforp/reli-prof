@@ -306,67 +306,78 @@ changing the descent logic — just the formatter.
 
 ---
 
-## Proposed new Finding: `non_zendmm_memory`
+## Scope: manage via tool-level docs, not per-report findings
 
 Observed while running `rw2_xml-dom-huge.report.txt`:
 
     memory_get_usage(): 43.25 MB | peak: 43.25 MB | RSS: 395.40 MB
     Heap: 42.85 MB (99.1% analyzed)
 
-`99.1% analyzed` is accurate — within the ZendMM scope, 99.1% of tracked
-allocations are reachable from the graph. The statement isn't misleading
-*for what it measures*. But the process is using 395 MB of RSS and only
-43 MB of that lives in ZendMM; the remaining 352 MB is invisible to this
-report because it's held by C extensions (libxml2's DOM tree in this
-case) or allocator overhead outside Zend's memory manager.
+`99.1% analyzed` is accurate within the ZendMM scope. The report
+doesn't see the 352 MB held by libxml2's DOM tree because that memory
+is allocated via malloc() outside Zend's memory manager.
 
-Users hitting "Allowed memory size of X bytes exhausted" with
-DOMDocument / Imagick / GD / large PDO cursors won't find their culprit
-in any section of the current report. Nothing flags the gap.
+An earlier draft of this doc proposed a `non_zendmm_memory` Finding.
+That's the wrong layer. The scope of reli's memory analyser — "what
+reli can see and what it can't" — is a *property of the tool*, not a
+per-capture anomaly. Firing a Finding on every DOMDocument-heavy
+script would spam users who already understand the scope and would
+repeat documentation at a bad time.
 
-Proposed finding:
+### Better place for this: tool-level docs
 
-    [HIGH] non_zendmm_memory: ~352 MB outside PHP's memory manager
-           (8.2× the tracked heap)
-      Process RSS (395 MB) greatly exceeds ZendMM-tracked heap (43 MB).
-      This gap lives outside the scope analysed below. Typical causes:
-        - DOMDocument / SimpleXML trees (libxml2, often 5–100× source XML)
-        - Imagick / GD image buffers
-        - Open PDO cursors holding full result sets
-        - PCRE JIT automata on large patterns
-        - glibc arena fragmentation (commonly 20–40% of working set)
-      If your OOM is in this gap, the findings below (scoped to ZendMM)
-      will not reach it — inspect loaded extensions and open resources.
-      Possible next steps:
-        - inspector:memory:dump/inspect the full memory map to see the
-          anonymous/mmap regions that carry the gap
-        - Drop the DOM tree / close cursors / unset image handles and
-          recapture to confirm
+Add a scope section to `docs/getting-started.md` (and the README's
+"What it does" block) that says plainly:
 
-### Threshold
+- The memory report analyses PHP's ZendMM heap — allocations made
+  via Zend's memory manager (zvals, HashTables, objects, strings,
+  op_arrays, class definitions).
+- It does **not** analyse memory allocated outside ZendMM. That
+  typically includes:
+  - C extension working memory: libxml2 (DOMDocument / SimpleXML),
+    Imagick, GD, open PDO cursors holding full result sets, PCRE JIT
+    on large patterns, etc. Often 5–100× the apparent PHP memory.
+  - glibc arena fragmentation (commonly 20–40% of working set).
+  - Opcache shared memory and anonymous mmap regions.
+- Symptom: `memory_get_usage()` and the report's "Heap" value are
+  small (MB range), but the process RSS is large (hundreds of MB or
+  more). If you're hitting "Allowed memory size of X bytes exhausted"
+  with that profile, the culprit is almost certainly outside this
+  report's scope.
+- Where to look instead: `inspector:memory:dump/inspect` exposes the
+  full memory map (anonymous / mmap regions can be sized there);
+  `strace`, `/proc/<pid>/maps`, `ps`, and per-extension debug modes
+  (libxml's `xmlMemoryStrdup`, etc.) live outside reli.
 
-Emit only when the gap is meaningful to avoid firing on normal allocator
-overhead:
+### Lightweight in-report signal
 
-- Gap ≥ 10 MB (absolute floor), AND
-- RSS / tracked_heap ≥ 1.5× (ratio floor)
+A full Finding is too heavy, but a one-line annotation costs nothing
+and helps readers who skip docs:
 
-Empirically calibrated against the two scenarios in hand:
+- Always show RSS alongside Heap in the Overview line (already
+  happens — keep it there).
+- When `RSS / analyzed_heap ≥ 10×` *and* the absolute gap is large
+  (say ≥ 100 MB), add one line immediately under the Overview:
 
-| Scenario        | RSS     | Heap   | Ratio | Gap    | Fire? |
-|-----------------|---------|--------|-------|--------|-------|
-| csv-mega        | 533 MB  | 462 MB | 1.15× |  71 MB | no    |
-| xml-dom-huge    | 395 MB  | 43 MB  | 8.2×  | 352 MB | yes   |
-| json-decode-huge| 242 MB  | 172 MB | 1.41× |  70 MB | borderline (no by ratio) |
+        Note: RSS is 9.2× the analysed heap (352 MB outside ZendMM).
+              See "Analysis scope" in getting-started for what this
+              report does and doesn't cover.
 
-The csv-mega and json-decode-huge gaps are plausibly glibc fragmentation
-and opcache/anonymous mappings — they should not alarm. The xml-dom-huge
-gap is the real libxml2 footprint — it should alarm.
+That's a gentle nudge for the pathological case, not a recurring
+alarm.
 
-Severity tiers proposed:
+### Data calibration
 
-- `Warning` at 1.5× ratio / 10 MB gap
-- `High` at 3× ratio / 100 MB gap
+Scenarios captured so far:
+
+| Scenario         | RSS     | Heap   | Ratio | Gap    | Note     |
+|------------------|---------|--------|-------|--------|----------|
+| csv-mega         | 533 MB  | 462 MB | 1.15× |  71 MB | no note  |
+| json-decode-huge | 242 MB  | 172 MB | 1.41× |  70 MB | no note  |
+| xml-dom-huge     | 395 MB  |  43 MB | 9.2×  | 352 MB | **note** |
+
+Thresholds chosen so glibc/mmap overhead (≤ 1.5×) never fires, and
+libxml2-scale gaps do.
 
 ---
 
