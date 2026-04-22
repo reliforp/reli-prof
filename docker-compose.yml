@@ -59,6 +59,8 @@ services:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
+    ulimits:
+      core: -1
     environment:
       - RELI_TEST_PHP_TARGETS=${RELI_TEST_PHP_TARGETS:-}
     volumes:
