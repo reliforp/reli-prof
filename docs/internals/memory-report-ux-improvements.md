@@ -237,6 +237,75 @@ leaf-path-with-root-size display without tearing up the report layout.
 
 ---
 
+## Design axis: Finding-centric vs. Narrative-centric output
+
+Much of the criticism above amounts to "the text output would read better
+as one coherent story". That's a presentation preference, not a verdict
+on the underlying engine. It's worth separating the two:
+
+**Finding-centric (what the engine already is).**
+Many passes each look at the graph from one angle and emit independent
+Finding records. Multiple findings converging on the same target is a
+*triangulation signal* — each detector is an independent witness, so
+convergence increases confidence. This is a valid and useful design when
+the consumer is programmatic (JSON, MCP server, rmem:live,
+downstream analysis) or when the reader is an expert triangulating across
+probes.
+
+**Narrative-centric (what the text formatter arguably should be).**
+One coherent story per report: "memory lives here, because of this, and
+you can lever that". Findings are the raw material, but the output
+sequences them, merges duplicates, and adds connective tissue. This is
+what a first-time reader skimming a report actually wants.
+
+The current setup feeds **Finding-centric** data directly into the text
+formatter, so the text output inherits the internal structure of the
+engine and reads like a detector dump. That's the real tension — not
+that the engine is wrong.
+
+### Clean split
+
+- Keep the Finding engine as-is. It produces value for JSON/MCP/other
+  programmatic consumers and the triangulation signal it carries is a
+  feature.
+- Let `JsonReportFormatter` render findings faithfully (current
+  behaviour).
+- Let `TextReportFormatter` evolve toward a narrative view: cluster
+  findings by target node, choose one representative per cluster,
+  present as a tree/story. The other clustered findings appear as
+  "also detected by" evidence lines.
+
+That split makes almost every S-tier item above (S2 / S4 / S5 / S6 /
+S12) a change local to the text formatter rather than to passes.
+
+### Lighter fix: annotate rather than merge
+
+A cheaper option that sidesteps clustering entirely: give each finding
+kind a one-line definition at the point of display, so the reader can
+correctly interpret the number even when the framing is non-obvious.
+
+For `bottleneck_path`, this collapses B8 from "bug" to "missing label":
+
+    [HIGH] bottleneck_path (heaviest-child drill-down from the root)
+      171.45 MB at the top of this spine
+
+      Spine:
+        $decoded → [data] → [10100] → [profile] → ...
+        (mass drops sharply after [data] — distributed across 25k
+         similar-sized siblings below)
+
+    Explore: rmem:explore --node=...
+
+With that explicit framing, the user reads the output correctly (they
+went in with the right mental model: "a descent-from-root probe that
+ended up somewhere big") even when the shown leaf is an arbitrary
+representative of many uniform siblings.
+
+This is a cheaper, earlier-shippable version of (b) that doesn't require
+changing the descent logic — just the formatter.
+
+---
+
 ## Structural / presentation issues
 
 ### S1. Root-blame guidance is one-size-fits-all
