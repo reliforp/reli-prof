@@ -21,6 +21,7 @@ final class ClassEntryContext implements ReferenceContext
 
     public function __construct(
         public ZendClassEntryMemoryLocation $memory_location,
+        public readonly ?string $class_name = null,
         public readonly ?string $filename = null,
         public readonly ?int $line_start = null,
         public readonly ?int $line_end = null,
@@ -37,6 +38,9 @@ final class ClassEntryContext implements ReferenceContext
     public function getContexts(): iterable
     {
         $attrs = [];
+        if ($this->class_name !== null && $this->class_name !== '') {
+            $attrs['class_name'] = $this->class_name;
+        }
         if ($this->filename !== null && $this->filename !== '') {
             $attrs['filename'] = $this->filename;
         }

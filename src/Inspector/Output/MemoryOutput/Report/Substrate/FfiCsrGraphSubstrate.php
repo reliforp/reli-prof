@@ -49,6 +49,19 @@ use Reli\Lib\FFI\FFIHelper;
  */
 final class FfiCsrGraphSubstrate extends GraphSubstrate
 {
+    /**
+     * Optional producer for the SECTION_SOURCE_LOC_REFS section that
+     * writeDerivedCache() consults before finalizing the cache. The
+     * rmem:explore SCC-builder child sets this so source-location refs
+     * land in the same sidecar as SCC data without threading extra
+     * parameters through createFromBinary / loadFromBinary.
+     *
+     * Callable signature: `fn(string $rmemPath): ?array{bytes: string, count: int}`.
+     *
+     * @var \Closure|null
+     */
+    public static ?\Closure $sourceLocRefProducer = null;
+
     private int $nodeCount = 0;
 
     // CSR for tree children
@@ -2533,6 +2546,27 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $profilesJson,
                 count($this->scc_profiles),
             );
+        }
+
+        // Optional: source-location refs contributed by a caller that
+        // has attribute data (the live graph substrate itself doesn't).
+        $srclocProducer = self::$sourceLocRefProducer;
+        if ($srclocProducer !== null) {
+            try {
+                /** @var array{bytes: string, count: int}|null $srcloc */
+                $srcloc = ($srclocProducer)($rmemPath);
+                if ($srcloc !== null && $srcloc['count'] > 0) {
+                    $writer->writeRawSection(
+                        DerivedCacheFormat::SECTION_SOURCE_LOC_REFS,
+                        $srcloc['bytes'],
+                        $srcloc['count'],
+                    );
+                }
+            } catch (\Throwable $e) {
+                // Fail-open: a bad producer must not prevent SCC cache
+                // from being written.
+                fwrite(STDERR, "WARNING: source-loc ref producer failed: {$e->getMessage()}\n");
+            }
         }
 
         $writer->writeFingerprint($rmemPath);

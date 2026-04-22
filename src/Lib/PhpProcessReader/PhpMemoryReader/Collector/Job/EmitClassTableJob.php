@@ -145,6 +145,14 @@ final class EmitClassTableJob implements CollectorJob
         $memory_location = ZendClassEntryMemoryLocation::fromZendClassEntry($class_entry);
         $ctx->memory_locations->add($memory_location);
 
+        $ce_class_name = null;
+        try {
+            $ce_class_name = $class_entry->getClassName($ctx->dereferencer);
+        } catch (\Throwable) {
+            // Name read failures are non-fatal — the attribute is purely
+            // for navigation hints.
+        }
+
         $ce_filename = null;
         $ce_line_start = null;
         $ce_line_end = null;
@@ -156,14 +164,13 @@ final class EmitClassTableJob implements CollectorJob
                 $ce_line_start = $class_entry->info->user->line_start;
                 $ce_line_end = $class_entry->info->user->line_end;
             } catch (\Throwable) {
-                // Filename read failures are non-fatal — the attribute
-                // is purely for navigation hints.
                 $ce_filename = null;
             }
         }
 
         $class_entry_context = new ClassEntryContext(
             $memory_location,
+            $ce_class_name,
             $ce_filename,
             $ce_line_start,
             $ce_line_end,

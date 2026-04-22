@@ -36,4 +36,14 @@ final class DerivedCacheFormat
     public const SECTION_SUBTREE_SIZES = 'subtree_by_idx';
     public const SECTION_SCC_NODE_MAP = 'scc_by_idx';
     public const SECTION_SCC_PROFILES = 'scc_profiles';
+
+    /**
+     * Source location index: packed rows of
+     *   u32 node_id | i32 defined_at_nid | i32 held_by_nid
+     * (12 bytes each). Only nodes that benefit from indirection are
+     * included — nodes that carry a filename attribute themselves are
+     * served directly from attributes and don't need a row here.
+     */
+    public const SECTION_SOURCE_LOC_REFS = 'srcloc_refs';
+    public const SOURCE_LOC_REF_ROW_SIZE = 12;
 }

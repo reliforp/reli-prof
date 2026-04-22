@@ -51,6 +51,34 @@ final class RmemModel
     /** @var array<int, array<string, string>> node_id => [key => value] from attributes */
     private array $nodeAttributes = [];
 
+    /**
+     * class_name => class_entry node_id. Built lazily from nodeAttributes
+     * after attribute load so defined_at resolution for object zvals can
+     * hop from the object's class string to its ClassEntryContext node.
+     *
+     * @var array<string, int>
+     */
+    private ?array $classEntryIndex = null;
+
+    /**
+     * Memo for resolveSourceLocations() to avoid re-walking ancestors on
+     * every TUI render. Negative sentinel used for "known absent".
+     *
+     * @var array<int, list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int}>>
+     */
+    private array $sourceLocationCache = [];
+
+    /**
+     * When populated from the derived cache, maps node_id to the
+     * resolved indirection targets. held_by_nid / defined_at_nid are
+     * the node_ids whose own filename should be surfaced for this
+     * node. -1 means "no resolution known". When this is non-null,
+     * resolveSourceLocations() uses it to skip the live ancestor walk.
+     *
+     * @var array<int, array{defined_at: int, held_by: int}>|null
+     */
+    private ?array $sourceLocationRefs = null;
+
     private ?BinaryReader $reader;
 
     private PathMap $pathMap;
@@ -861,46 +889,61 @@ final class RmemModel
     }
 
     /**
-     * Resolve a source location for $nodeId, applying the configured
-     * path map. Returns null when no filename attribute is available.
-     *
-     * Direct hits: op_array / class_entry / call_frame nodes have
-     * `filename` (and usually `line_start`/`line_end` or `lineno`)
-     * emitted as attributes at dump time. Callers that want an
-     * "approximate" location for bare zvals/arrays should walk the
-     * graph upward themselves — this method deliberately stays local
-     * to the requested node.
+     * Resolve the node's own source location, applying the configured
+     * path map. Returns null unless the node itself carries a filename
+     * attribute (op_array / class_entry / call_frame).
      *
      * @return array{filename: string, line_start: ?int, line_end: ?int, line: ?int}|null
      */
     public function resolveSourceLocation(int $nodeId): ?array
     {
         $this->ensureLocationInfoLoaded();
-        $attrs = $this->nodeAttributes[$nodeId] ?? [];
-        $filename = null;
-        if (isset($attrs['filename']) && $attrs['filename'] !== '') {
-            $filename = $attrs['filename'];
+        return $this->rawSourceLocation($nodeId);
+    }
+
+    /**
+     * Resolve all known source locations for $nodeId with kind tags.
+     *
+     * Kinds (in order):
+     *  - `self`        — the node directly carries a filename attribute.
+     *  - `defined_at`  — for object zvals, the class_entry's filename.
+     *  - `held_by`     — nearest ancestor with a known source location.
+     *
+     * @return list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int}>
+     */
+    public function resolveSourceLocations(int $nodeId): array
+    {
+        $this->ensureLocationInfoLoaded();
+        if (isset($this->sourceLocationCache[$nodeId])) {
+            return $this->sourceLocationCache[$nodeId];
         }
-        if ($filename === null) {
-            // frameLabels hold function_name:lineno but not filename.
-            // Rely on the explicit 'filename' attribute the dumper emits
-            // for call_frame / op_array / class_entry nodes.
-            return null;
+
+        $results = [];
+
+        $self = $this->rawSourceLocation($nodeId);
+        if ($self !== null) {
+            $results[] = ['kind' => 'self'] + $self;
         }
-        $line_start = isset($attrs['line_start']) ? (int)$attrs['line_start'] : null;
-        $line_end = isset($attrs['line_end']) ? (int)$attrs['line_end'] : null;
-        $line = null;
-        if (isset($attrs['lineno'])) {
-            $line = (int)$attrs['lineno'];
-        } elseif ($line_start !== null) {
-            $line = $line_start;
+
+        $definedAt = $this->resolveDefinedAt($nodeId);
+        if ($definedAt !== null) {
+            $results[] = ['kind' => 'defined_at'] + $definedAt;
         }
-        return [
-            'filename' => $this->pathMap->map($filename),
-            'line_start' => $line_start,
-            'line_end' => $line_end,
-            'line' => $line,
-        ];
+
+        // held_by is only interesting when we don't have self (a node
+        // that owns its filename doesn't need to know who holds it).
+        // An object zval's defined_at is more valuable, but a held_by
+        // entry is still useful to identify the calling code. We emit
+        // held_by unless $self already exists to keep the detail pane
+        // from getting noisy on every op_array.
+        if ($self === null) {
+            $heldBy = $this->resolveHeldBy($nodeId);
+            if ($heldBy !== null) {
+                $results[] = ['kind' => 'held_by'] + $heldBy;
+            }
+        }
+
+        return $this->sourceLocationCache[$nodeId] = $results;
     }
 
     /**
@@ -913,6 +956,14 @@ final class RmemModel
         if ($loc === null) {
             return null;
         }
+        return self::formatLocation($loc);
+    }
+
+    /**
+     * @param array{filename: string, line: ?int, line_start: ?int, line_end: ?int} $loc
+     */
+    private static function formatLocation(array $loc): string
+    {
         $file = $loc['filename'];
         $line = $loc['line'] ?? $loc['line_start'];
         if ($line !== null && $line > 0) {
@@ -922,6 +973,240 @@ final class RmemModel
             return "{$file}:{$line}";
         }
         return $file;
+    }
+
+    /**
+     * Local filename/line extraction from the node's own attributes,
+     * with path-map applied. Shared between the direct-resolver and
+     * the multi-kind resolver.
+     *
+     * @return array{filename: string, line_start: ?int, line_end: ?int, line: ?int}|null
+     */
+    private function rawSourceLocation(int $nodeId): ?array
+    {
+        $attrs = $this->nodeAttributes[$nodeId] ?? [];
+        if (!isset($attrs['filename']) || $attrs['filename'] === '') {
+            return null;
+        }
+        $line_start = isset($attrs['line_start']) ? (int)$attrs['line_start'] : null;
+        $line_end = isset($attrs['line_end']) ? (int)$attrs['line_end'] : null;
+        $line = null;
+        if (isset($attrs['lineno'])) {
+            $line = (int)$attrs['lineno'];
+        } elseif ($line_start !== null) {
+            $line = $line_start;
+        }
+        return [
+            'filename' => $this->pathMap->map($attrs['filename']),
+            'line_start' => $line_start,
+            'line_end' => $line_end,
+            'line' => $line,
+        ];
+    }
+
+    /**
+     * @return array{filename: string, line_start: ?int, line_end: ?int, line: ?int}|null
+     */
+    private function resolveDefinedAt(int $nodeId): ?array
+    {
+        // Cached refs short-circuit the class_entry index scan.
+        if ($this->sourceLocationRefs !== null) {
+            $refs = $this->sourceLocationRefs[$nodeId] ?? null;
+            if ($refs !== null && $refs['defined_at'] >= 0) {
+                return $this->rawSourceLocation($refs['defined_at']);
+            }
+            if ($refs !== null) {
+                return null;
+            }
+        }
+        $class = $this->resolveClass($nodeId);
+        if ($class === null || $class === '') {
+            return null;
+        }
+        $index = $this->classEntryIndex();
+        $ceNodeId = $index[$class] ?? null;
+        if ($ceNodeId === null || $ceNodeId === $nodeId) {
+            return null;
+        }
+        return $this->rawSourceLocation($ceNodeId);
+    }
+
+    /**
+     * Walk the tree-parent chain and return the source location of the
+     * nearest ancestor that has one. Bounded to 128 hops to keep
+     * pathological cycles or very deep graphs cheap.
+     *
+     * @return array{filename: string, line_start: ?int, line_end: ?int, line: ?int}|null
+     */
+    private function resolveHeldBy(int $nodeId): ?array
+    {
+        if ($this->sourceLocationRefs !== null) {
+            $refs = $this->sourceLocationRefs[$nodeId] ?? null;
+            if ($refs !== null && $refs['held_by'] >= 0) {
+                return $this->rawSourceLocation($refs['held_by']);
+            }
+            if ($refs !== null) {
+                return null;
+            }
+        }
+        $hops = 0;
+        $cur = $this->substrate->getTreeParentNodeId($nodeId);
+        while ($cur !== null && $cur >= 0 && $hops < 128) {
+            $loc = $this->rawSourceLocation($cur);
+            if ($loc !== null) {
+                return $loc;
+            }
+            $cur = $this->substrate->getTreeParentNodeId($cur);
+            $hops++;
+        }
+        return null;
+    }
+
+    /**
+     * Build the packed source-location refs section for persisting to
+     * the derived cache. Format: u32 node_id | i32 defined_at_nid |
+     * i32 held_by_nid rows (12 bytes each).
+     *
+     * Only nodes that benefit from indirection (i.e. do not carry a
+     * filename of their own) are included, since direct hits are
+     * already served from the attributes section.
+     *
+     * @return array{bytes: string, count: int}
+     */
+    public function buildSourceLocationRefs(): array
+    {
+        $this->ensureLocationInfoLoaded();
+        $classIndex = $this->classEntryIndex();
+        $bytes = '';
+        $count = 0;
+
+        for ($nid = 0; $nid < $this->nodeCount; $nid++) {
+            // Nodes with their own filename are "self" and don't need
+            // a ref row.
+            if (isset($this->nodeAttributes[$nid]['filename'])) {
+                continue;
+            }
+
+            $definedAt = -1;
+            $class = $this->resolveClass($nid);
+            if ($class !== null && $class !== '') {
+                $cand = $classIndex[$class] ?? null;
+                if ($cand !== null && $cand !== $nid) {
+                    // Only record if that class_entry has a filename.
+                    if (isset($this->nodeAttributes[$cand]['filename'])) {
+                        $definedAt = $cand;
+                    }
+                }
+            }
+
+            $heldBy = -1;
+            $hops = 0;
+            $cur = $this->substrate->getTreeParentNodeId($nid);
+            while ($cur !== null && $cur >= 0 && $hops < 128) {
+                if (isset($this->nodeAttributes[$cur]['filename'])) {
+                    $heldBy = $cur;
+                    break;
+                }
+                $cur = $this->substrate->getTreeParentNodeId($cur);
+                $hops++;
+            }
+
+            if ($definedAt === -1 && $heldBy === -1) {
+                continue;
+            }
+            $bytes .= pack('Vll', $nid, $definedAt, $heldBy);
+            $count++;
+        }
+        return ['bytes' => $bytes, 'count' => $count];
+    }
+
+    /**
+     * Consume a previously built source-location ref blob so that
+     * resolveSourceLocations() can skip the live ancestor walk.
+     *
+     * Idempotent — the last call wins.
+     */
+    public function primeSourceLocationRefs(string $bytes, int $count): void
+    {
+        $refs = [];
+        $rowSize = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SOURCE_LOC_REF_ROW_SIZE;
+        for ($i = 0; $i < $count; $i++) {
+            $offset = $i * $rowSize;
+            if ($offset + $rowSize > strlen($bytes)) {
+                break;
+            }
+            /** @var array{1: int} $nidArr */
+            $nidArr = unpack('V', $bytes, $offset);
+            /** @var array{1: int} $definedArr */
+            $definedArr = unpack('l', $bytes, $offset + 4);
+            /** @var array{1: int} $heldArr */
+            $heldArr = unpack('l', $bytes, $offset + 8);
+            $refs[$nidArr[1]] = [
+                'defined_at' => $definedArr[1],
+                'held_by' => $heldArr[1],
+            ];
+        }
+        $this->sourceLocationRefs = $refs;
+        // Invalidate memo so resolveSourceLocations() re-queries with
+        // the fresh indirection table.
+        $this->sourceLocationCache = [];
+    }
+
+    /**
+     * Try to load source-location refs from the derived cache sidecar
+     * for the given rmem file. Returns true if refs were loaded.
+     */
+    public function tryLoadSourceLocationRefsFromCache(string $rmemPath): bool
+    {
+        $cache = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheReader::open($rmemPath);
+        if ($cache === null) {
+            return false;
+        }
+        if (!$cache->hasSection(
+            \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SOURCE_LOC_REFS
+        )) {
+            return false;
+        }
+        $data = $cache->getSectionData(
+            \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SOURCE_LOC_REFS
+        );
+        $count = $cache->getSectionElementCount(
+            \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SOURCE_LOC_REFS
+        );
+        if ($data === null || $count === 0) {
+            return false;
+        }
+        $this->ensureLocationInfoLoaded();
+        $this->primeSourceLocationRefs($data, $count);
+        return true;
+    }
+
+    /**
+     * Build (and memoize) the class_name -> class_entry node_id index
+     * by scanning nodeAttributes for `class_name` entries. Populated on
+     * first use so pure-graph operations don't pay for it.
+     *
+     * @return array<string, int>
+     */
+    private function classEntryIndex(): array
+    {
+        if ($this->classEntryIndex !== null) {
+            return $this->classEntryIndex;
+        }
+        $index = [];
+        foreach ($this->nodeAttributes as $nid => $attrs) {
+            if (!isset($attrs['class_name'])) {
+                continue;
+            }
+            // Prefer the first emitted entry; the dumper visits a class
+            // once per class_table walk so collisions should not happen,
+            // but if they do we keep the lower node_id for determinism.
+            $name = $attrs['class_name'];
+            if (!isset($index[$name]) || $nid < $index[$name]) {
+                $index[$name] = $nid;
+            }
+        }
+        return $this->classEntryIndex = $index;
     }
 
     public function nodeLabel(int $nodeId): string
@@ -977,11 +1262,24 @@ final class RmemModel
      *     refcount: ?int,
      *     attributes: array<string, string>,
      *     source_location: ?string,
+     *     source_locations: list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}>,
      * }
      */
     public function nodeDetail(int $nodeId): array
     {
         $this->ensureLocationInfoLoaded();
+
+        $locations = [];
+        foreach ($this->resolveSourceLocations($nodeId) as $loc) {
+            $formatted = self::formatLocation([
+                'filename' => $loc['filename'],
+                'line' => $loc['line'],
+                'line_start' => $loc['line_start'],
+                'line_end' => $loc['line_end'],
+            ]);
+            $locations[] = $loc + ['formatted' => $formatted];
+        }
+
         return [
             'type' => $this->substrate->getNodeType($nodeId) ?? '?',
             'class' => $this->resolveClass($nodeId),
@@ -991,7 +1289,8 @@ final class RmemModel
             'string_value' => $this->nodeStringValues[$nodeId] ?? null,
             'refcount' => $this->nodeRefcounts[$nodeId] ?? null,
             'attributes' => $this->nodeAttributes[$nodeId] ?? [],
-            'source_location' => $this->formatSourceLocation($nodeId),
+            'source_location' => $locations !== [] ? $locations[0]['formatted'] : null,
+            'source_locations' => $locations,
         ];
     }
 
