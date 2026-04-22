@@ -138,6 +138,9 @@ Key `phpspy:trace` / `phpspy:daemon` options: `-s/--sleep-ns`, `-b/--buffer-size
 ## Capture a memory graph
 Reconstruct the target's PHP heap into an analysable graph. `.rmem` is the fastest format and is what every analyser (`rmem:explore`, `memory:report`, `memory:compare`, `rmem:viz`, `rmem:live`, `rmem:serve`, `rmem:mcp`) reads natively.
 
+> [!CAUTION]
+> Memory snapshots contain the target script's runtime state — including any secrets / PII it was holding. Don't upload them to the public internet.
+
 ```bash
 # Recommended for ad-hoc / local use: live one-shot capture
 sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
@@ -243,227 +246,76 @@ The same expression grammar as `inspector:peek-var --var` is supported, includin
 See [docs/inspection/trace-var-command.md](docs/inspection/trace-var-command.md) for full documentation — including rate-limit options (`--trace-var-every`, `--trace-var-on-function`), RLE implications in rbt, and daemon mode behaviour.
 
 ## Examples
-### Trace a script
-```bash
-$ ./reli i:trace -- php -r "fgets(STDIN);"
-0 fgets <internal>:-1
-1 <main> <internal>:-1
 
-0 fgets <internal>:-1
-1 <main> <internal>:-1
+A taste of what reli looks like in use. For the full walkthroughs, follow each showcase's link. For step-by-step first-use, see [docs/getting-started.md](docs/getting-started.md).
 
-0 fgets <internal>:-1
-1 <main> <internal>:-1
+### Interactive trace browsing — `rbt:explore`
 
-<press q to exit>
-...
-```
-
-### Attach to a running process
-```bash
-$ sudo php ./reli i:trace -p 2182685
-0 time_nanosleep <internal>:-1
-1 Reli\Lib\Loop\LoopMiddleware\NanoSleepMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/NanoSleepMiddleware.php:33
-2 Reli\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/KeyboardCancelMiddleware.php:39
-3 Reli\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/RetryOnExceptionMiddleware.php:37
-4 Reli\Lib\Loop\Loop::invoke /home/sji/work/reli/src/Lib/Loop/Loop.php:26
-5 Reli\Command\Inspector\GetTraceCommand::execute /home/sji/work/reli/src/Command/Inspector/GetTraceCommand.php:133
-6 Symfony\Component\Console\Command\Command::run /home/sji/work/reli/vendor/symfony/console/Command/Command.php:291
-7 Symfony\Component\Console\Application::doRunCommand /home/sji/work/reli/vendor/symfony/console/Application.php:979
-8 Symfony\Component\Console\Application::doRun /home/sji/work/reli/vendor/symfony/console/Application.php:299
-9 Symfony\Component\Console\Application::run /home/sji/work/reli/vendor/symfony/console/Application.php:171
-10 <main> /home/sji/work/reli/reli:45
-
-0 time_nanosleep <internal>:-1
-1 Reli\Lib\Loop\LoopMiddleware\NanoSleepMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/NanoSleepMiddleware.php:33
-2 Reli\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/KeyboardCancelMiddleware.php:39
-3 Reli\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware::invoke /home/sji/work/reli/src/Lib/Loop/LoopMiddleware/RetryOnExceptionMiddleware.php:37
-4 Reli\Lib\Loop\Loop::invoke /home/sji/work/reli/src/Lib/Loop/Loop.php:26
-5 Reli\Command\Inspector\GetTraceCommand::execute /home/sji/work/reli/src/Command/Inspector/GetTraceCommand.php:133
-6 Symfony\Component\Console\Command\Command::run /home/sji/work/reli/vendor/symfony/console/Command/Command.php:291
-7 Symfony\Component\Console\Application::doRunCommand /home/sji/work/reli/vendor/symfony/console/Application.php:979
-8 Symfony\Component\Console\Application::doRun /home/sji/work/reli/vendor/symfony/console/Application.php:299
-9 Symfony\Component\Console\Application::run /home/sji/work/reli/vendor/symfony/console/Application.php:171
-10 <main> /home/sji/work/reli/reli:45
-
-<press q to exit>
-...
-```
-The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
-
-### Capture to a binary trace (`.rbt`)
-For anything beyond a quick eyeball, capture straight to reli's compact binary format and analyse it offline with the `rbt:*` tools. `.rbt` compresses ~370× vs phpspy text (measured: 70 MB phpspy → 180 KB `.rbt`) via string interning, stack dedup, and run-length encoding.
+Capture to `.rbt`, open the sandwich / flame / tree TUI.
 
 ```bash
-# Capture a single process
-$ sudo php ./reli i:trace -p <pid> -F rbt -o trace.rbt
-
-# Browse it interactively in the terminal
+$ sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
 $ ./reli rbt:explore trace.rbt
-
-# Or get a one-shot text report (hot frames, callers / callees, live tail)
-$ ./reli rbt:analyze trace.rbt
 ```
 
-See [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md) for the TUI / analyser tour and [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md) for the format specification.
+![rbt:explore — sandwich + panes view](docs/images/rbt-explore-panes.png)
 
-### Daemon mode
-```bash
-# Live view
-$ sudo php ./reli i:daemon -P "^/usr/sbin/httpd"
+Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md). Format spec and converters: [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md). Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md).
 
-# Per-worker .rbt files (zero IPC overhead)
-$ sudo php ./reli i:daemon -P "^php-fpm" -F rbt -o ./traces/
-```
-The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
+### Memory graph visualization — `rmem:viz` / `rmem:live`
 
-### top-like mode
-UNIX-`top`-style live aggregated view across matching processes:
+Render the heap as a standalone HTML file — Circle Pack, Treemap, Sunburst, 3D Force — or serve it live with a shared focus bus that `rmem:explore` (TUI), browsers, and an MCP client all follow in sync.
 
 ```bash
-$ sudo php ./reli i:top -P "^php-fpm"
-```
+# Standalone HTML
+$ php ./reli rmem:viz snapshot.rmem
+# wrote snapshot.rmem.viz.html
 
-### Get the address of EG
-```bash
-$ sudo php ./reli i:eg -p 2183131
-0x555ae7825d80
-```
-The executing process must have the CAP_SYS_PTRACE capability. (Usually run as root is enough.)
-
-### Hybrid phpspy mode
-Install phpspy via reli and use it as the tracing backend:
-```bash
-# Install phpspy (builds from source, installs to ~/.reli/bin/phpspy)
-$ ./reli phpspy:install
-
-# Trace a single process (reli resolves EG, phpspy does the fast tracing)
-$ sudo php ./reli phpspy:trace -p <pid>
-resolving EG address...
-EG address resolved: 0x564102620bc0
-SG address resolved: 0x564102620600
-starting phpspy for pid 12345...
-0 usleep <internal>:-1
-1 <main> Command line code:1
+# Live (HTTP/SSE) with follow-from-TUI
+$ php ./reli rmem:explore snapshot.rmem --http-bridge 8080
+# press `f` in the TUI, then open http://127.0.0.1:8080/
 ```
 
-This is especially useful for ZTS PHP where phpspy alone cannot resolve the EG address:
+<!-- TODO(screenshot): rmem:viz 3D Force graph of a real heap -->
+![rmem:viz — 3D Force graph of a PHP heap (screenshot coming soon)](docs/images/rmem-viz-force.png)
+
+<!-- TODO(screenshot): rmem:viz Circle Pack of a real heap -->
+![rmem:viz — Circle Pack view (screenshot coming soon)](docs/images/rmem-viz-pack.png)
+
+<!-- TODO(gif): rmem:explore ↔ rmem:live focus bus — moving the TUI cursor moves the browser highlight -->
+![rmem:explore ↔ browser follow mode (GIF coming soon)](docs/images/rmem-follow.gif)
+
+Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md).
+
+### Automated memory findings — `memory:report`
+
+Capture a snapshot and get a prioritised report back — dominant classes, cycles, choke points, deduplication candidates — each with severity, hypothesis, and next steps.
+
 ```bash
-# Trace a ZTS PHP process — reli handles ZTS EG resolution, phpspy traces
-$ sudo php ./reli phpspy:trace -p <zts-pid>
+$ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+$ php ./reli inspector:memory:report snapshot.rmem
 ```
 
-Daemon mode discovers processes automatically and launches phpspy per process:
+<!-- TODO(screenshot): memory:report terminal output (findings + tables) -->
+![memory:report — findings and tables (screenshot coming soon)](docs/images/memory-report-output.png)
+
+Compare two snapshots to track regressions or verify fixes:
+
 ```bash
-$ sudo php ./reli phpspy:daemon -P "^php-fpm"
+$ php ./reli inspector:memory:compare before.rmem after.rmem
 ```
 
-You can pass extra phpspy flags via `--phpspy-args`:
-```bash
-$ sudo php ./reli phpspy:trace -p <pid> --phpspy-args="-c -1"
-```
+Full reference (output formats, thresholds, JSON mode): [docs/memory/memory-report.md](docs/memory/memory-report.md). Capture options (`--exclude-heap`, portable dumps, core-file analysis): [docs/memory/memory-dump.md](docs/memory/memory-dump.md), [docs/memory/coredump.md](docs/memory/coredump.md).
 
-### Use in a docker container and target a process on host
-```bash
-$ docker pull reliforp/reli-prof
-$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof i:trace -p <pid of the target process or thread>
-```
-
-### Advanced capture: opcodes, native traces, JIT
-`inspector:trace` / `inspector:daemon` can also attach the executing Zend VM opcode, C-level native stack frames (`--with-native-trace`, with optional `--native-trace-anytime`), and JIT-compiled function names to every sample. These combine with any output format and with `--trace-var`.
-
-See [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md) for the full walkthrough — opcode reveal in `.rbt` vs. phpspy text, DWARF unwinding, the `opcache.jit_debug` settings, Alpine/musl caveat.
-
-### Convert traces to other formats
-`converter:*` reads both `.rbt` and phpspy text (auto-detected) and writes flamegraph SVG, speedscope, pprof, callgrind, folded stacks, or `.rbt`:
+### Flamegraph from a `.rbt`
 
 ```bash
-# From .rbt (preferred — smaller, lossless, no re-parse cost)
 $ ./reli converter:flamegraph <trace.rbt >flame.svg
-$ ./reli converter:speedscope <trace.rbt >profile.speedscope.json
-$ ./reli converter:pprof <trace.rbt >profile.pb.gz
-$ ./reli converter:callgrind <trace.rbt >callgrind.out && kcachegrind callgrind.out
-$ ./reli converter:folded <trace.rbt | ./tools/flamegraph/flamegraph.pl >flame.svg
-$ ./reli converter:phpspy <trace.rbt     # decode to phpspy text
-
-# Same commands work on phpspy text input too
-$ ./reli converter:speedscope <traces >profile.speedscope.json
-
-# Recover a corrupted / truncated .rbt
-$ ./reli rbt:recover <corrupted.rbt >recovered.rbt
 ```
 
 ![flame](https://user-images.githubusercontent.com/6488121/153741551-3f0fc730-c748-4908-b8ac-7c3f46a5bdbc.svg)
 
-See [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md) for the `.rbt` specification and [#101](https://github.com/reliforp/reli-prof/pull/101) for the original speedscope integration.
-
-### Dump and analyse memory
-
-> [!CAUTION]
-> **Don't upload the output of this command to the internet — it can contain sensitive information of the target script!**
-
-The recommended flow is **dump now, analyse later**: `inspector:memory:dump` only stops the target long enough to copy its memory pages, and the heap walk runs offline afterwards (possibly on a different machine).
-
-```bash
-# 1. Dump the target's memory to a portable file (short stop on the target)
-$ sudo php ./reli inspector:memory:dump -p <pid> -o snapshot.relimem
-
-# 2. Build the analysable memory graph offline — .rmem is the fastest
-#    format and what every analyser below reads natively
-$ php ./reli inspector:memory:analyze snapshot.relimem -f binary -o snapshot.rmem
-
-# 3a. Browse it interactively
-$ php ./reli rmem:explore snapshot.rmem
-
-# 3b. Or get a prioritised findings report
-$ php ./reli inspector:memory:report snapshot.rmem
-```
-
-For ad-hoc / local use where the longer stop doesn't matter, the one-shot `inspector:memory` command captures and analyses in a single call:
-
-```bash
-$ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
-$ php ./reli rmem:explore snapshot.rmem
-```
-
-`-f sqlite3` and `-f json` are also accepted — see the format tip in [docs/README.md § Capture memory graphs](docs/README.md#capture-memory-graphs-where-memory-is-used).
-
-Only NTS targets are supported for now.
-
-See [docs/memory/memory-dump.md](docs/memory/memory-dump.md) for capture options (`--exclude-heap`, `--include-binary`, …), [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md) for the TUI, [docs/memory/memory-report.md](docs/memory/memory-report.md) for reports and comparisons, [docs/memory/coredump.md](docs/memory/coredump.md) for post-mortem analysis from a core file, and [docs/memory/memory-profiler.md](docs/memory/memory-profiler.md) for the JSON + `jq` deep-dive (the original workflow — still supported, just no longer the first recommendation).
-
-### Automatic analysis report
-
-Instead of manually querying with `jq`, generate an automatic analysis report. Save as `.rmem` first, then run the report (also works with `-f sqlite3 -o snapshot.db`):
-
-```bash
-$ sudo php ./reli i:m -p <pid> -f binary -o snapshot.rmem
-$ php ./reli inspector:memory:report snapshot.rmem
-```
-
-Or generate the report directly:
-
-```bash
-$ sudo php ./reli i:m -p <pid> -f report
-```
-
-The report identifies dominant classes, circular references, choke points, deduplication candidates, and more — with severity, hypothesis, and next steps for each finding. See [docs/memory/memory-report.md](docs/memory/memory-report.md) for details.
-
-### Comparing two snapshots
-
-Compare memory snapshots to find regressions, verify fixes, or track leaks over time:
-
-```bash
-$ sudo php ./reli i:m -p <pid> -f binary -o before.rmem
-# ... deploy code change, trigger workload, etc.
-$ sudo php ./reli i:m -p <pid> -f binary -o after.rmem
-$ php ./reli inspector:memory:compare before.rmem after.rmem
-
-# SQLite snapshots are also supported (and let you compare run IDs within one DB)
-$ php ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
-```
-
-The comparison report shows summary deltas, type breakdown deltas, per-class memory changes (added/removed/changed), and findings diff (new/resolved/changed issues). Use `--threshold 5` to filter changes smaller than 5%. See [docs/memory/memory-report.md](docs/memory/memory-report.md) for details.
+Also available: `converter:speedscope`, `converter:pprof`, `converter:callgrind`, `converter:folded`, `converter:phpspy`, `rbt:recover`. See [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md).
 
 ## Binary analysis cache
 
