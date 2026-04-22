@@ -41,8 +41,6 @@ For the full catalogue of tasks and commands, see the [documentation index](docs
 - 64bit Linux x86_64
 - 64bit Linux AArch64 (experimental)
 
-On targeting ZTS, reli finds EG from the TLS. Stripped binaries are supported (TLS segments are scanned via brute force). On glibc 2.34+, where libpthread is merged into libc, reli automatically falls back to libc.so, so no extra options are needed in most cases.
-
 ### Platform notes
 
 - **AArch64 (ARM64)** — experimental. Enables profiling on ARM-based servers (AWS Graviton) and Apple Silicon Macs running Linux VMs or Docker containers. Both NTS and ZTS targets supported. See [docs/internals/aarch64-support.md](docs/internals/aarch64-support.md).
