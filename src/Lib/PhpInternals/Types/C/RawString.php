@@ -54,10 +54,17 @@ final class RawString implements CDataDereferencable
      * (observed as intermittent SIGSEGV in integration tests); a 2-arg call
      * bounds the read but keeps trailing garbage for the NUL-terminated use.
      * Bound first, then strip at the first NUL to satisfy both.
+     *
+     * The 2-arg FFI::string() enforces a boundary check against the
+     * declared size of the given CData. The "casted" view is typed as
+     * char[0] (a zero-sized placeholder), so reading through it trips
+     * the check for any non-empty string; the "raw" side is the original
+     * unsigned char[N] buffer produced by the memory reader and declares
+     * the real size, so it passes. Use raw here.
      */
     private function readBounded(): string
     {
-        $raw = \FFI::string($this->cdata->casted, $this->len);
+        $raw = \FFI::string($this->cdata->raw, $this->len);
         $nul = strpos($raw, "\0");
         return $nul === false ? $raw : substr($raw, 0, $nul);
     }
