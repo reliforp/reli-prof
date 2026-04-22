@@ -516,16 +516,44 @@ but don't pretend to be an importance measure. This is the most honest
 about the fact that "importance" is a multi-factor judgement, at the
 cost of tuning weights and justifying the formula.
 
+#### (D) Expose multiple sort keys, let the caller pick
+
+Carry `current_bytes` and `saving_estimate_bytes` as separate fields
+(the (B) shape), but don't pick a primary sort — expose the choice as
+a CLI flag:
+
+    --sort-by=current     (default: "biggest patterns first")
+    --sort-by=saving      ("biggest levers first")
+    --sort-by=severity    ("most alarming first")
+    --sort-by=heap-fraction  ("most dominant first")
+
+JSON consumers sort themselves; the tool just provides the data.
+Text output picks the flag's value as its sort key and notes the
+choice in the report header ("sorted by: saving (--sort-by=saving)").
+
+Honest about the fact that the "right answer" is probably
+situational — a CLI user investigating an OOM wants savings first, a
+reviewer glancing at a report wants orientation (biggest patterns)
+first. The tradeoff sidesteps itself by deferring it to the caller.
+
+This is somewhat "escapist" — defaults still have to be picked, and
+most users will never touch the flag, so whatever default we choose
+gets judged as if it were the only answer. But it adds very little
+code (one strategy switch in the formatter) and gives power users
+the lever they'd otherwise patch in locally.
+
 ### Recommendation
 
 (A) is the smallest change that removes the "greater than heap" bug
 without giving up the single-axis ranking. It's a strict improvement
 over today, doesn't break MCP/JSON consumers (only adds a field), and
-leaves (B) and (C) open as future refinements if the sort ends up
-feeling wrong in practice.
+leaves (B), (C), and (D) open as future refinements if the sort ends
+up feeling wrong in practice.
 
-Either (B) or (C) is a bigger schema migration; park them until we see
-that (A) alone isn't enough.
+If users start asking for different defaults in different situations,
+pivot to (D) — it's cheap and acknowledges that there's no single
+right sort. (B) and (C) are bigger schema migrations; park them until
+we see that the cheaper options aren't enough.
 
 ---
 
