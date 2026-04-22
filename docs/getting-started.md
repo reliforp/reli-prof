@@ -113,7 +113,7 @@ You should see samples scrolling by roughly ~100 times per second.
 Stop it with `q` or `Ctrl-C`.
 
 If this works, you're ready for real targets. If it fails, the
-[Troubleshooting](../README.md#troubleshooting) section covers the
+[Troubleshooting](troubleshooting.md) page covers the
 common issues (missing `CAP_SYS_PTRACE`, unusual PHP binary paths,
 Amazon Linux 2 memory maps).
 
