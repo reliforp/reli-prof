@@ -100,57 +100,52 @@ A finding that accounts for under ~1 MB should never be HIGH
 regardless of percentage. Gate HIGH on `impact_bytes >= HIGH_MIN_BYTES`
 in addition to ratio.
 
-#### B4b. `cycle_cluster` severity needs a smarter signal than retained alone
+#### B4b. `cycle_cluster` LOW severity was probably correct — retract
 
 An earlier draft of this section claimed that a 53.90 MB retained
-cycle on a 59 MB heap must be HIGH. That's too fast. In
-`rw2_spreadsheet-xlsx.report.txt`:
+cycle on a 59 MB heap must be HIGH. Retract that.
+
+In `rw2_spreadsheet-xlsx.report.txt`:
 
     [LOW] 53.90 MB impacted
       cycle_cluster: 1 identical cycle (15 classes, 6.70 KB shallow,
                                         53.90 MB retained)
       Back-reference: cellXfSupervisor
 
-"Cycle exists with large retained" doesn't mean "breaking the cycle
-frees that retained". PHP has a cycle GC, and in a live-process
-snapshot everything visible is still reachable. The actionable
-question is:
+Two separate reasons the HIGH call was wrong:
 
-    "If I broke the back-reference right now, would the subtree
-     actually be freed, or is it kept alive by some other tree-edge
-     from a live root?"
+1. **PHP has a cycle GC.** The presence of a cycle does not
+   automatically mean a leak. In a live-process snapshot everything
+   visible is still reachable; the cycle GC will handle it when the
+   cycle becomes unreachable.
 
-For the `cellXfSupervisor` cycle, the Style subtree is *also*
-reachable via `$spreadsheet->cellXfSupervisor` forward edges. Breaking
-the back-reference alone wouldn't free the 53.90 MB — the supervisor
-still owns everything via tree edges. In that light, LOW is not an
-obvious mis-assignment; it's plausibly the correct severity, and my
-earlier "clearly wrong" call was based on reading `retained` as if it
-were `saving`.
+2. **reli already has the distinction.** `GcPendingPass` emits a
+   separate `gc_pending_candidate` finding specifically for SCC
+   members reachable *only* through `objects_store` — i.e., not
+   reachable from user-code roots, waiting on cycle GC. That's the
+   "this cycle is actually the leak" case.
 
-The right signal would be something like:
+   Across all 14 real-world reports collected so far, **zero**
+   `gc_pending_candidate` findings fired — including on the
+   PhpSpreadsheet scenario, the `s3_cycles` Node graph, and the
+   Twig/Monolog WeakMap false-positive reports. All observed cycles
+   were reachable from user-land forward edges, consistent with
+   "structural cycle, not leak", consistent with LOW.
 
-    free_if_cycle_broken =
-        retained(subtree)
-      − retained(subtree via non-cycle tree edges)
+So `cycle_cluster` LOW isn't a mis-assigned severity — it's the
+right label for "I found a cycle, it isn't the leak, here's the
+shape for your information". `gc_pending_candidate` is the HIGH
+variant (properly scoped to the actual leaks), just not firing on
+my captured data. Nothing to fix here.
 
-- If > 0 and large relative to the heap → cycle is the last path;
-  breaking it actually releases the subtree. High severity.
-- If ≈ 0 → subtree is owned by live roots independently of the cycle;
-  breaking the back-reference changes nothing. Low / Info severity.
-- If partial → medium.
+What *would* be worth doing: `cycle_cluster` currently reports the
+subtree's `retained` as `impact_bytes`, which still reads like a
+saving estimate even when severity is LOW. Re-labelling to
+`current_retained_bytes` (a size, not a lever) would let severity
+and the number be read consistently.
 
-The substrate already distinguishes tree and non-tree edges, so this
-is computable, though it likely needs a dedicated traversal per
-cycle-cluster finding. The current severity assignment may already be
-doing something along these lines — worth verifying before changing
-the heuristic.
-
-Separately: the finding's `impact_bytes` currently reports the
-subtree's `retained`, which misleads the reader into treating it as a
-saving estimate. Re-labelling to `current_retained_bytes` (it's not a
-lever, it's a size) plus adding `saving_if_broken_bytes` when the
-traversal is cheap enough would fix that side too.
+The B4a (`dominant_class` HIGH on ratio alone) part of B4 still
+stands.
 
 ### B5. `cycle_cluster` treats WeakMap as a cycle (false positive)
 
