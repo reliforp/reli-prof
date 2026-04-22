@@ -306,6 +306,70 @@ changing the descent logic — just the formatter.
 
 ---
 
+## Proposed new Finding: `non_zendmm_memory`
+
+Observed while running `rw2_xml-dom-huge.report.txt`:
+
+    memory_get_usage(): 43.25 MB | peak: 43.25 MB | RSS: 395.40 MB
+    Heap: 42.85 MB (99.1% analyzed)
+
+`99.1% analyzed` is accurate — within the ZendMM scope, 99.1% of tracked
+allocations are reachable from the graph. The statement isn't misleading
+*for what it measures*. But the process is using 395 MB of RSS and only
+43 MB of that lives in ZendMM; the remaining 352 MB is invisible to this
+report because it's held by C extensions (libxml2's DOM tree in this
+case) or allocator overhead outside Zend's memory manager.
+
+Users hitting "Allowed memory size of X bytes exhausted" with
+DOMDocument / Imagick / GD / large PDO cursors won't find their culprit
+in any section of the current report. Nothing flags the gap.
+
+Proposed finding:
+
+    [HIGH] non_zendmm_memory: ~352 MB outside PHP's memory manager
+           (8.2× the tracked heap)
+      Process RSS (395 MB) greatly exceeds ZendMM-tracked heap (43 MB).
+      This gap lives outside the scope analysed below. Typical causes:
+        - DOMDocument / SimpleXML trees (libxml2, often 5–100× source XML)
+        - Imagick / GD image buffers
+        - Open PDO cursors holding full result sets
+        - PCRE JIT automata on large patterns
+        - glibc arena fragmentation (commonly 20–40% of working set)
+      If your OOM is in this gap, the findings below (scoped to ZendMM)
+      will not reach it — inspect loaded extensions and open resources.
+      Possible next steps:
+        - inspector:memory:dump/inspect the full memory map to see the
+          anonymous/mmap regions that carry the gap
+        - Drop the DOM tree / close cursors / unset image handles and
+          recapture to confirm
+
+### Threshold
+
+Emit only when the gap is meaningful to avoid firing on normal allocator
+overhead:
+
+- Gap ≥ 10 MB (absolute floor), AND
+- RSS / tracked_heap ≥ 1.5× (ratio floor)
+
+Empirically calibrated against the two scenarios in hand:
+
+| Scenario        | RSS     | Heap   | Ratio | Gap    | Fire? |
+|-----------------|---------|--------|-------|--------|-------|
+| csv-mega        | 533 MB  | 462 MB | 1.15× |  71 MB | no    |
+| xml-dom-huge    | 395 MB  | 43 MB  | 8.2×  | 352 MB | yes   |
+| json-decode-huge| 242 MB  | 172 MB | 1.41× |  70 MB | borderline (no by ratio) |
+
+The csv-mega and json-decode-huge gaps are plausibly glibc fragmentation
+and opcache/anonymous mappings — they should not alarm. The xml-dom-huge
+gap is the real libxml2 footprint — it should alarm.
+
+Severity tiers proposed:
+
+- `Warning` at 1.5× ratio / 10 MB gap
+- `High` at 3× ratio / 100 MB gap
+
+---
+
 ## Structural / presentation issues
 
 ### S1. Root-blame guidance is one-size-fits-all
