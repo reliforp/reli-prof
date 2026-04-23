@@ -1,4 +1,7 @@
-# Reli
+<h1 align="center">
+  <img src="docs/images/reli-banner.png" alt="Reli" width="420">
+</h1>
+
 ![Minimum PHP version: 8.5.0](https://img.shields.io/badge/php-8.5.0%2B-blue.svg)
 [![Packagist](https://img.shields.io/packagist/v/reliforp/reli-prof.svg)](https://packagist.org/packages/reliforp/reli-prof)
 [![Github Actions](https://github.com/reliforp/reli-prof/workflows/build/badge.svg)](https://github.com/reliforp/reli-prof/actions)
