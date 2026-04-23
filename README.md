@@ -25,8 +25,8 @@ Capture to `.rbt` in one terminal while running `rbt:analyze` through `watch(1)`
 # Terminal A — capture
 $ sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
 
-# Terminal B — live analysis, refreshed every 0,2 second
-$ watch -n0.2 'reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail,self+total" --crop-anchor=right --path=short --crop=auto < trace.rbt'
+# Terminal B — live analysis, refreshed every 0.2 seconds
+$ watch -n0.2 './reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail,self+total" --crop-anchor=right --path=short --crop=auto < trace.rbt'
 ```
 
 <p align="center">
