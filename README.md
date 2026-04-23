@@ -39,7 +39,7 @@ Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-a
 
 ### Interactive trace browsing — `rbt:explore`
 
-Capture to `.rbt`, open the sandwich / flame / tree TUI.
+Capture to `.rbt`, open the sandwich / flamegraph / tree TUI.
 
 ```bash
 $ sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
