@@ -105,10 +105,12 @@ reli() {
     return 2
   fi
   mkdir -m 0700 -p "$scratch" || return $?
-  # Strictly reject if owner or mode don't match — don't silently coerce.
-  if ! reli_assert_scratch_safe "$scratch"; then
-    echo "reli: scratch dir $scratch failed safety check; aborting" >&2
-    echo "reli: if you own the dir, run: chmod 0700 '$scratch'" >&2
+  # Strictly reject if owner / mode / symlink don't match — don't
+  # silently coerce. The validator echoes a reason-specific hint so
+  # the user sees the actual problem, not a generic "chmod and retry".
+  local reason
+  if ! reason=$(reli_assert_scratch_safe "$scratch"); then
+    echo "reli: scratch dir $scratch failed safety check: $reason" >&2
     return 2
   fi
 
@@ -129,24 +131,26 @@ reli() {
 }
 
 reli_assert_scratch_safe() {
-  # Host-side check. The wrapper function runs on whichever shell invokes
-  # `docker run` (Linux bash, macOS zsh, WSL bash, ...), NOT inside the
-  # container. `stat` flag syntax therefore varies with host OS: GNU
-  # userland (`-c`) on Linux / WSL, BSD userland (`-f`) on macOS. The
-  # print-wrapper subcommand detects the target shell and host OS (via
-  # `--shell`) and emits the matching probe; the form below is the
-  # portable fallback that tries both.
+  # Host-side check. Runs on whichever shell invokes `docker run`
+  # (Linux bash, macOS zsh, WSL bash, ...), NOT inside the container.
+  # `stat` flag syntax differs between GNU (-c) and BSD (-f) userland;
+  # the form below tries both. On stdout, emits a reason string when
+  # the check fails so the caller can surface the actual problem; on
+  # success, emits nothing.
   local d="$1"
-  [ -d "$d" ] && [ ! -L "$d" ] || return 1
+  [ -d "$d" ]    || { echo "not a directory"; return 1; }
+  [ ! -L "$d" ]  || { echo "scratch entry is a symlink; remove it and retry"; return 1; }
   local owner mode
   owner=$(stat -c '%u' "$d" 2>/dev/null) \
     || owner=$(stat -f '%u' "$d" 2>/dev/null) \
-    || return 1
-  [ "$owner" = "$(id -u)" ] || return 1
+    || { echo "could not stat"; return 1; }
+  [ "$owner" = "$(id -u)" ] \
+    || { echo "not owned by uid $(id -u) (owned by $owner); rename or remove with appropriate privilege"; return 1; }
   mode=$(stat -c '%a' "$d" 2>/dev/null) \
     || mode=$(stat -f '%Lp' "$d" 2>/dev/null) \
-    || return 1
-  [ "$mode" = "700" ] || return 1
+    || { echo "could not stat mode"; return 1; }
+  [ "$mode" = "700" ] \
+    || { echo "mode is $mode, want 700; fix with: chmod 0700 '$d'"; return 1; }
   return 0
 }
 ```
@@ -167,11 +171,19 @@ Key properties:
   user-private on single-user laptops and conventional home-directory
   setups, but less categorical — shared NFS homes or unusual permission
   regimes weaken the guarantee).
-  `reli_assert_scratch_safe` stats the resolved path and rejects
-  (loud abort, not silent coerce) anything that is a symlink, not
-  owned by the current uid, or not exactly mode 0700. The abort message
-  points at an explicit `chmod` recovery command so users who hit this
-  on a legitimately misconfigured dir know what to do.
+  `reli_assert_scratch_safe` inspects the scratch dir entry itself and
+  rejects (loud abort, not silent coerce) if it is not a directory,
+  if it is a symlink, if it is not owned by the current uid, or if it
+  is not exactly mode 0700. The check is local to the entry: symlinks
+  on path components *above* the scratch dir (e.g., a symlinked
+  `$HOME` or `$XDG_RUNTIME_DIR`) are not traversed / validated — those
+  rely on the underlying filesystem's per-user permission model being
+  sane (which is the normal case for systemd-managed runtime dirs and
+  for conventional home directories, but not an absolute guarantee).
+  Each failure emits a reason-specific hint (e.g. `chmod 0700 '$d'`
+  only when the mode is the actual issue; an ownership mismatch
+  instead suggests rename / remove) rather than a one-size-fits-all
+  message.
 - `--user "$UID:$GID"` makes generated files owned by the host user
   (no `sudo rm` required after profiling).
 - `HOME="${scratch}"` aligns in-container config discovery
@@ -392,7 +404,7 @@ Inventoried via a pass over every Symfony Console command definition.
 | TUI (`rbt:explore`, `rmem:explore`)                | auto `-t`.                                        |
 | File ownership                                     | `--user "$UID:$GID"`.                             |
 | Daemon output default                              | `HOME` / `XDG_STATE_HOME` → scratch.              |
-| Scratch-dir pre-creation / symlink attacks         | parent path chosen from normally user-private locations (XDG runtime / `$HOME/.cache`); strict owner + mode + non-symlink check on every invocation rejects anything that doesn't match, rather than relying on the parent's assumed permissions. |
+| Scratch-dir pre-creation / symlink attacks         | parent path chosen from normally user-private locations (XDG runtime / `$HOME/.cache`); strict owner + mode + "entry is not a symlink" check on every invocation rejects anything that doesn't match. Upstream path components (e.g. a symlinked `$HOME`) are not traversed — relies on the underlying FS's per-user permission model for those. |
 
 ### Handled by core changes
 
