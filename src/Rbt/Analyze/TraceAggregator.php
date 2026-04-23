@@ -41,6 +41,10 @@ use Reli\Converter\BinaryTrace\BinaryTraceSample;
  * `last_count > 0` keeps a ring buffer of the most recent samples'
  * formatted frame stacks (with the same hide/no-line rules applied)
  * so the CLI can render a `--last N` tail without re-processing.
+ *
+ * `last_depth > 0` truncates each tail sample's stack to the `last_depth`
+ * leaf-most frames so variable stack depth doesn't shove the rest of the
+ * report around when `--last` is piped through `watch`.
  */
 final class TraceAggregator
 {
@@ -58,6 +62,7 @@ final class TraceAggregator
         public readonly ?string $callers_re = null,
         public readonly ?string $callees_re = null,
         public readonly int $last_count = 0,
+        public readonly int $last_depth = 0,
     ) {
     }
 
@@ -185,8 +190,11 @@ final class TraceAggregator
             }
 
             if ($this->last_count > 0) {
+                $tail_frames = $this->last_depth > 0
+                    ? array_slice($keys, 0, $this->last_depth)
+                    : $keys;
                 $tail_buffer[] = [
-                    'frames' => $keys,
+                    'frames' => $tail_frames,
                     'annotations' => $sample->annotations,
                 ];
                 if (count($tail_buffer) > $this->last_count) {
