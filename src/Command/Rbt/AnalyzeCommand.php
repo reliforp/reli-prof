@@ -15,14 +15,18 @@ namespace Reli\Command\Rbt;
 
 use Reli\Converter\BinaryTrace\BinaryTraceReader;
 use Reli\Converter\StreamDecompressor;
+use Reli\Rbt\Analyze\FrameFormatter;
+use Reli\Rbt\Analyze\SectionLayout;
 use Reli\Rbt\Analyze\TraceAggregationResult;
 use Reli\Rbt\Analyze\TraceAggregator;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Terminal;
 
 /**
  * Aggregates a binary trace (.rbt) into hot-frame and call-site reports.
@@ -42,7 +46,7 @@ final class AnalyzeCommand extends Command
                 'top',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Number of rows to show per table (0 to suppress aggregation tables)',
+                'Number of rows to show per table (0 to suppress the default self/total tables)',
                 '20',
             )
             ->addOption(
@@ -52,6 +56,14 @@ final class AnalyzeCommand extends Command
                 'Print the last N samples\' call stacks (default 1) — useful for'
                 . ' watching an in-progress trace and seeing the current execution position',
                 false,
+            )
+            ->addOption(
+                'last-depth',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Cap each --last stack at N leaf-most frames (0 = no cap) so deeper stacks'
+                . ' don\'t shove the rest of the report around under `watch`',
+                '0',
             )
             ->addOption(
                 'callers',
@@ -89,6 +101,31 @@ final class AnalyzeCommand extends Command
                 InputOption::VALUE_NONE,
                 'Include the VM opcode in each frame key (e.g. [ZEND_RECV])',
             )
+            ->addOption(
+                'path',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Path display mode: full (default) or short (basename only'
+                . ' — display-only, does not affect aggregation)',
+                FrameFormatter::PATH_FULL,
+            )
+            ->addOption(
+                'crop',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Crop each output line at N characters (or "auto" for terminal width) to prevent wrap;'
+                . ' in multi-column layouts the width is split per column',
+                '0',
+            )
+            ->addOption(
+                'sections',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Layout spec: "," stacks rows, "+" lays sections out side by side.'
+                . ' Known sections: self, total, callers, callees, tail.'
+                . ' Example: "self+total,tail"',
+                SectionLayout::DEFAULT_SPEC,
+            )
         ;
     }
 
@@ -106,6 +143,7 @@ final class AnalyzeCommand extends Command
         $hide_pattern = $input->getOption('hide');
         $no_line = (bool) $input->getOption('no-line');
         $with_opcode = (bool) $input->getOption('with-opcode');
+        $last_depth = max(0, (int) $input->getOption('last-depth'));
 
         // --last:
         //   absent  → false (no tail)
@@ -118,6 +156,33 @@ final class AnalyzeCommand extends Command
             $last_count = $last_raw === null ? 1 : max(1, (int) $last_raw);
         }
 
+        /** @var string $path_mode */
+        $path_mode = $input->getOption('path');
+        if (!in_array($path_mode, [FrameFormatter::PATH_FULL, FrameFormatter::PATH_SHORT], true)) {
+            $output->writeln("<error>--path must be 'full' or 'short', got: {$path_mode}</error>");
+            return 1;
+        }
+
+        /** @var string $sections_spec */
+        $sections_spec = $input->getOption('sections');
+        try {
+            $layout = SectionLayout::parse($sections_spec);
+        } catch (\InvalidArgumentException $e) {
+            $output->writeln('<error>' . $e->getMessage() . '</error>');
+            return 1;
+        }
+
+        $terminal_width = (new Terminal())->getWidth();
+        $row_crop_widths = $this->resolveCrop(
+            (string) $input->getOption('crop'),
+            $layout,
+            $terminal_width,
+            $output,
+        );
+        if ($row_crop_widths === null) {
+            return 1;
+        }
+
         $aggregator = new TraceAggregator(
             no_line: $no_line,
             with_opcode: $with_opcode,
@@ -126,6 +191,7 @@ final class AnalyzeCommand extends Command
             callers_re: TraceAggregator::wrapPattern($callers_pattern),
             callees_re: TraceAggregator::wrapPattern($callees_pattern),
             last_count: $last_count,
+            last_depth: $last_depth,
         );
 
         $reader = new BinaryTraceReader();
@@ -138,56 +204,191 @@ final class AnalyzeCommand extends Command
 
         $this->writeSummary($err, $reader, $result->sample_count, $result->matched_samples);
 
-        if ($last_count > 0) {
-            $this->printTail($output, $result->tail);
-        }
+        $sections = $this->renderSections(
+            $result,
+            new FrameFormatter($path_mode),
+            $layout,
+            $row_crop_widths,
+            $top,
+            $last_count,
+            $callers_pattern,
+            $callees_pattern,
+        );
 
-        $denominator = $result->matched_samples > 0 ? $result->matched_samples : 1;
-
-        if ($top > 0) {
-            $this->printTable($output, 'self-time top', $result->self_counts, $denominator, $top);
-            $this->printTable($output, 'total-time top (inclusive)', $result->total_counts, $denominator, $top);
-        }
-
-        // --top 0 only suppresses the default self/total tables. The
-        // callers/callees tables are explicit asks; always render them
-        // (with their own row cap so the user can still bound output).
-        $explicit_top = $top > 0 ? $top : 20;
-
-        if ($aggregator->callers_re !== null) {
-            $this->printTable(
-                $output,
-                "callers of frames matching /{$callers_pattern}/",
-                $result->caller_counts,
-                $denominator,
-                $explicit_top,
-            );
-        }
-        if ($aggregator->callees_re !== null) {
-            $this->printTable(
-                $output,
-                "callees of frames matching /{$callees_pattern}/",
-                $result->callee_counts,
-                $denominator,
-                $explicit_top,
-            );
+        $lines = $layout->assemble($sections);
+        foreach ($lines as $line) {
+            $output->writeln($line);
         }
 
         return 0;
     }
 
     /**
-     * Render the most recent samples' call stacks with annotations.
+     * Resolve --crop into per-row per-column widths.
      *
-     * @param list<array{frames: list<string>, annotations: array<string, string>|null}> $tail
+     * For `auto`, each row's width budget is the terminal width minus the
+     * gaps between its columns, divided evenly across the columns. A row
+     * with one column gets the full terminal width; a 3-column row with
+     * an 180-char terminal gets ~58 chars per column.
+     *
+     * Returns null on parse error after writing to the output.
+     *
+     * @return array<int, list<int>>|null
      */
-    private function printTail(OutputInterface $output, array $tail): void
+    private function resolveCrop(
+        string $raw,
+        SectionLayout $layout,
+        int $terminal_width,
+        OutputInterface $output,
+    ): ?array {
+        $raw = trim($raw);
+        $is_auto = strcasecmp($raw, 'auto') === 0;
+        $fixed = 0;
+        if (!$is_auto) {
+            if (!preg_match('/^-?\d+$/', $raw)) {
+                $output->writeln("<error>--crop must be 'auto' or an integer, got: {$raw}</error>");
+                return null;
+            }
+            $fixed = max(0, (int) $raw);
+        }
+
+        $gap_width = strlen(SectionLayout::COLUMN_GAP);
+        /** @var array<int, list<int>> $per_row */
+        $per_row = [];
+        foreach ($layout->rows as $row_index => $row) {
+            $n = count($row);
+            if (!$is_auto) {
+                $per_row[$row_index] = array_fill(0, $n, $fixed);
+                continue;
+            }
+            if ($terminal_width <= 0 || $n === 0) {
+                $per_row[$row_index] = array_fill(0, $n, 0);
+                continue;
+            }
+            $usable = $terminal_width - ($n - 1) * $gap_width;
+            if ($usable <= 0) {
+                $per_row[$row_index] = array_fill(0, $n, 0);
+                continue;
+            }
+            $per_row[$row_index] = array_fill(0, $n, intdiv($usable, $n));
+        }
+
+        return $per_row;
+    }
+
+    /**
+     * Render every known section to a list of plain-text lines, keyed by
+     * section name so {@see SectionLayout::assemble()} can pick them up
+     * in the requested order. Sections that wouldn't have content this
+     * run (callers/callees without a pattern, tail without --last) are
+     * omitted rather than rendered empty.
+     *
+     * @param array<int, list<int>> $row_crop_widths
+     * @return array<string, list<string>>
+     */
+    private function renderSections(
+        TraceAggregationResult $result,
+        FrameFormatter $formatter,
+        SectionLayout $layout,
+        array $row_crop_widths,
+        int $top,
+        int $last_count,
+        ?string $callers_pattern,
+        ?string $callees_pattern,
+    ): array {
+        $denominator = $result->matched_samples > 0 ? $result->matched_samples : 1;
+        $explicit_top = $top > 0 ? $top : 20;
+
+        $crop_for_section = $this->buildSectionCropMap($layout, $row_crop_widths);
+
+        /** @var array<string, list<string>> $sections */
+        $sections = [];
+
+        if ($top > 0) {
+            $sections[SectionLayout::SECTION_SELF] = $this->renderTable(
+                'self-time top',
+                $result->self_counts,
+                $denominator,
+                $top,
+                $formatter,
+                $crop_for_section[SectionLayout::SECTION_SELF] ?? 0,
+            );
+            $sections[SectionLayout::SECTION_TOTAL] = $this->renderTable(
+                'total-time top (inclusive)',
+                $result->total_counts,
+                $denominator,
+                $top,
+                $formatter,
+                $crop_for_section[SectionLayout::SECTION_TOTAL] ?? 0,
+            );
+        }
+
+        if ($callers_pattern !== null && $callers_pattern !== '') {
+            $sections[SectionLayout::SECTION_CALLERS] = $this->renderTable(
+                "callers of frames matching /{$callers_pattern}/",
+                $result->caller_counts,
+                $denominator,
+                $explicit_top,
+                $formatter,
+                $crop_for_section[SectionLayout::SECTION_CALLERS] ?? 0,
+            );
+        }
+
+        if ($callees_pattern !== null && $callees_pattern !== '') {
+            $sections[SectionLayout::SECTION_CALLEES] = $this->renderTable(
+                "callees of frames matching /{$callees_pattern}/",
+                $result->callee_counts,
+                $denominator,
+                $explicit_top,
+                $formatter,
+                $crop_for_section[SectionLayout::SECTION_CALLEES] ?? 0,
+            );
+        }
+
+        if ($last_count > 0) {
+            $sections[SectionLayout::SECTION_TAIL] = $this->renderTail(
+                $result->tail,
+                $formatter,
+                $crop_for_section[SectionLayout::SECTION_TAIL] ?? 0,
+            );
+        }
+
+        return $sections;
+    }
+
+    /**
+     * Resolve each section's crop budget from its position in the layout.
+     *
+     * Sections not present in the layout aren't rendered to the screen
+     * either, so they don't need a crop entry.
+     *
+     * @param array<int, list<int>> $row_crop_widths
+     * @return array<string, int>
+     */
+    private function buildSectionCropMap(
+        SectionLayout $layout,
+        array $row_crop_widths,
+    ): array {
+        $map = [];
+        foreach ($layout->rows as $row_index => $row) {
+            foreach ($row as $col_index => $name) {
+                $map[$name] = $row_crop_widths[$row_index][$col_index] ?? 0;
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * @param list<array{frames: list<string>, annotations: array<string, string>|null}> $tail
+     * @return list<string>
+     */
+    private function renderTail(array $tail, FrameFormatter $formatter, int $crop_width): array
     {
-        $output->writeln('');
-        $output->writeln('<comment># last ' . count($tail) . ' sample(s)</comment>');
+        $lines = [];
+        $lines[] = '# last ' . count($tail) . ' sample(s)';
         if ($tail === []) {
-            $output->writeln('  (no samples)');
-            return;
+            $lines[] = '  (no samples)';
+            return $this->applyCrop($lines, $crop_width);
         }
         $count = count($tail);
         foreach ($tail as $i => $entry) {
@@ -195,16 +396,79 @@ final class AnalyzeCommand extends Command
             $label = $count === 1
                 ? '(now)'
                 : ($offset === 0 ? '(now)' : sprintf('(%d ago)', $offset));
-            $output->writeln("  ── sample {$label} ──");
+            $lines[] = "  ── sample {$label} ──";
             foreach ($entry['frames'] as $depth => $frame) {
-                $output->writeln(sprintf('  [%2d] %s', $depth, $frame));
+                $lines[] = sprintf('  [%2d] %s', $depth, $formatter->formatFrame($frame));
             }
             if (($entry['annotations'] ?? null) !== null && $entry['annotations'] !== []) {
                 foreach ($entry['annotations'] as $key => $value) {
-                    $output->writeln(sprintf('  # %s = %s', $key, $value));
+                    $lines[] = sprintf('  # %s = %s', $key, $value);
                 }
             }
         }
+        return $this->applyCrop($lines, $crop_width);
+    }
+
+    /**
+     * @param array<string, int> $counts
+     * @return list<string>
+     */
+    private function renderTable(
+        string $title,
+        array $counts,
+        int $denominator,
+        int $top,
+        FrameFormatter $formatter,
+        int $crop_width,
+    ): array {
+        arsort($counts);
+        $rows = array_slice($counts, 0, $top, preserve_keys: true);
+
+        $lines = [];
+        $lines[] = "# {$title}";
+
+        if ($rows === []) {
+            $lines[] = '  (no matches)';
+            return $this->applyCrop($lines, $crop_width);
+        }
+
+        $buffer = new BufferedOutput();
+        $denom = (float)max(1, $denominator);
+        $table = new Table($buffer);
+        $table->setHeaders(['count', 'pct', 'frame']);
+        foreach ($rows as $key => $count) {
+            $pct = (float)$count * 100.0 / $denom;
+            $table->addRow([
+                (string) $count,
+                sprintf('%5.1f%%', $pct),
+                $formatter->formatFrame($key),
+            ]);
+        }
+        $table->render();
+
+        $rendered = rtrim($buffer->fetch(), "\n");
+        if ($rendered !== '') {
+            foreach (explode("\n", $rendered) as $row_line) {
+                $lines[] = $row_line;
+            }
+        }
+        return $this->applyCrop($lines, $crop_width);
+    }
+
+    /**
+     * @param list<string> $lines
+     * @return list<string>
+     */
+    private function applyCrop(array $lines, int $crop_width): array
+    {
+        if ($crop_width <= 0) {
+            return $lines;
+        }
+        $out = [];
+        foreach ($lines as $line) {
+            $out[] = FrameFormatter::cropLine($line, $crop_width);
+        }
+        return $out;
     }
 
     private function writeSummary(
@@ -222,40 +486,5 @@ final class AnalyzeCommand extends Command
             $period,
             $duration_s,
         ));
-    }
-
-    /**
-     * @param array<string, int> $counts
-     */
-    private function printTable(
-        OutputInterface $output,
-        string $title,
-        array $counts,
-        int $denominator,
-        int $top,
-    ): void {
-        arsort($counts);
-        $rows = array_slice($counts, 0, $top, preserve_keys: true);
-
-        $output->writeln('');
-        $output->writeln("<comment># {$title}</comment>");
-
-        if ($rows === []) {
-            $output->writeln('  (no matches)');
-            return;
-        }
-
-        $denom = (float)max(1, $denominator);
-        $table = new Table($output);
-        $table->setHeaders(['count', 'pct', 'frame']);
-        foreach ($rows as $key => $count) {
-            $pct = (float)$count * 100.0 / $denom;
-            $table->addRow([
-                (string) $count,
-                sprintf('%5.1f%%', $pct),
-                $key,
-            ]);
-        }
-        $table->render();
     }
 }

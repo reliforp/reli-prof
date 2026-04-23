@@ -196,6 +196,52 @@ class TraceAggregatorTest extends BaseTestCase
         $this->assertSame([], $result->tail);
     }
 
+    public function testLastDepthKeepsOnlyLeafMostFrames(): void
+    {
+        $samples = [
+            $this->makeSample(['leaf', 'mid', 'outer', 'root']),
+        ];
+        $result = (new TraceAggregator(
+            no_line: true,
+            last_count: 1,
+            last_depth: 2,
+        ))->aggregate($samples);
+
+        // Only the 2 leaf-most frames survive in the tail. Aggregation
+        // tables are unchanged — last_depth is tail-only.
+        $this->assertSame(['leaf', 'mid'], $result->tail[0]['frames']);
+        $this->assertSame(1, $result->total_counts['root']);
+        $this->assertSame(1, $result->total_counts['outer']);
+    }
+
+    public function testLastDepthZeroLeavesFullStack(): void
+    {
+        $samples = [
+            $this->makeSample(['leaf', 'mid', 'root']),
+        ];
+        $result = (new TraceAggregator(
+            no_line: true,
+            last_count: 1,
+            last_depth: 0,
+        ))->aggregate($samples);
+
+        $this->assertSame(['leaf', 'mid', 'root'], $result->tail[0]['frames']);
+    }
+
+    public function testLastDepthLargerThanStackJustReturnsStack(): void
+    {
+        $samples = [
+            $this->makeSample(['leaf', 'root']),
+        ];
+        $result = (new TraceAggregator(
+            no_line: true,
+            last_count: 1,
+            last_depth: 10,
+        ))->aggregate($samples);
+
+        $this->assertSame(['leaf', 'root'], $result->tail[0]['frames']);
+    }
+
     public function testWithOpcodeAppendsOpcodeToKey(): void
     {
         $samples = [

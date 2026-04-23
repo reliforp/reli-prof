@@ -130,6 +130,8 @@ for live tailing while a long-running script chugs along:
 ```bash
 ./reli rbt:analyze --last=5 < trace.rbt
 
+...self/total tables...
+
 # last 5 sample(s)
   ── sample (4 ago) ──
   [ 0] PDO::query /var/www/src/Db.php:142
@@ -141,6 +143,44 @@ for live tailing while a long-running script chugs along:
 ```
 
 `--last` alone defaults to 1, `--last=N` keeps a ring buffer of N.
+The tail prints after the aggregation tables so `watch` shows the
+(fixed-size) tables anchored at the top and lets the variable-depth
+stack sit at the bottom of the screen.
+
+**Stabilise the layout under `watch`** — the stack depth of each
+sample varies and can jitter the rest of the display. Three levers,
+usable together:
+
+```bash
+# Cap every tail stack at 5 leaf-most frames.
+watch './reli rbt:analyze --last --last-depth=5 --top=5 < trace.rbt'
+
+# Drop the directory portion of every file path ('Worker.php:42')
+# and hard-clip each line to the terminal width so a stray 200-char
+# FQN doesn't wrap-break the layout.
+./reli rbt:analyze --last=5 --path=short --crop=auto < trace.rbt
+```
+
+`--path` is display-only — aggregation still keys on the full path, so
+two files with the same basename stay distinct in the self/total
+counts.
+
+**Rearrange and side-by-side** — the `--sections` flag controls both
+the order of the report and whether sections stack or sit next to
+each other. `,` separates rows, `+` joins columns within a row:
+
+```bash
+# self/total side by side on top, the tail full-width below:
+./reli rbt:analyze --last=5 --sections='self+total,tail' < trace.rbt
+
+# three columns, tail at the right — trades vertical space for width:
+./reli rbt:analyze --last=5 --sections='self+total+tail' \
+  --path=short --crop=auto < trace.rbt
+```
+
+Known section names: `self`, `total`, `callers`, `callees`, `tail`.
+Sections that wouldn't have content this run (e.g. `callers` with no
+`--callers=` pattern) are silently skipped.
 
 **Suppress the default tables** (e.g. when you only want a callers
 view, no top-N noise) with `--top=0`:
@@ -154,12 +194,16 @@ view, no top-N noise) with `--top=0`:
 | Option | Default | Description |
 |---|---|---|
 | `--top=N` | `20` | Rows per table. `0` suppresses the default self/total tables. |
-| `--last[=N]` | off | Print the last N sample stacks (default 1) at the top of the report. |
+| `--last[=N]` | off | Print the last N sample stacks (default 1). |
+| `--last-depth=N` | `0` | Cap each `--last` stack at N leaf-most frames (`0` = no cap). Tail-only; doesn't affect aggregation. |
 | `--callers=PATTERN` | — | Show callers of frames matching this PCRE pattern (no delimiters needed). |
 | `--callees=PATTERN` | — | Show callees of frames matching this PCRE pattern. |
 | `--match=PATTERN` | — | Only count samples whose stack contains a matching frame. |
 | `--hide=PATTERN` | — | Drop frames matching this PCRE pattern from each stack *before* counting. |
 | `--no-line` | off | Group frames by function name only (ignore `file:line`). |
+| `--path=MODE` | `full` | `full` keeps the whole path; `short` displays only `basename:line`. Display-only. |
+| `--crop=N\|auto` | `0` | Hard-clip each output line at N chars (or the terminal width per column with `auto`). Appends an ellipsis when clipping. |
+| `--sections=SPEC` | `self,total,callers,callees,tail` | Layout spec. `,` stacks rows, `+` lays sections side by side. |
 
 All `*=PATTERN` flags take a raw PCRE regex without delimiters; reli
 wraps them in `#…#` internally.
