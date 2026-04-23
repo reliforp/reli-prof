@@ -15,42 +15,99 @@ namespace Reli\Rbt\Analyze;
 
 /**
  * Display-time transforms for frame strings produced by
- * {@see TraceAggregator}: frame-level path shortening, and line-level
- * width cropping with a trailing ellipsis.
+ * {@see TraceAggregator}: frame-level path shortening and
+ * anchor-directional width cropping.
  *
  * Both transforms are purely cosmetic — aggregation keys are untouched,
  * so two distinct call sites that collapse to the same basename still
  * retain separate counts in the self/total tables.
  *
- * The two live together because they're the two cooperating levers the
- * CLI exposes to tame wide traces: `--path=short` shrinks the natural
- * column width; `--crop` hard-caps whatever's left so very long
- * FQN-only frames don't line-wrap the layout.
+ * Cropping anchor:
+ *   - ANCHOR_LEFT  → keep the head of the string, trailing ellipsis:
+ *                    `Reli\Inspector\MemoryDump\FastPath\Re…`
+ *                    — good when the distinguishing prefix is what you care about.
+ *   - ANCHOR_RIGHT → keep the tail of the string, leading ellipsis:
+ *                    `…\FastPath\RegionByteProvider::region`
+ *                    — good when you care about the leaf function and
+ *                    deep namespace prefixes are share-able noise.
+ *
+ * Frame cropping happens *before* a Table row is built, not after the
+ * line is rendered, so Symfony's Table auto-sizes its borders around
+ * the already-cropped content. That keeps the right-hand `|` border
+ * intact instead of getting chewed off by a naive line-level crop.
  */
 final class FrameFormatter
 {
     public const PATH_FULL = 'full';
     public const PATH_SHORT = 'short';
 
-    /**
-     * `path_mode`:
-     *   - PATH_FULL  → leave frame strings as-is.
-     *   - PATH_SHORT → replace the directory portion of `file:line`
-     *                  with the basename (`Worker.php:42`).
-     */
+    public const ANCHOR_LEFT = 'left';
+    public const ANCHOR_RIGHT = 'right';
+
     public function __construct(
         public readonly string $path_mode = self::PATH_FULL,
+        public readonly string $anchor = self::ANCHOR_LEFT,
     ) {
     }
 
     /**
-     * Frame-level transform: applies path shortening only.
-     *
-     * Use this on the value that will end up in the "frame" column of
-     * a table, or the body of a tail line — i.e. on content that's
-     * still going to be laid out / padded downstream.
+     * Path-shorten the frame but leave its length alone. Use this when
+     * the caller has no width budget (no `--crop`, or the section it's
+     * going into lays out at natural width).
      */
     public function formatFrame(string $frame): string
+    {
+        return $this->shortenPath($frame);
+    }
+
+    /**
+     * Path-shorten, then crop to `$budget` characters (anchor-aware).
+     *
+     * `$budget <= 0` disables cropping (returns the path-shortened
+     * frame as-is). A budget of 1 collapses to a lone `…`, which is
+     * a degenerate corner we guard against explicitly.
+     */
+    public function cropFrame(string $frame, int $budget): string
+    {
+        $frame = $this->shortenPath($frame);
+        if ($budget <= 0) {
+            return $frame;
+        }
+        $len = mb_strlen($frame);
+        if ($len <= $budget) {
+            return $frame;
+        }
+        if ($budget === 1) {
+            return '…';
+        }
+        if ($this->anchor === self::ANCHOR_RIGHT) {
+            return '…' . mb_substr($frame, $len - ($budget - 1));
+        }
+        return mb_substr($frame, 0, $budget - 1) . '…';
+    }
+
+    /**
+     * Line-level hard cap: crop a fully rendered output line at
+     * `$width` chars with a trailing ellipsis. Anchor-agnostic — used
+     * for section titles and other non-table lines that don't have
+     * borders to protect.
+     */
+    public static function cropLine(string $line, int $width): string
+    {
+        if ($width <= 0) {
+            return $line;
+        }
+        $len = mb_strlen($line);
+        if ($len <= $width) {
+            return $line;
+        }
+        if ($width === 1) {
+            return '…';
+        }
+        return mb_substr($line, 0, $width - 1) . '…';
+    }
+
+    private function shortenPath(string $frame): string
     {
         if ($this->path_mode !== self::PATH_SHORT) {
             return $frame;
@@ -78,28 +135,5 @@ final class FrameFormatter
             return $frame;
         }
         return $m[1] . ' ' . $basename . ':' . $m[3] . $opcode_suffix;
-    }
-
-    /**
-     * Line-level transform: hard-cap a fully rendered output line
-     * (including any table borders) at `$width` characters, replacing
-     * the last visible character with an ellipsis when clipping.
-     *
-     * `$width <= 0` is a no-op so callers can unconditionally route
-     * lines through this when crop is disabled.
-     */
-    public static function cropLine(string $line, int $width): string
-    {
-        if ($width <= 0) {
-            return $line;
-        }
-        $len = mb_strlen($line);
-        if ($len <= $width) {
-            return $line;
-        }
-        if ($width === 1) {
-            return '…';
-        }
-        return mb_substr($line, 0, $width - 1) . '…';
     }
 }

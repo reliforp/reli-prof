@@ -165,6 +165,19 @@ watch './reli rbt:analyze --last --last-depth=5 --top=5 < trace.rbt'
 two files with the same basename stay distinct in the self/total
 counts.
 
+By default `--crop` keeps the head of each frame and puts the
+ellipsis on the right. For deep-namespace frames like
+`Reli\Inspector\MemoryDump\FastPath\RegionByteProvider::regionBytes`
+that can hide the leaf; flip the anchor with `--crop-anchor=right`
+to keep the class/method/file instead:
+
+```bash
+./reli rbt:analyze --last=5 --path=short --crop=auto --crop-anchor=right < trace.rbt
+```
+
+Frames are cropped *before* going into the table, so Symfony's
+auto-sized borders stay intact either way.
+
 **Rearrange and side-by-side** — the `--sections` flag controls both
 the order of the report and whether sections stack or sit next to
 each other. `,` separates rows, `+` joins columns within a row:
@@ -202,7 +215,8 @@ view, no top-N noise) with `--top=0`:
 | `--hide=PATTERN` | — | Drop frames matching this PCRE pattern from each stack *before* counting. |
 | `--no-line` | off | Group frames by function name only (ignore `file:line`). |
 | `--path=MODE` | `full` | `full` keeps the whole path; `short` displays only `basename:line`. Display-only. |
-| `--crop=N\|auto` | `0` | Hard-clip each output line at N chars (or the terminal width per column with `auto`). Appends an ellipsis when clipping. |
+| `--crop=N\|auto` | `0` | Hard-clip each frame at N chars (or the terminal width per column with `auto`). Tables keep their borders — the crop applies to the frame column only. |
+| `--crop-anchor=left\|right` | `left` | Which end of the frame `--crop` preserves. `left` keeps the head (namespace); `right` keeps the leaf (class + method + file). |
 | `--sections=SPEC` | `self,total,callers,callees,tail` | Layout spec. `,` stacks rows, `+` lays sections side by side. |
 
 All `*=PATTERN` flags take a raw PCRE regex without delimiters; reli

@@ -118,6 +118,14 @@ final class AnalyzeCommand extends Command
                 '0',
             )
             ->addOption(
+                'crop-anchor',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'When --crop clips a frame, anchor at "left" (keep the head, ellipsis on the right — default)'
+                . ' or "right" (keep the leaf, ellipsis on the left). Tables keep their borders intact either way.',
+                FrameFormatter::ANCHOR_LEFT,
+            )
+            ->addOption(
                 'sections',
                 null,
                 InputOption::VALUE_REQUIRED,
@@ -160,6 +168,13 @@ final class AnalyzeCommand extends Command
         $path_mode = $input->getOption('path');
         if (!in_array($path_mode, [FrameFormatter::PATH_FULL, FrameFormatter::PATH_SHORT], true)) {
             $output->writeln("<error>--path must be 'full' or 'short', got: {$path_mode}</error>");
+            return 1;
+        }
+
+        /** @var string $crop_anchor */
+        $crop_anchor = $input->getOption('crop-anchor');
+        if (!in_array($crop_anchor, [FrameFormatter::ANCHOR_LEFT, FrameFormatter::ANCHOR_RIGHT], true)) {
+            $output->writeln("<error>--crop-anchor must be 'left' or 'right', got: {$crop_anchor}</error>");
             return 1;
         }
 
@@ -206,7 +221,7 @@ final class AnalyzeCommand extends Command
 
         $sections = $this->renderSections(
             $result,
-            new FrameFormatter($path_mode),
+            new FrameFormatter($path_mode, $crop_anchor),
             $layout,
             $row_crop_widths,
             $top,
@@ -391,6 +406,10 @@ final class AnalyzeCommand extends Command
             return $this->applyCrop($lines, $crop_width);
         }
         $count = count($tail);
+        // "  [NN] " prefix is 7 chars (2 indent + 2 bracket + 2 digits + 1 space).
+        // Bake that into the frame budget so --crop-anchor actually bites the
+        // frame text rather than a late line-level crop eating the tail end.
+        $frame_budget = $crop_width > 0 ? max(1, $crop_width - 7) : 0;
         foreach ($tail as $i => $entry) {
             $offset = $count - $i - 1;
             $label = $count === 1
@@ -398,7 +417,7 @@ final class AnalyzeCommand extends Command
                 : ($offset === 0 ? '(now)' : sprintf('(%d ago)', $offset));
             $lines[] = "  ── sample {$label} ──";
             foreach ($entry['frames'] as $depth => $frame) {
-                $lines[] = sprintf('  [%2d] %s', $depth, $formatter->formatFrame($frame));
+                $lines[] = sprintf('  [%2d] %s', $depth, $formatter->cropFrame($frame, $frame_budget));
             }
             if (($entry['annotations'] ?? null) !== null && $entry['annotations'] !== []) {
                 foreach ($entry['annotations'] as $key => $value) {
@@ -406,6 +425,9 @@ final class AnalyzeCommand extends Command
                 }
             }
         }
+        // Safety net: the sample separator line and annotations are
+        // fixed-format and normally short, but line-crop them anyway in
+        // case someone feeds an absurdly wide annotation value.
         return $this->applyCrop($lines, $crop_width);
     }
 
@@ -425,11 +447,30 @@ final class AnalyzeCommand extends Command
         $rows = array_slice($counts, 0, $top, preserve_keys: true);
 
         $lines = [];
-        $lines[] = "# {$title}";
+        $lines[] = FrameFormatter::cropLine("# {$title}", $crop_width);
 
         if ($rows === []) {
-            $lines[] = '  (no matches)';
-            return $this->applyCrop($lines, $crop_width);
+            $lines[] = FrameFormatter::cropLine('  (no matches)', $crop_width);
+            return $lines;
+        }
+
+        // Pre-size the frame column: we crop each frame *before* handing
+        // it to Symfony's Table, so the Table then auto-sizes its borders
+        // around the already-short content. That preserves the right-hand
+        // `|` border instead of having a post-render line crop eat it.
+        //
+        // Overhead per row: "| " + count + " | " + pct + " | " + frame + " |"
+        // count column widens to max(len("count"), widest numeric value);
+        // pct is fixed at 6 chars ("100.0%").
+        $frame_budget = 0;
+        if ($crop_width > 0) {
+            $count_col = strlen('count');
+            foreach ($rows as $row_count) {
+                $count_col = max($count_col, strlen((string) $row_count));
+            }
+            $pct_col = 6; // "100.0%"
+            $fixed_overhead = 2 + $count_col + 3 + $pct_col + 3 + 2;
+            $frame_budget = max(1, $crop_width - $fixed_overhead);
         }
 
         $buffer = new BufferedOutput();
@@ -438,10 +479,13 @@ final class AnalyzeCommand extends Command
         $table->setHeaders(['count', 'pct', 'frame']);
         foreach ($rows as $key => $count) {
             $pct = (float)$count * 100.0 / $denom;
+            $frame_cell = $frame_budget > 0
+                ? $formatter->cropFrame($key, $frame_budget)
+                : $formatter->formatFrame($key);
             $table->addRow([
                 (string) $count,
                 sprintf('%5.1f%%', $pct),
-                $formatter->formatFrame($key),
+                $frame_cell,
             ]);
         }
         $table->render();
@@ -452,7 +496,10 @@ final class AnalyzeCommand extends Command
                 $lines[] = $row_line;
             }
         }
-        return $this->applyCrop($lines, $crop_width);
+        // Note: no line-level applyCrop() on table rows — the frames are
+        // already cropped, and Symfony's Table has sized the borders to
+        // match. Clipping here would chew off the right border.
+        return $lines;
     }
 
     /**
