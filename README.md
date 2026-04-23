@@ -30,7 +30,7 @@ $ watch -n0.2 'reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail
 ```
 
 <p align="center">
-  <img src="docs/images/rbt-analyze-watch-demo.gif" alt="inspector:trace + watch rbt:analyze — live hot-frames" width="100%">
+  <img src="docs/images/rbt-analyze-watch-demo.gif" alt="watch rbt:analyze — live hot-frames" width="100%">
 </p>
 
 Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md).
@@ -44,7 +44,9 @@ $ sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
 $ ./reli rbt:explore trace.rbt
 ```
 
-![rbt:explore — sandwich + panes view](docs/images/rbt-explore-panes.png)
+<p align="center">
+  <img src="docs/images/rbt-explore-demo.gif" alt="rbt:explore demo" width="100%">
+</p>
 
 Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md). `.rbt` format spec and `converter:*` outputs (flamegraph, speedscope, pprof, callgrind, folded, phpspy): [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md). Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md).
 
