@@ -29,8 +29,9 @@ $ sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
 $ watch -n1 './reli rbt:analyze trace.rbt'
 ```
 
-<!-- TODO(gif): split terminals — left: inspector:trace capturing, right: watch rbt:analyze with growing hot-frames table -->
-![inspector:trace + watch rbt:analyze — live hot-frames (GIF coming soon)](docs/images/rbt-analyze-watch.gif)
+<h1 align="center">
+  <img src="docs/images/rbt-analyze-watch-demo.gif" alt="inspector:trace + watch rbt:analyze — live hot-frames" width="100%">
+</h1>
 
 Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md).
 
