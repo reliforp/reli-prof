@@ -2191,13 +2191,28 @@ final class ExploreTui
     }
 
     /**
-     * @param array{counts: array<int, int>, matched_samples: int} $view
+     * @param array{counts: array<int, int>, root_distance_sum: array<int, int>, matched_samples: int} $view
      * @return array{matched_samples:int, rows:list<array{int,int,string}>}
      */
     private function buildCache(array $view, bool $no_line): array
     {
         $counts = $view['counts'];
-        arsort($counts);
+        $sums = $view['root_distance_sum'];
+        // Count descending is the primary sort; root-distance sum ascending
+        // is a tie-breaker so entry-point-like frames (small accumulated
+        // distance from the stack root) bubble above their immediate callees
+        // when they appear in exactly the same number of samples. Without
+        // this, <main> can end up below a function it always calls.
+        uksort(
+            $counts,
+            static function (int $a, int $b) use ($counts, $sums): int {
+                $by_count = $counts[$b] <=> $counts[$a];
+                if ($by_count !== 0) {
+                    return $by_count;
+                }
+                return ($sums[$a] ?? 0) <=> ($sums[$b] ?? 0);
+            },
+        );
         $rows = [];
         foreach ($counts as $key_id => $count) {
             $label = Aggregator::labelFor($this->model, $key_id, $no_line, $this->opts->with_opcode);

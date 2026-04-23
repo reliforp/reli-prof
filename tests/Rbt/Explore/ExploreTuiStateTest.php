@@ -191,6 +191,48 @@ class ExploreTuiStateTest extends BaseTestCase
         $this->assertSame($result, $second);
     }
 
+    public function testEnsureOverviewBreaksCountTiesByRootCloseness(): void
+    {
+        // Pathological-but-realistic case: every sample has the same
+        // three frames, so main, mid and leaf all tie at count N on the
+        // total view. Without a tie-breaker the insertion order (leaf →
+        // root) bubbles the leaf to the top of the sidebar; with the
+        // root-distance tie-breaker the entry point (main) comes first
+        // and the call order is reflected when drilling down.
+        $frame_keys = [
+            'leaf /a.php:1',
+            'mid /m.php:1',
+            'main /r.php:1',
+        ];
+        $model = new TraceModel(
+            frame_keys: $frame_keys,
+            frame_keys_no_line: $frame_keys,
+            no_line_map: [0, 1, 2],
+            samples: [
+                [0, 1, 2],
+                [0, 1, 2],
+                [0, 1, 2],
+            ],
+            sampling_period_us: 10000,
+            source_path: '/dev/null',
+        );
+        $tui = $this->makeTui($model);
+        // Switch the overview sort to 'total' so all three tie at 3.
+        $this->set($tui, 'overview_sort', 'total');
+
+        /** @var array{matched_samples:int, rows:list<array{int,int,string}>} $result */
+        $result = $this->inv($tui, 'ensureOverview');
+
+        // All three frames appear in every sample, so counts tie at 3.
+        $this->assertSame(3, $result['rows'][0][0]);
+        $this->assertSame(3, $result['rows'][1][0]);
+        $this->assertSame(3, $result['rows'][2][0]);
+        // Order is now root-first because of the root-distance tie-breaker.
+        $this->assertSame('main /r.php:1', $result['rows'][0][2]);
+        $this->assertSame('mid /m.php:1', $result['rows'][1][2]);
+        $this->assertSame('leaf /a.php:1', $result['rows'][2][2]);
+    }
+
     public function testInvalidateClearsListCacheButPreservesOverview(): void
     {
         $tui = $this->makeTui();
