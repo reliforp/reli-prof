@@ -101,10 +101,11 @@ reli() {
     echo "reli: neither XDG_RUNTIME_DIR nor HOME is set; refusing to start" >&2
     return 2
   fi
-  mkdir -p "$scratch" || return $?
-  # Validate: must be a real directory owned by us, mode 0700, not a symlink.
-  if ! reli_validate_scratch "$scratch"; then
-    echo "reli: scratch dir $scratch failed owner/mode validation; aborting" >&2
+  mkdir -m 0700 -p "$scratch" || return $?
+  # Strictly reject if owner or mode don't match — don't silently coerce.
+  if ! reli_assert_scratch_safe "$scratch"; then
+    echo "reli: scratch dir $scratch failed safety check; aborting" >&2
+    echo "reli: if you own the dir, run: chmod 0700 '$scratch'" >&2
     return 2
   fi
 
@@ -124,15 +125,25 @@ reli() {
     reliforp/reli-prof:<TAG_PINNED_AT_GENERATION> "$@"
 }
 
-reli_validate_scratch() {
-  # POSIX-ish: stat format differs on BSD/macOS, but on Docker hosts (Linux)
-  # GNU stat is assumed. The print-wrapper subcommand may emit a platform-
-  # adjusted variant.
+reli_assert_scratch_safe() {
+  # Host-side check. The wrapper function runs on whichever shell invokes
+  # `docker run` (Linux bash, macOS zsh, WSL bash, ...), NOT inside the
+  # container. `stat` flag syntax therefore varies with host OS: GNU
+  # userland (`-c`) on Linux / WSL, BSD userland (`-f`) on macOS. The
+  # print-wrapper subcommand detects the target shell and host OS (via
+  # `--shell`) and emits the matching probe; the form below is the
+  # portable fallback that tries both.
   local d="$1"
   [ -d "$d" ] && [ ! -L "$d" ] || return 1
-  local owner; owner=$(stat -c '%u' "$d") || return 1
+  local owner mode
+  owner=$(stat -c '%u' "$d" 2>/dev/null) \
+    || owner=$(stat -f '%u' "$d" 2>/dev/null) \
+    || return 1
   [ "$owner" = "$(id -u)" ] || return 1
-  chmod 0700 "$d" || return 1
+  mode=$(stat -c '%a' "$d" 2>/dev/null) \
+    || mode=$(stat -f '%Lp' "$d" 2>/dev/null) \
+    || return 1
+  [ "$mode" = "700" ] || return 1
   return 0
 }
 ```
@@ -148,11 +159,16 @@ Key properties:
 - `-v "$PWD":"$PWD" -w "$PWD"` makes every cwd-relative or cwd-anchored
   absolute path Just Work (`-o trace.rbt`, `-o ./sub/trace.rbt`,
   `-o $PWD/trace.rbt` all resolve identically inside and outside).
-- Scratch dir under `$XDG_RUNTIME_DIR` (systemd: `/run/user/$UID`, 0700)
-  or `$HOME/.cache` — both are inside host-user-owned filesystem space,
-  so other local users cannot pre-create or symlink-hijack the path.
-  Validation (`reli_validate_scratch`) rejects compromised dirs with a
-  loud error rather than falling through.
+- Scratch dir under `$XDG_RUNTIME_DIR` (systemd: `/run/user/$UID`, 0700,
+  strongly per-user by construction) or `$HOME/.cache` (typically
+  user-private on single-user laptops and conventional home-directory
+  setups, but less categorical — shared NFS homes or unusual permission
+  regimes weaken the guarantee).
+  `reli_assert_scratch_safe` stats the resolved path and rejects
+  (loud abort, not silent coerce) anything that is a symlink, not
+  owned by the current uid, or not exactly mode 0700. The abort message
+  points at an explicit `chmod` recovery command so users who hit this
+  on a legitimately misconfigured dir know what to do.
 - `--user "$UID:$GID"` makes generated files owned by the host user
   (no `sudo rm` required after profiling).
 - `HOME="${scratch}"` aligns in-container config discovery
@@ -203,6 +219,25 @@ Commands safe under Minimal are those annotated
 change D). Running a Full-profile command under Minimal will fail at
 reli's first ptrace / network attempt — by design, not via an
 explicit wrapper-level guard.
+
+Because the failure path is generic (`EPERM` from ptrace, address
+bind failure, etc.) and the user may not immediately connect it to
+the profile choice, two mitigations ship together:
+
+1. `docker:print-wrapper --profile=minimal` prepends a header comment
+   to the emitted function listing the Minimal-safe commands
+   (generated via reflection over `ReliCommand` subclasses), so the
+   installed wrapper self-documents its scope.
+2. README explicitly says: "if a command fails unexpectedly under
+   `reli-view`, reinstall the wrapper with `--profile=full` and try
+   again." — the first-run troubleshooting path should be one
+   command, not a spelunking expedition.
+
+A wrapper-level runtime guard that pattern-matches `$1` and refuses
+incompatible commands up-front was considered and declined (see Out
+of scope): it would add a second enforcement layer that must be kept
+in sync with `DockerProfile`, and reli's own error is ultimately
+more accurate about *why* a command fails.
 
 ## Privilege and trust surface
 
@@ -437,6 +472,16 @@ Options:
 
 Output: shell code on stdout, no trailing prose. Safe to `eval`.
 
+`--shell` governs syntactic variant (`local`, `[[ ]]`, POSIX-portable
+fallbacks) of the emitted shell, not host-OS assumptions. The wrapper
+function executes on the user's host shell — which may be Linux
+bash / zsh, macOS zsh (Docker Desktop), WSL bash, etc. — not inside
+the container. Userland-level differences (notably `stat` flag
+syntax between GNU and BSD) are handled by emitting a portable probe
+that tries both. An explicit `--host-os=linux|macos|wsl` option is
+**out of scope for v1** but reserved as a future extension if the
+portable probe proves unreliable in practice.
+
 When `--profile=minimal`, the emitted output includes a leading comment
 block listing the commands classified as `DockerProfile::Minimal` (for
 user reference), gathered via reflection over the `ReliCommand`
@@ -485,7 +530,11 @@ Non-zero exit on unknown shell, unknown profile, or malformed option.
 8. **README.md** — replace "From Docker" snippet with the
    `eval "$(...)"` one-liner; also mention the `--profile=minimal`
    variant. Drop `sudo` from examples where it was only for ptrace
-   permission. Add a privilege / trust surface warning section.
+   permission. Add a privilege / trust surface warning section. Add
+   a one-line troubleshooting note: "if a command fails unexpectedly
+   under `reli-view` (Minimal), reinstall with `--profile=full` and
+   retry" — so first-time users don't have to diagnose the
+   profile-mismatch case themselves.
 9. **`docs/docker-wrapper.md`** (new) — full reference: profile
    comparison table, `RELI_DOCKER_EXTRA_ARGS` recipes, limitation
    table (reproduced from this design), security notes, FAQ
