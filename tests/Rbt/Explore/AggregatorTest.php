@@ -252,4 +252,80 @@ class AggregatorTest extends BaseTestCase
         $this->assertSame('mid /m.php:1', Aggregator::labelFor($model, 2, false));
         $this->assertSame('mid', Aggregator::labelFor($model, 1, true));
     }
+
+    public function testTotalTimeReportsRootDistanceSum(): void
+    {
+        $model = $this->buildModel();
+        $r = Aggregator::totalTime($model, new ViewOptions());
+        // Per-sample positions (leaf→root indexing in stack arrays):
+        //   [0,2,3] n=3 → leaf_a:1 dist=2, mid dist=1, root dist=0
+        //   [0,2,3] same
+        //   [1,2,3] n=3 → leaf_a:2 dist=2, mid dist=1, root dist=0
+        //   [2,3]   n=2 → mid dist=1, root dist=0
+        $this->assertSame(
+            [
+                0 => 4, // leaf_a:1 appears twice, each at dist 2
+                2 => 4, // mid appears in 4 samples, each at dist 1
+                3 => 0, // root appears in 4 samples, each at dist 0
+                1 => 2, // leaf_a:2 appears once at dist 2
+            ],
+            $r['root_distance_sum'],
+        );
+    }
+
+    public function testSelfTimeReportsRootDistanceSum(): void
+    {
+        $model = $this->buildModel();
+        $r = Aggregator::selfTime($model, new ViewOptions());
+        // Leaf-only credits: dist is n-1 for the sample.
+        //   samples 0,1: leaf=0, n=3 → +2 each
+        //   sample 2:    leaf=1, n=3 → +2
+        //   sample 3:    leaf=2 (mid), n=2 → +1
+        $this->assertSame(
+            [
+                0 => 4,
+                1 => 2,
+                2 => 1,
+            ],
+            $r['root_distance_sum'],
+        );
+    }
+
+    public function testCallersOfReportsRootDistanceSum(): void
+    {
+        $model = $this->buildModel();
+        // Focus mid. Real caller is root in all four samples; distance
+        // from root is 0 in every case.
+        $r = Aggregator::callersOf($model, 2, new ViewOptions());
+        $this->assertSame([3 => 0], $r['root_distance_sum']);
+    }
+
+    public function testCallersOfSyntheticRootUsesNegativeOneDistance(): void
+    {
+        $model = $this->buildModel();
+        // Focus root; it is always the bottom of the stack so the
+        // synthetic <root> marker accumulates -1 per sample.
+        $r = Aggregator::callersOf($model, 3, new ViewOptions());
+        $this->assertSame([-1 => -4], $r['root_distance_sum']);
+    }
+
+    public function testCalleesOfReportsRootDistanceSum(): void
+    {
+        $model = $this->buildModel();
+        // Focus mid. Callee dist from root:
+        //   [0,2,3] callee=0 at i=0, n=3 → dist = n - i_focus = 3 - 1 = 2
+        //   [0,2,3] same
+        //   [1,2,3] callee=1, same → dist = 2
+        //   [2,3]   no callee → synthetic <leaf> at virtual position,
+        //                       dist = n = 2
+        $r = Aggregator::calleesOf($model, 2, new ViewOptions());
+        $this->assertSame(
+            [
+                0 => 4,
+                1 => 2,
+                -2 => 2,
+            ],
+            $r['root_distance_sum'],
+        );
+    }
 }
