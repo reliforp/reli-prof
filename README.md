@@ -15,7 +15,7 @@ Use it for call-trace sampling (where time is spent), memory-graph analysis (whe
 
 ## Showcase
 
-A taste of what reli looks like in use. For the full walkthroughs, follow each showcase's link. For step-by-step first-use, see [docs/getting-started.md](docs/getting-started.md).
+A taste of what reli looks like in use. For the full walkthroughs, follow each showcase's link.
 
 ### Sampling with a live hot-frames feed — `inspector:trace` + `watch rbt:analyze`
 
