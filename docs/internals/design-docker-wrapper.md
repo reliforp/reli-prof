@@ -62,7 +62,7 @@ the intended envelope.
 
 | Scenario              | wrapper default guards                             | wrapper default does NOT guard                  |
 |-----------------------|----------------------------------------------------|-------------------------------------------------|
-| Single-user laptop    | cwd isolation (mounted), file ownership (via `--user`), host-owned scratch dir, sidecar socket under per-user 0700 dir | (nothing — the host user trusts themselves)     |
+| Single-user laptop    | cwd isolation (mounted), file ownership (via `--user`), user-private scratch dir (strict-checked), sidecar socket under per-user 0700 dir | (nothing — the host user trusts themselves)     |
 | CI runner (dedicated) | same as laptop, plus cache directories confined to host user scope | (same — assumes runner is ephemeral / trusted)  |
 | Multi-tenant host     | (partial — scratch uses `$XDG_RUNTIME_DIR` which systemd sets 0700 per-user; `--user` preserves per-user file ownership) | **ptrace of other tenants' processes** (wrapper grants `CAP_SYS_PTRACE` + `--pid=host`), **port conflicts via `--network=host`**, **apparmor removal** |
 
@@ -90,8 +90,11 @@ reli() {
   local tty=
   [ -t 0 ] && [ -t 1 ] && tty=-t
 
-  # Scratch dir lives under host-user-owned filesystem to prevent
-  # pre-creation / symlink attacks from other local users.
+  # Scratch dir path is chosen from locations that are normally user-
+  # private ($XDG_RUNTIME_DIR under systemd; $HOME/.cache otherwise).
+  # We do not *rely* on that — the mkdir below only sets mode 0700 on
+  # fresh creation (no-op if the dir exists), and the strict check
+  # after rejects anything we don't already own at mode 0700.
   local scratch
   if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
     scratch="${XDG_RUNTIME_DIR}/reli-docker"
@@ -322,8 +325,9 @@ sidecar (no more `/var/run` write).
 (typically `$HOME/.local/state/reli/...`).
 
 **Decision**: **keep the default unchanged**. Under the wrapper, `HOME`
-and `XDG_STATE_HOME` are already steered to the host-user-owned scratch
-dir (see wrapper shape). No core change needed. Reasoning:
+and `XDG_STATE_HOME` are already steered to the wrapper-managed scratch
+dir (see wrapper shape), which is itself owner/mode-validated before
+use. No core change needed. Reasoning:
 
 - Profile data is sensitive (variable values via `--trace-var`, heap
   contents via memory dumps — routinely contains credentials / PII).
@@ -388,7 +392,7 @@ Inventoried via a pass over every Symfony Console command definition.
 | TUI (`rbt:explore`, `rmem:explore`)                | auto `-t`.                                        |
 | File ownership                                     | `--user "$UID:$GID"`.                             |
 | Daemon output default                              | `HOME` / `XDG_STATE_HOME` → scratch.              |
-| Scratch-dir pre-creation attacks                   | scratch rooted in host-user-owned FS + owner/mode validation. |
+| Scratch-dir pre-creation / symlink attacks         | parent path chosen from normally user-private locations (XDG runtime / `$HOME/.cache`); strict owner + mode + non-symlink check on every invocation rejects anything that doesn't match, rather than relying on the parent's assumed permissions. |
 
 ### Handled by core changes
 
