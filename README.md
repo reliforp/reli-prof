@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/images/reli-banner.png" alt="Reli" width="420">
+  <img src="docs/images/logos/banner_bg_white.png" alt="Reli" width="100%">
 </h1>
 
 ![Minimum PHP version: 8.5.0](https://img.shields.io/badge/php-8.5.0%2B-blue.svg)
