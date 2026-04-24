@@ -399,3 +399,70 @@ grouping keys:
 If those produce reasonable groupings on the four noisy reports
 (`rw3_messenger-envelopes`, `rw3_doctrine-uow`, `rw3_eloquent-hydration`,
 `rw_logger-stack`), ship it.
+
+### N2 — separate positive signals from warnings
+
+Affected finding kinds: `shared_singleton`, `shared_fanin` (when
+refs/targets ratio is high).
+
+Evidence:
+- `rw3_reflection-heavy`: `AttributeMetadata::$ignoredAttributes:
+  4,499 refs -> 1 target` means CoW is already sharing — positive
+- `rw4_pdo-result-hoarding`: `key -> ? (4,500,030 refs -> 39 targets,
+  115385.4 each)` means string interning is working — positive
+- `rw4_enum-collections`: `$payment -> PaymentMethod (59,996 refs
+  -> 4 targets)` means enum is correctly shared — positive
+
+Currently all three land in "Additional Info" with `[shared_*]`
+formatting identical to actual problems.
+
+**Fix**: split the Additional Info section into two sub-sections:
+
+    Observations (no action needed):
+      [CoW share] AttributeMetadata::$ignoredAttributes (4,499 × 1)
+      [interning] HashTable keys: 4.5M refs → 39 interned strings
+
+    Minor findings:
+      (rest)
+
+Deciding which bucket a finding goes into:
+- `shared_singleton` → always "Observations" (it means shared)
+- `shared_fanin` with `refs/targets >= 100` → "Observations"
+  (it means well-deduped)
+- `shared_fanin` with `refs/targets < 10` → "Minor findings"
+  (potential dedup opportunity)
+
+### N4 — collapse uniform-sibling rows in Top Arrays / Top Strings
+
+**File**: `src/Inspector/Output/MemoryOutput/Report/Formatter/TextReportFormatter.php`
+(Top Arrays and Top Strings rendering)
+
+Recurring across the corpus: multiple rows of same-sized siblings
+take separate lines:
+
+    rw2_error-context-capture:
+      3  54.50 KB  #199    $errors[0]->frames
+      4  53.99 KB  #1104238 $errors[1000]->frames
+      5  53.99 KB  #1105342 $errors[1001]->frames
+      ... (7 rows total)
+
+    rw3_graphql-shape:
+      8  672 KB  $queryResult[viewer][recentActivity][0]
+      9  672 KB  $queryResult[viewer][recentActivity][1]
+     10  672 KB  $queryResult[viewer][recentActivity][2]
+
+    rw4_pdo-result-hoarding: $byUser[0..5] all 19.42 KB (6 rows)
+    rw4_enum-collections: $byStatus[pending..refunded] all 256 KB (6 rows)
+
+**Fix**: in the rendering loop, detect runs where consecutive rows
+have the same `retained`, same `element_count`, and paths that
+differ only in an array-index suffix. Collapse into one row with a
+"+N more similar" annotation:
+
+    3  54.50 KB  #199  $errors[0]->frames
+        (+6 more similar siblings at ~54 KB each, indices [1000..1006])
+
+Same shape for Top Strings (multiple identical-size Carbon
+doc_comments in rw_logger-stack).
+
+~30 lines total. Purely formatter-side.
