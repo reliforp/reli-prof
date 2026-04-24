@@ -187,7 +187,8 @@ final class RmemExploreCommand extends Command
         if ($model->tryLoadSourceLocationRefsFromCache($rmemPathForCache)) {
             $output->writeln('<info>loaded source-location refs from cache</info>');
         }
-        $this->writeOverview($reader, $output);
+        $overviewLines = $this->buildOverviewLines($reader);
+        $this->writeOverview($overviewLines, $output);
         $output->writeln(sprintf(
             '<info>loaded %s edges, starting TUI</info>',
             number_format($model->edgeCount),
@@ -373,6 +374,9 @@ final class RmemExploreCommand extends Command
 
         $term = new Terminal();
         $tui = new RmemExploreTui($model, $term, $keymap, $initialNodeId, $socketPath);
+        if ($overviewLines !== []) {
+            $tui->setOverviewLines($overviewLines);
+        }
         if ($queryChildPid !== null) {
             $tui->setQueryChildPid($queryChildPid);
         }
@@ -704,19 +708,21 @@ final class RmemExploreCommand extends Command
     }
 
     /**
-     * Print the same heap/memory overview that inspector:memory:report
-     * shows at the top of its text output — Captured timestamp, the
-     * memory_get_usage() family, memory_limit, RSS, and the heap /
-     * VM-stack / compiler-arena split with analyzed coverage. Written
-     * to the normal screen buffer before the TUI enters alt-screen
-     * mode, so it stays visible during startup and reappears in the
-     * scrollback after the user quits.
+     * Build the same heap/memory overview lines that
+     * inspector:memory:report shows at the top of its text output —
+     * Captured timestamp, the memory_get_usage() family, memory_limit,
+     * RSS, and the heap / VM-stack / compiler-arena split with analyzed
+     * coverage. Plain text, no Symfony formatter tags — suitable for
+     * either stdout (before the TUI starts) or the TUI overview
+     * overlay.
+     *
+     * @return list<string>
      */
-    private function writeOverview(BinaryReader $reader, OutputInterface $output): void
+    private function buildOverviewLines(BinaryReader $reader): array
     {
         $summary = BinaryReportDataProvider::loadSummary($reader);
         if ($summary === []) {
-            return;
+            return [];
         }
         $findings = (new OverviewPass($summary))->analyze();
         $overview_findings = array_values(array_filter(
@@ -724,18 +730,40 @@ final class RmemExploreCommand extends Command
             fn (Finding $f): bool => in_array($f->kind, ['overview', 'coverage_gap'], true),
         ));
         if ($overview_findings === []) {
-            return;
+            return [];
         }
 
+        $lines = [];
         $captured_at = BinaryReportDataProvider::loadCapturedAt($reader);
-
-        $output->writeln('');
-        $output->writeln('<info>=== Overview ===</info>');
         if ($captured_at !== null) {
-            $output->writeln('  Captured: ' . $captured_at);
+            $lines[] = 'Captured: ' . $captured_at;
         }
         foreach ($overview_findings as $finding) {
-            $output->writeln('  ' . $finding->summary);
+            // The overview finding packs its fields into a single
+            // pipe-joined summary; split for a denser multi-line view.
+            foreach (explode(' | ', $finding->summary) as $part) {
+                $lines[] = $part;
+            }
+        }
+        return $lines;
+    }
+
+    /**
+     * Print the overview to the normal screen buffer before the TUI
+     * enters alt-screen mode, so it stays visible during startup and
+     * reappears in the scrollback after the user quits.
+     *
+     * @param list<string> $lines
+     */
+    private function writeOverview(array $lines, OutputInterface $output): void
+    {
+        if ($lines === []) {
+            return;
+        }
+        $output->writeln('');
+        $output->writeln('<info>=== Overview ===</info>');
+        foreach ($lines as $line) {
+            $output->writeln('  ' . $line);
         }
         $output->writeln('');
     }

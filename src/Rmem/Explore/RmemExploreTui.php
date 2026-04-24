@@ -58,6 +58,9 @@ final class RmemExploreTui
     private int $sidebarScroll = 0;
 
     private bool $showHelp = false;
+    private bool $showOverview = false;
+    /** @var list<string> plain-text heap/memory overview lines (matches inspector:memory:report overview) */
+    private array $overviewLines = [];
     private bool $showSidebar = true;
     private ?string $filterPattern = null;
     private string $filterInput = '';
@@ -106,6 +109,12 @@ final class RmemExploreTui
     public function setSccBuilderPid(int $pid): void
     {
         $this->sccBuilderPid = $pid;
+    }
+
+    /** @param list<string> $lines */
+    public function setOverviewLines(array $lines): void
+    {
+        $this->overviewLines = $lines;
     }
 
     /**
@@ -530,7 +539,13 @@ final class RmemExploreTui
         // scroll wheel as arrow up/down.
         $mouse = MouseEvent::tryParse($key);
         if ($mouse !== null) {
-            if (!$this->filterPrompt && !$this->addrPrompt && !$this->searchPrompt && !$this->showHelp) {
+            if (
+                !$this->filterPrompt
+                && !$this->addrPrompt
+                && !$this->searchPrompt
+                && !$this->showHelp
+                && !$this->showOverview
+            ) {
                 $this->handleMouseEvent($mouse);
             }
             return;
@@ -540,6 +555,10 @@ final class RmemExploreTui
 
         if ($this->showHelp) {
             $this->showHelp = false;
+            return;
+        }
+        if ($this->showOverview) {
+            $this->showOverview = false;
             return;
         }
 
@@ -585,6 +604,7 @@ final class RmemExploreTui
             Keymap::ACTION_NO_LINE => $this->toggleAllEdges(),
             Keymap::ACTION_FILTER_VIEW => $this->startFilter(),
             Keymap::ACTION_HELP => $this->showHelp = true,
+            Keymap::ACTION_VIEW_OVERVIEW => $this->showOverview = $this->overviewLines !== [],
             Keymap::ACTION_QUIT => $this->running = false,
             default => $this->dispatchRaw($key),
         };
@@ -1636,6 +1656,8 @@ final class RmemExploreTui
 
         if ($this->showHelp) {
             $this->renderHelpOverlay($lines, $cols, $rows);
+        } elseif ($this->showOverview) {
+            $this->renderOverviewOverlay($lines, $cols, $rows);
         }
 
         // Prompt overlays on last line
@@ -1971,8 +1993,8 @@ final class RmemExploreTui
     private function renderFooter(int $cols): string
     {
         $hints = $this->sandwich
-            ? " ↑↓:sel Tab:pane Enter:focus Bksp:back g:def r:sort n:edges f:follow m:mark ':marks o:side s:top t:roots ?:help q:quit"
-            : " ↑↓:sel Enter:drill Bksp:back /:filt F:search r:sort c:class y:type a:addr g:def f:follow m:mark ':marks o:side s:top t:roots q:quit";
+            ? " ↑↓:sel Tab:pane Enter:focus Bksp:back g:def r:sort n:edges f:follow m:mark ':marks o:side O:mem s:top t:roots ?:help q:quit"
+            : " ↑↓:sel Enter:drill Bksp:back /:filt F:search r:sort c:class y:type a:addr g:def f:follow m:mark ':marks o:side O:mem s:top t:roots q:quit";
         $followBadge = $this->followMode ? "\e[1;42;30m follow \e[0m " : '';
         $bare = $hints;
         $visibleLen = strlen($bare) + ($this->followMode ? 9 : 0); // badge rendered width
@@ -2010,6 +2032,7 @@ final class RmemExploreTui
             '    r               Toggle sort: retained / link name',
             '    n               Toggle tree/all edges',
             '    o               Toggle sidebar (path to root)',
+            '    O               Show memory overview (heap/limit/RSS/...)',
             '',
             '  Sandwich view:',
             '    Top pane        Parents (who retains this node)',
@@ -2037,6 +2060,62 @@ final class RmemExploreTui
                 $content = str_pad($text, $boxW);
             }
             $startCol = max(0, (int)(($cols - $boxW) / 2));
+            $lines[$lineIdx] = "\e[" . ($lineIdx + 1) . ";" . ($startCol + 1) . "H"
+                . "\e[47;30m" . $content . "\e[0m";
+        }
+    }
+
+    /**
+     * Render a centered overlay box with the heap/memory overview —
+     * the same content inspector:memory:report prints under its
+     * "=== Overview ===" header. Populated from setOverviewLines(),
+     * which the command fills once at startup from the binary's
+     * summary section via OverviewPass.
+     *
+     * @param list<string> &$lines
+     */
+    private function renderOverviewOverlay(array &$lines, int $cols, int $rows): void
+    {
+        $body = [
+            '  Memory overview',
+            '',
+        ];
+        foreach ($this->overviewLines as $line) {
+            $body[] = '  ' . $line;
+        }
+        $body[] = '';
+        $body[] = '  Any key to dismiss';
+
+        $contentW = 0;
+        foreach ($body as $line) {
+            $w = mb_strlen($line);
+            if ($w > $contentW) {
+                $contentW = $w;
+            }
+        }
+        // Budget: 4-col margin for the box plus a 2-col inner padding on
+        // each side. Long overview lines (especially the pipe-joined
+        // heap/vm_stack/compiler_arena trio) get clamped to the terminal
+        // width so the box never runs past the edge.
+        $boxW = min(max($contentW + 4, 40), max(40, $cols - 4));
+        $boxH = count($body) + 2;
+        $startRow = max(0, (int)(($rows - $boxH) / 2));
+        $startCol = max(0, (int)(($cols - $boxW) / 2));
+
+        for ($i = 0; $i < $boxH; $i++) {
+            $lineIdx = $startRow + $i;
+            if ($lineIdx >= count($lines)) {
+                break;
+            }
+            if ($i === 0 || $i === $boxH - 1) {
+                $content = str_repeat('─', $boxW);
+            } else {
+                $text = $body[$i - 1] ?? '';
+                if (mb_strlen($text) > $boxW - 2) {
+                    $text = mb_substr($text, 0, $boxW - 5) . '...';
+                }
+                $content = str_pad($text, $boxW);
+            }
             $lines[$lineIdx] = "\e[" . ($lineIdx + 1) . ";" . ($startCol + 1) . "H"
                 . "\e[47;30m" . $content . "\e[0m";
         }
