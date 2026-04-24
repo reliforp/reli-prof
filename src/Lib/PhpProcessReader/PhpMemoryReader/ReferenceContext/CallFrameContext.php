@@ -20,6 +20,7 @@ final class CallFrameContext implements ReferenceContext
     public function __construct(
         public string $function_name,
         public int $lineno,
+        public readonly ?string $filename = null,
     ) {
     }
 
@@ -37,9 +38,13 @@ final class CallFrameContext implements ReferenceContext
     #[\Override]
     public function getContexts(): iterable
     {
-        return [
+        $attrs = [
             'function_name' => $this->function_name,
             'lineno' => $this->lineno,
         ];
+        if ($this->filename !== null && $this->filename !== '') {
+            $attrs['filename'] = $this->filename;
+        }
+        return $attrs;
     }
 }

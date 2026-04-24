@@ -31,4 +31,20 @@ final class OpArrayContext implements ReferenceContext
     {
         return [$this->header_memory_location, $this->body_memory_location];
     }
+
+    #[\Override]
+    public function getContexts(): iterable
+    {
+        $attrs = [];
+        if ($this->header_memory_location->file !== '') {
+            $attrs['filename'] = $this->header_memory_location->file;
+        }
+        if ($this->header_memory_location->line_start > 0) {
+            $attrs['line_start'] = $this->header_memory_location->line_start;
+        }
+        if ($this->header_memory_location->line_end > 0) {
+            $attrs['line_end'] = $this->header_memory_location->line_end;
+        }
+        return $attrs;
+    }
 }

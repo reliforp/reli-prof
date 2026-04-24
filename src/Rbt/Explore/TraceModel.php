@@ -15,6 +15,7 @@ namespace Reli\Rbt\Explore;
 
 use Reli\Converter\BinaryTrace\BinaryTraceReader;
 use Reli\Converter\StreamDecompressor;
+use Reli\Lib\String\PathMap;
 
 /**
  * In-memory model of a .rbt trace, optimised for the interactive
@@ -61,6 +62,7 @@ final class TraceModel
      */
     public static function load(string $path, array $path_map = []): self
     {
+        $path_mapper = new PathMap($path_map);
         $stream = @fopen($path, 'rb');
         if ($stream === false) {
             throw new \RuntimeException("Failed to open trace file: {$path}");
@@ -105,7 +107,7 @@ final class TraceModel
                 $stack = [];
                 foreach ($sample->trace->call_frames as $frame) {
                     $function = $frame->function_name;
-                    $file = $path_map !== [] ? self::mapPath($frame->file_name, $path_map) : $frame->file_name;
+                    $file = $path_mapper->map($frame->file_name);
                     $line = $frame->lineno;
                     $opcode = $frame->opcode_name;
 
@@ -166,25 +168,6 @@ final class TraceModel
         } finally {
             fclose($stream);
         }
-    }
-
-    /**
-     * @param array<string, string> $path_map
-     */
-    private static function mapPath(string $path, array $path_map): string
-    {
-        $best_prefix = '';
-        $best_replacement = '';
-        foreach ($path_map as $from => $to) {
-            if (str_starts_with($path, $from) && strlen($from) > strlen($best_prefix)) {
-                $best_prefix = $from;
-                $best_replacement = $to;
-            }
-        }
-        if ($best_prefix === '') {
-            return $path;
-        }
-        return $best_replacement . substr($path, strlen($best_prefix));
     }
 
     public function sampleCount(): int

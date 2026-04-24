@@ -15,6 +15,7 @@ namespace Reli\Command\Rmem;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
+use Reli\Lib\String\PathMap;
 use Reli\Rbt\Explore\Keymap;
 use Reli\Rbt\Explore\Terminal;
 use Reli\Rmem\Serve\RmemQueryService;
@@ -125,6 +126,16 @@ final class RmemExploreCommand extends Command
                 'per-parent cap on BFS child expansion for the bridged subgraph',
                 (string)\Reli\Rmem\Live\VizHtmlBuilder::DEFAULT_MAX_CHILDREN_PER_NODE,
             )
+            ->addOption(
+                'path-map',
+                null,
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'rewrite file paths recorded in the snapshot for local navigation;'
+                . ' format is "from=to" where "from" is a prefix recorded in'
+                . ' the snapshot and "to" is the local replacement'
+                . ' (e.g. --path-map /var/www/html=/home/you/project).'
+                . ' May be specified multiple times; longest prefix wins',
+            )
         ;
     }
 
@@ -149,12 +160,30 @@ final class RmemExploreCommand extends Command
             ? Keymap::fromJsonFile($keymap_path)
             : Keymap::default();
 
+        /** @var list<string> $path_map_raw */
+        $path_map_raw = $input->getOption('path-map');
+        try {
+            $path_map = PathMap::parseOption($path_map_raw);
+        } catch (\InvalidArgumentException $e) {
+            $output->writeln('<error>' . $e->getMessage() . '</error>');
+            return 1;
+        }
+
         $output->writeln("<info>loading {$file} ...</info>");
         $reader = BinaryReader::open($file);
         $output->writeln('<info>building substrate ...</info>');
         $substrate = GraphSubstrate::createFromBinary($reader, skipScc: true);
         $output->writeln('<info>building model ...</info>');
-        $model = RmemModel::fromSubstrate($substrate, $reader);
+        $model = RmemModel::fromSubstrate($substrate, $reader, $path_map);
+        // If a previous session (or a parallel SCC builder) already
+        // wrote a source-location ref section into the derived cache,
+        // consume it so the TUI skips the live class_entry index scan
+        // and ancestor walk.
+        $resolved = realpath($file);
+        $rmemPathForCache = $resolved !== false ? $resolved : $file;
+        if ($model->tryLoadSourceLocationRefsFromCache($rmemPathForCache)) {
+            $output->writeln('<info>loaded source-location refs from cache</info>');
+        }
         $output->writeln(sprintf(
             '<info>loaded %s edges, starting TUI</info>',
             number_format($model->edgeCount),
@@ -636,6 +665,32 @@ final class RmemExploreCommand extends Command
     {
         try {
             $reader = BinaryReader::open($rmemPath);
+            // Arm a producer so the derived cache writer also packs a
+            // source-location ref section. The producer reconstructs a
+            // throwaway RmemModel over the same reader/substrate so it
+            // can see attributes. Fail-open — if anything here throws,
+            // the SCC cache is still written.
+            \Reli\Inspector\Output\MemoryOutput\Report\Substrate\FfiCsrGraphSubstrate::$sourceLocRefProducer =
+                static function (string $_rmemPath) use ($reader): ?array {
+                    // The substrate for srcloc must exist before this
+                    // callback runs, so rebuild without cache to ensure
+                    // a fresh graph. Cheaper: re-open the reader and
+                    // skip SCC (we're building it anyway in the outer
+                    // call).
+                    try {
+                        $innerReader = BinaryReader::open($reader->getFilePath());
+                        $srclocSubstrate = GraphSubstrate::createFromBinary(
+                            $innerReader,
+                            forceFfiCsr: true,
+                            useCache: false,
+                            skipScc: true,
+                        );
+                        $model = RmemModel::fromSubstrate($srclocSubstrate, $innerReader);
+                        return $model->buildSourceLocationRefs();
+                    } catch (\Throwable) {
+                        return null;
+                    }
+                };
             GraphSubstrate::createFromBinary($reader, skipScc: false, forceFfiCsr: true);
             exit(0);
         } catch (\Throwable $e) {

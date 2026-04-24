@@ -1714,7 +1714,26 @@ final class RmemExploreTui
             $val = RmemModel::sanitizeForTerminal($detail['string_value']);
             $wrap("val: \"{$val}\"");
         }
+        foreach ($detail['source_locations'] as $loc) {
+            $label = match ($loc['kind']) {
+                'self' => 'source',
+                'defined_at' => 'defined',
+                'held_by' => 'held by',
+                default => $loc['kind'],
+            };
+            $wrap("{$label}: {$loc['formatted']}");
+        }
         foreach ($detail['attributes'] as $key => $val) {
+            // filename / line_start / line_end / lineno are already
+            // rendered via source_locations; class_name is surfaced in
+            // the class: line. Suppress the raw entries so the detail
+            // pane stays scannable.
+            if (
+                $key === 'filename' || $key === 'line_start' || $key === 'line_end'
+                || $key === 'lineno' || $key === 'class_name'
+            ) {
+                continue;
+            }
             $wrap("{$key}: {$val}");
         }
 

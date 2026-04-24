@@ -2,7 +2,10 @@
 
 ## Status
 
-Proposed design. Not yet implemented.
+Implemented. The sidecar format (`.rmem.derived`, magic `RMDC`)
+and the `subtree_by_idx`, `scc_by_idx`, `scc_profiles`, and
+`srcloc_refs` sections are in production use. `canonical_map` is
+still proposed.
 
 ## Problem
 
@@ -194,10 +197,60 @@ invalidating existing ones:
   report findings
 - **node_labels**: function_name:lineno labels resolved from
   the attributes section
+- **srcloc_refs** *(implemented)*: packed source-location
+  indirection refs — see below.
 
 Each section has its own element_count in the TOC, so a partial
 sidecar (missing newer sections) is still valid for the sections
 it does contain. Tools check `hasSection` before using each one.
+
+### srcloc_refs (source-location indirection)
+
+`rmem:explore` surfaces three flavours of source location per node
+(`self`, `defined_at`, `held_by` — see
+`docs/memory/rmem-explore-and-serve.md`). `self` is served
+directly from the attributes section. The other two require
+either a class_name → class_entry index or an ancestor walk.
+
+The `srcloc_refs` section caches the result of both resolutions
+so subsequent sessions skip the work:
+
+```
+srcloc_refs   packed rows, 12 bytes each:
+  uint32 node_id
+  int32  defined_at_nid   -1 if none
+  int32  held_by_nid      -1 if none
+```
+
+Only nodes that benefit from indirection are stored. Nodes that
+carry a filename of their own (`self`) are omitted — their
+location comes straight from the attributes section and would be
+redundant here. Nodes with neither `defined_at` nor `held_by`
+(e.g. roots below a bare sentinel) are also omitted.
+
+The section is produced by the SCC builder child that
+`rmem:explore` forks on startup: when it runs, it reconstructs
+a lightweight `RmemModel` over the same reader, calls
+`buildSourceLocationRefs()`, and passes the result into
+`FfiCsrGraphSubstrate::writeDerivedCache()` via a static
+producer hook (`FfiCsrGraphSubstrate::$sourceLocRefProducer`).
+Fail-open: a failure in the producer logs a warning and the
+cache is still written without the section.
+
+On load, `RmemModel::tryLoadSourceLocationRefsFromCache()`
+populates an in-memory indirection map that
+`resolveSourceLocations()` consults before falling back to the
+live class-entry scan or ancestor walk. In-memory memoisation
+stays active either way, so a fresh session without the cache
+remains fast after the first few queries.
+
+#### Why node_id-keyed, not CSR-index-keyed
+
+Unlike the dense `int32[node_count]` sections, `srcloc_refs` is
+**sparse** — most nodes don't produce a row. Keying by node_id
+and storing rows contiguously is smaller than a full CSR-indexed
+array of `(defined_at_nid, held_by_nid)` pairs for every node,
+and the read path already has to look up node_ids.
 
 ### Cost estimate
 

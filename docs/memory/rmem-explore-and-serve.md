@@ -110,7 +110,48 @@ php reli rmem:explore output.rmem --serve --serve-control
 # Combine with --serve to expose both the Unix socket and HTTP.
 php reli rmem:explore output.rmem --http-bridge 8080
 # Then press `f` inside the TUI and open http://127.0.0.1:8080/
+
+# Rewrite file paths recorded in the snapshot for local navigation.
+# Useful when the snapshot was captured inside a container or on a
+# remote host and you want the "source:" lines in the detail pane
+# to point at your local checkout. May be repeated; longest prefix
+# wins.
+php reli rmem:explore output.rmem \
+    --path-map /var/www/html=/home/me/project
 ```
+
+### Source locations
+
+The right-hand detail pane surfaces up to three source-location
+lines per node, depending on what is available:
+
+- **`source:`** — the node itself carries a `filename` attribute.
+  Emitted for `CallFrameContext`, `OpArrayContext`, and user-defined
+  `ClassEntryContext` nodes.
+- **`defined:`** — for object zvals, the filename of the class the
+  object belongs to. Resolved by hopping through the class name to
+  the matching `class_entry` node.
+- **`held by:`** — the filename of the nearest tree-ancestor that
+  has a source location, so bare arrays / scalars whose definition
+  site is implicit still get a navigation hint. Only emitted when
+  the node has no `source:` of its own.
+
+`line_start`–`line_end` is printed for nodes that carry a range
+(op_array, class_entry); single-line nodes (`lineno`) print as
+`file:line`. `--path-map` is applied to every output line, so
+values recorded as `/var/www/html/src/App.php` become
+`/home/me/project/src/App.php` in the pane.
+
+The paths show up in a form terminals such as iTerm2, VS Code's
+integrated terminal, and Kitty recognise as clickable — `Cmd`/`Ctrl`-click
+(or the terminal's keyboard equivalent) opens the file at the
+given line in your editor.
+
+The first (highest-priority) location is also surfaced as
+`source_location` in `query.node_detail` responses, and the full
+list as `source_locations[]`, so MCP/HTTP bridge clients can turn
+them into `vscode://file/…` or `https://github.com/…` links at
+render time.
 
 ### HTTP bridge options (`--http-bridge`)
 

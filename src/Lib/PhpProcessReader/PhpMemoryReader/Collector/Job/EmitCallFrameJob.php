@@ -111,12 +111,21 @@ final class EmitCallFrameJob implements CollectorJob
         );
 
         $lineno = -1;
+        $filename = null;
         if ($execute_data->opline !== null and !$execute_data->isInternalCall($ctx->dereferencer)) {
             $opline = $ctx->dereferencer->deref($execute_data->opline);
             $lineno = $opline->lineno;
+            if ($execute_data->func !== null) {
+                try {
+                    $func = $ctx->dereferencer->deref($execute_data->func);
+                    $filename = $func->op_array->getFileName($ctx->dereferencer);
+                } catch (\Throwable) {
+                    $filename = null;
+                }
+            }
         }
 
-        $call_frame_context = new CallFrameContext($function_name, $lineno);
+        $call_frame_context = new CallFrameContext($function_name, $lineno, $filename);
 
         // Track memory location
         try {
