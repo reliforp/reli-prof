@@ -1181,26 +1181,69 @@ Reports live in `/tmp/memreport-out/rw3_*.report.txt`. Observations
 below are grounded in specific findings from those reports — not
 speculation.
 
-### N1. `empty_object` on Closures is misleading advice
+### N1. `empty_object` should exclude internal classes
 
-`empty_object` flagged Closures as "Objects with no stored properties —
-pure overhead, may be replaceable" in at least three scenarios:
+`empty_object` flags instances with zero user-declared properties as
+"pure overhead, may be replaceable". The logic assumes the object is a
+user-land class that could be refactored to a plain struct — but the
+finding misfires on every PHP internal class, because internal classes
+by definition have no user-declared properties while still carrying
+significant C-side state.
 
-- `rw3_closure-leak`: `Closure: 6,000 instances x 344 B` (the actual leak
-  root — each closure captures `$this`)
-- `rw3_messenger-envelopes`: `Closure: 50,000 instances x 344 B` (the
-  `RetryStamp::$replay` closures capturing `$msg`)
-- `rw3_graphql-shape`: `Closure: 320 instances x 344 B` (field resolvers
-  that capture config)
+Captured across the 20-report corpus (see index below), internal
+classes showing up as `empty_object`:
 
-In all three cases the Closures are not "empty" — they carry captured
-state that is the whole reason they retain memory. The "may be
-replaceable" wording is actively misleading; a reader following it
-won't find a replacement target.
+| Report                      | Class                 | Count | Note                                        |
+|-----------------------------|-----------------------|-------|---------------------------------------------|
+| `rw_phpunit`                | `ReflectionClass`     | 200   | internal; reflection handle                 |
+| `rw_twig`                   | `ReflectionMethod`    | 177   | internal                                    |
+| `rw_symfony-console`        | `Closure`             | 56    | internal; carries captured `$this`/`use`    |
+| `rw3_closure-leak`          | `Closure`             | 6,000 | the *actual leak root*, not "replaceable"   |
+| `rw3_messenger-envelopes`   | `Closure`             | 50,000| `RetryStamp::$replay` — the retainer        |
+| `rw3_graphql-shape`         | `Closure`             | 320   | field resolvers                             |
+| `rw4_generator-leak`        | `Generator`           | 2,000 | captures `$this` + pipeline state           |
 
-Fix: in `EmptyObjectPass` (or wherever `empty_object` is emitted),
-exclude `Closure`. Closures with no bound state are extremely rare in
-user code; the finding reliably misfires for them.
+In every one of those cases, "no stored properties — may be replaceable"
+is misleading: internal objects *cannot* be made into a plain value
+shape, and several of those rows are pointing the reader directly at
+the retainer they should be investigating ("this 2,000 Generators / 6k
+Closures isn't waste, it's your leak").
+
+Fix: filter internal classes at the pass level. `EmptyObjectPass`
+already has class information; use the Zend class-entry `type` (user
+= 0x01 vs internal = 0x02) to skip internal. A hard-coded denylist
+works as a short-term substitute:
+
+    Closure, Generator, Fiber,
+    WeakMap, WeakReference, SplObjectStorage, SplFixedArray,
+    SplDoublyLinkedList, SplQueue, SplStack, SplHeap, SplPriorityQueue,
+    DateTime, DateTimeImmutable, DateInterval, DateTimeZone, DatePeriod,
+    DOMDocument, DOMElement, DOMNode, DOMText, DOMAttr,
+    SimpleXMLElement, XMLReader, XMLWriter,
+    PDO, PDOStatement,
+    mysqli, mysqli_stmt, mysqli_result,
+    ReflectionClass, ReflectionMethod, ReflectionProperty,
+    ReflectionFunction, ReflectionParameter,
+    ArrayObject, ArrayIterator,
+    CachingIterator, RecursiveDirectoryIterator, // ... (many more)
+
+The class-entry `type` check is the correct implementation; the
+denylist is only defensible as a stepping stone until the substrate
+exposes the internal/user flag cleanly.
+
+After this filter, the remaining `empty_object` findings are
+user-defined classes with no declared properties — for which the
+finding's advice ("consider value type / enum / flag-only class") is
+actually applicable. From the corpus, genuinely-relevant residues
+would include:
+
+- `Twig\Node\NameDeprecation` (1,440 instances, user-defined, holds
+  only static metadata via inheritance → candidate for enum)
+- `BusNameStamp` (50,000 user-defined marker stamps → could be an
+  enum or a shared singleton)
+
+Those rows the advice actually helps with. Everything internal-class
+should be gone.
 
 ### N2. `shared_singleton` reads as a warning when it's a positive signal
 
