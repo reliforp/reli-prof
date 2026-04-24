@@ -365,3 +365,37 @@ implement resolution (A) — `current_bytes` unified, with a separate
 `saving_estimate_bytes` — which removes the cross-kind mixing
 without breaking JSON consumers. That work is larger than this
 handoff's scope; the clamp guardrail is enough to ship T2.
+
+---
+
+## Tier 3 implementation notes
+
+### S12 — cluster findings by target across detector kinds
+
+**File**: `src/Inspector/Output/MemoryOutput/Report/Formatter/TextReportFormatter.php`
+
+Already a partial clustering exists: JSON emits `large_array`,
+`root_blame`, `type_ranking`, `class_ranking` as individual Findings
+but the text formatter aggregates those kinds into tables (Top
+Arrays, Root Blame Allocation, Type Breakdown, Top Classes).
+
+What's missing: **cross-kind clustering** where several kinds
+converge on the same target. `rw3_messenger-envelopes.report.txt`
+shows the worst case — 22 findings for one phenomenon (50k envelope
+accumulation), split across `choke_point`, `bottleneck_path`,
+`companion_cluster`, `expensive_property` (6×), `empty_object` (3×),
+`ownership_pattern`, `structural_duplicate` (7×), `dedup_candidate`.
+
+**Approach**: post-process the Findings list before rendering:
+group by primary target (node_id or class_name), pick one
+representative per group, render others as "also detected as"
+evidence lines.
+
+Probably 80–150 lines in the formatter. Start with just two
+grouping keys:
+- `facts.class_name` when present
+- `evidence_node_ids[0]` otherwise
+
+If those produce reasonable groupings on the four noisy reports
+(`rw3_messenger-envelopes`, `rw3_doctrine-uow`, `rw3_eloquent-hydration`,
+`rw_logger-stack`), ship it.
