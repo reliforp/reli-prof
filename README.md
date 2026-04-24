@@ -84,8 +84,9 @@ $ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
 $ php ./reli inspector:memory:report snapshot.rmem
 ```
 
-<!-- TODO(screenshot): inspector:memory:report terminal output (findings + tables) -->
-![inspector:memory:report — findings and tables (screenshot coming soon)](docs/images/memory-report-output.png)
+<p align="center">
+  <img src="docs/images/memory-report-output.png" alt="inspector:memory:report — findings and tables" width="100%">
+</p>
 
 Compare two snapshots to track regressions or verify fixes:
 
