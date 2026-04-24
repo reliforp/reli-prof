@@ -118,7 +118,7 @@ We would like to achieve the following 5 goals through this project.
 - To be a framework for PHP programmers to create a freely customizable PHP profiler.
 - To be experimentation for the use of PHP outside of the web, where recent improvements of PHP like JIT and FFI have opened the door.
 - Another entry point for PHP programmers to learn about PHP's internal implementation.
-- To create a program that is fun to write for me.
+- To create a program that remains fun for us to write, even as AI coding agents become part of how we build software.
 
 ## LICENSE
 - MIT (mostly)
