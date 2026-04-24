@@ -1422,6 +1422,7 @@
   <file src="src/Rmem/Explore/RmemExploreTui.php">
     <ArgumentTypeCoercion>
       <code><![CDATA[$lines]]></code>
+      <code><![CDATA[$lines]]></code>
     </ArgumentTypeCoercion>
     <DocblockTypeContradiction>
       <code><![CDATA[$this->listMode === 'scc_members']]></code>
@@ -1506,6 +1507,7 @@
       <code><![CDATA[$idx]]></code>
     </PossiblyFalseOperand>
     <ReferenceConstraintViolation>
+      <code><![CDATA[$lines]]></code>
       <code><![CDATA[$lines]]></code>
     </ReferenceConstraintViolation>
   </file>

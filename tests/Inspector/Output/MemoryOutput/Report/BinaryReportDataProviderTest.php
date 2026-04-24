@@ -318,4 +318,66 @@ class BinaryReportDataProviderTest extends TestCase
 
         $this->assertEmpty($result);
     }
+
+    public function testLoadSummaryFlattensEntriesAndCoercesNumerics(): void
+    {
+        $sink = new BinaryContextTreeSink(batch_size: 10);
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'ObjectContext',
+            locations: [new MemoryLocation(0x1000, 64)],
+            attributes: [],
+        );
+
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming($sink, [
+            [
+                'zend_mm_heap_usage' => '8388608',
+                'heap_memory_analyzed_percentage' => '99.5',
+                'php_version' => '8.4.1',
+            ],
+        ]);
+
+        $reader = Reader::open($this->rmem_path);
+        $summary = BinaryReportDataProvider::loadSummary($reader);
+
+        // Callers (OverviewPass etc.) expect a list of a single flat map.
+        $this->assertCount(1, $summary);
+        $flat = $summary[0];
+
+        // Integers come back as int, floats as float, non-numerics as string.
+        $this->assertSame(8388608, $flat['zend_mm_heap_usage']);
+        $this->assertSame(99.5, $flat['heap_memory_analyzed_percentage']);
+        $this->assertSame('8.4.1', $flat['php_version']);
+    }
+
+    public function testLoadCapturedAtReturnsIsoTimestamp(): void
+    {
+        $sink = new BinaryContextTreeSink(batch_size: 10);
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'ObjectContext',
+            locations: [new MemoryLocation(0x1000, 64)],
+            attributes: [],
+        );
+
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming($sink, [
+            ['zend_mm_heap_usage' => '100'],
+        ]);
+
+        $reader = Reader::open($this->rmem_path);
+        $captured_at = BinaryReportDataProvider::loadCapturedAt($reader);
+
+        // finalizeStreaming stamps gmdate('Y-m-d\TH:i:s\Z') into the runs section.
+        $this->assertIsString($captured_at);
+        $this->assertMatchesRegularExpression(
+            '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/',
+            $captured_at,
+        );
+    }
 }

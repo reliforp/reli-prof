@@ -303,7 +303,7 @@ final class ReportGenerator
         $dict = $reader->getStringDict();
 
         // Load summary from binary
-        $summary = $this->loadSummaryFromBinary($reader);
+        $summary = BinaryReportDataProvider::loadSummary($reader);
         /** @var array<string, mixed> $flat_summary */
         $flat_summary = [];
         /** @psalm-suppress MixedAssignment */
@@ -319,17 +319,7 @@ final class ReportGenerator
         $class_objects = $this->computeClassObjectsFromBinary($reader);
 
         // Load runs metadata
-        $captured_at = null;
-        if ($reader->hasSection(Format::SECTION_RUNS)) {
-            $runs_data = $reader->getSectionData(Format::SECTION_RUNS);
-            // [run_count:u32] then [len:u32][string...]
-            $offset = 4; // skip run_count
-            if (strlen($runs_data) > $offset + 4) {
-                $len = unpack('V', $runs_data, $offset)[1];
-                $offset += 4;
-                $captured_at = substr($runs_data, $offset, $len);
-            }
-        }
+        $captured_at = BinaryReportDataProvider::loadCapturedAt($reader);
 
         /** @var array<string, mixed> $meta */
         $meta = [];
@@ -463,43 +453,6 @@ final class ReportGenerator
         $this->sortFindings($findings);
 
         return new ReportResult($meta, $findings);
-    }
-
-    /**
-     * Load summary key-value pairs from the binary file's summary section.
-     *
-     * @return array<int, array<string, mixed>>
-     * @psalm-suppress MixedAssignment
-     * @psalm-suppress PossiblyInvalidArrayAccess
-     */
-    private function loadSummaryFromBinary(BinaryReader $reader): array
-    {
-        if (!$reader->hasSection(Format::SECTION_SUMMARY)) {
-            return [];
-        }
-        $data = $reader->getSectionData(Format::SECTION_SUMMARY);
-        $dict = $reader->getStringDict();
-
-        $offset = 0;
-        $entry_count = unpack('V', $data, $offset)[1];
-        $offset += 4;
-
-        $flat = [];
-        for ($i = 0; $i < $entry_count; $i++) {
-            $key_id = unpack('V', $data, $offset)[1];
-            $offset += 4;
-            $value_id = unpack('V', $data, $offset)[1];
-            $offset += 4;
-
-            $key = $dict->lookup((int)$key_id);
-            $value = $dict->lookup((int)$value_id);
-            if ($key !== null && $value !== null) {
-                $flat[$key] = is_numeric($value)
-                    ? (str_contains($value, '.') ? (float)$value : (int)$value)
-                    : $value;
-            }
-        }
-        return [$flat];
     }
 
     /**

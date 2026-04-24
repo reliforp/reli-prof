@@ -351,6 +351,40 @@ class RmemExploreTuiTest extends TestCase
         $this->assertStringContainsString('Navigation:', $out);
     }
 
+    // ---------- 10b. Overview overlay ----------
+
+    public function testOverviewOverlayRendersWhenLinesProvided(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+        $tui->setOverviewLines([
+            'Captured: 2026-04-24T00:00:00Z',
+            'memory_get_usage(): 50 B | Heap: 48 B (99.0% analyzed)',
+        ]);
+
+        // 'O' opens the overview overlay, any key dismisses it, then 'q' quits.
+        $term->script('O', ' ', 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        $this->assertStringContainsString('Memory overview', $out);
+        $this->assertStringContainsString('Captured: 2026-04-24T00:00:00Z', $out);
+        $this->assertStringContainsString('memory_get_usage()', $out);
+    }
+
+    public function testOverviewOverlayIsNoOpWhenNoLinesSet(): void
+    {
+        $term = new FakeTerminal(cols: 120, rows: 30);
+        $tui = $this->makeTui(term: $term);
+        // Intentionally do NOT call setOverviewLines().
+
+        $term->script('O', 'q');
+        $tui->run();
+
+        $out = $term->plainOutput();
+        $this->assertStringNotContainsString('Memory overview', $out);
+    }
+
     // ---------- 11. Global search ----------
 
     public function testGlobalSearch(): void
