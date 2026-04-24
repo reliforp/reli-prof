@@ -19,6 +19,33 @@ Labels `B*` = bug. `S*` = structural / presentation.
 > of the items below therefore need re-validation against larger snapshots
 > before acting on them.
 
+## Verification status
+
+After the initial observation pass produced several walk-backs under
+closer reading, every testable claim below has been re-checked against
+the actual implementation. Status at time of writing:
+
+| Item | Claim                                                                                | Verified against                                                         | Status                                                                                     |
+|------|--------------------------------------------------------------------------------------|--------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| B1   | Class / method names lower-cased in path labels                                      | `EmitClassTableJob.php:101` (`$bucket->key`), `NodeLabeler` only handles frames | Confirmed. Fix has two shapes: emit-time (use `$class_entry->name`) or display-time (extend NodeLabeler to read `name` child). |
+| B2   | `dedup_candidate` impact can exceed heap total                                       | `DedupCandidatePass.php:85–92`                                           | Confirmed as observation, **mechanism corrected**: not "cnt × retained double-counts shared subtree" — it's sample averaging over a **heterogeneous bucket** (B6). Fix follows from B6. |
+| B3   | Preview strings with embedded newlines break the table                               | `TextReportFormatter.php:251–257` (no whitespace escape)                 | Confirmed. 1-line fix.                                                                     |
+| B4a  | `dominant_class` HIGH severity on ratio alone                                        | `ClassRankingPass.php:57` (`$pct > 50.0` with no absolute floor)         | Confirmed.                                                                                 |
+| B4b  | `cycle_cluster` under-reports severity                                               | `GcPendingPass` already separates GC-only cycles; zero `gc_pending_candidate` in 14 real reports | **Retracted.** LOW is the right label for structurally-reachable cycles; real leaks are emitted separately. |
+| B5   | `cycle_cluster` flags WeakMap as false positive                                      | `EmitWeakMapJob` emits ht via `EmitArrayDirectJob`                       | **Needs investigation.** Observed but unclear whether the collector is emitting WeakMap entries with strong edges (real bug) or the SCC detection crosses through WeakMap correctly (acceptable). Downgrade to open question. |
+| B6   | `dedup_candidate` groups heterogeneous classes by shallow size only                  | `DedupCandidatePass.php:195` (`GROUP BY link_name, node_size`)           | Confirmed. Root cause of the extreme B2 numbers.                                           |
+| B7   | `bottleneck_path` leaf can stop on a structural container                            | `DrillDownPass` descends up to 12 levels, no leaf-kind filter            | Confirmed.                                                                                 |
+| B8   | `bottleneck_path` shows leaf path with root's retained                               | `DrillDownPass.php:110` (`$total_size = $path_sizes[0]`)                 | Confirmed.                                                                                 |
+| B9   | Uniform siblings produce arbitrary leaf                                              | `DrillDownPass.php:182–191` (only checks multi-sibling at last depth)    | Confirmed.                                                                                 |
+| S3   | `DefinedClassesContext` choke_point is noise                                         | `ChokePointPass.php:66–80` (subtree ≥ 1 MB, ratio > 10, no kind filter)  | **Softened.** The finding is a real signal ("N classes take X MB"); it just lands as HIGH next to userland findings. Presentation issue, not "useless".  |
+| S10  | `shared_fanin` `?` undocumented                                                      | `NonTreeEdgePass.php:226` (`target_class !== '' ? $target_class : '?'`)  | Confirmed; meaning is more specific than the earlier text: `?` = non-object target (HashTable key string etc.), not "unknown". |
+
+The rest of the S items are presentational (what the text formatter
+chooses to show) and don't need code-side verification — they're
+accurate descriptions of what the current formatter does. The stocked
+proposals (class_definition_overhead, shape detection, impact_bytes
+refactor, non-ZendMM docs) are not yet implemented.
+
 ---
 
 ## Confirmed implementation bugs
@@ -33,42 +60,80 @@ as the case-folded Zend hashtable key instead of the canonical name:
     class_table->generatedtest0->methods->runbare->op_array
     class_table->composer\autoload\composerstaticinit32e1def09fefbf05b3038ecf2fa0a6e2->...
 
-Origin: `src/Lib/PhpProcessReader/PhpMemoryReader/Collector/Job/EmitClassTableJob.php:101-111`
-uses `$bucket->key` (the lookup key, which PHP lower-cases for
+Origin: `src/Lib/PhpProcessReader/PhpMemoryReader/Collector/Job/EmitClassTableJob.php:101–111`
+uses `$bucket->key` (PHP lower-cases class_table keys for
 case-insensitive dispatch) as the node label:
 
-    $zend_string = $ctx->dereferencer->deref($bucket->key);
-    $class_name = $zend_string->toString($ctx->dereferencer);
+    if ($bucket->key !== null) {
+        $zend_string = $ctx->dereferencer->deref($bucket->key);
+        $class_name = $zend_string->toString($ctx->dereferencer);
+    } else {
+        $class_name = '?';
+    }
     ...
     $ctx->emitNode($class_def_context, $parent, $class_name);
 
-The canonical name is already collected as a `name` child node a few lines
-below (`$class_entry->name`). The label should use that. Same issue for the
-methods table at line 309. This is the single highest-ROI fix: every report
-becomes dramatically more readable without changing any logic.
+The canonical name is already collected as a `name` **child node** a few
+lines below:
+
+    $class_name_context = CollectorHelpers::collectZendStringPointer(
+        $class_entry->name, $ctx,
+    );
+    $class_definition_context->add('name', $class_name_context);
+
+Same lowercasing applies to the methods table (method names hashed for
+lookup are lower-cased too).
+
+Two fix shapes, each viable:
+
+**(i) Emit-time:** resolve `$class_entry->name` and use it as the
+label at the `emitNode` call. Minimal change, runs on the hot
+collection path. Needs a guard in case the name pointer can't be
+dereferenced (fall back to `$bucket->key`).
+
+**(ii) Display-time:** leave collection alone, extend `NodeLabeler`
+to look up the `name` child for class-definition nodes and prefer
+that over the raw link-name for path display. `NodeLabeler` currently
+only handles CallFrameContext via `function_name`/`lineno` attributes
+(see `NodeLabeler.php:76–103`); adding class-definition handling is
+additive. Downside: `name` is stored as a child node, not as an
+attribute in `context_node_attributes`, so the labeler has to join
+through tree edges (or we add an attribute mirror).
+
+(i) is probably less total code; (ii) is more conservative about the
+collection pipeline. Either way it's the single highest-ROI fix —
+every path that descends into `class_table` becomes readable.
 
 ### B2. `dedup_candidate` impact can exceed the entire heap
 
 A `[LOW] 722.27 MB impacted` finding on a heap whose total analysed size is
-11.96 MB (see `rw_logger-stack.report.txt`). Caused by
-`src/Inspector/Output/MemoryOutput/Report/Pass/DedupCandidatePass.php:92`:
+11.96 MB (see `rw_logger-stack.report.txt`).
 
-    if ($retained > $shallow_size) {
-        $size = $retained;
-        $total = $cnt * $retained;   // overcounts shared subtree N times
-    }
+An earlier version of this note blamed a "`cnt × retained` with retained
+double-counting shared subtree" formula. Re-reading the code showed that
+explanation is wrong. The actual mechanism:
 
-`retained` includes bytes in the shared subtree; multiplying by the number
-of owning copies counts those bytes N times.
+1. The SQL that selects dedup groups (`loadDedupRowsFromSql`,
+   `DedupCandidatePass.php:180–201`) keys the group by
+   `(link_name, node_size)` only — class is not part of the group key.
+   So any two objects linked via the same slot with the same shallow
+   size land in the same bucket. This is **B6** — heterogeneous bucketing.
+2. `getRetainedForDedup` (line 461–500) then samples up to 20 children
+   from that bucket and computes the **arithmetic mean** of their
+   retained sizes.
+3. That mean is multiplied by `cnt` to produce `impact_bytes` (line 92).
 
-This is part of a broader problem — see "The `impact_bytes` semantics
-problem" below for the general fix. The minimum patch to kill the
-"greater than total heap" embarrassment is:
+For the logger-stack bucket: `Monolog\Handler\TestHandler` (1 instance,
+retains the entire handler tree ≈ all logged records) ended up in the
+same bucket as 3,000 `Monolog\LogRecord` instances (which retain just
+themselves). The mean is dominated by the one outlier; multiplying by
+3,001 gives the 722 MB figure.
 
-- Short-term: clamp to `min($cnt * $retained, $heap_total_bytes)` and
-  label the impact as "(overcounted via sharing)".
-- Medium-term: replace the value with a saving estimate (see section
-  below).
+So **B2 is a symptom of B6**. Fix the grouping (include target class
+in the key, or at least require bucket homogeneity before emitting
+the finding) and B2's extreme numbers go away without touching the
+cnt × retained formula. The cheapest short-term clamp is still
+`impact_bytes = min(impact_bytes, heap_total)` as a guardrail.
 
 ### B3. String previews with embedded newlines break the table
 
@@ -147,15 +212,35 @@ and the number be read consistently.
 The B4a (`dominant_class` HIGH on ratio alone) part of B4 still
 stands.
 
-### B5. `cycle_cluster` treats WeakMap as a cycle (false positive)
+### B5. `cycle_cluster` flags cycles containing WeakMap — needs investigation
+
+Observed:
 
     Per cycle: 1x WeakMap
-    Example: $log->fiberLogDepth
-    Example: $twig->parser->parsers->precedenceChanges
+    Example: $log->fiberLogDepth          (rw_logger-stack)
+    Example: $twig->parser->parsers->precedenceChanges  (rw_twig)
 
-`WeakMap` entries use weak references and don't retain their keys, so by
-definition they don't form a retain-cycle. Skip WeakMap in cycle detection
-(or exclude edges originating from its internal storage).
+Two possible readings, can't pick between them from the data alone:
+
+**(a) False positive.** WeakMap keys are weak by definition, so a
+cycle-through-WeakMap shouldn't retain anything; flagging it is
+noise.
+
+**(b) Real cycle the collector emits with strong edges.**
+`EmitWeakMapJob` just calls `EmitArrayDirectJob` on the WeakMap's
+backing HashTable (`EmitWeakMapJob.php:47–57`). If that emits entries
+as strong edges (treating the WeakMap's ht like any other array),
+then the collector is over-strong-edging, and the cycle is real in
+reli's graph even though it's weak in PHP. That's a collector bug,
+not a cycle-pass bug, and the right fix is marking WeakMap entry
+edges as weak/non-tree.
+
+Earlier note dismissed this as a straight false positive without
+checking. Downgrade to "open question" pending a look at how
+`EmitArrayDirectJob` handles the edge strength for WeakMap ht
+entries. Either way, the user-visible fix is probably to skip
+WeakMap-only SCCs in `cycle_cluster`'s output until the underlying
+representation is decided.
 
 ### B6. `dedup_candidate` mixes members of different classes under one group key
 
@@ -725,14 +810,22 @@ at overlapping subtrees:
 They are two views of the same phenomenon; one HIGH entry per phenomenon
 is enough. Merge the two or demote the weaker into evidence of the other.
 
-### S3. `DefinedClassesContext` choke-point adds no information
+### S3. `DefinedClassesContext` choke_point is real but mis-prioritised
 
     choke_point: DefinedClassesContext (0 B shallow)
         holds 5.80 MB via 448 children — class_table
 
-0 B shallow, N direct children. This is "you loaded N classes, totalling
-X MB" restated as a finding. Collapse to a single Overview line
-(`Loaded class definitions: N classes, X MB`) and drop the finding entry.
+`ChokePointPass` fires this because subtree ≥ 1 MB and
+subtree/shallow ratio > 10, both true for any heavy class_table.
+Earlier wording said "adds no information" — that's overstated. It
+does tell the reader "class definitions account for X MB", which is
+genuine information; the issue is the severity/priority relative to
+userland findings on the same report.
+
+Better framing than "drop the finding": lower its priority (e.g.,
+demote to Info) or move it to a dedicated "Loaded class definitions:
+N classes, X MB" line in Overview instead of occupying a HIGH slot
+in the Findings list alongside userland choke_points.
 
 ### S4. `companion_cluster` and `ownership_pattern` duplicate each other
 
@@ -813,10 +906,17 @@ graph — not necessarily a leak).
 
     [shared_fanin] key -> ? (21,023 refs -> 30 targets, 700.8 each)
 
-`?` = target class couldn't be resolved. No legend anywhere. Use
-`(unresolved)` or similar. Separately, `key` / `value` / `name` as the
-only identifier is ambiguous — qualify with where it came from (e.g.,
-`HashTable bucket key (interned)` or `property: <owner>::<$prop>`).
+Per `NonTreeEdgePass.php:226`, `?` is emitted when `$target_class`
+is the empty string — i.e., the target has no class because it's
+not an object (a ZendString hashtable key, an array's inner bucket,
+etc.). Not "couldn't be resolved" but specifically "target isn't an
+object".
+
+Either way the symbol is undocumented. Replace with `(non-object)`
+or similar, and consider qualifying `key` / `value` / `name` (which
+currently appear as bare words) with where the slot comes from — a
+HashTable bucket key is a different structural meaning than a
+property named `key`.
 
 ### S11. "Collapse to DAG for exact" points at nothing
 
