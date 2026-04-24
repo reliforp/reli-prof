@@ -140,11 +140,21 @@ final class MemoryLocationsCollector
 
         $zend_mm_main_chunk = $dereferencer->deref($main_chunk_header_pointer);
         $walked_chunk_count = 0;
+        $chunks_total_free_bytes = 0;
+        $chunks_mostly_empty_count = 0;
+        // Threshold: chunks that are at least 90% free (so only a few pages
+        // pinning an otherwise-empty chunk).
+        $mostly_empty_free_pages_threshold = intdiv(ZendMmChunk::SIZE / ZendMmChunk::PAGE_SIZE * 9, 10);
         foreach ($zend_mm_main_chunk->iterateChunks($dereferencer) as $chunk) {
             $chunk_memory_location = ZendMmChunkMemoryLocation::fromZendMmChunk($chunk);
             $chunk_memory_locations->add(
                 $chunk_memory_location
             );
+            $free_pages = $chunk->free_pages;
+            $chunks_total_free_bytes += $free_pages * ZendMmChunk::PAGE_SIZE;
+            if ($free_pages >= $mostly_empty_free_pages_threshold) {
+                $chunks_mostly_empty_count++;
+            }
             $walked_chunk_count++;
         }
         $huge_memory_locations = new MemoryLocations();
@@ -161,7 +171,12 @@ final class MemoryLocationsCollector
         $memory_get_usage_real_size = $zend_mm_main_chunk->heap_slot->real_size;
         $memory_get_peak_usage = $zend_mm_main_chunk->heap_slot->peak;
         $memory_limit = $zend_mm_main_chunk->heap_slot->limit;
-        $cached_chunks_size = $zend_mm_main_chunk->heap_slot->cached_chunks_count * ZendMmChunk::SIZE;
+        $chunks_count = $zend_mm_main_chunk->heap_slot->chunks_count;
+        $peak_chunks_count = $zend_mm_main_chunk->heap_slot->peak_chunks_count;
+        $cached_chunks_count = $zend_mm_main_chunk->heap_slot->cached_chunks_count;
+        $cached_chunks_size = $cached_chunks_count * ZendMmChunk::SIZE;
+        $last_chunks_delete_boundary = $zend_mm_main_chunk->heap_slot->last_chunks_delete_boundary;
+        $last_chunks_delete_count = $zend_mm_main_chunk->heap_slot->last_chunks_delete_count;
 
         // Warn if chunk walk was incomplete (corrupt next pointer or
         // chunks outside dump region).
@@ -343,6 +358,13 @@ final class MemoryLocationsCollector
             $memory_get_usage_real_size,
             $memory_get_peak_usage,
             $memory_limit,
+            $chunks_count,
+            $peak_chunks_count,
+            $cached_chunks_count,
+            $last_chunks_delete_boundary,
+            $last_chunks_delete_count,
+            $chunks_total_free_bytes,
+            $chunks_mostly_empty_count,
         );
     }
 

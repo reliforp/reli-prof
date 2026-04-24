@@ -169,6 +169,8 @@ class zend_mm_heap extends CData
     public int $chunks_count;
     public int $peak_chunks_count;
     public int $cached_chunks_count;
+    public int $last_chunks_delete_boundary;
+    public int $last_chunks_delete_count;
 }
 class zend_mm_huge_list extends CData
 {

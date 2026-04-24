@@ -63,6 +63,12 @@ final class ZendMmHeap implements LazyDereferencable, CDataDereferencable
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $cached_chunks_count;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $last_chunks_delete_boundary;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $last_chunks_delete_count;
+
     private ?FieldReader $field_reader = null;
 
     /**
@@ -85,6 +91,8 @@ final class ZendMmHeap implements LazyDereferencable, CDataDereferencable
         unset($this->chunks_count);
         unset($this->peak_chunks_count);
         unset($this->cached_chunks_count);
+        unset($this->last_chunks_delete_boundary);
+        unset($this->last_chunks_delete_count);
     }
 
     #[\Override]
@@ -151,6 +159,14 @@ final class ZendMmHeap implements LazyDereferencable, CDataDereferencable
                 $this->pointer,
                 'cached_chunks_count',
             ),
+            'last_chunks_delete_boundary' => $this->last_chunks_delete_boundary = $this->field_reader->readIntField(
+                $this->pointer,
+                'last_chunks_delete_boundary',
+            ),
+            'last_chunks_delete_count' => $this->last_chunks_delete_count = $this->field_reader->readIntField(
+                $this->pointer,
+                'last_chunks_delete_count',
+            ),
         };
     }
 
@@ -182,6 +198,10 @@ final class ZendMmHeap implements LazyDereferencable, CDataDereferencable
             'chunks_count' => $this->chunks_count = $this->casted_cdata->casted->chunks_count,
             'peak_chunks_count' => $this->peak_chunks_count = $this->casted_cdata->casted->peak_chunks_count,
             'cached_chunks_count' => $this->cached_chunks_count = $this->casted_cdata->casted->cached_chunks_count,
+            'last_chunks_delete_boundary' => $this->last_chunks_delete_boundary
+                = $this->casted_cdata->casted->last_chunks_delete_boundary,
+            'last_chunks_delete_count' => $this->last_chunks_delete_count
+                = $this->casted_cdata->casted->last_chunks_delete_count,
         };
     }
 

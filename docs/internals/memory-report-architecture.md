@@ -47,7 +47,9 @@ MemoryReportCommand::execute()
         │     ├── OverviewPass($summary)
         │     ├── TypeBreakdownPass($location_types)
         │     ├── ClassRankingPass($class_objects)
-        │     └── CompanionDetectionPass($class_objects)
+        │     ├── CompanionDetectionPass($class_objects)
+        │     ├── ChunkCacheHeuristicPass($summary)
+        │     └── ChunkFragmentationPass($summary)
         ├── Phase 2: SQL passes (or --no-full-analysis < 500K nodes)
         │     ├── CallStackPass($db)
         │     ├── DynamicPropertiesPass($db)
@@ -162,10 +164,12 @@ Zero additional memory.
 
 | Pass | Source | Emits |
 |---|---|---|
-| OverviewPass | summary table | `overview`, `coverage_gap` |
+| OverviewPass | summary table | `overview`, `coverage_gap`, `near_memory_limit` |
 | TypeBreakdownPass | location_types_summary | `dominant_type` |
 | ClassRankingPass | class_objects_summary | `dominant_class` |
 | CompanionDetectionPass | class_objects_summary | `companion_cluster` |
+| ChunkCacheHeuristicPass | summary table | `zendmm_chunk_heuristic_state`, `zendmm_cache_expansion_imminent`, `zendmm_cache_bloat` |
+| ChunkFragmentationPass | summary table | `zendmm_chunk_fragmentation_state`, `zendmm_chunks_pinned_by_fragmentation`, `zendmm_heap_fragmentation_high` |
 
 ### Phase 2: SQL-Based
 
@@ -245,6 +249,8 @@ src/Inspector/Output/MemoryOutput/Report/
 │   ├── TypeBreakdownPass.php
 │   ├── ClassRankingPass.php
 │   ├── CompanionDetectionPass.php
+│   ├── ChunkCacheHeuristicPass.php   # ZendMM cache bloat / heuristic
+│   ├── ChunkFragmentationPass.php    # Fragmentation-pinned chunks
 │   ├── CallStackPass.php
 │   ├── DynamicPropertiesPass.php
 │   ├── PropertyScalingPass.php     # SQL or graph (retained)

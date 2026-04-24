@@ -252,6 +252,9 @@ All class names use fully qualified names (FQCN). Paths use PHP syntax: `<main>:
 | `large_array` | Large arrays (retained size when available) | "15.30 MB retained (table: 160.00 KB), 10,000 elements" |
 | `large_string` | Large strings with owner path | "205.88 KB — <main>:67::$messages[0]->structure->raw" |
 | `sparse_array` | Arrays with low slot utilization | "256.00 KB table, 5/16,384 slots (0.03%)" |
+| `zendmm_cache_bloat` | ZendMM caches more chunks than it's currently using | "holding 8 cached chunks (16.00 MB) vs 2 in-use" |
+| `zendmm_chunks_pinned_by_fragmentation` | ≥4 in-use chunks ≥90% empty but can't be returned to OS | "5 in-use chunks ≥90% empty but cannot be returned to the OS" |
+| `zendmm_heap_fragmentation_high` | Scattered free-page space exceeds analyzed heap usage | "10.00 MB free inside in-use chunks vs 3.00 MB analyzed" |
 
 ### Low Severity
 
@@ -275,12 +278,42 @@ All class names use fully qualified names (FQCN). Paths use PHP syntax: `<main>:
 | `root_blame` | Memory attributed to each root branch |
 | `retained_exact` | No cycles — retained size is exact |
 | `retained_approximate` | Cycles exist — retained size is approximate |
+| `zendmm_chunk_heuristic_state` | Current ZendMM chunk counters and chunk-delete heuristic state |
+| `zendmm_chunk_fragmentation_state` | Scattered free-page bytes and "mostly empty" chunk count |
 
 ### Warning
 
 | Kind | Description |
 |---|---|
 | `coverage_gap` | Less than 95% of heap analyzed — unaccounted memory |
+| `near_memory_limit` | Peak usage ≥80% (warning) or ≥95% (high) of `memory_limit` |
+| `zendmm_cache_expansion_imminent` | `last_chunks_delete_count` near the threshold — `cached_chunks_max` is about to grow |
+| `zendmm_chunks_pinned_by_fragmentation` | 1-3 in-use chunks ≥90% empty but pinned (Medium from 4 chunks) |
+
+### ZendMM Chunk Findings
+
+`zendmm_*` findings surface the two distinct ways a PHP process can hold on to
+memory without the userland heap (`memory_get_usage()`) reflecting it:
+
+- **Cache bloat** (`zendmm_cache_bloat`, `zendmm_cache_expansion_imminent`).
+  ZendMM keeps a cache of freed 2 MB chunks to avoid thrashing the OS
+  allocator, and grows `cached_chunks_max` when `last_chunks_delete_count`
+  reaches 4 at the same boundary. Long-lived CLI / worker processes that cycle
+  through bursty workloads can accumulate cached chunks that stay resident
+  until shutdown. Mitigation: call `gc_mem_caches()` between jobs.
+- **Fragmentation pin-up** (`zendmm_chunks_pinned_by_fragmentation`,
+  `zendmm_heap_fragmentation_high`). A chunk is only returned to the OS when
+  every page inside it is free, so one long-lived allocation (interned string,
+  persistent class entry, surviving HashTable bucket) can hold an otherwise
+  empty 2 MB hostage. `gc_mem_caches()` does **not** help here because these
+  chunks are still in the in-use list. Mitigation: recycle long-lived workers
+  after heavy transient allocations.
+
+The `zendmm_chunk_heuristic_state` and `zendmm_chunk_fragmentation_state` info
+findings always report the raw counters (`chunks_count`, `peak_chunks_count`,
+`cached_chunks_count`, `last_chunks_delete_boundary/count`,
+`chunks_total_free_bytes`, `chunks_mostly_empty_count`) so you can see the
+underlying numbers even when no warning fires.
 
 ## Analysis Phases
 

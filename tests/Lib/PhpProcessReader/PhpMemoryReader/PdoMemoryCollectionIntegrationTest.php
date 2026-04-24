@@ -206,6 +206,24 @@ class PdoMemoryCollectionIntegrationTest extends BaseTestCase
 
         $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
 
+        // Chunk counters are read from heap_slot on every collection.
+        // A live PHP process has at least one in-use chunk (main_chunk),
+        // and peak_chunks_count is always >= chunks_count by construction.
+        $this->assertGreaterThanOrEqual(1, $collected_memories->chunks_count);
+        $this->assertGreaterThanOrEqual(
+            $collected_memories->chunks_count,
+            $collected_memories->peak_chunks_count,
+        );
+        $this->assertGreaterThanOrEqual(0, $collected_memories->cached_chunks_count);
+        $this->assertGreaterThanOrEqual(0, $collected_memories->last_chunks_delete_boundary);
+        $this->assertGreaterThanOrEqual(0, $collected_memories->last_chunks_delete_count);
+        $this->assertGreaterThanOrEqual(0, $collected_memories->chunks_total_free_bytes);
+        $this->assertGreaterThanOrEqual(0, $collected_memories->chunks_mostly_empty_count);
+        $this->assertLessThanOrEqual(
+            $collected_memories->chunks_count,
+            $collected_memories->chunks_mostly_empty_count,
+        );
+
         // Verify PDO and PDOStatement objects are detected
         $object_class_analyzer = new ObjectClassAnalyzer();
         $sink->flush();

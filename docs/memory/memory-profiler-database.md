@@ -97,6 +97,28 @@ Key-value pairs containing metadata about the analysis snapshot.
 SELECT * FROM summary WHERE run_id = 1;
 ```
 
+Well-known keys produced for every run:
+
+| Key | Meaning |
+|---|---|
+| `php_version` | PHP version of the target process (e.g. `v84`) |
+| `memory_get_usage` | Userland `memory_get_usage()` — `zend_mm_heap->size` |
+| `memory_get_real_usage` | Userland `memory_get_usage(true)` — `zend_mm_heap->real_size` |
+| `memory_get_peak_usage` | `zend_mm_heap->peak` |
+| `memory_limit` | `zend_mm_heap->limit` |
+| `zend_mm_heap_total` / `zend_mm_heap_usage` | Analyzed heap totals per region |
+| `vm_stack_total` / `compiler_arena_total` | Region totals from RegionAnalyzer |
+| `heap_memory_analyzed_percentage` | Fraction of `memory_get_usage` covered by walked locations |
+| `rss` | Process RSS at capture time (when available) |
+| `cached_chunks_size` | `cached_chunks_count * 2 MiB` — bytes held in the chunk cache |
+| `chunks_count` | `zend_mm_heap->chunks_count` — in-use chunks |
+| `peak_chunks_count` | `zend_mm_heap->peak_chunks_count` |
+| `cached_chunks_count` | `zend_mm_heap->cached_chunks_count` |
+| `last_chunks_delete_boundary` | Chunk count at the last delete event — heuristic input |
+| `last_chunks_delete_count` | Consecutive deletes at that boundary — bumps `cached_chunks_max` on reaching 4 |
+| `chunks_total_free_bytes` | Sum of `free_pages * 4 KiB` across walked chunks (scattered free space) |
+| `chunks_mostly_empty_count` | Walked chunks that are ≥90% free — fragmentation-pinned candidates |
+
 #### `location_types_summary`
 Aggregated memory usage by location type, computed via `GROUP BY` from `context_node_locations`.
 

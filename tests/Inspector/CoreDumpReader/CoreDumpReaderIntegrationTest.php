@@ -153,6 +153,25 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         $this->assertGreaterThan(0, $summary['memory_get_peak_usage']);
         $this->assertArrayHasKey('memory_limit', $summary);
         $this->assertGreaterThan(0, $summary['memory_limit']);
+
+        // ZendMM chunk counters and fragmentation aggregates surfaced from
+        // the heap_slot + chunk walk. The live process has at least one
+        // in-use chunk (main_chunk), and the heuristic fields are always
+        // present even when they're zero.
+        $this->assertArrayHasKey('chunks_count', $summary);
+        $this->assertGreaterThanOrEqual(1, $summary['chunks_count']);
+        $this->assertArrayHasKey('peak_chunks_count', $summary);
+        $this->assertGreaterThanOrEqual(
+            (int)$summary['chunks_count'],
+            (int)$summary['peak_chunks_count'],
+        );
+        $this->assertArrayHasKey('cached_chunks_count', $summary);
+        $this->assertArrayHasKey('last_chunks_delete_boundary', $summary);
+        $this->assertArrayHasKey('last_chunks_delete_count', $summary);
+        $this->assertArrayHasKey('chunks_total_free_bytes', $summary);
+        $this->assertGreaterThanOrEqual(0, $summary['chunks_total_free_bytes']);
+        $this->assertArrayHasKey('chunks_mostly_empty_count', $summary);
+        $this->assertGreaterThanOrEqual(0, $summary['chunks_mostly_empty_count']);
     }
 
     private function takeCoreDump(int $pid): string

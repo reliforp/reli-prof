@@ -125,6 +125,13 @@ And the output is like below. The target process is [psalm](https://github.com/v
             "memory_get_usage": 129053816,
             "memory_get_real_usage": 153092096,
             "cached_chunks_size": 0,
+            "chunks_count": 73,
+            "peak_chunks_count": 73,
+            "cached_chunks_count": 0,
+            "last_chunks_delete_boundary": 0,
+            "last_chunks_delete_count": 0,
+            "chunks_total_free_bytes": 552960,
+            "chunks_mostly_empty_count": 0,
             "heap_memory_analyzed_percentage": 98.36809784842008,
             "php_version": "v82",
             "analyzer": "reli 0.12.0"
@@ -513,6 +520,20 @@ This section contains the summary of the memory usage of the target process. The
 #### cached_chunks_size
 - This is the total size of the chunks that are cached by ZendMM and not used at the time of the analysis
 - ZendMM may not immediately return unused chunks to the OS but use them for another allocation later, and this field represents their total size.
+
+#### chunks_count / peak_chunks_count / cached_chunks_count
+- Raw chunk counters from `zend_mm_heap`
+- `chunks_count` is the number of chunks currently in the in-use list, `peak_chunks_count` is the maximum observed during the request, and `cached_chunks_count` is the number of freed chunks ZendMM is still holding in its cache
+- `cached_chunks_size` === `cached_chunks_count * 2MB`
+
+#### last_chunks_delete_boundary / last_chunks_delete_count
+- State of the chunk-delete heuristic that decides when to grow `cached_chunks_max` (the ceiling on how many chunks ZendMM keeps cached instead of returning to the OS)
+- `last_chunks_delete_boundary` is the chunk count at which the most recent delete was observed; `last_chunks_delete_count` is how many consecutive deletes have happened at that boundary. Reaching 4 bumps `cached_chunks_max` up, so cached chunks stay resident for longer. Surfaced so memory analysis can tell "cache-bloated by heuristic" apart from "fragmentation-pinned".
+
+#### chunks_total_free_bytes / chunks_mostly_empty_count
+- Aggregates computed during the in-use chunk walk
+- `chunks_total_free_bytes` is the sum of `free_pages * 4KB` across all walked chunks — the total amount of free-page space scattered across the heap
+- `chunks_mostly_empty_count` is the number of in-use chunks that are ≥90% free, typically the "one long-lived allocation pins 2MB" pattern. Unlike `cached_chunks_count`, these cannot be released by `gc_mem_caches()` because they are still in the in-use list.
 
 #### zend_mm_chunk_total / zend_mm_chunk_usage
 - The total size of the normal chunks allocated by ZendMM and its analyzed usage
