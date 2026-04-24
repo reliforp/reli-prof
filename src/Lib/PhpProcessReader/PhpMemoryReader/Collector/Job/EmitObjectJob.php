@@ -129,6 +129,8 @@ final class EmitObjectJob implements CollectorJob
             || $class_name === \WeakMap::class
             || $class_name === \PDO::class
             || $class_name === \PDOStatement::class
+            || $class_name === 'SimpleXMLElement'
+            || $class_name === 'SimpleXMLIterator'
         ) {
             $object = $ctx->dereferencer->deref($this->pointer);
             $this->processObject($object, $ctx, $queue);
@@ -503,6 +505,17 @@ final class EmitObjectJob implements CollectorJob
         ) {
             try {
                 $queue->push(new EmitClosureJob(
+                    $object,
+                    $object_node_id,
+                    $ctx,
+                ));
+            } catch (\Throwable) {
+            }
+        }
+
+        if ($class_name === 'SimpleXMLElement' || $class_name === 'SimpleXMLIterator') {
+            try {
+                $queue->push(new EmitSimpleXMLJob(
                     $object,
                     $object_node_id,
                     $ctx,

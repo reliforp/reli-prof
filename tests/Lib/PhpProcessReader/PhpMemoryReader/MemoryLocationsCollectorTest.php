@@ -2211,6 +2211,164 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     }
 
     #[DataProvider('provideFromV80')]
+    public function testSimpleXMLInternalAllocationsTracking(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        // Parse a small doc and walk a child node so that SimpleXML
+        // allocates both the php_libxml_ref_obj (document) and the
+        // php_libxml_node_ptr (child node) through emalloc.
+        $target_script =
+            <<<'CODE'
+            <?php
+            $xml = simplexml_load_string(
+                '<root><child id="1">hello</child></root>'
+            );
+            $_ = (string)$xml->child;
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $sink = new ArrayContextTreeSink();
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+
+        $contexts_analyzed = $sink->getResult();
+
+        $found_simplexml_node = false;
+        $found_simplexml_document = false;
+        $findSxe = function (array $tree) use (
+            &$findSxe,
+            &$found_simplexml_node,
+            &$found_simplexml_document,
+        ): void {
+            foreach ($tree as $key => $value) {
+                if ($key === 'simplexml_node') {
+                    $found_simplexml_node = true;
+                }
+                if ($key === 'simplexml_document') {
+                    $found_simplexml_document = true;
+                }
+                if (is_array($value) && $key !== '#locations') {
+                    $findSxe($value);
+                }
+            }
+        };
+        $findSxe($contexts_analyzed);
+        $this->assertTrue(
+            $found_simplexml_node,
+            'SimpleXMLElement should have its php_libxml_node_ptr allocation tracked'
+        );
+        $this->assertTrue(
+            $found_simplexml_document,
+            'SimpleXMLElement should have its php_libxml_ref_obj allocation tracked'
+        );
+    }
+
+    #[DataProvider('provideFromV80')]
     public function testStreamResourceTracking(string $php_version, string $docker_image_name): void
     {
         if ($php_version === 'skip') {

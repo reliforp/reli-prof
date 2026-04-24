@@ -78,6 +78,14 @@ class zend_weakmap extends CData
     public zend_object $std;
 }
 
+class php_sxe_object extends CData
+{
+    public ?CPointer $node;
+    public ?CPointer $document;
+    public ?CPointer $properties;
+    public zend_object $zo;
+}
+
 class zend_constants extends CData
 {
     public ?CPointer $name;
