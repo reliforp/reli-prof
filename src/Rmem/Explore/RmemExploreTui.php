@@ -82,12 +82,15 @@ final class RmemExploreTui
     private ?int $bannerFocusId = null;
 
     /**
-     * Whether the last render emitted a banner row. hitTestMouseRow()
-     * reads this to offset the sandwich pane boundaries correctly —
-     * the banner steals a row from the bottom that the unfixed
-     * formula would otherwise count as the last child row.
+     * How many banner rows the last render emitted — 0 when the
+     * banner is off or the focused node has no source location;
+     * otherwise one row per `source_locations` kind (self /
+     * defined_at / held_by, up to 3). hitTestMouseRow() reads
+     * this to offset the sandwich pane boundaries correctly,
+     * since every banner row steals a row from the bottom that
+     * the unfixed formula would count as the last child row.
      */
-    private bool $lastRenderBannerShown = false;
+    private int $lastRenderBannerRowCount = 0;
     private ?string $filterPattern = null;
     private string $filterInput = '';
     private bool $filterPrompt = false;
@@ -805,12 +808,13 @@ final class RmemExploreTui
         //   row  h+4      "▸ Children (N)" label
         //   rows h+5..Y   children rows
         //
-        // When the source banner is showing, it steals one row from
-        // the bottom (so bottomReserve is 3 instead of 2), which in
-        // turn shrinks bodyH and halfH by one. Match that here or
-        // clicks on the last visible child row would be routed to
-        // the banner instead.
-        $bottomReserve = $this->lastRenderBannerShown ? 3 : 2;
+        // When the source banner is showing, every emitted row
+        // (one per source_locations kind) steals a row from the
+        // bottom — so bottomReserve stretches to 2 + N, which in
+        // turn shrinks bodyH and halfH by N. Match that here or
+        // clicks on the last visible child rows would be routed
+        // to banner rows instead.
+        $bottomReserve = 2 + $this->lastRenderBannerRowCount;
         $bodyH = $totalRows - 2 - $bottomReserve;
         $halfH = (int)($bodyH / 2);
         $parentsStart = 3;
@@ -1628,47 +1632,52 @@ final class RmemExploreTui
     // ---- Rendering ----
 
     /**
-     * Build the full-width source-banner row for $nodeId, or return
-     * null when the node has no source location (the caller then
-     * skips emitting a row and the status line moves up one).
+     * Build the full-width source-banner rows for $nodeId. Returns
+     * an empty list when the banner is turned off or the node has
+     * no source location (the caller then skips emitting rows and
+     * the status line moves up accordingly).
      *
-     * The banner prints the highest-priority source_location on a
-     * single row — no `$wrap()` splitting — because terminals'
-     * file:line pattern matchers require a contiguous `path:line`
-     * token to offer a clickable jump. PhpStorm's JediTerm in
-     * particular can't drive the sidebar's hover overlay (it doesn't
-     * emit mode-1003 motion events), so this gives its path matcher
-     * something to latch onto.
+     * Each `source_locations` kind (self / defined_at / held_by)
+     * gets its own reverse-video row — mirrors the sidebar so a
+     * node that has both `defined` and `held by` doesn't lose half
+     * of its navigation hints. Terminals' file:line pattern
+     * matchers only latch onto tokens sitting on one line, so we
+     * intentionally don't fold them together.
+     *
+     * @return list<string>
      */
-    private function renderSourceBanner(?int $nodeId, int $cols): ?string
+    private function renderSourceBannerRows(?int $nodeId, int $cols): array
     {
         if (!$this->showSourceBanner || $nodeId === null) {
-            return null;
+            return [];
         }
         /** @var list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}> $locs */
         $locs = $this->model->nodeDetail($nodeId)['source_locations'];
         if ($locs === []) {
-            return null;
+            return [];
         }
-        $loc = $locs[0];
-        $label = match ($loc['kind']) {
-            'self' => 'source',
-            'defined_at' => 'defined',
-            'held_by' => 'held by',
-            default => $loc['kind'],
-        };
-        $text = $label . ': ' . $loc['formatted'];
         $maxWidth = $cols - 2;
         if ($maxWidth < 8) {
-            return null;
+            return [];
         }
-        if (strlen($text) > $maxWidth) {
-            $text = substr($text, 0, $maxWidth - 1) . '…';
+        $rows = [];
+        foreach ($locs as $loc) {
+            $label = match ($loc['kind']) {
+                'self' => 'source',
+                'defined_at' => 'defined',
+                'held_by' => 'held by',
+                default => $loc['kind'],
+            };
+            $text = $label . ': ' . $loc['formatted'];
+            if (strlen($text) > $maxWidth) {
+                $text = substr($text, 0, $maxWidth - 1) . '…';
+            }
+            // Reverse video keeps the banner visually distinct from
+            // the status / footer rows without burning a color that
+            // might clash with the user's terminal theme.
+            $rows[] = "\e[7m " . str_pad($text, $cols - 1) . "\e[27m";
         }
-        // Reverse video makes the banner visually distinct from the
-        // regular status / footer rows without burning a color that
-        // might clash with the user's terminal theme.
-        return "\e[7m " . str_pad($text, $cols - 1) . "\e[27m";
+        return $rows;
     }
 
     private function render(): void
@@ -1882,9 +1891,9 @@ final class RmemExploreTui
 
     private function renderList(array &$lines, int $cols, int $totalRows): void
     {
-        $banner = $this->renderSourceBanner($this->bannerFocusId, $cols);
-        $this->lastRenderBannerShown = $banner !== null;
-        $bottomReserve = $banner !== null ? 3 : 2; // banner + footer + status vs. footer + status
+        $bannerRows = $this->renderSourceBannerRows($this->bannerFocusId, $cols);
+        $this->lastRenderBannerRowCount = count($bannerRows);
+        $bottomReserve = 2 + $this->lastRenderBannerRowCount; // banner rows + footer + status
 
         $lines[] = $this->renderBreadcrumb($cols);
         $lines[] = $this->colHeader($cols);
@@ -1900,8 +1909,8 @@ final class RmemExploreTui
             $lines[] = '';
         }
 
-        if ($banner !== null) {
-            $lines[] = $banner;
+        foreach ($bannerRows as $bannerRow) {
+            $lines[] = $bannerRow;
         }
         $lines[] = $this->renderFooter($cols);
         $statusParts = [
@@ -1917,11 +1926,11 @@ final class RmemExploreTui
 
     private function renderSandwich(array &$lines, int $cols, int $totalRows): void
     {
-        $banner = $this->renderSourceBanner($this->bannerFocusId, $cols);
-        $this->lastRenderBannerShown = $banner !== null;
-        $bottomReserve = $banner !== null ? 3 : 2; // banner + footer + status vs. footer + status
+        $bannerRows = $this->renderSourceBannerRows($this->bannerFocusId, $cols);
+        $this->lastRenderBannerRowCount = count($bannerRows);
+        $bottomReserve = 2 + $this->lastRenderBannerRowCount; // banner rows + footer + status
 
-        $bodyH = $totalRows - 2 - $bottomReserve; // header + focus bar on top, banner?+footer+status on bottom
+        $bodyH = $totalRows - 2 - $bottomReserve; // header + focus bar on top, banner rows + footer + status on bottom
         $halfH = (int)($bodyH / 2);
 
         // Parents pane
@@ -1967,8 +1976,8 @@ final class RmemExploreTui
             $lines[] = '';
         }
 
-        if ($banner !== null) {
-            $lines[] = $banner;
+        foreach ($bannerRows as $bannerRow) {
+            $lines[] = $bannerRow;
         }
         $lines[] = $this->renderFooter($cols);
         $lines[] = sprintf(
