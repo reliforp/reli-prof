@@ -1647,7 +1647,19 @@ final class RmemExploreTui
             for ($i = 1; $i < count($lines); $i++) {
                 $row = $i + 1; // 1-based terminal row
                 $sLine = $sidebarLines[$i - 1] ?? '';
-                if (strlen($sLine) > $sidebarW - 1) {
+                // Skip byte-based truncation on lines that carry an
+                // OSC 8 hyperlink: the escape embeds a URI which easily
+                // pushes strlen() past $sidebarW even when the visible
+                // text fits. A blind substr here cuts the escape open,
+                // the terminal never sees a closing `\e]8;;\e\\`, and
+                // from that point onward the hyperlink-attributed
+                // region swallows whatever follows (PhpStorm's JediTerm
+                // in particular blocks pty writes while it waits for
+                // the close). buildSidebarLines() has already
+                // middle-truncated the visible text to fit, so the
+                // rendered width is correct without our help.
+                $hasOsc8 = str_contains($sLine, "\e]8;");
+                if (!$hasOsc8 && strlen($sLine) > $sidebarW - 1) {
                     $sLine = substr($sLine, 0, $sidebarW - 4) . '...';
                 }
                 $sidebarBuf .= "\e[{$row};{$sepCol}H\e[2m│\e[22m{$sLine}";
@@ -2166,26 +2178,17 @@ final class RmemExploreTui
     }
 
     /**
-     * Decide whether the current terminal can handle OSC 8 hyperlinks
-     * without stalling on them.
+     * Decide whether the current terminal should get OSC 8 hyperlinks.
      *
-     * Most modern terminals ignore escapes they don't understand, but
-     * a few parse OSC 8 so slowly that pty writes stall the render
-     * pipeline — PHP blocks on `fwrite()` with no CPU use, and the
-     * TUI looks frozen. PhpStorm/IntelliJ's bundled JediTerm is the
-     * known-bad case we can detect cheaply via
-     * `TERMINAL_EMULATOR=JetBrains-JediTerm`. We also honor
-     * `RELI_NO_HYPERLINKS=1` as an escape hatch for anything else we
-     * haven't listed.
+     * Terminals that don't recognise OSC 8 normally just skip the
+     * escape, so we emit by default and leave opting out to the
+     * `RELI_NO_HYPERLINKS=1` env var for the rare case where a
+     * terminal chokes on them.
      */
     private static function supportsOsc8Hyperlinks(): bool
     {
         $optOut = getenv('RELI_NO_HYPERLINKS');
         if ($optOut !== false && $optOut !== '' && $optOut !== '0') {
-            return false;
-        }
-        $emulator = getenv('TERMINAL_EMULATOR');
-        if (is_string($emulator) && stripos($emulator, 'JetBrains') !== false) {
             return false;
         }
         return true;
