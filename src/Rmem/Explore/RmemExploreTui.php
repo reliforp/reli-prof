@@ -1736,6 +1736,7 @@ final class RmemExploreTui
             $val = RmemModel::sanitizeForTerminal($detail['string_value']);
             $wrap("val: \"{$val}\"");
         }
+        $hyperlinkable = self::supportsOsc8Hyperlinks();
         foreach ($detail['source_locations'] as $loc) {
             $label = match ($loc['kind']) {
                 'self' => 'source',
@@ -1743,18 +1744,28 @@ final class RmemExploreTui
                 'held_by' => 'held by',
                 default => $loc['kind'],
             };
-            // Don't let $wrap() split the path across sidebar rows:
-            // the resulting `file:line` is no longer a contiguous
-            // clickable token in most terminals. Truncate the visible
-            // text to fit on a single line (keeping the `:line` tail
-            // visible) and wrap the whole thing in an OSC 8 hyperlink
-            // so terminals with OSC 8 support (iTerm2, Kitty, WezTerm,
-            // VS Code's integrated terminal, GNOME Terminal, Windows
-            // Terminal) pick it up regardless of what the ellipsis
-            // ate.
-            $prefix = "{$label}: ";
-            $visible = self::squeezeMiddle($loc['formatted'], max(4, $usable - strlen($prefix)));
-            $lines[] = ' ' . $prefix . self::hyperlink($loc['uri'], $visible);
+            if ($hyperlinkable) {
+                // Don't let $wrap() split the path across sidebar rows:
+                // the resulting `file:line` is no longer a contiguous
+                // clickable token in most terminals. Truncate the
+                // visible text to fit on a single line (keeping the
+                // `:line` tail visible) and wrap the whole thing in an
+                // OSC 8 hyperlink so terminals with OSC 8 support
+                // (iTerm2, Kitty, WezTerm, VS Code's integrated
+                // terminal, GNOME Terminal, Windows Terminal) pick it
+                // up regardless of what the ellipsis ate.
+                $prefix = "{$label}: ";
+                $visible = self::squeezeMiddle($loc['formatted'], max(4, $usable - strlen($prefix)));
+                $lines[] = ' ' . $prefix . self::hyperlink($loc['uri'], $visible);
+            } else {
+                // Fallback: emit plain text and let $wrap() multi-row
+                // it. The terminal's own file:line pattern matcher
+                // (e.g. PhpStorm/IntelliJ JediTerm) still picks up
+                // complete rows as clickable, and more importantly we
+                // avoid OSC 8 escapes that some terminals parse so
+                // slowly that pty writes stall the whole TUI.
+                $wrap("{$label}: {$loc['formatted']}");
+            }
         }
         foreach ($detail['attributes'] as $key => $val) {
             // filename / line_start / line_end / lineno are already
@@ -2152,6 +2163,32 @@ final class RmemExploreTui
     private static function hyperlink(string $uri, string $text): string
     {
         return "\e]8;;" . $uri . "\e\\" . $text . "\e]8;;\e\\";
+    }
+
+    /**
+     * Decide whether the current terminal can handle OSC 8 hyperlinks
+     * without stalling on them.
+     *
+     * Most modern terminals ignore escapes they don't understand, but
+     * a few parse OSC 8 so slowly that pty writes stall the render
+     * pipeline — PHP blocks on `fwrite()` with no CPU use, and the
+     * TUI looks frozen. PhpStorm/IntelliJ's bundled JediTerm is the
+     * known-bad case we can detect cheaply via
+     * `TERMINAL_EMULATOR=JetBrains-JediTerm`. We also honor
+     * `RELI_NO_HYPERLINKS=1` as an escape hatch for anything else we
+     * haven't listed.
+     */
+    private static function supportsOsc8Hyperlinks(): bool
+    {
+        $optOut = getenv('RELI_NO_HYPERLINKS');
+        if ($optOut !== false && $optOut !== '' && $optOut !== '0') {
+            return false;
+        }
+        $emulator = getenv('TERMINAL_EMULATOR');
+        if (is_string($emulator) && stripos($emulator, 'JetBrains') !== false) {
+            return false;
+        }
+        return true;
     }
 
     /**

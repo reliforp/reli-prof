@@ -153,6 +153,15 @@ target still encodes the full path so the jump is unaffected by
 truncation. Terminals without OSC 8 support just see the visible
 text.
 
+PhpStorm/IntelliJ's bundled terminal (JediTerm) parses OSC 8 slowly
+enough that emitting hyperlinks stalls the render pipeline and the
+TUI looks frozen. It's auto-detected via
+`TERMINAL_EMULATOR=JetBrains-JediTerm` and the hyperlink wrapper is
+skipped; the lines fall back to plain `source: file:line` text that
+PhpStorm's own pattern matcher still turns into a clickable link.
+Set `RELI_NO_HYPERLINKS=1` to force the same fallback anywhere
+else you hit a similarly quirky terminal.
+
 The URI is derived from the (path-mapped) filename:
 
 - **Plain filesystem path** (`/home/me/project/src/Foo.php`): the
