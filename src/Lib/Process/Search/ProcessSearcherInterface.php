@@ -17,7 +17,12 @@ interface ProcessSearcherInterface
 {
     /**
      * @param non-empty-string $regex
+     * @param non-empty-string|null $thread_name_regex optional per-thread
+     *     filter matched against /proc/<tid>/comm. TIDs whose comm does not
+     *     match are skipped; useful for targets like FrankenPHP where the
+     *     PHP VM only lives on pthread-named worker threads (`php-<hex>`)
+     *     and most other TIDs are Go runtime threads without PHP state.
      * @return int[]
      */
-    public function searchByRegex(string $regex): array;
+    public function searchByRegex(string $regex, ?string $thread_name_regex = null): array;
 }

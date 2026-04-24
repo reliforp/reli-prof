@@ -701,6 +701,8 @@ final class WatchCommand extends Command
             $target_php_settings,
             $my_pid,
             $no_cache,
+            needs_compiler_globals: false,
+            thread_name_regex: $daemon_settings->target_thread_regex,
         );
 
         // Create watch worker pool (WatchTriggerMessage-based)

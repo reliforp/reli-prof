@@ -46,7 +46,10 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         $this->auto_context_recovering->getContext()->start();
     }
 
-    /** @param non-empty-string $regex */
+    /**
+     * @param non-empty-string $regex
+     * @param non-empty-string|null $thread_name_regex
+     */
     #[\Override]
     public function sendTarget(
         string $regex,
@@ -54,6 +57,7 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
         int $pid,
         bool $no_cache = false,
         bool $needs_compiler_globals = false,
+        ?string $thread_name_regex = null,
     ): void {
         $message = new TargetPhpSettingsMessage(
             $regex,
@@ -61,6 +65,7 @@ final class PhpSearcherController implements PhpSearcherControllerInterface
             $pid,
             $no_cache,
             $needs_compiler_globals,
+            $thread_name_regex,
         );
         $this->auto_context_recovering->withAutoRecover(
             function (PhpSearcherControllerProtocolInterface $protocol) use ($message) {
