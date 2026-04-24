@@ -57,25 +57,39 @@ For the full catalogue of tasks-and-commands, see the
 
 ## 1. Install
 
-The provided Docker image is usually the easiest starting point —
-PHP 8.5, FFI and PCNTL already enabled, and `--cap-add=SYS_PTRACE`
-+ `--pid=host` let you target PHP processes running on the host or
-in other containers without touching the host shell:
+The Docker image is the easiest starting point — PHP 8.5, FFI, and
+PCNTL pre-built, no host toolchain needed. A one-line command
+installs a shell function `reli` so the rest of this doc works
+exactly as written, with no docker flag incantations to remember:
 
 ```bash
-docker pull reliforp/reli-prof
-docker run -it --security-opt="apparmor=unconfined" \
-                --cap-add=SYS_PTRACE --pid=host \
-                reliforp/reli-prof
+eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper)"
 ```
 
-`--cap-add=SYS_PTRACE` grants reli the ptrace capability, and
-`--pid=host` makes PHP processes running on the host (or in other
-containers) visible as targets — no extra setup on the host side.
+Then, still in the same shell:
 
-Inside the container the CLI is available as `reli` (and also as
-`./reli`). Everything below is the same whether you invoke it from
-the container or from a native install.
+```bash
+reli --version
+```
+
+Append the `eval "$(...)"` line to your `~/.bashrc` / `~/.zshrc` to
+keep it. The wrapper baked-in image tag matches the version of reli
+the `docker run` invocation pulled, so there's no `:latest` drift.
+
+The wrapper runs each `reli` invocation as a container with
+`--cap-add=SYS_PTRACE --pid=host --network=host`, which gives reli
+the access it needs to profile PHP processes on the host. See
+[docker-wrapper.md](docker-wrapper.md) for the security trade-offs
+and for the lower-privilege `reli-view` variant (viewer-only, safe
+on shared hosts):
+
+```bash
+eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper --profile=minimal)"
+```
+
+If a command fails unexpectedly under `reli-view`, reinstall with
+`--profile=full` and retry — `reli-view` intentionally omits the
+host privileges needed for attaching to live processes.
 
 ### From Composer
 
@@ -130,12 +144,15 @@ Run your workload in one terminal, attach reli from another:
 php ./your-script.php
 
 # Terminal B: attach and capture for ~10 s, then Ctrl-C
-sudo php ./reli inspector:trace -p "$(pgrep -f your-script.php)" \
-                                -F rbt -o trace.rbt
+reli inspector:trace -p "$(pgrep -f your-script.php)" \
+                     -F rbt -o trace.rbt
 ```
 
-The target process must be reachable with `ptrace(2)` — usually this
-means running reli as root (or granting `CAP_SYS_PTRACE`).
+The target process must be reachable with `ptrace(2)`. Under the
+Docker wrapper this is already handled (the container has
+`CAP_SYS_PTRACE`). On a native install you need either to run reli
+as root (`sudo`) or set `CAP_SYS_PTRACE` on the `php` binary you
+use to run reli.
 
 ## 4. Read the trace
 

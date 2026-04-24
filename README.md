@@ -23,10 +23,10 @@ Capture to `.rbt` in one terminal while running `rbt:analyze` through `watch(1)`
 
 ```bash
 # Terminal A — capture
-$ sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
+$ reli inspector:trace -p <pid> -F rbt -o trace.rbt
 
 # Terminal B — live analysis, refreshed every 0.2 seconds
-$ watch -n0.2 './reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail,self+total" --crop-anchor=right --path=short --crop=auto < trace.rbt'
+$ watch -n0.2 'reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail,self+total" --crop-anchor=right --path=short --crop=auto < trace.rbt'
 ```
 
 <p align="center">
@@ -42,8 +42,8 @@ Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-a
 Capture to `.rbt`, open the sandwich / flamegraph / tree TUI.
 
 ```bash
-$ sudo php ./reli inspector:trace -p <pid> -F rbt -o trace.rbt
-$ ./reli rbt:explore trace.rbt
+$ reli inspector:trace -p <pid> -F rbt -o trace.rbt
+$ reli rbt:explore trace.rbt
 ```
 
 <p align="center">
@@ -58,14 +58,14 @@ Render the heap as a standalone HTML file — Circle Pack, Treemap, Sunburst, 3D
 
 ```bash
 # Capture a snapshot first (one-shot; or use inspector:memory:dump + inspector:memory:analyze in production — see docs/memory/memory-dump.md)
-$ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+$ reli inspector:memory -p <pid> -f binary -o snapshot.rmem
 
 # Standalone HTML
-$ php ./reli rmem:viz snapshot.rmem
+$ reli rmem:viz snapshot.rmem
 # wrote snapshot.rmem.viz.html
 
 # Live (HTTP/SSE) with follow-from-TUI
-$ php ./reli rmem:explore snapshot.rmem --http-bridge 8080
+$ reli rmem:explore snapshot.rmem --http-bridge 8080
 # press `f` in the TUI, then open http://127.0.0.1:8080/
 ```
 
@@ -82,8 +82,8 @@ Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-an
 Capture a snapshot and get a prioritised report back — dominant classes, cycles, choke points, deduplication candidates — each with severity, hypothesis, and next steps.
 
 ```bash
-$ sudo php ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
-$ php ./reli inspector:memory:report snapshot.rmem
+$ reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+$ reli inspector:memory:report snapshot.rmem
 ```
 
 <p align="center">
@@ -95,7 +95,7 @@ $ php ./reli inspector:memory:report snapshot.rmem
 Compare two snapshots to track regressions or verify fixes:
 
 ```bash
-$ php ./reli inspector:memory:compare before.rmem after.rmem
+$ reli inspector:memory:compare before.rmem after.rmem
 ```
 
 Full reference (output formats, thresholds, JSON mode): [docs/memory/memory-report.md](docs/memory/memory-report.md). Capture options (`--exclude-heap`, portable dumps, core-file analysis): [docs/memory/memory-dump.md](docs/memory/memory-dump.md), [docs/memory/coredump.md](docs/memory/coredump.md).
