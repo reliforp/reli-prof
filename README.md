@@ -69,14 +69,9 @@ $ php ./reli rmem:explore snapshot.rmem --http-bridge 8080
 # press `f` in the TUI, then open http://127.0.0.1:8080/
 ```
 
-<!-- TODO(screenshot): rmem:viz 3D Force graph of a real heap -->
-![rmem:viz — 3D Force graph of a PHP heap (screenshot coming soon)](docs/images/rmem-viz-force.png)
-
-<!-- TODO(screenshot): rmem:viz Circle Pack of a real heap -->
-![rmem:viz — Circle Pack view (screenshot coming soon)](docs/images/rmem-viz-pack.png)
-
-<!-- TODO(gif): rmem:explore ↔ rmem:live focus bus — moving the TUI cursor moves the browser highlight -->
-![rmem:explore ↔ browser follow mode (GIF coming soon)](docs/images/rmem-follow.gif)
+<p align="center">
+  <img src="docs/images/rmem-explore-viz-demo.gif" alt="rmem:explore ↔ browser follow mode" width="100%">
+</p>
 
 Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md).
 
