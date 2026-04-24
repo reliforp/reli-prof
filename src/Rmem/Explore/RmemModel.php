@@ -1162,17 +1162,12 @@ final class RmemModel
         if ($cache === null) {
             return false;
         }
-        if (!$cache->hasSection(
-            \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SOURCE_LOC_REFS
-        )) {
+        $section = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SOURCE_LOC_REFS;
+        if (!$cache->hasSection($section)) {
             return false;
         }
-        $data = $cache->getSectionData(
-            \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SOURCE_LOC_REFS
-        );
-        $count = $cache->getSectionElementCount(
-            \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SOURCE_LOC_REFS
-        );
+        $data = $cache->getSectionData($section);
+        $count = $cache->getSectionElementCount($section);
         if ($data === null || $count === 0) {
             return false;
         }
