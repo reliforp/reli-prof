@@ -62,6 +62,32 @@ final class RmemExploreTui
     /** @var list<string> plain-text heap/memory overview lines (matches inspector:memory:report overview) */
     private array $overviewLines = [];
     private bool $showSidebar = true;
+
+    /**
+     * Whether to paint the full-width source-banner row just above the
+     * footer. The banner duplicates the sidebar's source / defined /
+     * held-by line at full terminal width so terminals that don't
+     * emit motion events (PhpStorm JediTerm) — and therefore can't
+     * drive the sidebar's hover overlay — still see a contiguous
+     * `file:line` token their pattern matcher can latch onto. Toggled
+     * with `b`.
+     */
+    private bool $showSourceBanner = true;
+
+    /**
+     * Node id the next render() should source the banner text from.
+     * Computed at the top of render() so renderList / renderSandwich
+     * can pull it without re-running the cursor-pane dispatch.
+     */
+    private ?int $bannerFocusId = null;
+
+    /**
+     * Whether the last render emitted a banner row. hitTestMouseRow()
+     * reads this to offset the sandwich pane boundaries correctly —
+     * the banner steals a row from the bottom that the unfixed
+     * formula would otherwise count as the last child row.
+     */
+    private bool $lastRenderBannerShown = false;
     private ?string $filterPattern = null;
     private string $filterInput = '';
     private bool $filterPrompt = false;
@@ -778,7 +804,14 @@ final class RmemExploreTui
         //   row  h+3      focus bar
         //   row  h+4      "▸ Children (N)" label
         //   rows h+5..Y   children rows
-        $bodyH = $totalRows - 4;
+        //
+        // When the source banner is showing, it steals one row from
+        // the bottom (so bottomReserve is 3 instead of 2), which in
+        // turn shrinks bodyH and halfH by one. Match that here or
+        // clicks on the last visible child row would be routed to
+        // the banner instead.
+        $bottomReserve = $this->lastRenderBannerShown ? 3 : 2;
+        $bodyH = $totalRows - 2 - $bottomReserve;
         $halfH = (int)($bodyH / 2);
         $parentsStart = 3;
         $parentsEnd = $halfH + 2;
@@ -1431,6 +1464,7 @@ final class RmemExploreTui
             "'" => $this->switchToBookmarks(),
             'i' => $this->showSubtreeInfo(),
             'x' => $this->showCycles(),
+            'b' => $this->showSourceBanner = !$this->showSourceBanner,
             default => null,
         };
     }
@@ -1593,27 +1627,64 @@ final class RmemExploreTui
 
     // ---- Rendering ----
 
+    /**
+     * Build the full-width source-banner row for $nodeId, or return
+     * null when the node has no source location (the caller then
+     * skips emitting a row and the status line moves up one).
+     *
+     * The banner prints the highest-priority source_location on a
+     * single row — no `$wrap()` splitting — because terminals'
+     * file:line pattern matchers require a contiguous `path:line`
+     * token to offer a clickable jump. PhpStorm's JediTerm in
+     * particular can't drive the sidebar's hover overlay (it doesn't
+     * emit mode-1003 motion events), so this gives its path matcher
+     * something to latch onto.
+     */
+    private function renderSourceBanner(?int $nodeId, int $cols): ?string
+    {
+        if (!$this->showSourceBanner || $nodeId === null) {
+            return null;
+        }
+        /** @var list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}> $locs */
+        $locs = $this->model->nodeDetail($nodeId)['source_locations'];
+        if ($locs === []) {
+            return null;
+        }
+        $loc = $locs[0];
+        $label = match ($loc['kind']) {
+            'self' => 'source',
+            'defined_at' => 'defined',
+            'held_by' => 'held by',
+            default => $loc['kind'],
+        };
+        $text = $label . ': ' . $loc['formatted'];
+        $maxWidth = $cols - 2;
+        if ($maxWidth < 8) {
+            return null;
+        }
+        if (strlen($text) > $maxWidth) {
+            $text = substr($text, 0, $maxWidth - 1) . '…';
+        }
+        // Reverse video makes the banner visually distinct from the
+        // regular status / footer rows without burning a color that
+        // might clash with the user's terminal theme.
+        return "\e[7m " . str_pad($text, $cols - 1) . "\e[27m";
+    }
+
     private function render(): void
     {
         $this->model->ensureLocationInfoLoaded();
         [$cols, $rows] = $this->term->size();
 
+        // The sidebar and the source-banner both want the node id the
+        // cursor is currently sitting on, regardless of whether the
+        // user has drilled into it — mirrors the detail-pane policy.
+        $focusId = $this->currentCursorNodeId();
+
         $sidebarW = 0;
         $sidebarLines = [];
         if ($this->showSidebar && $cols > 80) {
             $sidebarW = min(40, (int)($cols * 0.3));
-            if ($this->sandwich) {
-                // Show detail for the selected row in the active pane
-                if ($this->activePane === 'children' && isset($this->childRows[$this->childSelected])) {
-                    $focusId = $this->childRows[$this->childSelected]['node_id'];
-                } elseif ($this->activePane === 'parents' && isset($this->parentRows[$this->parentSelected])) {
-                    $focusId = $this->parentRows[$this->parentSelected]['node_id'];
-                } else {
-                    $focusId = $this->sandwichNodeId;
-                }
-            } else {
-                $focusId = $this->rows[$this->selected]['node_id'] ?? null;
-            }
             if ($focusId !== null) {
                 $allSidebarLines = $this->buildSidebarLines($focusId, $sidebarW, $rows + $this->sidebarScroll);
                 // Apply scroll
@@ -1626,6 +1697,7 @@ final class RmemExploreTui
             }
         }
         $mainW = $cols - $sidebarW;
+        $this->bannerFocusId = $focusId;
 
         $lines = [];
         $lines[] = $this->renderHeader($cols);
@@ -1810,20 +1882,27 @@ final class RmemExploreTui
 
     private function renderList(array &$lines, int $cols, int $totalRows): void
     {
+        $banner = $this->renderSourceBanner($this->bannerFocusId, $cols);
+        $this->lastRenderBannerShown = $banner !== null;
+        $bottomReserve = $banner !== null ? 3 : 2; // banner + footer + status vs. footer + status
+
         $lines[] = $this->renderBreadcrumb($cols);
         $lines[] = $this->colHeader($cols);
         $lines[] = '  ' . str_repeat('─', min($cols - 2, 120));
 
-        $bodyH = $totalRows - count($lines) - 2;
+        $bodyH = $totalRows - count($lines) - $bottomReserve;
         $count = count($this->rows);
         for ($i = $this->topRow; $i < min($this->topRow + $bodyH, $count); $i++) {
             $lines[] = $this->formatRow($this->rows[$i], $i === $this->selected, $cols);
         }
 
-        while (count($lines) < $totalRows - 2) {
+        while (count($lines) < $totalRows - $bottomReserve) {
             $lines[] = '';
         }
 
+        if ($banner !== null) {
+            $lines[] = $banner;
+        }
         $lines[] = $this->renderFooter($cols);
         $statusParts = [
             number_format(count($this->rows)) . ' nodes',
@@ -1838,7 +1917,11 @@ final class RmemExploreTui
 
     private function renderSandwich(array &$lines, int $cols, int $totalRows): void
     {
-        $bodyH = $totalRows - 4; // header + focus bar + footer + status
+        $banner = $this->renderSourceBanner($this->bannerFocusId, $cols);
+        $this->lastRenderBannerShown = $banner !== null;
+        $bottomReserve = $banner !== null ? 3 : 2; // banner + footer + status vs. footer + status
+
+        $bodyH = $totalRows - 2 - $bottomReserve; // header + focus bar on top, banner?+footer+status on bottom
         $halfH = (int)($bodyH / 2);
 
         // Parents pane
@@ -1873,17 +1956,20 @@ final class RmemExploreTui
         // Children pane
         $cLabel = $this->activePane === 'children' ? "\e[1m▸ Children\e[0m" : "\e[2m  Children\e[0m";
         $lines[] = $cLabel . sprintf(' (%d)', count($this->childRows));
-        $remainH = $totalRows - count($lines) - 2;
+        $remainH = $totalRows - count($lines) - $bottomReserve;
         $cCount = count($this->childRows);
         for ($i = $this->childTopRow; $i < min($this->childTopRow + $remainH, $cCount); $i++) {
             $sel = $this->activePane === 'children' && $i === $this->childSelected;
             $lines[] = $this->formatRow($this->childRows[$i], $sel, $cols);
         }
 
-        while (count($lines) < $totalRows - 2) {
+        while (count($lines) < $totalRows - $bottomReserve) {
             $lines[] = '';
         }
 
+        if ($banner !== null) {
+            $lines[] = $banner;
+        }
         $lines[] = $this->renderFooter($cols);
         $lines[] = sprintf(
             ' node#%d | Tab:switch pane | Enter:focus | Bksp:back to list',
@@ -2033,6 +2119,7 @@ final class RmemExploreTui
             '    n               Toggle tree/all edges',
             '    o               Toggle sidebar (path to root)',
             '    O               Show memory overview (heap/limit/RSS/...)',
+            '    b               Toggle source-location banner (clickable path)',
             '',
             '  Sandwich view:',
             '    Top pane        Parents (who retains this node)',
