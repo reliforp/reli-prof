@@ -586,3 +586,113 @@ in the noisy reports. Spot-check `rw3_reflection-heavy` (has
 Look for Top Arrays / Top Strings showing `(+N more similar ...)`
 annotations in: `rw2_error-context-capture`, `rw3_graphql-shape`,
 `rw4_pdo-result-hoarding`, `rw4_enum-collections`.
+
+---
+
+## Things to avoid — walk-backs collected in the investigation
+
+The investigation session made several confident calls that turned
+out to be wrong. Listed here so the implementation session doesn't
+re-make them.
+
+### "class_table findings are noise, filter them out"
+
+**Wrong.** class_table legitimately dominates small heaps (CLI script
+baselines) and static-property-heavy apps (`rw3_static-cache`). The
+finding is factually correct; only the advice wording is off. See
+the stocked `class_definition_overhead` proposal in
+`memory-report-ux-improvements.md`. Do **not** suppress class_table
+findings. The correct fix is context-specific guidance, not filtering.
+
+### "cycle_cluster at 53 MB retained must be HIGH severity"
+
+**Wrong.** `rw3_spreadsheet-xlsx` shows a 53.9 MB retained cycle
+(PhpSpreadsheet's `cellXfSupervisor` pattern) flagged as LOW. The
+investigation initially called that a bug. Rechecking:
+
+1. PHP has a cycle GC; not every cycle is a leak.
+2. `GcPendingPass` already emits `gc_pending_candidate` for SCCs
+   reachable only through `objects_store` — the *actual* leak case.
+3. Across all 25 captured reports, zero `gc_pending_candidate`
+   findings fired. Every observed cycle was reachable from userland
+   tree edges; LOW is the right severity.
+
+Don't "upgrade" cycle_cluster severity; the distinction is already
+working. Only open issue is that the finding's `impact_bytes` shows
+the cycle's retained, which reads like a saving estimate — relabel
+to `current_retained_bytes` if possible, or document in the
+formatter.
+
+### "retained × count double-counts shared subtrees N times"
+
+**Approximately wrong as a mechanism statement.** The investigation
+first explained B2 as "retained × count double-counts". The real
+mechanism is more specific:
+
+1. DedupCandidatePass buckets by `(link_name, node_size)` only,
+   producing heterogeneous groups (B6).
+2. `getRetainedForDedup` averages sampled members' retained sizes;
+   outliers in the heterogeneous group skew the mean.
+3. Multiplying skewed mean × total count produces the blown-up
+   number.
+
+For SCC-heavy graphs (rw4_graph-recursion) the amplification is
+different again: every SCC member's retained includes the whole SCC
+subtree. `N × retained` here = `N × (entire shared part)`, so the
+effect is N² in the worst case.
+
+Both cases share the surface symptom but neither is purely "×N
+double-count". Write fixes that match the actual mechanism (B6
+bucket fix + SCC-aware clamp), not a generic "divide by something".
+
+### "bottleneck_path should be truncated at the class name"
+
+**Wrong.** Early proposal was to elide everything below the class
+name in class_table paths (so that `class_table->Foo->methods->bar->op_array->...`
+became just `class_table->Foo`). Counter-argument from the user: a
+script with auto-generated code, pathological doc comments, or a
+runaway `static $cache` inside a method would need to see the
+full descent to diagnose. Don't elide; improve the rendering
+(sizes + drops).
+
+### "non-ZendMM memory gap should be a Finding"
+
+**Wrong layer.** An early proposal suggested firing a
+`non_zendmm_memory` finding when RSS >> analysed heap. That would
+alarm on every DOMDocument/libxml2/opcache scenario. Correct layer
+is tool-level documentation (scope section in
+getting-started.md / README): "reli analyses ZendMM; C-extension
+memory and opcache shared mem are outside scope". Findings are for
+in-scope things.
+
+### "give up on a single sort axis — expose --sort-by"
+
+**Tempting but defer.** The investigation entertained a
+`--sort-by=current|saving|severity|heap_fraction` flag as escape
+from the `impact_bytes` semantics tradeoff. Don't add this in T2.
+The (A) resolution (`current_bytes` unified + separate
+`saving_estimate_bytes`) is a strict improvement over today and
+preserves the single-axis sort. Only consider `--sort-by` if users
+ask for it post-ship.
+
+---
+
+## Scope discipline
+
+Each tier is independently shippable. Don't bundle across tiers:
+
+- T1 is purely additive — three small fixes, no JSON schema changes,
+  no behaviour changes beyond labels.
+- T2 makes number accuracy better; no new schema fields needed for
+  the clamp + bucket fix. If you touch `impact_bytes` semantics,
+  that's T2.5 / T3 territory.
+- T3 affects layout and narrative; may touch `facts.*` conventions
+  but avoid breaking JSON consumers.
+
+**Do NOT** rewrite TextReportFormatter wholesale to "clean narrative
+format" in one PR. Incremental shipping against the priority list
+makes the whole series verifiable against the 25 saved reports.
+
+Good luck. The 25-report corpus is the real test — each claim in
+`memory-report-ux-improvements.md` names the specific report it
+shows up in, so verification is "diff before/after on that report".
