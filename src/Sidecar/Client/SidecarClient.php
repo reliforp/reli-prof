@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Sidecar\Client;
 
+use Reli\Inspector\Sidecar\SocketPathResolver;
+
 /**
  * Lightweight client for communicating with the reli sidecar daemon.
  *
@@ -23,11 +25,10 @@ namespace Reli\Sidecar\Client;
  * Socket path resolution order:
  *   1. Constructor argument ($socket_path)
  *   2. RELI_SIDECAR_SOCKET environment variable
- *   3. Default: /var/run/reli-sidecar.sock
+ *   3. $XDG_RUNTIME_DIR/reli/sidecar.sock (or throws if XDG_RUNTIME_DIR unset)
  */
 final class SidecarClient
 {
-    public const DEFAULT_SOCKET_PATH = '/var/run/reli-sidecar.sock';
     public const ENV_SOCKET_PATH = 'RELI_SIDECAR_SOCKET';
 
     private string $socket_path;
@@ -44,9 +45,11 @@ final class SidecarClient
             $this->socket_path = $socket_path;
         } else {
             $env = getenv(self::ENV_SOCKET_PATH);
-            $this->socket_path = (is_string($env) && $env !== '')
-                ? $env
-                : self::DEFAULT_SOCKET_PATH;
+            if (is_string($env) && $env !== '') {
+                $this->socket_path = $env;
+            } else {
+                $this->socket_path = SocketPathResolver::resolveDefault();
+            }
         }
     }
 

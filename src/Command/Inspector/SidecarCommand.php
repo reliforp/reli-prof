@@ -18,6 +18,7 @@ use Reli\Inspector\Settings\SidecarSettings\SidecarSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Sidecar\SidecarDumpHandler;
 use Reli\Inspector\Sidecar\SidecarServer;
+use Reli\Inspector\Sidecar\SocketPathResolver;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\RssReader;
@@ -89,7 +90,7 @@ final class SidecarCommand extends ReliCommand
         }
 
         AppDirectory::ensureDirectoryExists($settings->output_dir);
-        AppDirectory::ensureDirectoryExists(dirname($settings->socket_path));
+        SocketPathResolver::assertParentSafe($settings->socket_path);
 
         $disk_tracker = new DiskUsageTracker(
             $settings->disk_usage_limit_bytes,
