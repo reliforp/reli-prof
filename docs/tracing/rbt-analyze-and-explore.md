@@ -384,6 +384,25 @@ defaults intact.
 ./reli rbt:explore --keymap=/path/to/my-keymap.json trace.rbt
 ```
 
+### Rewriting recorded paths (`--path-map`)
+
+Traces captured inside containers or on remote hosts bake in whatever
+path `zend_op_array->filename` held in the target process, which is
+usually not what your local editor expects. `--path-map FROM=TO`
+rewrites paths before they reach the TUI labels (and the file:line
+suffixes most terminals turn into clickable links):
+
+```bash
+./reli rbt:explore trace.rbt \
+    --path-map /var/www/html=/home/me/project \
+    --path-map /var/www/html/vendor=/opt/vendor
+```
+
+The option may be specified multiple times; the **longest matching
+prefix** wins, so a specific `/vendor` entry layered on top of a
+broader `/var/www/html` entry behaves as expected. `FROM` must be
+non-empty; `TO` may be empty to strip the prefix entirely.
+
 ### Diagnose mode
 
 If keys seem to do nothing, the terminal may not be in raw mode. Run
