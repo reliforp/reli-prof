@@ -976,6 +976,49 @@ final class RmemModel
     }
 
     /**
+     * Build a URI terminals can honor as an OSC 8 hyperlink.
+     *
+     * Rules:
+     *  - If the filename already carries a URL scheme (because the
+     *    user pointed a --path-map at one), reuse the scheme and pick
+     *    the appropriate line suffix: `#L<n>` for http(s) (GitHub
+     *    blob convention), `:<n>` otherwise (VS Code's
+     *    `vscode://file/<path>:<line>:<col>` convention).
+     *  - Otherwise treat the filename as an absolute POSIX path and
+     *    wrap it in `file://`, with a trailing `#L<n>` fragment so
+     *    terminals that understand fragments (iTerm2, Kitty,
+     *    WezTerm) can jump to the exact line.
+     *
+     * @param array{filename: string, line: ?int, line_start: ?int, line_end: ?int} $loc
+     */
+    public static function buildSourceLocationUri(array $loc): string
+    {
+        $file = $loc['filename'];
+        $line = $loc['line'] ?? $loc['line_start'];
+
+        if (preg_match('#^([a-z][a-z0-9+.-]*)://#i', $file, $m) === 1) {
+            $scheme = strtolower($m[1]);
+            if ($line !== null && $line > 0) {
+                if ($scheme === 'http' || $scheme === 'https') {
+                    return $file . '#L' . $line;
+                }
+                return $file . ':' . $line;
+            }
+            return $file;
+        }
+
+        // Plain filesystem path. Percent-encode the path component
+        // while leaving forward slashes intact so `file://` URIs are
+        // well-formed for spaces / unicode paths.
+        $encoded = implode('/', array_map('rawurlencode', explode('/', $file)));
+        $uri = 'file://' . $encoded;
+        if ($line !== null && $line > 0) {
+            $uri .= '#L' . $line;
+        }
+        return $uri;
+    }
+
+    /**
      * Local filename/line extraction from the node's own attributes,
      * with path-map applied. Shared between the direct-resolver and
      * the multi-kind resolver.
@@ -1247,6 +1290,11 @@ final class RmemModel
     /**
      * Get detailed info for a node (for focus bar / detail view).
      *
+     * source_locations[*].uri is a terminal-friendly URI (see
+     * {@see self::buildSourceLocationUri()}) so clients can render
+     * an OSC 8 hyperlink and bypass file:line auto-detection —
+     * which, in a sidebar, breaks as soon as the path wraps.
+     *
      * @return array{
      *     type: string,
      *     class: ?string,
@@ -1257,7 +1305,15 @@ final class RmemModel
      *     refcount: ?int,
      *     attributes: array<string, string>,
      *     source_location: ?string,
-     *     source_locations: list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}>,
+     *     source_locations: list<array{
+     *         kind: string,
+     *         filename: string,
+     *         line: ?int,
+     *         line_start: ?int,
+     *         line_end: ?int,
+     *         formatted: string,
+     *         uri: string,
+     *     }>,
      * }
      */
     public function nodeDetail(int $nodeId): array
@@ -1266,13 +1322,16 @@ final class RmemModel
 
         $locations = [];
         foreach ($this->resolveSourceLocations($nodeId) as $loc) {
-            $formatted = self::formatLocation([
+            $short = [
                 'filename' => $loc['filename'],
                 'line' => $loc['line'],
                 'line_start' => $loc['line_start'],
                 'line_end' => $loc['line_end'],
-            ]);
-            $locations[] = $loc + ['formatted' => $formatted];
+            ];
+            $locations[] = $loc + [
+                'formatted' => self::formatLocation($short),
+                'uri' => self::buildSourceLocationUri($short),
+            ];
         }
 
         return [

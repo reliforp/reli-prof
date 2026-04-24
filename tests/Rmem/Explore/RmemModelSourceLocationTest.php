@@ -258,6 +258,84 @@ class RmemModelSourceLocationTest extends TestCase
         $this->assertSame('defined_at', $detail['source_locations'][0]['kind']);
     }
 
+    public function testNodeDetailIncludesOsc8ReadyUri(): void
+    {
+        $model = $this->createModel();
+        $detail = $model->nodeDetail(2);
+        $this->assertNotEmpty($detail['source_locations']);
+        $loc = $detail['source_locations'][0];
+        $this->assertArrayHasKey('uri', $loc);
+        $this->assertSame(
+            'file:///var/www/html/src/App.php#L17',
+            $loc['uri'],
+        );
+    }
+
+    public function testBuildUriForPlainFilesystemPath(): void
+    {
+        $uri = RmemModel::buildSourceLocationUri([
+            'filename' => '/home/me/project/src/Foo.php',
+            'line' => 42,
+            'line_start' => 42,
+            'line_end' => 60,
+        ]);
+        $this->assertSame('file:///home/me/project/src/Foo.php#L42', $uri);
+    }
+
+    public function testBuildUriWithoutLineOmitsFragment(): void
+    {
+        $uri = RmemModel::buildSourceLocationUri([
+            'filename' => '/tmp/a.php',
+            'line' => null,
+            'line_start' => null,
+            'line_end' => null,
+        ]);
+        $this->assertSame('file:///tmp/a.php', $uri);
+    }
+
+    public function testBuildUriPercentEncodesSpacesAndUnicode(): void
+    {
+        $uri = RmemModel::buildSourceLocationUri([
+            'filename' => '/home/テスト/My App/Foo.php',
+            'line' => 7,
+            'line_start' => 7,
+            'line_end' => null,
+        ]);
+        // Path segments percent-encoded, separators preserved.
+        $this->assertStringContainsString('/My%20App/', $uri);
+        $this->assertStringStartsWith('file:///', $uri);
+        $this->assertStringEndsWith('#L7', $uri);
+    }
+
+    public function testBuildUriForVscodeSchemePassesThrough(): void
+    {
+        $uri = RmemModel::buildSourceLocationUri([
+            'filename' => 'vscode://file/Users/me/project/src/Foo.php',
+            'line' => 42,
+            'line_start' => 42,
+            'line_end' => null,
+        ]);
+        // VS Code uses `:line` suffix, not a fragment.
+        $this->assertSame(
+            'vscode://file/Users/me/project/src/Foo.php:42',
+            $uri,
+        );
+    }
+
+    public function testBuildUriForHttpsUsesLineFragment(): void
+    {
+        $uri = RmemModel::buildSourceLocationUri([
+            'filename' => 'https://github.com/acme/repo/blob/abc/src/Foo.php',
+            'line' => 42,
+            'line_start' => 42,
+            'line_end' => null,
+        ]);
+        $this->assertSame(
+            'https://github.com/acme/repo/blob/abc/src/Foo.php#L42',
+            $uri,
+        );
+    }
+
     public function testBuildAndPrimeSourceLocationRefsRoundTrip(): void
     {
         $model = $this->createModel();

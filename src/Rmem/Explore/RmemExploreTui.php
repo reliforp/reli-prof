@@ -1743,7 +1743,18 @@ final class RmemExploreTui
                 'held_by' => 'held by',
                 default => $loc['kind'],
             };
-            $wrap("{$label}: {$loc['formatted']}");
+            // Don't let $wrap() split the path across sidebar rows:
+            // the resulting `file:line` is no longer a contiguous
+            // clickable token in most terminals. Truncate the visible
+            // text to fit on a single line (keeping the `:line` tail
+            // visible) and wrap the whole thing in an OSC 8 hyperlink
+            // so terminals with OSC 8 support (iTerm2, Kitty, WezTerm,
+            // VS Code's integrated terminal, GNOME Terminal, Windows
+            // Terminal) pick it up regardless of what the ellipsis
+            // ate.
+            $prefix = "{$label}: ";
+            $visible = self::squeezeMiddle($loc['formatted'], max(4, $usable - strlen($prefix)));
+            $lines[] = ' ' . $prefix . self::hyperlink($loc['uri'], $visible);
         }
         foreach ($detail['attributes'] as $key => $val) {
             // filename / line_start / line_end / lineno are already
@@ -2125,5 +2136,39 @@ final class RmemExploreTui
     {
         [, $rows] = $this->term->size();
         return max(1, $rows - 6);
+    }
+
+    /**
+     * Wrap $text in an OSC 8 hyperlink escape pointing at $uri.
+     *
+     * Terminals that understand OSC 8 (iTerm2, Kitty, WezTerm,
+     * recent VS Code integrated terminal, GNOME Terminal, Windows
+     * Terminal, …) make the region clickable irrespective of what
+     * the visible text looks like — which matters in the sidebar
+     * where paths can be long enough to trigger wrapping or
+     * truncation. Terminals that don't grok OSC 8 simply skip the
+     * escapes and see the visible text unchanged.
+     */
+    private static function hyperlink(string $uri, string $text): string
+    {
+        return "\e]8;;" . $uri . "\e\\" . $text . "\e]8;;\e\\";
+    }
+
+    /**
+     * Middle-truncate $text to at most $max chars using a single
+     * ellipsis. Keeps the head and tail visible — useful for
+     * `/long/path/leading/to/Foo.php:42` where both the prefix
+     * context and the trailing `:line` matter.
+     */
+    private static function squeezeMiddle(string $text, int $max): string
+    {
+        $len = strlen($text);
+        if ($len <= $max || $max < 4) {
+            return $text;
+        }
+        $keep = $max - 1; // reserve one char for the ellipsis
+        $head = (int)ceil($keep / 2);
+        $tail = $keep - $head;
+        return substr($text, 0, $head) . '…' . substr($text, $len - $tail);
     }
 }

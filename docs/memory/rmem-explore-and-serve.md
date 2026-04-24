@@ -142,16 +142,34 @@ lines per node, depending on what is available:
 values recorded as `/var/www/html/src/App.php` become
 `/home/me/project/src/App.php` in the pane.
 
-The paths show up in a form terminals such as iTerm2, VS Code's
-integrated terminal, and Kitty recognise as clickable — `Cmd`/`Ctrl`-click
-(or the terminal's keyboard equivalent) opens the file at the
-given line in your editor.
+Each source line is emitted wrapped in an OSC 8 hyperlink, so
+terminals that support it (iTerm2, Kitty, WezTerm, recent VS Code
+integrated terminal, GNOME Terminal, Windows Terminal, …) make the
+whole region clickable regardless of the sidebar width — `Cmd`/`Ctrl`-click
+(or the terminal's keyboard equivalent) opens the file at the given
+line in your editor. The visible `file:line` is middle-truncated
+with a `…` when it would overflow the sidebar, but the hyperlink
+target still encodes the full path so the jump is unaffected by
+truncation. Terminals without OSC 8 support just see the visible
+text.
+
+The URI is derived from the (path-mapped) filename:
+
+- **Plain filesystem path** (`/home/me/project/src/Foo.php`): the
+  link target becomes `file:///home/me/project/src/Foo.php#L17`.
+  Path segments are percent-encoded so spaces and unicode are safe.
+- **User-mapped URL scheme**: point `--path-map` at a scheme-prefixed
+  target to get editor-native links. e.g.
+  `--path-map /var/www/html=vscode://file/Users/me/project` yields
+  `vscode://file/Users/me/project/src/Foo.php:17`; a GitHub blob
+  target (`https://github.com/acme/repo/blob/abc`) yields
+  `…blob/abc/src/Foo.php#L17`.
 
 The first (highest-priority) location is also surfaced as
-`source_location` in `query.node_detail` responses, and the full
-list as `source_locations[]`, so MCP/HTTP bridge clients can turn
-them into `vscode://file/…` or `https://github.com/…` links at
-render time.
+`source_location` (string) in `query.node_detail` responses, and
+the full list as `source_locations[]` with each entry carrying a
+`uri` field, so MCP/HTTP bridge clients can render hyperlinks
+directly without having to reconstruct the URI.
 
 ### HTTP bridge options (`--http-bridge`)
 
