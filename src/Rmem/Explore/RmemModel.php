@@ -853,11 +853,26 @@ final class RmemModel
     }
 
     /**
-     * Get a short inline preview for string/scalar nodes.
-     * Returns null for non-value nodes.
+     * Replace escape sequences / control chars with visible stand-ins so
+     * the result is safe to splat onto a raw TTY.
+     *
+     * `$maxLen`, when provided, caps the input *before* the pattern
+     * operations run. That cap matters: the TUI calls this from hot
+     * paths like `valuePreview()` (one call per rendered row) and from
+     * the detail pane, and the raw string_value can be multi-MB for
+     * pathological nodes. Running two `preg_replace()` scans over
+     * megabytes of text on every repaint turns keypress response into
+     * a visible freeze. Callers that know how much they will actually
+     * render should pass a generous upper bound (final display length
+     * + some margin for ANSI-strip expansion). A null `$maxLen` keeps
+     * the historical unbounded behavior for places that really do want
+     * the full string.
      */
-    public static function sanitizeForTerminal(string $s): string
+    public static function sanitizeForTerminal(string $s, ?int $maxLen = null): string
     {
+        if ($maxLen !== null && strlen($s) > $maxLen) {
+            $s = substr($s, 0, $maxLen);
+        }
         // Replace common whitespace escapes with visible representations
         $s = str_replace(["\n", "\r", "\t", "\0"], ['\n', '\r', '\t', '\0'], $s);
         // Strip ANSI escape sequences
@@ -871,7 +886,10 @@ final class RmemModel
     {
         $sv = $this->nodeStringValues[$nodeId] ?? null;
         if ($sv !== null) {
-            $preview = self::sanitizeForTerminal($sv);
+            // Bound the sanitize input so a multi-MB string value
+            // doesn't make preg_replace scan megabytes per rendered
+            // row — we only need ~40 chars of preview out.
+            $preview = self::sanitizeForTerminal($sv, 80);
             if (strlen($preview) > 40) {
                 $preview = substr($preview, 0, 37) . '...';
             }
