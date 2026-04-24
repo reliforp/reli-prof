@@ -1163,3 +1163,261 @@ same report and reach the right conclusion.
 Ship only after B1 is in — the breakdown output still contains class
 names, and displaying them lower-cased would undo most of the readability
 win.
+
+---
+
+## Third-batch observations (rw3_*, Doctrine / static-cache / GraphQL /
+reflection metadata / messenger / closure-leak)
+
+Six more scenarios targeting patterns not previously exercised:
+Doctrine-like UnitOfWork (30k products + 90k variants + identity map),
+unbounded static property caches (80k entries on a class static), a
+GraphQL schema + resolved result tree with captured resolvers, a
+Symfony-Serializer-style metadata cache (300 DTOs × 15 attrs),
+Symfony-Messenger envelopes with closure-capturing retry stamps, and
+the classic captured-$this event-listener leak.
+
+Reports live in `/tmp/memreport-out/rw3_*.report.txt`. Observations
+below are grounded in specific findings from those reports — not
+speculation.
+
+### N1. `empty_object` on Closures is misleading advice
+
+`empty_object` flagged Closures as "Objects with no stored properties —
+pure overhead, may be replaceable" in at least three scenarios:
+
+- `rw3_closure-leak`: `Closure: 6,000 instances x 344 B` (the actual leak
+  root — each closure captures `$this`)
+- `rw3_messenger-envelopes`: `Closure: 50,000 instances x 344 B` (the
+  `RetryStamp::$replay` closures capturing `$msg`)
+- `rw3_graphql-shape`: `Closure: 320 instances x 344 B` (field resolvers
+  that capture config)
+
+In all three cases the Closures are not "empty" — they carry captured
+state that is the whole reason they retain memory. The "may be
+replaceable" wording is actively misleading; a reader following it
+won't find a replacement target.
+
+Fix: in `EmptyObjectPass` (or wherever `empty_object` is emitted),
+exclude `Closure`. Closures with no bound state are extremely rare in
+user code; the finding reliably misfires for them.
+
+### N2. `shared_singleton` reads as a warning when it's a positive signal
+
+In `rw3_reflection-heavy`:
+
+    [shared_singleton] AttributeMetadata::$ignoredAttributes: 4,499 refs -> 1 target
+    [shared_singleton] PropertyInfoCacheEntry::$types: 4,499 refs -> 1 target
+    [shared_singleton] ClassMetadata::$discriminatorMap: 299 refs -> 1 target
+
+Same pattern in `rw3_graphql-shape` with `FieldDefinition::$args`.
+These mean: "all instances of this class happen to share the same
+value for this property via CoW — you're already getting the dedup for
+free". That's a positive fact about the heap, not a problem. But the
+finding appears in the `Additional Info` section with the same `[tag]`
+formatting as the actual issues above it, and the name
+`shared_singleton` doesn't carry the positive valence.
+
+Two fixes that help independently:
+
+- **Phrase it positively**: rename to `shared_property_ok` or similar,
+  with wording like "CoW is already sharing this property — no action
+  needed".
+- **Separate positive from negative**: split the "Additional Info"
+  section into "Observations (no action needed)" and "Minor
+  findings" so the valence is explicit from where an item lands.
+
+### N3. `spl_object_hash`-keyed arrays produce hostile paths
+
+`rw3_doctrine-uow`:
+
+    bottleneck_path: $uow->originalEntityData[00000000000000090000000000000000][attributes]
+
+`00000000000000090000000000000000` is a valid `spl_object_hash()` key;
+the path is technically correct. But the reader can't derive any
+meaning from the hash. Doctrine's UnitOfWork specifically uses
+`spl_object_hash`-keyed maps for identity tracking; any Doctrine-style
+report will show this pattern.
+
+Possible fix: detect keys that match `spl_object_hash`'s format
+(32-char hex, or 33 with trailing tag in older PHP) and render as
+`[obj#<short>]` where `<short>` is a short counter assigned per dump.
+The verbatim hash goes into `facts.key_raw` for the reader who needs
+it. Low risk: the rendered form still uniquely identifies the slot
+within the report.
+
+### N4. Uniform-sibling rows in "Top Arrays" waste space
+
+Recurring across `rw2_error-context-capture`, `rw2_guzzle-buffered`,
+`rw2_eloquent-hydration`, `rw3_graphql-shape`:
+
+    8       672.00 KB   ...    $queryResult[viewer][recentActivity][0]
+    9       671.94 KB   ...    $queryResult[viewer][recentActivity][1]
+    10      671.94 KB   ...    $queryResult[viewer][recentActivity][2]
+
+Three to seven rows of identically-sized siblings, each a separate line.
+`TextReportFormatter`'s Top Arrays table could detect runs where
+`retained`, `element_count`, and the path suffix pattern match, and
+collapse them:
+
+    8       672.00 KB   ...    $queryResult[viewer][recentActivity][0]
+       (+2 more at ~672 KB each — see rmem:explore)
+
+Same shape is useful for "Top Strings" where duplicate-content strings
+get one row each today.
+
+### N5. `dedup_candidate` severity floor is flat; saving potential is not reflected
+
+Per `DedupCandidatePass.php:128–130`:
+
+    severity: $total > 102400
+        ? FindingSeverity::Low
+        : FindingSeverity::Info,
+
+Anything above 100 KB is Low. In `rw3_doctrine-uow`:
+
+    [LOW] 5.15 MB impacted
+    dedup_candidate: value: 30000/30000 copies have identical content (100%).
+    Example: "Product description text. Product description text. Produ..."
+
+30,000 identical 180-byte strings — interning them would save ~5 MB. On
+a 148 MB heap that's ~3.5% — small, but a real actionable lever. Low is
+too low; more importantly, the "100% identical content" sub-case is
+*definitely* actionable (unlike the "same size but different content"
+sub-case) and should be separated.
+
+Two tiers instead of one:
+
+- `content_identical` sub-case: severity scales with `impact_bytes`
+  (≥ 1 MB → Medium; ≥ 10 MB → High).
+- `same_size_different_content` sub-case: stays Low/Info — weaker
+  signal, may not actually be dedup-able.
+
+The pass already distinguishes the two cases in its hypothesis text
+(`3000/3000 copies have identical content (100%)` vs `Same size but
+different content`); the severity just doesn't pick up on it.
+
+### N6. Closure-capture leak shape is detectable from existing findings
+
+`rw3_closure-leak` produces exactly the signature that would let a
+shape-detection pass recognise this pattern:
+
+    dominant_class:     Closure 6,000 x 344 B
+    dedup_candidate:    this_ptr (Handler): 3,000 copies (retained)
+    ownership_pattern:  RequestContext owned 1:1 by Handler (3,000)
+    choke_point:        $bus->listeners[request.completed] (3,000 children)
+
+"N distinct closures, each `this_ptr` points at a distinct
+Handler-like instance, listener container grew to N" is the exact
+fingerprint of the captured-$this leak pattern. Today the reader must
+synthesise this from four separate findings. A `closure_this_leak`
+shape-detection rule keyed off that signature would produce one clear
+finding with actionable guidance:
+
+    [HIGH] captured_$this leak via Closure:
+      N closures (each bound to a different Handler/Controller) accumulate
+      in $bus->listeners[...]. Closures capture $this by default, so each
+      handler's entire context tree stays alive. Typical fix:
+        - Remove listeners when the request ends
+        - Use a static closure (fn or `static fn`) if the handler state
+          is not actually needed
+        - Or invert: put the listener on a persistent service, not on
+          per-request Handler
+
+Adds weight to the stocked shape-detection proposal — this is a
+generic PHP anti-pattern, not framework-specific.
+
+### N7. static_properties paths are clean once B1 is fixed
+
+`rw3_static-cache` only has 5 findings, all correctly pointing at
+`class_table->...->static_properties->...` of user classes
+(`LookupService::$staticCache`, `UserRepository::$byIdCache`, etc.).
+Once B1 lands, those paths read as proper class names and the report
+is essentially already narrative — this is the cleanest report in the
+whole corpus.
+
+Confirms the intuition that the text output is *close* to good for
+well-shaped heaps; the complaints we've collected are concentrated on
+a few recurring issues (B1 casing, B8 descent, duplicate findings,
+Closure noise) rather than a global "the whole layout is wrong".
+
+### N8. `rw3_messenger-envelopes`: 22 findings for one root problem
+
+50,000 envelope accumulation — unambiguously one phenomenon ("worker
+didn't process-and-discard envelopes") — produced 22 separate
+findings:
+
+- 1 bottleneck_path
+- 1 choke_point on `$processedEnvelopes`
+- 2 companion_cluster (one with 8 classes on a single 320-char line,
+  one with 3)
+- 6 expensive_property (one per stamp property)
+- 3 empty_object (Closure + 2 stamp classes)
+- 1 ownership_pattern (Closure via RetryStamp)
+- 7 structural_duplicate (one per stamp/message class)
+- 1 dedup_candidate
+
+This is the strongest empirical case for S12 (cluster by target).
+22 items to describe "50k envelopes, each with 6 stamps + 1 closure"
+is unreadable in practice. Most of the 22 could be rolled into one
+block:
+
+    [HIGH] $processedEnvelopes: 50,000 accumulated, 185.86 MB retained
+      Shape: each Envelope owns 6 stamps (BusNameStamp, HandledStamp,
+             RetryStamp, SentStamp, DelayStamp, TransportMessageIdStamp)
+             and wraps a message (ProcessUserRegistration / SendNotification
+             / ExportReport, 1/3 each).
+      Hot retainer: RetryStamp::$replay is a Closure (50,000 × 344 B =
+                    16.40 MB) capturing the wrapped message via `use`.
+      Levers:
+        - Bound the envelope list (rotate / drain after handling)
+        - Drop RetryStamp once the handler succeeded
+        - Use `static fn` if the replay closure doesn't actually need
+          to capture
+
+That's 10 lines vs 22 findings; all the facts are in the existing
+findings, the formatter just has to join them on target.
+
+### N9. Text formatter is already close for some scenarios
+
+Scenarios that produced clean, focused reports with the existing
+formatter:
+
+- `rw3_static-cache` (5 findings, all actionable)
+- `rw2_csv-mega` (2 findings — bottleneck + choke — for a 462 MB heap)
+- `rw3_graphql-shape` (8 findings, all relevant)
+
+Scenarios that produced noisy reports:
+
+- `rw3_messenger-envelopes` (22)
+- `rw3_doctrine-uow` (25)
+- `rw_logger-stack` (14)
+- `rw_twig` (10 with shared_singleton flood)
+
+The noise correlates with **many per-instance objects of several
+companion classes**. Scenarios dominated by a single large userland
+array produce focused reports. S12 clustering would mostly affect the
+object-heavy scenarios; scenarios like `rw3_static-cache` don't need
+it.
+
+This suggests prioritising: ship B1 + B3 first (help everyone), then
+S12 clustering (help the 22-finding cases).
+
+---
+
+## Reports corpus snapshot
+
+As of this revision: **20 real-world reports** across three batches.
+
+- `rw_*` (7): framework-baseline sized (2–12 MB heap) — phpunit,
+  symfony-console, twig, parsedown, logger-stack, laravel-collections,
+  psr-7-stack.
+- `rw2_*` (7): OOM-sized (43–462 MB) modelled on classic issues —
+  json-decode-huge, csv-mega, xml-dom-huge, error-context-capture,
+  eloquent-hydration, guzzle-buffered, spreadsheet-xlsx.
+- `rw3_*` (6): pattern-diverse — doctrine-uow, static-cache,
+  graphql-shape, reflection-heavy, messenger-envelopes, closure-leak.
+
+Every B-item and S-item claim in this document is supported by at
+least one of those reports. Each claim's primary evidence report is
+named inline with the claim.
