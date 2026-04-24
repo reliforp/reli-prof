@@ -2221,16 +2221,17 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();
 
-        // Parse a small doc and walk a child node so that SimpleXML
-        // allocates both the php_libxml_ref_obj (document) and the
-        // php_libxml_node_ptr (child node) through emalloc.
+        // Parse a small doc and keep a named child SimpleXMLElement alive
+        // so that every tracked emalloc path is exercised:
+        //   - root sxe:   php_sxe_object + php_libxml_ref_obj + node_ptr
+        //   - child sxe:  php_sxe_object + iter.name (estrdup "child")
         $target_script =
             <<<'CODE'
             <?php
             $xml = simplexml_load_string(
                 '<root><child id="1">hello</child></root>'
             );
-            $_ = (string)$xml->child;
+            $keep = $xml->child;
             fputs(STDOUT, "a\n");
             fgets(STDIN);
             CODE
@@ -2340,10 +2341,14 @@ class MemoryLocationsCollectorTest extends BaseTestCase
 
         $found_simplexml_node = false;
         $found_simplexml_document = false;
+        $found_simplexml_iter_name = false;
+        $sxe_object_sizes = [];
         $findSxe = function (array $tree) use (
             &$findSxe,
             &$found_simplexml_node,
             &$found_simplexml_document,
+            &$found_simplexml_iter_name,
+            &$sxe_object_sizes,
         ): void {
             foreach ($tree as $key => $value) {
                 if ($key === 'simplexml_node') {
@@ -2352,7 +2357,22 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 if ($key === 'simplexml_document') {
                     $found_simplexml_document = true;
                 }
-                if (is_array($value) && $key !== '#locations') {
+                if ($key === 'simplexml_iter_name') {
+                    $found_simplexml_iter_name = true;
+                }
+                if ($key === '#locations' && is_array($value)) {
+                    /** @var array<mixed> $value */
+                    foreach ($value as $loc) {
+                        if (
+                            $loc instanceof \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation
+                            && $loc->class_name === 'SimpleXMLElement'
+                        ) {
+                            $sxe_object_sizes[] = $loc->size;
+                        }
+                    }
+                    continue;
+                }
+                if (is_array($value)) {
                     $findSxe($value);
                 }
             }
@@ -2365,6 +2385,268 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertTrue(
             $found_simplexml_document,
             'SimpleXMLElement should have its php_libxml_ref_obj allocation tracked'
+        );
+        $this->assertTrue(
+            $found_simplexml_iter_name,
+            'A named child SimpleXMLElement should have its iter.name (estrdup/zend_string) tracked'
+        );
+
+        // Object size correction: php_sxe_object is ~152 bytes (incl.
+        // zend_object's baked-in 1-zval slot) vs. sizeof(zend_object)=56
+        // on 64-bit. Without the ZendObjectMemoryLocation fix SimpleXML
+        // would be reported as size=40 (56 - 16 for property_count=0).
+        // We allow some slack in case zend_object shape shifts between
+        // PHP versions, but require > 56 to confirm the correction ran.
+        $this->assertNotEmpty(
+            $sxe_object_sizes,
+            'At least one SimpleXMLElement ZendObjectMemoryLocation should be emitted'
+        );
+        foreach ($sxe_object_sizes as $size) {
+            $this->assertGreaterThan(
+                100,
+                $size,
+                'SimpleXMLElement should report the full php_sxe_object size, not just zend_object'
+            );
+        }
+    }
+
+    /**
+     * Run a target PHP script in a container and drive the memory
+     * locations collector over the resulting process. Returns the
+     * context tree emitted by {@see ArrayContextTreeSink}.
+     *
+     * @return array<string, mixed>
+     */
+    private function runCollectorOnTargetScript(
+        string $php_version,
+        string $docker_image_name,
+        string $target_script,
+        MemoryReader $memory_reader,
+        ZendTypeReaderCreator $type_reader_creator,
+    ): array {
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $sink = new ArrayContextTreeSink();
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+
+        return $sink->getResult();
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testSimpleXMLPropertiesCacheWalked(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+
+        // Trigger sxe->properties population by casting to array. The
+        // SimpleXML handler populates the HashTable with @attributes +
+        // child zvals and keeps it on the instance.
+        $target_script = <<<'CODE'
+            <?php
+            $xml = simplexml_load_string(
+                '<root><child id="42">hello</child><child>world</child></root>'
+            );
+            /** @var array<mixed> $_ */
+            $_ = (array)$xml;
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE;
+
+        $contexts_analyzed = $this->runCollectorOnTargetScript(
+            $php_version,
+            $docker_image_name,
+            $target_script,
+            new MemoryReader(),
+            new ZendTypeReaderCreator(),
+        );
+
+        $found_properties_cache = false;
+        $find = function (array $tree) use (&$find, &$found_properties_cache): void {
+            foreach ($tree as $key => $value) {
+                if ($key === 'simplexml_properties_cache') {
+                    $found_properties_cache = true;
+                    return;
+                }
+                if (is_array($value) && $key !== '#locations') {
+                    $find($value);
+                    if ($found_properties_cache) {
+                        return;
+                    }
+                }
+            }
+        };
+        $find($contexts_analyzed);
+        $this->assertTrue(
+            $found_properties_cache,
+            'SimpleXMLElement->properties HashTable should be walked after it is populated'
+        );
+    }
+
+    #[DataProvider('provideFromV80')]
+    public function testSimpleXMLIteratorTracked(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+
+        // SimpleXMLIterator uses the same php_sxe_object layout but a
+        // distinct class entry; verify the dispatch picks it up too.
+        $target_script = <<<'CODE'
+            <?php
+            $xml = new SimpleXMLIterator(
+                '<root><child>hello</child></root>'
+            );
+            $keep = $xml->child;
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE;
+
+        $contexts_analyzed = $this->runCollectorOnTargetScript(
+            $php_version,
+            $docker_image_name,
+            $target_script,
+            new MemoryReader(),
+            new ZendTypeReaderCreator(),
+        );
+
+        $found_iterator_class = false;
+        $found_node_edge_under_iterator = false;
+        $find = function (array $tree) use (
+            &$find,
+            &$found_iterator_class,
+            &$found_node_edge_under_iterator,
+        ): void {
+            $is_iterator_here = false;
+            if (isset($tree['#locations']) && is_array($tree['#locations'])) {
+                /** @var array<mixed> $locs */
+                $locs = $tree['#locations'];
+                foreach ($locs as $loc) {
+                    if (
+                        $loc instanceof \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation
+                        && $loc->class_name === 'SimpleXMLIterator'
+                    ) {
+                        $found_iterator_class = true;
+                        $is_iterator_here = true;
+                    }
+                }
+            }
+            // `simplexml_node` is a direct child link of the object
+            // node (not a grandchild), so check at this same level.
+            if ($is_iterator_here && isset($tree['simplexml_node'])) {
+                $found_node_edge_under_iterator = true;
+            }
+            foreach ($tree as $key => $value) {
+                if (is_array($value) && $key !== '#locations') {
+                    $find($value);
+                }
+            }
+        };
+        $find($contexts_analyzed);
+
+        $this->assertTrue(
+            $found_iterator_class,
+            'SimpleXMLIterator instance should be recognised as a ZendObjectMemoryLocation'
+        );
+        $this->assertTrue(
+            $found_node_edge_under_iterator,
+            'SimpleXMLIterator should also emit a simplexml_node child edge'
         );
     }
 

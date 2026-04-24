@@ -55,6 +55,12 @@ class PhpSxeObject implements PointedTypeResolverAware
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $document_address;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $iter_name_address;
+
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $iter_nsprefix_address;
+
     /**
      * @param CastedCData<\FFI\PhpInternals\php_sxe_object> $casted_cdata
      * @param Pointer<PhpSxeObject> $pointer
@@ -67,6 +73,8 @@ class PhpSxeObject implements PointedTypeResolverAware
         unset($this->properties);
         unset($this->node_address);
         unset($this->document_address);
+        unset($this->iter_name_address);
+        unset($this->iter_nsprefix_address);
     }
 
     public function __get(string $field_name): mixed
@@ -94,6 +102,10 @@ class PhpSxeObject implements PointedTypeResolverAware
                 FFIHelper::castPointerToInt($this->casted_cdata->casted->node),
             'document_address' => $this->document_address =
                 FFIHelper::castPointerToInt($this->casted_cdata->casted->document),
+            'iter_name_address' => $this->iter_name_address =
+                FFIHelper::castPointerToInt($this->casted_cdata->casted->iter->name),
+            'iter_nsprefix_address' => $this->iter_nsprefix_address =
+                FFIHelper::castPointerToInt($this->casted_cdata->casted->iter->nsprefix),
         };
     }
 

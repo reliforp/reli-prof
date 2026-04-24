@@ -1531,8 +1531,8 @@ typedef struct {
 	HashTable           *properties;
 	void                *xpath;
 	struct {
-		void    *name;
-		void    *nsprefix;
+		char    *name;
+		char    *nsprefix;
 		int      isprefix;
 		int      type;
 		zval     data;

@@ -13,9 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
+use Reli\Lib\PhpInternals\Types\C\RawString;
 use Reli\Lib\PhpInternals\Types\Zend\PhpSxeObject;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendObject;
+use Reli\Lib\PhpInternals\Types\Zend\ZendString;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
@@ -116,5 +119,83 @@ final class EmitSimpleXMLJob implements CollectorJob
                 'simplexml_properties_cache',
             ));
         }
+
+        // iter.name / iter.nsprefix hold the element name / namespace prefix
+        // used when the SimpleXMLElement represents a named child iterator.
+        // Their storage differs by version:
+        //   PHP 7.0-8.3: xmlChar* (estrdup'd null-terminated C string).
+        //   PHP 8.4+:    zend_string* — pick up via the normal string walker.
+        $this->trackIterString(
+            $this->sxe->iter_name_address,
+            'simplexml_iter_name',
+            $ctx,
+            $queue,
+        );
+        $this->trackIterString(
+            $this->sxe->iter_nsprefix_address,
+            'simplexml_iter_nsprefix',
+            $ctx,
+            $queue,
+        );
+    }
+
+    private function trackIterString(
+        int $address,
+        string $link_name,
+        CollectorContext $ctx,
+        JobQueue $queue,
+    ): void {
+        if ($address === 0) {
+            return;
+        }
+
+        if (!$ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V84)) {
+            // Already a zend_string; let the standard walker handle
+            // dedup + size accounting.
+            $queue->push(new EmitStringJob(
+                new Pointer(
+                    ZendString::class,
+                    $address,
+                    $ctx->zend_type_reader->sizeOf('zend_string'),
+                ),
+                $this->object_node_id,
+                $link_name,
+            ));
+            return;
+        }
+
+        if ($ctx->memory_locations->has($address)) {
+            $ctx->checkVisitedAndEmitReference(
+                $address,
+                $this->object_node_id,
+                $link_name,
+            );
+            return;
+        }
+
+        // estrdup'd C string: read bounded, then register strlen+1
+        // as its allocation size. 256 is a safe upper bound for
+        // XML element / namespace-prefix names in practice.
+        try {
+            /** @var RawString $raw */
+            $raw = $ctx->dereferencer->deref(
+                new Pointer(RawString::class, $address, 256),
+            );
+            $length = strlen($raw->value) + 1;
+        } catch (\Throwable) {
+            return;
+        }
+
+        $location = new SimpleXmlInternalMemoryLocation(
+            $address,
+            $length,
+            'SimpleXMLElement::iter (estrdup)',
+        );
+        $ctx->memory_locations->add($location);
+        $ctx->emitNode(
+            new SimpleXmlInternalContext($location),
+            $this->object_node_id,
+            $link_name,
+        );
     }
 }
