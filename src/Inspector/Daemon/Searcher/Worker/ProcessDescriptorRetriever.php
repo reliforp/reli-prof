@@ -17,6 +17,7 @@ use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpInternals\ZendTypeReader;
+use Reli\Lib\PhpProcessReader\EgActivityChecker;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -27,6 +28,7 @@ class ProcessDescriptorRetriever
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
         private PhpVersionDetector $php_version_detector,
+        private EgActivityChecker $eg_activity_checker,
     ) {
     }
 
@@ -47,6 +49,15 @@ class ProcessDescriptorRetriever
         $cache = $process_descriptor_cache->get($pid);
         if (!is_null($cache)) {
             return $cache;
+        }
+
+        $pending = $process_descriptor_cache->getPending($pid);
+        if (!is_null($pending)) {
+            if ($this->eg_activity_checker->isActive($pid, $pending->eg_address, $pending->php_version)) {
+                $process_descriptor_cache->set($pending);
+                return $pending;
+            }
+            return TargetProcessDescriptor::getInvalid();
         }
 
         try {
@@ -94,6 +105,13 @@ class ProcessDescriptorRetriever
             $target_php_settings_decided->php_version,
             $cg_address,
         );
+
+        if (!$this->eg_activity_checker->isActive($pid, $eg_address, $target_php_settings_decided->php_version)) {
+            Log::debug('EG(active) is 0 — deferring as pending (e.g. mod_php parent or booting worker)', ['target_pid' => $pid]);
+            $process_descriptor_cache->setPending($result);
+            return TargetProcessDescriptor::getInvalid();
+        }
+
         $process_descriptor_cache->set($result);
         return $result;
     }

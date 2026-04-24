@@ -55,4 +55,51 @@ class ProcessDescriptorCacheTest extends BaseTestCase
         );
         $this->assertNull($process_descriptor_cache->get(2));
     }
+
+    public function testPendingIsIndependentOfValidCache(): void
+    {
+        $cache = new ProcessDescriptorCache();
+        $this->assertNull($cache->get(10));
+        $this->assertNull($cache->getPending(10));
+
+        $pending_desc = new TargetProcessDescriptor(10, 0xdead, 0xbeef, ZendTypeReader::V80);
+        $cache->setPending($pending_desc);
+
+        // Pending must not leak into the valid lookup
+        $this->assertNull($cache->get(10));
+        $this->assertEquals($pending_desc, $cache->getPending(10));
+
+        // Promotion to valid clears the pending entry
+        $cache->set($pending_desc);
+        $this->assertEquals($pending_desc, $cache->get(10));
+        $this->assertNull($cache->getPending(10));
+    }
+
+    public function testSetInvalidClearsPending(): void
+    {
+        $cache = new ProcessDescriptorCache();
+        $cache->setPending(new TargetProcessDescriptor(7, 0x1, 0x2, ZendTypeReader::V80));
+        $cache->setInvalid(7);
+        $this->assertSame(TargetProcessDescriptor::getInvalid(), $cache->get(7));
+        $this->assertNull($cache->getPending(7));
+    }
+
+    public function testRemoveDisappearedClearsBothCaches(): void
+    {
+        $cache = new ProcessDescriptorCache();
+        $cache->set(new TargetProcessDescriptor(1, 0, 0, ZendTypeReader::V80));
+        $cache->setPending(new TargetProcessDescriptor(2, 0, 0, ZendTypeReader::V80));
+        $cache->setPending(new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80));
+        $cache->set(new TargetProcessDescriptor(4, 0, 0, ZendTypeReader::V80));
+
+        $cache->removeDisappeared(1, 3);
+
+        $this->assertNotNull($cache->get(1));
+        $this->assertNull($cache->getPending(2));
+        $this->assertEquals(
+            new TargetProcessDescriptor(3, 0, 0, ZendTypeReader::V80),
+            $cache->getPending(3),
+        );
+        $this->assertNull($cache->get(4));
+    }
 }
