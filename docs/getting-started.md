@@ -17,8 +17,8 @@ changes to the target. Four broad capabilities:
 - **Where memory is used** — reconstruct the PHP heap into a
   queryable graph. `.rmem` is the fastest on-disk format and is what
   every analyser reads natively: browse interactively with
-  `rmem:explore`, get a prioritised report with `memory:report`, or
-  compare two snapshots with `memory:compare`. SQLite and JSON
+  `rmem:explore`, get a prioritised report with `inspector:memory:report`, or
+  compare two snapshots with `inspector:memory:compare`. SQLite and JSON
   outputs are also supported for interop.
 - **What values flow through** — read PHP variable values from a
   running process with `inspector:peek-var`, or attach variable
@@ -35,6 +35,26 @@ changes to the target. Four broad capabilities:
 For the full catalogue of tasks-and-commands, see the
 [documentation index](README.md).
 
+## Requirements
+
+### Runtime
+
+- PHP 8.5+ (NTS / ZTS)
+- 64bit Linux x86_64 (or AArch64, experimental)
+- `FFI` extension enabled
+- `PCNTL` extension enabled
+- Ability to `ptrace(2)` the target — usually running reli as root, or granting `CAP_SYS_PTRACE`
+
+### Target PHP process
+
+- PHP 7.0+ (NTS / ZTS)
+- 64bit Linux x86_64 (or AArch64, experimental)
+
+### Platform notes
+
+- **AArch64 (ARM64)** — experimental.
+- **Alpine / musl libc** — `--with-native-trace` not supported.
+
 ## 1. Install
 
 The provided Docker image is usually the easiest starting point —
@@ -49,14 +69,30 @@ docker run -it --security-opt="apparmor=unconfined" \
                 reliforp/reli-prof
 ```
 
+`--cap-add=SYS_PTRACE` grants reli the ptrace capability, and
+`--pid=host` makes PHP processes running on the host (or in other
+containers) visible as targets — no extra setup on the host side.
+
 Inside the container the CLI is available as `reli` (and also as
 `./reli`). Everything below is the same whether you invoke it from
 the container or from a native install.
 
-Alternative installs — Composer, Git — are documented in
-[README § Installation](../README.md#installation). Requirements
-(supported PHP versions, platforms) are in
-[README § Requirements](../README.md#requirements).
+### From Composer
+
+```bash
+composer create-project reliforp/reli-prof
+cd reli-prof
+./reli
+```
+
+### From Git
+
+```bash
+git clone git@github.com:reliforp/reli-prof.git
+cd reli-prof
+composer install
+./reli
+```
 
 ## 2. Smoke test
 
@@ -77,7 +113,7 @@ You should see samples scrolling by roughly ~100 times per second.
 Stop it with `q` or `Ctrl-C`.
 
 If this works, you're ready for real targets. If it fails, the
-[Troubleshooting](../README.md#troubleshooting) section covers the
+[Troubleshooting](troubleshooting.md) page covers the
 common issues (missing `CAP_SYS_PTRACE`, unusual PHP binary paths,
 Amazon Linux 2 memory maps).
 
@@ -151,4 +187,4 @@ docs. Suggested entry points:
 - **Post-mortem from a core file**:
   [memory/coredump.md](memory/coredump.md)
 - **Tracing a ZTS PHP process via phpspy**:
-  [README § Hybrid phpspy mode](../README.md#hybrid-phpspy-mode)
+  [tracing/phpspy-hybrid.md](tracing/phpspy-hybrid.md)

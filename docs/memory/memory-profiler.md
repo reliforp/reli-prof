@@ -20,7 +20,7 @@ The canonical invocation:
 reli inspector:memory -p <pid_of_target_process>
 ```
 
-By default this writes the analysed snapshot as JSON on stdout — that's what the rest of this document covers. The same command also accepts other output formats, and for any analysis-tool-driven workflow **`-f binary` (the `.rmem` format) is the fastest and is what every analyser (`rmem:explore`, `rmem:serve`, `rmem:mcp`, `memory:report`, `memory:compare`) reads natively**. Other accepted formats: `-f sqlite3` (for SQL tooling — see [memory-profiler-database.md](memory-profiler-database.md)), `-f report` (direct findings report — see [memory-report.md](memory-report.md)), `-f mysql` / `-f postgresql` (stream into a remote database).
+By default this writes the analysed snapshot as JSON on stdout — that's what the rest of this document covers. The same command also accepts other output formats, and for any analysis-tool-driven workflow **`-f binary` (the `.rmem` format) is the fastest and is what every analyser (`rmem:explore`, `rmem:serve`, `rmem:mcp`, `inspector:memory:report`, `inspector:memory:compare`) reads natively**. Other accepted formats: `-f sqlite3` (for SQL tooling — see [memory-profiler-database.md](memory-profiler-database.md)), `-f report` (direct findings report — see [memory-report.md](memory-report.md)), `-f mysql` / `-f postgresql` (stream into a remote database).
 
 You can use this mode to analyze the memory usage of the target process — for finding memory bottlenecks or memory leaks. For example, you can see statistics such as whether strings, arrays or objects are particularly dominant in a script's memory usage, or contextual information such as where certain local variables in a given call frame are referenced from elsewhere, and the actual values held by certain memory areas.
 
@@ -72,9 +72,9 @@ Arguments:
 Options:
       --stop-process|--no-stop-process                               stop the process while inspecting (default: on)
       --pretty-print|--no-pretty-print                               pretty print the result (default: off)
-      --memory-usage-error-file=MEMORY-USAGE-ERROR-FILE              file path where memory_limit is exceeded
-      --memory-usage-error-line=MEMORY-USAGE-ERROR-LINE              line number where memory_limit is exceeded
-      --memory-usage-error-max-depth[=MEMORY-USAGE-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
+      --memory-limit-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
+      --memory-limit-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
+      --memory-limit-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
   -p, --pid=PID                                                      process id
       --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
       --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
@@ -458,8 +458,8 @@ register_shutdown_function(
             return;
         }
         $pid = getmypid();
-        $file_opt = '--memory-usage-error-file=' . escapeshellarg($error['file']);
-        $line_opt = '--memory-usage-error-line=' . escapeshellarg((string)$error['line']);
+        $file_opt = '--memory-limit-error-file=' . escapeshellarg($error['file']);
+        $line_opt = '--memory-limit-error-line=' . escapeshellarg((string)$error['line']);
         system("sudo reli i:m -p {$pid} --no-stop-process {$file_opt} {$line_opt} >{$pid}_memory_analyzed.json");
     }
 );

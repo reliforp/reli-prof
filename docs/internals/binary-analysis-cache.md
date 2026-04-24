@@ -5,7 +5,9 @@ repeated profiling of the same PHP binary is fast. This note covers
 *what* gets cached, *where*, *how cache keys are computed*, and the
 Docker-overlayfs edge case that shaped the current keying scheme.
 For the user-facing one-liner (clear / bypass), see
-[README § Binary analysis cache](../../README.md#binary-analysis-cache).
+[the "Clear / bypass the cache" row in the docs index](../README.md#advanced--tooling)
+— the short version is `./reli cache:clear` to clear and `--no-cache`
+on any inspector command to bypass.
 
 ## What is cached
 
