@@ -549,6 +549,70 @@ final class BinaryReportDataProvider
     }
 
     /**
+     * Load summary key/value pairs from the binary file's summary section.
+     *
+     * Mirrors the shape expected by summary-based passes (OverviewPass,
+     * ChunkCacheHeuristicPass, ChunkFragmentationPass): a list of a single
+     * flat associative array.
+     *
+     * @return array<int, array<string, mixed>>
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    public static function loadSummary(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_SUMMARY)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_SUMMARY);
+        $dict = $reader->getStringDict();
+
+        $offset = 0;
+        $entry_count = unpack('V', $data, $offset)[1];
+        $offset += 4;
+
+        $flat = [];
+        for ($i = 0; $i < $entry_count; $i++) {
+            $key_id = unpack('V', $data, $offset)[1];
+            $offset += 4;
+            $value_id = unpack('V', $data, $offset)[1];
+            $offset += 4;
+
+            $key = $dict->lookup((int)$key_id);
+            $value = $dict->lookup((int)$value_id);
+            if ($key !== null && $value !== null) {
+                $flat[$key] = is_numeric($value)
+                    ? (str_contains($value, '.') ? (float)$value : (int)$value)
+                    : $value;
+            }
+        }
+        return [$flat];
+    }
+
+    /**
+     * Pull the capture timestamp string out of the binary runs section.
+     *
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    public static function loadCapturedAt(BinaryReader $reader): ?string
+    {
+        if (!$reader->hasSection(Format::SECTION_RUNS)) {
+            return null;
+        }
+        $runs_data = $reader->getSectionData(Format::SECTION_RUNS);
+        // [run_count:u32] then [len:u32][string...]
+        $offset = 4;
+        if (strlen($runs_data) <= $offset + 4) {
+            return null;
+        }
+        $len = unpack('V', $runs_data, $offset)[1];
+        $offset += 4;
+        $captured_at = substr($runs_data, $offset, (int)$len);
+        return $captured_at !== '' ? $captured_at : null;
+    }
+
+    /**
      * Load frame labels (function_name:lineno) from the binary attributes section.
      *
      * Replaces NodeLabeler's SQL query on context_node_attributes.

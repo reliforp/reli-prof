@@ -14,6 +14,9 @@ declare(strict_types=1);
 namespace Reli\Command\Rmem;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
+use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
+use Reli\Inspector\Output\MemoryOutput\Report\Finding;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\OverviewPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Lib\String\PathMap;
 use Reli\Rbt\Explore\Keymap;
@@ -184,6 +187,7 @@ final class RmemExploreCommand extends Command
         if ($model->tryLoadSourceLocationRefsFromCache($rmemPathForCache)) {
             $output->writeln('<info>loaded source-location refs from cache</info>');
         }
+        $this->writeOverview($reader, $output);
         $output->writeln(sprintf(
             '<info>loaded %s edges, starting TUI</info>',
             number_format($model->edgeCount),
@@ -697,6 +701,43 @@ final class RmemExploreCommand extends Command
             fwrite(STDERR, "SCC builder failed: {$e->getMessage()}\n");
             exit(1);
         }
+    }
+
+    /**
+     * Print the same heap/memory overview that inspector:memory:report
+     * shows at the top of its text output — Captured timestamp, the
+     * memory_get_usage() family, memory_limit, RSS, and the heap /
+     * VM-stack / compiler-arena split with analyzed coverage. Written
+     * to the normal screen buffer before the TUI enters alt-screen
+     * mode, so it stays visible during startup and reappears in the
+     * scrollback after the user quits.
+     */
+    private function writeOverview(BinaryReader $reader, OutputInterface $output): void
+    {
+        $summary = BinaryReportDataProvider::loadSummary($reader);
+        if ($summary === []) {
+            return;
+        }
+        $findings = (new OverviewPass($summary))->analyze();
+        $overview_findings = array_values(array_filter(
+            $findings,
+            fn (Finding $f): bool => in_array($f->kind, ['overview', 'coverage_gap'], true),
+        ));
+        if ($overview_findings === []) {
+            return;
+        }
+
+        $captured_at = BinaryReportDataProvider::loadCapturedAt($reader);
+
+        $output->writeln('');
+        $output->writeln('<info>=== Overview ===</info>');
+        if ($captured_at !== null) {
+            $output->writeln('  Captured: ' . $captured_at);
+        }
+        foreach ($overview_findings as $finding) {
+            $output->writeln('  ' . $finding->summary);
+        }
+        $output->writeln('');
     }
 
     private function defaultSocketPath(): string
