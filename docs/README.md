@@ -90,6 +90,7 @@ Tip: **`-f binary` (`.rmem`) is the fastest format** and what the analysers belo
 
 - Alpine / musl libc — [internals/alpine-investigation.md](internals/alpine-investigation.md)
 - AArch64 (ARM64, experimental) — [internals/aarch64-support.md](internals/aarch64-support.md)
+- FrankenPHP (PHP embedded in Caddy) — [tracing/frankenphp.md](tracing/frankenphp.md)
 
 ## Internals / design notes
 

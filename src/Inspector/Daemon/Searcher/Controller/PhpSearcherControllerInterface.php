@@ -20,13 +20,17 @@ interface PhpSearcherControllerInterface
 {
     public function start(): void;
 
-    /** @param non-empty-string $regex */
+    /**
+     * @param non-empty-string $regex
+     * @param non-empty-string|null $thread_name_regex
+     */
     public function sendTarget(
         string $regex,
         TargetPhpSettings $target_php_settings,
         int $pid,
         bool $no_cache = false,
         bool $needs_compiler_globals = false,
+        ?string $thread_name_regex = null,
     ): void;
 
     public function receivePidList(): UpdateTargetProcessMessage;

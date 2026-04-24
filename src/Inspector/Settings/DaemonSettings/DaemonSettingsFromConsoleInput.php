@@ -42,6 +42,13 @@ final class DaemonSettingsFromConsoleInput
                 InputOption::VALUE_OPTIONAL,
                 'number of workers (default: 8)'
             )
+            ->addOption(
+                'target-thread-regex',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'regex matched against /proc/<tid>/comm to restrict which threads of a matching'
+                . ' process get traced (e.g. "^php-[0-9a-f]+$" for FrankenPHP worker threads)'
+            )
         ;
     }
 
@@ -69,6 +76,17 @@ final class DaemonSettingsFromConsoleInput
             );
         }
 
-        return new DaemonSettings('{' . $target_regex . '}', $threads);
+        $target_thread_regex_option = $input->getOption('target-thread-regex');
+        $target_thread_regex = null;
+        if (!is_null($target_thread_regex_option)) {
+            if (!is_string($target_thread_regex_option) || $target_thread_regex_option === '') {
+                throw DaemonSettingsException::create(
+                    DaemonSettingsException::TARGET_THREAD_REGEX_IS_NOT_STRING
+                );
+            }
+            $target_thread_regex = '{' . $target_thread_regex_option . '}';
+        }
+
+        return new DaemonSettings('{' . $target_regex . '}', $threads, $target_thread_regex);
     }
 }

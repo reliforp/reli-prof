@@ -128,6 +128,8 @@ final class TopLikeCommand extends ReliCommand
             $target_php_settings,
             $my_pid,
             $no_cache,
+            needs_compiler_globals: false,
+            thread_name_regex: $daemon_settings->target_thread_regex,
         );
 
         $worker_pool = WorkerPool::create(

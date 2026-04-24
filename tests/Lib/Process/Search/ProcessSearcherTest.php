@@ -62,4 +62,68 @@ class ProcessSearcherTest extends BaseTestCase
             $searcher->searchByRegex('/test_ProcessSearcherTest/')
         );
     }
+
+    public function testThreadNameFilterMatches(): void
+    {
+        $this->child = proc_open(
+            [
+                PHP_BINARY,
+                '-r',
+                'fputs(STDOUT, "test_ProcessSearcherTest`\n");fgets(STDIN);'
+            ],
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w'],
+            ],
+            $pipes
+        );
+        fgets($pipes[1]);
+        $child_status = proc_get_status($this->child);
+        $child_pid = $child_status['pid'];
+
+        $comm = trim((string)file_get_contents("/proc/{$child_pid}/comm"));
+
+        $searcher = new ProcessSearcher(
+            new NativeFileReader(),
+            new ThreadEnumerator(),
+        );
+        $this->assertSame(
+            [$child_pid],
+            $searcher->searchByRegex(
+                '/test_ProcessSearcherTest/',
+                '{^' . preg_quote($comm, '}') . '$}'
+            )
+        );
+    }
+
+    public function testThreadNameFilterExcludes(): void
+    {
+        $this->child = proc_open(
+            [
+                PHP_BINARY,
+                '-r',
+                'fputs(STDOUT, "test_ProcessSearcherTest`\n");fgets(STDIN);'
+            ],
+            [
+                ['pipe', 'r'],
+                ['pipe', 'w'],
+                ['pipe', 'w'],
+            ],
+            $pipes
+        );
+        fgets($pipes[1]);
+
+        $searcher = new ProcessSearcher(
+            new NativeFileReader(),
+            new ThreadEnumerator(),
+        );
+        $this->assertSame(
+            [],
+            $searcher->searchByRegex(
+                '/test_ProcessSearcherTest/',
+                '{^reli-thread-name-should-never-match$}'
+            )
+        );
+    }
 }

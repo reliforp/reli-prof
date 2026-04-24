@@ -24,10 +24,33 @@ class DaemonSettingsFromConsoleInputTest extends BaseTestCase
         $input = Mockery::mock(InputInterface::class);
         $input->expects()->getOption('threads')->andReturns(4);
         $input->expects()->getOption('target-regex')->andReturns('regex');
+        $input->expects()->getOption('target-thread-regex')->andReturns(null);
         $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
 
         $this->assertSame('{regex}', $settings->target_regex);
         $this->assertSame(4, $settings->threads);
+        $this->assertNull($settings->target_thread_regex);
+    }
+
+    public function testFromConsoleInputWithTargetThreadRegex(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('threads')->andReturns(4);
+        $input->expects()->getOption('target-regex')->andReturns('regex');
+        $input->expects()->getOption('target-thread-regex')->andReturns('^php-[0-9a-f]+$');
+        $settings = (new DaemonSettingsFromConsoleInput())->createSettings($input);
+
+        $this->assertSame('{^php-[0-9a-f]+$}', $settings->target_thread_regex);
+    }
+
+    public function testFromConsoleInputTargetThreadRegexNotString(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('threads')->andReturns(4);
+        $input->expects()->getOption('target-regex')->andReturns('regex');
+        $input->expects()->getOption('target-thread-regex')->andReturns(1);
+        $this->expectException(DaemonSettingsException::class);
+        (new DaemonSettingsFromConsoleInput())->createSettings($input);
     }
 
     public function testFromConsoleInputTargetRegexNotSpecified(): void

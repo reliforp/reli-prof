@@ -27,6 +27,8 @@ final class TargetPhpSettingsMessage
      *     static::/func_static:: scopes) requires CG. When false, the
      *     searcher skips the extra lookup and TargetProcessDescriptor's
      *     cg_address stays 0.
+     * @param non-empty-string|null $thread_name_regex optional per-thread
+     *     filter matched against /proc/<tid>/comm; see DaemonSettings.
      */
     public function __construct(
         public string $regex,
@@ -34,6 +36,7 @@ final class TargetPhpSettingsMessage
         public int $parent_pid,
         public bool $no_cache = false,
         public bool $needs_compiler_globals = false,
+        public ?string $thread_name_regex = null,
     ) {
     }
 }

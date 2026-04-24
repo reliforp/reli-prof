@@ -54,7 +54,7 @@ class PhpSearcherEntryPointTest extends BaseTestCase
             )
             ->once();
         $process_searcher = Mockery::mock(ProcessSearcherInterface::class);
-        $process_searcher->expects()->searchByRegex('regex_to_search_process');
+        $process_searcher->expects()->searchByRegex('regex_to_search_process', null);
         $process_descriptor_retriever = Mockery::mock(ProcessDescriptorRetriever::class);
 
         $entry_point = new PhpSearcherEntryPoint(

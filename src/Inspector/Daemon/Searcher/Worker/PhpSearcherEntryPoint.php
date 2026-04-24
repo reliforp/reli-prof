@@ -50,7 +50,8 @@ final class PhpSearcherEntryPoint implements WorkerEntryPointInterface
         while ($this->loop_condition->shouldContinue()) {
             $searched_pids = array_diff(
                 $this->process_searcher->searchByRegex(
-                    $target_php_settings_message->regex
+                    $target_php_settings_message->regex,
+                    $target_php_settings_message->thread_name_regex,
                 ),
                 [
                     ...$this->thread_enumerator->getThreadIds(

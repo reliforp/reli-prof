@@ -127,6 +127,7 @@ final class DaemonCommand extends ReliCommand
             $my_pid,
             $no_cache,
             $get_trace_settings->needsCompilerGlobals(),
+            $daemon_settings->target_thread_regex,
         );
 
         // Pass resolved output dir to workers (not the raw user path)

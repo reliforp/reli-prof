@@ -54,6 +54,9 @@ For the full catalogue of tasks-and-commands, see the
 
 - **AArch64 (ARM64)** — experimental.
 - **Alpine / musl libc** — `--with-native-trace` not supported.
+- **FrankenPHP** — requires three flags up front (`--php-regex`,
+  `--libpthread-regex`, and `--target-thread-regex` when using
+  daemon/top/watch); see [tracing/frankenphp.md](tracing/frankenphp.md).
 
 ## 1. Install
 
