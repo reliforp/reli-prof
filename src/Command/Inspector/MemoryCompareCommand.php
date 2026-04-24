@@ -23,14 +23,21 @@ use Reli\Inspector\Output\MemoryOutput\Comparison\Formatter\TextComparisonFormat
 use Reli\Inspector\Output\MemoryOutput\Comparison\PdoComparisonDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 use Reli\Lib\Log\Log;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class MemoryCompareCommand extends Command
+final class MemoryCompareCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     #[\Override]
     public function configure(): void
     {

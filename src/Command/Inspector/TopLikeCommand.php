@@ -40,7 +40,8 @@ use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Revolt\EventLoop;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -49,8 +50,14 @@ use function Amp\async;
 use function Amp\Future\await;
 use function Reli\Lib\Defer\defer;
 
-final class TopLikeCommand extends Command
+final class TopLikeCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Full;
+    }
+
     public function __construct(
         private PhpSearcherContextCreator $php_searcher_context_creator,
         private PhpReaderContextCreator $php_reader_context_creator,

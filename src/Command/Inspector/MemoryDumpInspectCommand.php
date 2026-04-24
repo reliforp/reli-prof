@@ -14,13 +14,20 @@ declare(strict_types=1);
 namespace Reli\Command\Inspector;
 
 use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class MemoryDumpInspectCommand extends Command
+final class MemoryDumpInspectCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     private const MAGIC = "RELIMEM\0";
 
     public function __construct()

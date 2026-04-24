@@ -19,7 +19,8 @@ use Reli\Rbt\Analyze\FrameFormatter;
 use Reli\Rbt\Analyze\SectionLayout;
 use Reli\Rbt\Analyze\TraceAggregationResult;
 use Reli\Rbt\Analyze\TraceAggregator;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -35,8 +36,14 @@ use Symfony\Component\Console\Terminal;
  * inclusive (total) time, plus optional caller/callee views for finding the
  * call sites that dominate the profile of a given function.
  */
-final class AnalyzeCommand extends Command
+final class AnalyzeCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     #[\Override]
     public function configure(): void
     {

@@ -20,14 +20,21 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
 use Reli\Inspector\Watch\HeapStats;
 use Reli\Lib\File\LibcFileReader;
 use Reli\Lib\Log\Log;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class MemoryReportCommand extends Command
+final class MemoryReportCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     #[\Override]
     public function configure(): void
     {

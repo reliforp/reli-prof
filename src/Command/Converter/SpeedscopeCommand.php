@@ -16,12 +16,19 @@ namespace Reli\Command\Converter;
 use Reli\Converter\Speedscope\Settings\SpeedscopeConverterSettingsFromConsoleInput;
 use Reli\Converter\Speedscope\SpeedscopeConverter;
 use Reli\Converter\TraceInputReader;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class SpeedscopeCommand extends Command
+final class SpeedscopeCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     public function __construct(
         private SpeedscopeConverter $speedscope_converter,
         private SpeedscopeConverterSettingsFromConsoleInput $settings_from_console_input,

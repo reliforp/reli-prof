@@ -17,7 +17,8 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Rmem\Explore\RmemModel;
 use Reli\Rmem\Live\VizHtmlBuilder;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -27,8 +28,14 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Emit a standalone HTML page that visualizes a .rmem snapshot in
  * multiple ways (3D force graph, circle packing, treemap, sunburst).
  */
-final class RmemVizCommand extends Command
+final class RmemVizCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     private const DEFAULT_TOP = 500;
     private const DEFAULT_DEPTH = 1;
 

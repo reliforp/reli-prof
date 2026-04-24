@@ -17,7 +17,8 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Rmem\Explore\RmemModel;
 use Reli\Rmem\Serve\RmemQueryService;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -33,8 +34,14 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   --socket=PATH  connects to an existing rmem:serve or explore --serve
  *                  socket (add --control to enable ui.* tools)
  */
-final class RmemMcpCommand extends Command
+final class RmemMcpCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     private const SERVER_NAME = 'reli-rmem';
     private const SERVER_VERSION = '1.0.0';
     private const PROTOCOL_VERSION = '2024-11-05';

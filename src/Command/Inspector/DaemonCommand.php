@@ -35,7 +35,8 @@ use Reli\Lib\Console\EchoBackCanceller;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use Revolt\EventLoop;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -46,8 +47,14 @@ use function fread;
 
 use const STDIN;
 
-final class DaemonCommand extends Command
+final class DaemonCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Full;
+    }
+
     public function __construct(
         private PhpSearcherContextCreator $php_searcher_context_creator,
         private PhpReaderContextCreator $php_reader_context_creator,

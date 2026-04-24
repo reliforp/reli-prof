@@ -15,13 +15,20 @@ namespace Reli\Command\PhpSpy;
 
 use Reli\Lib\PhpSpy\PhpSpyFinder;
 use Reli\Lib\PhpSpy\PhpSpyNotFoundException;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class PhpSpyInstallCommand extends Command
+final class PhpSpyInstallCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Full;
+    }
+
     public function __construct(
         private PhpSpyFinder $phpspy_finder,
     ) {
