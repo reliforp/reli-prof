@@ -222,3 +222,146 @@ cases where the advice "consider value type / enum / flag-only
 class" actually applies. From the corpus:
   - `Twig\Node\NameDeprecation` (1,440 instances — candidate for enum)
   - `BusNameStamp` (50,000 instances — marker stamp, could be enum)
+
+---
+
+## Tier 2 implementation notes
+
+### B8/B9 — `bottleneck_path` shows the leaf path with the root's retained size
+
+**Files**:
+- `src/Inspector/Output/MemoryOutput/Report/Pass/DrillDownPass.php`
+  (line 110 is the "bug origin")
+- `src/Inspector/Output/MemoryOutput/Report/Formatter/TextReportFormatter.php`
+  (the fix lives here)
+
+**What's wrong today**: `DrillDownPass::analyze()` descends the
+heaviest-child spine up to 12 depths. At line 110:
+
+        $total_size = $path_sizes[0] ?? 0;
+
+That's the **root of the spine's** retained size. The summary then
+reads:
+
+        sprintf('%s (%s)', $path_str, SizeFormatter::format($total_size))
+
+so the leaf path (depth 12) is printed with the size from depth 0.
+In `rw2_json-decode-huge.report.txt` this produces:
+
+    bottleneck_path: $decoded[data][10100][profile] (171.45 MB)
+
+where `$decoded[data][10100][profile]` is a ~2 KB sub-dict among
+25,000 uniformly-sized siblings, and the 171 MB is the total
+global_variables subtree.
+
+**Critical insight** (don't miss this): the Finding already carries
+**all the information needed to fix this** in `facts.sizes`. For
+the above report:
+
+    "sizes": [
+        325480905,  325479089,  325475106,  325475106,  324977898,
+        3336,       3336,       3184,       2520,       2240,
+        2144,       2144
+    ]
+
+The drop from ~325 MB to 3 KB at index 5 is the "uniform sibling
+point". A pass-only fix isn't required — the text formatter can
+read `facts.sizes` and `facts.path` and render correctly.
+
+**Recommended fix (text-formatter only, ~20 lines)**:
+
+1. In `TextReportFormatter`, when rendering a `bottleneck_path`
+   finding, read `$finding->facts['sizes']` and `->facts['path']`.
+2. Walk `sizes[]` from index 0. Find the first `i` where
+   `sizes[i+1] < sizes[i] * 0.5` (dominance drop threshold —
+   tunable; 0.5 is a safe start).
+3. Render the pre-drop chain as the "spine" (with its shrinking
+   sizes) and the post-drop continuation as a "leaf example" with
+   a note like "mass drops — ~N similar siblings below":
+
+        [HIGH] bottleneck_path
+          Drill-down from root (heaviest-child at each depth):
+            $decoded                310 MB
+            → [data]                310 MB (one of 2 roots, dominant)
+            → [10100]               3.4 KB  ← weight spreads from here
+                                            (25,000 uniform siblings)
+          Leaf example continues:
+            → [profile] → ... → (string)
+
+4. If no drop is found (descent is uniformly heavy), render the
+   whole chain with the final leaf's size as impact.
+
+**Do not** change `DrillDownPass` itself in this step. The pass's
+data is fine; the formatter is the leak.
+
+### B2 / B6 / N10 — `retained × count` inflation across passes
+
+Symptom: impact values that vastly exceed the heap total.
+
+Evidence:
+- `rw_logger-stack.report.txt`: `[LOW] 722.27 MB impacted /
+  dedup_candidate` on an 11.96 MB heap (60× heap)
+- `rw4_graph-recursion.report.txt`:
+  `[MEDIUM] 53.73 GB impacted / property_scaling` on 111 MB (**500×**)
+  `[LOW] 108.55 GB impacted / dedup_candidate` (**1000×**)
+- `rw3_doctrine-uow.report.txt`: saner magnitudes but same shape
+
+There are **two independent causes**; both need fixing:
+
+#### B6 — `dedup_candidate` groups heterogeneous classes by shallow size
+
+**File**: `src/Inspector/Output/MemoryOutput/Report/Pass/DedupCandidatePass.php:180–201`
+
+The SQL groups by `(link_name, node_size)` only:
+
+        GROUP BY e.link_name, cs.node_size
+        HAVING count(...) > 50 AND count(...) * cs.node_size > 10240
+
+So any two nodes linked via the same slot with the same shallow
+size land in the same bucket — regardless of class. In the
+logger-stack run, `Monolog\Handler\TestHandler` (1 instance,
+shallow 152 B, retained 4.7 MB) and 3,000 `Monolog\LogRecord`
+instances (shallow 152 B, retained ~3 KB each) ended up in the same
+bucket. `getRetainedForDedup` then averaged the sample's retained
+sizes — the outlier dominates the mean — and multiplied by 3,001.
+
+**Fix**: include `target_class` in the GROUP BY. You'll need a JOIN
+against the child node's class-entry location info. Once the
+bucket is class-homogeneous, outliers of this kind can't form.
+
+#### N10 — `retained × count` is not heap-valid under SCC sharing
+
+Affects both `DedupCandidatePass.php:92`:
+
+        if ($retained > $shallow_size) {
+            $size = $retained;
+            $total = $cnt * $retained;
+        }
+
+and (per N10 evidence from rw4_graph-recursion) `property_scaling`
+pass — grep for it; the same `× count` pattern lives there too.
+
+When nodes share a subtree (SCC members, or any DAG), `retained`
+double-counts the shared part. Multiplying by N re-counts it N times
+on top of that.
+
+**Short-term guardrail** (ships independently of the real fix):
+clamp the emitted `impact_bytes` to `min($total, $heap_total_bytes)`
+in both passes, and append a note to the hypothesis when the clamp
+fires: "(clamped from X MB — involves shared subtree)". That alone
+eliminates the "1000× the heap" surprises.
+
+**Medium-term fix**: switch `impact_bytes` for these kinds from
+`total = count × per_copy_retained` to a saving estimate:
+`saving = total_memory_currently_in_pattern - one_representative_size`.
+That computes what you'd actually save by de-duplicating /
+removing one copy's worth.
+
+**Longer-term fix**: `impact_bytes` across finding kinds doesn't
+mean the same thing. See
+`memory-report-ux-improvements.md` §"The `impact_bytes` semantics
+tradeoff" for 4 candidate resolutions (A–D). Recommendation:
+implement resolution (A) — `current_bytes` unified, with a separate
+`saving_estimate_bytes` — which removes the cross-kind mixing
+without breaking JSON consumers. That work is larger than this
+handoff's scope; the clamp guardrail is enough to ship T2.
