@@ -73,6 +73,8 @@ $ php ./reli rmem:explore snapshot.rmem --http-bridge 8080
   <img src="docs/images/rmem-explore-viz-demo.gif" alt="rmem:explore ↔ browser follow mode" width="100%">
 </p>
 
+**What you're looking at.** reli walks the target's PHP heap into a graph — every value (objects, arrays, strings, call frames…) is a node, every reference is an edge. `rmem:viz` renders that graph as a standalone HTML page; `rmem:live` (or `rmem:explore --http-bridge`) serves it over HTTP with a shared cursor that the terminal TUI, browser views, and an MCP client all follow at once. Useful for chasing memory leaks, finding which classes eat the most memory, and visualising reference cycles.
+
 Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md).
 
 ### Automated memory findings — `inspector:memory:report`
@@ -87,6 +89,8 @@ $ php ./reli inspector:memory:report snapshot.rmem
 <p align="center">
   <img src="docs/images/memory-report-output.png" alt="inspector:memory:report — findings and tables" width="100%">
 </p>
+
+**What you're looking at.** reli scans the captured heap graph for known waste patterns and prints each one as a finding, with a severity, a hypothesis, and a next-investigation step. The patterns include *dominant* classes (one type eats most of the heap), reference *cycles* (objects keeping each other alive even when no one else references them), *choke points* (one node through which most of the retention flows downstream), and *dedup* candidates (identical values stored over and over). No SQL or `jq` required.
 
 Compare two snapshots to track regressions or verify fixes:
 
