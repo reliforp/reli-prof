@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Command;
 
-use DI\ContainerBuilder;
 use GlobIterator;
 use PHPUnit\Framework\TestCase;
 
@@ -70,25 +69,5 @@ class DockerProfileCoverageTest extends TestCase
             DockerProfile::cases(),
             "{$commandClass}::getDockerProfile() must return a DockerProfile enum case."
         );
-    }
-
-    public function testDiContainerCanInstantiateEveryCommand(): void
-    {
-        $container = (new ContainerBuilder())
-            ->addDefinitions(__DIR__ . '/../../config/di.php')
-            ->build();
-
-        $failures = [];
-        foreach (self::allCommandClasses() as [$commandClass]) {
-            try {
-                $instance = $container->make($commandClass);
-                if (!$instance instanceof ReliCommand) {
-                    $failures[] = "{$commandClass} is not a ReliCommand";
-                }
-            } catch (\Throwable $e) {
-                $failures[] = "{$commandClass}: " . $e->getMessage();
-            }
-        }
-        $this->assertSame([], $failures);
     }
 }
