@@ -4,6 +4,8 @@
 
 If your PHP binary uses a non-standard binary name that does not end with `/php`, use the `--php-regex` option to specify the name of the executable (or shared object) that contains the PHP interpreter.
 
+For FrankenPHP specifically, PHP is loaded as `libphp.so` and pthread lives in `libc.so`; see [tracing/frankenphp.md](tracing/frankenphp.md) for the full set of flags (`--php-regex`, `--libpthread-regex`, `--target-thread-regex`).
+
 ## I don't think the trace is accurate.
 
 The `-S` option will give you better results. Using this option stops the execution of the target process for a moment at every sampling, but the trace obtained will be more accurate. If you don't stop the VMs from running when profiling CPU-heavy programs such as benchmarking programs, you may misjudge the bottleneck, because you will miss more VM states that transition very quickly and are not detected well.

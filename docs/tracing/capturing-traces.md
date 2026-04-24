@@ -107,4 +107,5 @@ the EG lookup and the phpspy launch into one command.
 - [binary-trace-format.md](binary-trace-format.md) — `.rbt` format spec, converters, `rbt:recover`
 - [advanced-capture.md](advanced-capture.md) — opcodes, native traces, JIT
 - [phpspy-hybrid.md](phpspy-hybrid.md) — phpspy as the tracer backend, ZTS-aware
+- [frankenphp.md](frankenphp.md) — profiling FrankenPHP (embedded PHP in Caddy)
 - [../inspection/trace-var-command.md](../inspection/trace-var-command.md) — attach variable values to each sample
