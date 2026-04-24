@@ -46,6 +46,104 @@ accurate descriptions of what the current formatter does. The stocked
 proposals (class_definition_overhead, shape detection, impact_bytes
 refactor, non-ZendMM docs) are not yet implemented.
 
+## Fresh pass: text formatter is under-using Finding facts
+
+Comparing the JSON output (`-f report-json`) to the text output for
+the same dump reveals that several of the "bugs" above are actually
+**data the Finding already carries that the text formatter doesn't
+render**. The Finding engine is producing enough, the text layer is
+just thin.
+
+Implications that tilt the fix strategy:
+
+**B8 is a text-only fix.** The `bottleneck_path` finding's
+`facts.sizes` already contains the full per-depth subtree size along
+the descent. For `rw2_eloquent-hydration`:
+
+    sizes = [325480905, 325479089, 325475106, 325475106, 324977898,
+             3336, 3336, 3184, 2520, 2240, 2144, 2144]
+
+The drop at index 5 (the uniform-sibling point, `$users[0]`) is right
+there in the data. The text formatter renders `summary` (which uses
+`sizes[0]`) and ignores `facts.sizes` entirely. A ~20-line change in
+`TextReportFormatter` to detect the first large drop and render both
+endpoints fixes B8/B9 presentation without touching `DrillDownPass`.
+
+**Internal type names leak through `summary` strings.** Example from
+the same dump:
+
+    choke_point.summary = "ZendArrayTableMemoryLocation (1.53 MB shallow)
+                           holds 309.92 MB via 100000 children — $users"
+    choke_point.facts.path          = "$users"
+    choke_point.facts.children_count = 100000
+    choke_point.facts.shallow_size   = 1608544
+    choke_point.facts.subtree_size   = 324977898
+
+The facts are clean; the `summary` is what contains
+`ZendArrayTableMemoryLocation`. That internal type name is produced
+inside `ChokePointPass` when it builds the summary string. Two fix
+shapes:
+
+- Stop including the internal location type in the summary string
+  at pass time.
+- Have the text formatter re-render from `facts` instead of echoing
+  `summary` verbatim.
+
+The second is more invasive but gives the text formatter the freedom
+to pick its own wording. The first is a 1-line fix.
+
+**Text formatter already groups findings by kind.** JSON emits
+`large_array`, `root_blame`, `type_ranking`, `class_ranking` as many
+individual Findings; the text output aggregates those into tables
+(Top Arrays, Root Blame Allocation, Type Breakdown, Top Classes).
+That's exactly the narrative-synthesis pattern the S12 "cluster by
+target" proposal asks for — it's already in place for some kinds. The
+missing piece is **cross-kind clustering on the same target node**
+(combining `choke_point` + `bottleneck_path` + `dominant_class` that
+all point at the same class), which is an extension of an existing
+pattern, not a new architecture.
+
+**Finding count: JSON 27, text ~15.** The text formatter is already
+dropping/grouping half the findings before the reader sees them.
+That's fine — it's the narrative layer doing its job. The items
+trimmed are mostly Info-severity `root_blame`, `type_ranking`,
+`class_ranking` findings that get rolled into tables. Knowing this
+means the "too many findings for the same target" complaint (S12) is
+already partially addressed for some kinds; the ones still wasteful
+are Medium/Low findings (`dominant_class`, `property_scaling`,
+`expensive_property`, `structural_duplicate`, `companion_cluster`,
+`ownership_pattern`) that converge on the same class.
+
+### Quick-win text-formatter-only fixes
+
+Listed in order of smallness:
+
+1. **B3** (preview newline escape) — 1 line in `TextReportFormatter`.
+2. **Internal type names in summary** — either strip
+   `MemoryLocation` / `Context` suffixes in the formatter, or change
+   summary generation in each pass. ~5–20 lines.
+3. **B8/B9** (bottleneck_path descent rendering) — ~20 lines reading
+   `facts.sizes` and `facts.path`, detecting the first large drop,
+   rendering with both endpoints.
+4. **S6** (long inline lists) — switch `companion_cluster` and
+   similar single-line lists to vertical rendering when > 3 items.
+   ~15 lines.
+5. **S5** (`shared_singleton` flood) — cap at N items + one summary
+   line, ~10 lines.
+
+All five are additive; none need pass-level changes, JSON schema
+changes, or MCP migration notices.
+
+### Bigger items that need pass-level changes
+
+- B1 (class name case) — collector-side change
+- B2/B6 (dedup heterogeneous bucket) — SQL change in
+  `DedupCandidatePass::loadDedupRowsFromSql`
+- B4a (`dominant_class` severity floor) — one line in `ClassRankingPass`
+- B5 (WeakMap edge strength) — collector-side investigation
+- S12 full clustering — text formatter, but needs a new post-processing
+  step that joins findings by target across kinds
+
 ---
 
 ## Confirmed implementation bugs
