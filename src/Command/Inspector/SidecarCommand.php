@@ -18,6 +18,7 @@ use Reli\Inspector\Settings\SidecarSettings\SidecarSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Sidecar\SidecarDumpHandler;
 use Reli\Inspector\Sidecar\SidecarServer;
+use Reli\Inspector\Sidecar\SocketPathResolver;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\RssReader;
@@ -27,13 +28,20 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class SidecarCommand extends Command
+final class SidecarCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Full;
+    }
+
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
         private PhpVersionDetector $php_version_detector,
@@ -82,7 +90,7 @@ final class SidecarCommand extends Command
         }
 
         AppDirectory::ensureDirectoryExists($settings->output_dir);
-        AppDirectory::ensureDirectoryExists(dirname($settings->socket_path));
+        SocketPathResolver::assertParentSafe($settings->socket_path);
 
         $disk_tracker = new DiskUsageTracker(
             $settings->disk_usage_limit_bytes,

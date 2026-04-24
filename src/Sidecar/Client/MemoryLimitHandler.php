@@ -31,7 +31,7 @@ namespace Reli\Sidecar\Client;
  * Socket path is resolved via:
  *   1. $socket_path argument
  *   2. RELI_SIDECAR_SOCKET environment variable
- *   3. Default: /var/run/reli-sidecar.sock
+ *   3. $XDG_RUNTIME_DIR/reli/sidecar.sock (throws if XDG_RUNTIME_DIR unset)
  *
  * ## Emergency Memory Reserve
  *

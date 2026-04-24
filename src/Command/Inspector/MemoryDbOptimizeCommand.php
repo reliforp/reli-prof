@@ -14,14 +14,21 @@ declare(strict_types=1);
 namespace Reli\Command\Inspector;
 
 use PhpCast\NullableCast;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class MemoryDbOptimizeCommand extends Command
+final class MemoryDbOptimizeCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     #[\Override]
     public function configure(): void
     {

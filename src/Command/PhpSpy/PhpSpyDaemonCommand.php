@@ -21,13 +21,20 @@ use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Lib\PhpSpy\PhpSpyFinder;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class PhpSpyDaemonCommand extends Command
+final class PhpSpyDaemonCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Full;
+    }
+
     public function __construct(
         private PhpSearcherContextCreator $php_searcher_context_creator,
         private PhpSpyFinder $phpspy_finder,

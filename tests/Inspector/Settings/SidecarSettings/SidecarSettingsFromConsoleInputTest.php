@@ -10,10 +10,35 @@ use Symfony\Component\Console\Input\InputInterface;
 
 class SidecarSettingsFromConsoleInputTest extends BaseTestCase
 {
-    public function testCreateSettingsDefaults(): void
+    private ?string $xdgBackup;
+    private string $xdgScratch;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $xdg = getenv('XDG_RUNTIME_DIR');
+        $this->xdgBackup = is_string($xdg) ? $xdg : null;
+        $this->xdgScratch = sys_get_temp_dir() . '/reli-sidecar-default-' . getmypid() . '-' . mt_rand();
+        mkdir($this->xdgScratch, 0o700);
+        putenv('XDG_RUNTIME_DIR=' . $this->xdgScratch);
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->xdgBackup !== null) {
+            putenv('XDG_RUNTIME_DIR=' . $this->xdgBackup);
+        } else {
+            putenv('XDG_RUNTIME_DIR');
+        }
+        @rmdir($this->xdgScratch);
+        parent::tearDown();
+    }
+
+    public function testCreateSettingsDefaultsResolveSocketFromXdgRuntimeDir(): void
     {
         $input = Mockery::mock(InputInterface::class);
-        $input->expects()->getOption('socket')->andReturns(SidecarSettings::DEFAULT_SOCKET_PATH);
+        // --socket not specified → null → resolver kicks in.
+        $input->expects()->getOption('socket')->andReturns(null);
         $input->expects()->getOption('output-dir')->andReturns('.');
         $input->expects()->getOption('disk-usage-limit')->andReturns('1G');
         $input->expects()->getOption('include-binary')->andReturns(false);
@@ -22,7 +47,10 @@ class SidecarSettingsFromConsoleInputTest extends BaseTestCase
 
         $settings = (new SidecarSettingsFromConsoleInput())->createSettings($input);
 
-        $this->assertSame(SidecarSettings::DEFAULT_SOCKET_PATH, $settings->socket_path);
+        $this->assertSame(
+            $this->xdgScratch . '/reli/sidecar.sock',
+            $settings->socket_path,
+        );
         $this->assertSame('.', $settings->output_dir);
         $this->assertSame(1073741824, $settings->disk_usage_limit_bytes);
         $this->assertFalse($settings->include_binary);

@@ -16,13 +16,20 @@ namespace Reli\Command\Rbt;
 use Reli\Converter\BinaryTrace\BinaryTraceReader;
 use Reli\Converter\BinaryTrace\BinaryTraceWriter;
 use Reli\Converter\StreamDecompressor;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class RecoverCommand extends Command
+final class RecoverCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     #[\Override]
     public function configure(): void
     {

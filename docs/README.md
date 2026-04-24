@@ -8,6 +8,7 @@ this file links out to a dedicated doc or a section of the top-level
 ## Getting started
 
 - **New here?** [getting-started.md](getting-started.md) walks you from install to your first trace in 5 minutes.
+- Docker wrapper (`reli` / `reli-view` installed via `eval "$(... docker:print-wrapper)"`) — [docker-wrapper.md](docker-wrapper.md)
 - How it works (architecture overview) — [README § How it works](../README.md#how-it-works)
 - Supported PHP versions and platforms — [getting-started.md § Requirements](getting-started.md#requirements)
 

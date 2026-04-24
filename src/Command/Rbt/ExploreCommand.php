@@ -18,7 +18,8 @@ use Reli\Rbt\Explore\ExploreTui;
 use Reli\Rbt\Explore\Keymap;
 use Reli\Rbt\Explore\Terminal;
 use Reli\Rbt\Explore\TraceModel;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -32,8 +33,14 @@ use Symfony\Component\Console\Output\OutputInterface;
  * drill into a frame's call sites without re-running anything. See
  * `--help` and the in-app `?` overlay for keybindings.
  */
-final class ExploreCommand extends Command
+final class ExploreCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     #[\Override]
     public function configure(): void
     {

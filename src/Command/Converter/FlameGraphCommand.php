@@ -15,12 +15,19 @@ namespace Reli\Command\Converter;
 
 use Noodlehaus\Config;
 use PhpCast\Cast;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class FlameGraphCommand extends Command
+final class FlameGraphCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     public function __construct(
         private Config $config,
     ) {

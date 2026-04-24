@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\SidecarSettings;
 
 use PhpCast\NullableCast;
+use Reli\Inspector\Sidecar\SocketPathResolver;
 use Reli\Inspector\Watch\HeapStats;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -29,8 +30,8 @@ final class SidecarSettingsFromConsoleInput
                 'socket',
                 's',
                 InputOption::VALUE_REQUIRED,
-                'Unix domain socket path',
-                SidecarSettings::DEFAULT_SOCKET_PATH,
+                'Unix domain socket path'
+                . ' (default: $XDG_RUNTIME_DIR/reli/sidecar.sock)',
             )
             ->addOption(
                 'output-dir',
@@ -84,8 +85,13 @@ final class SidecarSettingsFromConsoleInput
             }
         }
 
+        $socket = NullableCast::toString($input->getOption('socket'));
+        if ($socket === null || $socket === '') {
+            $socket = SocketPathResolver::resolveDefault();
+        }
+
         return new SidecarSettings(
-            socket_path: (string)$input->getOption('socket'),
+            socket_path: $socket,
             output_dir: (string)$input->getOption('output-dir'),
             disk_usage_limit_bytes: $disk_limit,
             include_binary: (bool)$input->getOption('include-binary'),

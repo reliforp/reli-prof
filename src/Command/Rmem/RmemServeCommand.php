@@ -17,7 +17,8 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Rmem\Explore\RmemModel;
 use Reli\Rmem\Serve\RmemQueryService;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -26,8 +27,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * Headless query server for .rmem files over Unix domain socket.
  */
-final class RmemServeCommand extends Command
+final class RmemServeCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     #[\Override]
     public function configure(): void
     {

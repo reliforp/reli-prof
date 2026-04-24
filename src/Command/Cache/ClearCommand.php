@@ -14,12 +14,19 @@ declare(strict_types=1);
 namespace Reli\Command\Cache;
 
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class ClearCommand extends Command
+final class ClearCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Minimal;
+    }
+
     public function __construct(
         private BinaryAnalysisCache $binary_analysis_cache,
     ) {

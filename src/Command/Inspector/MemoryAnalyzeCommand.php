@@ -18,14 +18,21 @@ use Reli\Inspector\MemoryDump\MemoryDumpReaderFactory;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettingsFromConsoleInput;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Log\Log;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class MemoryAnalyzeCommand extends Command
+final class MemoryAnalyzeCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Full;
+    }
+
     public function __construct(
         private MemoryProfilerSettingsFromConsoleInput $memory_profiler_settings_from_console_input,
         private MemoryDumpReaderFactory $memory_dump_reader_factory,

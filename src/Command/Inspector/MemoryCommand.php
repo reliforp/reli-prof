@@ -27,15 +27,22 @@ use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessStopper\ProcessStopper;
 use Reli\ReliProfiler;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
-use Symfony\Component\Console\Command\Command;
+use Reli\Command\DockerProfile;
+use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function Reli\Lib\Defer\defer;
 
-final class MemoryCommand extends Command
+final class MemoryCommand extends ReliCommand
 {
+    #[\Override]
+    public static function getDockerProfile(): DockerProfile
+    {
+        return DockerProfile::Full;
+    }
+
     public function __construct(
         private PhpGlobalsFinder $php_globals_finder,
         private MemoryProfilerSettingsFromConsoleInput $memory_profiler_settings_from_console_input,
