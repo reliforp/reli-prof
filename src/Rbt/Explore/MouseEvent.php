@@ -18,6 +18,10 @@ namespace Reli\Rbt\Explore;
  *
  * SGR format: \e[<Cb;Cx;CyM  (press) or \e[<Cb;Cx;Cym (release)
  * where Cb = button flags, Cx = 1-based column, Cy = 1-based row.
+ *
+ * With mode 1003 (any-motion tracking) enabled on top, mouse motion
+ * without any button held also arrives here — recognisable by
+ * `drag=true` together with `button=BUTTON_NONE`.
  */
 final class MouseEvent
 {
@@ -35,7 +39,19 @@ final class MouseEvent
         public readonly bool $press,
         public readonly bool $drag,
         public readonly bool $shift = false,
+        public readonly bool $ctrl = false,
     ) {
+    }
+
+    /**
+     * Convenience: the event is "hover" — motion without any button
+     * held down — if the motion bit is set and the button field is
+     * BUTTON_NONE. With mode 1002 only (drag-tracking) we never see
+     * these; mode 1003 (any-motion) emits them on every pixel move.
+     */
+    public function isHover(): bool
+    {
+        return $this->drag && $this->button === self::BUTTON_NONE;
     }
 
     /**
@@ -55,9 +71,10 @@ final class MouseEvent
         $press = $m[4] === 'M';
 
         $shift = ($cb & 4) !== 0;
+        $ctrl = ($cb & 16) !== 0;
         $drag = ($cb & 32) !== 0;
         $button = $cb & ~(4 | 8 | 16 | 32);
 
-        return new self($button, $col, $row, $press, $drag, $shift);
+        return new self($button, $col, $row, $press, $drag, $shift, $ctrl);
     }
 }

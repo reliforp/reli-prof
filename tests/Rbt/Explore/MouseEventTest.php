@@ -120,4 +120,57 @@ class MouseEventTest extends BaseTestCase
         $this->assertNull(MouseEvent::tryParse("\e[<0;10M"));
         $this->assertNull(MouseEvent::tryParse("\e[<;10;5M"));
     }
+
+    public function testParseCtrlModifier(): void
+    {
+        // Ctrl adds bit 4 (16). Left click + ctrl = 0 + 16 = 16.
+        $event = MouseEvent::tryParse("\e[<16;10;5M");
+        $this->assertNotNull($event);
+        $this->assertSame(MouseEvent::BUTTON_LEFT, $event->button);
+        $this->assertTrue($event->ctrl);
+        $this->assertFalse($event->shift);
+        $this->assertFalse($event->drag);
+    }
+
+    public function testNoCtrlByDefault(): void
+    {
+        $event = MouseEvent::tryParse("\e[<0;10;5M");
+        $this->assertNotNull($event);
+        $this->assertFalse($event->ctrl);
+    }
+
+    public function testParseHoverMotionWithoutButton(): void
+    {
+        // Any-motion (mode 1003) emits: button=3 (none) + 32 (motion) = 35.
+        $event = MouseEvent::tryParse("\e[<35;42;8M");
+        $this->assertNotNull($event);
+        $this->assertSame(MouseEvent::BUTTON_NONE, $event->button);
+        $this->assertTrue($event->drag);
+        $this->assertTrue($event->isHover());
+    }
+
+    public function testDragWithLeftButtonIsNotHover(): void
+    {
+        // Left button held + motion = 0 + 32 = 32.
+        $event = MouseEvent::tryParse("\e[<32;10;5M");
+        $this->assertNotNull($event);
+        $this->assertTrue($event->drag);
+        $this->assertFalse($event->isHover());
+    }
+
+    public function testPlainClickIsNotHover(): void
+    {
+        $event = MouseEvent::tryParse("\e[<0;10;5M");
+        $this->assertNotNull($event);
+        $this->assertFalse($event->isHover());
+    }
+
+    public function testCtrlPlusHoverMotion(): void
+    {
+        // Button none (3) + motion (32) + ctrl (16) = 51.
+        $event = MouseEvent::tryParse("\e[<51;42;8M");
+        $this->assertNotNull($event);
+        $this->assertTrue($event->isHover());
+        $this->assertTrue($event->ctrl);
+    }
 }

@@ -102,8 +102,14 @@ final class Terminal implements TerminalInterface
         // Alt screen on, hide cursor, enable SGR mouse tracking.
         // ?1000h = basic press/release tracking
         // ?1002h = button-motion (drag) tracking
+        // ?1003h = any-motion tracking (hover, motion without button)
         // ?1006h = SGR extended coordinates (no 223-column limit)
-        $this->write("\e[?1049h\e[?25l\e[?1000h\e[?1002h\e[?1006h");
+        //
+        // Consumers that don't care about hover (e.g. rbt:explore) just
+        // ignore motion-only events in their dispatcher — safer than
+        // toggling ?1003h per-TUI and risking leaving it on during an
+        // error exit.
+        $this->write("\e[?1049h\e[?25l\e[?1000h\e[?1002h\e[?1003h\e[?1006h");
 
         $this->entered = true;
     }
@@ -117,7 +123,7 @@ final class Terminal implements TerminalInterface
         $this->entered = false;
 
         // Disable mouse tracking, show cursor, leave alt screen.
-        $this->write("\e[?1006l\e[?1002l\e[?1000l\e[?25h\e[?1049l");
+        $this->write("\e[?1006l\e[?1003l\e[?1002l\e[?1000l\e[?25h\e[?1049l");
 
         if ($this->stty_orig !== null) {
             $this->applyStty($this->stty_orig);

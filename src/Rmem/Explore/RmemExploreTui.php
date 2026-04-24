@@ -149,9 +149,37 @@ final class RmemExploreTui
      *  root step can navigate to it. */
     private array $sidebarPathMap = [];
 
+    /**
+     * Sidebar line index (within `$allSidebarLines`, i.e. before
+     * `$sidebarScroll` is applied) → the full pre-wrap text of the
+     * source/defined/held-by line that occupies that row. Populated
+     * by buildSidebarLines so the hover overlay can redisplay the
+     * full "source: /long/path:line" on a single row when the mouse
+     * lingers on it — long paths normally get $wrap()-ed across
+     * multiple rows which breaks terminals' file:line pattern
+     * matcher.
+     *
+     * @var array<int,string>
+     */
+    private array $sidebarHoverOverlay = [];
+
+    /**
+     * The (pre-scroll) sidebar line index currently being hovered,
+     * or null if the pointer is elsewhere. Kept so the render loop
+     * can fold the overlay into the $body string — changes here
+     * force a repaint automatically.
+     */
+    private ?int $hoveredSidebarIndex = null;
+
     /** Leftmost 1-based terminal column occupied by the sidebar at
      *  the last render (0 if the sidebar is hidden). */
     private int $sidebarStartCol = 0;
+
+    /** Total columns / rows captured by the last render call, used
+     *  by the motion-event hit-test so it doesn't have to re-query
+     *  the terminal for every hover sample. */
+    private int $lastRenderCols = 0;
+    private int $lastRenderRows = 0;
 
     /**
      * Write end of a pipe to a sidecar process (the --http-bridge child).
@@ -679,6 +707,13 @@ final class RmemExploreTui
      */
     private function handleMouseEvent(MouseEvent $mouse): void
     {
+        // Any-motion events (mode 1003) arrive with press=true, drag=true,
+        // and button=BUTTON_NONE. Route them to the hover tracker instead
+        // of falling through to the click handler.
+        if ($mouse->isHover()) {
+            $this->updateHoverFromMotion($mouse);
+            return;
+        }
         if (!$mouse->press || $mouse->drag) {
             return;
         }
@@ -744,6 +779,39 @@ final class RmemExploreTui
         if ($isDouble) {
             $this->lastClickTime = 0.0; // consume, prevent triple-click repeat
             $this->enter();
+        }
+    }
+
+    /**
+     * Translate a motion event into a sidebar hover overlay decision.
+     *
+     * Outside the sidebar column range → clear hover. Over a sidebar
+     * row that carries an overlay entry → set hover to that
+     * (post-scroll-adjusted) all-sidebar index. Elsewhere on the
+     * sidebar → clear hover. We leave it to `render()` to fold the
+     * result into the `$body` string, so the natural diff-against-
+     * last-rendered check triggers a repaint only when the hover
+     * outcome actually changed.
+     */
+    private function updateHoverFromMotion(MouseEvent $mouse): void
+    {
+        $newHover = null;
+        if (
+            $this->sidebarStartCol > 0
+            && $mouse->col >= $this->sidebarStartCol
+        ) {
+            // sidebar rows are painted at terminal row = visibleIdx + 2,
+            // where visibleIdx is 0-based into the post-scroll slice.
+            $visibleIdx = $mouse->row - 2;
+            if ($visibleIdx >= 0) {
+                $allIdx = $visibleIdx + $this->sidebarScroll;
+                if (isset($this->sidebarHoverOverlay[$allIdx])) {
+                    $newHover = $allIdx;
+                }
+            }
+        }
+        if ($newHover !== $this->hoveredSidebarIndex) {
+            $this->hoveredSidebarIndex = $newHover;
         }
     }
 
@@ -1675,7 +1743,14 @@ final class RmemExploreTui
             $lines[$lastIdx] .= "  \e[33m[filter: {$this->filterPattern}]\e[0m";
         }
 
-        $body = implode("\n", array_slice($lines, 1)) . $sidebarBuf;
+        // Stash terminal size so motion-event hit-tests don't have to
+        // reprobe the tty per hover sample.
+        $this->lastRenderCols = $cols;
+        $this->lastRenderRows = $rows;
+
+        $hoverOverlay = $this->buildHoverOverlay($cols);
+
+        $body = implode("\n", array_slice($lines, 1)) . $sidebarBuf . $hoverOverlay;
         $header = $lines[0] ?? '';
 
         if ($body !== $this->lastRendered) {
@@ -1690,6 +1765,45 @@ final class RmemExploreTui
     }
 
     /**
+     * Build the cursor-positioning escape string that paints the
+     * hover overlay (if any) on top of the rest of the frame.
+     *
+     * When the pointer sits on a sidebar row that carries an overlay
+     * entry (source / defined / held-by), we paint the entire terminal
+     * row with the full un-wrapped text and a reverse-video style.
+     * The overlay overruns the main content area for that one row so
+     * terminals' file:line pattern matchers have a contiguous `path:line`
+     * token to recognise. Next repaint clears it naturally — the row
+     * is re-emitted from the main content buffer.
+     */
+    private function buildHoverOverlay(int $cols): string
+    {
+        if ($this->hoveredSidebarIndex === null) {
+            return '';
+        }
+        $text = $this->sidebarHoverOverlay[$this->hoveredSidebarIndex] ?? null;
+        if ($text === null) {
+            return '';
+        }
+        $visibleIdx = $this->hoveredSidebarIndex - $this->sidebarScroll;
+        if ($visibleIdx < 0) {
+            return '';
+        }
+        $row = $visibleIdx + 2; // same mapping buildSidebarLines uses
+        if ($row > $this->lastRenderRows) {
+            return '';
+        }
+        $maxWidth = $cols - 2;
+        if ($maxWidth < 8) {
+            return '';
+        }
+        if (strlen($text) > $maxWidth) {
+            $text = substr($text, 0, $maxWidth - 1) . '…';
+        }
+        return sprintf("\e[%d;1H\e[K\e[7m %s \e[27m", $row, $text);
+    }
+
+    /**
      * Build sidebar lines showing node detail + path-to-root.
      * @return list<string>
      */
@@ -1697,6 +1811,7 @@ final class RmemExploreTui
     {
         $lines = [];
         $this->sidebarPathMap = [];
+        $this->sidebarHoverOverlay = [];
         $detail = $this->model->nodeDetail($nodeId);
         $usable = $width - 2; // 1 space indent + 1 margin
 
@@ -1743,7 +1858,19 @@ final class RmemExploreTui
                 'held_by' => 'held by',
                 default => $loc['kind'],
             };
-            $wrap("{$label}: {$loc['formatted']}");
+            $full = "{$label}: {$loc['formatted']}";
+            // Record every sidebar row this wrapped line ends up
+            // occupying so the hover-overlay hit-test can paint the
+            // full text back over whichever fragment the pointer is
+            // on. Terminals' file:line pattern matchers need the
+            // whole `path:line` on one row to trigger, and the
+            // wrapped fragments alone don't qualify.
+            $firstIdx = count($lines);
+            $wrap($full);
+            $lastIdx = count($lines) - 1;
+            for ($li = $firstIdx; $li <= $lastIdx; $li++) {
+                $this->sidebarHoverOverlay[$li] = $full;
+            }
         }
         foreach ($detail['attributes'] as $key => $val) {
             // filename / line_start / line_end / lineno are already
