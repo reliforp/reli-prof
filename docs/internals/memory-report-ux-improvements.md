@@ -1421,3 +1421,144 @@ As of this revision: **20 real-world reports** across three batches.
 Every B-item and S-item claim in this document is supported by at
 least one of those reports. Each claim's primary evidence report is
 named inline with the claim.
+
+---
+
+## Tool-level UX outside the main report
+
+So far every observation has been about `inspector:memory:report`.
+The broader set of tools (`inspector:memory:compare`, `rmem:query`,
+`rmem:explore`, `rmem:viz`, `rmem:serve`) are the natural follow-up
+surfaces when a report's `Explore:` hint sends the reader further.
+Notes from walking those tools on the captured dumps:
+
+### T1. `Explore: rmem:explore --node=N` hint is broken on raw dumps
+
+Every finding with evidence nodes emits a line like:
+
+    Explore: rmem:explore --node=205  (#205, #206, #215)
+
+But `rmem:explore` / `rmem:query` reject the `.rmem` file produced by
+`inspector:memory:dump`. On `rw3_closure-leak.rmem`:
+
+    $ ./reli rmem:query rw3_closure-leak.rmem --node=203
+    Invalid rmem magic: 52454c49
+
+The file starts with `RELIMEM` (the raw dump format); `rmem:query`
+expects the *intermediate* binary format produced by
+`inspector:memory:analyze --output-format=binary`. The user is
+expected to run a separate conversion step that the hint does not
+mention.
+
+Workarounds the hint could surface:
+
+- Append the prerequisite: `Explore: after converting with
+  'inspector:memory:analyze … --output-format=binary', rmem:explore
+  --node=205`.
+- Better: make `rmem:query` / `rmem:explore` accept raw dumps by
+  running the conversion internally on first use.
+- Better still: emit the hint with the path to a binary file the
+  user already has, if analyse was run with `--output-format=binary`.
+
+Even the direction "run inspector:memory:analyze first" is non-obvious
+because users typically already ran `analyze` — but with
+`--output-format=sqlite3` (the format the report needs) and that file
+isn't accepted by `rmem:query` either.
+
+### T2. `rmem:query` drill-down works but is verbose
+
+Following the hint from `rw3_closure-leak` after the conversion
+(node 203 is a Closure):
+
+    $ ./reli rmem:query rw3_closure-leak.binary.rmem --node=203 --children
+    Node 203 locations:
+      type=ZendObjectMemoryLocation addr=0x7ed50aa80000 size=344 B
+      refcount=1 class=Closure
+
+    Path to root:
+      [value] node=203 (ObjectContext)
+        [0] node=202 (ArrayElementContext)
+          [array_elements] node=201 (ArrayElementsContext)
+            [value] node=199 (ArrayHeaderContext)
+              [request.completed] node=198 (ArrayElementContext)
+                [array_elements] node=197 (ArrayElementsContext)
+                  [listeners] node=195 (ArrayHeaderContext)
+                    [object_properties] node=194 (ObjectPropertiesContext)
+                      [value] node=192 (ObjectContext)
+                        [bus] node=191 (ArrayElementContext)
+                          [array_elements] node=117 (ArrayElementsContext)
+                            [global_variables] node=115 (ArrayHeaderContext)
+                              [<root>] node=4294967295 (?)
+
+    Children:
+      [object_handlers] node=204 (ObjectHandlersContext)
+      [object_properties] node=205 (ObjectPropertiesContext)
+      [closure] node=206 (ClosureContext)
+
+Strengths: the path-to-root is useful, locations section is specific.
+Weaknesses:
+
+- **Every query prints the full path to root**, 14 lines in this
+  case. For a user walking multiple nodes that's the same preamble
+  repeated. Add a `--no-path` flag or skip path when the parent
+  matches the previous query.
+- **Structural-context class names leak unchanged**: ArrayElementContext,
+  ObjectPropertiesContext, ClosureContext, ArrayHeaderContext,
+  ArrayElementsContext. Same S-tier friction as in the main report —
+  these names are engine-internal and don't help a user understand
+  what they own.
+- **Bulk traversal is missing.** The actionable answer for this
+  particular node was "the Closure captures `$this_ptr`, which points
+  at a Handler". Getting there required drilling node 203 → 206 → 215
+  manually. A `--show-retained-tree` or `--show-captures` mode for
+  closure nodes would land the answer in one step.
+
+### T3. `inspector:memory:compare` Findings Diff is incomplete
+
+Compared `rw_logger-stack.db` (baseline, 12 MB worker heap) with
+`rw3_messenger-envelopes.db` (target, 172 MB worker heap) as a
+"accumulation grew" test:
+
+The class-memory and location-type sections are excellent:
+
+    === Class Memory Changes ===
+      New classes (target only):
+        Envelope                50,000 instances  3.43 MB
+        HandledStamp            50,000 instances  3.43 MB
+        RetryStamp              50,000 instances  3.43 MB
+        ...
+      Removed classes (baseline only):
+        Monolog\LogRecord        3,000 instances  445.31 KB
+        ...
+
+But the Findings Diff is missing a `New findings:` section despite
+the target having 22 findings the baseline doesn't. Output has:
+
+    Resolved findings:   (36 items — everything from baseline)
+    Changed findings:    (1 item — companion_cluster impact changed)
+
+Likely cause: the matching heuristic pairs findings across snapshots
+by `kind` alone, so e.g. `choke_point` in baseline and `choke_point`
+in target are treated as "the same finding, value changed" even
+though they point at completely different subtrees. The 22 target
+findings either all get paired up (making them Changed rather than
+New) or get dropped.
+
+Fixes:
+
+- Match findings by `(kind, primary_target_node_id or equivalent)`,
+  not `kind` alone. Two choke_points at different nodes should not
+  pair.
+- When no reasonable match exists in the baseline, emit as New.
+- When baseline had findings of a kind that target lacks, emit as
+  Resolved (currently seems to work for Resolved).
+
+### T4. Other tools (`rmem:viz`, `rmem:serve`, `rmem:mcp`) unexplored
+
+This doc only covers the command-line report path. `rmem:viz` (HTML),
+`rmem:serve` (query server), and `rmem:mcp` (AI-assisted MCP server)
+are additional surfaces that would benefit from the same JSON-vs-text
+discrepancy analysis — e.g., does `rmem:viz` render the full
+`facts.sizes` array that the text formatter ignores? Is `rmem:mcp`
+exposing the cleaner `facts.*` fields or the raw `summary` string?
+Worth a separate pass.
