@@ -2181,14 +2181,25 @@ final class RmemExploreTui
      * Decide whether the current terminal should get OSC 8 hyperlinks.
      *
      * Terminals that don't recognise OSC 8 normally just skip the
-     * escape, so we emit by default and leave opting out to the
-     * `RELI_NO_HYPERLINKS=1` env var for the rare case where a
-     * terminal chokes on them.
+     * escape, so we emit by default. Two exceptions:
+     *
+     *  - `RELI_NO_HYPERLINKS=1` is a generic escape hatch.
+     *  - PhpStorm/IntelliJ's bundled JediTerm silently drops OSC 8
+     *    entirely — a `printf '\e]8;;…\e\\text\e]8;;\e\\'` test in a
+     *    plain shell yields no underline. In that case we still want
+     *    to fall back to the pre-OSC-8 `$wrap()` layout so JediTerm's
+     *    own `file:line` pattern matcher has a full row to chew on;
+     *    a middle-truncated `…/Foo.php:42` wouldn't match its regex.
+     *    Detected via `TERMINAL_EMULATOR=JetBrains-*`.
      */
     private static function supportsOsc8Hyperlinks(): bool
     {
         $optOut = getenv('RELI_NO_HYPERLINKS');
         if ($optOut !== false && $optOut !== '' && $optOut !== '0') {
+            return false;
+        }
+        $emulator = getenv('TERMINAL_EMULATOR');
+        if (is_string($emulator) && stripos($emulator, 'JetBrains') !== false) {
             return false;
         }
         return true;

@@ -153,11 +153,16 @@ target still encodes the full path so the jump is unaffected by
 truncation. Terminals without OSC 8 support just see the visible
 text.
 
-If a terminal turns out to choke on OSC 8 anyway, set
-`RELI_NO_HYPERLINKS=1` to skip the escapes — the source lines then
-fall back to plain `source: file:line` text that most terminals
-(including PhpStorm's built-in one) still pick up as clickable via
-their own file:line pattern matcher.
+PhpStorm/IntelliJ's bundled terminal (JediTerm) silently drops
+OSC 8 hyperlinks — a `printf '\e]8;;…\e\\text\e]8;;\e\\'` test in
+the plain shell already shows no underline — so we auto-detect
+it via `TERMINAL_EMULATOR=JetBrains-JediTerm` and skip the
+hyperlink wrapper. The source lines then fall back to plain
+`source: file:line` text and let JediTerm's own file:line pattern
+matcher turn the full rows into clickable links; middle-truncated
+paths wouldn't have matched its regex. Set `RELI_NO_HYPERLINKS=1`
+to force the same fallback in any other terminal that turns out
+quirky.
 
 The URI is derived from the (path-mapped) filename:
 
