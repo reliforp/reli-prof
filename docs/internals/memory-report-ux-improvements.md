@@ -1450,7 +1450,7 @@ S12 clustering (help the 22-finding cases).
 
 ## Reports corpus snapshot
 
-As of this revision: **20 real-world reports** across three batches.
+As of this revision: **25 real-world reports** across four batches.
 
 - `rw_*` (7): framework-baseline sized (2–12 MB heap) — phpunit,
   symfony-console, twig, parsedown, logger-stack, laravel-collections,
@@ -1460,10 +1460,208 @@ As of this revision: **20 real-world reports** across three batches.
   eloquent-hydration, guzzle-buffered, spreadsheet-xlsx.
 - `rw3_*` (6): pattern-diverse — doctrine-uow, static-cache,
   graphql-shape, reflection-heavy, messenger-envelopes, closure-leak.
+- `rw4_*` (5): shape-diverse and WordPress — wordpress-bootstrap
+  (real WP core loaded), generator-leak, graph-recursion (highly
+  cyclic, 10k-node graph), enum-collections (PHP 8.1+ enums),
+  pdo-result-hoarding (500k-row fetchAll).
 
 Every B-item and S-item claim in this document is supported by at
 least one of those reports. Each claim's primary evidence report is
 named inline with the claim.
+
+## Fourth-batch additions
+
+### N10. `B2` extends to `property_scaling`, not just `dedup_candidate`
+
+`rw4_graph-recursion` (111 MB heap, heavily cyclic 10,000-node graph):
+
+    [MEDIUM] 53.73 GB impacted
+      property_scaling: GraphNode (10,000 instances): 4 per-instance props
+                       (5.50 MB/instance retained), 0 shared
+      PER-INSTANCE (retained, scales with count):
+        GraphNode::$outEdges: 10,000 copies x 5.50 MB = 53.71 GB
+
+    [LOW] 108.55 GB impacted
+      dedup_candidate: GraphNode::$outEdges[value] (GraphNode):
+                       10,000 copies x 11.12 MB retained = 108.55 GB
+
+53 GB and 108 GB impacts on a 111 MB heap — **500× and 1000× the heap
+respectively**. Root cause is the same `retained × count` formula (now
+seen in at least two passes, `DedupCandidatePass` and whichever pass
+emits `property_scaling`) being applied to SCC members. When every
+GraphNode is part of one 140,000-node SCC (per the final
+`[retained_approximate]` line), each node's "retained" includes the
+entire SCC via reachability, so `N × retained` = `N × (whole heap)` =
+`N × N × shallow`.
+
+Confirms that B2 isn't a dedup-specific bug — it's **any pass that
+multiplies per-node retained by a population count** without
+accounting for shared subtrees / SCC membership. The clamp and the
+dedup-bucket fix both still apply; the bigger rule is "retained is
+not additive across nodes that share a subtree."
+
+### N11. `function_table` is the mirror of `class_table`
+
+`rw4_wordpress-bootstrap` (3.69 MB heap):
+
+    [HIGH] 1.70 MB impacted
+      bottleneck_path: function_table->remove_accents->op_array (1.70 MB)
+    [HIGH] 1.70 MB impacted
+      choke_point: ZendArrayMemoryLocation (72.37 KB shallow) holds
+                   1.70 MB via 1802 children — function_table
+
+    Root Blame Allocation
+      function_table     1.71 MB   37.3%
+      global_variables   1.48 MB   32.2%
+      class_table        806 KB    17.1%
+
+`function_table` accounts for 37% of the heap, driven by WordPress's
+`remove_accents()` — a 1.7 MB compiled op_array (mostly a huge
+literal-table for accent transliteration + a 31 KB doc comment).
+
+Implications:
+
+- Everything said about `class_table` in S1 / S2 / S3 and the stocked
+  `class_definition_overhead` proposal applies equally to
+  `function_table`. WP loads hundreds of top-level functions; Laravel
+  / Symfony apps do too (helper files, global helpers).
+- Same B1 lowercase-name issue in principle (function_table keys are
+  case-folded too). `remove_accents` happens to be all-lowercase so
+  it renders correctly by accident; a function named
+  `formatDate()` would display as `formatdate`.
+- The `class_definition_overhead` stocked proposal should either
+  generalise to `definition_overhead` (classes + functions) or be
+  paired with a matching `function_definition_overhead` kind.
+
+### N12. `pdo-result-hoarding` is a clean report at 442 MB heap
+
+    === Findings ===
+    [HIGH] 442.00 MB impacted  bottleneck_path: $rows[0][metadata][ref]
+    [HIGH] 251.70 MB impacted  choke_point: $rows (500,000 children)
+    [HIGH] 189.82 MB impacted  choke_point: $byUser (10,000 children)
+
+Three findings for a 500,000-row fetchAll-style dump. Each correctly
+points at user-land state. This is the cleanest of the four
+hundred-MB reports and matches the csv-mega pattern noted earlier:
+"array-dominated scenarios produce focused reports naturally".
+
+Adds weight to N9 — the noise-per-root-cause complaint is really
+"many-per-instance-objects + several companion classes" complaint.
+Array-heavy heaps don't need S12 clustering.
+
+### N13. `shared_fanin key -> ? (4,500,030 refs -> 39 targets)` is a positive signal
+
+Same `rw4_pdo-result-hoarding`:
+
+    [shared_fanin] key -> ? (4,500,030 refs -> 39 targets, 115385.4 each)
+
+4.5 million HashTable keys resolve to only 39 interned string targets.
+That's PHP's string interning of repeated column names in every row of
+a fetchAll result — working as intended. Without interning, this
+would cost ~80 MB extra. The finding is **excellent empirical
+evidence that interning is doing its job** but reads as noise because
+it appears under "Additional Info" with the same bullet formatting as
+actual issues.
+
+Same N2 pattern: positive information presented as warning. Two
+narrow observations per kind:
+
+- `shared_fanin` to a small number of targets with a high
+  refs-per-target ratio → **interning/deduplication is already
+  working**, not a problem.
+- `shared_fanin` to many targets with low refs-per-target → only
+  *this* is a potential dedup opportunity.
+
+Current output doesn't distinguish. Add the "is this good or bad"
+judgment in the formatter: a 115k-refs-per-target ratio is clearly
+good; a 3-refs-per-target ratio over 100k targets is a weak-but-real
+dedup candidate.
+
+### N14. PHP 8.1+ enums are handled correctly — positive confirmation
+
+`rw4_enum-collections`:
+
+    property_scaling: OrderSnapshot (60,000 instances):
+      OrderSnapshot::$items: 60,000 copies x 1,013 B = 58.00 MB
+      OrderSnapshot::$customerEmail: 60,000 copies x 48 B = 2.79 MB
+      OrderSnapshot::$status: 6 copies x 104 B = 626 B     ← enum singleton
+      OrderSnapshot::$region: 6 copies x 98 B = 590 B       ← enum singleton
+      OrderSnapshot::$payment: 4 copies x 104 B = 418 B     ← enum singleton
+
+The per-property "copies" count correctly dropped from 60,000 to
+the number of distinct enum cases (6, 6, 4). The report correctly
+attributes the memory to `$items` and `$customerEmail` (the scaling
+per-row data), not to the enum fields. Nothing to fix; worth noting
+because the opposite — "60k × Enum instance" counted as scaling
+memory — would have been a plausible failure mode.
+
+`shared_fanin OrderSnapshot::$payment -> PaymentMethod (59,996 refs
+-> 4 targets)` likewise correctly labels the fan-in on the target
+class.
+
+### N15. WordPress bootstrap validates the scope-gap narrative
+
+`rw4_wordpress-bootstrap`:
+
+    Heap: 3.69 MB (78.8% analyzed)      RSS: 61.56 MB (ratio 16.6×)
+
+WP's core-load RSS is dominated by opcache's shared-memory page
+cache for included .php files, which lives outside ZendMM. 3.7 MB of
+Zend heap is the analysable script state; the rest is opcache
+baseline + glibc fragmentation. Consistent with the calibration
+table in the scope section earlier:
+
+| Scenario          | RSS    | Heap   | Ratio | Primary gap cause          |
+|-------------------|--------|--------|-------|----------------------------|
+| csv-mega          | 533 MB | 462 MB | 1.15× | glibc fragmentation        |
+| json-decode-huge  | 242 MB | 172 MB | 1.41× | glibc + mmap               |
+| xml-dom-huge      | 395 MB | 43 MB  | 9.2×  | libxml2 (DOM tree)         |
+| wordpress-bootstrap | 62 MB |  4 MB | 16.6× | opcache (many included files)|
+| pdo-result-hoarding | 520 MB | 442 MB | 1.18× | glibc fragmentation        |
+
+The WP row is exactly the case the tool-level scope docs should name:
+"you loaded WordPress core, opcache is hundreds of .php files into
+shared memory that reli can't see — the 'Heap: 3.69 MB' is script
+state only". A reader investigating "why does my WP worker use 62 MB
+per process" without that context would look at the report and
+conclude reli couldn't find anything.
+
+### N16. 25-report corpus confirms priority ordering
+
+Tallying B-/S-/N-item occurrences across all 25 reports:
+
+| Item                            | Occurrences | Severity of reader impact |
+|---------------------------------|-------------|----------------------------|
+| B1 (class name lowercased)      | 19+ / 25    | high — every class_table path looks broken |
+| B8/B9 (bottleneck leaf≠size)    | 25 / 25     | high — every report has one |
+| N4 (uniform sibling rows)       | 12+ / 25    | medium — cosmetic         |
+| N1 (empty_object internal class)| 9 / 25      | medium — misleading advice |
+| B2/N10 (retained × count inflation) | 4 / 25  | high in affected reports  |
+| N2 (shared_singleton positive-as-warning) | 11+ / 25 | low — noise  |
+| S12 (cluster across detectors)  | 4 / 25 (noisy ones) | high in affected |
+| B3 (preview newline)            | 2 / 25      | high when it hits         |
+| B6 (dedup heterogeneous bucket) | 2 / 25      | high when it hits         |
+
+Priority re-stated:
+
+**Tier 1: fix once, helps every report.**
+- B1 (class name lowercase) — collector-side 1-line equivalent
+- B3 (preview newline escape) — formatter 1-line
+- N1 (filter internal classes from empty_object) — 1-line filter
+
+**Tier 2: fixes the biggest number-is-wrong complaints.**
+- B8/B9 (bottleneck descent) — formatter reads `facts.sizes`
+- B2/B6/N10 (retained × count inflation) — clamp + dedup bucket fix
+
+**Tier 3: narrative improvements for noisy cases.**
+- S12 (cluster findings by target)
+- N2 (separate positive signals from warnings)
+- N4 (collapse uniform sibling rows)
+
+Tier 1 alone probably makes 20/25 reports noticeably cleaner. Tier 2
+rescues the remaining "numbers look wrong" cases. Tier 3 is polish
+that matters for power-user readability but doesn't fix any
+incorrectness.
 
 ---
 
