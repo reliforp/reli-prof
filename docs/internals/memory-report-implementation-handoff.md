@@ -466,3 +466,123 @@ Same shape for Top Strings (multiple identical-size Carbon
 doc_comments in rw_logger-stack).
 
 ~30 lines total. Purely formatter-side.
+
+---
+
+## Verification checklist
+
+After each tier lands, rerun `inspector:memory:report` against all
+25 saved .db files and check the diff. Suggested grep patterns:
+
+### T1 verification
+
+**B1 — no more lower-cased class names in class_table/function_table paths**:
+
+    grep -E 'class_table->[a-z][a-z0-9_\\]+\b' \
+      /tmp/memreport-out/rw*_*.report.txt
+
+Before: hundreds of hits (`composerstaticinit...`,
+`twig\extension\coreextension`, `symfony\component\dependencyinjection\...`).
+After: only genuinely-lowercase names like `stdclass` or framework
+classes that really are lowercase. The big red flag:
+`class_table->composer\autoload\composerstaticinit32e1def...` should
+read `class_table->Composer\Autoload\ComposerStaticInit32e1def...`.
+
+Spot-check reports: `rw_symfony-console`, `rw_twig`, `rw_phpunit`,
+`rw3_static-cache` (paths go through `class_table->LookupService->...`),
+`rw4_wordpress-bootstrap` (`function_table->remove_accents` — should
+be unchanged, since `remove_accents` is lowercase).
+
+**B3 — no split Top Strings rows**:
+
+    grep -B1 '^\.\.\.$' /tmp/memreport-out/rw*_*.report.txt
+
+Before: matches in `rw_logger-stack` (Carbon doc_comments) and
+`rw_s4_big_string` (huge HTML blob). After: zero matches.
+
+Also spot-check that `\n`/`\r`/`\t` appear literally in previews,
+not as actual newlines/tabs.
+
+**N1 — no `empty_object` findings for internal classes**:
+
+    grep -E 'empty_object: (Closure|Generator|Reflection|WeakMap|DateTime|DOMDocument|PDO|mysqli|Spl)' \
+      /tmp/memreport-out/rw*_*.report.txt
+
+Before: ~9 hits. After: 0 hits. Residual `empty_object` findings
+should be user-defined classes only (expect `Twig\Node\NameDeprecation`
+in rw_twig and `BusNameStamp`/other marker stamps in
+rw3_messenger-envelopes to remain).
+
+### T2 verification
+
+**B8/B9 — bottleneck_path shows sensible leaf + size relation**:
+
+Eyeball these specific findings against their reports:
+
+- `rw2_json-decode-huge`: was `$decoded[data][10100][profile] (171.45 MB)`.
+  After: path should stop at or near `$decoded[data]` with ~84 MB,
+  or show a spine → leaf with both sizes.
+- `rw2_csv-mega`: was `$orders[0][items][0] (461.70 MB)`. After:
+  shouldn't attribute 461 MB to a single item.
+- `rw4_pdo-result-hoarding`: was `$rows[0][metadata][ref] (442.00 MB)`.
+  After: similar.
+- `rw3_closure-leak`, `rw3_messenger-envelopes`, `rw4_enum-collections`,
+  `rw4_generator-leak` — all show arbitrary-index leaves today.
+
+Automated smoke test: for each report, check that the impact size
+in `bottleneck_path: ... (X MB)` is less than the total heap size.
+
+**B2/B6/N10 — no finding impact exceeds heap total**:
+
+    for db in /tmp/memreport-out/rw*_*.db; do
+      # extract heap total from the matching .report.txt and compare
+      # against each finding's impact_bytes
+      ...
+    done
+
+Concrete failures to eliminate:
+- `rw_logger-stack`: `[LOW] 722.27 MB impacted` on 11.96 MB heap
+- `rw4_graph-recursion`: `[MEDIUM] 53.73 GB impacted`,
+  `[LOW] 108.55 GB impacted` on 111 MB heap
+- `rw3_laravel-collections`: `[LOW] 2.23 MB impacted` (borderline)
+
+After the clamp, no finding's impact_bytes should exceed the heap
+total. After the B6 bucket fix, the `dedup_candidate` groups should
+be class-homogeneous — verify `facts.source_class` /
+`facts.target_class` in the JSON are single values per finding, and
+the `Examples:` line doesn't mix classes.
+
+### T3 verification
+
+**S12 — noisy reports collapsed**:
+
+Pre-fix finding counts:
+- `rw3_messenger-envelopes`: 22 findings
+- `rw3_doctrine-uow`: 25 findings
+- `rw2_eloquent-hydration`: 10+ findings
+
+Post-fix: expect the noisy reports to show ≤10 top-level findings,
+with the collapsed ones visible as "also detected by" evidence
+lines. Check `rw3_messenger-envelopes` specifically — the 22-finding
+case is the flagship evidence report.
+
+**N2 — Additional Info split into two blocks**:
+
+Expect:
+
+    === Observations (no action needed) ===
+    [CoW share] ...
+    [interning] ...
+
+    === Minor findings ===
+    ...
+
+in the noisy reports. Spot-check `rw3_reflection-heavy` (has
+`$ignoredAttributes: 4499 -> 1`) and `rw4_pdo-result-hoarding`
+(has `key -> ? (4.5M → 39)`).
+
+**N4 — uniform sibling rows collapsed**:
+
+Look for Top Arrays / Top Strings showing `(+N more similar ...)`
+annotations in: `rw2_error-context-capture`, `rw3_graphql-shape`,
+`rw4_pdo-result-hoarding`, `rw4_enum-collections`.
