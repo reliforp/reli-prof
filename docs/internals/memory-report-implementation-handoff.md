@@ -368,6 +368,153 @@ handoff's scope; the clamp guardrail is enough to ship T2.
 
 ---
 
+## T2.1 implementation notes — dedup `cnt × retained` → union aggregation
+
+Independent from T3. Can ship in either order. Closes the
+"`impact_bytes` is just a clamped ceiling, not actual memory in this
+pattern" caveat surfaced during T2 verification (see
+`memory-report-implementation-verification.md` § "Caveat: clamp is a
+guardrail, not a saving estimate" and § "Where the over-counting
+actually happens").
+
+### What's wrong today
+
+`DedupCandidatePass.php:92` and `PropertyScalingPass.php:191` (and
+their FFI/binary equivalents) compute `impact_bytes` as `cnt ×
+sample_mean(retained)`. The substrate's per-node retained is
+correct (tree-edge DFS, no DAG double-count), but the **aggregation
+treats N copies as if each owned an independent retained subtree**.
+For a spanning-tree of an SCC, members near the spanning-tree root
+have `retained ≈ entire reachable subtree`. Multiplying by N counts
+the spanning tree's upper-level bytes O(N²) times.
+
+`rw4_graph-recursion` exhibits both passes:
+
+    [LOW] 111.45 MB impacted   (clamped from 108.55 GB) — dedup_candidate
+    [MEDIUM] 111.45 MB impacted (clamped from 53.73 GB) — property_scaling
+
+Heap is 111 MB, so clamp = heap ceiling, which is **still wrong as
+a "memory in this pattern"** number. A reader interpreting
+"111 MB impacted" as either the current usage of that pattern or
+the savings if removed gets a wrong answer in either direction.
+
+### Proposed fix
+
+Replace `cnt × sample_mean(retained)` with **union of tree-edge
+subtrees from the N seeds**:
+
+    visited = empty set
+    for each seed in dedup_group_members:
+        BFS from seed via strong_children, skipping nodes already in visited
+        add traversed nodes to visited
+    impact_bytes = sum_over_visited(node_size)
+
+Properties:
+
+- Each node counted exactly once. No DAG / spanning-tree
+  double-counting.
+- Bounded above by heap total automatically — no clamp needed.
+- Represents "memory currently sitting under the union of these
+  N copies" — a meaningful, well-defined number.
+- For the independent-copies case (e.g., logger-stack 3,000
+  LogRecord), produces ≈ the same number as today's clamped
+  output (since the subtrees are nearly disjoint). For the
+  SCC-shared case, produces a much smaller, accurate number.
+
+### What this does *not* fix
+
+This is the *current_bytes* part of resolution A in the
+`impact_bytes` semantics tradeoff. It does not produce a
+**saving_estimate** — i.e., "if you de-duplicate these N copies,
+how much would actually be freed". That requires either
+`(N-1) × per_seed_exclusive_size` (where exclusive_size is what
+each seed dominates uniquely — needs a dominator tree) or some
+other dedup-specific calculation. Saving estimate stays parked
+under resolution A's full implementation.
+
+After T2.1: the displayed impact_bytes is honest as "memory
+currently in this pattern", reads naturally as the upper bound
+on potential saving (you can't save more than what's there), and
+the clamp note becomes unnecessary.
+
+### Performance budget
+
+Per-finding cost: O(union of reachable set). For the top-10 dedup
+groups the pass currently emits, total work is bounded by
+O(10 × heap_node_count). Concretely:
+
+- `rw4_graph-recursion` (10k seeds in a 140k SCC): ~140k visits
+  per group × 10 groups = ~1.4M ops
+- Independent-copies cases (`rw_logger-stack`, `rw3_messenger-envelopes`):
+  each seed reaches its own small subtree; union ≈ direct-sum ≈
+  cheap
+
+Existing parallelism: `DedupCandidatePass` and `PropertyScalingPass`
+already run in `ParallelPassRunner`'s Phase 3 alongside heavier
+passes. Per `docs/internals/memory-report-performance-hotspots.md`
+priority list, the wall-clock-critical passes are
+**`CycleClusterPass`** (multiple graph walks per top SCC group) and
+**`BlameAllocationPass`** (BFS from every root). The added union
+BFS in dedup passes likely fits inside the wall-clock window of
+those, so the change should be invisible in end-to-end
+`inspector:memory:report` time on most reports.
+
+If profiling shows otherwise on a specific scenario, the substrate
+hotspots-doc Priority 1 (no-allocation `getChildren` /
+`getStrongChildren` APIs) reduces the per-visit cost across all
+passes simultaneously and is a higher-leverage win than
+re-optimising T2.1 specifically.
+
+### Implementation sketch
+
+1. Add `unionReachableTreeNodes(list<int> $seeds): array<int, true>`
+   to the substrate (returns set of node_ids reachable via
+   `strong_children` from any seed). Cost is O(|union|), shared
+   across multiple uses.
+2. In `DedupCandidatePass`, replace
+   `$total = $cnt * $retained` with the union sum, and drop the
+   clamp logic (no longer needed — union is intrinsically bounded
+   by heap). Keep `total_waste_unclamped` field omitted (no clamp
+   to record).
+3. In `PropertyScalingPass`, do the same: per-property union over
+   the seeds for that property's child node, summed once.
+4. The `(impact clamped from … — over-counts shared subtree)`
+   hypothesis line goes away.
+5. JSON consumers: `total_waste` / `per_instance_total_bytes`
+   semantics change from "N × mean retained, clamped to heap" to
+   "union over seeds". Document the shift in the JSON schema notes.
+   Old `total_waste_unclamped` field disappears.
+
+### Verification plan
+
+Same artifacts as T1/T2 (the saved `.db` files in
+`/tmp/memreport-out/`). Re-run `inspector:memory:report` on each
+and check:
+
+- `rw4_graph-recursion` `dedup_candidate` and `property_scaling`
+  emit values within heap total, ideally much *less* than the
+  clamp's 111.45 MB (the SCC is shared; union should be a fraction
+  of the SCC).
+- `rw_logger-stack`, `rw3_messenger-envelopes`, `rw4_enum-collections`:
+  values stay close to today's clamped numbers (their copies are
+  largely independent so union ≈ N × per-copy).
+- No finding's reported impact exceeds heap total (no clamp needed).
+- Hypothesis text no longer carries the clamp note.
+
+### Order vs T3
+
+T2.1 is purely pass-level math. T3 is formatter-level narrative.
+They don't conflict. Pick whichever has the maintainer's interest
+first; either can ship without the other.
+
+If T2.1 ships before resolution A (the full `current_bytes` /
+`saving_estimate_bytes` split), the displayed `impact_bytes` will
+be a tight `current_bytes` value rather than a misleading clamped
+ceiling. resolution A would then add the saving-side metric on
+top, without disrupting the work T2.1 does on the current-side.
+
+---
+
 ## Tier 3 implementation notes
 
 ### S12 — cluster findings by target across detector kinds
