@@ -420,3 +420,62 @@ case after B6: 3,000 × ~1.67 KB ≈ 4.88 MB, plausible). But for
 DAG/SCC members it overstates, sometimes massively. The substrate's
 retained number is fine; the dedup-pass aggregation is the leaky
 abstraction.
+
+---
+
+## T2.1 follow-up verification (PR #649 — union aggregation)
+
+Re-ran `inspector:memory:report` against the 25 saved `.db` files
+using PR #649's `claude/dedup-union-aggregation` branch (commit
+`9f58256`). Pass-level changes only, so no re-analyse needed.
+
+### Status: ✅ closed cleanly
+
+| Check                                              | Result |
+|----------------------------------------------------|--------|
+| Clamp annotations gone                             | ✅ all 25 reports — zero `(impact clamped from ...)` lines |
+| `total_waste_unclamped` gone from JSON facts       | implied (the field is removed from the Finding shape) |
+| SCC over-count actually fixed (graph-recursion)    | ✅ `dedup_candidate 111.45 MB → 11.13 MB`, `property_scaling 111.45 MB → 22.25 MB`. Both well under heap, both representing the actual SCC subtree |
+| Independent-copies cases stay sane (logger-stack)  | ✅ `4.88 MB → 4.66 MB` (drop reflects that union de-dups some shared interned/metadata) |
+| Per-class buckets after B6 (messenger-envelopes)   | ✅ `2.75 / 2.77 / 8.98 → 2.37 / 2.38 / 9.04` — same magnitude |
+| Findings count regression                          | ✅ `±0` on all 25 reports vs the pre-T2.1 baseline |
+| Wording reflects union semantics                   | ✅ `"X KB retained"` → `"X KB avg retained"` (X = total / cnt) |
+
+### Caveat: `impact_bytes` is now "current" but still not "saving"
+
+T2.1 closes the "ceiling vs actual" complaint from the previous
+verification round. The displayed value is now the **memory
+currently sitting under any of these N copies**, intrinsically
+bounded by heap, no clamp needed.
+
+But it is still **not** a saving estimate. For the graph-recursion
+case the new `11.13 MB` reflects "11 MB of SCC bytes are reachable
+under any of the 10,000 GraphNodes". If a reader interprets it as
+"de-duplicating these would save 11 MB", they'll be over-estimating —
+the GraphNodes can't actually be deduplicated in the simple sense
+(they're mutually-referencing nodes in a graph, not interchangeable
+copies of one logical thing).
+
+The honest reading after T2.1:
+**"this is how much memory is currently in the union of these N
+copies' reachable subtrees — and that's also the upper bound on
+what you could free by collapsing them"**. That's a tighter,
+correct bound — strictly better than the pre-T2.1 clamp ceiling.
+
+The remaining "tight saving estimate" piece stays parked under
+resolution A's full implementation (`current_bytes` +
+`saving_estimate_bytes` split — see
+`memory-report-ux-improvements.md` §"The `impact_bytes` semantics
+tradeoff").
+
+### Final state of the `impact_bytes` saga
+
+| Stage          | What `dedup_candidate.impact_bytes` represents                                                  |
+|----------------|--------------------------------------------------------------------------------------------------|
+| Pre-PR #644    | `cnt × sample_mean(retained)`. Could exceed heap by 1000× in SCC scenarios.                       |
+| PR #644 (T2)   | `min(cnt × sample_mean(retained), heap_total)`. Ceiling, not tight; clamp note in hypothesis.    |
+| PR #649 (T2.1) | `unionReachableTreeSize(seeds)`. **Actual memory under those seeds.** Bounded by heap intrinsically. |
+| Future (Res. A)| Adds `saving_estimate_bytes` next to `current_bytes`. Requires dominator-tree calculation.       |
+
+T2.1 ships the third row. The fourth is the resolution A refactor
+that's still parked.
