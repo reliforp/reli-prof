@@ -45,6 +45,19 @@ final class PathFormatter
     ];
 
     /**
+     * Whether the given link name is a structural intermediary that
+     * `toPhpSyntax` would otherwise elide. Exposed so callers that
+     * render a partial path slice (e.g. the bottleneck-spine drop
+     * label) can extend the slice past structural components until
+     * a user-named segment appears, keeping the rendered vocabulary
+     * consistent with the full-path `summary_path`. T2.5.
+     */
+    public static function isStructuralLink(string $link_name): bool
+    {
+        return in_array($link_name, self::STRUCTURAL, true);
+    }
+
+    /**
      * Format a raw path (from link_names) into PHP-style syntax.
      *
      * @param list<string> $parts resolved link_names (frame names already resolved)
