@@ -652,3 +652,49 @@ Either is a small refinement on top of T2.2 — not a regression in
 T2.2 itself, but worth queueing as a polish item if the
 convergence matters in practice. (Filed as T2.5 in the handoff if
 prioritised.)
+
+---
+
+## T2.4 verification (PR #653 — call-frame `:lineno` strip from non-stack paths)
+
+Re-ran `inspector:memory:report` on all 25 saved `.db` files
+against PR #653's `claude/strip-call-frame-line-from-paths`
+branch (commit `153ea60`). NodeLabeler-only change at report time
+— no re-analyse needed.
+
+### Status: ✅ closed (with caveat about corpus coverage)
+
+| Check                                              | Result |
+|----------------------------------------------------|--------|
+| `:lineno` in non-Call-Stack paths                  | ✅ 0 hits in the corpus (impl7 and impl8 both 0 — my corpus doesn't produce this leakage in the first place; see below) |
+| Call Stack section `function:lineno` form preserved | ✅ `#1 <main>:65` form intact across reports |
+| Findings count regression                          | ✅ 0 changed, 25 unchanged |
+
+### Caveat: corpus doesn't exercise the bug directly
+
+My 25 captured scripts pause at `fgets(STDIN)` at the top level,
+so the captured call stack is always shallow (`#0 fgets:-1`,
+`#1 <main>:N`). The bottleneck-path descent never reaches into a
+deeper `CallFrameContext` for any of the .db files I have.
+
+The user's original example —
+`Reli\Lib\…\MemoryLocationsCollector::collectAll:297::$sink->...` —
+came from a "reli profiling itself" capture, where the running
+collector is mid-frame in `collectAll` and the spine descends
+through that frame's locals. None of my 25 reports reproduce that
+shape.
+
+So T2.4's correctness rests on:
+
+- Unit tests (8/8 pass per PR — including the 4 new T2.4
+  cases on top of the G4 set)
+- Call Stack section's `:lineno` form preserved (positive
+  control — show the only render site that still requires the
+  line number stays on the with-line form)
+- No regression in the 25 reports
+
+Re-checking against a "reli profiling itself" capture would be
+the proof-positive run; pending whoever runs into that scenario
+again. Pending that, the code review of NodeLabeler's two-mode
+resolver (`frame_labels_with_line` vs `frame_labels_path_form`)
+is the strongest evidence.
