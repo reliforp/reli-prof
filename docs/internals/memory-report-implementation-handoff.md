@@ -515,6 +515,105 @@ top, without disrupting the work T2.1 does on the current-side.
 
 ---
 
+## T2.2 implementation notes — Spine drop point should name a path component, not a depth number
+
+Polish-tier T2 follow-up. Independent of T2.1 and T3, ~15 lines.
+
+### What's wrong today
+
+`TextReportFormatter::renderBottleneckSpine()` emits:
+
+    Spine: heaviest-child mass drops at depth 5 (30.24 MB → 10.00 MB);
+           leaf retains only 0 B
+
+`depth 5` is engineering-internal: the reader has to count path
+components from the start of `facts.path[]` to find what's at depth
+5, then map that back to the rendered `summary_path`. There's no
+context that would make "5" meaningful by itself — it's just an
+index into an array the reader doesn't see.
+
+For a real `bottleneck_path` like
+
+    Reli\...\MemoryLocationsCollector::collectAll:297::$sink->addressMinNode[0]
+
+"drops at depth 5" forces the reader to mentally split the rendered
+path into 6+ segments and count, just to identify *where* in their
+own variables the dominance breaks.
+
+### Proposed fix
+
+Render the drop position by **path component name** rather than depth
+index:
+
+    Spine: heaviest-child mass drops after $sink->addressMinNode
+           (30.24 MB → 10.00 MB); leaf retains only 0 B
+
+The pre-drop component is `facts.path[$drop_index]`. Two render
+shapes worth considering — both small:
+
+**(a) Single-line, drop-component named:**
+
+    Spine: heaviest-child mass drops after $sink->addressMinNode
+           (30.24 MB → 10.00 MB); leaf retains only 0 B
+
+**(b) Mini staircase showing where mass concentrates:**
+
+    Spine: 30.24 MB at $sink->addressMinNode
+         → 10.00 MB at [0]
+         → ... → 0 B (leaf)
+
+(a) is the simpler change; (b) gives a sharper visual when the
+spine is interesting. Either works.
+
+### Implementation sketch
+
+1. In `renderBottleneckSpine()` (around the `sprintf('Spine: ...')`
+   line), read `$finding->facts['path']` (already populated by
+   `DrillDownPass`).
+2. Resolve the drop-index component to a user-facing label. Two
+   options:
+   - Use `PathFormatter::toPhpSyntax($path_slice, $types_slice)`
+     on the prefix up to and including `$drop_index` — produces
+     the `$sink->addressMinNode`-style suffix that matches what
+     `summary_path` already shows.
+   - Or just take `$path[$drop_index]` raw and skip the
+     PathFormatter call (cheaper but inconsistent with the rest of
+     the path rendering — won't render `array_elements` correctly).
+3. The existing `depth %d` becomes either an "after `<component>`"
+   phrase or the staircase form.
+
+### Edge cases
+
+- **Long paths**: cap at last 2–3 components when the prefix is
+  long: `... ->config->servers[0]` rather than the full string.
+  `summary_path` already does similar truncation logic to learn
+  from.
+- **Path-only-up-to-drop**: the `summary_path` field on the
+  `bottleneck_path` finding shows the full leaf path. The Spine
+  line should show **the component where the drop occurs**, not
+  the leaf — those are different things and the reader needs the
+  former.
+- **No-drop case**: existing code returns `[]` (no spine line)
+  when there's no drop; keep that branch unchanged.
+
+### Verification plan
+
+Same artifacts (the 25 saved `.db` files in `/tmp/memreport-out/`).
+Re-run `inspector:memory:report` and check:
+
+- All existing `Spine:` lines still appear
+- `at depth N` substring is gone
+- The drop component is a recognisable user-side identifier (`$sink`,
+  `$decoded[data]`, etc.) and not an internal label like
+  `array_elements` or `value`
+
+Spot-check reports: `rw2_json-decode-huge`, `rw2_csv-mega`,
+`rw4_pdo-result-hoarding`, `rw4_eloquent-hydration`, and the
+profile-yourself one with the spine descending into
+`MemoryLocationsCollector::collectAll`.
+
+---
+
 ## Tier 3 implementation notes
 
 ### S12 — cluster findings by target across detector kinds
