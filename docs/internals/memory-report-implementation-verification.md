@@ -479,3 +479,53 @@ tradeoff").
 
 T2.1 ships the third row. The fourth is the resolution A refactor
 that's still parked.
+
+---
+
+## G4 follow-up verification (PR #651 — `is_tree=1` filter removed)
+
+PR #651 (`claude/canonical-names-include-non-tree-edges`, commit
+`d6aa1c7`) drops the `is_tree = 1` filter from all three sites
+(`NodeLabeler.php` SQL JOIN, `BinaryReportDataProvider.php`'s
+`castSection` and raw-bytes branches inside `loadCanonicalNames`).
+Re-ran `inspector:memory:report` against the 25 saved `.db` files
+on the new branch.
+
+### Status: ✅ closed
+
+The agreed acceptance grep:
+
+    grep -E 'class_table->[a-z]+\\' /tmp/memreport-out-impl*/rw*_*.report.txt
+
+| Stage         | Total hits | Reports affected |
+|---------------|------------|-------------------|
+| Before G4 (impl4 / pre-PR #651) | **9**     | **4**             |
+| After G4 (impl5 / PR #651)      | **0**     | **0**             |
+
+Spot-check expectations from the PR description, all confirmed:
+
+| Report          | Pre                                                       | Post                                                      |
+|-----------------|-----------------------------------------------------------|-----------------------------------------------------------|
+| `rw_phpunit`    | `class_table->generatedtest0->methods->runbare`           | `class_table->GeneratedTest0->methods->runBare`           |
+| `rw_phpunit`    | `class_table->composer\autoload\composerstaticinit32e1def...` | `class_table->Composer\Autoload\ComposerStaticInit32e1def...` |
+| `rw_twig`       | `class_table->twig\extension\coreextension->getattribute` | `class_table->Twig\Extension\CoreExtension->getAttribute` |
+| `rw3_static-cache` | `class_table->lookupservice / userrepository / queryparser / templaterenderer` | `class_table->LookupService / UserRepository / QueryParser / TemplateRenderer` |
+
+Regression check across the 25 reports: **0 changed, 25
+unchanged** in finding count. No spurious additions or
+disappearances.
+
+### B1 saga, complete
+
+| Stage                                  | What happens to a class name like `Twig\Extension\CoreExtension` |
+|----------------------------------------|------------------------------------------------------------------|
+| Original                               | `twig\extension\coreextension` (case-folded HashTable bucket key) |
+| PR #644 (T1 emit-time, **reverted**)   | `Twig\Extension\CoreExtension` — but broke PHP 8.x target-version CI |
+| PR #648 (T1 display-time, partial)     | `Twig\Extension\CoreExtension` for ~54% of classes; user-defined classes that arrived via `is_tree = 0` `name` edges (autoload / opcache) still rendered as case-folded |
+| PR #651 (G4)                           | All classes resolved (filter dropped). Corpus-wide `class_table->[a-z]\\` hits = 0. |
+
+T1's B1 / G1 / G4 chain is functionally complete. The remaining
+"function_table non-definition entries" gap (PR #648's
+out-of-scope note) only affects edges that don't have a
+`*FunctionDefinitionContext` target — internal builtins registered
+via different paths. Those are uncommon and not user-actionable.
