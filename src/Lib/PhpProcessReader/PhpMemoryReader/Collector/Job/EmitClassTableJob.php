@@ -159,6 +159,7 @@ final class EmitClassTableJob implements CollectorJob
 
         // Now emit the root with the populated diagnostic counters
         // baked into its attributes.
+        $memoBeforeEmit = $defined_classes_context->getMemoNodeId();
         $ctx->emitNode($defined_classes_context, null, 'class_table');
 
         // Confirm what actually landed on disk for the user's
@@ -169,8 +170,9 @@ final class EmitClassTableJob implements CollectorJob
         // id), and the diagnostic is itself buggy.
         $finalNodeId = $defined_classes_context->getMemoNodeId();
         fwrite(STDERR, sprintf(
-            "EmitClassTableJob: reserved node #%d, late-emitted as DefinedClassesContext at node #%s\n",
+            "EmitClassTableJob: reserved node #%d, memo before late-emit=%s, late-emitted as DefinedClassesContext at node #%s\n",
             $reserved,
+            $memoBeforeEmit === null ? '<unset>' : (string)$memoBeforeEmit,
             $finalNodeId === null ? '<unset>' : (string)$finalNodeId,
         ));
 
