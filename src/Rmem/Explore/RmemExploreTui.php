@@ -1680,10 +1680,24 @@ final class RmemExploreTui
     // ---- Rendering ----
 
     /**
-     * Build the full-width source-banner rows for $nodeId. Returns
-     * an empty list when the banner is turned off or the node has
-     * no source location (the caller then skips emitting rows and
-     * the status line moves up accordingly).
+     * Source-location kinds the resolver can return — `self`,
+     * `defined_at`, `held_by`. We always reserve room for all three
+     * so the focus bar / pane split don't shift around as the user
+     * navigates between nodes that have different counts of source
+     * info; layout instability there was previously routing clicks
+     * onto the children row that ended up underneath the banner
+     * after a re-render.
+     */
+    private const SOURCE_BANNER_RESERVED_ROWS = 3;
+
+    /**
+     * Build the full-width source-banner rows for $nodeId. The
+     * returned list is **always** sized to {@see self::SOURCE_BANNER_RESERVED_ROWS}
+     * when the banner is enabled — actual reverse-video rows for
+     * the kinds the node carries (anchored to the bottom, just
+     * above the footer), padded above with empty rows so total
+     * count stays constant. When the banner is toggled off the
+     * list is empty and no rows are reserved.
      *
      * Each `source_locations` kind (self / defined_at / held_by)
      * gets its own reverse-video row — mirrors the sidebar so a
@@ -1696,19 +1710,21 @@ final class RmemExploreTui
      */
     private function renderSourceBannerRows(?int $nodeId, int $cols): array
     {
-        if (!$this->showSourceBanner || $nodeId === null) {
-            return [];
-        }
-        /** @var list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}> $locs */
-        $locs = $this->model->nodeDetail($nodeId)['source_locations'];
-        if ($locs === []) {
+        if (!$this->showSourceBanner) {
             return [];
         }
         $maxWidth = $cols - 2;
         if ($maxWidth < 8) {
             return [];
         }
-        $rows = [];
+
+        $locs = [];
+        if ($nodeId !== null) {
+            /** @var list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}> $locs */
+            $locs = $this->model->nodeDetail($nodeId)['source_locations'];
+        }
+
+        $bannerRows = [];
         foreach ($locs as $loc) {
             $label = match ($loc['kind']) {
                 'self' => 'source',
@@ -1723,7 +1739,24 @@ final class RmemExploreTui
             // Reverse video keeps the banner visually distinct from
             // the status / footer rows without burning a color that
             // might clash with the user's terminal theme.
-            $rows[] = "\e[7m " . str_pad($text, $cols - 1) . "\e[27m";
+            $bannerRows[] = "\e[7m " . str_pad($text, $cols - 1) . "\e[27m";
+            if (count($bannerRows) >= self::SOURCE_BANNER_RESERVED_ROWS) {
+                break;
+            }
+        }
+
+        // Pad with blanks **above** the banner content so the
+        // banner is anchored to the bottom (just above the footer).
+        // Total row count is constant — the focus bar and pane
+        // split below it never have to move because of source
+        // changes during navigation.
+        $padding = self::SOURCE_BANNER_RESERVED_ROWS - count($bannerRows);
+        $rows = [];
+        for ($i = 0; $i < $padding; $i++) {
+            $rows[] = '';
+        }
+        foreach ($bannerRows as $row) {
+            $rows[] = $row;
         }
         return $rows;
     }
