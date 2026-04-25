@@ -1056,6 +1056,95 @@ Spine line when `bottleneck_path` shows `$decoded`).
 
 ---
 
+## T2.6 implementation notes — Quote string array keys in path display
+
+Polish-tier T2 follow-up. Independent of all other T2.* items.
+~5 lines in `PathFormatter::toPhpSyntax` (or its array-key
+rendering helper).
+
+### What's wrong
+
+Current path output renders both numeric and string array keys
+without quotes:
+
+    $decoded[data][10100][profile]
+    $bus->listeners[request.completed]
+    $cache[query_cfcd208495d565ef66e7dff9f98764da]
+
+These are read by PHP developers who normally write
+`$arr['data']`, `$arr[$var]`, `$arr[42]`. An unquoted bareword
+inside `[ ]` reads as either a constant or an undefined-constant
+warning depending on PHP version — never as a string literal.
+The path output diverges from that mental model just enough to
+slow the eye down.
+
+### Not about disambiguation
+
+PHP arrays auto-cast numeric-string keys to integers, so there's
+no semantic difference between `$arr[0]` and `$arr['0']` — both
+land in the same int-keyed slot. Quoting numeric keys would be
+incorrect (the runtime stores them as ints).
+
+The fix is purely about matching what PHP source code looks like.
+
+### Proposed fix
+
+In `PathFormatter::toPhpSyntax` (the array-element step), wrap
+non-numeric keys in single quotes:
+
+    if (preg_match('/^-?\d+$/', $key)) {
+        $rendered = "[$key]";        // numeric — leave bare
+    } else {
+        $rendered = "['$key']";      // string — quote
+    }
+
+Edge cases:
+
+- Keys containing single quotes themselves (rare in real captures
+  but possible): escape with `\'` so the rendered form parses as
+  the original PHP literal.
+- Keys that look numeric but aren't (e.g., `'01'`, `'0e123'`):
+  PHP leaves these as strings at runtime. The simple `^\d+$`
+  test treats them as numeric here, which is technically wrong
+  but matches user intuition for the common case. A stricter
+  check could use `is_int($key) || (is_string($key) &&
+  $key === (string)(int)$key)` if needed.
+
+### Examples after the fix
+
+| Before                                            | After                                                   |
+|---------------------------------------------------|---------------------------------------------------------|
+| `$decoded[data][10100][profile]`                  | `$decoded['data'][10100]['profile']`                    |
+| `$bus->listeners[request.completed]`              | `$bus->listeners['request.completed']`                  |
+| `$cache[query_cfcd208495d565ef66e7dff9f98764da]`  | `$cache['query_cfcd208495d565ef66e7dff9f98764da']`      |
+| `$rows[0][metadata][ref]`                         | `$rows[0]['metadata']['ref']`                           |
+
+### Verification plan
+
+Same artifacts (the 25 saved `.db` files in `/tmp/memreport-out/`).
+Re-run `inspector:memory:report` and check:
+
+- All `[<numeric>]` segments stay unquoted.
+- All `[<non-numeric>]` segments become `['<value>']`.
+- `summary_path`, Spine drop labels, `bottleneck_path`,
+  `choke_point` paths, `Top Arrays` paths all use the same
+  rendering (single source of truth in `PathFormatter`).
+- No `[<bareword>]` form remains anywhere in the corpus reports
+  except in known structural-only renderings outside `PathFormatter`'s
+  responsibility.
+
+Quick check:
+
+    grep -hoE '\[[a-zA-Z_][^]]*\]' /tmp/memreport-out/rw*_*.report.txt \
+      | grep -v "^\[\(HIGH\|MEDIUM\|LOW\|INFO\)\]" \
+      | sort -u | head -30
+
+Pre-fix returns lots of `[data]`, `[users]`, `[notes]`, etc.
+Post-fix returns roughly zero (the survivors are non-PathFormatter
+labels).
+
+---
+
 ## Tier 3 implementation notes
 
 ### S12 — cluster findings by target across detector kinds
