@@ -790,7 +790,14 @@ final class RmemExploreTui
             // List layout: header (1) + breadcrumb (2) + column header (3)
             // + separator (4), data rows start on 5.
             $bodyStart = 5;
-            if ($row < $bodyStart) {
+            // Cap the click target at the last visible body row so a
+            // press on the banner / footer / status doesn't get
+            // routed to a list index that happens to fall within the
+            // dataset but isn't currently on screen — relevant for
+            // Shift-bypass-less Ctrl+click scenarios where the click
+            // still reaches the TUI.
+            $bodyEnd = $totalRows - 2 - $this->lastRenderBannerRowCount;
+            if ($row < $bodyStart || $row > $bodyEnd) {
                 return [null, null];
             }
             $idx = $this->topRow + ($row - $bodyStart);
@@ -820,6 +827,10 @@ final class RmemExploreTui
         $parentsStart = 3;
         $parentsEnd = $halfH + 2;
         $childrenStart = $halfH + 5;
+        // Last visible terminal row inside the children pane —
+        // banner / footer / status sit at $childrenEnd+1 onwards
+        // and must not be hit-tested as children rows.
+        $childrenEnd = $totalRows - $bottomReserve;
         if ($row >= $parentsStart && $row <= $parentsEnd) {
             $idx = $this->parentTopRow + ($row - $parentsStart);
             if ($idx < 0 || $idx >= count($this->parentRows)) {
@@ -827,7 +838,7 @@ final class RmemExploreTui
             }
             return ['parents', $idx];
         }
-        if ($row >= $childrenStart) {
+        if ($row >= $childrenStart && $row <= $childrenEnd) {
             $idx = $this->childTopRow + ($row - $childrenStart);
             if ($idx < 0 || $idx >= count($this->childRows)) {
                 return [null, null];
