@@ -310,14 +310,62 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertStringNotContainsString("first line\nsecond line", $output);
     }
 
-    public function testFormatRendersBottleneckSpineDropLine(): void
+    public function testFormatRendersBottleneckSpineDropLineWithPathComponent(): void
     {
-        // bottleneck_path uses sizes[0] (spine root) as impact_bytes while
-        // showing the leaf path as summary. When the descent crosses into a
-        // uniform-sibling region the displayed size and path describe
-        // opposite ends of the chain. The formatter should emit a "Spine"
-        // explanatory line that names where mass drops and reports the
-        // leaf's actual retained size.
+        // T2.2: the spine line should name the path component the
+        // descent landed on ("drops after $decoded[data]"), not a
+        // depth integer that forces the reader to count segments in
+        // facts.path manually. PathFormatter renders the prefix in
+        // the same syntax as facts.summary_path so the two read
+        // consistently.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: '$decoded[data][10100][profile] (171.45 MB)',
+                facts: [
+                    // global_variables → array_elements → 'decoded' →
+                    // array_header → array_elements → 'data' → ...
+                    // PathFormatter strips the structural intermediaries
+                    // and renders ['$decoded', '[data]', ...].
+                    'path' => [
+                        'global_variables', 'array_elements', 'decoded',
+                        'array_header', 'array_elements', 'data',
+                        'array_header', 'array_elements', '10100', 'profile',
+                        'value', 'value',
+                    ],
+                    'path_types' => [
+                        '', '', '',
+                        '', '', '',
+                        '', '', 'ArrayElementContext', '',
+                        '', '',
+                    ],
+                    'sizes' => [
+                        325480905, 325479089, 325475106, 325475106, 324977898,
+                        3336, 3336, 3184, 2520, 2240, 2144, 2144,
+                    ],
+                ],
+                impact_bytes: 325480905,
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        // Names the drop position as a path component, not "depth 5".
+        $this->assertStringContainsString('Spine: heaviest-child mass drops after ', $output);
+        $this->assertStringNotContainsString('drops at depth', $output);
+        // After the drop, sizes flatline within ~10% — formatter should
+        // mark the leaf as one-of-many uniform siblings.
+        $this->assertStringContainsString('one of many similar-sized siblings', $output);
+    }
+
+    public function testFormatFallsBackToDepthIntegerWhenPathTypesMissing(): void
+    {
+        // Legacy / minimal facts (path / path_types absent — older
+        // captures and unit-test fixtures that pre-date T2.2). The
+        // spine line should still appear, falling back to the depth
+        // integer rather than skipping the line entirely.
         $result = new ReportResult([], [
             new Finding(
                 kind: 'bottleneck_path',
@@ -337,9 +385,41 @@ class TextReportFormatterTest extends BaseTestCase
         $output = $formatter->format($result);
 
         $this->assertStringContainsString('Spine: heaviest-child mass drops at depth 5', $output);
-        // After the drop, sizes flatline within ~10% — formatter should
-        // mark the leaf as one-of-many uniform siblings.
-        $this->assertStringContainsString('one of many similar-sized siblings', $output);
+    }
+
+    public function testFormatTruncatesLongSpineDropLabel(): void
+    {
+        // Very deep paths get truncated from the right so the Spine
+        // line stays inside terminal width. The pre-truncation prefix
+        // here is ~110 chars; the rendered label should start with
+        // "..." and keep the trailing ~47 chars.
+        $deep_path = [];
+        $deep_types = [];
+        for ($i = 0; $i < 30; $i++) {
+            $deep_path[] = 'verbose_property_name_' . $i;
+            $deep_types[] = '';
+        }
+        $sizes = array_fill(0, 31, 1_000_000);
+        $sizes[10] = 1000; // sharp drop at depth 10
+
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: 'long path summary',
+                facts: [
+                    'path' => $deep_path,
+                    'path_types' => $deep_types,
+                    'sizes' => $sizes,
+                ],
+                impact_bytes: $sizes[0],
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        $this->assertStringContainsString('drops after ...', $output);
     }
 
     public function testFormatOmitsBottleneckSpineLineForUniformDescent(): void

@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Formatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TextReportFormatter implements ReportFormatterInterface
@@ -427,14 +428,33 @@ final class TextReportFormatter implements ReportFormatterInterface
 
         $pre_drop_size = $sizes[$drop_index];
         $post_drop_size = $sizes[$drop_index + 1];
-        $line = sprintf(
-            'Spine: heaviest-child mass drops at depth %d'
-            . ' (%s → %s); leaf retains only %s',
-            $drop_index + 1,
-            SizeFormatter::format($pre_drop_size),
-            SizeFormatter::format($post_drop_size),
-            SizeFormatter::format($leaf_size),
-        );
+
+        // Name the drop position by the path component the descent
+        // landed on, not the depth integer ("at depth 5" forced the
+        // reader to count segments in `facts.path[]` to learn what was
+        // there). Format the path prefix up to and including the
+        // pre-drop component via PathFormatter so it matches the
+        // syntax used by `summary_path` ("$sink->addressMinNode" etc.).
+        $drop_label = self::formatSpineDropLabel($finding, $drop_index);
+        $line = $drop_label !== null
+            ? sprintf(
+                'Spine: heaviest-child mass drops after %s'
+                . ' (%s → %s); leaf retains only %s',
+                $drop_label,
+                SizeFormatter::format($pre_drop_size),
+                SizeFormatter::format($post_drop_size),
+                SizeFormatter::format($leaf_size),
+            )
+            : sprintf(
+                // Legacy path: facts predate path_types — fall back to
+                // the depth integer rather than emit nothing.
+                'Spine: heaviest-child mass drops at depth %d'
+                . ' (%s → %s); leaf retains only %s',
+                $drop_index + 1,
+                SizeFormatter::format($pre_drop_size),
+                SizeFormatter::format($post_drop_size),
+                SizeFormatter::format($leaf_size),
+            );
 
         $out = [$line];
 
@@ -483,5 +503,63 @@ final class TextReportFormatter implements ReportFormatterInterface
         }
 
         return $out;
+    }
+
+    /**
+     * Resolve the spine-drop position to a user-facing PHP-syntax label
+     * like `$sink->addressMinNode` (matching the format of
+     * `facts.summary_path`). Returns null when the finding doesn't carry
+     * `path` + `path_types` — the caller falls back to a depth integer
+     * in that case.
+     *
+     * Long prefixes are truncated to the trailing portion so the line
+     * stays inside terminal width: a path like
+     * `$container->config->servers[0]->endpoints[3]` becomes
+     * `...->endpoints[3]` past 50 chars.
+     *
+     * @psalm-suppress MixedAssignment, MixedArgument, MixedArgumentTypeCoercion
+     */
+    private static function formatSpineDropLabel(
+        Finding $finding,
+        int $drop_index,
+    ): ?string {
+        /** @var mixed $raw_path */
+        $raw_path = $finding->facts['path'] ?? null;
+        /** @var mixed $raw_types */
+        $raw_types = $finding->facts['path_types'] ?? null;
+        if (!is_array($raw_path) || !is_array($raw_types)) {
+            return null;
+        }
+        if ($drop_index < 0 || $drop_index >= count($raw_path)) {
+            return null;
+        }
+
+        /** @var list<string> $path_parts */
+        $path_parts = [];
+        foreach (array_slice($raw_path, 0, $drop_index + 1) as $p) {
+            if (!is_string($p)) {
+                return null;
+            }
+            $path_parts[] = $p;
+        }
+        /** @var list<string> $path_types */
+        $path_types = [];
+        foreach (array_slice($raw_types, 0, $drop_index + 1) as $t) {
+            $path_types[] = is_string($t) ? $t : '';
+        }
+
+        $label = PathFormatter::toPhpSyntax($path_parts, $path_types);
+        if ($label === '' || $label === '(root)') {
+            return null;
+        }
+
+        // Truncate from the right when the prefix grows long. 50 chars
+        // keeps the full Spine line under ~110 chars, comfortable for
+        // most terminals.
+        $max = 50;
+        if (strlen($label) > $max) {
+            $label = '...' . substr($label, -($max - 3));
+        }
+        return $label;
     }
 }

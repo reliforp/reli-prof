@@ -146,6 +146,7 @@ final class DrillDownPass implements PassInterface
                 ),
                 facts: [
                     'path' => $path_parts,
+                    'path_types' => $path_types,
                     'sizes' => $path_sizes,
                     'depth' => count($path_parts),
                     'summary_path' => $path_str,
