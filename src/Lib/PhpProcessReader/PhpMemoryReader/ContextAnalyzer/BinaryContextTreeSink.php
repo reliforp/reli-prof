@@ -490,7 +490,15 @@ final class BinaryContextTreeSink implements ContextTreeSink
             $new_cap *= 2;
         }
         $new_sizes = \Reli\Lib\FFI\FFIHelper::new("int64_t[{$new_cap}]");
-        $new_classes = \Reli\Lib\FFI\FFIHelper::new("int32_t[{$new_cap}]");
+        // Class slots hold string-dict IDs (unsigned 32-bit, with
+        // Format::NULL_STRING_ID = 0xFFFFFFFF reserved for "unset").
+        // `uint32_t` is the right type for that representation: a
+        // signed `int32_t` reads NULL_STRING_ID back as `-1`, which
+        // makes `=== Format::NULL_STRING_ID` (the natural guard) never
+        // match and silently leaves every per-node class id as NULL on
+        // disk — see `docs/internals/memory-report-t2-3-investigation.md`
+        // for the failure trail this caused on the binary report path.
+        $new_classes = \Reli\Lib\FFI\FFIHelper::new("uint32_t[{$new_cap}]");
         // Initialize new class slots to NULL_STRING_ID
         for ($i = 0; $i < $new_cap; $i++) {
             $new_classes[$i] = Format::NULL_STRING_ID;
@@ -515,7 +523,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
     }
 
     /**
-     * Get per-node class IDs as FFI int32 array (string dict IDs).
+     * Get per-node class IDs as FFI uint32 array (string dict IDs).
      */
     public function getPerNodeClasses(): ?\FFI\CData
     {
