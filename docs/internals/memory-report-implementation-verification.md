@@ -831,3 +831,67 @@ smaller change and produces the same observable result on this
 corpus, per the handoff's "either works; (B) is simpler"
 recommendation. (A) remains an option if the teams later need to
 unify a wider set of path-render sites against one elision helper.
+
+---
+
+## T2.6 verification (PR #656 — quote string array keys in path display)
+
+PR #656 wraps non-numeric array keys in single quotes inside
+`PathFormatter::toPhpSyntax`. Numeric keys stay bare. Embedded
+`'` and `\` in keys are escaped.
+
+### Status: ✅ closed (within stated scope)
+
+| Check                                          | Result |
+|------------------------------------------------|--------|
+| Bareword `[<string>]` in PathFormatter output  | ✅ dropped from 10+ unique forms to 3 (the 3 are non-PathFormatter — see below) |
+| Numeric keys remain bare                       | ✅ `[10100]`, `[0]`, etc. unchanged |
+| Findings count regression                      | ✅ 0 changed, 25 unchanged |
+
+### Sample renderings before / after
+
+| Report                  | Before                                                                | After                                                                       |
+|-------------------------|-----------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| `rw2_csv-mega`          | `$orders[0][items][0]`                                                | `$orders[0]['items'][0]`                                                    |
+| `rw2_json-decode-huge`  | `$decoded[data][10100][profile]`                                      | `$decoded['data'][10100]['profile']`                                        |
+| `rw3_messenger-envelopes` | `$processedEnvelopes[0]->stamps[RetryStamp]`                        | `$processedEnvelopes[0]->stamps['RetryStamp']`                              |
+| `rw3_static-cache`      | `class_table->LookupService->...->staticCache[lookup_…][data]`        | `class_table->LookupService->...->staticCache['lookup_…']['data']`          |
+
+### Residual bareword: DedupCandidatePass label format
+
+Three patterns survive across the corpus:
+
+    GraphNode::$outEdges[value] (GraphNode)
+    Product::$variants[value] (Variant)
+    Twig\Node\Expression\GetAttrExpression::$nodes[value] (Twig\…\ConstantExpression)
+
+These come from `DedupCandidatePass::buildDedupLabel()`:
+
+    $label = "{$source_class}::\${$owner_prop}[{$link_name}]";
+
+The `[{$link_name}]` interpolation injects the raw Zend HashTable
+bucket value-slot name (`value`), which is a Zend-internal term —
+not a user array key. PR #656's scope was PathFormatter only (per
+the handoff: "modulo non-PathFormatter labels"), so this label
+format wasn't touched.
+
+The semantics differ from PathFormatter's case:
+
+- PathFormatter renders user-side array keys captured in the
+  graph → quote because they're literal user data.
+- buildDedupLabel encodes the structural relationship "each
+  element of `$owner_prop`'s value slot reaches a `target_class`"
+  → `[value]` is a Zend-internal label. Reading it as
+  `$variants['value']` is wrong — there's no string key `'value'`,
+  the iteration is over all elements.
+
+Possible follow-up (call it T2.7 if pursued):
+
+- Drop `[value]` entirely: `Product::$variants → Variant`
+- Or use an "iteration over elements" mark:
+  `Product::$variants[*] (Variant)`
+- Or arrow form: `Product::$variants → Variant: 90,000 copies …`
+
+Each is a small DedupCandidatePass change. Not a regression in
+T2.6 — just a PathFormatter-vs-DedupCandidatePass label scope
+asymmetry.
