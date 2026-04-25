@@ -456,15 +456,24 @@ final class TextReportFormatter implements ReportFormatterInterface
         // T1+T2 verification doc on the research branch for examples.
         if ($drop_index + 2 < count($sizes)) {
             $tail = array_slice($sizes, $drop_index + 1);
+            // The outer length check guarantees $tail has ≥ 2 elements, so
+            // max()/min() are safe — but psalm can't infer that, so seed
+            // the running min/max from the first element instead.
             $has_sharp_step = false;
-            for ($i = 0; $i < count($tail) - 1; $i++) {
-                if ($tail[$i + 1] * 3 < $tail[$i]) {
+            $tail_max = $tail[0];
+            $tail_min = $tail[0];
+            for ($i = 0; $i < count($tail); $i++) {
+                if ($i + 1 < count($tail) && $tail[$i + 1] * 3 < $tail[$i]) {
                     $has_sharp_step = true;
-                    break;
+                }
+                if ($tail[$i] > $tail_max) {
+                    $tail_max = $tail[$i];
+                }
+                if ($tail[$i] < $tail_min) {
+                    $tail_min = $tail[$i];
                 }
             }
-            $tail_max = max($tail);
-            $tail_min = max(1, min($tail));
+            $tail_min = max(1, $tail_min);
             $tail_spread_bounded = ($tail_max / $tail_min) < 4.0;
 
             if (!$has_sharp_step || $tail_spread_bounded) {
