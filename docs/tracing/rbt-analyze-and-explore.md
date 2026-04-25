@@ -24,8 +24,8 @@ Any of reli's `.rbt`-emitting modes produce input these commands can
 read:
 
 ```bash
-# inspector:trace, single .rbt file
-sudo ./reli inspector:trace -p <pid> --output-format=rbt -o trace.rbt
+# inspector:trace, single .rbt file (rbt format is auto-selected from the .rbt extension)
+sudo ./reli inspector:trace -p <pid> -o trace.rbt
 
 # inspector:daemon, one .rbt per worker
 sudo ./reli inspector:daemon -P "^php-fpm" --output-format=rbt -o /tmp/traces/

@@ -36,7 +36,8 @@ reli inspector:trace -p <pid> \
   --trace-var='memory::memory_get_peak_usage'
 
 # Binary (rbt) output — annotations ride on SAMPLE_ANNOTATION events
-reli inspector:trace -p <pid> -F rbt -o trace.rbt \
+# (-F rbt is implied by the .rbt extension on -o)
+reli inspector:trace -p <pid> -o trace.rbt \
   --trace-var='global::$counter'
 ```
 
@@ -79,7 +80,7 @@ equivalents. Available names: `memory_get_usage`, `memory_get_peak_usage`,
 For `local::` and `func_static::`, the function name is **required**; use
 `<main>` for the top-level script scope.
 
-## Output Formats
+## Annotations in each output format
 
 ### phpspy text (`-F template:phpspy`, default)
 

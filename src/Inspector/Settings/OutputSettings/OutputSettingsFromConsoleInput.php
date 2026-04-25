@@ -34,7 +34,8 @@ final class OutputSettingsFromConsoleInput
                 'output-format',
                 'F',
                 InputOption::VALUE_OPTIONAL,
-                'output format (template:phpspy|template:phpspy_with_opcode|template:json_lines|rbt|rbt-bundled)'
+                'output format (template:phpspy|template:phpspy_with_opcode|template:json_lines|rbt|rbt-bundled).'
+                . ' Default: when -o ends with .rbt, rbt is selected; otherwise the configured template (phpspy).'
             )
             ->addOption(
                 'template',
@@ -76,6 +77,19 @@ final class OutputSettingsFromConsoleInput
             }
         }
 
+        $output_path = $input->getOption('output');
+        if (!is_null($output_path) and !is_string($output_path)) {
+            throw OutputSettingsException::create(
+                OutputSettingsException::OUTPUT_IS_NOT_STRING
+            );
+        }
+
+        if ($output_format === null && is_string($output_path)) {
+            if (str_ends_with(strtolower($output_path), '.rbt')) {
+                $output_format = 'rbt';
+            }
+        }
+
         if ($output_format === null) {
             $default_template = NullableCast::toString($this->config->get('output.template.default'));
             if ($default_template !== null) {
@@ -85,13 +99,6 @@ final class OutputSettingsFromConsoleInput
                     OutputSettingsException::TEMPLATE_NOT_SPECIFIED
                 );
             }
-        }
-
-        $output_path = $input->getOption('output');
-        if (!is_null($output_path) and !is_string($output_path)) {
-            throw OutputSettingsException::create(
-                OutputSettingsException::OUTPUT_IS_NOT_STRING
-            );
         }
 
         /** @var string $rbt_timestamps */

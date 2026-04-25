@@ -19,7 +19,7 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | I want to... | Use | More |
 |---|---|---|
 | Attach to a running process | `inspector:trace -p <pid>` | [tracing/capturing-traces.md](tracing/capturing-traces.md) |
-| Capture to a compact binary file for later analysis **(recommended)** | `inspector:trace -p <pid> -F rbt -o trace.rbt` | [tracing/binary-trace-format.md](tracing/binary-trace-format.md) |
+| Capture to a compact binary file for later analysis **(recommended)** | `inspector:trace -p <pid> -o trace.rbt` | [tracing/binary-trace-format.md](tracing/binary-trace-format.md) |
 | Trace many processes at once (e.g. a php-fpm pool) | `inspector:daemon -P <regex>` | [tracing/capturing-traces.md](tracing/capturing-traces.md) |
 | Live `top`-style aggregation | `inspector:top -P <regex>` | [tracing/capturing-traces.md](tracing/capturing-traces.md) |
 | Include C-level frames | add `--with-native-trace` | [tracing/advanced-capture.md](tracing/advanced-capture.md) |

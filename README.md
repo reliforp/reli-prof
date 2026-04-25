@@ -22,8 +22,8 @@ A taste of what reli looks like in use. For the full walkthroughs, follow each s
 Capture to `.rbt` in one terminal while running `rbt:analyze` through `watch(1)` in another for a live-refreshing "top of the hot frames" view — the data streams in as samples are taken.
 
 ```bash
-# Terminal A — capture
-$ reli inspector:trace -p <pid> -F rbt -o trace.rbt
+# Terminal A — capture (`-F rbt` is implied by the .rbt extension)
+$ reli inspector:trace -p <pid> -o trace.rbt
 
 # Terminal B — live analysis, refreshed every 0.2 seconds
 $ watch -n0.2 'reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail,self+total" --crop-anchor=right --path=short --crop=auto < trace.rbt'
@@ -35,6 +35,8 @@ $ watch -n0.2 'reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail
 
 **What you're looking at.** reli is a *sampling* profiler — every ~10 ms it takes a snapshot of the target's PHP call stack. The top pane is the most recent snapshot (what the target is running *right now*). The self / total tables below rank frames by how many accumulated snapshots they've appeared in: more appearances = more wall time spent there. *Self* is time directly in the frame; *Total* is time in the frame **plus** anything it called.
 
+**Compact enough to leave running.** At default 10 ms sampling, an hour of trace is typically only a few MB of `.rbt` — interning and run-length encoding bring it down to a handful of bytes per sample, so `.rbt` files are easy to keep around, ship to a colleague, or analyse later. Capture now, dig in when you have time.
+
 Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md).
 
 ### Interactive trace browsing — `rbt:explore`
@@ -42,7 +44,7 @@ Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-a
 Capture to `.rbt`, open the sandwich / flamegraph / tree TUI.
 
 ```bash
-$ reli inspector:trace -p <pid> -F rbt -o trace.rbt
+$ reli inspector:trace -p <pid> -o trace.rbt
 $ reli rbt:explore trace.rbt
 ```
 
