@@ -1943,3 +1943,44 @@ typedef struct _zend_accel_shared_globals {
 	const void **jit_exit_groups;
 	zend_string_table interned_strings;
 } zend_accel_shared_globals;
+
+/* ext/libxml/php_libxml.h — SimpleXML/libxml Tier 1 support.
+ * PHP 8.4 restructured php_libxml_ref_obj: added private_data + handlers
+ * pointers and moved refcount to uint32 + two 8-bit bitfields for
+ * class_type / quirks_mode. We represent the two bitfields as one
+ * unsigned int since Tier 1 only needs the total struct size. */
+typedef struct _php_libxml_node_ptr {
+	void *node;
+	unsigned int refcount;
+	void *_private;
+} php_libxml_node_ptr;
+
+typedef struct _php_libxml_ref_obj {
+	void        *ptr;
+	void        *doc_props;
+	size_t       cache_tag_modification_nr;
+	void        *private_data;
+	void        *handlers;
+	unsigned int refcount;
+	unsigned int class_and_quirks;
+} php_libxml_ref_obj;
+
+/* ext/simplexml/php_simplexml.h — layout is stable from PHP 7.0 through 8.4
+ * for the fields Tier 1 cares about. iter.name/nsprefix switched from
+ * xmlChar* to zend_string* in 8.4 but both are 8-byte pointers. */
+typedef struct {
+	php_libxml_node_ptr *node;
+	php_libxml_ref_obj  *document;
+	HashTable           *properties;
+	void                *xpath;
+	struct {
+		char    *name;
+		char    *nsprefix;
+		int      isprefix;
+		int      type;
+		zval     data;
+	} iter;
+	zval           tmp;
+	zend_function *fptr_count;
+	zend_object    zo;
+} php_sxe_object;

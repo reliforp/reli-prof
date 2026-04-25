@@ -73,6 +73,10 @@ final class ZendObjectMemoryLocation extends RefcountedMemoryLocation
             [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('pdo_stmt_t', 'std');
             $address -= $std_offset;
             $size = $zend_object->getMemorySize($dereferencer) + $std_offset;
+        } elseif ($class_name === 'SimpleXMLElement' || $class_name === 'SimpleXMLIterator') {
+            [$std_offset] = $zend_type_reader->getOffsetAndSizeOfMember('php_sxe_object', 'zo');
+            $address -= $std_offset;
+            $size = $zend_object->getMemorySize($dereferencer) + $std_offset;
         } else {
             $size = $zend_object->getMemorySize($dereferencer);
         }
