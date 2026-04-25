@@ -1897,7 +1897,13 @@ final class RmemExploreTui
             $wrap("refcount: {$detail['refcount']}");
         }
         if ($detail['string_value'] !== null) {
-            $val = RmemModel::sanitizeForTerminal($detail['string_value']);
+            // Cap the sanitize input: $wrap() shows at most 3 sidebar
+            // rows, so anything past that is discarded anyway. Without
+            // the cap a multi-MB string_value would drag two preg_replace
+            // scans over megabytes on every redraw and turn keypresses
+            // into a visible freeze.
+            $valMax = max(120, $usable * 3 + 32);
+            $val = RmemModel::sanitizeForTerminal($detail['string_value'], $valMax);
             $wrap("val: \"{$val}\"");
         }
         foreach ($detail['source_locations'] as $loc) {
