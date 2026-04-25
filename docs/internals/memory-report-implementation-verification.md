@@ -698,3 +698,83 @@ the proof-positive run; pending whoever runs into that scenario
 again. Pending that, the code review of NodeLabeler's two-mode
 resolver (`frame_labels_with_line` vs `frame_labels_path_form`)
 is the strongest evidence.
+
+---
+
+## T2.3 verification (PR #654 — binary `node_classes` writer signedness)
+
+PR #654 fixes the T2.3 root cause identified by the investigation
+session:
+`BinaryContextTreeSink::$perNodeClasses` was an FFI `int32_t[]`
+accumulator, but the unset sentinel `Format::NULL_STRING_ID`
+(`0xFFFFFFFF`) read back through a signed slot as `-1`. The
+update guard `=== Format::NULL_STRING_ID` (= `4294967295`)
+therefore never matched, slots stayed null, and the on-disk
+`node_classes` section came out all-NULL. Fix: switch the
+accumulator to `uint32_t[]` (same wire bytes, correct PHP-side
+read-back).
+
+### Why my SQLite-only corpus missed this
+
+The 25 saved `.db` files in `/tmp/memreport-out/` are SQLite
+intermediate output. `inspector:memory:report` against a `.db`
+takes the SQL path, which reads `class_name` straight from
+`LocationRow` and isn't affected by the binary writer bug. To
+reproduce the bug I had to re-analyze with
+`--output-format=binary` and feed the binary intermediate to
+`inspector:memory:report`.
+
+The bug was real but invisible to a SQLite-only corpus —
+explaining why the `dedup_candidate: raw:` example the user
+originally shared (presumably from a binary-path run) was never
+reproducible from any of the .db files I had.
+
+### Status: ✅ closed
+
+Verified on `rw3_doctrine-uow.rmem` re-analyzed to binary
+intermediate, before and after PR #654:
+
+| Finding                                                  | Before                              | After                                              |
+|----------------------------------------------------------|-------------------------------------|----------------------------------------------------|
+| 90,000 Variant via Product::$variants                    | `value: 90,000 ...`                 | `Product::$variants[value] (Variant): 90,000 ...`  |
+| 30,000 ProductProxy via Product::$category               | `value: 30,000 x 88 B`              | `value (ProductProxy): 30,000 x 88 B`              |
+| 30,000 ZendString descriptions / interned strings        | `value: 30,000 x 180 B` etc.        | unchanged (target is a string, not an object — legitimately no class to surface) |
+
+After the fix, the binary path's dedup_candidate labels match the
+SQL path's exactly on the same `.rmem`. Two findings that
+previously dropped to the bare `value:` form now read with full
+ownership info. The remaining `value:` entries are the
+"target is a string / non-object location" cases where there
+genuinely is no class to surface.
+
+### What's not in PR #654
+
+The original T2.3 doc proposed a `?::$link_name -> TargetClass`
+display fallback as a second line of defence in
+`DedupCandidatePass::buildDedupLabel`. PR #654 deliberately skips
+it — once the writer is fixed, the only observed bare-label case
+goes away, and the fallback would be guarding speculative future
+failures with no concrete data behind them. Per CLAUDE.md's
+no-hypothetical-features guidance, fail-loud > softened defence.
+Filed as the explicit non-goal in the PR description.
+
+The investigation also recommended (3) a codebase-wide audit of
+other `int32_t[]` FFI accumulators using `=== NULL_STRING_ID`
+guards and (4) a sweep for other substrate consumers degrading
+silently on the binary path. Both are separate follow-ups for the
+verification team — neither blocks closing T2.3.
+
+### Methodology lesson
+
+T2.3 is a clean example of why my earlier corpus-only verification
+runs missed a real bug: the entire 25-report corpus was SQLite,
+and the SQL path reads `class_name` from `LocationRow` directly
+without touching the buggy `node_classes` section. The bug only
+manifested on the binary path — which is what `rmem:explore`,
+`rmem:viz`, and the parallel binary-report consumers actually use.
+
+For future verification rounds, **regenerating reports against
+both `--output-format=sqlite3` and `--output-format=binary`**
+would catch this kind of path-specific regression early. Adding
+that to the verification checklist for any change touching the
+binary-format writer or its readers.
