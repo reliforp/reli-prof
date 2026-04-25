@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\MemoryDump;
 
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Inspector\Watch\RssReader;
 use Reli\Lib\Log\Log;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
@@ -73,6 +74,10 @@ final class MemoryDumper
         );
 
         $pid = $process_specifier->pid;
+        // Capture RSS up-front so the figure embedded in the dump
+        // reflects the target's footprint at snapshot time, not whatever
+        // the PID happens to point at when the dump is replayed later.
+        $rss_bytes = (new RssReader())->read($pid);
         $memory_map = $this->process_memory_map_creator
             ->getProcessMemoryMap($pid);
 
@@ -615,6 +620,7 @@ final class MemoryDumper
             $cg_address,
             $all_areas,
             $regions_data,
+            $rss_bytes,
         );
 
         $total_size = 0;

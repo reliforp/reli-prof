@@ -79,6 +79,7 @@ class MemoryDumpWriterTest extends TestCase
             0x7f00cafebabe,
             $memory_areas,
             $regions,
+            107798528,
         );
 
         $this->assertFileExists($this->tmp_file);
@@ -95,7 +96,7 @@ class MemoryDumpWriterTest extends TestCase
 
         // Format version
         $result = unpack('Vval', fread($fp, 4));
-        $this->assertSame(1, $result['val']);
+        $this->assertSame(2, $result['val']);
 
         // PHP version
         $len = unpack('Vval', fread($fp, 4))['val'];
@@ -113,6 +114,10 @@ class MemoryDumpWriterTest extends TestCase
         // CG address
         $cg_address = unpack('Pval', fread($fp, 8))['val'];
         $this->assertSame(0x7f00cafebabe, $cg_address);
+
+        // RSS bytes (v2)
+        $rss_bytes = unpack('Pval', fread($fp, 8))['val'];
+        $this->assertSame(107798528, $rss_bytes);
 
         // Memory map count
         $memory_map_count = unpack('Vval', fread($fp, 4))['val'];
@@ -216,6 +221,33 @@ class MemoryDumpWriterTest extends TestCase
         $fp = fopen($this->tmp_file, 'rb');
         $magic = fread($fp, 8);
         $this->assertSame("RELIMEM\0", $magic);
+        fclose($fp);
+    }
+
+    #[Test]
+    public function testRssBytesNullSerializedAsMinusOne(): void
+    {
+        $writer = new MemoryDumpWriter();
+        $writer->write(
+            $this->tmp_file,
+            42,
+            'v83',
+            0x1000,
+            0x2000,
+            [],
+            [],
+            null,
+        );
+
+        $fp = fopen($this->tmp_file, 'rb');
+        // Skip magic(8) + version(4) + php_version(string) + pid(8) + eg(8) + cg(8)
+        fread($fp, 8 + 4);
+        $len = unpack('Vval', fread($fp, 4))['val'];
+        fread($fp, $len);
+        fread($fp, 8 + 8 + 8);
+        // rss_bytes
+        $rss_raw = unpack('qval', fread($fp, 8))['val'];
+        $this->assertSame(-1, $rss_raw);
         fclose($fp);
     }
 }

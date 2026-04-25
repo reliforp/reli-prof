@@ -131,7 +131,7 @@ class MemoryDumpRoundtripTest extends TestCase
 
         // version
         $ver = unpack('Vval', fread($fp, 4));
-        $this->assertSame(1, $ver['val']);
+        $this->assertSame(2, $ver['val']);
 
         // php_version
         $len = unpack('Vval', fread($fp, 4))['val'];
@@ -147,6 +147,10 @@ class MemoryDumpRoundtripTest extends TestCase
         $this->assertSame(0x5000, $eg);
         $cg = unpack('Pval', fread($fp, 8))['val'];
         $this->assertSame(0x6000, $cg);
+
+        // rss_bytes (v2): caller passed default null → -1 sentinel
+        $rss = unpack('qval', fread($fp, 8))['val'];
+        $this->assertSame(-1, $rss);
 
         // counts
         $map_count = unpack('Vval', fread($fp, 4))['val'];

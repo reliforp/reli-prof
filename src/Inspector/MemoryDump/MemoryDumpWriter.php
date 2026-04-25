@@ -18,11 +18,13 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 final class MemoryDumpWriter
 {
     private const MAGIC = "RELIMEM\0";
-    private const FORMAT_VERSION = 1;
+    private const FORMAT_VERSION = 2;
 
     /**
      * @param array<array{address: int, size: int, data: string}> $regions
      * @param ProcessMemoryArea[] $memory_areas
+     * @param int|null $rss_bytes RSS in bytes captured at dump time, or
+     *     null when /proc/<pid>/statm was unreadable.
      */
     public function write(
         string $output_path,
@@ -32,6 +34,7 @@ final class MemoryDumpWriter
         int $cg_address,
         array $memory_areas,
         array $regions,
+        ?int $rss_bytes = null,
     ): void {
         // Delegate to the streaming path so there is a single code path.
         $this->writeStreaming(
@@ -47,6 +50,7 @@ final class MemoryDumpWriter
                     yield $region;
                 }
             })(),
+            $rss_bytes,
         );
     }
 
@@ -63,6 +67,8 @@ final class MemoryDumpWriter
      *
      * @param ProcessMemoryArea[] $memory_areas
      * @param iterable<array{address: int, size: int, data: string}> $regions
+     * @param int|null $rss_bytes RSS in bytes captured at dump time, or
+     *     null when /proc/<pid>/statm was unreadable.
      * @return array{region_count: int, total_bytes: int}
      */
     public function writeStreaming(
@@ -74,6 +80,7 @@ final class MemoryDumpWriter
         array $memory_areas,
         int $estimated_region_count,
         iterable $regions,
+        ?int $rss_bytes = null,
     ): array {
         $fp = fopen($output_path, 'wb');
         if ($fp === false) {
@@ -88,6 +95,7 @@ final class MemoryDumpWriter
                 $cg_address,
                 count($memory_areas),
                 $estimated_region_count,
+                $rss_bytes,
             );
             $this->writeMemoryMap($fp, $memory_areas);
 
@@ -133,6 +141,7 @@ final class MemoryDumpWriter
         int $cg_address,
         int $memory_map_count,
         int $region_count,
+        ?int $rss_bytes,
     ): int {
         $buf = self::MAGIC;
         $buf .= pack('V', self::FORMAT_VERSION);
@@ -140,6 +149,8 @@ final class MemoryDumpWriter
         $buf .= pack('P', $pid);
         $buf .= pack('P', $eg_address);
         $buf .= pack('P', $cg_address);
+        // v2: rss_bytes (int64, signed). -1 = unavailable.
+        $buf .= pack('q', $rss_bytes ?? -1);
         $buf .= pack('V', $memory_map_count);
         $region_count_offset = strlen($buf);
         $buf .= pack('V', $region_count);
