@@ -846,6 +846,107 @@ unknowable, e.g. dynamic class loading).
 
 ---
 
+## T2.4 implementation notes — Call-frame line numbers leak into non-stack path labels
+
+Polish-tier T2 follow-up. Independent of all other T2.* items,
+~10 lines.
+
+### What's wrong
+
+`NodeLabeler` stores a single string per call-frame node:
+
+    // src/Inspector/Output/MemoryOutput/Report/Substrate/NodeLabeler.php:35
+    /** @var array<int, string> node_id => "function_name:lineno" */
+    private array $frame_labels = [];
+
+`resolvePathLabel($link_name, $child_node_id)` returns this string
+verbatim regardless of the calling context. The `:lineno` suffix
+appears in every report section that traverses a call-frame node
+on the way to user-land state, even though only the explicit
+**Call Stack** rendering needs the line number for disambiguation.
+
+Example from `bottleneck_path`:
+
+    Reli\…\MemoryLocationsCollector::collectAll:297::$sink->addressMinNode[0]
+                                          ^^^^
+                                       noise — $sink doesn't depend on
+                                       which line the frame is paused at
+
+For Call Stack output the `:297` is genuinely informative ("we paused
+at line 297 of `collectAll`"). For an ownership chain it just
+distracts.
+
+### Proposed fix
+
+Two-part change:
+
+**(1) Strip the line number when not rendering Call Stack.** Either:
+- Add a `$include_call_site` flag to `resolvePathLabel()` (default
+  `false`), set to `true` only at the Call Stack render site.
+- Or store two maps in `NodeLabeler`: `frame_labels_with_line` and
+  `frame_labels_function_only`. Pick by context.
+
+**(2) Wrap the bare function name in parens for path contexts** so
+the call-frame nature is obvious without ambiguity against PHP's
+`Class::staticMethod::$staticProp` syntax:
+
+    Before:  MemoryLocationsCollector::collectAll:297::$sink->...
+    After:   MemoryLocationsCollector::collectAll()::$sink->...
+
+The `()` clearly marks the frame as an invocation rather than a
+class scope, while keeping `::` as the consistent "scope into" join.
+
+### Final form by context
+
+| Where rendered                       | Format                       | Example                                      |
+|--------------------------------------|------------------------------|----------------------------------------------|
+| Call Stack section                   | `function_name:lineno`       | `#0 MemoryLocationsCollector::collectAll:297` |
+| `bottleneck_path` / other paths      | `function_name()::$var…`     | `MemoryLocationsCollector::collectAll()::$sink->addressMinNode[0]` |
+| `Spine:` drop annotation (T2.2)      | same as path                 | `Spine: drops after collectAll()::$sink`     |
+
+### Files
+
+- `src/Inspector/Output/MemoryOutput/Report/Substrate/NodeLabeler.php`
+  (the `frame_labels` map and `resolvePathLabel`)
+- Whatever passes / formatter sites use the labeler — most need the
+  no-lineno mode; only the Call Stack render site (in
+  `TextReportFormatter` for the "=== Overview ===" block) needs the
+  `:lineno` form
+
+### Edge cases
+
+- **`()` already in the function name** (closure name might end up
+  including parens): unlikely, but keep the formatter idempotent
+  (don't double-wrap).
+- **Internal functions / built-ins**: same form, `()` reads
+  naturally — `internalFunction()::...` is consistent.
+- **Anonymous closures**: today they get a synthetic name like
+  `{closure}:LineNo`. The same `:lineno` strip applies; rendering
+  becomes `{closure}()::...`.
+
+### Verification plan
+
+Same artifacts (the 25 saved `.db` files in `/tmp/memreport-out/`).
+Re-run `inspector:memory:report` and check:
+
+- Call Stack section preserves `:lineno` form unchanged.
+- All other sections (`bottleneck_path`, `choke_point`,
+  `Top Arrays` paths, `Spine:` drop labels) render call frames as
+  `function_name()` without the line number.
+
+Quick check across the corpus:
+
+    grep -hE '::[a-zA-Z_][a-zA-Z0-9_]*:[0-9]+::' \
+      /tmp/memreport-out/rw*_*.report.txt
+
+should return only Call Stack lines (or zero matches if the formatter
+strips even there in the rare case it's not needed).
+
+Spot-check reports include any "reli profiling itself" capture
+where `MemoryLocationsCollector::collectAll` shows up on the spine.
+
+---
+
 ## Tier 3 implementation notes
 
 ### S12 — cluster findings by target across detector kinds
