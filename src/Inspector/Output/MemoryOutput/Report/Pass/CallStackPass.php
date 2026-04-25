@@ -86,7 +86,11 @@ final class CallStackPass implements PassInterface
         $framesByNo = [];
         foreach ($this->substrate->getChildren($callFramesNodeId) as $child_id) {
             $link_name = $this->substrate->getTreeLinkName($child_id) ?? '?';
-            $label = $labeler->resolvePathLabel($link_name, $child_id);
+            // Call Stack is the one rendering site that benefits from
+            // the line-number suffix ("paused at line N of fn"); every
+            // other consumer of NodeLabeler treats `:lineno` as noise
+            // and gets the path form ("fn()") by default.
+            $label = $labeler->resolvePathLabel($link_name, $child_id, include_call_site: true);
             // resolvePathLabel returns the link_name unchanged when
             // the child has no function_name attribute. That can't
             // happen for a real CallFrameContext but we handle it

@@ -148,6 +148,133 @@ class NodeLabelerTest extends BaseTestCase
         );
     }
 
+    public function testCallFrameDefaultPathFormStripsLineNumberAndAppendsParens(): void
+    {
+        // T2.4: by default, NodeLabeler returns the path-form for
+        // call-frame nodes — `function_name()`, no `:lineno`. The
+        // line number is noise outside the Call Stack section
+        // ("$sink doesn't depend on which line collectAll happens
+        // to be paused at"); the parens disambiguate the
+        // call-frame scope from PHP's `Class::staticMethod`.
+        $db = $this->createDirectDb();
+
+        $frame_node_id = 500;
+        $this->insertContextNode($db, $frame_node_id, 'CallFrameContext');
+        $this->insertAttribute($db, $frame_node_id, 'function_name', 'collectAll');
+        $this->insertAttribute($db, $frame_node_id, 'lineno', '297');
+
+        $labeler = new NodeLabeler($db, 1);
+
+        $this->assertSame(
+            'collectAll()',
+            $labeler->resolvePathLabel('?', $frame_node_id),
+            'default mode strips :lineno and adds ()',
+        );
+    }
+
+    public function testCallFrameWithIncludeCallSiteKeepsLineNumber(): void
+    {
+        // The Call Stack render site opts into `include_call_site:
+        // true` because the line number is exactly what disambiguates
+        // "where in this function did the snapshot catch us".
+        $db = $this->createDirectDb();
+
+        $frame_node_id = 600;
+        $this->insertContextNode($db, $frame_node_id, 'CallFrameContext');
+        $this->insertAttribute($db, $frame_node_id, 'function_name', 'collectAll');
+        $this->insertAttribute($db, $frame_node_id, 'lineno', '297');
+
+        $labeler = new NodeLabeler($db, 1);
+
+        $this->assertSame(
+            'collectAll:297',
+            $labeler->resolvePathLabel('?', $frame_node_id, include_call_site: true),
+        );
+    }
+
+    public function testCallFrameWithoutLinenoIsHandledIdempotently(): void
+    {
+        // No `lineno` attribute. The path form is still
+        // `function_name()`, the Call Stack form is just
+        // `function_name`.
+        $db = $this->createDirectDb();
+
+        $frame_node_id = 700;
+        $this->insertContextNode($db, $frame_node_id, 'CallFrameContext');
+        $this->insertAttribute($db, $frame_node_id, 'function_name', '{closure}');
+
+        $labeler = new NodeLabeler($db, 1);
+
+        $this->assertSame(
+            '{closure}()',
+            $labeler->resolvePathLabel('?', $frame_node_id),
+        );
+        $this->assertSame(
+            '{closure}',
+            $labeler->resolvePathLabel('?', $frame_node_id, include_call_site: true),
+        );
+    }
+
+    public function testBinaryPathFrameLabelIsSplitCorrectly(): void
+    {
+        // The binary report path passes pre-baked
+        // "function_name:lineno" strings via $preloaded_frame_labels.
+        // The labeler must split them back into the two display forms
+        // even when the function name itself contains "::" (a static
+        // method's `Class::method` shape).
+        $preloaded_frame_labels = [
+            10 => 'plain_function:42',
+            11 => 'App\\Service\\Worker::run:123',
+            12 => 'no_lineno_function',
+            13 => 'App\\Util\\X::lookup', // no numeric suffix — keep whole
+        ];
+
+        $labeler = new NodeLabeler(null, 0, $preloaded_frame_labels);
+
+        // Default path form
+        $this->assertSame('plain_function()', $labeler->resolvePathLabel('?', 10));
+        $this->assertSame(
+            'App\\Service\\Worker::run()',
+            $labeler->resolvePathLabel('?', 11),
+        );
+        $this->assertSame('no_lineno_function()', $labeler->resolvePathLabel('?', 12));
+        $this->assertSame(
+            'App\\Util\\X::lookup()',
+            $labeler->resolvePathLabel('?', 13),
+        );
+
+        // Call Stack form
+        $this->assertSame(
+            'plain_function:42',
+            $labeler->resolvePathLabel('?', 10, include_call_site: true),
+        );
+        $this->assertSame(
+            'App\\Service\\Worker::run:123',
+            $labeler->resolvePathLabel('?', 11, include_call_site: true),
+        );
+        $this->assertSame(
+            'no_lineno_function',
+            $labeler->resolvePathLabel('?', 12, include_call_site: true),
+        );
+        $this->assertSame(
+            'App\\Util\\X::lookup',
+            $labeler->resolvePathLabel('?', 13, include_call_site: true),
+        );
+    }
+
+    private function insertAttribute(
+        \PDO $db,
+        int $node_id,
+        string $key,
+        string $value,
+    ): void {
+        $stmt = $db->prepare(
+            'INSERT INTO context_node_attributes'
+            . ' (run_id, node_id, key, value) VALUES (?, ?, ?, ?)'
+        );
+        $stmt->execute([1, $node_id, $key, $value]);
+    }
+
     private function insertContextNode(\PDO $db, int $node_id, string $type): void
     {
         $stmt = $db->prepare(
