@@ -1800,9 +1800,20 @@ final class RmemExploreTui
             for ($i = 1; $i < count($lines); $i++) {
                 $row = $i + 1; // 1-based terminal row
                 $sLine = $sidebarLines[$i - 1] ?? '';
-                if (strlen($sLine) > $sidebarW - 1) {
-                    $sLine = substr($sLine, 0, $sidebarW - 4) . '...';
-                }
+                // Sidebar lines may carry their own ANSI escapes
+                // (e.g. the underlined-cyan styling on Path-to-root
+                // entries). A blind byte-truncate cuts those mid-CSI
+                // and leaks the unterminated escape onto the screen
+                // — terminals like PhpStorm's JediTerm parse the
+                // partial sequence + the next iteration's cursor
+                // positioning escape together and either eat their
+                // ESC or render the parameters as literal text,
+                // which then bleeds into / overwrites neighbouring
+                // panes. truncateToVisibleWidth() preserves CSI
+                // sequences intact and resets attributes after the
+                // suffix so the next sidebar / main-pane row
+                // starts from a clean state.
+                $sLine = self::truncateToVisibleWidth($sLine, $sidebarW - 1);
                 $sidebarBuf .= "\e[{$row};{$sepCol}H\e[2m│\e[22m{$sLine}";
             }
         }
@@ -2336,5 +2347,63 @@ final class RmemExploreTui
     {
         [, $rows] = $this->term->size();
         return max(1, $rows - 6);
+    }
+
+    /**
+     * Visible-cell width of $s, ignoring CSI escape sequences.
+     * ASCII-only assumption — every non-escape byte is one cell.
+     * Good enough for the sidebar paths and node labels we render
+     * (no CJK / wide chars in those code paths).
+     */
+    private static function visibleWidth(string $s): int
+    {
+        $stripped = preg_replace('/\e\[[0-9;]*[A-Za-z]/', '', $s);
+        return strlen($stripped ?? $s);
+    }
+
+    /**
+     * Truncate $s so its **visible** width is at most $max cells,
+     * preserving CSI escape sequences intact (no half-cut escapes
+     * leaking onto the screen as literal text). When truncation
+     * actually happens, append $suffix and a `\e[0m` reset so any
+     * attribute the caller's escapes left half-open doesn't bleed
+     * into whatever is drawn next.
+     */
+    private static function truncateToVisibleWidth(string $s, int $max, string $suffix = '...'): string
+    {
+        if (self::visibleWidth($s) <= $max) {
+            return $s;
+        }
+        $suffixWidth = self::visibleWidth($suffix);
+        if ($suffixWidth >= $max) {
+            return substr($suffix, 0, $max);
+        }
+        $budget = $max - $suffixWidth;
+        $out = '';
+        $visible = 0;
+        $len = strlen($s);
+        $i = 0;
+        while ($i < $len && $visible < $budget) {
+            // Pass CSI escapes through unmodified — they don't cost
+            // visible cells. We accept the standard `\e[ <params> <final>`
+            // form; final byte is in 0x40..0x7E (`@..~`).
+            if ($i + 1 < $len && $s[$i] === "\e" && $s[$i + 1] === '[') {
+                $j = $i + 2;
+                while ($j < $len) {
+                    $b = ord($s[$j]);
+                    $j++;
+                    if ($b >= 0x40 && $b <= 0x7E) {
+                        break;
+                    }
+                }
+                $out .= substr($s, $i, $j - $i);
+                $i = $j;
+                continue;
+            }
+            $out .= $s[$i];
+            $visible++;
+            $i++;
+        }
+        return $out . $suffix . "\e[0m";
     }
 }
