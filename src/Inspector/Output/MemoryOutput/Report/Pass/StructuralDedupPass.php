@@ -22,12 +22,107 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class StructuralDedupPass implements PassInterface
 {
+    /**
+     * Internal PHP classes that report zero user-declared properties but
+     * carry significant C-level state. Filtering them out of `empty_object`
+     * stops the finding from misfiring on Closures (the actual leak root in
+     * many capture scenarios), Generators, Reflection*, DateTime, DOM*, PDO,
+     * and friends. Long-term this should come from the class_entry type
+     * (internal vs user) — see memory-report-ux-improvements.md §N1.
+     */
+    private const INTERNAL_CLASS_NAMES = [
+        'Closure' => true,
+        'Generator' => true,
+        'Fiber' => true,
+        'WeakMap' => true,
+        'WeakReference' => true,
+        'SplObjectStorage' => true,
+        'SplFixedArray' => true,
+        'SplDoublyLinkedList' => true,
+        'SplQueue' => true,
+        'SplStack' => true,
+        'SplHeap' => true,
+        'SplPriorityQueue' => true,
+        'SplMinHeap' => true,
+        'SplMaxHeap' => true,
+        'DateTime' => true,
+        'DateTimeImmutable' => true,
+        'DateInterval' => true,
+        'DateTimeZone' => true,
+        'DatePeriod' => true,
+        'DOMDocument' => true,
+        'DOMElement' => true,
+        'DOMNode' => true,
+        'DOMText' => true,
+        'DOMAttr' => true,
+        'DOMNodeList' => true,
+        'DOMComment' => true,
+        'DOMCdataSection' => true,
+        'DOMDocumentFragment' => true,
+        'DOMXPath' => true,
+        'SimpleXMLElement' => true,
+        'XMLReader' => true,
+        'XMLWriter' => true,
+        'PDO' => true,
+        'PDOStatement' => true,
+        'mysqli' => true,
+        'mysqli_stmt' => true,
+        'mysqli_result' => true,
+        'mysqli_warning' => true,
+        'ReflectionClass' => true,
+        'ReflectionObject' => true,
+        'ReflectionMethod' => true,
+        'ReflectionProperty' => true,
+        'ReflectionFunction' => true,
+        'ReflectionParameter' => true,
+        'ReflectionExtension' => true,
+        'ReflectionAttribute' => true,
+        'ReflectionEnum' => true,
+        'ReflectionEnumBackedCase' => true,
+        'ReflectionEnumUnitCase' => true,
+        'ReflectionUnionType' => true,
+        'ReflectionIntersectionType' => true,
+        'ReflectionNamedType' => true,
+        'ReflectionType' => true,
+        'ReflectionClassConstant' => true,
+        'ReflectionFunctionAbstract' => true,
+        'ReflectionGenerator' => true,
+        'ReflectionFiber' => true,
+        'ArrayObject' => true,
+        'ArrayIterator' => true,
+        'CachingIterator' => true,
+        'RecursiveDirectoryIterator' => true,
+        'DirectoryIterator' => true,
+        'FilesystemIterator' => true,
+        'GlobIterator' => true,
+        'RecursiveIteratorIterator' => true,
+        'IteratorIterator' => true,
+        'AppendIterator' => true,
+        'NoRewindIterator' => true,
+        'LimitIterator' => true,
+        'EmptyIterator' => true,
+        'CallbackFilterIterator' => true,
+        'RegexIterator' => true,
+        'SplFileObject' => true,
+        'SplFileInfo' => true,
+        'SplTempFileObject' => true,
+        'CURLFile' => true,
+        'CURLStringFile' => true,
+        'GMP' => true,
+        'BcMath\\Number' => true,
+    ];
+
     public function __construct(
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
         private ?LinkNameResolver $link_resolver = null,
     ) {
+    }
+
+    private static function isInternalClass(string $class_name): bool
+    {
+        return isset(self::INTERNAL_CLASS_NAMES[$class_name]);
     }
 
     /**
@@ -60,6 +155,12 @@ final class StructuralDedupPass implements PassInterface
             $waste = ($g['count'] - 1) * $g['size'];
 
             if ($is_empty) {
+                if (self::isInternalClass($g['class'])) {
+                    // Internal classes (Closure, Generator, Reflection*, DOM*,
+                    // PDO, ...) carry C-side state with no user-declared
+                    // properties; "may be replaceable" advice doesn't apply.
+                    continue;
+                }
                 $findings[] = new Finding(
                     kind: 'empty_object',
                     severity: $g['total_size'] > 102400

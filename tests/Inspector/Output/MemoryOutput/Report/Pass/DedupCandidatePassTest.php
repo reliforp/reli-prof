@@ -90,6 +90,152 @@ class DedupCandidatePassTest extends BaseTestCase
         ));
     }
 
+    public function testAnalyzeKeepsHeterogeneousClassesInSeparateBuckets(): void
+    {
+        // Regression for B6 (memory-report-ux-improvements.md): the SQL
+        // GROUP BY used to key on (link_name, node_size) only, so two
+        // different classes that happened to share a slot name and shallow
+        // size would land in the same bucket. The bigger of the two would
+        // dominate the sample-mean retained size and inflate impact_bytes.
+        // After the fix, target_class is part of the group key, so a
+        // mixed bucket cannot form.
+        $db = $this->createDirectDb();
+        $this->seedHeterogeneousClassScenario($db);
+
+        $findings = (new DedupCandidatePass($db, 1))->analyze();
+
+        // Without the per-class group key the SQL would have produced a
+        // single bucket of count=120 mixing both classes. With the fix
+        // each class produces its own bucket of count=60.
+        $alpha = $this->findFinding(
+            $findings,
+            'dedup_candidate',
+            'App\\Alpha',
+        );
+        $beta = $this->findFinding(
+            $findings,
+            'dedup_candidate',
+            'App\\Beta',
+        );
+
+        $this->assertNotNull($alpha, 'Alpha bucket should be present');
+        $this->assertNotNull($beta, 'Beta bucket should be present');
+        $this->assertSame(60, $alpha->facts['count']);
+        $this->assertSame(60, $beta->facts['count']);
+    }
+
+    public function testAnalyzeClampsImpactToHeapTotal(): void
+    {
+        // Regression for N10: dedup_candidate's `cnt × retained` impact
+        // can exceed the heap total when the children share a subtree
+        // (every member's retained includes the shared part). When a
+        // heap-total is supplied, the pass clamps impact_bytes and notes
+        // the original value in `total_waste_unclamped` + hypothesis.
+        $db = $this->createDirectDb();
+        $this->seedRepresentativeScenario($db);
+
+        // total_waste = 60 × 256 = 15,360. Set a much smaller heap total
+        // so the clamp is observable. (Substrate is null here so the
+        // shallow-size path is used; the calculation matches the SQL row
+        // total_waste field directly.)
+        $heap_total = 10000;
+        $findings = (new DedupCandidatePass($db, 1, null, null, $heap_total))->analyze();
+
+        $finding = $this->findFinding(
+            $findings,
+            'dedup_candidate',
+            'App\\Owner::$names[value]',
+        );
+        $this->assertNotNull($finding);
+        $this->assertSame($heap_total, $finding->impact_bytes);
+        $this->assertSame($heap_total, $finding->facts['total_waste']);
+        $this->assertSame(15360, $finding->facts['total_waste_unclamped'] ?? null);
+        $this->assertStringContainsString('clamped', $finding->hypothesis);
+    }
+
+    private function seedHeterogeneousClassScenario(\PDO $db): void
+    {
+        $edge_stmt = $db->prepare(
+            'INSERT INTO context_edges'
+            . ' (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
+            . ' VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $node_stmt = $db->prepare(
+            'INSERT INTO context_node_locations'
+            . ' (run_id, node_id, address, size, location_type, class_name, string_value)'
+            . ' VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+
+        // Two classes (Alpha + Beta), both 64 B shallow, both linked via
+        // the same slot name `value`. Without per-class bucketing, they'd
+        // collapse into a single (link='value', size=64) bucket of size
+        // 120; with it they should stay separate.
+        $classes = [
+            ['App\\Alpha', 0],
+            ['App\\Beta', 5000],
+        ];
+
+        foreach ($classes as [$class_name, $base]) {
+            for ($i = 0; $i < 60; $i++) {
+                $owner_node_id = 10000 + $base + $i * 5;
+                $properties_node_id = $owner_node_id + 1;
+                $array_header_node_id = $owner_node_id + 2;
+                $array_elements_node_id = $owner_node_id + 3;
+                $target_node_id = 200000 + $base + $i;
+
+                $node_stmt->execute([
+                    1,
+                    $owner_node_id,
+                    1000000 + $base + $i,
+                    72,
+                    'ZendObjectMemoryLocation',
+                    $class_name,
+                    null,
+                ]);
+                $node_stmt->execute([
+                    1,
+                    $array_header_node_id,
+                    2000000 + $base + $i,
+                    56,
+                    'ZendArrayMemoryLocation',
+                    null,
+                    null,
+                ]);
+                // Target is an instance of the same class — 256 B shallow
+                // (shallow * count must exceed the 10240 HAVING threshold).
+                $node_stmt->execute([
+                    1,
+                    $target_node_id,
+                    3000000 + $base + $i,
+                    256,
+                    'ZendObjectMemoryLocation',
+                    $class_name,
+                    null,
+                ]);
+
+                $edge_stmt->execute([1, null, $owner_node_id, "owner_{$base}_{$i}", 1, 'strong']);
+                $edge_stmt->execute([
+                    1, $owner_node_id, $properties_node_id,
+                    'object_properties', 1, 'strong',
+                ]);
+                $edge_stmt->execute([
+                    1, $properties_node_id, $array_header_node_id,
+                    'children', 1, 'strong',
+                ]);
+                $edge_stmt->execute([
+                    1, $array_header_node_id, $array_elements_node_id,
+                    'array_elements', 1, 'strong',
+                ]);
+                // Non-tree strong edge to the dedup target — same slot
+                // name and size across both classes.
+                $edge_stmt->execute([
+                    1, $array_elements_node_id, $target_node_id,
+                    'value', 0, 'strong',
+                ]);
+            }
+        }
+    }
+
     /**
      * @param list<Finding> $findings
      */
