@@ -75,7 +75,7 @@ VM's opcode dispatcher.
 Capture to `.rbt` and analyse interactively:
 
 ```bash
-$ sudo php ./reli i:trace --with-native-trace -p <pid> -F rbt -o trace.rbt
+$ sudo php ./reli i:trace --with-native-trace -p <pid> -o trace.rbt
 $ ./reli rbt:explore trace.rbt
 # ...or convert to a flamegraph:
 $ ./reli converter:flamegraph <trace.rbt >flame_native.svg

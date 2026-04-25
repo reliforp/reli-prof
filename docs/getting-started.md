@@ -147,8 +147,8 @@ Run your workload in one terminal, attach reli from another:
 php ./your-script.php
 
 # Terminal B: attach and capture for ~10 s, then Ctrl-C
-reli inspector:trace -p "$(pgrep -f your-script.php)" \
-                     -F rbt -o trace.rbt
+# (-F rbt is implied by the .rbt extension on -o)
+reli inspector:trace -p "$(pgrep -f your-script.php)" -o trace.rbt
 ```
 
 The target process must be reachable with `ptrace(2)`. Under the

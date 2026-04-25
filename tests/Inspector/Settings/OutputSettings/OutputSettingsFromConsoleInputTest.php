@@ -120,4 +120,82 @@ class OutputSettingsFromConsoleInputTest extends BaseTestCase
         $this->assertTrue($settings->isBinaryTraceBundled());
         $this->assertFalse($settings->isTemplate());
     }
+
+    public function testCreateSettingsAutoDetectsRbtFromOutputExtension(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns(null);
+        $input->expects()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns('/tmp/trace.rbt');
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
+        $config = Mockery::mock(Config::class);
+
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+        $this->assertSame('rbt', $settings->output_format);
+        $this->assertTrue($settings->isBinaryTrace());
+        $this->assertFalse($settings->isTemplate());
+        $this->assertSame('/tmp/trace.rbt', $settings->output_path);
+    }
+
+    public function testCreateSettingsAutoDetectsRbtExtensionCaseInsensitive(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns(null);
+        $input->expects()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns('/tmp/Trace.RBT');
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
+        $config = Mockery::mock(Config::class);
+
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+        $this->assertTrue($settings->isBinaryTrace());
+    }
+
+    public function testCreateSettingsExplicitFormatWinsOverRbtExtension(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns('template:phpspy');
+        $input->allows()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns('/tmp/trace.rbt');
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
+        $config = Mockery::mock(Config::class);
+
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+        $this->assertSame('template:phpspy', $settings->output_format);
+        $this->assertFalse($settings->isBinaryTrace());
+    }
+
+    public function testCreateSettingsRbtGzExtensionDoesNotAutoDetect(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns(null);
+        $input->expects()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns('/tmp/trace.rbt.gz');
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
+        $config = Mockery::mock(Config::class);
+        $config->expects()->get('output.template.default')->andReturns('phpspy');
+
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+        $this->assertSame('template:phpspy', $settings->output_format);
+        $this->assertFalse($settings->isBinaryTrace());
+    }
+
+    public function testCreateSettingsNonRbtExtensionFallsThroughToConfigDefault(): void
+    {
+        $input = Mockery::mock(InputInterface::class);
+        $input->expects()->getOption('output-format')->andReturns(null);
+        $input->expects()->getOption('template')->andReturns(null);
+        $input->expects()->getOption('output')->andReturns('/tmp/trace.txt');
+        $input->allows()->getOption('rbt-timestamps')->andReturns('none');
+        $input->allows()->getOption('rbt-compress')->andReturns(false);
+        $config = Mockery::mock(Config::class);
+        $config->expects()->get('output.template.default')->andReturns('phpspy');
+
+        $settings = (new OutputSettingsFromConsoleInput($config))->createSettings($input);
+        $this->assertSame('template:phpspy', $settings->output_format);
+        $this->assertFalse($settings->isBinaryTrace());
+    }
 }
