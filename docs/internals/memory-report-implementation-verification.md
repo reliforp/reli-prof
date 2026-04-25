@@ -529,3 +529,56 @@ T1's B1 / G1 / G4 chain is functionally complete. The remaining
 out-of-scope note) only affects edges that don't have a
 `*FunctionDefinitionContext` target — internal builtins registered
 via different paths. Those are uncommon and not user-actionable.
+
+---
+
+## T2.2 verification (PR #652 — spine drop by path component name)
+
+Re-ran `inspector:memory:report` on all 25 saved `.db` files
+against PR #652's `claude/spine-drop-name-component` branch
+(`961b3a8`). Pass-time + formatter-time changes only — no
+re-analyse needed.
+
+### Status: ✅ closed
+
+| Check                                          | Result |
+|------------------------------------------------|--------|
+| `at depth N` substring eliminated              | ✅ 0 hits across all 25 reports (was 22) |
+| Drop component reads as user-side identifier   | ✅ `$orders`, `$users`, `$errors`, `$history`, `$uow`, `$bus->listeners[request.completed]`, etc. |
+| Spine line count preserved                     | ✅ 22 → 22 (same descent triggers the same line) |
+| Findings count regression                      | ✅ 0 changed, 25 unchanged |
+
+### Sample renderings before / after
+
+| Report                | Before                                                                                     | After                                                                                                |
+|-----------------------|--------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
+| `rw2_csv-mega`        | `Spine: heaviest-child mass drops at depth 5 (460.75 MB → 2.47 KB); leaf retains only 405 B` | `Spine: heaviest-child mass drops after $orders (460.75 MB → 2.47 KB); leaf retains only 405 B`      |
+| `rw2_eloquent-hydration` | `Spine: heaviest-child mass drops at depth 5 (309.92 MB → 3.26 KB)`                      | `Spine: heaviest-child mass drops after $users (309.92 MB → 3.26 KB)`                                |
+| `rw3_doctrine-uow`    | `Spine: heaviest-child mass drops at depth 5 (146.04 MB → 48.03 MB)`                       | `Spine: heaviest-child mass drops after $uow (146.04 MB → 48.03 MB)`                                 |
+| `rw3_closure-leak`    | `Spine: heaviest-child mass drops at depth 10 (7.12 MB → 2.66 KB)`                         | `Spine: heaviest-child mass drops after $bus->listeners[request.completed] (7.12 MB → 2.66 KB)`      |
+
+### Edge case noted
+
+In `rw2_json-decode-huge` the rendered drop component is
+`global_variables -> array_elements` — the descent root is the
+`global_variables` HashTable and the first descent step is into
+its `array_elements` bucket. That arrow notation is the standard
+PathFormatter form for "step from a structural root through its
+array-elements container", not a user-named variable. Acceptable
+as-is — it conveys "the descent goes through the array of all
+globals" — but is the one place where the new component-named
+form still includes engine-internal terminology. If a future polish
+pass wants to elide that, it'd be a PathFormatter change, not
+T2.2.
+
+### Net for T2 series
+
+After PR #652 + the still-pending T2.4 (call-frame `:lineno` strip),
+spine and bottleneck output reads as:
+
+    bottleneck_path: <user-path>
+    Spine: heaviest-child mass drops after <user-recognisable component>
+           (X → Y); leaf retains only Z
+
+with no engineering-internal `:lineno` or `at depth N` artefacts —
+matching the T2-series ergonomic goal.
