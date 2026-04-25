@@ -947,6 +947,115 @@ where `MemoryLocationsCollector::collectAll` shows up on the spine.
 
 ---
 
+## T2.5 implementation notes — bottleneck_path and Spine should share elision vocabulary
+
+Polish-tier T2 follow-up surfaced during T2.2 re-verification.
+Independent of T2.3 / T2.4. ~10–20 lines depending on shape.
+
+### What's wrong
+
+For shallow drops the two lines under a `bottleneck_path` finding
+disagree on what to call the descent root:
+
+    bottleneck_path: $decoded[data][10100][profile] (171.45 MB)
+    Spine: heaviest-child mass drops after global_variables -> array_elements
+           (171.44 MB → 84.33 MB); leaf retains only 1.94 KB
+
+`bottleneck_path` elides the structural roots `global_variables` and
+`array_elements` and starts the user-visible path at `$decoded`.
+`Spine`, after PR #652, renders the full path prefix from the
+structural root through to the drop index — so for a depth-1 drop
+into `array_elements` it surfaces engine vocabulary the
+`bottleneck_path` line consciously hides.
+
+The two reads as if they're describing different paths.
+
+Affected reports in the corpus:
+
+- `rw2_json-decode-huge` — drop is at the `array_elements` of
+  `global_variables`; Spine: `after global_variables -> array_elements`
+- `rw4_graph-recursion` — same shape: `after global_variables -> array_elements`
+- `rw3_static-cache` — drop is at `static_properties->staticCache`;
+  Spine: `after ...->LookupService->static_properties->staticCache`
+  (this one happens to read OK because the prefix already includes
+  the user class, but the principle is the same)
+
+Reports with the drop mid-userland (like
+`after $bus->listeners[request.completed]`) are unaffected.
+
+### Proposed fix
+
+Two shapes; either works.
+
+**(A) Share elision logic.** Whatever `DrillDownPass::selectSummaryPath`
+and `PathFormatter::toPhpSyntax` use to pick the user-visible
+`summary_path` (`$decoded[data][10100][profile]`), apply the same
+rule to the Spine prefix slice. This keeps `bottleneck_path`'s
+existing one-line summary unchanged and makes Spine speak the same
+language.
+
+In code: when rendering the Spine drop label, run the path[] +
+path_types[] slice through the same elision wrapper used for
+`summary_path` rather than calling `PathFormatter::toPhpSyntax`
+on the raw slice.
+
+**(B) Extend the slice.** When the slice ends on a structural-only
+component (`array_elements`, `value`, `object_properties`,
+`function_table`, `class_table`, etc.), extend it by one or two
+steps until the last component is user-named. The drop point
+itself doesn't change — the rendered label is just a slightly
+longer prefix that reaches a recognisable identifier.
+
+For the json-decode-huge case:
+
+    Slice with drop at depth 1: [global_variables, array_elements]
+    Extended to first user name: [global_variables, array_elements, decoded]
+    Rendered: "after $decoded"
+
+(B) is simpler and preserves Spine's mechanical "this was the
+heaviest-child step where mass dropped" semantics. (A) is
+more principled and guarantees consistency by construction. Pick
+based on how much PathFormatter / DrillDownPass refactor the team
+wants to do.
+
+### Edge cases
+
+- **Drop already at a user-named component** (most reports): no
+  change needed; both schemes render identically to today.
+- **Drop in the deepest slot of a user-named structure**
+  (`$bus->listeners[request.completed]`): no change needed.
+- **Reports with an entirely structural descent path**
+  (rare — would be a path that never names a user variable, e.g.
+  pure class_table internals): the extension in (B) might run
+  out before finding a user-named segment. Cap at the original
+  drop_index in that case so we don't accidentally surface deeper
+  structural noise.
+
+### Verification plan
+
+Same artifacts (the 25 saved `.db` files in `/tmp/memreport-out/`).
+Re-run `inspector:memory:report` and check:
+
+- Reports that previously showed
+  `after global_variables -> array_elements` now show a
+  user-named identifier matching the `bottleneck_path` line.
+  Specifically `rw2_json-decode-huge` and `rw4_graph-recursion`.
+- All Spine lines that already named user-side components stay
+  unchanged.
+- `bottleneck_path` line is unchanged.
+- Findings count regression: 0 across all 25 reports.
+
+Quick consistency check:
+
+    grep -hE 'bottleneck_path|Spine: ' /tmp/memreport-out/rw*_*.report.txt \
+      | paste - -
+
+Each pair should now describe the same path with consistent
+vocabulary (no `global_variables -> array_elements` form on the
+Spine line when `bottleneck_path` shows `$decoded`).
+
+---
+
 ## Tier 3 implementation notes
 
 ### S12 — cluster findings by target across detector kinds
