@@ -59,20 +59,11 @@ final class EmitFunctionTableJob implements CollectorJob
         foreach ($this->array->getItemIterator($ctx->dereferencer) as $function_name => $zval) {
             assert(is_string($function_name));
             assert(!is_null($zval->value->func));
-            // PHP lower-cases function names in the global function_table
-            // for case-insensitive dispatch. Resolve the canonical name
-            // from the function struct so user code declared as
-            // `myCamelCase()` doesn't appear as `mycamelcase` in paths.
-            $canonical_name = CollectorHelpers::resolveCanonicalFunctionName(
-                $zval->value->func,
-                $function_name,
-                $ctx,
-            );
             $result = CollectorHelpers::collectZendFunctionPointer($zval->value->func, $ctx);
             if (is_int($result)) {
-                $defined_functions_context->add($canonical_name, $result);
+                $defined_functions_context->add($function_name, $result);
             } else {
-                $defined_functions_context->add($canonical_name, $result->context);
+                $defined_functions_context->add($function_name, $result->context);
                 if ($result->deferred_arrays !== []) {
                     $deferred_all[] = $result;
                 }

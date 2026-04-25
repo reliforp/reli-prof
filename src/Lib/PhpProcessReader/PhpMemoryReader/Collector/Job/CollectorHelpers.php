@@ -71,50 +71,6 @@ final class CollectorHelpers
     }
 
     /**
-     * Resolve the canonical function/method name for a label (path segment).
-     *
-     * PHP lower-cases function and method names when storing them in
-     * HashTables for case-insensitive dispatch. The bucket key — what
-     * `ZendArray::getItemIterator()` yields — therefore reads as
-     * `getattribute` even though the source declares `getAttribute`. The
-     * canonical name lives on the function struct itself
-     * (`zend_function->common.function_name`).
-     *
-     * Returns the canonical name when the function pointer derefs cleanly,
-     * or `$bucket_key_fallback` if dereferencing or name resolution fails.
-     * Re-deref'ing the func pointer is essentially free here because
-     * `CachingDereferencer` memoises by `(type, address)`.
-     *
-     * Implementation note: this mirrors what `collectZendFunction()` already
-     * does for the `name` child (deref function_name, toString) — no
-     * `getFunctionName()` call, because that method's closure branch
-     * triggers an op_array lazy-init that reads garbage memory for
-     * non-user-function entries (internal trampolines, callable wrappers
-     * registered in PHP 8+ function_tables).
-     *
-     * @param Pointer<ZendFunction> $function_pointer
-     */
-    public static function resolveCanonicalFunctionName(
-        Pointer $function_pointer,
-        string $bucket_key_fallback,
-        CollectorContext $ctx,
-    ): string {
-        try {
-            $func = $ctx->dereferencer->deref($function_pointer);
-            if ($func->function_name !== null) {
-                $string = $ctx->dereferencer->deref($func->function_name);
-                $name = $string->toString($ctx->dereferencer);
-                if ($name !== '') {
-                    return $name;
-                }
-            }
-        } catch (\Throwable) {
-            // Fall through to bucket-key fallback.
-        }
-        return $bucket_key_fallback;
-    }
-
-    /**
      * Collect a ZendFunction (user or internal). Does not push recursive jobs.
      * Returns a FunctionDefinitionContext. This handles the full user function
      * definition including op_array, arg_infos, etc.
