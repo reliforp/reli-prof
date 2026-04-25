@@ -341,7 +341,8 @@ additions or removals.
 ### Final status
 
 T1 + T2 verification gaps closed. Every claim in the handoff doc
-has a corresponding verified fix. Open follow-ups for a future
-commit are limited to T3 (S12 clustering, N2 positive-signal
-re-section, N4 uniform-sibling row collapse), which were never in
-scope for this round.
+has a corresponding verified fix. T3 (S12 clustering, N2
+positive-signal re-section, N4 uniform-sibling row collapse) is
+pending — not started yet on this branch. The handoff's
+"Scope discipline" section calls each tier independently shippable,
+and T3 lives in a separate PR by design, not as an exclusion.
