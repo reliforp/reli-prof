@@ -778,3 +778,56 @@ both `--output-format=sqlite3` and `--output-format=binary`**
 would catch this kind of path-specific regression early. Adding
 that to the verification checklist for any change touching the
 binary-format writer or its readers.
+
+---
+
+## T2.5 verification (PR #655 — Spine extends past structural intermediaries)
+
+PR #655 implements shape (B) from the T2.5 handoff: the Spine
+renderer walks forward from `drop_index + 1` past structural
+link names (`global_variables`, `array_elements`,
+`object_properties`, `value`, …) until it finds a user-named
+identifier, then renders the extended slice through
+`PathFormatter::toPhpSyntax`. If the entire descent is
+structural, falls back to the legacy `at depth N` form.
+
+### Status: ✅ closed
+
+Re-ran `inspector:memory:report` against all 25 saved `.db` files.
+
+| Check                                                          | Result |
+|----------------------------------------------------------------|--------|
+| Structural-only Spine labels (`-> array_elements`, etc.)        | ✅ 2 → 0 |
+| `bottleneck_path` and Spine vocabulary match within a finding   | ✅ both lines now reference the same user identifier |
+| Findings count regression                                       | ✅ 0 changed, 25 unchanged |
+
+### Sample renderings before / after
+
+| Report                 | Before                                                                                | After                                                                  |
+|------------------------|---------------------------------------------------------------------------------------|------------------------------------------------------------------------|
+| `rw2_json-decode-huge` | `Spine: drops after global_variables -> array_elements (171.44 MB → 84.33 MB)`        | `Spine: drops after $decoded (171.44 MB → 84.33 MB)`                   |
+| `rw4_graph-recursion`  | `Spine: drops after global_variables -> array_elements (110.97 MB → 49.60 MB)`        | `Spine: drops after $reachabilityCache (110.97 MB → 49.60 MB)`         |
+
+In both reports the `bottleneck_path` line already showed
+`$decoded[data][10100][profile]` / `$reachabilityCache[0][0]`.
+After T2.5, the Spine line agrees on what the user-side root of
+the descent is, eliminating the cross-line vocabulary mismatch.
+
+### Mid-userland drops unchanged
+
+Reports where the drop already lands on a user-named component
+(`rw3_closure-leak`'s `after $bus->listeners[request.completed]`,
+`rw_logger-stack`'s `after $log->handlers->referenced[0]->records`,
+etc.) render unchanged, as expected — the slice extension only
+kicks in when `drop_index` itself sits on a structural-only
+segment.
+
+### Shape choice
+
+PR #655 takes shape (B) from the handoff (extend the slice past
+structural components) rather than shape (A) (share elision logic
+between `selectSummaryPath` and Spine rendering). (B) is the
+smaller change and produces the same observable result on this
+corpus, per the handoff's "either works; (B) is simpler"
+recommendation. (A) remains an option if the teams later need to
+unify a wider set of path-render sites against one elision helper.
