@@ -960,6 +960,18 @@ final class RmemModel
     }
 
     /**
+     * Render a source location as a single `file:line` token the way
+     * terminals expect it — so their built-in pattern matchers can
+     * offer a clickable jump.
+     *
+     * Historically we also printed the closing line as `file:A-B`
+     * for nodes that carry a range (op_array, class_entry), but the
+     * range form is rejected by the file:line matcher in every
+     * terminal and IDE I checked: PhpStorm, iTerm2, Kitty, VS Code
+     * integrated terminal. The range is still exposed on
+     * `source_locations[*].line_end` for anyone inspecting the raw
+     * nodeDetail payload.
+     *
      * @param array{filename: string, line: ?int, line_start: ?int, line_end: ?int} $loc
      */
     private static function formatLocation(array $loc): string
@@ -967,9 +979,6 @@ final class RmemModel
         $file = $loc['filename'];
         $line = $loc['line'] ?? $loc['line_start'];
         if ($line !== null && $line > 0) {
-            if ($loc['line_end'] !== null && $loc['line_end'] > $line) {
-                return "{$file}:{$line}-{$loc['line_end']}";
-            }
             return "{$file}:{$line}";
         }
         return $file;

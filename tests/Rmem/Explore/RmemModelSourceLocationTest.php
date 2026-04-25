@@ -157,8 +157,12 @@ class RmemModelSourceLocationTest extends TestCase
         $this->assertSame('/var/www/html/src/App.php', $loc['filename']);
         $this->assertSame(10, $loc['line_start']);
         $this->assertSame(42, $loc['line_end']);
+        // formatSourceLocation() intentionally drops the closing
+        // line — terminals' file:line matchers don't accept the
+        // range form. Raw start/end stay on the loc array for any
+        // JSON-RPC consumers that want them.
         $this->assertSame(
-            '/var/www/html/src/App.php:10-42',
+            '/var/www/html/src/App.php:10',
             $model->formatSourceLocation(1),
         );
     }
@@ -253,7 +257,7 @@ class RmemModelSourceLocationTest extends TestCase
     {
         $model = $this->createModel();
         $detail = $model->nodeDetail(5);
-        $this->assertSame('/var/www/html/src/User.php:5-20', $detail['source_location']);
+        $this->assertSame('/var/www/html/src/User.php:5', $detail['source_location']);
         $this->assertNotEmpty($detail['source_locations']);
         $this->assertSame('defined_at', $detail['source_locations'][0]['kind']);
     }
@@ -288,7 +292,7 @@ class RmemModelSourceLocationTest extends TestCase
         ]);
         $model = $this->createModel($pathMap);
         $this->assertSame(
-            '/home/me/project/src/App.php:10-42',
+            '/home/me/project/src/App.php:10',
             $model->formatSourceLocation(1),
         );
         $locs = $model->resolveSourceLocations(5);

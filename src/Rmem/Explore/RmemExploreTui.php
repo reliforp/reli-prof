@@ -62,6 +62,63 @@ final class RmemExploreTui
     /** @var list<string> plain-text heap/memory overview lines (matches inspector:memory:report overview) */
     private array $overviewLines = [];
     private bool $showSidebar = true;
+
+    /**
+     * Whether to paint the full-width source-banner row just above the
+     * footer. The banner duplicates the sidebar's source / defined /
+     * held-by line at full terminal width so terminals that don't
+     * emit motion events (PhpStorm JediTerm) — and therefore can't
+     * drive the sidebar's hover overlay — still see a contiguous
+     * `file:line` token their pattern matcher can latch onto. Toggled
+     * with `b`.
+     */
+    private bool $showSourceBanner = true;
+
+    /**
+     * Node id the next render() should source the banner text from.
+     * Computed at the top of render() so renderList / renderSandwich
+     * can pull it without re-running the cursor-pane dispatch.
+     */
+    private ?int $bannerFocusId = null;
+
+    /**
+     * How many banner rows the last render emitted — 0 when the
+     * banner is off or the focused node has no source location;
+     * otherwise one row per `source_locations` kind (self /
+     * defined_at / held_by, up to 3). hitTestMouseRow() reads
+     * this to offset the sandwich pane boundaries correctly,
+     * since every banner row steals a row from the bottom that
+     * the unfixed formula would count as the last child row.
+     */
+    private int $lastRenderBannerRowCount = 0;
+
+    /**
+     * Exact 1-based terminal row range that holds the last render's
+     * scrollable body content (list rows / sandwich children rows).
+     * Mouse clicks below `$lastRenderBodyEndRow` are inside the
+     * non-interactive bottom strip (banner + footer + status) and
+     * must be suppressed before any pane hit-test or sidebar
+     * lookup runs — relying on `lastRenderBannerRowCount` alone
+     * isn't enough, because a focus-change between render and
+     * click can leave the cached count out of sync with what's
+     * actually on screen, and the click then falls through to
+     * children rows that aren't where the user thinks they are.
+     */
+    private int $lastRenderBodyEndRow = 0;
+
+    /**
+     * Last render's children-pane visible terminal-row window in
+     * sandwich view. -1 when sandwich isn't active. Stored so the
+     * sandwich hit-test answers strictly against what was on screen
+     * at render time, not whatever halfH / banner derivation
+     * happens to compute now.
+     */
+    private int $lastRenderChildrenStart = -1;
+    private int $lastRenderChildrenEnd = -1;
+    private int $lastRenderParentsStart = -1;
+    private int $lastRenderParentsEnd = -1;
+    private int $lastRenderListStart = -1;
+    private int $lastRenderListEnd = -1;
     private ?string $filterPattern = null;
     private string $filterInput = '';
     private bool $filterPrompt = false;
@@ -688,6 +745,24 @@ final class RmemExploreTui
             return;
         }
 
+        // Bottom-reserved rows (source banner + footer + status) are
+        // visually non-interactive for the TUI. Suppress *non-scroll*
+        // clicks that land there so the click stays available to the
+        // terminal — particularly the file:line pattern matcher in
+        // PhpStorm / VS Code etc., which fires on Shift+Click. Without
+        // this check, a click on the banner's right-hand half (which
+        // spans the full terminal width) would fall through to the
+        // path-to-root sidebar handler below and navigate the cursor
+        // to whichever ancestor happens to share that row.
+        //
+        // Use the row that the *last actual render* committed, not a
+        // value freshly recomputed from `lastRenderBannerRowCount`,
+        // so a focus-change happening between render and click can't
+        // shift the threshold out from under the user.
+        if (!$isScroll && $this->lastRenderBodyEndRow > 0 && $mouse->row > $this->lastRenderBodyEndRow) {
+            return;
+        }
+
         // Path-to-root row in the sidebar: clicking a step jumps
         // sandwich view to that ancestor. Tested before pane hit so
         // scroll events still work inside the sidebar area.
@@ -755,43 +830,53 @@ final class RmemExploreTui
      */
     private function hitTestMouseRow(int $row): array
     {
-        [, $totalRows] = $this->term->size();
-
         if (!$this->sandwich) {
-            // List layout: header (1) + breadcrumb (2) + column header (3)
-            // + separator (4), data rows start on 5.
-            $bodyStart = 5;
-            if ($row < $bodyStart) {
+            // Use the row range the *last actual render* committed.
+            // Re-deriving from cached values like
+            // `lastRenderBannerRowCount` is racy: a focus change
+            // happening between render and click can leave the cached
+            // count out of sync with what's actually on screen, and
+            // the user's click then maps to a non-visible list index.
+            if (
+                $this->lastRenderListStart < 0
+                || $row < $this->lastRenderListStart
+                || $row > $this->lastRenderListEnd
+            ) {
                 return [null, null];
             }
-            $idx = $this->topRow + ($row - $bodyStart);
+            // List layout: header (1) + breadcrumb (2) + column header (3)
+            // + separator (4), data rows start on 5 (lastRenderListStart).
+            $idx = $this->topRow + ($row - $this->lastRenderListStart);
             if ($idx < 0 || $idx >= count($this->rows)) {
                 return [null, null];
             }
             return ['list', $idx];
         }
 
-        // Sandwich layout, mirroring renderSandwich():
-        //   row 1         header
-        //   row 2         "▸ Parents (N)" label
-        //   rows 3..h+2   parent rows (h = halfH)
-        //   row  h+3      focus bar
-        //   row  h+4      "▸ Children (N)" label
-        //   rows h+5..Y   children rows
-        $bodyH = $totalRows - 4;
-        $halfH = (int)($bodyH / 2);
-        $parentsStart = 3;
-        $parentsEnd = $halfH + 2;
-        $childrenStart = $halfH + 5;
-        if ($row >= $parentsStart && $row <= $parentsEnd) {
-            $idx = $this->parentTopRow + ($row - $parentsStart);
+        // Sandwich layout. Use the row ranges the *last actual
+        // render* committed instead of re-deriving halfH /
+        // childrenStart from cached values; otherwise a focus change
+        // happening between render and click can leave the cached
+        // banner-row count out of sync with the screen and route a
+        // click to a non-visible child row at a row index that
+        // happens to fall inside the dataset.
+        if (
+            $this->lastRenderParentsStart > 0
+            && $row >= $this->lastRenderParentsStart
+            && $row <= $this->lastRenderParentsEnd
+        ) {
+            $idx = $this->parentTopRow + ($row - $this->lastRenderParentsStart);
             if ($idx < 0 || $idx >= count($this->parentRows)) {
                 return [null, null];
             }
             return ['parents', $idx];
         }
-        if ($row >= $childrenStart) {
-            $idx = $this->childTopRow + ($row - $childrenStart);
+        if (
+            $this->lastRenderChildrenStart > 0
+            && $row >= $this->lastRenderChildrenStart
+            && $row <= $this->lastRenderChildrenEnd
+        ) {
+            $idx = $this->childTopRow + ($row - $this->lastRenderChildrenStart);
             if ($idx < 0 || $idx >= count($this->childRows)) {
                 return [null, null];
             }
@@ -1431,6 +1516,7 @@ final class RmemExploreTui
             "'" => $this->switchToBookmarks(),
             'i' => $this->showSubtreeInfo(),
             'x' => $this->showCycles(),
+            'b' => $this->showSourceBanner = !$this->showSourceBanner,
             default => null,
         };
     }
@@ -1593,27 +1679,93 @@ final class RmemExploreTui
 
     // ---- Rendering ----
 
+    /**
+     * Maximum number of source-location kinds the resolver can
+     * return — `self`, `defined_at`, `held_by`. The renderer treats
+     * this as a constant *upper bound* when computing the focus
+     * bar's y-position so the bar doesn't jump as the cursor walks
+     * through nodes with different actual kind counts; the children
+     * pane below it then absorbs whatever the actual banner doesn't
+     * use, so there's no padding gap visible above the banner.
+     */
+    private const SOURCE_BANNER_MAX_ROWS = 3;
+
+    /**
+     * Build the full-width source-banner rows for $nodeId. Returns
+     * up to {@see self::SOURCE_BANNER_MAX_ROWS} actual reverse-video
+     * rows (no padding) — one per `source_locations` kind. Empty
+     * when the banner is toggled off, the node has no source, or
+     * the terminal is too narrow.
+     *
+     * Each kind (self / defined_at / held_by) gets its own row —
+     * mirrors the sidebar so a node that has both `defined` and
+     * `held by` doesn't lose half of its navigation hints.
+     * Terminals' file:line pattern matchers only latch onto tokens
+     * sitting on one line, so we intentionally don't fold them
+     * together.
+     *
+     * @return list<string>
+     */
+    private function renderSourceBannerRows(?int $nodeId, int $cols): array
+    {
+        if (!$this->showSourceBanner || $nodeId === null) {
+            return [];
+        }
+        $maxWidth = $cols - 2;
+        if ($maxWidth < 8) {
+            return [];
+        }
+        /** @var list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}> $locs */
+        $locs = $this->model->nodeDetail($nodeId)['source_locations'];
+        $rows = [];
+        foreach ($locs as $loc) {
+            $label = match ($loc['kind']) {
+                'self' => 'source',
+                'defined_at' => 'defined',
+                'held_by' => 'held by',
+                default => $loc['kind'],
+            };
+            $text = $label . ': ' . $loc['formatted'];
+            if (strlen($text) > $maxWidth) {
+                $text = substr($text, 0, $maxWidth - 1) . '…';
+            }
+            // Reverse video keeps the banner visually distinct from
+            // the status / footer rows without burning a color that
+            // might clash with the user's terminal theme.
+            $rows[] = "\e[7m " . str_pad($text, $cols - 1) . "\e[27m";
+            if (count($rows) >= self::SOURCE_BANNER_MAX_ROWS) {
+                break;
+            }
+        }
+        return $rows;
+    }
+
+    /**
+     * Worst-case rows the source-location banner can ever steal
+     * from the body, regardless of what the currently focused node
+     * carries. Used by the sandwich split so the focus bar's
+     * y-position stays stable as the cursor walks through nodes —
+     * children pane absorbs the slack at runtime.
+     */
+    private function maxBannerReserve(): int
+    {
+        return $this->showSourceBanner ? self::SOURCE_BANNER_MAX_ROWS : 0;
+    }
+
     private function render(): void
     {
         $this->model->ensureLocationInfoLoaded();
         [$cols, $rows] = $this->term->size();
 
+        // The sidebar and the source-banner both want the node id the
+        // cursor is currently sitting on, regardless of whether the
+        // user has drilled into it — mirrors the detail-pane policy.
+        $focusId = $this->currentCursorNodeId();
+
         $sidebarW = 0;
         $sidebarLines = [];
         if ($this->showSidebar && $cols > 80) {
             $sidebarW = min(40, (int)($cols * 0.3));
-            if ($this->sandwich) {
-                // Show detail for the selected row in the active pane
-                if ($this->activePane === 'children' && isset($this->childRows[$this->childSelected])) {
-                    $focusId = $this->childRows[$this->childSelected]['node_id'];
-                } elseif ($this->activePane === 'parents' && isset($this->parentRows[$this->parentSelected])) {
-                    $focusId = $this->parentRows[$this->parentSelected]['node_id'];
-                } else {
-                    $focusId = $this->sandwichNodeId;
-                }
-            } else {
-                $focusId = $this->rows[$this->selected]['node_id'] ?? null;
-            }
             if ($focusId !== null) {
                 $allSidebarLines = $this->buildSidebarLines($focusId, $sidebarW, $rows + $this->sidebarScroll);
                 // Apply scroll
@@ -1626,6 +1778,7 @@ final class RmemExploreTui
             }
         }
         $mainW = $cols - $sidebarW;
+        $this->bannerFocusId = $focusId;
 
         $lines = [];
         $lines[] = $this->renderHeader($cols);
@@ -1647,9 +1800,20 @@ final class RmemExploreTui
             for ($i = 1; $i < count($lines); $i++) {
                 $row = $i + 1; // 1-based terminal row
                 $sLine = $sidebarLines[$i - 1] ?? '';
-                if (strlen($sLine) > $sidebarW - 1) {
-                    $sLine = substr($sLine, 0, $sidebarW - 4) . '...';
-                }
+                // Sidebar lines may carry their own ANSI escapes
+                // (e.g. the underlined-cyan styling on Path-to-root
+                // entries). A blind byte-truncate cuts those mid-CSI
+                // and leaks the unterminated escape onto the screen
+                // — terminals like PhpStorm's JediTerm parse the
+                // partial sequence + the next iteration's cursor
+                // positioning escape together and either eat their
+                // ESC or render the parameters as literal text,
+                // which then bleeds into / overwrites neighbouring
+                // panes. truncateToVisibleWidth() preserves CSI
+                // sequences intact and resets attributes after the
+                // suffix so the next sidebar / main-pane row
+                // starts from a clean state.
+                $sLine = self::truncateToVisibleWidth($sLine, $sidebarW - 1);
                 $sidebarBuf .= "\e[{$row};{$sepCol}H\e[2m│\e[22m{$sLine}";
             }
         }
@@ -1810,20 +1974,41 @@ final class RmemExploreTui
 
     private function renderList(array &$lines, int $cols, int $totalRows): void
     {
+        $bannerRows = $this->renderSourceBannerRows($this->bannerFocusId, $cols);
+        $this->lastRenderBannerRowCount = count($bannerRows);
+        $bottomReserve = 2 + $this->lastRenderBannerRowCount; // banner rows + footer + status
+
         $lines[] = $this->renderBreadcrumb($cols);
         $lines[] = $this->colHeader($cols);
         $lines[] = '  ' . str_repeat('─', min($cols - 2, 120));
 
-        $bodyH = $totalRows - count($lines) - 2;
+        $bodyH = $totalRows - count($lines) - $bottomReserve;
+        // 1-based terminal row range that holds the visible list rows;
+        // recorded so hitTestMouseRow doesn't have to re-derive it from
+        // potentially-stale cached values.
+        $listFirstRow = count($lines) + 1;
         $count = count($this->rows);
+        $visibleListCount = max(0, min($bodyH, $count - $this->topRow));
+        $this->lastRenderListStart = $visibleListCount > 0 ? $listFirstRow : -1;
+        $this->lastRenderListEnd = $visibleListCount > 0
+            ? $listFirstRow + $visibleListCount - 1
+            : -1;
+        $this->lastRenderBodyEndRow = $totalRows - $bottomReserve;
+        $this->lastRenderParentsStart = -1;
+        $this->lastRenderParentsEnd = -1;
+        $this->lastRenderChildrenStart = -1;
+        $this->lastRenderChildrenEnd = -1;
         for ($i = $this->topRow; $i < min($this->topRow + $bodyH, $count); $i++) {
             $lines[] = $this->formatRow($this->rows[$i], $i === $this->selected, $cols);
         }
 
-        while (count($lines) < $totalRows - 2) {
+        while (count($lines) < $totalRows - $bottomReserve) {
             $lines[] = '';
         }
 
+        foreach ($bannerRows as $bannerRow) {
+            $lines[] = $bannerRow;
+        }
         $lines[] = $this->renderFooter($cols);
         $statusParts = [
             number_format(count($this->rows)) . ' nodes',
@@ -1838,13 +2023,39 @@ final class RmemExploreTui
 
     private function renderSandwich(array &$lines, int $cols, int $totalRows): void
     {
-        $bodyH = $totalRows - 4; // header + focus bar + footer + status
+        $bannerRows = $this->renderSourceBannerRows($this->bannerFocusId, $cols);
+        $this->lastRenderBannerRowCount = count($bannerRows);
+
+        // Two reserves intentionally diverge:
+        //   - $bottomReserve = actual rows the banner takes — used
+        //     for filling the children pane down to the banner's
+        //     top edge so there's no padding gap.
+        //   - $halfH is computed from $maxBottomReserve (worst-
+        //     case banner + footer + status) so the focus bar
+        //     stays at a constant y-position even as the cursor
+        //     walks through nodes with different actual kind
+        //     counts. The children pane absorbs the slack rows
+        //     when the banner is shorter than the maximum.
+        $bottomReserve = 2 + $this->lastRenderBannerRowCount;
+        $maxBottomReserve = 2 + $this->maxBannerReserve();
+        $this->lastRenderBodyEndRow = $totalRows - $bottomReserve;
+        $this->lastRenderListStart = -1;
+        $this->lastRenderListEnd = -1;
+
+        $bodyH = $totalRows - 2 - $maxBottomReserve; // header + focus bar on top, max banner + footer + status on bottom
         $halfH = (int)($bodyH / 2);
 
         // Parents pane
         $pLabel = $this->activePane === 'parents' ? "\e[1m▸ Parents\e[0m" : "\e[2m  Parents\e[0m";
         $lines[] = $pLabel . sprintf(' (%d)', count($this->parentRows));
+        // 1-based terminal row of the first parent data row.
+        $parentsFirstRow = count($lines) + 1;
         $pCount = count($this->parentRows);
+        $visibleParentCount = max(0, min($halfH, $pCount - $this->parentTopRow));
+        $this->lastRenderParentsStart = $visibleParentCount > 0 ? $parentsFirstRow : -1;
+        $this->lastRenderParentsEnd = $visibleParentCount > 0
+            ? $parentsFirstRow + $visibleParentCount - 1
+            : -1;
         for ($i = $this->parentTopRow; $i < min($this->parentTopRow + $halfH, $pCount); $i++) {
             $sel = $this->activePane === 'parents' && $i === $this->parentSelected;
             $lines[] = $this->formatRow($this->parentRows[$i], $sel, $cols);
@@ -1873,17 +2084,27 @@ final class RmemExploreTui
         // Children pane
         $cLabel = $this->activePane === 'children' ? "\e[1m▸ Children\e[0m" : "\e[2m  Children\e[0m";
         $lines[] = $cLabel . sprintf(' (%d)', count($this->childRows));
-        $remainH = $totalRows - count($lines) - 2;
+        $remainH = $totalRows - count($lines) - $bottomReserve;
+        // 1-based terminal row of the first child data row.
+        $childrenFirstRow = count($lines) + 1;
         $cCount = count($this->childRows);
+        $visibleChildCount = max(0, min($remainH, $cCount - $this->childTopRow));
+        $this->lastRenderChildrenStart = $visibleChildCount > 0 ? $childrenFirstRow : -1;
+        $this->lastRenderChildrenEnd = $visibleChildCount > 0
+            ? $childrenFirstRow + $visibleChildCount - 1
+            : -1;
         for ($i = $this->childTopRow; $i < min($this->childTopRow + $remainH, $cCount); $i++) {
             $sel = $this->activePane === 'children' && $i === $this->childSelected;
             $lines[] = $this->formatRow($this->childRows[$i], $sel, $cols);
         }
 
-        while (count($lines) < $totalRows - 2) {
+        while (count($lines) < $totalRows - $bottomReserve) {
             $lines[] = '';
         }
 
+        foreach ($bannerRows as $bannerRow) {
+            $lines[] = $bannerRow;
+        }
         $lines[] = $this->renderFooter($cols);
         $lines[] = sprintf(
             ' node#%d | Tab:switch pane | Enter:focus | Bksp:back to list',
@@ -2033,6 +2254,7 @@ final class RmemExploreTui
             '    n               Toggle tree/all edges',
             '    o               Toggle sidebar (path to root)',
             '    O               Show memory overview (heap/limit/RSS/...)',
+            '    b               Toggle source-location banner (clickable path)',
             '',
             '  Sandwich view:',
             '    Top pane        Parents (who retains this node)',
@@ -2125,5 +2347,63 @@ final class RmemExploreTui
     {
         [, $rows] = $this->term->size();
         return max(1, $rows - 6);
+    }
+
+    /**
+     * Visible-cell width of $s, ignoring CSI escape sequences.
+     * ASCII-only assumption — every non-escape byte is one cell.
+     * Good enough for the sidebar paths and node labels we render
+     * (no CJK / wide chars in those code paths).
+     */
+    private static function visibleWidth(string $s): int
+    {
+        $stripped = preg_replace('/\e\[[0-9;]*[A-Za-z]/', '', $s);
+        return strlen($stripped ?? $s);
+    }
+
+    /**
+     * Truncate $s so its **visible** width is at most $max cells,
+     * preserving CSI escape sequences intact (no half-cut escapes
+     * leaking onto the screen as literal text). When truncation
+     * actually happens, append $suffix and a `\e[0m` reset so any
+     * attribute the caller's escapes left half-open doesn't bleed
+     * into whatever is drawn next.
+     */
+    private static function truncateToVisibleWidth(string $s, int $max, string $suffix = '...'): string
+    {
+        if (self::visibleWidth($s) <= $max) {
+            return $s;
+        }
+        $suffixWidth = self::visibleWidth($suffix);
+        if ($suffixWidth >= $max) {
+            return substr($suffix, 0, $max);
+        }
+        $budget = $max - $suffixWidth;
+        $out = '';
+        $visible = 0;
+        $len = strlen($s);
+        $i = 0;
+        while ($i < $len && $visible < $budget) {
+            // Pass CSI escapes through unmodified — they don't cost
+            // visible cells. We accept the standard `\e[ <params> <final>`
+            // form; final byte is in 0x40..0x7E (`@..~`).
+            if ($i + 1 < $len && $s[$i] === "\e" && $s[$i + 1] === '[') {
+                $j = $i + 2;
+                while ($j < $len) {
+                    $b = ord($s[$j]);
+                    $j++;
+                    if ($b >= 0x40 && $b <= 0x7E) {
+                        break;
+                    }
+                }
+                $out .= substr($s, $i, $j - $i);
+                $i = $j;
+                continue;
+            }
+            $out .= $s[$i];
+            $visible++;
+            $i++;
+        }
+        return $out . $suffix . "\e[0m";
     }
 }
