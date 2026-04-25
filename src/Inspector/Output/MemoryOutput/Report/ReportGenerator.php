@@ -131,7 +131,14 @@ final class ReportGenerator
             if (!$run_phase3) {
                 $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(
-                    new PropertyScalingPass($db, $run_id, $class_objects)
+                    new PropertyScalingPass(
+                        $db,
+                        $run_id,
+                        $class_objects,
+                        null,
+                        null,
+                        $heap_usage,
+                    )
                 ));
                 $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
@@ -231,6 +238,7 @@ final class ReportGenerator
                     $class_objects,
                     $substrate,
                     $resolver_factory(),
+                    $heap_usage,
                 )
             );
             $pass_factories['PerPropertyMemoryPass'] = fn (): array => $this->runPass(
@@ -401,6 +409,7 @@ final class ReportGenerator
                     $class_objects,
                     $substrate,
                     $resolver_factory(),
+                    $heap_usage,
                 )
             );
             $pass_factories['PerPropertyMemoryPass'] = fn (): array => $this->runPass(

@@ -352,11 +352,20 @@ final class EmitClassTableJob implements CollectorJob
         foreach ($array->getItemIterator($ctx->dereferencer) as $function_name => $zval) {
             assert(is_string($function_name));
             assert(!is_null($zval->value->func));
+            // The iterator key is the case-folded HashTable bucket key
+            // (PHP lower-cases method names for dispatch). Resolve the
+            // canonical name from the function struct so paths render
+            // `methods->getAttribute` instead of `methods->getattribute`.
+            $canonical_name = CollectorHelpers::resolveCanonicalFunctionName(
+                $zval->value->func,
+                $function_name,
+                $ctx,
+            );
             $result = CollectorHelpers::collectZendFunctionPointer($zval->value->func, $ctx);
             if (is_int($result)) {
-                $defined_functions_context->add($function_name, $result);
+                $defined_functions_context->add($canonical_name, $result);
             } else {
-                $defined_functions_context->add($function_name, $result->context);
+                $defined_functions_context->add($canonical_name, $result->context);
                 if ($result->deferred_arrays !== []) {
                     $deferred_results[] = $result;
                 }

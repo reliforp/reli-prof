@@ -438,20 +438,36 @@ final class TextReportFormatter implements ReportFormatterInterface
 
         $out = [$line];
 
-        // Detect a flat tail after the drop: if no further >2× drop occurs
-        // in the descent past the drop, the post-drop region is roughly
-        // uniform — the leaf is an arbitrary one of N similar-sized
-        // siblings, so the path index is incidental rather than meaningful.
+        // Decide whether to mark the post-drop region as a "uniform-
+        // sibling" tail. The label is a reader hint that the chosen leaf
+        // index is incidental: the descent landed on one of many similar
+        // children of the same parent, not a single deep spine.
+        //
+        // Two forgiving signals — either suffices:
+        //   (a) No single tail step is sharper than 3× (the descent
+        //       slope is shallow — weight is spreading gradually).
+        //   (b) Overall max/min ratio across the tail is < 4× (the tail
+        //       spans less than two doublings; even if some individual
+        //       steps are >3×, the total spread is bounded).
+        //
+        // 2× was too strict: descents like
+        // 2.47 KB → 1.8 KB → 600 B (still gradual but with one >3× step)
+        // were excluded. 3× is calibrated against the corpus — see the
+        // T1+T2 verification doc on the research branch for examples.
         if ($drop_index + 2 < count($sizes)) {
             $tail = array_slice($sizes, $drop_index + 1);
-            $has_secondary_drop = false;
+            $has_sharp_step = false;
             for ($i = 0; $i < count($tail) - 1; $i++) {
-                if ($tail[$i + 1] * 2 < $tail[$i]) {
-                    $has_secondary_drop = true;
+                if ($tail[$i + 1] * 3 < $tail[$i]) {
+                    $has_sharp_step = true;
                     break;
                 }
             }
-            if (!$has_secondary_drop) {
+            $tail_max = max($tail);
+            $tail_min = max(1, min($tail));
+            $tail_spread_bounded = ($tail_max / $tail_min) < 4.0;
+
+            if (!$has_sharp_step || $tail_spread_bounded) {
                 $out[] = '       leaf is one of many similar-sized siblings'
                     . ' — weight is distributed, no single deep spine';
             }

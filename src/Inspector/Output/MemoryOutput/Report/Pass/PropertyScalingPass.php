@@ -24,6 +24,14 @@ final class PropertyScalingPass implements PassInterface
 {
     /**
      * @param array<string, array{count: int, memory_usage: int}> $class_objects_summary
+     * @param int $heap_total_bytes Optional heap-total clamp for impact_bytes.
+     *     0 = no clamp. Per-instance retained sizes can include shared
+     *     subtrees, so summing them over all instances may exceed the heap
+     *     total (e.g. graph-recursion: 53.73 GB on a 111 MB heap). When
+     *     non-zero, the per-instance total is clamped down and the
+     *     unclamped value preserved in `per_instance_total_bytes_unclamped`
+     *     plus a hypothesis note. See N10 in
+     *     memory-report-ux-improvements.md.
      */
     public function __construct(
         private \PDO $db,
@@ -31,6 +39,7 @@ final class PropertyScalingPass implements PassInterface
         private array $class_objects_summary,
         private ?GraphSubstrate $substrate = null,
         private ?LinkNameResolver $link_resolver = null,
+        private int $heap_total_bytes = 0,
     ) {
     }
 
@@ -144,6 +153,42 @@ final class PropertyScalingPass implements PassInterface
             array_column($per_instance, 'size')
         );
 
+        // Clamp to heap total when known. The per-instance retained sum
+        // can over-count shared subtrees (every instance's retained size
+        // includes the whole shared part), producing impacts that exceed
+        // the heap total. Mirrors the DedupCandidatePass clamp — see N10
+        // in memory-report-ux-improvements.md.
+        $clamped_from = null;
+        $impact_bytes = $per_instance_total;
+        if ($this->heap_total_bytes > 0 && $impact_bytes > $this->heap_total_bytes) {
+            $clamped_from = $impact_bytes;
+            $impact_bytes = $this->heap_total_bytes;
+        }
+
+        $hypothesis = 'Per-instance properties scale linearly;'
+            . ' shared properties have constant cost.'
+            . "\n" . implode("\n", $lines);
+        if ($clamped_from !== null) {
+            $hypothesis .= sprintf(
+                "\n(impact clamped from %s to heap total — per-instance"
+                . ' retained over-counts shared subtree memory)',
+                SizeFormatter::format($clamped_from),
+            );
+        }
+
+        $facts = [
+            'class_name' => $dominant_class,
+            'instance_count' => $dominant_count,
+            'per_instance_properties' => $per_instance,
+            'shared_properties' => $shared,
+            'scalar_properties_count' => $scalar_count,
+            'per_instance_total_bytes' => $per_instance_total,
+            'size_mode' => $size_label,
+        ];
+        if ($clamped_from !== null) {
+            $facts['per_instance_total_bytes_unclamped'] = $clamped_from;
+        }
+
         return [
             new Finding(
                 kind: 'property_scaling',
@@ -163,25 +208,15 @@ final class PropertyScalingPass implements PassInterface
                     $size_label,
                     count($shared),
                 ),
-                facts: [
-                    'class_name' => $dominant_class,
-                    'instance_count' => $dominant_count,
-                    'per_instance_properties' => $per_instance,
-                    'shared_properties' => $shared,
-                    'scalar_properties_count' => $scalar_count,
-                    'per_instance_total_bytes' => $per_instance_total,
-                    'size_mode' => $size_label,
-                ],
-                hypothesis: 'Per-instance properties scale linearly;'
-                    . ' shared properties have constant cost.'
-                    . "\n" . implode("\n", $lines),
+                facts: $facts,
+                hypothesis: $hypothesis,
                 next_checks: [
                     'Per-instance props with small values'
                     . ' may benefit from lazy init',
                     'Check if per-instance arrays can be replaced'
                     . ' with defaults',
                 ],
-                impact_bytes: $per_instance_total,
+                impact_bytes: $impact_bytes,
             ),
         ];
     }
