@@ -85,6 +85,13 @@ final class CollectorHelpers
      * Re-deref'ing the func pointer is essentially free here because
      * `CachingDereferencer` memoises by `(type, address)`.
      *
+     * Implementation note: this mirrors what `collectZendFunction()` already
+     * does for the `name` child (deref function_name, toString) — no
+     * `getFunctionName()` call, because that method's closure branch
+     * triggers an op_array lazy-init that reads garbage memory for
+     * non-user-function entries (internal trampolines, callable wrappers
+     * registered in PHP 8+ function_tables).
+     *
      * @param Pointer<ZendFunction> $function_pointer
      */
     public static function resolveCanonicalFunctionName(
@@ -94,12 +101,12 @@ final class CollectorHelpers
     ): string {
         try {
             $func = $ctx->dereferencer->deref($function_pointer);
-            $name = $func->getFunctionName(
-                $ctx->dereferencer,
-                $ctx->zend_type_reader,
-            );
-            if ($name !== null && $name !== '') {
-                return $name;
+            if ($func->function_name !== null) {
+                $string = $ctx->dereferencer->deref($func->function_name);
+                $name = $string->toString($ctx->dereferencer);
+                if ($name !== '') {
+                    return $name;
+                }
             }
         } catch (\Throwable) {
             // Fall through to bucket-key fallback.
