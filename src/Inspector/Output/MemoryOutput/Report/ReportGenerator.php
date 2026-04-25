@@ -136,7 +136,9 @@ final class ReportGenerator
                 $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
-                $findings = array_merge($findings, $this->runPass(new DedupCandidatePass($db, $run_id)));
+                $findings = array_merge($findings, $this->runPass(
+                    new DedupCandidatePass($db, $run_id, null, null, $heap_usage)
+                ));
                 $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
             }
         }
@@ -247,7 +249,7 @@ final class ReportGenerator
                 new NonTreeEdgePass($db_factory(), $run_id, $substrate)
             );
             $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
-                new DedupCandidatePass($db_factory(), $run_id, $substrate)
+                new DedupCandidatePass($db_factory(), $run_id, $substrate, null, $heap_usage)
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
                 new StructuralDedupPass($db_factory(), $run_id, $substrate, $resolver_factory())
@@ -417,7 +419,13 @@ final class ReportGenerator
                 new NonTreeEdgePass($dummy_factory(), 0, $substrate, $non_tree_edge_stats)
             );
             $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
-                new DedupCandidatePass($dummy_factory(), 0, $substrate, $dedup_candidates)
+                new DedupCandidatePass(
+                    $dummy_factory(),
+                    0,
+                    $substrate,
+                    $dedup_candidates,
+                    $heap_usage,
+                )
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
                 new StructuralDedupPass($dummy_factory(), 0, $substrate, $resolver_factory())

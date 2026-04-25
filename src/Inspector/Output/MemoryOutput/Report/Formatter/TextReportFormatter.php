@@ -105,6 +105,12 @@ final class TextReportFormatter implements ReportFormatterInterface
                 $lines[] = "  [{$tag}] {$impact}";
                 $lines[] = "    {$finding->kind}: {$finding->summary}";
 
+                if ($finding->kind === 'bottleneck_path') {
+                    foreach (self::renderBottleneckSpine($finding) as $spine_line) {
+                        $lines[] = "    {$spine_line}";
+                    }
+                }
+
                 if ($finding->hypothesis !== '') {
                     foreach (explode("\n", $finding->hypothesis) as $h) {
                         $lines[] = "    {$h}";
@@ -252,6 +258,15 @@ final class TextReportFormatter implements ReportFormatterInterface
                 $display_path = strlen($path) > 30
                     ? '...' . substr($path, -27)
                     : $path;
+                // Escape whitespace before truncating: a literal newline
+                // splits the table row in two, and `\n`/`\t`/`\0` in the
+                // preview are far more readable than the actual character.
+                $preview = strtr($preview, [
+                    "\n" => '\\n',
+                    "\r" => '\\r',
+                    "\t" => '\\t',
+                    "\0" => '\\0',
+                ]);
                 $display_preview = strlen($preview) > 40
                     ? substr($preview, 0, 37) . '...'
                     : $preview;
@@ -350,5 +365,98 @@ final class TextReportFormatter implements ReportFormatterInterface
             FindingSeverity::Low => 3,
             FindingSeverity::Info => 4,
         };
+    }
+
+    /**
+     * Render `bottleneck_path` spine info from `facts.sizes`.
+     *
+     * The summary string already shows `<path> (<size>)`, but on a
+     * descent like `$decoded[data][10100][profile]` the displayed size
+     * is the spine *root's* retained size while the path is the spine's
+     * *leaf*. When the heaviest-child descent crosses into a uniform-
+     * sibling region (e.g. one of 25,000 ~3 KB profiles), the size and
+     * the path describe opposite ends of the chain.
+     *
+     * Detect the first dominance drop (sizes[i+1] < sizes[i] * 0.5) and
+     * print one explanatory line — the leaf retained size, plus a note
+     * if the descent flatlines after the drop (uniform-sibling region).
+     *
+     * Returns 0–2 lines to be rendered under the standard summary.
+     *
+     * @return list<string>
+     * @psalm-suppress MixedAssignment, MixedArgument
+     */
+    private static function renderBottleneckSpine(Finding $finding): array
+    {
+        /** @var mixed $raw_sizes */
+        $raw_sizes = $finding->facts['sizes'] ?? null;
+        if (!is_array($raw_sizes) || count($raw_sizes) < 2) {
+            return [];
+        }
+
+        /** @var list<int> $sizes */
+        $sizes = [];
+        foreach ($raw_sizes as $s) {
+            if (is_int($s) && $s >= 0) {
+                $sizes[] = $s;
+            }
+        }
+        if (count($sizes) < 2) {
+            return [];
+        }
+
+        $root_size = $sizes[0];
+        $leaf_size = $sizes[count($sizes) - 1];
+        if ($root_size <= 0) {
+            return [];
+        }
+
+        $drop_index = null;
+        for ($i = 0; $i < count($sizes) - 1; $i++) {
+            if ($sizes[$i + 1] * 2 < $sizes[$i]) {
+                $drop_index = $i;
+                break;
+            }
+        }
+
+        if ($drop_index === null) {
+            // Descent stays heavy all the way down — the displayed size
+            // is roughly accurate; nothing to clarify.
+            return [];
+        }
+
+        $pre_drop_size = $sizes[$drop_index];
+        $post_drop_size = $sizes[$drop_index + 1];
+        $line = sprintf(
+            'Spine: heaviest-child mass drops at depth %d'
+            . ' (%s → %s); leaf retains only %s',
+            $drop_index + 1,
+            SizeFormatter::format($pre_drop_size),
+            SizeFormatter::format($post_drop_size),
+            SizeFormatter::format($leaf_size),
+        );
+
+        $out = [$line];
+
+        // Detect a flat tail after the drop: if no further >2× drop occurs
+        // in the descent past the drop, the post-drop region is roughly
+        // uniform — the leaf is an arbitrary one of N similar-sized
+        // siblings, so the path index is incidental rather than meaningful.
+        if ($drop_index + 2 < count($sizes)) {
+            $tail = array_slice($sizes, $drop_index + 1);
+            $has_secondary_drop = false;
+            for ($i = 0; $i < count($tail) - 1; $i++) {
+                if ($tail[$i + 1] * 2 < $tail[$i]) {
+                    $has_secondary_drop = true;
+                    break;
+                }
+            }
+            if (!$has_secondary_drop) {
+                $out[] = '       leaf is one of many similar-sized siblings'
+                    . ' — weight is distributed, no single deep spine';
+            }
+        }
+
+        return $out;
     }
 }

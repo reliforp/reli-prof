@@ -106,6 +106,19 @@ final class EmitClassTableJob implements CollectorJob
                 }
 
                 $class_entry = $ctx->dereferencer->deref($pointer);
+
+                // Prefer the canonical class name from class_entry->name over
+                // the bucket key. PHP lower-cases class_table HashTable keys
+                // for case-insensitive dispatch, so $bucket->key returns
+                // "twig\extension\coreextension" instead of
+                // "Twig\Extension\CoreExtension". Fall back to the bucket key
+                // if the canonical name can't be read.
+                try {
+                    $class_name = $class_entry->getClassName($ctx->dereferencer);
+                } catch (\Throwable) {
+                    // Keep bucket-key fallback.
+                }
+
                 [$class_def_context, $deferred_zvals] = $this->collectClassDefinition($class_entry, $ctx, $queue);
 
                 $ctx->emitNode($class_def_context, $parent, $class_name);

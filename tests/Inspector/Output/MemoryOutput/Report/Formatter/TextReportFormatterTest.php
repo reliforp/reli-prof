@@ -279,6 +279,92 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertStringContainsString('[sparse]', $output);
     }
 
+    public function testFormatEscapesWhitespaceInTopStringPreview(): void
+    {
+        // Strings whose preview contains a literal newline used to wrap
+        // mid-row and break the table layout (B3). Verify the formatter
+        // now escapes \n / \r / \t / \0 before truncating.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'large_string',
+                severity: FindingSeverity::Medium,
+                confidence: FindingConfidence::High,
+                summary: '512.00 KB — multi-line string',
+                facts: [
+                    'node_id' => 99,
+                    'size' => 524288,
+                    'owner_path' => '$multiline',
+                    'preview' => "first line\nsecond line\twith tab",
+                ],
+                impact_bytes: 524288,
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        $this->assertStringContainsString('=== Top Strings ===', $output);
+        // The escape sequences appear literally; no raw newline inside the row
+        $this->assertStringContainsString('first line\\nsecond line\\twith tab', $output);
+        // No literal newline can appear inside the preview portion: the
+        // exact preview substring must not contain one.
+        $this->assertStringNotContainsString("first line\nsecond line", $output);
+    }
+
+    public function testFormatRendersBottleneckSpineDropLine(): void
+    {
+        // bottleneck_path uses sizes[0] (spine root) as impact_bytes while
+        // showing the leaf path as summary. When the descent crosses into a
+        // uniform-sibling region the displayed size and path describe
+        // opposite ends of the chain. The formatter should emit a "Spine"
+        // explanatory line that names where mass drops and reports the
+        // leaf's actual retained size.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: '$decoded[data][10100][profile] (171.45 MB)',
+                facts: [
+                    'sizes' => [
+                        325480905, 325479089, 325475106, 325475106, 324977898,
+                        3336, 3336, 3184, 2520, 2240, 2144, 2144,
+                    ],
+                ],
+                impact_bytes: 325480905,
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        $this->assertStringContainsString('Spine: heaviest-child mass drops at depth 5', $output);
+        // After the drop, sizes flatline within ~10% — formatter should
+        // mark the leaf as one-of-many uniform siblings.
+        $this->assertStringContainsString('one of many similar-sized siblings', $output);
+    }
+
+    public function testFormatOmitsBottleneckSpineLineForUniformDescent(): void
+    {
+        // When the spine stays dominant from root to leaf (no >2× drop
+        // anywhere), the displayed size is roughly accurate and the spine
+        // line would be noise.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: '$root->$child->$leaf (10.00 MB)',
+                facts: [
+                    'sizes' => [10485760, 10000000, 9500000, 9000000],
+                ],
+                impact_bytes: 10485760,
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        $this->assertStringNotContainsString('Spine:', $output);
+    }
+
     public function testFormatTruncatesLongClassName(): void
     {
         $long_name = 'App\\Very\\Long\\Namespace\\That\\Goes\\On\\And\\On\\ClassName';

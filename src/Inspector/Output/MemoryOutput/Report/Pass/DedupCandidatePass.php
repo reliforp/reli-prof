@@ -33,15 +33,22 @@ final class DedupCandidatePass implements PassInterface
      *     sample_parent_node_id: int,
      *     sample_child_node_id: int,
      *     sample_location_type?: ?string,
+     *     target_class?: ?string,
+     *     target_location_type?: ?string,
      *     sample_child_node_ids?: list<int>,
      *     examples?: array<string, mixed>
      * }>|null $precomputed_dedup_candidates
+     * @param int $heap_total_bytes Optional heap-total clamp for impact_bytes.
+     *     0 = no clamp. When non-zero, dedup findings whose `cnt × retained`
+     *     product exceeds the heap are clamped down — the raw product
+     *     over-counts shared subtrees (a known limitation of × count).
      */
     public function __construct(
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
         private ?array $precomputed_dedup_candidates = null,
+        private int $heap_total_bytes = 0,
     ) {
     }
 
@@ -68,9 +75,14 @@ final class DedupCandidatePass implements PassInterface
             }
 
             $sample_child_node_id = $row['sample_child_node_id'];
-            $sample_location_type = $row['sample_location_type']
-                ?? $this->loadNodeLocationInfo($sample_child_node_id)['location_type'];
-            if ($sample_location_type === 'ZendArrayMemoryLocation') {
+            $target_class = $row['target_class'] ?? null;
+            $target_location_type = $row['target_location_type']
+                ?? $row['sample_location_type']
+                ?? null;
+            if ($target_location_type === null) {
+                $target_location_type = $this->loadNodeLocationInfo($sample_child_node_id)['location_type'];
+            }
+            if ($target_location_type === 'ZendArrayMemoryLocation') {
                 continue;
             }
 
@@ -86,11 +98,26 @@ final class DedupCandidatePass implements PassInterface
                     $link_name,
                     $shallow_size,
                     $sample_child_node_ids,
+                    $target_class,
+                    $target_location_type,
                 );
                 if ($retained > $shallow_size) {
                     $size = $retained;
                     $total = $cnt * $retained;
                 }
+            }
+
+            // Clamp to heap total when known: cnt × retained over-counts
+            // shared subtree memory (every SCC member's retained size
+            // includes the whole shared subtree). Without a clamp this
+            // produces "722 MB impacted on a 12 MB heap" — see N10 in
+            // memory-report-ux-improvements.md. The clamp is a safety
+            // net; the proper fix is switching impact_bytes semantics
+            // from current_total to potential_saving (future work).
+            $clamped_from = null;
+            if ($this->heap_total_bytes > 0 && $total > $this->heap_total_bytes) {
+                $clamped_from = $total;
+                $total = $this->heap_total_bytes;
             }
 
             $sample_parent_node_id = $row['sample_parent_node_id'];
@@ -99,13 +126,14 @@ final class DedupCandidatePass implements PassInterface
                     'source_class' => $dedup_src,
                     'owner_prop' => $owner_prop,
                 ] = $this->resolveDedupOwnerInfoFromSubstrate($sample_parent_node_id);
-                $dedup_tgt = $this->substrate->getNodeClass($sample_child_node_id);
+                $dedup_tgt = $target_class ?? $this->substrate->getNodeClass($sample_child_node_id);
             } else {
                 [
                     'source_class' => $dedup_src,
                     'owner_prop' => $owner_prop,
                 ] = $this->resolveDedupOwnerInfoFromSql($sample_parent_node_id);
-                $dedup_tgt = $this->loadNodeLocationInfo($sample_child_node_id)['class_name'];
+                $dedup_tgt = $target_class
+                    ?? $this->loadNodeLocationInfo($sample_child_node_id)['class_name'];
             }
 
             $dedup_label = $this->buildDedupLabel(
@@ -116,12 +144,26 @@ final class DedupCandidatePass implements PassInterface
             );
 
             /** @var array<string, mixed> $examples */
-            $examples = $row['examples'] ?? $this->getDedupExamples($link_name, $shallow_size);
+            $examples = $row['examples']
+                ?? $this->getDedupExamples(
+                    $link_name,
+                    $shallow_size,
+                    $target_class,
+                    $target_location_type,
+                );
 
             [
                 'hypothesis' => $hypothesis,
                 'confidence' => $confidence,
             ] = $this->buildEvidenceSummary($examples, $cnt);
+
+            if ($clamped_from !== null) {
+                $hypothesis .= sprintf(
+                    "\n(impact clamped from %s to heap total — cnt × retained"
+                    . ' over-counts shared subtree memory)',
+                    SizeFormatter::format($clamped_from),
+                );
+            }
 
             $findings[] = new Finding(
                 kind: 'dedup_candidate',
@@ -137,15 +179,26 @@ final class DedupCandidatePass implements PassInterface
                     $size > $shallow_size ? ' retained' : '',
                     SizeFormatter::format($total),
                 ),
-                facts: [
-                    'link_name' => $link_name,
-                    'source_class' => $dedup_src,
-                    'target_class' => $dedup_tgt,
-                    'count' => $cnt,
-                    'each_size' => $size,
-                    'total_waste' => $total,
-                    'examples' => $examples,
-                ],
+                facts: $clamped_from !== null
+                    ? [
+                        'link_name' => $link_name,
+                        'source_class' => $dedup_src,
+                        'target_class' => $dedup_tgt,
+                        'count' => $cnt,
+                        'each_size' => $size,
+                        'total_waste' => $total,
+                        'total_waste_unclamped' => $clamped_from,
+                        'examples' => $examples,
+                    ]
+                    : [
+                        'link_name' => $link_name,
+                        'source_class' => $dedup_src,
+                        'target_class' => $dedup_tgt,
+                        'count' => $cnt,
+                        'each_size' => $size,
+                        'total_waste' => $total,
+                        'examples' => $examples,
+                    ],
                 hypothesis: $hypothesis,
                 impact_bytes: $total,
                 evidence_node_ids: $sample_child_node_ids ?? [$sample_child_node_id],
@@ -162,25 +215,49 @@ final class DedupCandidatePass implements PassInterface
      *     cnt: int,
      *     total_waste: int,
      *     sample_parent_node_id: int,
-     *     sample_child_node_id: int
+     *     sample_child_node_id: int,
+     *     target_class: ?string,
+     *     target_location_type: ?string
      * }>
      * @psalm-suppress MixedAssignment
      */
     private function loadDedupRowsFromSql(): array
     {
+        // Bucket by (link_name, node_size, target identity). The target
+        // identity (class_name when present, location_type otherwise) keeps
+        // heterogeneous classes that happen to share a shallow size out of
+        // the same group. Without it, e.g. Monolog\Handler\TestHandler (1
+        // instance, retains the full handler tree) and 3000 LogRecord
+        // instances (152 B each) collapse into one bucket whose
+        // sample-mean retained size is wildly skewed by the outlier — and
+        // the resulting × count blows the impact past the heap total.
+        // See B6 in docs/internals/memory-report-ux-improvements.md.
         /** @var list<array{
          *     link_name: string,
          *     size: int,
          *     cnt: int,
          *     total_waste: int,
          *     sample_parent_node_id: int,
-         *     sample_child_node_id: int
+         *     sample_child_node_id: int,
+         *     target_class: ?string,
+         *     target_location_type: ?string
          * }> $rows
          */
         $rows = $this->db->query($this->childSizesCteSql() . "
+            , child_classes AS (
+                SELECT
+                    node_id,
+                    min(class_name) as class_name,
+                    min(location_type) as location_type
+                FROM context_node_locations
+                WHERE run_id = {$this->run_id}
+                GROUP BY node_id
+            )
             SELECT
                 e.link_name,
                 cs.node_size as size,
+                cc.class_name as target_class,
+                cc.location_type as target_location_type,
                 count(DISTINCT e.child_node_id) as cnt,
                 count(DISTINCT e.child_node_id) * cs.node_size as total_waste,
                 min(e.parent_node_id) as sample_parent_node_id,
@@ -188,11 +265,13 @@ final class DedupCandidatePass implements PassInterface
             FROM context_edges e
             JOIN child_sizes cs
                 ON cs.node_id = e.child_node_id
+            LEFT JOIN child_classes cc
+                ON cc.node_id = e.child_node_id
             WHERE e.run_id = {$this->run_id}
                 AND e.is_tree = 0
                 AND e.strength = 'strong'
                 AND e.link_name <> 'key'
-            GROUP BY e.link_name, cs.node_size
+            GROUP BY e.link_name, cs.node_size, cc.class_name, cc.location_type
             HAVING count(DISTINCT e.child_node_id) > 50
                 AND count(DISTINCT e.child_node_id) * cs.node_size > 10240
             ORDER BY total_waste DESC
@@ -215,8 +294,32 @@ final class DedupCandidatePass implements PassInterface
         ";
     }
 
-    private function dedupChildrenCteSql(string $link_name, int $size): string
-    {
+    /**
+     * @param ?string $target_class Class name of bucket members, when known.
+     *     Filters group_children to the class-homogeneous subset so sample
+     *     averaging in getRetainedForDedup / getDedupExamples sees only
+     *     bucket members, not class-mates that happen to share a shallow
+     *     size (B6).
+     * @param ?string $target_location_type Location type fallback — applies
+     *     when class_name is NULL (non-object children: arrays, strings).
+     */
+    private function dedupChildrenCteSql(
+        string $link_name,
+        int $size,
+        ?string $target_class = null,
+        ?string $target_location_type = null,
+    ): string {
+        $class_filter = '';
+        if ($target_class !== null) {
+            $class_filter .= ' AND cc.class_name = ' . $this->db->quote($target_class);
+        } else {
+            $class_filter .= ' AND cc.class_name IS NULL';
+        }
+        if ($target_location_type !== null) {
+            $class_filter .= ' AND cc.location_type = ' . $this->db->quote($target_location_type);
+        } else {
+            $class_filter .= ' AND cc.location_type IS NULL';
+        }
         return "
             WITH child_sizes AS (
                 SELECT
@@ -226,16 +329,28 @@ final class DedupCandidatePass implements PassInterface
                 WHERE run_id = {$this->run_id}
                 GROUP BY node_id
             ),
+            child_classes AS (
+                SELECT
+                    node_id,
+                    min(class_name) as class_name,
+                    min(location_type) as location_type
+                FROM context_node_locations
+                WHERE run_id = {$this->run_id}
+                GROUP BY node_id
+            ),
             group_children AS (
                 SELECT DISTINCT e.child_node_id
                 FROM context_edges e
                 JOIN child_sizes cs
                     ON cs.node_id = e.child_node_id
+                LEFT JOIN child_classes cc
+                    ON cc.node_id = e.child_node_id
                 WHERE e.run_id = {$this->run_id}
                     AND e.is_tree = 0
                     AND e.strength = 'strong'
                     AND e.link_name = " . $this->db->quote($link_name) . "
                     AND cs.node_size = {$size}
+                    {$class_filter}
             )
         ";
     }
@@ -462,6 +577,8 @@ final class DedupCandidatePass implements PassInterface
         string $link_name,
         int $shallow_size,
         ?array $sample_child_node_ids = null,
+        ?string $target_class = null,
+        ?string $target_location_type = null,
     ): int {
         assert($this->substrate !== null);
 
@@ -470,11 +587,18 @@ final class DedupCandidatePass implements PassInterface
                 return $shallow_size;
             }
 
-            $stmt = $this->db->query($this->dedupChildrenCteSql($link_name, $shallow_size) . "
+            $stmt = $this->db->query(
+                $this->dedupChildrenCteSql(
+                    $link_name,
+                    $shallow_size,
+                    $target_class,
+                    $target_location_type,
+                ) . "
                 SELECT child_node_id
                 FROM group_children
                 LIMIT 20
-            ");
+            "
+            );
 
             $sample_child_node_ids = [];
             while (true) {
@@ -504,9 +628,19 @@ final class DedupCandidatePass implements PassInterface
      * @return array<string, mixed>
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
      */
-    private function getDedupExamples(string $link_name, int $size): array
-    {
-        $str_rows = $this->db->query($this->dedupChildrenCteSql($link_name, $size) . "
+    private function getDedupExamples(
+        string $link_name,
+        int $size,
+        ?string $target_class = null,
+        ?string $target_location_type = null,
+    ): array {
+        $cte = $this->dedupChildrenCteSql(
+            $link_name,
+            $size,
+            $target_class,
+            $target_location_type,
+        );
+        $str_rows = $this->db->query($cte . "
             SELECT
                 cnl.string_value,
                 count(*) as cnt
@@ -547,7 +681,7 @@ final class DedupCandidatePass implements PassInterface
             ];
         }
 
-        $obj_rows = $this->db->query($this->dedupChildrenCteSql($link_name, $size) . "
+        $obj_rows = $this->db->query($cte . "
             SELECT
                 gc.child_node_id,
                 cnl.class_name,
