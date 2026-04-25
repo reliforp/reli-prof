@@ -21,7 +21,6 @@ use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
-use Reli\Inspector\Watch\RssReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
@@ -38,6 +37,7 @@ final class MemoryDumpReader
         private int $eg_address,
         private int $cg_address,
         private ?int $bg_address = null,
+        private ?int $rss_bytes = null,
         private ?FastPathReader $fast_path = null,
     ) {
     }
@@ -97,9 +97,6 @@ final class MemoryDumpReader
                 $collected_memories->memory_locations,
             );
 
-            $rss_reader = new RssReader();
-            $rss_bytes = $rss_reader->read($this->pid);
-
             $sink->flush();
             $region_boundaries->backfillRegions($db, $run_id);
             $_region_result = RegionsSummary::queryRegionSums($db, $run_id);
@@ -111,7 +108,7 @@ final class MemoryDumpReader
             $summary = $this->buildSummary(
                 $summary_base,
                 $collected_memories,
-                $rss_bytes,
+                $this->rss_bytes,
                 $target_php_settings,
             );
 
@@ -187,9 +184,6 @@ final class MemoryDumpReader
             $collected_memories->memory_locations,
         );
 
-        $rss_reader = new RssReader();
-        $rss_bytes = $rss_reader->read($this->pid);
-
         // Use corrected summary if region sums are available from the
         // backfilled locations. Compute region sums directly from the
         // location temp file since we don't have a SQL DB.
@@ -200,7 +194,7 @@ final class MemoryDumpReader
         $summary = $this->buildSummary(
             $summary_base,
             $collected_memories,
-            $rss_bytes,
+            $this->rss_bytes,
             $target_php_settings,
         );
 

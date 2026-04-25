@@ -116,6 +116,7 @@ final class MemoryDumpReaderFactory
             $php_version,
             $parsed['eg_address'],
             $parsed['cg_address'],
+            rss_bytes: $parsed['rss_bytes'],
             fast_path: $fast_path,
         );
     }
@@ -130,6 +131,7 @@ final class MemoryDumpReaderFactory
      *     php_version: string,
      *     eg_address: int,
      *     cg_address: int,
+     *     rss_bytes: int|null,
      *     memory_areas: ProcessMemoryArea[],
      *     region_index: list<array{address: int, size: int, file_offset: int}>,
      * }
@@ -142,13 +144,20 @@ final class MemoryDumpReaderFactory
             throw new \RuntimeException("invalid dump file: bad magic");
         }
         $format_version = $this->readUint32($fp);
-        if ($format_version !== 1) {
+        if ($format_version !== 1 && $format_version !== 2) {
             throw new \RuntimeException("unsupported dump format version: {$format_version}");
         }
         $php_version = $this->readString($fp);
         $pid = $this->readInt64($fp);
         $eg_address = $this->readInt64($fp);
         $cg_address = $this->readInt64($fp);
+        // v2 added rss_bytes (signed int64; -1 = unavailable) right
+        // after cg_address. v1 dumps don't carry it.
+        $rss_bytes = null;
+        if ($format_version >= 2) {
+            $raw = $this->readInt64($fp);
+            $rss_bytes = $raw === -1 ? null : $raw;
+        }
         $memory_map_count = $this->readUint32($fp);
         $region_count = $this->readUint32($fp);
 
@@ -206,6 +215,7 @@ final class MemoryDumpReaderFactory
             'php_version' => $php_version,
             'eg_address' => $eg_address,
             'cg_address' => $cg_address,
+            'rss_bytes' => $rss_bytes,
             'memory_areas' => $memory_areas,
             'region_index' => $region_index,
         ];

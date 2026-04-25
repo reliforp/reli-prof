@@ -80,11 +80,12 @@ class MemoryDumpInspectCommandTest extends TestCase
 
         $display = $output->fetch();
         $this->assertStringContainsString('=== Header ===', $display);
-        $this->assertStringContainsString('Format Version:   1', $display);
+        $this->assertStringContainsString('Format Version:   2', $display);
         $this->assertStringContainsString('PHP Version:      v84', $display);
         $this->assertStringContainsString('PID:              9999', $display);
         $this->assertStringContainsString('EG Address:       0x7f0000001000', $display);
         $this->assertStringContainsString('CG Address:       0x7f0000002000', $display);
+        $this->assertStringContainsString('RSS at dump:      (unavailable)', $display);
         $this->assertStringContainsString('Memory Map Count: 0', $display);
         $this->assertStringContainsString('Region Count:     0', $display);
     }

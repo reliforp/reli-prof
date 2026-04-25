@@ -66,12 +66,13 @@ class DumpFileMemoryReaderTest extends TestCase
         $fp = fopen($this->tmp_file, 'rb') ?: $this->fail('open failed');
         $magic = fread($fp, 8);
         $this->assertSame("RELIMEM\0", $magic);
-        // format version (4) + php_version (4 len + 3 body) + pid (8) +
-        // eg (8) + cg (8) + memory_map_count (4) + region_count (4)
+        // format version (4) + php_version (4 len + body) + pid (8) +
+        // eg (8) + cg (8) + rss_bytes (8, v2) + memory_map_count (4) +
+        // region_count (4)
         fread($fp, 4);
         $len = unpack('V', fread($fp, 4))[1];
         fread($fp, $len);
-        fread($fp, 8 + 8 + 8 + 4 + 4);
+        fread($fp, 8 + 8 + 8 + 8 + 4 + 4);
         // Skip the memory map entries.
         foreach ($memory_areas as $area) {
             // begin + end + file_offset strings
@@ -165,7 +166,9 @@ class DumpFileMemoryReaderTest extends TestCase
         fread($fp, 4); // format version
         $len = unpack('V', fread($fp, 4))[1];
         fread($fp, $len);
-        fread($fp, 8 + 8 + 8 + 4 + 4);
+        // pid (8) + eg (8) + cg (8) + rss_bytes (8, v2)
+        // + memory_map_count (4) + region_count (4)
+        fread($fp, 8 + 8 + 8 + 8 + 4 + 4);
 
         $region_index = [];
         foreach ($regions as $region) {

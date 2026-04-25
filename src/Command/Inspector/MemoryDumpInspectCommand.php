@@ -76,13 +76,18 @@ final class MemoryDumpInspectCommand extends ReliCommand
             throw new \RuntimeException("invalid dump file: bad magic");
         }
         $format_version = $this->readUint32($fp);
-        if ($format_version !== 1) {
+        if ($format_version !== 1 && $format_version !== 2) {
             throw new \RuntimeException("unsupported dump format version: {$format_version}");
         }
         $php_version = $this->readString($fp);
         $pid = $this->readInt64($fp);
         $eg_address = $this->readInt64($fp);
         $cg_address = $this->readInt64($fp);
+        $rss_bytes = null;
+        if ($format_version >= 2) {
+            $raw = $this->readInt64($fp);
+            $rss_bytes = $raw === -1 ? null : $raw;
+        }
         $memory_map_count = $this->readUint32($fp);
         $region_count = $this->readUint32($fp);
 
@@ -93,6 +98,10 @@ final class MemoryDumpInspectCommand extends ReliCommand
         $output->writeln("  PID:              {$pid}");
         $output->writeln("  EG Address:       0x" . dechex($eg_address));
         $output->writeln("  CG Address:       0x" . dechex($cg_address));
+        $output->writeln(
+            "  RSS at dump:      "
+            . ($rss_bytes === null ? '(unavailable)' : (string)$rss_bytes . ' bytes')
+        );
         $output->writeln("  Memory Map Count: {$memory_map_count}");
         $output->writeln("  Region Count:     {$region_count}");
         $output->writeln('');
