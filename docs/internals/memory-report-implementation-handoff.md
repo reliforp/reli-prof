@@ -708,6 +708,144 @@ primary B1/G1/G4 acceptance check.
 
 ---
 
+## T2.3 implementation notes — `dedup_candidate` label `raw:` (and similar) lacks owner class
+
+Mixed bug-investigation + UX fallback request. Independent of all
+other T2.* items. Recommended split: ship the **display fallback**
+immediately (text-only, ~10 lines, no regression risk), run the
+**investigation** in a separate session against a small repro DB.
+
+### What's wrong
+
+The user-facing report contains findings like
+
+    [LOW] 16.28 MB impacted
+      dedup_candidate: raw: 6,429 copies x 2.59 KB retained = 16.28 MB
+      Multiple copies of same-size objects via shared references; ...
+      Examples: FFI\CData (88B)
+
+`raw:` is the bare `link_name`. Per
+`DedupCandidatePass::buildDedupLabel()` the label degrades to that
+shape only when **both `$source_class` and `$target_class` are null**.
+
+But the next line — `Examples: FFI\CData (88B)` — proves the target
+class is detectable somewhere. So the output we'd want is at minimum
+`raw (FFI\CData)`, and ideally
+`Reli\Lib\PhpInternals\CastedCData::$raw -> FFI\CData`.
+
+### Investigation task (separate session)
+
+Reproduce the scenario, get a `.db`, find out which of the candidate
+failure modes is real:
+
+**Repro recipe** (rough — adjust as needed):
+
+    cat > /tmp/ffi-cdata-test.php <<'EOF'
+    <?php
+    require __DIR__ . '/vendor/autoload.php';
+    $wrappers = [];
+    for ($i = 0; $i < 5000; $i++) {
+        $cdata = FFI::new('int');
+        $wrappers[] = new \Reli\Lib\PhpInternals\CastedCData($cdata, $cdata);
+    }
+    fputs(STDOUT, "ready\n");
+    fgets(STDIN);
+    EOF
+
+Then dump → analyze → query the resulting `.db`:
+
+    -- 1. how many 'raw' edges?
+    SELECT COUNT(*) FROM context_edges WHERE link_name = 'raw';
+
+    -- 2. parent context types of those edges
+    SELECT cn.type, COUNT(*) FROM context_edges e
+    JOIN context_nodes cn ON cn.node_id = e.parent_node_id
+    WHERE e.link_name = 'raw' GROUP BY cn.type;
+
+    -- 3. parent's tree-link-name (what resolveDirectSourceClassFromSubstrate checks)
+    SELECT pe.link_name, COUNT(*) FROM context_edges e
+    JOIN context_edges pe
+      ON pe.child_node_id = e.parent_node_id AND pe.is_tree = 1
+    WHERE e.link_name = 'raw' GROUP BY pe.link_name;
+
+    -- 4. grand-parent's class_name (the owner — the CastedCData object)
+    SELECT cnl.class_name, COUNT(*) FROM context_edges raw_e
+    JOIN context_edges obj_props_e
+      ON obj_props_e.child_node_id = raw_e.parent_node_id
+      AND obj_props_e.is_tree = 1
+      AND obj_props_e.link_name = 'object_properties'
+    JOIN context_node_locations cnl
+      ON cnl.node_id = obj_props_e.parent_node_id
+    WHERE raw_e.link_name = 'raw' GROUP BY cnl.class_name;
+
+The diagnostic tells:
+
+- **Query 3 returns something other than `object_properties`** →
+  `resolveDirectSourceClassFromSubstrate` rejects on the first
+  guard. Investigate whether FFI-wrapping classes don't go through
+  `ObjectPropertiesContext` (e.g. CastedCData might emit
+  properties via a different context).
+- **Query 4 returns NULL or empty `class_name`** → `getNodeClass`
+  returns null; investigate why the CastedCData object's class
+  isn't recorded in `context_node_locations`. Possibly an
+  EmitObjectJob path that skips class_name recording for some
+  object kind.
+- **Both queries return the expected shape but the report still
+  shows bare `raw:`** → the dedup pass's
+  `min(parent_node_id)` heuristic is picking a parent that isn't
+  representative; investigate `loadDedupRowsFromSql` (in
+  particular how the `sample_parent_node_id` interacts with
+  class-homogeneous bucketing).
+
+### Display fallback (independent quick win)
+
+Whatever the root cause turns out to be, the formatter should
+**always show whatever context is available**. The bare `raw:`
+form drops both ends of the relationship even when the target
+class is known.
+
+Patch shape in `DedupCandidatePass::buildDedupLabel()`:
+
+    if ($source_class !== null && $owner_prop !== null) {
+        $label = "{$source_class}::\${$owner_prop}[{$link_name}]";
+    } elseif ($source_class !== null) {
+        $label = "{$source_class}::\${$link_name}";
+    } else {
+        // Source unknown. Surface the target class if known so the
+        // reader doesn't read "raw:" as the entire identifier.
+        if ($target_class !== null) {
+            return "?::\${$link_name} -> {$target_class}";
+        }
+        return "(unknown owner)::\${$link_name}";
+    }
+
+    if ($target_class !== null) {
+        $label .= " ({$target_class})";
+    }
+
+    return $label;
+
+Result on the user's example:
+
+    Before:  dedup_candidate: raw: 6,429 copies x 2.59 KB retained = 16.28 MB
+    After:   dedup_candidate: ?::$raw -> FFI\CData: 6,429 copies x 2.59 KB retained = 16.28 MB
+
+Even without solving the root cause, the reader now knows "some
+class's `$raw` property points at FFI\CData". The `?::` is honest
+about the gap.
+
+### Order
+
+Display fallback is text-only, ~10 lines, no JSON schema impact —
+ship as part of any near-term follow-up.
+
+Investigation is a separate session's deeper work; once the root
+cause is known, the proper resolver fix supersedes the `?::`
+fallback (which then only fires on cases where source is genuinely
+unknowable, e.g. dynamic class loading).
+
+---
+
 ## Tier 3 implementation notes
 
 ### S12 — cluster findings by target across detector kinds
