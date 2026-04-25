@@ -686,11 +686,19 @@ final class BinaryReportDataProvider
         $name_child_of = [];
         $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
         $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+        // No `is_tree` filter on the `name` edge: when a class registers
+        // after its name string has already been collected by some other
+        // path (autoload, opcache-loaded interned strings, etc.), the
+        // resulting edge is recorded as `is_tree = 0` (back-reference to
+        // an existing node). Filtering by `is_tree = 1` would drop ~half
+        // of the user-defined ClassDefinitionContexts in real captures
+        // while keeping the internal classes that happened to be
+        // discovered first via the class table walk. Each
+        // ClassDefinitionContext / *FunctionDefinitionContext has at
+        // most one `name`-link edge by construction, so dropping the
+        // filter doesn't introduce duplicates.
         if ($edgeRows !== null) {
             for ($i = 0; $i < $edge_count; $i++) {
-                if ((int)$edgeRows[$i]->is_tree !== 1) {
-                    continue;
-                }
                 $parent = (int)$edgeRows[$i]->parent_node_id;
                 if (!isset($is_def_node[$parent])) {
                     continue;
@@ -705,9 +713,6 @@ final class BinaryReportDataProvider
             for ($i = 0; $i < $edge_count; $i++) {
                 $off = $i * Format::EDGE_ROW_SIZE;
                 $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $data, $off);
-                if ((int)$row['is_tree'] !== 1) {
-                    continue;
-                }
                 $parent = (int)$row['parent'];
                 if (!isset($is_def_node[$parent])) {
                     continue;
