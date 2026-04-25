@@ -382,3 +382,41 @@ The medium-term fix lives in the parked
 clamped numbers in `dedup_candidate` and `property_scaling` should
 be read as "memory currently sitting in this pattern, capped at
 heap total" — not as a delete-and-save figure.
+
+#### Where the over-counting actually happens (clarification)
+
+A natural question while reading this section: does `retained`
+itself double-count shared subtrees, or is the over-counting in
+the aggregation? Worth being precise.
+
+`GraphSubstrate::computeSubtreeSizes()` walks only `strong_children`
+(tree-edge children). Tree edges are stored with one parent per
+child (`tree_parents[$child] = $parent`), so the tree-edge graph
+is a true forest. Each node's `node_size` is summed into exactly
+one tree ancestor's subtree. **Retained per node is well-defined
+and not double-counted via DAG sharing.**
+
+The over-counting happens in the `cnt × retained` aggregation in
+`DedupCandidatePass` (and similarly per-instance retained sums in
+`PropertyScalingPass`). For a highly-connected SCC like
+`rw4_graph-recursion`'s 140,000-node graph:
+
+1. Analyse picks a spanning tree across the SCC (one tree parent
+   per node; remaining edges become non-tree).
+2. Spanning-tree-root-ish nodes have subtree_size ≈ entire SCC
+   subtree. Leaf-ish nodes have subtree_size ≈ shallow.
+3. `getRetainedForDedup` averages 20 sampled members' retained
+   sizes — the closer the sample skews to spanning-tree roots,
+   the larger the mean.
+4. That mean × N counts the spanning tree's ancestors many times
+   over (each member's retained already includes everything below
+   it, and the descendants are themselves SCC members whose
+   retained also includes their descendants, all of which overlap).
+
+So the formula `cnt × retained` is a hypothetical "if N copies each
+owned a fresh independent subtree of mean retained size" — useful
+when copies truly are independent (`rw_logger-stack`'s LogRecord
+case after B6: 3,000 × ~1.67 KB ≈ 4.88 MB, plausible). But for
+DAG/SCC members it overstates, sometimes massively. The substrate's
+retained number is fine; the dedup-pass aggregation is the leaky
+abstraction.
