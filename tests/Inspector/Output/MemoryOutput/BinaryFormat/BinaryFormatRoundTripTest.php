@@ -171,6 +171,74 @@ class BinaryFormatRoundTripTest extends TestCase
         $this->assertNotNull($dict->lookup(0)); // at least one string interned
     }
 
+    public function testNodeClassesSectionIsPopulatedForObjectLocations(): void
+    {
+        // Regression for T2.3: BinaryContextTreeSink::$perNodeClasses was
+        // an FFI `int32_t[]`. NULL_STRING_ID = 0xFFFFFFFF round-tripped
+        // through int32_t reads back as `-1`, never `4294967295`, so
+        // `(int)$arr[i] === Format::NULL_STRING_ID` was always false and
+        // the per-node accumulator never recorded a class for any
+        // object location. Result: the on-disk `node_classes` section
+        // came out all-NULL and the FFI-CSR substrate's binary loader
+        // returned null for every `getNodeClass()` — the SQL path was
+        // unaffected because it reads class_name straight from
+        // LocationRow. See
+        // docs/internals/memory-report-t2-3-investigation.md for the
+        // full trace.
+        $sink = new BinaryContextTreeSink(batch_size: 10);
+
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'root_entry',
+            type: 'ObjectContext',
+            locations: [
+                new ZendObjectMemoryLocation(
+                    address: 0x1000,
+                    size: 64,
+                    refcount: 1,
+                    type_info: 7,
+                    class_name: 'App\\MyClass',
+                ),
+            ],
+            attributes: [],
+        );
+
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming(
+            $sink,
+            [['zend_mm_heap_usage' => '64']],
+        );
+
+        $reader = Reader::open($this->rmem_path);
+        $this->assertTrue(
+            $reader->hasSection('node_classes'),
+            'finalize wrote a node_classes section',
+        );
+
+        $classesData = $reader->getSectionData('node_classes');
+        $slots = (int)(strlen($classesData) / 4);
+        $this->assertGreaterThan(0, $slots);
+
+        // At least one slot must be a real string-dict id, not the
+        // NULL_STRING_ID sentinel that signals "no class known". Pre-
+        // T2.3, every slot in this scenario was NULL_STRING_ID.
+        $non_null_slots = 0;
+        for ($i = 0; $i < $slots; $i++) {
+            /** @var array{1: int} $u */
+            $u = unpack('V', $classesData, $i * 4);
+            if ((int)$u[1] !== Format::NULL_STRING_ID) {
+                $non_null_slots++;
+            }
+        }
+        $this->assertGreaterThan(
+            0,
+            $non_null_slots,
+            'node_classes section must record at least one class id'
+            . ' for the emitted ZendObjectMemoryLocation',
+        );
+    }
+
     public function testSubstrateLoadFromBinary(): void
     {
         // Build a .rmem with a small graph
