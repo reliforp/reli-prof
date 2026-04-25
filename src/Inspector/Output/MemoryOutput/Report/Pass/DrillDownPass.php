@@ -23,12 +23,17 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class DrillDownPass implements PassInterface
 {
-    /** @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path) */
+    /**
+     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
+     * @param array<int, string>|null $canonical_names Pre-loaded class/
+     *     method/function canonical names (binary path)
+     */
     public function __construct(
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
         private ?array $frame_labels = null,
+        private ?array $canonical_names = null,
     ) {
     }
 
@@ -46,7 +51,12 @@ final class DrillDownPass implements PassInterface
         // issued one prepared-statement execute per depth level for
         // each, which on big dumps showed up as a small but real
         // hot spot in the trace.
-        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
+        $labeler = new NodeLabeler(
+            $this->db,
+            $this->run_id,
+            $this->frame_labels,
+            $this->canonical_names,
+        );
 
         $path_parts = [];
         $path_types = [];

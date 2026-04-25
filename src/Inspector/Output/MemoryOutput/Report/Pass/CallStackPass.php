@@ -24,12 +24,17 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
  */
 final class CallStackPass implements PassInterface
 {
-    /** @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path) */
+    /**
+     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
+     * @param array<int, string>|null $canonical_names Pre-loaded class/
+     *     method/function canonical names (binary path)
+     */
     public function __construct(
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
         private ?array $frame_labels = null,
+        private ?array $canonical_names = null,
     ) {
     }
 
@@ -72,7 +77,12 @@ final class CallStackPass implements PassInterface
             return [];
         }
 
-        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
+        $labeler = new NodeLabeler(
+            $this->db,
+            $this->run_id,
+            $this->frame_labels,
+            $this->canonical_names,
+        );
         $framesByNo = [];
         foreach ($this->substrate->getChildren($callFramesNodeId) as $child_id) {
             $link_name = $this->substrate->getTreeLinkName($child_id) ?? '?';
