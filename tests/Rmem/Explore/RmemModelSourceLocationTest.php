@@ -209,6 +209,158 @@ class RmemModelSourceLocationTest extends TestCase
         $this->assertSame(5, $definedAt['line_start']);
     }
 
+    public function testDefinedAtForDefinitionWrapperWithClassEntryChild(): void
+    {
+        // Build a small graph mimicking a ClassDefinitionContext: a
+        // wrapper node with no own filename whose `class_entry`
+        // tree-link points at a ClassEntryContext that does carry one.
+        $path = tempnam(sys_get_temp_dir(), 'reli_srcloc_wrap_');
+        $rmemPath = $path . '.rmem';
+        $sink = new BinaryContextTreeSink(batch_size: 10);
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'class_def',
+            type: 'ClassDefinitionContext',
+            locations: [new ZendArrayMemoryLocation(
+                address: 0x1000,
+                size: 16,
+                refcount: 1,
+                type_info: 7,
+            )],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 2,
+            parent_node_id: 1,
+            link_name: 'class_entry',
+            type: 'ClassEntryContext',
+            locations: [new ZendArrayMemoryLocation(
+                address: 0x2000,
+                size: 400,
+                refcount: 1,
+                type_info: 7,
+            )],
+            attributes: [
+                'class_name' => 'App\\Foo',
+                'filename' => '/var/www/html/src/Foo.php',
+                'line_start' => 7,
+                'line_end' => 33,
+            ],
+        );
+        $sink->emitNode(
+            node_id: 3,
+            parent_node_id: 1,
+            link_name: 'name',
+            type: 'ZendStringContext',
+            locations: [new ZendArrayMemoryLocation(
+                address: 0x3000,
+                size: 32,
+                refcount: 1,
+                type_info: 6,
+            )],
+            attributes: [],
+        );
+        $binary_output = new BinaryMemoryOutput($rmemPath);
+        $binary_output->finalizeStreaming($sink, [
+            ['zend_mm_heap_usage' => '500', 'php_version' => '8.2.0'],
+        ]);
+
+        try {
+            $reader = BinaryReader::open($rmemPath);
+            $substrate = GraphSubstrate::createFromBinary($reader, forceFfiCsr: false, skipScc: true);
+            $model = RmemModel::fromSubstrate($substrate, $reader);
+
+            $locs = $model->resolveSourceLocations(1);
+            $definedAt = null;
+            foreach ($locs as $loc) {
+                if ($loc['kind'] === 'defined_at') {
+                    $definedAt = $loc;
+                    break;
+                }
+            }
+            $this->assertNotNull(
+                $definedAt,
+                'ClassDefinitionContext should resolve defined_at via its class_entry child',
+            );
+            $this->assertSame('/var/www/html/src/Foo.php', $definedAt['filename']);
+            $this->assertSame(7, $definedAt['line_start']);
+
+            // The `name` ZendStringContext sibling has no filename
+            // and isn't on the DEFINING_CHILD_LINKS list, so the
+            // resolver must not pick it up as a defined_at hit.
+            $this->assertNull($model->resolveSourceLocation(3));
+        } finally {
+            @unlink($rmemPath);
+        }
+    }
+
+    public function testDefinedAtForDefinitionWrapperWithOpArrayChild(): void
+    {
+        // UserFunctionDefinitionContext mirrors ClassDefinitionContext
+        // but with an `op_array` child carrying the filename.
+        $path = tempnam(sys_get_temp_dir(), 'reli_srcloc_func_');
+        $rmemPath = $path . '.rmem';
+        $sink = new BinaryContextTreeSink(batch_size: 10);
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'function_def',
+            type: 'UserFunctionDefinitionContext',
+            locations: [new ZendArrayMemoryLocation(
+                address: 0x1000,
+                size: 16,
+                refcount: 1,
+                type_info: 7,
+            )],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 2,
+            parent_node_id: 1,
+            link_name: 'op_array',
+            type: 'OpArrayContext',
+            locations: [new ZendArrayMemoryLocation(
+                address: 0x2000,
+                size: 100,
+                refcount: 1,
+                type_info: 7,
+            )],
+            attributes: [
+                'filename' => '/var/www/html/src/funcs.php',
+                'line_start' => 12,
+                'line_end' => 28,
+            ],
+        );
+        $binary_output = new BinaryMemoryOutput($rmemPath);
+        $binary_output->finalizeStreaming($sink, [
+            ['zend_mm_heap_usage' => '116', 'php_version' => '8.2.0'],
+        ]);
+
+        try {
+            $reader = BinaryReader::open($rmemPath);
+            $substrate = GraphSubstrate::createFromBinary($reader, forceFfiCsr: false, skipScc: true);
+            $model = RmemModel::fromSubstrate($substrate, $reader);
+
+            $locs = $model->resolveSourceLocations(1);
+            $definedAt = null;
+            foreach ($locs as $loc) {
+                if ($loc['kind'] === 'defined_at') {
+                    $definedAt = $loc;
+                    break;
+                }
+            }
+            $this->assertNotNull(
+                $definedAt,
+                'UserFunctionDefinitionContext should resolve defined_at via op_array',
+            );
+            $this->assertSame('/var/www/html/src/funcs.php', $definedAt['filename']);
+            $this->assertSame(12, $definedAt['line_start']);
+        } finally {
+            @unlink($rmemPath);
+        }
+    }
+
     public function testNodesThatOwnLocationDoNotEmitHeldBy(): void
     {
         $model = $this->createModel();

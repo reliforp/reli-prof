@@ -1014,11 +1014,47 @@ final class RmemModel
     }
 
     /**
+     * Tree-link names whose target child carries the canonical
+     * "this thing was defined at" filename. ClassDefinitionContext
+     * has a `class_entry` child (a ClassEntryContext that knows
+     * the user-defined class's filename); UserFunctionDefinitionContext
+     * has an `op_array` child (a OpArrayContext with the function's
+     * file:line range). Picking these by link-name keeps the
+     * heuristic from leaking into unrelated structural children
+     * (function_table, properties_info, …) that happen to share
+     * the same parent.
+     */
+    private const DEFINING_CHILD_LINKS = ['class_entry', 'op_array'];
+
+    /**
+     * Find a child of $nodeId whose tree-link is one of the
+     * known definition-bearing names AND whose own attributes
+     * carry a filename. Returns the child node_id or null.
+     */
+    private function findDefiningChildNodeId(int $nodeId): ?int
+    {
+        foreach ($this->substrate->getChildren($nodeId) as $childId) {
+            if (!isset($this->nodeAttributes[$childId]['filename'])) {
+                continue;
+            }
+            $linkName = $this->substrate->getTreeLinkName($childId);
+            if ($linkName === null) {
+                continue;
+            }
+            if (in_array($linkName, self::DEFINING_CHILD_LINKS, true)) {
+                return $childId;
+            }
+        }
+        return null;
+    }
+
+    /**
      * @return array{filename: string, line_start: ?int, line_end: ?int, line: ?int}|null
      */
     private function resolveDefinedAt(int $nodeId): ?array
     {
-        // Cached refs short-circuit the class_entry index scan.
+        // Cached refs short-circuit both the class_entry index scan
+        // and the child-link lookup.
         if ($this->sourceLocationRefs !== null) {
             $refs = $this->sourceLocationRefs[$nodeId] ?? null;
             if ($refs !== null && $refs['defined_at'] >= 0) {
@@ -1028,16 +1064,32 @@ final class RmemModel
                 return null;
             }
         }
+
+        // Path 1: object zvals carry a class name in nodeClasses;
+        // hop through the class_entry index to the matching class
+        // definition's filename.
         $class = $this->resolveClass($nodeId);
-        if ($class === null || $class === '') {
-            return null;
+        if ($class !== null && $class !== '') {
+            $index = $this->classEntryIndex();
+            $ceNodeId = $index[$class] ?? null;
+            if ($ceNodeId !== null && $ceNodeId !== $nodeId) {
+                $loc = $this->rawSourceLocation($ceNodeId);
+                if ($loc !== null) {
+                    return $loc;
+                }
+            }
         }
-        $index = $this->classEntryIndex();
-        $ceNodeId = $index[$class] ?? null;
-        if ($ceNodeId === null || $ceNodeId === $nodeId) {
-            return null;
+
+        // Path 2: definition wrappers (ClassDefinitionContext,
+        // UserFunctionDefinitionContext) own a class_entry / op_array
+        // child that carries the filename. Surface that as
+        // defined_at so navigating onto a class_table entry shows
+        // its source line directly.
+        $childId = $this->findDefiningChildNodeId($nodeId);
+        if ($childId !== null) {
+            return $this->rawSourceLocation($childId);
         }
-        return $this->rawSourceLocation($ceNodeId);
+        return null;
     }
 
     /**
@@ -1097,14 +1149,26 @@ final class RmemModel
             }
 
             $definedAt = -1;
+            // Path 1: object zvals → class_entry via class name.
             $class = $this->resolveClass($nid);
             if ($class !== null && $class !== '') {
                 $cand = $classIndex[$class] ?? null;
-                if ($cand !== null && $cand !== $nid) {
-                    // Only record if that class_entry has a filename.
-                    if (isset($this->nodeAttributes[$cand]['filename'])) {
-                        $definedAt = $cand;
-                    }
+                if (
+                    $cand !== null
+                    && $cand !== $nid
+                    && isset($this->nodeAttributes[$cand]['filename'])
+                ) {
+                    $definedAt = $cand;
+                }
+            }
+            // Path 2: definition wrappers (ClassDefinitionContext,
+            // UserFunctionDefinitionContext) → their `class_entry`
+            // / `op_array` child carrying the filename. Mirrors the
+            // live resolveDefinedAt() fallback.
+            if ($definedAt === -1) {
+                $cand = $this->findDefiningChildNodeId($nid);
+                if ($cand !== null) {
+                    $definedAt = $cand;
                 }
             }
 
