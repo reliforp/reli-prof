@@ -167,6 +167,18 @@ final class NodeLabeler
         // happens to lack the schema, fall through silently so the
         // labeler still answers raw link_names rather than blowing up
         // the surrounding pass.
+        //
+        // No `is_tree` filter on the `name` edge: when a class
+        // registers after its name string has already been collected
+        // (autoload, opcache-loaded interned strings, etc.), the
+        // resulting edge is recorded as `is_tree = 0` (back-reference
+        // to an existing node). Filtering by `is_tree = 1` would drop
+        // ~half of the user-defined ClassDefinitionContexts in real
+        // captures while keeping the internal classes that happened
+        // to be discovered first via the class table walk. Each
+        // ClassDefinitionContext / *FunctionDefinitionContext has at
+        // most one `name`-link edge by construction, so dropping the
+        // filter doesn't introduce duplicates.
         try {
             $rows = $this->db->query("
                 SELECT cn.node_id, cnl.string_value
@@ -175,7 +187,6 @@ final class NodeLabeler
                     ON name_edge.parent_node_id = cn.node_id
                     AND name_edge.run_id = cn.run_id
                     AND name_edge.link_name = 'name'
-                    AND name_edge.is_tree = 1
                 JOIN context_node_locations cnl
                     ON cnl.node_id = name_edge.child_node_id
                     AND cnl.run_id = name_edge.run_id
