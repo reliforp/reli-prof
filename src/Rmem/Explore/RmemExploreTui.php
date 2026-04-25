@@ -1680,51 +1680,44 @@ final class RmemExploreTui
     // ---- Rendering ----
 
     /**
-     * Source-location kinds the resolver can return — `self`,
-     * `defined_at`, `held_by`. We always reserve room for all three
-     * so the focus bar / pane split don't shift around as the user
-     * navigates between nodes that have different counts of source
-     * info; layout instability there was previously routing clicks
-     * onto the children row that ended up underneath the banner
-     * after a re-render.
+     * Maximum number of source-location kinds the resolver can
+     * return — `self`, `defined_at`, `held_by`. The renderer treats
+     * this as a constant *upper bound* when computing the focus
+     * bar's y-position so the bar doesn't jump as the cursor walks
+     * through nodes with different actual kind counts; the children
+     * pane below it then absorbs whatever the actual banner doesn't
+     * use, so there's no padding gap visible above the banner.
      */
-    private const SOURCE_BANNER_RESERVED_ROWS = 3;
+    private const SOURCE_BANNER_MAX_ROWS = 3;
 
     /**
-     * Build the full-width source-banner rows for $nodeId. The
-     * returned list is **always** sized to {@see self::SOURCE_BANNER_RESERVED_ROWS}
-     * when the banner is enabled — actual reverse-video rows for
-     * the kinds the node carries (anchored to the bottom, just
-     * above the footer), padded above with empty rows so total
-     * count stays constant. When the banner is toggled off the
-     * list is empty and no rows are reserved.
+     * Build the full-width source-banner rows for $nodeId. Returns
+     * up to {@see self::SOURCE_BANNER_MAX_ROWS} actual reverse-video
+     * rows (no padding) — one per `source_locations` kind. Empty
+     * when the banner is toggled off, the node has no source, or
+     * the terminal is too narrow.
      *
-     * Each `source_locations` kind (self / defined_at / held_by)
-     * gets its own reverse-video row — mirrors the sidebar so a
-     * node that has both `defined` and `held by` doesn't lose half
-     * of its navigation hints. Terminals' file:line pattern
-     * matchers only latch onto tokens sitting on one line, so we
-     * intentionally don't fold them together.
+     * Each kind (self / defined_at / held_by) gets its own row —
+     * mirrors the sidebar so a node that has both `defined` and
+     * `held by` doesn't lose half of its navigation hints.
+     * Terminals' file:line pattern matchers only latch onto tokens
+     * sitting on one line, so we intentionally don't fold them
+     * together.
      *
      * @return list<string>
      */
     private function renderSourceBannerRows(?int $nodeId, int $cols): array
     {
-        if (!$this->showSourceBanner) {
+        if (!$this->showSourceBanner || $nodeId === null) {
             return [];
         }
         $maxWidth = $cols - 2;
         if ($maxWidth < 8) {
             return [];
         }
-
-        $locs = [];
-        if ($nodeId !== null) {
-            /** @var list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}> $locs */
-            $locs = $this->model->nodeDetail($nodeId)['source_locations'];
-        }
-
-        $bannerRows = [];
+        /** @var list<array{kind: string, filename: string, line: ?int, line_start: ?int, line_end: ?int, formatted: string}> $locs */
+        $locs = $this->model->nodeDetail($nodeId)['source_locations'];
+        $rows = [];
         foreach ($locs as $loc) {
             $label = match ($loc['kind']) {
                 'self' => 'source',
@@ -1739,26 +1732,24 @@ final class RmemExploreTui
             // Reverse video keeps the banner visually distinct from
             // the status / footer rows without burning a color that
             // might clash with the user's terminal theme.
-            $bannerRows[] = "\e[7m " . str_pad($text, $cols - 1) . "\e[27m";
-            if (count($bannerRows) >= self::SOURCE_BANNER_RESERVED_ROWS) {
+            $rows[] = "\e[7m " . str_pad($text, $cols - 1) . "\e[27m";
+            if (count($rows) >= self::SOURCE_BANNER_MAX_ROWS) {
                 break;
             }
         }
-
-        // Pad with blanks **above** the banner content so the
-        // banner is anchored to the bottom (just above the footer).
-        // Total row count is constant — the focus bar and pane
-        // split below it never have to move because of source
-        // changes during navigation.
-        $padding = self::SOURCE_BANNER_RESERVED_ROWS - count($bannerRows);
-        $rows = [];
-        for ($i = 0; $i < $padding; $i++) {
-            $rows[] = '';
-        }
-        foreach ($bannerRows as $row) {
-            $rows[] = $row;
-        }
         return $rows;
+    }
+
+    /**
+     * Worst-case rows the source-location banner can ever steal
+     * from the body, regardless of what the currently focused node
+     * carries. Used by the sandwich split so the focus bar's
+     * y-position stays stable as the cursor walks through nodes —
+     * children pane absorbs the slack at runtime.
+     */
+    private function maxBannerReserve(): int
+    {
+        return $this->showSourceBanner ? self::SOURCE_BANNER_MAX_ROWS : 0;
     }
 
     private function render(): void
@@ -2023,12 +2014,24 @@ final class RmemExploreTui
     {
         $bannerRows = $this->renderSourceBannerRows($this->bannerFocusId, $cols);
         $this->lastRenderBannerRowCount = count($bannerRows);
-        $bottomReserve = 2 + $this->lastRenderBannerRowCount; // banner rows + footer + status
+
+        // Two reserves intentionally diverge:
+        //   - $bottomReserve = actual rows the banner takes — used
+        //     for filling the children pane down to the banner's
+        //     top edge so there's no padding gap.
+        //   - $halfH is computed from $maxBottomReserve (worst-
+        //     case banner + footer + status) so the focus bar
+        //     stays at a constant y-position even as the cursor
+        //     walks through nodes with different actual kind
+        //     counts. The children pane absorbs the slack rows
+        //     when the banner is shorter than the maximum.
+        $bottomReserve = 2 + $this->lastRenderBannerRowCount;
+        $maxBottomReserve = 2 + $this->maxBannerReserve();
         $this->lastRenderBodyEndRow = $totalRows - $bottomReserve;
         $this->lastRenderListStart = -1;
         $this->lastRenderListEnd = -1;
 
-        $bodyH = $totalRows - 2 - $bottomReserve; // header + focus bar on top, banner rows + footer + status on bottom
+        $bodyH = $totalRows - 2 - $maxBottomReserve; // header + focus bar on top, max banner + footer + status on bottom
         $halfH = (int)($bodyH / 2);
 
         // Parents pane
