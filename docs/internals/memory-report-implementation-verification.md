@@ -229,3 +229,119 @@ Otherwise: clean implementation, comprehensive denylist for N1,
 proper preservation of unclamped value for tooling consumers,
 spine renderer respects the existing finding payload (no schema
 break).
+
+---
+
+## G1/G2/G3 follow-up verification (commit `857b695`)
+
+After the gaps were reported, the implementation session shipped
+`857b695 fix(memory-report): close T1+T2 verification gaps (G1, G2, G3)`.
+Re-running the same verification on the new commit:
+
+### G1 — methods table & function_table de-cased
+
+A new helper `CollectorHelpers::resolveCanonicalFunctionName()`
+derefs `$zval->value->func->common.function_name` (via
+`$func->getFunctionName()`) and falls back to the bucket key on
+deref failure. Used in both `EmitClassTableJob` (per-class methods)
+and `EmitFunctionTableJob` (top-level function_table).
+
+Re-analyzed `rw_twig.rmem` and `rw_phpunit.rmem` (collector-side
+change requires re-analyze):
+
+    Before:  class_table->Twig\Extension\CoreExtension->methods->getattribute->op_array
+    After:   class_table->Twig\Extension\CoreExtension->methods->getAttribute->op_array
+
+    Before:  class_table->GeneratedTest0->methods->runbare->op_array
+    After:   class_table->GeneratedTest0->methods->runBare->op_array
+
+Method names render with their declared case. function_table uses
+the same helper so de-casing applies symmetrically (WP's
+`remove_accents` happens to be all-lowercase by declaration so it
+renders unchanged, which is correct).
+
+**Status: ✅ closed.**
+
+### G2 — `property_scaling` impact clamp
+
+`PropertyScalingPass` now takes `heap_total_bytes` and clamps the
+per-instance retained sum, mirroring `DedupCandidatePass`. The pre-
+clamp value is preserved as `per_instance_total_bytes_unclamped` in
+facts; the hypothesis carries a clamp note when triggered.
+`ReportGenerator` wires `$heap_usage` to all three call sites.
+
+`rw4_graph-recursion`:
+
+    Before:  [MEDIUM] 53.73 GB impacted
+             property_scaling: GraphNode (10,000 instances): ...
+
+    After:   [MEDIUM] 111.45 MB impacted
+             property_scaling: GraphNode (10,000 instances): ...
+               GraphNode::$outEdges: 10,000 copies x 5.50 MB = 53.71 GB
+               GraphNode::$inEdges: 10,000 copies x 634 B = 6.05 MB
+               GraphNode::$properties: 10,000 copies x 629 B = 6.01 MB
+               GraphNode::$label: 10,000 copies x 32 B = 321.18 KB
+             (1 scalar properties per-instance, included in object size)
+             (impact clamped from 53.73 GB to heap total — per-instance
+              retained over-counts shared subtree memory)
+
+The headline `impact_bytes` is now bounded by heap total. The
+per-property breakdown lines retain their unclamped figures, which
+is the right call — those are informational, and the clamp note
+makes the over-counting explicit.
+
+**Status: ✅ closed.**
+
+### G3 — uniform-sibling tail heuristic
+
+The strict "no >2× drop in tail" rule was loosened to "no >3× single
+step OR overall max/min < 4×" — a single sharp step is allowed if
+total tail spread stays bounded.
+
+Firing rate across the corpus:
+
+| Implementation        | Reports firing the label | Notes |
+|-----------------------|--------------------------|-------|
+| f551b5d (impl1)       | 8 / 25                   | (Earlier verification doc said "1/25" — that was a miscount on my part. The actual impl1 number was 8.) |
+| 857b695 (impl2, G3)   | 11 / 25                  | +3: rw2_csv-mega, rw4_enum-collections, rw_laravel-collections |
+
+`rw2_csv-mega` (the headline G3 case in the handoff):
+
+    bottleneck_path: $orders[0][items][0] (461.70 MB)
+    Spine: heaviest-child mass drops at depth 5 (460.75 MB → 2.47 KB);
+           leaf retains only 405 B
+           leaf is one of many similar-sized siblings — weight is
+           distributed, no single deep spine
+
+The reader can now tell at a glance that `[0]` and `[items][0]` are
+arbitrary picks among many ~equal siblings.
+
+`rw4_pdo-result-hoarding` still doesn't fire — its tail descent
+drops sharply enough that even the loosened heuristic doesn't
+classify it as uniform. Could be tightened further with a
+relative-variance check, but the current shape covers the obvious
+cases.
+
+**Status: ✅ closed (improved from 8/25 → 11/25).**
+
+### Regression check (G1/G2/G3 vs impl1)
+
+All previous T1/T2 fixes still hold:
+- B3 (`\n` escape): present in `rw_logger-stack` Top Strings
+- N1 (internal classes filtered): `empty_object: Closure|Generator|Reflection|...` count = 0
+- B6 (homogeneous bucket): `Examples:` lines now show single class
+  consistently across logger-stack and messenger-envelopes
+- N10 dedup clamp: `108.55 GB → 111.45 MB` annotation intact
+- B8 spine line: 22 spine lines fire across 25 reports
+
+No findings counts changed between impl1 and impl2 — G1/G2/G3 are
+purely modifications of existing finding content, no spurious
+additions or removals.
+
+### Final status
+
+T1 + T2 verification gaps closed. Every claim in the handoff doc
+has a corresponding verified fix. Open follow-ups for a future
+commit are limited to T3 (S12 clustering, N2 positive-signal
+re-section, N4 uniform-sibling row collapse), which were never in
+scope for this round.
