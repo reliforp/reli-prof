@@ -582,3 +582,73 @@ spine and bottleneck output reads as:
 
 with no engineering-internal `:lineno` or `at depth N` artefacts —
 matching the T2-series ergonomic goal.
+
+### Re-verification on 0.12.x HEAD (G4 + T2.2 combined)
+
+The first T2.2 verification ran against PR #652's branch in
+isolation, which forks from a base that pre-dates PR #651's merge.
+That made the lowercase residue I noted (`...->lookupservice->...`)
+look like a T2.2 issue when it was actually pre-existing G4
+territory. Re-ran on `origin/0.12.x` HEAD (`a3696d9` — both PRs
+merged) for clarity:
+
+- Corpus-wide `class_table->[a-z]+\\` residue: **0** (G4 holds)
+- Spine drop labels render with declared casing, e.g.
+  `after ...->LookupService->static_properties->staticCache`
+- All other T2.2 properties unchanged (22 → 0 `at depth N` etc.)
+
+### Repeat-name ambiguity check
+
+A reasonable concern about T2.2: if the rendered drop label were a
+single component name (e.g., `after outEdges`) and that name
+appeared multiple times in the descent, the reader couldn't tell
+**which** `outEdges` the drop is at.
+
+Checked the implementation — `renderBottleneckSpine` slices
+`path[0..drop_index]` inclusive and runs the whole prefix through
+`PathFormatter::toPhpSyntax`. So even when a component name
+repeats in the descent, the rendered label carries the full
+prefix:
+
+    Spine: heaviest-child mass drops after $nodes[0]->outEdges[0]->outEdges
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                          full prefix → position is unambiguous
+
+Survey of all 25 reports: **no ambiguous component names** in the
+emitted drop labels. The closest the corpus comes to repetition is
+`after global_variables -> array_elements` appearing in two
+different reports (json-decode-huge, graph-recursion), but those
+are distinct findings on distinct snapshots, not in-path
+repetition. Multi-segment labels like
+`after $bus->listeners[request.completed]` and
+`after $queryResult[viewer][recentActivity]` show the full prefix
+correctly.
+
+### Remaining polish item (out of T2.2 scope)
+
+`bottleneck_path` and `Spine` sometimes describe the same descent
+with different vocabularies:
+
+    bottleneck_path: $decoded[data][10100][profile] (171.45 MB)
+    Spine: heaviest-child mass drops after global_variables -> array_elements
+           (171.44 MB → 84.33 MB); leaf retains only 1.94 KB
+
+`bottleneck_path` elides the structural roots (`global_variables`,
+`array_elements`) and starts at the first user-named slot
+(`$decoded`). `Spine` renders the full prefix from the structural
+root, so for shallow drops it shows the structural-root part that
+`bottleneck_path` elides. The two then read as if discussing
+different paths.
+
+Two ways to converge:
+
+- Spine extends its slice past purely-structural components until
+  it includes a user-named segment.
+- Or share the elision logic between `bottleneck_path`'s
+  `summary_path` and Spine's drop label so they always agree on
+  what counts as "user-side".
+
+Either is a small refinement on top of T2.2 — not a regression in
+T2.2 itself, but worth queueing as a polish item if the
+convergence matters in practice. (Filed as T2.5 in the handoff if
+prioritised.)
