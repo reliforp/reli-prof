@@ -717,6 +717,24 @@ final class RmemExploreTui
             return;
         }
 
+        // Bottom-reserved rows (source banner + footer + status) are
+        // visually non-interactive for the TUI. Suppress *non-scroll*
+        // clicks that land there so the click stays available to the
+        // terminal — particularly the file:line pattern matcher in
+        // PhpStorm / VS Code etc., which fires on Shift+Click. Without
+        // this check, a click on the banner's right-hand half (which
+        // spans the full terminal width) would fall through to the
+        // path-to-root sidebar handler below and navigate the cursor
+        // to whichever ancestor happens to share that row.
+        if (!$isScroll) {
+            [, $totalRows] = $this->term->size();
+            $bottomReserve = 2 + $this->lastRenderBannerRowCount;
+            $bodyEndRow = $totalRows - $bottomReserve;
+            if ($mouse->row > $bodyEndRow) {
+                return;
+            }
+        }
+
         // Path-to-root row in the sidebar: clicking a step jumps
         // sandwich view to that ancestor. Tested before pane hit so
         // scroll events still work inside the sidebar area.
