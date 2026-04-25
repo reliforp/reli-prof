@@ -24,14 +24,6 @@ final class PropertyScalingPass implements PassInterface
 {
     /**
      * @param array<string, array{count: int, memory_usage: int}> $class_objects_summary
-     * @param int $heap_total_bytes Optional heap-total clamp for impact_bytes.
-     *     0 = no clamp. Per-instance retained sizes can include shared
-     *     subtrees, so summing them over all instances may exceed the heap
-     *     total (e.g. graph-recursion: 53.73 GB on a 111 MB heap). When
-     *     non-zero, the per-instance total is clamped down and the
-     *     unclamped value preserved in `per_instance_total_bytes_unclamped`
-     *     plus a hypothesis note. See N10 in
-     *     memory-report-ux-improvements.md.
      */
     public function __construct(
         private \PDO $db,
@@ -39,7 +31,6 @@ final class PropertyScalingPass implements PassInterface
         private array $class_objects_summary,
         private ?GraphSubstrate $substrate = null,
         private ?LinkNameResolver $link_resolver = null,
-        private int $heap_total_bytes = 0,
     ) {
     }
 
@@ -152,29 +143,11 @@ final class PropertyScalingPass implements PassInterface
         $per_instance_total = array_sum(
             array_column($per_instance, 'size')
         );
-
-        // Clamp to heap total when known. The per-instance retained sum
-        // can over-count shared subtrees (every instance's retained size
-        // includes the whole shared part), producing impacts that exceed
-        // the heap total. Mirrors the DedupCandidatePass clamp — see N10
-        // in memory-report-ux-improvements.md.
-        $clamped_from = null;
         $impact_bytes = $per_instance_total;
-        if ($this->heap_total_bytes > 0 && $impact_bytes > $this->heap_total_bytes) {
-            $clamped_from = $impact_bytes;
-            $impact_bytes = $this->heap_total_bytes;
-        }
 
         $hypothesis = 'Per-instance properties scale linearly;'
             . ' shared properties have constant cost.'
             . "\n" . implode("\n", $lines);
-        if ($clamped_from !== null) {
-            $hypothesis .= sprintf(
-                "\n(impact clamped from %s to heap total — per-instance"
-                . ' retained over-counts shared subtree memory)',
-                SizeFormatter::format($clamped_from),
-            );
-        }
 
         $facts = [
             'class_name' => $dominant_class,
@@ -185,9 +158,6 @@ final class PropertyScalingPass implements PassInterface
             'per_instance_total_bytes' => $per_instance_total,
             'size_mode' => $size_label,
         ];
-        if ($clamped_from !== null) {
-            $facts['per_instance_total_bytes_unclamped'] = $clamped_from;
-        }
 
         return [
             new Finding(
@@ -273,11 +243,9 @@ final class PropertyScalingPass implements PassInterface
                     }
                     $prop_stats[$prop_name]['distinct'][$prop_canon] = true;
                     $prop_stats[$prop_name]['total_refs']++;
-                    // Use retained if available, else shallow
-                    if ($use_retained) {
-                        $prop_stats[$prop_name]['size']
-                            += $this->substrate->getSubtreeSize($prop_child);
-                    } else {
+                    if (!$use_retained) {
+                        // Shallow-size mode is unaffected by SCC sharing —
+                        // accumulate per-child as before.
                         $prop_stats[$prop_name]['size']
                             += $this->substrate->getNodeSize($prop_child);
                     }
@@ -286,10 +254,21 @@ final class PropertyScalingPass implements PassInterface
             }
         }
 
-        // Also count non-tree refs for scaling classification
-        // (check all_children for non-tree property edges)
-        // Not needed for graph — tree edges are sufficient for
-        // distinct_targets counting.
+        // Retained-size mode: sum each property's union of tree-edge
+        // subtrees rooted at its distinct child node_ids. Each reachable
+        // node counted once across all N instances of the property — so
+        // an SCC shared by every instance contributes once, not N times,
+        // and the sum is intrinsically bounded by the heap. Replaces the
+        // earlier `Σ_i getSubtreeSize(prop_child_i)` which was O(N²) for
+        // SCC graphs and required a heap-total clamp downstream.
+        // See T2.1 in docs/internals/memory-report-implementation-handoff.md.
+        if ($use_retained) {
+            foreach ($prop_stats as $prop_name => $stat) {
+                $seeds = array_keys($stat['distinct']);
+                $prop_stats[$prop_name]['size']
+                    = $this->substrate->unionReachableTreeSize($seeds);
+            }
+        }
 
         $results = [];
         foreach ($prop_stats as $prop_name => $stat) {

@@ -124,22 +124,26 @@ class DedupCandidatePassTest extends BaseTestCase
         $this->assertSame(60, $beta->facts['count']);
     }
 
-    public function testAnalyzeClampsImpactToHeapTotal(): void
+    public function testAnalyzeUsesUnionSumForSharedSubtree(): void
     {
-        // Regression for N10: dedup_candidate's `cnt × retained` impact
-        // can exceed the heap total when the children share a subtree
-        // (every member's retained includes the shared part). When a
-        // heap-total is supplied, the pass clamps impact_bytes and notes
-        // the original value in `total_waste_unclamped` + hypothesis.
+        // T2.1: when N dedup-bucket members all live inside an SCC's
+        // spanning tree, `total_waste` should reflect the **union** of
+        // their reachable tree-edge subtrees — each node counted once —
+        // not `cnt × sample_mean(retained)`, which over-counts the
+        // spanning-tree ancestors O(N²) and previously required a
+        // heap-total clamp.
+        //
+        // Scenario: 60 distinct dedup targets connected in a tree
+        // chain (target1 → target2 → ... → target60). Each target is
+        // 256 B. retained(target_i) = 256 × (60 - i + 1) — spans
+        // [256, 256×60]. Pre-T2.1 mean ≈ 256 × 30.5 = 7808; cnt × mean
+        // ≈ 60 × 7808 = 468,480 — would have been clamped previously.
+        // With union: 60 × 256 = 15,360.
         $db = $this->createDirectDb();
-        $this->seedRepresentativeScenario($db);
+        $this->seedTreeChainSharedScenario($db);
 
-        // total_waste = 60 × 256 = 15,360. Set a much smaller heap total
-        // so the clamp is observable. (Substrate is null here so the
-        // shallow-size path is used; the calculation matches the SQL row
-        // total_waste field directly.)
-        $heap_total = 10000;
-        $findings = (new DedupCandidatePass($db, 1, null, null, $heap_total))->analyze();
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+        $findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
 
         $finding = $this->findFinding(
             $findings,
@@ -147,10 +151,87 @@ class DedupCandidatePassTest extends BaseTestCase
             'App\\Owner::$names[value]',
         );
         $this->assertNotNull($finding);
-        $this->assertSame($heap_total, $finding->impact_bytes);
-        $this->assertSame($heap_total, $finding->facts['total_waste']);
-        $this->assertSame(15360, $finding->facts['total_waste_unclamped'] ?? null);
-        $this->assertStringContainsString('clamped', $finding->hypothesis);
+        $this->assertSame(60, $finding->facts['count']);
+        $this->assertSame(15360, $finding->facts['total_waste']);
+        $this->assertArrayNotHasKey(
+            'total_waste_unclamped',
+            $finding->facts,
+            'union sum is intrinsically bounded; no clamp metadata',
+        );
+        $this->assertStringNotContainsString('clamped', $finding->hypothesis);
+    }
+
+    private function seedTreeChainSharedScenario(\PDO $db): void
+    {
+        $edge_stmt = $db->prepare(
+            'INSERT INTO context_edges'
+            . ' (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
+            . ' VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $node_stmt = $db->prepare(
+            'INSERT INTO context_node_locations'
+            . ' (run_id, node_id, address, size, location_type, class_name, string_value)'
+            . ' VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+
+        // 60 target nodes connected as a tree chain. Each owner's
+        // dedup edge points at a distinct target — bucket has 60
+        // members. The chain makes each target's retained_size span
+        // 1..60 nodes, so cnt × sample_mean over-counts heavily; the
+        // union from any subset of members visits the same 60-node
+        // chain once.
+        for ($i = 0; $i < 60; $i++) {
+            $target_id = 800000 + $i;
+            $node_stmt->execute([
+                1, $target_id, 8_000_000 + $i, 256,
+                'ZendObjectMemoryLocation', 'App\\SharedTarget', null,
+            ]);
+        }
+        for ($i = 0; $i < 59; $i++) {
+            // tree edge target_i → target_{i+1}
+            $edge_stmt->execute([
+                1, 800000 + $i, 800001 + $i, "next_{$i}", 1, 'strong',
+            ]);
+        }
+
+        // 60 owners, each linking (non-tree) to one of the 60 distinct
+        // chain targets via the same bucket key (link='value', size=256,
+        // class='App\\SharedTarget').
+        for ($i = 0; $i < 60; $i++) {
+            $owner_id = 1000 + $i * 10;
+            $props_id = $owner_id + 1;
+            $arr_header_id = $owner_id + 2;
+            $arr_elems_id = $owner_id + 3;
+            $arr_elem_id = $owner_id + 4;
+            $target_id = 800000 + $i;
+
+            $node_stmt->execute([
+                1, $owner_id, 1_000_000 + $i, 64,
+                'ZendObjectMemoryLocation', 'App\\Owner', null,
+            ]);
+            $node_stmt->execute([
+                1, $arr_header_id, 2_000_000 + $i, 56,
+                'ZendArrayMemoryLocation', null, null,
+            ]);
+
+            $edge_stmt->execute([1, null, $owner_id, "owner_{$i}", 1, 'strong']);
+            $edge_stmt->execute([
+                1, $owner_id, $props_id, 'object_properties', 1, 'strong',
+            ]);
+            $edge_stmt->execute([
+                1, $props_id, $arr_header_id, 'names', 1, 'strong',
+            ]);
+            $edge_stmt->execute([
+                1, $arr_header_id, $arr_elems_id, 'array_elements', 1, 'strong',
+            ]);
+            $edge_stmt->execute([
+                1, $arr_elems_id, $arr_elem_id, '0', 1, 'strong',
+            ]);
+            // Non-tree dedup edge to one of the 60 distinct targets.
+            $edge_stmt->execute([
+                1, $arr_elem_id, $target_id, 'value', 0, 'strong',
+            ]);
+        }
     }
 
     private function seedHeterogeneousClassScenario(\PDO $db): void

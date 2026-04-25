@@ -131,20 +131,13 @@ final class ReportGenerator
             if (!$run_phase3) {
                 $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(
-                    new PropertyScalingPass(
-                        $db,
-                        $run_id,
-                        $class_objects,
-                        null,
-                        null,
-                        $heap_usage,
-                    )
+                    new PropertyScalingPass($db, $run_id, $class_objects)
                 ));
                 $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
                 $findings = array_merge($findings, $this->runPass(
-                    new DedupCandidatePass($db, $run_id, null, null, $heap_usage)
+                    new DedupCandidatePass($db, $run_id)
                 ));
                 $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
             }
@@ -238,7 +231,6 @@ final class ReportGenerator
                     $class_objects,
                     $substrate,
                     $resolver_factory(),
-                    $heap_usage,
                 )
             );
             $pass_factories['PerPropertyMemoryPass'] = fn (): array => $this->runPass(
@@ -257,7 +249,7 @@ final class ReportGenerator
                 new NonTreeEdgePass($db_factory(), $run_id, $substrate)
             );
             $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
-                new DedupCandidatePass($db_factory(), $run_id, $substrate, null, $heap_usage)
+                new DedupCandidatePass($db_factory(), $run_id, $substrate)
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
                 new StructuralDedupPass($db_factory(), $run_id, $substrate, $resolver_factory())
@@ -417,7 +409,6 @@ final class ReportGenerator
                     $class_objects,
                     $substrate,
                     $resolver_factory(),
-                    $heap_usage,
                 )
             );
             $pass_factories['PerPropertyMemoryPass'] = fn (): array => $this->runPass(
@@ -448,7 +439,6 @@ final class ReportGenerator
                     0,
                     $substrate,
                     $dedup_candidates,
-                    $heap_usage,
                 )
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
