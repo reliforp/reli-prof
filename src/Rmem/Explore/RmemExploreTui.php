@@ -91,6 +91,34 @@ final class RmemExploreTui
      * the unfixed formula would count as the last child row.
      */
     private int $lastRenderBannerRowCount = 0;
+
+    /**
+     * Exact 1-based terminal row range that holds the last render's
+     * scrollable body content (list rows / sandwich children rows).
+     * Mouse clicks below `$lastRenderBodyEndRow` are inside the
+     * non-interactive bottom strip (banner + footer + status) and
+     * must be suppressed before any pane hit-test or sidebar
+     * lookup runs — relying on `lastRenderBannerRowCount` alone
+     * isn't enough, because a focus-change between render and
+     * click can leave the cached count out of sync with what's
+     * actually on screen, and the click then falls through to
+     * children rows that aren't where the user thinks they are.
+     */
+    private int $lastRenderBodyEndRow = 0;
+
+    /**
+     * Last render's children-pane visible terminal-row window in
+     * sandwich view. -1 when sandwich isn't active. Stored so the
+     * sandwich hit-test answers strictly against what was on screen
+     * at render time, not whatever halfH / banner derivation
+     * happens to compute now.
+     */
+    private int $lastRenderChildrenStart = -1;
+    private int $lastRenderChildrenEnd = -1;
+    private int $lastRenderParentsStart = -1;
+    private int $lastRenderParentsEnd = -1;
+    private int $lastRenderListStart = -1;
+    private int $lastRenderListEnd = -1;
     private ?string $filterPattern = null;
     private string $filterInput = '';
     private bool $filterPrompt = false;
@@ -726,13 +754,13 @@ final class RmemExploreTui
         // spans the full terminal width) would fall through to the
         // path-to-root sidebar handler below and navigate the cursor
         // to whichever ancestor happens to share that row.
-        if (!$isScroll) {
-            [, $totalRows] = $this->term->size();
-            $bottomReserve = 2 + $this->lastRenderBannerRowCount;
-            $bodyEndRow = $totalRows - $bottomReserve;
-            if ($mouse->row > $bodyEndRow) {
-                return;
-            }
+        //
+        // Use the row that the *last actual render* committed, not a
+        // value freshly recomputed from `lastRenderBannerRowCount`,
+        // so a focus-change happening between render and click can't
+        // shift the threshold out from under the user.
+        if (!$isScroll && $this->lastRenderBodyEndRow > 0 && $mouse->row > $this->lastRenderBodyEndRow) {
+            return;
         }
 
         // Path-to-root row in the sidebar: clicking a step jumps
@@ -802,62 +830,53 @@ final class RmemExploreTui
      */
     private function hitTestMouseRow(int $row): array
     {
-        [, $totalRows] = $this->term->size();
-
         if (!$this->sandwich) {
-            // List layout: header (1) + breadcrumb (2) + column header (3)
-            // + separator (4), data rows start on 5.
-            $bodyStart = 5;
-            // Cap the click target at the last visible body row so a
-            // press on the banner / footer / status doesn't get
-            // routed to a list index that happens to fall within the
-            // dataset but isn't currently on screen — relevant for
-            // Shift-bypass-less Ctrl+click scenarios where the click
-            // still reaches the TUI.
-            $bodyEnd = $totalRows - 2 - $this->lastRenderBannerRowCount;
-            if ($row < $bodyStart || $row > $bodyEnd) {
+            // Use the row range the *last actual render* committed.
+            // Re-deriving from cached values like
+            // `lastRenderBannerRowCount` is racy: a focus change
+            // happening between render and click can leave the cached
+            // count out of sync with what's actually on screen, and
+            // the user's click then maps to a non-visible list index.
+            if (
+                $this->lastRenderListStart < 0
+                || $row < $this->lastRenderListStart
+                || $row > $this->lastRenderListEnd
+            ) {
                 return [null, null];
             }
-            $idx = $this->topRow + ($row - $bodyStart);
+            // List layout: header (1) + breadcrumb (2) + column header (3)
+            // + separator (4), data rows start on 5 (lastRenderListStart).
+            $idx = $this->topRow + ($row - $this->lastRenderListStart);
             if ($idx < 0 || $idx >= count($this->rows)) {
                 return [null, null];
             }
             return ['list', $idx];
         }
 
-        // Sandwich layout, mirroring renderSandwich():
-        //   row 1         header
-        //   row 2         "▸ Parents (N)" label
-        //   rows 3..h+2   parent rows (h = halfH)
-        //   row  h+3      focus bar
-        //   row  h+4      "▸ Children (N)" label
-        //   rows h+5..Y   children rows
-        //
-        // When the source banner is showing, every emitted row
-        // (one per source_locations kind) steals a row from the
-        // bottom — so bottomReserve stretches to 2 + N, which in
-        // turn shrinks bodyH and halfH by N. Match that here or
-        // clicks on the last visible child rows would be routed
-        // to banner rows instead.
-        $bottomReserve = 2 + $this->lastRenderBannerRowCount;
-        $bodyH = $totalRows - 2 - $bottomReserve;
-        $halfH = (int)($bodyH / 2);
-        $parentsStart = 3;
-        $parentsEnd = $halfH + 2;
-        $childrenStart = $halfH + 5;
-        // Last visible terminal row inside the children pane —
-        // banner / footer / status sit at $childrenEnd+1 onwards
-        // and must not be hit-tested as children rows.
-        $childrenEnd = $totalRows - $bottomReserve;
-        if ($row >= $parentsStart && $row <= $parentsEnd) {
-            $idx = $this->parentTopRow + ($row - $parentsStart);
+        // Sandwich layout. Use the row ranges the *last actual
+        // render* committed instead of re-deriving halfH /
+        // childrenStart from cached values; otherwise a focus change
+        // happening between render and click can leave the cached
+        // banner-row count out of sync with the screen and route a
+        // click to a non-visible child row at a row index that
+        // happens to fall inside the dataset.
+        if (
+            $this->lastRenderParentsStart > 0
+            && $row >= $this->lastRenderParentsStart
+            && $row <= $this->lastRenderParentsEnd
+        ) {
+            $idx = $this->parentTopRow + ($row - $this->lastRenderParentsStart);
             if ($idx < 0 || $idx >= count($this->parentRows)) {
                 return [null, null];
             }
             return ['parents', $idx];
         }
-        if ($row >= $childrenStart && $row <= $childrenEnd) {
-            $idx = $this->childTopRow + ($row - $childrenStart);
+        if (
+            $this->lastRenderChildrenStart > 0
+            && $row >= $this->lastRenderChildrenStart
+            && $row <= $this->lastRenderChildrenEnd
+        ) {
+            $idx = $this->childTopRow + ($row - $this->lastRenderChildrenStart);
             if ($idx < 0 || $idx >= count($this->childRows)) {
                 return [null, null];
             }
@@ -1929,7 +1948,21 @@ final class RmemExploreTui
         $lines[] = '  ' . str_repeat('─', min($cols - 2, 120));
 
         $bodyH = $totalRows - count($lines) - $bottomReserve;
+        // 1-based terminal row range that holds the visible list rows;
+        // recorded so hitTestMouseRow doesn't have to re-derive it from
+        // potentially-stale cached values.
+        $listFirstRow = count($lines) + 1;
         $count = count($this->rows);
+        $visibleListCount = max(0, min($bodyH, $count - $this->topRow));
+        $this->lastRenderListStart = $visibleListCount > 0 ? $listFirstRow : -1;
+        $this->lastRenderListEnd = $visibleListCount > 0
+            ? $listFirstRow + $visibleListCount - 1
+            : -1;
+        $this->lastRenderBodyEndRow = $totalRows - $bottomReserve;
+        $this->lastRenderParentsStart = -1;
+        $this->lastRenderParentsEnd = -1;
+        $this->lastRenderChildrenStart = -1;
+        $this->lastRenderChildrenEnd = -1;
         for ($i = $this->topRow; $i < min($this->topRow + $bodyH, $count); $i++) {
             $lines[] = $this->formatRow($this->rows[$i], $i === $this->selected, $cols);
         }
@@ -1958,6 +1991,9 @@ final class RmemExploreTui
         $bannerRows = $this->renderSourceBannerRows($this->bannerFocusId, $cols);
         $this->lastRenderBannerRowCount = count($bannerRows);
         $bottomReserve = 2 + $this->lastRenderBannerRowCount; // banner rows + footer + status
+        $this->lastRenderBodyEndRow = $totalRows - $bottomReserve;
+        $this->lastRenderListStart = -1;
+        $this->lastRenderListEnd = -1;
 
         $bodyH = $totalRows - 2 - $bottomReserve; // header + focus bar on top, banner rows + footer + status on bottom
         $halfH = (int)($bodyH / 2);
@@ -1965,7 +2001,14 @@ final class RmemExploreTui
         // Parents pane
         $pLabel = $this->activePane === 'parents' ? "\e[1m▸ Parents\e[0m" : "\e[2m  Parents\e[0m";
         $lines[] = $pLabel . sprintf(' (%d)', count($this->parentRows));
+        // 1-based terminal row of the first parent data row.
+        $parentsFirstRow = count($lines) + 1;
         $pCount = count($this->parentRows);
+        $visibleParentCount = max(0, min($halfH, $pCount - $this->parentTopRow));
+        $this->lastRenderParentsStart = $visibleParentCount > 0 ? $parentsFirstRow : -1;
+        $this->lastRenderParentsEnd = $visibleParentCount > 0
+            ? $parentsFirstRow + $visibleParentCount - 1
+            : -1;
         for ($i = $this->parentTopRow; $i < min($this->parentTopRow + $halfH, $pCount); $i++) {
             $sel = $this->activePane === 'parents' && $i === $this->parentSelected;
             $lines[] = $this->formatRow($this->parentRows[$i], $sel, $cols);
@@ -1995,7 +2038,14 @@ final class RmemExploreTui
         $cLabel = $this->activePane === 'children' ? "\e[1m▸ Children\e[0m" : "\e[2m  Children\e[0m";
         $lines[] = $cLabel . sprintf(' (%d)', count($this->childRows));
         $remainH = $totalRows - count($lines) - $bottomReserve;
+        // 1-based terminal row of the first child data row.
+        $childrenFirstRow = count($lines) + 1;
         $cCount = count($this->childRows);
+        $visibleChildCount = max(0, min($remainH, $cCount - $this->childTopRow));
+        $this->lastRenderChildrenStart = $visibleChildCount > 0 ? $childrenFirstRow : -1;
+        $this->lastRenderChildrenEnd = $visibleChildCount > 0
+            ? $childrenFirstRow + $visibleChildCount - 1
+            : -1;
         for ($i = $this->childTopRow; $i < min($this->childTopRow + $remainH, $cCount); $i++) {
             $sel = $this->activePane === 'children' && $i === $this->childSelected;
             $lines[] = $this->formatRow($this->childRows[$i], $sel, $cols);
