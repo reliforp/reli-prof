@@ -38,17 +38,12 @@ final class DedupCandidatePass implements PassInterface
      *     sample_child_node_ids?: list<int>,
      *     examples?: array<string, mixed>
      * }>|null $precomputed_dedup_candidates
-     * @param int $heap_total_bytes Optional heap-total clamp for impact_bytes.
-     *     0 = no clamp. When non-zero, dedup findings whose `cnt × retained`
-     *     product exceeds the heap are clamped down — the raw product
-     *     over-counts shared subtrees (a known limitation of × count).
      */
     public function __construct(
         private \PDO $db,
         private int $run_id,
         private ?GraphSubstrate $substrate = null,
         private ?array $precomputed_dedup_candidates = null,
-        private int $heap_total_bytes = 0,
     ) {
     }
 
@@ -65,8 +60,6 @@ final class DedupCandidatePass implements PassInterface
             ?? $this->loadDedupRowsFromSql();
 
         $findings = [];
-        $use_retained = $this->substrate !== null
-            && $this->substrate->hasSubtreeSizes();
 
         foreach ($rows as $row) {
             $link_name = $row['link_name'];
@@ -93,31 +86,28 @@ final class DedupCandidatePass implements PassInterface
             /** @var list<int>|null $sample_child_node_ids */
             $sample_child_node_ids = $row['sample_child_node_ids'] ?? null;
 
-            if ($use_retained) {
-                $retained = $this->getRetainedForDedup(
-                    $link_name,
-                    $shallow_size,
-                    $sample_child_node_ids,
-                    $target_class,
-                    $target_location_type,
-                );
-                if ($retained > $shallow_size) {
-                    $size = $retained;
-                    $total = $cnt * $retained;
+            // Compute `total_waste` as the **union** of tree-edge subtrees
+            // rooted at the bucket's member nodes. Each reachable node is
+            // counted once even when N seeds share an SCC subtree, so this
+            // value reads honestly as "memory currently sitting under any
+            // of the N copies" and is intrinsically bounded by the heap
+            // total — no `cnt × retained` over-count, no clamp needed.
+            // See T2.1 in docs/internals/memory-report-implementation-handoff.md.
+            if ($this->substrate !== null) {
+                $member_node_ids = $sample_child_node_ids
+                    ?? $this->loadDedupMemberNodeIds(
+                        $link_name,
+                        $shallow_size,
+                        $target_class,
+                        $target_location_type,
+                    );
+                if ($member_node_ids !== []) {
+                    $union_size = $this->substrate->unionReachableTreeSize($member_node_ids);
+                    if ($union_size > 0) {
+                        $total = $union_size;
+                        $size = $cnt > 0 ? (int)($union_size / $cnt) : $shallow_size;
+                    }
                 }
-            }
-
-            // Clamp to heap total when known: cnt × retained over-counts
-            // shared subtree memory (every SCC member's retained size
-            // includes the whole shared subtree). Without a clamp this
-            // produces "722 MB impacted on a 12 MB heap" — see N10 in
-            // memory-report-ux-improvements.md. The clamp is a safety
-            // net; the proper fix is switching impact_bytes semantics
-            // from current_total to potential_saving (future work).
-            $clamped_from = null;
-            if ($this->heap_total_bytes > 0 && $total > $this->heap_total_bytes) {
-                $clamped_from = $total;
-                $total = $this->heap_total_bytes;
             }
 
             $sample_parent_node_id = $row['sample_parent_node_id'];
@@ -157,14 +147,6 @@ final class DedupCandidatePass implements PassInterface
                 'confidence' => $confidence,
             ] = $this->buildEvidenceSummary($examples, $cnt);
 
-            if ($clamped_from !== null) {
-                $hypothesis .= sprintf(
-                    "\n(impact clamped from %s to heap total — cnt × retained"
-                    . ' over-counts shared subtree memory)',
-                    SizeFormatter::format($clamped_from),
-                );
-            }
-
             $findings[] = new Finding(
                 kind: 'dedup_candidate',
                 severity: $total > 102400
@@ -176,32 +158,23 @@ final class DedupCandidatePass implements PassInterface
                     $dedup_label,
                     number_format($cnt),
                     SizeFormatter::format($size),
-                    $size > $shallow_size ? ' retained' : '',
+                    $size > $shallow_size ? ' avg retained' : '',
                     SizeFormatter::format($total),
                 ),
-                facts: $clamped_from !== null
-                    ? [
-                        'link_name' => $link_name,
-                        'source_class' => $dedup_src,
-                        'target_class' => $dedup_tgt,
-                        'count' => $cnt,
-                        'each_size' => $size,
-                        'total_waste' => $total,
-                        'total_waste_unclamped' => $clamped_from,
-                        'examples' => $examples,
-                    ]
-                    : [
-                        'link_name' => $link_name,
-                        'source_class' => $dedup_src,
-                        'target_class' => $dedup_tgt,
-                        'count' => $cnt,
-                        'each_size' => $size,
-                        'total_waste' => $total,
-                        'examples' => $examples,
-                    ],
+                facts: [
+                    'link_name' => $link_name,
+                    'source_class' => $dedup_src,
+                    'target_class' => $dedup_tgt,
+                    'count' => $cnt,
+                    'each_size' => $size,
+                    'total_waste' => $total,
+                    'examples' => $examples,
+                ],
                 hypothesis: $hypothesis,
                 impact_bytes: $total,
-                evidence_node_ids: $sample_child_node_ids ?? [$sample_child_node_id],
+                evidence_node_ids: $sample_child_node_ids !== null
+                    ? array_slice($sample_child_node_ids, 0, 20)
+                    : [$sample_child_node_id],
             );
         }
 
@@ -571,57 +544,44 @@ final class DedupCandidatePass implements PassInterface
     }
 
     /**
-     * @param list<int>|null $sample_child_node_ids
+     * Load every child node_id in the dedup bucket (no LIMIT). Used as
+     * seeds for `unionReachableTreeSize()` so the resulting impact value
+     * reflects the full bucket, not a 20-sample subset.
+     *
+     * @return list<int>
      */
-    private function getRetainedForDedup(
+    private function loadDedupMemberNodeIds(
         string $link_name,
         int $shallow_size,
-        ?array $sample_child_node_ids = null,
         ?string $target_class = null,
         ?string $target_location_type = null,
-    ): int {
-        assert($this->substrate !== null);
-
-        if ($sample_child_node_ids === null) {
-            if ($this->precomputed_dedup_candidates !== null) {
-                return $shallow_size;
-            }
-
-            $stmt = $this->db->query(
-                $this->dedupChildrenCteSql(
-                    $link_name,
-                    $shallow_size,
-                    $target_class,
-                    $target_location_type,
-                ) . "
-                SELECT child_node_id
-                FROM group_children
-                LIMIT 20
-            "
-            );
-
-            $sample_child_node_ids = [];
-            while (true) {
-                /** @var int|string|false $nid */
-                $nid = $stmt->fetchColumn();
-                if ($nid === false) {
-                    break;
-                }
-                $sample_child_node_ids[] = (int)$nid;
-            }
+    ): array {
+        if ($this->precomputed_dedup_candidates !== null) {
+            return [];
         }
 
-        $total = 0;
-        $count = 0;
-        foreach ($sample_child_node_ids as $node_id) {
-            $retained = $this->substrate->getSubtreeSize($node_id);
-            if ($retained > 0) {
-                $total += $retained;
-                $count++;
-            }
-        }
+        $stmt = $this->db->query(
+            $this->dedupChildrenCteSql(
+                $link_name,
+                $shallow_size,
+                $target_class,
+                $target_location_type,
+            ) . "
+            SELECT child_node_id
+            FROM group_children
+        "
+        );
 
-        return $count > 0 ? (int)($total / $count) : $shallow_size;
+        $member_node_ids = [];
+        while (true) {
+            /** @var int|string|false $nid */
+            $nid = $stmt->fetchColumn();
+            if ($nid === false) {
+                break;
+            }
+            $member_node_ids[] = (int)$nid;
+        }
+        return $member_node_ids;
     }
 
     /**

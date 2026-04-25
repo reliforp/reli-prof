@@ -1173,9 +1173,13 @@ final class BinaryReportDataProvider
         }
         $group['seen_children'][$child_node_id] = true;
 
-        if (count($group['sample_child_node_ids']) < 20) {
-            $group['sample_child_node_ids'][] = $child_node_id;
-        }
+        // Carry every member id, not just the first 20. DedupCandidatePass
+        // uses these as seeds for `unionReachableTreeSize` (T2.1) and a
+        // 20-cap there would under-count the bucket's reachable set.
+        // The Finding's evidence_node_ids slot still receives at most
+        // a few entries (formatter slices for display), so this only
+        // affects the in-memory candidate row.
+        $group['sample_child_node_ids'][] = $child_node_id;
 
         $string_value_id = $meta['string_value_id'];
         if ($string_value_id !== null) {

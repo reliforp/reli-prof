@@ -381,6 +381,59 @@ class GraphSubstrate
         return $this->subtree_sizes[$nodeId] ?? 0;
     }
 
+    /**
+     * Sum of `node_size` over the union of strong tree-edge subtrees
+     * rooted at the given seeds. Each reachable node is counted once
+     * even if multiple seeds reach it — i.e., this is "memory currently
+     * sitting under any of these N seeds", not "sum of per-seed retained
+     * sizes".
+     *
+     * Used by `DedupCandidatePass` and `PropertyScalingPass` to compute
+     * `impact_bytes` honestly under DAG / SCC sharing. The previous
+     * `cnt × sample_mean(retained)` aggregation over-counted spanning-
+     * tree ancestors when N seeds share an SCC and was capped with a
+     * heap-total clamp; the union value is intrinsically bounded by
+     * the heap and needs no clamp.
+     *
+     * BFS over `getStrongChildren()` (tree-edge strong children, the
+     * same edge set `computeSubtreeSizes()` walks). Per-call cost is
+     * O(|union|) regardless of seed count, because the visited set
+     * skips re-traversal.
+     *
+     * @param list<int> $seeds
+     */
+    public function unionReachableTreeSize(array $seeds): int
+    {
+        if ($seeds === []) {
+            return 0;
+        }
+        $visited = [];
+        $stack = [];
+        foreach ($seeds as $seed) {
+            if (isset($visited[$seed])) {
+                continue;
+            }
+            $stack[] = $seed;
+            while ($stack !== []) {
+                $node = array_pop($stack);
+                if (isset($visited[$node])) {
+                    continue;
+                }
+                $visited[$node] = true;
+                foreach ($this->getStrongChildren($node) as $child) {
+                    if (!isset($visited[$child])) {
+                        $stack[] = $child;
+                    }
+                }
+            }
+        }
+        $sum = 0;
+        foreach ($visited as $node_id => $_) {
+            $sum += $this->getNodeSize($node_id);
+        }
+        return $sum;
+    }
+
     public function getNodeClass(int $nodeId): ?string
     {
         return $this->node_classes[$nodeId] ?? null;
