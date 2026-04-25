@@ -158,23 +158,11 @@ final class EmitClassTableJob implements CollectorJob
         }
 
         // Now emit the root with the populated diagnostic counters
-        // baked into its attributes.
-        $memoBeforeEmit = $defined_classes_context->getMemoNodeId();
+        // baked into its attributes. Pre-reserving a node_id and
+        // late-emitting puts the row out of node_id order in the on-disk
+        // nodes section; FfiCsrGraphSubstrate.loadFromBinary handles
+        // that by ksort'ing all_node_ids before assigning csr indices.
         $ctx->emitNode($defined_classes_context, null, 'class_table');
-
-        // Confirm what actually landed on disk for the user's
-        // node_id #N when they open the resulting rmem in
-        // rmem:explore. If the type they see for that id isn't
-        // DefinedClassesContext, the late-emit didn't reach the
-        // sink (or got overwritten by another emit on the same
-        // id), and the diagnostic is itself buggy.
-        $finalNodeId = $defined_classes_context->getMemoNodeId();
-        fwrite(STDERR, sprintf(
-            "EmitClassTableJob: reserved node #%d, memo before late-emit=%s, late-emitted as DefinedClassesContext at node #%s\n",
-            $reserved,
-            $memoBeforeEmit === null ? '<unset>' : (string)$memoBeforeEmit,
-            $finalNodeId === null ? '<unset>' : (string)$finalNodeId,
-        ));
 
         if ($droppedSamples !== []) {
             // Mirror the count as a stderr warning so users running
