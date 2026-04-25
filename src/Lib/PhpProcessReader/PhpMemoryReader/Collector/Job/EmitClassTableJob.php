@@ -161,6 +161,19 @@ final class EmitClassTableJob implements CollectorJob
         // baked into its attributes.
         $ctx->emitNode($defined_classes_context, null, 'class_table');
 
+        // Confirm what actually landed on disk for the user's
+        // node_id #N when they open the resulting rmem in
+        // rmem:explore. If the type they see for that id isn't
+        // DefinedClassesContext, the late-emit didn't reach the
+        // sink (or got overwritten by another emit on the same
+        // id), and the diagnostic is itself buggy.
+        $finalNodeId = $defined_classes_context->getMemoNodeId();
+        fwrite(STDERR, sprintf(
+            "EmitClassTableJob: reserved node #%d, late-emitted as DefinedClassesContext at node #%s\n",
+            $reserved,
+            $finalNodeId === null ? '<unset>' : (string)$finalNodeId,
+        ));
+
         if ($droppedSamples !== []) {
             // Mirror the count as a stderr warning so users running
             // analyze interactively see it alongside other progress
