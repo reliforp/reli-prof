@@ -1803,3 +1803,135 @@ discrepancy analysis — e.g., does `rmem:viz` render the full
 `facts.sizes` array that the text formatter ignores? Is `rmem:mcp`
 exposing the cleaner `facts.*` fields or the raw `summary` string?
 Worth a separate pass.
+
+---
+
+## Parked design ideal: typed edges instead of stringly link_names
+
+Recurring symptom across multiple polish items: Zend-internal edge
+labels (`'key'`, `'value'`, `'array_elements'`, `'object_properties'`,
+`'static_properties'`, `'methods'`, `'name'`, `'func'`, ...) leak
+through pass labels and report output. Each callsite that wants to
+render or aggregate has to know what those mean *in its specific
+parent context*, because the same string carries different
+semantics depending on what kind of node it dangles from:
+
+- `link_name='value'` from an `ArrayElementContext` ≈ "array
+  element value"
+- `link_name='value'` from a `ZendReferenceContext` ≈ "reference
+  target"
+- `link_name='value'` from a user object whose property happens to
+  be named `$value` ≈ "the literal `$value` field"
+
+Filtering by string at the formatter / pass layer (today's
+`PathFormatter::STRUCTURAL` list, `DedupCandidatePass::buildDedupLabel`'s
+`[$link_name]` interpolation, `NonTreeEdgePass`'s
+`shared_fanin: $link_name -> $target_class` template) is a leaky
+abstraction: every site has to re-derive what the bare string means
+and pick its own rendering, with no compile-time check that the
+sites agree.
+
+### Idealised model
+
+Replace the `link_name: string` field on edges with a typed
+`EdgeKind`:
+
+    edge { parent_id, child_id, kind: ArrayElementValueEdge,
+           key: zval-or-int, ... }
+    edge { parent_id, child_id, kind: ObjectPropertyEdge,
+           name: 'addressMinNode' }
+    edge { parent_id, child_id, kind: ReferenceTargetEdge }
+    edge { parent_id, child_id, kind: ClassNameEdge }
+    edge { parent_id, child_id, kind: StaticPropertyEdge,
+           name: 'staticCache' }
+    edge { parent_id, child_id, kind: MethodDefinitionEdge,
+           name: 'getAttribute' }
+    ...
+
+Each `EdgeKind` carries:
+
+- Its own **rendering strategy**:
+  - `ArrayElementValueEdge::renderForPath()` → `[*]` or `['key']`
+    if `key` is known
+  - `ObjectPropertyEdge::renderForPath()` → `->$name`
+  - `StaticPropertyEdge::renderForPath()` → `::$name`
+  - `MethodDefinitionEdge::renderForPath()` → `::method()`
+  - `ReferenceTargetEdge::renderForPath()` → transparent (or `&`)
+  - `ClassNameEdge::renderForPath()` → elide (it's structural)
+- Its own **structural-elision flag**:
+  `EdgeKind::isStructuralElision(): bool` (replaces today's
+  `PathFormatter::STRUCTURAL` hardcoded list)
+- Its own **aggregate behaviour**:
+  Used by `shared_fanin` and similar: aggregating across edges
+  becomes type-driven. Mixed-kind aggregations are explicit
+  ("fan-in across multiple kinds") rather than ambiguous bare
+  `value -> ?`.
+
+Result:
+
+- `'key'` and `'value'` strings disappear from report output
+  entirely — they're internal implementation details of the
+  graph, never visible to a reader.
+- New semantic relationships (e.g., "Closure captured `$this`",
+  "Generator captured frame", "WeakMap entry") get added by
+  introducing new `EdgeKind` types, not by sprinkling new
+  string literals across the codebase.
+- Schema changes (a property gets renamed; a relationship's
+  semantics evolve) get type-checked at compile time.
+
+### Why local fixes are insufficient
+
+The handoff's T2.7 candidate ("clean up `[value]` in
+DedupCandidatePass labels, clean up `key/value` bare in
+shared_fanin labels, ...") would be a callsite-by-callsite
+patching pass. Each fix needs to know its parent context. Each
+fix duplicates a tiny piece of the typed-edge logic
+ad-hoc. Once a future site emits another `'value'` link with a
+new meaning, the cycle starts over.
+
+So either:
+
+- **Don't do T2.7 at all** until typed edges are on the table —
+  the work is paid up front and the fix is principled, OR
+- Do T2.7 as **acknowledged technical debt**: surface-level
+  cleanup that buys readability now, with the understanding that
+  typed edges supersedes it and the local fixes will be reverted
+  when the refactor lands.
+
+The verification team's recommendation is the first: park T2.7
+as a candidate that depends on the typed-edges decision. Don't
+build the local-cleanup substrate that becomes throwaway scaffolding.
+
+### Migration sketch (if pursued)
+
+Three phases, each independently shippable:
+
+1. **Introduce `EdgeKind` alongside `link_name`** — collector
+   populates both for new captures. Schema (sqlite, .rmem
+   binary, JSON) gains an additional column / field. Existing
+   captures lack the new field; readers fall back to `link_name`
+   for them.
+2. **Migrate render and aggregation sites** — every pass and
+   formatter that consumed `link_name` now consumes `EdgeKind`
+   when present. Old captures still flow through the
+   string-based path. PathFormatter's `STRUCTURAL` list gets
+   replaced by `EdgeKind::isStructuralElision()`.
+3. **Drop the string field** — once captures from N versions ago
+   have aged out, remove `link_name` from the schema entirely.
+
+Costs vs benefits, briefly:
+
+- **Costs**: schema migration touching collector, substrate, all
+  passes, all formatters, plus `.rmem` binary format bump. Risk
+  surface is broad but each phase is local and verifiable
+  against the corpus.
+- **Benefits**: every "string interpretation by context" gripe
+  in this doc resolves itself; new `EdgeKind` types are the
+  natural place to land features like Closure/Generator captured
+  state, WeakMap entries, Fiber locals, etc.; report code stops
+  hardcoding internal vocabulary.
+
+This belongs in the same file with the `impact_bytes` semantics
+refactor and the `class_definition_overhead` proposal — all three
+are "if a future round wants to invest in proper architecture,
+this is the move" parking lots.
