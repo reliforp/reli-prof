@@ -112,12 +112,16 @@ final class PathFormatter
                 continue;
             }
             if ($in_array_elements && $part !== 'value') {
-                // Array index — append [key] to previous segment
+                // Array index — append [key] to previous segment.
+                // String keys are quoted to match what PHP source code
+                // looks like (`$arr['data']` rather than `$arr[data]`,
+                // which would parse as a constant reference). T2.6.
+                $rendered = self::formatArrayKey($part);
                 if ($segments !== []) {
                     $last = count($segments) - 1;
-                    $segments[$last] .= "[{$part}]";
+                    $segments[$last] .= $rendered;
                 } else {
-                    $segments[] = "[{$part}]";
+                    $segments[] = $rendered;
                 }
                 $in_array_elements = false;
                 $prev_type = $type;
@@ -188,5 +192,31 @@ final class PathFormatter
         }
 
         return $result;
+    }
+
+    /**
+     * Render an array-key segment in PHP-source style: numeric keys
+     * stay bare (`[42]`), string keys are wrapped in single quotes
+     * (`['data']`). T2.6 — the path output reads as the PHP source
+     * a developer would write, so a bareword inside `[ ]` doesn't
+     * get mis-read as a constant reference.
+     *
+     * Numeric detection is the simple `/^-?\d+$/` test the handoff
+     * spec calls for. PHP arrays auto-cast numeric-string keys to
+     * ints at runtime, so quoting `['0']` would be incorrect; the
+     * common-case heuristic does miss strings like `'01'` and
+     * `'0e123'` (which PHP keeps as strings) but those are rare in
+     * captured paths and the divergence is cosmetic, not semantic.
+     */
+    private static function formatArrayKey(string $key): string
+    {
+        if ($key !== '' && preg_match('/^-?\d+$/', $key) === 1) {
+            return "[{$key}]";
+        }
+        // Single-quoted PHP literals only need `\` and `'` escaped.
+        // Replace `\` first so we don't double-escape the backslash
+        // we just added when escaping `'`.
+        $escaped = strtr($key, ['\\' => '\\\\', "'" => "\\'"]);
+        return "['{$escaped}']";
     }
 }
