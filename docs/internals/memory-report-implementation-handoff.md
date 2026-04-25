@@ -614,6 +614,100 @@ profile-yourself one with the spine descending into
 
 ---
 
+## G4 implementation notes — display-time canonical names skip is_tree=0 edges
+
+Bug fix follow-up to PR #648 (the display-time approach that
+replaced the reverted PR #644 emit-time approach). PR #648's
+`NodeLabeler` and `BinaryReportDataProvider::loadCanonicalNames`
+both filter the `name` edge by `is_tree = 1`, which causes nearly
+half of all `ClassDefinitionContext` rows to fail the canonical-
+name lookup in real captures.
+
+### What's wrong
+
+`rw_phpunit.db` (one of the 25 saved corpus reports) has 448
+`ClassDefinitionContext` rows; the labeler's SQL resolves
+canonical names for only **240** (54%). The 208 missing entries
+are user-defined classes (Composer\Autoload\ClassLoader,
+PHPUnit\Framework\TestCase, GeneratedTest0, etc.) — exactly the
+classes a reader of the report would care about. Internal classes
+(Traversable, Iterator, Closure, ...) succeed because their
+`name` edge happens to land as `is_tree = 1`.
+
+The mechanism: when a class is registered after its name string
+has already been collected by some other path (autoload,
+opcache-loaded interned strings, etc.), the string node already
+exists at `$class_definition_context->add('name', ...)` time, so
+the resulting edge is recorded as `is_tree = 0` (back-reference
+to an existing node). For internal classes loaded first via the
+class table walk, the edge is `is_tree = 1`. Either way the
+target string node and `string_value` are identical — the edge
+flag just records who discovered the node first.
+
+The labeler's `is_tree = 1` filter doesn't affect data validity;
+it just throws away half the data.
+
+### Files
+
+- `src/Inspector/Output/MemoryOutput/Report/Substrate/NodeLabeler.php:178`
+  (`AND name_edge.is_tree = 1`)
+- `src/Inspector/Output/MemoryOutput/Report/BinaryReportDataProvider.php:691, 708`
+  (the parallel binary-path edge walks; both branches of the
+  `castSection`-vs-raw-bytes fork have the same filter)
+
+### Fix
+
+Remove the `is_tree` filter from all three sites. Each
+`ClassDefinitionContext` (and `*FunctionDefinitionContext`) has
+at most one `name`-link edge by construction, so dropping the
+filter doesn't introduce duplicates. The `string_value` of the
+target node is the same regardless of edge tree-ness.
+
+Sanity check after the fix: the 240/448 ratio should become
+roughly 448/448 (modulo the small set of class entries that
+truly have no `name` child for unrelated reasons).
+
+### Verification
+
+Same artifacts as everything else — the 25 saved `.db` files in
+`/tmp/memreport-out/`. After the fix, re-running
+`inspector:memory:report` should show:
+
+- `rw_phpunit`:
+    `class_table->generatedtest0->...` → `class_table->GeneratedTest0->...`
+    `class_table->phpunit\framework\testcase->...` →
+       `class_table->PHPUnit\Framework\TestCase->...`
+    `class_table->composer\autoload\composerstaticinit32e1def...->...` →
+       `class_table->Composer\Autoload\ComposerStaticInit32e1def...->...`
+- `rw_twig`:
+    `class_table->twig\extension\coreextension->...` →
+       `class_table->Twig\Extension\CoreExtension->...`
+- `rw_symfony-console`:
+    `class_table->symfony\component\dependencyinjection\containerbuilder->...` →
+       `class_table->Symfony\Component\DependencyInjection\ContainerBuilder->...`
+- `rw3_static-cache`:
+    `class_table->lookupservice->...` → `class_table->LookupService->...`
+    (and the three sibling repositories)
+
+Quick comprehensive grep:
+
+    grep -hE 'class_table->[a-z]+\\' /tmp/memreport-out-impl-postfix/rw*.report.txt | wc -l
+
+Should fall to a small number (only genuinely-lowercase project
+identifiers remain).
+
+### Why this surfaced after PR #648 merged
+
+I (the verification session) spot-checked PR #648 by comparing
+the pre-fix and post-fix outputs on three representative reports
+where canonical names *were* showing — a confirmation bias on
+already-working internal classes. Running a corpus-wide
+`grep 'class_table->[a-z]'` immediately after merge would have
+caught this; the verification doc now records that grep as the
+primary B1/G1/G4 acceptance check.
+
+---
+
 ## Tier 3 implementation notes
 
 ### S12 — cluster findings by target across detector kinds
