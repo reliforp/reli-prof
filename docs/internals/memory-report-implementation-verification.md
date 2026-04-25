@@ -346,3 +346,39 @@ positive-signal re-section, N4 uniform-sibling row collapse) is
 pending — not started yet on this branch. The handoff's
 "Scope discipline" section calls each tier independently shippable,
 and T3 lives in a separate PR by design, not as an exclusion.
+
+### Caveat: clamp is a guardrail, not a saving estimate
+
+Worth being explicit so the verification isn't read as "the
+impact_bytes numbers are now correct":
+
+`min(cnt × retained, heap_total)` removes the "108 GB on a 111 MB
+heap" embarrassment but the clamped value is **the ceiling, not the
+actual saving**. In `rw4_graph-recursion` after the clamp:
+
+    [MEDIUM] 111.45 MB impacted
+      property_scaling: GraphNode (10,000 instances)
+        GraphNode::$outEdges: 10,000 copies x 5.50 MB = 53.71 GB
+
+`111.45 MB` equals the heap total. A reader who interprets that as
+"fixing this saves 111 MB" is over-estimating: the GraphNodes
+referenced via `$outEdges` are shared across the SCC, so removing
+this property only frees the strictly-unshared portion — much
+less than the heap. The clamp keeps the number physically possible;
+it doesn't make it tight.
+
+The handoff explicitly framed this as a stepping stone:
+
+> **Short-term guardrail**: clamp ... eliminates the "1000× the
+> heap" surprises.
+>
+> **Medium-term fix**: switch `impact_bytes` for these kinds from
+> `total = count × per_copy_retained` to a saving estimate.
+
+The medium-term fix lives in the parked
+"`impact_bytes` semantics tradeoff" section of
+`memory-report-ux-improvements.md` (resolution A: split into
+`current_bytes` + `saving_estimate_bytes`). Until that ships, the
+clamped numbers in `dedup_candidate` and `property_scaling` should
+be read as "memory currently sitting in this pattern, capped at
+heap total" — not as a delete-and-save figure.
