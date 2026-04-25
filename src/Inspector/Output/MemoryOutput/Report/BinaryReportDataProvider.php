@@ -613,6 +613,174 @@ final class BinaryReportDataProvider
     }
 
     /**
+     * Build the `node_id => canonical class/method/function name` map for
+     * the binary path. Mirrors NodeLabeler's SQL fetch, but reads sections
+     * directly so the binary report renders the same case-preserved
+     * identifiers as the SQLite report (the
+     * `testBinaryAnalyzeReportMatchesSqliteReportForKeyFindings` parity
+     * check requires it).
+     *
+     * Walks three sections:
+     *  - `nodes` — restrict to ClassDefinitionContext /
+     *    UserFunctionDefinitionContext / InternalFunctionDefinitionContext.
+     *  - `edges` — find the `name` tree-edge from each definition node.
+     *  - `locations` — pull the `string_value_id` of the name child and
+     *    resolve via the string dict.
+     *
+     * @return array<int, string>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    public static function loadCanonicalNames(BinaryReader $reader): array
+    {
+        if (
+            !$reader->hasSection(Format::SECTION_NODES)
+            || !$reader->hasSection(Format::SECTION_EDGES)
+            || !$reader->hasSection(Format::SECTION_LOCATIONS)
+        ) {
+            return [];
+        }
+
+        $dict = $reader->getStringDict();
+
+        $target_types = [
+            'ClassDefinitionContext' => true,
+            'UserFunctionDefinitionContext' => true,
+            'InternalFunctionDefinitionContext' => true,
+        ];
+
+        // Step 1: collect node_ids whose type is a class/function definition
+        /** @var array<int, true> $is_def_node */
+        $is_def_node = [];
+        $node_count = $reader->getSectionElementCount(Format::SECTION_NODES);
+        $nodeRows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
+        if ($nodeRows !== null) {
+            for ($i = 0; $i < $node_count; $i++) {
+                $type = $dict->lookup((int)$nodeRows[$i]->type_id);
+                if ($type !== null && isset($target_types[$type])) {
+                    $is_def_node[(int)$nodeRows[$i]->node_id] = true;
+                }
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_NODES);
+            for ($i = 0; $i < $node_count; $i++) {
+                $off = $i * Format::NODE_ROW_SIZE;
+                $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $data, $off);
+                $type = $dict->lookup((int)$row['type_id']);
+                if ($type !== null && isset($target_types[$type])) {
+                    $is_def_node[(int)$row['node_id']] = true;
+                }
+            }
+        }
+
+        if ($is_def_node === []) {
+            return [];
+        }
+
+        // Step 2: find 'name' tree-edges from definition nodes
+        /** @var array<int, int> def_node_id => name_child_node_id */
+        $name_child_of = [];
+        $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+        if ($edgeRows !== null) {
+            for ($i = 0; $i < $edge_count; $i++) {
+                if ((int)$edgeRows[$i]->is_tree !== 1) {
+                    continue;
+                }
+                $parent = (int)$edgeRows[$i]->parent_node_id;
+                if (!isset($is_def_node[$parent])) {
+                    continue;
+                }
+                $link = $dict->lookup((int)$edgeRows[$i]->link_name_id);
+                if ($link === 'name') {
+                    $name_child_of[$parent] = (int)$edgeRows[$i]->child_node_id;
+                }
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_EDGES);
+            for ($i = 0; $i < $edge_count; $i++) {
+                $off = $i * Format::EDGE_ROW_SIZE;
+                $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $data, $off);
+                if ((int)$row['is_tree'] !== 1) {
+                    continue;
+                }
+                $parent = (int)$row['parent'];
+                if (!isset($is_def_node[$parent])) {
+                    continue;
+                }
+                $link = $dict->lookup((int)$row['lid']);
+                if ($link === 'name') {
+                    $name_child_of[$parent] = (int)$row['child'];
+                }
+            }
+        }
+
+        if ($name_child_of === []) {
+            return [];
+        }
+
+        // Reverse mapping for the location-pass lookup below.
+        /** @var array<int, list<int>> name_child_node_id => def node ids */
+        $defs_for_child = [];
+        foreach ($name_child_of as $def_id => $child_id) {
+            $defs_for_child[$child_id][] = $def_id;
+        }
+
+        // Step 3: resolve string_value of each name child via locations
+        /** @var array<int, string> $canonical_names */
+        $canonical_names = [];
+        $loc_count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+        if ($locRows !== null) {
+            for ($i = 0; $i < $loc_count; $i++) {
+                $node_id = (int)$locRows[$i]->node_id;
+                if (!isset($defs_for_child[$node_id])) {
+                    continue;
+                }
+                $sv_id = (int)$locRows[$i]->string_value_id;
+                if ($sv_id === Format::NULL_STRING_ID) {
+                    continue;
+                }
+                $name = $dict->lookup($sv_id);
+                if ($name === null || $name === '') {
+                    continue;
+                }
+                foreach ($defs_for_child[$node_id] as $def_id) {
+                    $canonical_names[$def_id] = $name;
+                }
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+            for ($i = 0; $i < $loc_count; $i++) {
+                $off = $i * Format::LOCATION_ROW_SIZE;
+                $node_id = unpack('V', $data, $off)[1];
+                if (!isset($defs_for_child[(int)$node_id])) {
+                    continue;
+                }
+                // string_value_id offset: node_id u32 + type_id u32 +
+                // class_id u32 + address u64 + size u64 = 28
+                $sv_id = unpack('V', $data, $off + 28)[1];
+                if ((int)$sv_id === Format::NULL_STRING_ID) {
+                    continue;
+                }
+                $name = $dict->lookup((int)$sv_id);
+                if ($name === null || $name === '') {
+                    continue;
+                }
+                foreach ($defs_for_child[(int)$node_id] as $def_id) {
+                    $canonical_names[$def_id] = $name;
+                }
+            }
+        }
+
+        return $canonical_names;
+    }
+
+    /**
      * Load frame labels (function_name:lineno) from the binary attributes section.
      *
      * Replaces NodeLabeler's SQL query on context_node_attributes.

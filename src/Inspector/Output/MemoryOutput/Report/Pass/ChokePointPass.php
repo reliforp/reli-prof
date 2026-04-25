@@ -26,6 +26,8 @@ final class ChokePointPass implements PassInterface
     /**
      * @param array<int, true>|null $objects_store_nodes Pre-computed set (binary path)
      * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
+     * @param array<int, string>|null $canonical_names Pre-loaded class/
+     *     method/function canonical names (binary path)
      */
     public function __construct(
         private GraphSubstrate $substrate,
@@ -34,6 +36,7 @@ final class ChokePointPass implements PassInterface
         private int $heap_usage = 0,
         private ?array $objects_store_nodes = null,
         private ?array $frame_labels = null,
+        private ?array $canonical_names = null,
     ) {
     }
 
@@ -119,7 +122,12 @@ final class ChokePointPass implements PassInterface
         // substrate's in-memory indexes (loadEdgesFfi / loadNodeTypesFfi),
         // so the only prepared statement left here is the loc_stmt
         // class+location_type lookup, which is called at most 10 times.
-        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
+        $labeler = new NodeLabeler(
+            $this->db,
+            $this->run_id,
+            $this->frame_labels,
+            $this->canonical_names,
+        );
 
         $loc_stmt = null;
         if ($this->objects_store_nodes === null) {

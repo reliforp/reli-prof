@@ -29,6 +29,8 @@ final class TopStringsPass implements PassInterface
     /**
      * @param list<array{node_id: int, size: int, preview: string}>|null $top_strings_data Pre-computed (binary path)
      * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
+     * @param array<int, string>|null $canonical_names Pre-loaded class/
+     *     method/function canonical names (binary path)
      */
     public function __construct(
         private \PDO $db,
@@ -36,6 +38,7 @@ final class TopStringsPass implements PassInterface
         private ?GraphSubstrate $substrate = null,
         private ?array $top_strings_data = null,
         private ?array $frame_labels = null,
+        private ?array $canonical_names = null,
     ) {
     }
 
@@ -80,7 +83,12 @@ final class TopStringsPass implements PassInterface
             ")->fetchAll(\PDO::FETCH_ASSOC);
         }
 
-        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
+        $labeler = new NodeLabeler(
+            $this->db,
+            $this->run_id,
+            $this->frame_labels,
+            $this->canonical_names,
+        );
         $findings = [];
         foreach ($rows as $row) {
             $size = (int)$row['size'];

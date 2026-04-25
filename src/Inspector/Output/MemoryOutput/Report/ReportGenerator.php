@@ -365,6 +365,7 @@ final class ReportGenerator
             // Done before forking so child workers inherit the results
             // via copy-on-write.
             $frame_labels = BinaryReportDataProvider::loadFrameLabels($reader);
+            $canonical_names = BinaryReportDataProvider::loadCanonicalNames($reader);
             $objects_store_nodes = BinaryReportDataProvider::getNodesByLocationType(
                 $reader,
                 'ObjectsStoreMemoryLocation',
@@ -381,7 +382,7 @@ final class ReportGenerator
             $dummy_db = new \PDO('sqlite::memory:');
             $dummy_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
             $findings = array_merge($findings, $this->runPass(
-                new CallStackPass($dummy_db, 0, $substrate, $frame_labels)
+                new CallStackPass($dummy_db, 0, $substrate, $frame_labels, $canonical_names)
             ));
 
             // Binary passes don't share a SQLite fd, so each factory
@@ -400,7 +401,14 @@ final class ReportGenerator
                 new DynamicPropertiesPass($dummy_factory(), 0, $substrate)
             );
             $pass_factories['CycleClusterPass'] = fn (): array => $this->runPass(
-                new CycleClusterPass($substrate, $dummy_factory(), 0, $resolver_factory(), $frame_labels)
+                new CycleClusterPass(
+                    $substrate,
+                    $dummy_factory(),
+                    0,
+                    $resolver_factory(),
+                    $frame_labels,
+                    $canonical_names,
+                )
             );
             $pass_factories['PropertyScalingPass'] = fn (): array => $this->runPass(
                 new PropertyScalingPass(
@@ -422,7 +430,14 @@ final class ReportGenerator
                 new TopArraysPass($dummy_factory(), 0, $substrate, $frame_labels)
             );
             $pass_factories['TopStringsPass'] = fn (): array => $this->runPass(
-                new TopStringsPass($dummy_factory(), 0, $substrate, $top_strings, $frame_labels)
+                new TopStringsPass(
+                    $dummy_factory(),
+                    0,
+                    $substrate,
+                    $top_strings,
+                    $frame_labels,
+                    $canonical_names,
+                )
             );
             $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
                 new NonTreeEdgePass($dummy_factory(), 0, $substrate, $non_tree_edge_stats)
@@ -440,7 +455,13 @@ final class ReportGenerator
                 new StructuralDedupPass($dummy_factory(), 0, $substrate, $resolver_factory())
             );
             $pass_factories['DrillDownPass'] = fn (): array => $this->runPass(
-                new DrillDownPass($substrate, $dummy_factory(), 0, $frame_labels)
+                new DrillDownPass(
+                    $substrate,
+                    $dummy_factory(),
+                    0,
+                    $frame_labels,
+                    $canonical_names,
+                )
             );
             $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
                 new ChokePointPass(
@@ -450,6 +471,7 @@ final class ReportGenerator
                     $heap_usage,
                     $objects_store_nodes,
                     $frame_labels,
+                    $canonical_names,
                 )
             );
             $pass_factories['BlameAllocationPass'] = fn (): array => $this->runPass(
