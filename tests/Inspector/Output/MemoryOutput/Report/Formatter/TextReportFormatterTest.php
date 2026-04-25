@@ -422,6 +422,86 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertStringContainsString('drops after ...', $output);
     }
 
+    public function testFormatExtendsSpineSliceToUserIdentifierForShallowStructuralDrop(): void
+    {
+        // T2.5: when the drop lands on a structural intermediary
+        // (`global_variables` → `array_elements`), PathFormatter has no
+        // user-named segment to anchor on and falls back to a literal
+        // `global_variables -> array_elements` join. The bottleneck_path
+        // summary line on the same finding speaks the user-side
+        // vocabulary (`$decoded[...]`); the Spine line should match.
+        // The formatter walks the slice forward past trailing
+        // structural components until a user-named identifier appears.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: '$decoded[data] (171.45 MB)',
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements', 'decoded',
+                        'array_header', 'array_elements', 'data',
+                    ],
+                    'path_types' => [
+                        '', '', '',
+                        '', '', '',
+                    ],
+                    // ~2× drop at depth 1 (between sizes[0] and sizes[1]).
+                    // Without T2.5, the slice [0..1] is
+                    // [global_variables, array_elements] — both
+                    // structural — and PathFormatter renders
+                    // `global_variables -> array_elements`. With T2.5,
+                    // the slice extends to include `decoded` and renders
+                    // `$decoded`.
+                    'sizes' => [171_000_000, 84_000_000, 84_000_000, 84_000_000, 84_000_000, 84_000_000],
+                ],
+                impact_bytes: 171_000_000,
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        $this->assertStringContainsString('drops after $decoded', $output);
+        $this->assertStringNotContainsString('global_variables -> array_elements', $output);
+    }
+
+    public function testFormatFallsBackToDepthIntegerWhenDescentEntirelyStructural(): void
+    {
+        // Pathological case: every component on the descent is a
+        // structural intermediary. The extension loop runs off the
+        // end without finding a user-named segment; the formatter
+        // falls back to the depth integer rather than emit a longer
+        // string of structural noise.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: 'pathological structural-only descent',
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements',
+                        'object_properties', 'value',
+                    ],
+                    'path_types' => ['', '', '', ''],
+                    // Drop at depth 1.
+                    'sizes' => [10_000_000, 1_000_000, 500_000, 100_000],
+                ],
+                impact_bytes: 10_000_000,
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        // No user-named identifier ever appears, so the new label
+        // can't be built. The legacy "at depth N" form takes over.
+        // (depth = drop_index + 1; drop_index = 0 here because the
+        // first comparison sizes[1]*2 < sizes[0] satisfies on i=0.)
+        $this->assertStringContainsString('drops at depth 1', $output);
+        $this->assertStringNotContainsString('global_variables', $output);
+    }
+
     public function testFormatOmitsBottleneckSpineLineForUniformDescent(): void
     {
         // When the spine stays dominant from root to leaf (no >2× drop

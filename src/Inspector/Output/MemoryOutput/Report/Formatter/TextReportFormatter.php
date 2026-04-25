@@ -534,19 +534,51 @@ final class TextReportFormatter implements ReportFormatterInterface
             return null;
         }
 
-        /** @var list<string> $path_parts */
-        $path_parts = [];
-        foreach (array_slice($raw_path, 0, $drop_index + 1) as $p) {
+        /** @var list<string> $all_parts */
+        $all_parts = [];
+        foreach ($raw_path as $p) {
             if (!is_string($p)) {
                 return null;
             }
-            $path_parts[] = $p;
+            $all_parts[] = $p;
         }
-        /** @var list<string> $path_types */
-        $path_types = [];
-        foreach (array_slice($raw_types, 0, $drop_index + 1) as $t) {
-            $path_types[] = is_string($t) ? $t : '';
+        /** @var list<string> $all_types */
+        $all_types = [];
+        foreach ($raw_types as $t) {
+            $all_types[] = is_string($t) ? $t : '';
         }
+
+        // Walk past trailing structural intermediaries (`global_variables`,
+        // `array_elements`, `object_properties`, ...) so the rendered
+        // prefix lands on a user-named identifier (`$decoded`, `$bus`,
+        // a class name, ...). Without this, a depth-1 drop into
+        // `array_elements` of `global_variables` rendered as the literal
+        // `global_variables -> array_elements` because PathFormatter's
+        // structural elision had nothing to anchor on, while the
+        // bottleneck_path summary line on the same finding showed the
+        // user-side `$decoded[...]`. T2.5 — the two lines now share
+        // vocabulary.
+        //
+        // Stop conditions:
+        //  - Hit a non-structural component (the user-named slot that
+        //    PathFormatter can render as `$var`, `Class::name`, etc.).
+        //  - Run off the end of the path. In that rare case the descent
+        //    is entirely structural (e.g. pure class_table internals);
+        //    we fall back to the depth integer rather than emit a
+        //    longer string of structural noise.
+        $end = $drop_index + 1;
+        while (
+            $end < count($all_parts)
+            && PathFormatter::isStructuralLink($all_parts[$end - 1])
+        ) {
+            $end++;
+        }
+        if (PathFormatter::isStructuralLink($all_parts[$end - 1])) {
+            return null;
+        }
+
+        $path_parts = array_slice($all_parts, 0, $end);
+        $path_types = array_slice($all_types, 0, $end);
 
         $label = PathFormatter::toPhpSyntax($path_parts, $path_types);
         if ($label === '' || $label === '(root)') {
